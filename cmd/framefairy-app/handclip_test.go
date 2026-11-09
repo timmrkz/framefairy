@@ -241,9 +241,9 @@ func TestPathAClipMadeByHandIsEditedAndUndone(t *testing.T) {
 	}
 }
 
-// A clip made by hand keeps a minute heard on each side, so an edge
-// dragged out finds its words there without waiting, and an edge dragged
-// past that has what it brought in heard first, Tim on #745.
+// A clip made by hand keeps a minute heard around it, so an edge dragged
+// out finds its words there without waiting, and an edge dragged past
+// that has what it brought in heard first, Tim on #745.
 func TestPathAClipDraggedLongerIsHeardWhereItNowReaches(t *testing.T) {
 	d := open(t)
 	ep := d.episode("longer", minutes5)
@@ -280,19 +280,18 @@ func TestPathAClipDraggedLongerIsHeardWhereItNowReaches(t *testing.T) {
 	}
 	// O at 200 s hears back to 154 s, a clip's longest and two
 	// sentences' reach, see engine.ClipRequest, and a little past the
-	// clip. Then the rest of a minute after it, the side with less room,
-	// and the rest of a minute before it.
+	// clip. Then the rest of a minute on both sides of it, at once.
 	if done := d.waitFor(d.out(ep, 200).ID); done.State != JobDone {
 		t.Fatalf("made %+v", done)
 	}
 	c := clip()
-	room := heard()
-	if len(room) != 2 || !room[0].Room || !room[1].Room || room[0].From < c.End ||
-		math.Abs(room[0].To-(c.End+60)) > 0.5 || math.Abs(room[1].From-(c.Start-60)) > 0.5 || room[1].To > c.Start {
-		t.Fatalf("around the clip %.1f to %.1f the room heard is %+v", c.Start, c.End, room)
+	around := heard()
+	if len(around) != 1 || around[0].Hears() != engine.HearsAround ||
+		math.Abs(around[0].From-(c.Start-60)) > 0.5 || math.Abs(around[0].To-(c.End+60)) > 0.5 {
+		t.Fatalf("around the clip %.1f to %.1f is heard by %+v", c.Start, c.End, around)
 	}
-	// Its start dragged back 50 s, into the room: the words are there,
-	// and the side under 30 s is topped up to a minute again.
+	// Its start dragged back 50 s, into the stretch heard around it: the
+	// words are there, and the side under 30 s is heard to a minute again.
 	drag := func(from float64) ClipEntry {
 		c := clip()
 		if _, err := d.svc.Reshape(ctx, ep, c.Plan, c.ID, engine.Gesture{Kind: "trim", Edge: "start", From: from},
@@ -302,46 +301,46 @@ func TestPathAClipDraggedLongerIsHeardWhereItNowReaches(t *testing.T) {
 		return clip()
 	}
 	if c = drag(c.Start - 50); len(c.Unheard) != 0 {
-		t.Fatalf("dragged into the room, the clip has %v not heard", c.Unheard)
+		t.Fatalf("dragged into the stretch heard, the clip has %v not heard", c.Unheard)
 	}
 	if view, err := d.svc.Captions(ep, c.Plan, c.ID); err != nil || len(view.Captions) == 0 || view.Captions[0].Start > 3 {
-		t.Fatalf("dragged into the room, the first caption is at %+v, %v", view, err)
+		t.Fatalf("dragged into the stretch heard, the first caption is at %+v, %v", view, err)
 	}
-	if more := heard(); len(more) != 1 || !more[0].Room || math.Abs(more[0].To-(c.Start-10)) > 1 {
-		t.Fatalf("dragged to %.1f s, the room is topped up by %+v", c.Start, more)
+	if more := heard(); len(more) != 1 || more[0].Hears() != engine.HearsAround || math.Abs(more[0].To-(c.Start-10)) > 1 {
+		t.Fatalf("dragged to %.1f s, the stretch around it is heard again by %+v", c.Start, more)
 	}
-	// Past the room: what it brought in is heard first, in the turn of a
-	// clip made by hand, and then the room around it.
+	// Past that: what it brought in is heard first, as a part of the
+	// clip, in the turn of a clip made by hand, and then around it.
 	before := d.speech.seconds()
 	past := c.Start - 100
 	c = drag(past)
 	if len(c.Unheard) != 1 || math.Abs(c.Unheard[0][0]-past) > 0.05 {
-		t.Fatalf("dragged to %.1f s, past the room, not heard is %v", past, c.Unheard)
+		t.Fatalf("dragged to %.1f s, past what was heard, not heard is %v", past, c.Unheard)
 	}
 	more := heard()
-	if len(more) == 0 || more[0].Room || math.Abs(more[0].From-past) > 0.05 {
-		t.Fatalf("dragged past the room, the clip's part is heard by %+v", more)
+	if len(more) == 0 || more[0].Hears() != engine.HearsPart || math.Abs(more[0].From-past) > 0.05 {
+		t.Fatalf("dragged past what was heard, the clip's part is heard by %+v", more)
 	}
 	brought := c.Unheard[0][1] - past
-	// The room before it ends at the video's start, 30 s, and a piece the
-	// speech model is given may run on past a gap by up to 15 s.
+	// The stretch before it ends at the video's start, 30 s, and a piece
+	// the speech model is given may run on past a gap by up to 15 s.
 	if got := d.speech.seconds() - before; got > brought+30+15 {
-		t.Errorf("%.1f s heard for the %.1f s brought in and the room before it", got, brought)
+		t.Errorf("%.1f s heard for the %.1f s brought in and the stretch before it", got, brought)
 	}
 	if c = clip(); len(c.Unheard) != 0 {
 		t.Errorf("once heard, the clip still has %v not heard", c.Unheard)
 	}
 	if view, err := d.svc.Captions(ep, c.Plan, c.ID); err != nil || len(view.Captions) == 0 || view.Captions[0].Start > 3 {
-		t.Fatalf("dragged past the room, the first caption is at %+v, %v", view, err)
+		t.Fatalf("dragged past what was heard, the first caption is at %+v, %v", view, err)
 	}
 }
 
 // What of the clip chosen is heard by itself, and when it waits, issue
-// #745. What of the clip is not heard goes first, then room on each side
-// of a clip made by hand. A part that failed is not asked for again, or
+// #745. What of the clip is not heard goes first, then the stretch around
+// a clip made by hand. A part that failed is not asked for again, or
 // every state read would ask for it and fail again, up to several times
 // a second. One the app was closed on carries on by itself. The whole
-// video being transcribed holds no part up, which takes the lane from it.
+// video being transcribed holds nothing up.
 func TestThePartOfTheClipChosenIsHeardUnlessItFailed(t *testing.T) {
 	t.Parallel()
 	searched := "clips-0-300.json/c1"
@@ -350,73 +349,86 @@ func TestThePartOfTheClipChosenIsHeardUnlessItFailed(t *testing.T) {
 		return ClipEntry{Key: key, ClipView: engine.ClipView{Start: start, End: end,
 			Segments: []engine.SegmentView{{Start: start, End: end}}}}
 	}
-	transcription := func(id, state string, from, to float64) Job {
-		j := Job{Kind: engine.JobTranscribe, State: state, Seq: 1}
-		j.JobRecord.ID, j.From, j.To = id, from, to
+	transcription := func(part timed.Window, around bool, state string) Job {
+		j := Job{State: state, Seq: 1}
+		j.JobRecord = engine.TranscribeRecord(part, around)
 		return j
 	}
-	inClip, roomBefore, roomAfter := timed.Window{Start: 120, End: 150}, timed.Window{Start: 117, End: 154},
-		timed.Window{Start: 200, End: 260}
+	none := timed.Window{}
+	inClip, aroundIt := timed.Window{Start: 120, End: 150}, timed.Window{Start: 117, End: 260}
+	dragged := [][2]float64{{0, 100}, {150, 300}}
+	made := [][2]float64{{154, 200}}
 	for _, c := range []struct {
-		name   string
-		heard  [][2]float64
-		chosen ClipEntry
-		jobs   []Job
-		want   timed.Window
-		room   bool
+		name         string
+		heard        [][2]float64
+		chosen       ClipEntry
+		jobs         []Job
+		part, around timed.Window
 	}{
 		// A clip dragged back to 120 s past what was heard from 150 s.
-		{"nothing runs", [][2]float64{{0, 100}, {150, 300}}, entry(searched, 120, 180), nil, inClip, false},
-		{"another clip is chosen", [][2]float64{{0, 100}, {150, 300}}, entry("x", 0, 10), nil, timed.Window{}, false},
-		{"the whole video is transcribed", [][2]float64{{0, 100}, {150, 300}}, entry(searched, 120, 180),
-			[]Job{transcription(engine.TranscribeID, JobRunning, 0, 0)}, inClip, false},
-		{"a part is heard already", [][2]float64{{0, 100}, {150, 300}}, entry(searched, 120, 180),
-			[]Job{transcription(engine.TranscribePartID, JobRunning, 100, 110)}, timed.Window{}, false},
-		{"the same part failed", [][2]float64{{0, 100}, {150, 300}}, entry(searched, 120, 180),
-			[]Job{transcription(engine.TranscribePartID, JobFailed, 120, 150)}, timed.Window{}, false},
-		{"the same part was stopped by hand", [][2]float64{{0, 100}, {150, 300}}, entry(searched, 120, 180),
-			[]Job{transcription(engine.TranscribePartID, JobStopped, 120, 150)}, timed.Window{}, false},
-		{"a smaller part failed", [][2]float64{{0, 100}, {150, 300}}, entry(searched, 120, 180),
-			[]Job{transcription(engine.TranscribePartID, JobFailed, 130, 150)}, inClip, false},
-		{"the app was closed on the same part", [][2]float64{{0, 100}, {150, 300}}, entry(searched, 120, 180),
-			[]Job{transcription(engine.TranscribePartID, JobInterrupted, 120, 150)}, inClip, false},
-		{"the whole video failed", [][2]float64{{0, 100}, {150, 300}}, entry(searched, 120, 180),
-			[]Job{transcription(engine.TranscribeID, JobFailed, 0, 0)}, inClip, false},
+		{"nothing runs", dragged, entry(searched, 120, 180), nil, inClip, none},
+		{"another clip is chosen", dragged, entry("x", 0, 10), nil, none, none},
+		{"the whole video is transcribed", dragged, entry(searched, 120, 180),
+			[]Job{transcription(none, false, JobRunning)}, inClip, none},
+		{"a part is heard already", dragged, entry(searched, 120, 180),
+			[]Job{transcription(timed.Window{Start: 100, End: 110}, false, JobRunning)}, none, none},
+		{"the stretch around it is heard", dragged, entry(byHand, 120, 180),
+			[]Job{transcription(aroundIt, true, JobRunning)}, inClip, none},
+		{"the same part failed", dragged, entry(searched, 120, 180),
+			[]Job{transcription(inClip, false, JobFailed)}, none, none},
+		{"the same part was stopped by hand", dragged, entry(searched, 120, 180),
+			[]Job{transcription(inClip, false, JobStopped)}, none, none},
+		{"a smaller part failed", dragged, entry(searched, 120, 180),
+			[]Job{transcription(timed.Window{Start: 130, End: 150}, false, JobFailed)}, inClip, none},
+		{"the app was closed on the same part", dragged, entry(searched, 120, 180),
+			[]Job{transcription(inClip, false, JobInterrupted)}, inClip, none},
+		{"the whole video failed", dragged, entry(searched, 120, 180),
+			[]Job{transcription(none, false, JobFailed)}, inClip, none},
 		// A clip made with O at 200 s, which heard back to 154 s.
-		{"a clip found by a search keeps no room", [][2]float64{{154, 200}}, entry(searched, 177, 200), nil,
-			timed.Window{}, false},
-		{"a clip made by hand, room after it first", [][2]float64{{154, 200}}, entry(byHand, 177, 200), nil,
-			roomAfter, true},
-		{"then room before it", [][2]float64{{154, 260}}, entry(byHand, 177, 200), nil, roomBefore, true},
-		{"room on both sides", [][2]float64{{117, 260}}, entry(byHand, 177, 200), nil, timed.Window{}, false},
-		{"its part before its room", [][2]float64{{154, 200}}, entry(byHand, 120, 200), nil,
-			timed.Window{Start: 120, End: 154}, false},
-		{"room waits for a part being heard", [][2]float64{{154, 200}}, entry(byHand, 177, 200),
-			[]Job{transcription(engine.TranscribePartID, JobRunning, 140, 154)}, timed.Window{}, false},
+		{"a clip found by a search has nothing heard around it", made, entry(searched, 177, 200), nil, none, none},
+		{"a clip made by hand has a minute heard around it", made, entry(byHand, 177, 200), nil, none, aroundIt},
+		{"heard around it", [][2]float64{{117, 260}}, entry(byHand, 177, 200), nil, none, none},
+		{"its own part before what is around it", made, entry(byHand, 120, 200), nil,
+			timed.Window{Start: 120, End: 154}, none},
+		{"around it waits for its part being heard", made, entry(byHand, 177, 200),
+			[]Job{transcription(timed.Window{Start: 140, End: 154}, false, JobRunning)}, none, none},
+		{"around it failed", made, entry(byHand, 177, 200),
+			[]Job{transcription(aroundIt, true, JobFailed)}, none, none},
 	} {
 		st := VideoState{Status: engine.EpisodeStatus{Heard: c.heard}, Clips: []ClipEntry{c.chosen},
 			Chosen: c.chosen.Key, Jobs: c.jobs}
 		if c.name == "another clip is chosen" {
 			st.Chosen = "y"
 		}
-		got, room, hear := partToHear(st, 300)
-		if hear != (c.want != timed.Window{}) || got != c.want || room != c.room {
-			t.Errorf("%s: hears %v %v, room %v, want %v, room %v", c.name, hear, got, room, c.want, c.room)
+		for _, around := range []bool{false, true} {
+			want := c.part
+			if around {
+				want = c.around
+			}
+			got, hear := partToHear(st, 300, around)
+			if hear != (want != none) || got != want {
+				t.Errorf("%s, around %v: hears %v %v, want %v", c.name, around, hear, got, want)
+			}
 		}
 	}
 }
 
-// The whole video and the part of a clip are two transcriptions, which
-// run side by side, and asking for either again while it runs gives the
-// one that runs, issue #745.
+// The whole video, the part of a clip and the stretch around it are
+// three transcriptions, which run side by side, and asking for any again
+// while it runs gives the one that runs, issue #745.
 func TestAClipsPartIsHeardBesideTheWholeVideo(t *testing.T) {
 	t.Parallel()
 	svc, eps := memoryLibrary(t, "ep.mp4")
 	svc.jobs = newIdleQueue(svc.store, func(JobUpdate) {}, func(string) {})
 	whole := svc.Transcribe(eps[0])
 	part := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}, false)
-	if whole.ID == part.ID || whole.JobRecord.ID != engine.TranscribeID || part.JobRecord.ID != engine.TranscribePartID {
-		t.Fatalf("the whole video is %+v, the part %+v", whole, part)
+	around := svc.transcribe(eps[0], timed.Window{Start: 60, End: 210}, true)
+	if whole.ID == part.ID || part.ID == around.ID || whole.Hears() != engine.HearsWhole ||
+		part.Hears() != engine.HearsPart || around.Hears() != engine.HearsAround {
+		t.Fatalf("the whole video is %+v, the part %+v, around it %+v", whole, part, around)
+	}
+	if again := svc.transcribe(eps[0], timed.Window{Start: 60, End: 210}, true); again.ID != around.ID {
+		t.Errorf("around the clip asked for again is %s, not the one that runs, %s", again.ID, around.ID)
 	}
 	if again := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}, false); again.ID != part.ID {
 		t.Errorf("the part asked for again is %s, not the one that runs, %s", again.ID, part.ID)

@@ -36,6 +36,15 @@ import (
 // audio is heard in a second or two. Clips made by hand hear in the order
 // they were asked for.
 //
+// And the clip chosen, issue #745. A part of it not heard yet, which an
+// edge dragged out brought in, is somebody's wait the way a clip made by
+// hand is, and hears the same way. The stretch kept heard around a clip
+// made by hand, ahead of an edge dragged out, hears after every clip and
+// every such part, and before the searches: it takes the lane back from a
+// search that hears, and does not wait for one that finds, since it is a
+// minute or two of audio, heard in a second or two, and the next drag
+// may need it.
+//
 // And last: the whole video heard by itself, Transcribe whole video in
 // its menu, hears only when no search and no clip needs the lane. It can
 // take an hour, and nobody waits on it the way somebody waits on a search
@@ -52,7 +61,9 @@ type lanes struct {
 // A turn is either plain, or a step of a search: hearing, which gives way,
 // or finding, which the hearing lane gives way to, or the hearing of a clip
 // made by hand, which everything of a search gives way to, or the hearing
-// of a whole video, which gives way to all of them.
+// of the stretch around a clip, which gives way to a clip and goes ahead
+// of a search, or the hearing of a whole video, which gives way to all of
+// them.
 type turnKind int
 
 const (
@@ -61,6 +72,7 @@ const (
 	findingTurn
 	handHearingTurn
 	wholeHearingTurn
+	aroundHearingTurn
 )
 
 type holder struct {
@@ -240,8 +252,9 @@ func (l *lanes) mayLocked(a *ask) bool {
 }
 
 // givesWay says whether a turn that hears gives the hearing lane to another
-// that asks for it: a search to a clip made by hand, and the whole video
-// to everything but another whole video. A model being installed takes a
+// that asks for it: a search to a clip made by hand and the stretch
+// around a clip, that stretch to a clip, and the whole video to everything
+// but another whole video. A model being installed takes a
 // plain turn in the hearing lane, and it waited behind the whole video for
 // as long as that heard, up to an hour, found by the second review of
 // #458. The model the whole video hears with cannot be changed or removed
@@ -249,6 +262,8 @@ func (l *lanes) mayLocked(a *ask) bool {
 func givesWay(held, asks turnKind) bool {
 	switch held {
 	case hearingTurn:
+		return asks == handHearingTurn || asks == aroundHearingTurn
+	case aroundHearingTurn:
 		return asks == handHearingTurn
 	case wholeHearingTurn:
 		return asks != wholeHearingTurn
@@ -258,7 +273,8 @@ func givesWay(held, asks turnKind) bool {
 
 // passes says whether an ask goes ahead of one in the same lane asked for
 // before it: a clip made by hand goes ahead of everything but another clip,
-// and everything but another whole video goes ahead of the whole video.
+// the stretch around a clip goes ahead of a search, and everything but
+// another whole video goes ahead of the whole video.
 //
 // The whole video waits for every search and clip that asks to hear, so
 // whatever was asked for after it may not wait for it in turn. A model
@@ -273,6 +289,9 @@ func passes(a, earlier turnKind) bool {
 	if a == handHearingTurn {
 		return earlier != handHearingTurn
 	}
+	if a == aroundHearingTurn {
+		return earlier == hearingTurn
+	}
 	return false
 }
 
@@ -286,20 +305,20 @@ func (l *lanes) dropLocked(a *ask) {
 }
 
 // laneOfStep is the lane a step of a job runs in, and how it takes its
-// turn, by what the job's record says. A transcription of a part of a
-// clip, which a hand brought in, is somebody's wait the way a clip made
-// by hand is, and room kept beside a clip hears in turn with the
-// searches, ahead of the whole video, issue #745. local says whether the
-// job's language model runs on this machine, where finding holds hearing
-// up.
+// turn, by what the job's record says. A part of a clip not heard yet is
+// somebody's wait the way a clip made by hand is, and the stretch around
+// a clip goes between them and the searches, issue #745. local says
+// whether the job's language model runs on this machine, where finding
+// holds hearing up.
 func laneOfStep(rec engine.JobRecord, step string, local bool) (string, turnKind) {
 	switch step {
 	case "hearing":
-		part := rec.Kind == engine.JobTranscribe && rec.To > 0
 		switch {
-		case rec.Kind == engine.JobClip || (part && !rec.Room):
+		case rec.Kind == engine.JobClip || rec.Hears() == engine.HearsPart:
 			return LaneHearing, handHearingTurn
-		case rec.Kind == engine.JobTranscribe && !part:
+		case rec.Hears() == engine.HearsAround:
+			return LaneHearing, aroundHearingTurn
+		case rec.Hears() == engine.HearsWhole:
 			return LaneHearing, wholeHearingTurn
 		}
 		return LaneHearing, hearingTurn

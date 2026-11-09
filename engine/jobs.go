@@ -66,9 +66,9 @@ const (
 	JobRender = "render"
 	// JobClip is a clip made by hand, see MakeClip.
 	JobClip = "clip"
-	// JobTranscribe is the episode heard with no search after, the whole
-	// of it to its end or the part an edit brought into a clip, see
-	// TranscribeJob.
+	// JobTranscribe is the episode heard with no search after: the whole
+	// of it to its end, a part of a clip not heard yet, or the stretch
+	// kept heard around a clip, see TranscribeJob and Hears.
 	JobTranscribe = "transcribe"
 )
 
@@ -76,16 +76,57 @@ const (
 // a time, and a new one takes the place of the last.
 const SearchID = "search"
 
-// TranscribeID is the id of an episode's transcription to its end. An
-// episode has one at a time.
-const TranscribeID = "transcribe"
+// The ids of an episode's transcriptions, one of each at a time, see
+// Hears. TranscribeID hears the whole episode to its end.
+// TranscribePartID hears a part of a clip not heard yet, which an edit
+// brought in, and somebody waits on it. TranscribeAroundID hears the
+// stretch kept heard around a clip, ahead of an edge dragged out, see
+// ClipAround. Each has a record of its own, so they run side by side, and
+// the app's lanes say which hears first.
+const (
+	TranscribeID       = "transcribe"
+	TranscribePartID   = "transcribe-part"
+	TranscribeAroundID = "transcribe-around"
+)
 
-// TranscribePartID is the id of an episode's transcription of the part an
-// edit brought into a clip. It has a record of its own beside the whole
-// episode's, so the two run side by side: the part takes the lane of
-// hearing from the whole episode, which carries on once the part is
-// heard. An episode has one at a time.
-const TranscribePartID = "transcribe-part"
+// What a transcription hears, by its record, see Hears.
+type Hearing int
+
+const (
+	// HearsNothing is a record of a job that is no transcription.
+	HearsNothing Hearing = iota
+	HearsWhole
+	HearsPart
+	HearsAround
+)
+
+// Hears says what the transcription of this record hears. It is the one
+// place that tells them apart.
+func (r JobRecord) Hears() Hearing {
+	switch {
+	case r.Kind != JobTranscribe:
+		return HearsNothing
+	case r.ID == TranscribeAroundID:
+		return HearsAround
+	case r.To > 0:
+		return HearsPart
+	}
+	return HearsWhole
+}
+
+// TranscribeRecord is the record a transcription of part starts with: the
+// whole episode for a part with no end, otherwise a part of a clip, or
+// with around the stretch around a clip.
+func TranscribeRecord(part timed.Window, around bool) JobRecord {
+	r := JobRecord{ID: TranscribeID, Kind: JobTranscribe}
+	if part.End > 0 {
+		r.ID, r.From, r.To = TranscribePartID, part.Start, part.End
+		if around {
+			r.ID = TranscribeAroundID
+		}
+	}
+	return r
+}
 
 // JobRecord is what the work folder keeps about a job.
 type JobRecord struct {
@@ -94,12 +135,8 @@ type JobRecord struct {
 
 	// A search: the window, To 0 for the end of the episode, and the
 	// numbers it asks for. A transcription: the part it hears, the same.
-	From float64 `json:"from,omitempty"`
-	To   float64 `json:"to,omitempty"`
-	// A transcription of a part: Room says it is room kept heard beside a
-	// clip, heard ahead of an edge dragged out, which nobody waits on
-	// yet, see ClipRoom. Without it the part is in the clip already.
-	Room   bool    `json:"room,omitempty"`
+	From   float64 `json:"from,omitempty"`
+	To     float64 `json:"to,omitempty"`
 	Count  int     `json:"count,omitempty"`
 	Min    float64 `json:"min,omitempty"`
 	Max    float64 `json:"max,omitempty"`
@@ -335,16 +372,17 @@ func saneJob(source string, r *JobRecord) bool {
 		}
 	case JobRender:
 		// The plan is one of this episode's, by name and by where it is.
-		if r.ID == SearchID || r.ID == TranscribeID || filepath.Dir(r.Plan) != filepath.Join(WorkDir(source), "logs") ||
+		if r.ID == SearchID || r.ID == TranscribeID || r.ID == TranscribePartID || r.ID == TranscribeAroundID ||
+			filepath.Dir(r.Plan) != filepath.Join(WorkDir(source), "logs") ||
 			!IsPlanFile(r.Plan) || len(r.Clips) > 1000 || len(r.Done) > 1000 ||
 			r.Step == StepHearing || r.Step == StepFinding || r.Step == StepFraming {
 			return false
 		}
 	case JobTranscribe:
-		// The whole episode has no part, a part has an end after its start.
-		part := r.ID == TranscribePartID
-		if (r.ID != TranscribeID && !part) || !finite(r.From) || !finite(r.To) ||
-			(part && r.To <= r.From) || (!part && (r.From != 0 || r.To != 0 || r.Room)) ||
+		// The whole episode has no part, a part has an end after its start,
+		// and the record is the one TranscribeRecord makes.
+		if r.ID != TranscribeRecord(r.Part(), r.ID == TranscribeAroundID).ID || !finite(r.From) || !finite(r.To) ||
+			r.From < 0 || r.To < 0 || (r.To > 0 && r.To <= r.From) || (r.To == 0 && r.From != 0) ||
 			r.Step == StepFinding || r.Step == StepFraming || r.Step == StepRendering {
 			return false
 		}
@@ -634,17 +672,14 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan 
 // TranscribeJob hears a part of the episode, wherever the transcript has
 // not heard it yet, and nothing after. A part with no end is the whole
 // episode to its end: Transcribe whole video in a video's menu. A part
-// with an end is what an edit brought into a clip, see ClipUnheard, with
-// a record of its own, see TranscribePartID. It keeps a record like a search, so an app closed while it hears says so,
-// and carries on from what was heard. Its hearing gives way to every
-// search and clip made by hand, which the app's lanes decide.
-// room says a part is room kept beside a clip, see JobRecord.Room.
-func (p *Project) TranscribeJob(ctx context.Context, part timed.Window, room bool, host Host) (err error) {
-	id := TranscribeID
-	if part.End > 0 {
-		id = TranscribePartID
-	}
-	j := p.startJob(JobRecord{ID: id, Kind: JobTranscribe, From: part.Start, To: part.End, Room: room && part.End > 0}, host)
+// with an end is a part of a clip not heard yet, see ClipUnheard, or with
+// around the stretch kept heard around a clip, see ClipAround. Each has a
+// record of its own, see TranscribeRecord. It keeps a record like a
+// search, so an app closed while it hears says so, and carries on from
+// what was heard. When it hears, before or after searches and clips made
+// by hand, is the app's lanes to decide.
+func (p *Project) TranscribeJob(ctx context.Context, part timed.Window, around bool, host Host) (err error) {
+	j := p.startJob(TranscribeRecord(part, around), host)
 	defer j.end(&err)
 	if ctx.Err() != nil {
 		return ErrCancelled

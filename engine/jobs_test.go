@@ -315,6 +315,7 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		{ID: "render-1", Kind: JobRender, Plan: filepath.Join(logs, "clips-0-60.json"), Step: StepRendering},
 		{ID: TranscribeID, Kind: JobTranscribe, Step: StepHearing},
 		{ID: TranscribePartID, Kind: JobTranscribe, From: 120, To: 154, Step: StepHearing},
+		{ID: TranscribeAroundID, Kind: JobTranscribe, From: 117, To: 260, Step: StepHearing},
 	}
 	for _, r := range good {
 		if err := WriteJob(fsys, source, r); err != nil {
@@ -343,22 +344,23 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		}
 	}
 	got := ReadJobs(fsys, source)
-	if len(got) != 4 || got[0].ID != SearchID || got[1].ID != "render-1" || got[2].ID != TranscribePartID ||
-		got[3].ID != TranscribeID {
+	if len(got) != 5 || got[0].ID != SearchID || got[1].ID != "render-1" || got[2].ID != TranscribeAroundID ||
+		got[3].ID != TranscribePartID || got[4].ID != TranscribeID {
 		t.Errorf("read %+v", got)
 	}
 	if err := WriteJob(fsys, source, JobRecord{ID: "../out", Kind: JobRender}); err == nil {
 		t.Error("a record written outside the jobs folder")
 	}
-	if err := RemoveJob(fsys, source, "render-1"); err != nil || len(ReadJobs(fsys, source)) != 3 {
+	if err := RemoveJob(fsys, source, "render-1"); err != nil || len(ReadJobs(fsys, source)) != 4 {
 		t.Errorf("removed: %v, %d left", err, len(ReadJobs(fsys, source)))
 	}
-	// The whole video with a part, and a part with no end, in a video of
-	// their own, since their names are the good records' names.
+	// The whole video with a part, a part with no end and the stretch
+	// around a clip with none, in a video of their own, since their names are the good records' names.
 	other := "/home/tim/other.mp4"
 	for name, body := range map[string]string{
-		"transcribe.json":      `{"id": "transcribe", "kind": "transcribe", "from": 10, "to": 20, "step": "hearing"}`,
-		"transcribe-part.json": `{"id": "transcribe-part", "kind": "transcribe", "from": 10, "step": "hearing"}`,
+		"transcribe.json":        `{"id": "transcribe", "kind": "transcribe", "from": 10, "to": 20, "step": "hearing"}`,
+		"transcribe-part.json":   `{"id": "transcribe-part", "kind": "transcribe", "from": 10, "step": "hearing"}`,
+		"transcribe-around.json": `{"id": "transcribe-around", "kind": "transcribe", "step": "hearing"}`,
 	} {
 		if err := afero.WriteFile(fsys, filepath.Join(JobsDir(other), name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
@@ -723,7 +725,7 @@ func TestATranscriptionOfAPartHearsThatPart(t *testing.T) {
 	var turns []string
 	turn := func(ctx context.Context, step string, _ func()) (context.Context, func(), error) {
 		turns = append(turns, step)
-		if rec := ReadJobs(disk, p.Source); len(rec) != 1 || rec[0].ID != TranscribePartID || rec[0].Kind != JobTranscribe ||
+		if rec := ReadJobs(disk, p.Source); len(rec) != 1 || rec[0].Hears() != HearsPart ||
 			rec[0].Part() != part {
 			t.Errorf("waiting for %s, the records say %+v", step, rec)
 		}

@@ -68,11 +68,11 @@ export const steps = {
   //                    window, makes a clip with O two hundred seconds past
   //                    it, pinches the clip timeline out, drags the clip's
   //                    start back a hundred and twenty seconds, past the
-  //                    minute the app keeps heard beside a clip made by
+  //                    minute the app keeps heard around a clip made by
   //                    hand, lets go and pinches back in on it. The app
-  //                    hears that part by itself, ahead of the room, and
-  //                    the clip timeline then has caption blocks of words
-  //                    said in it, issue #745
+  //                    hears that part by itself, ahead of the stretch
+  //                    around the clip, and the clip timeline then has
+  //                    caption blocks of words said in it, issue #745
   async "drag past what was heard"(walk, arg, s) {
     const { page, watch } = walk;
     const path = await episodeOn(page);
@@ -121,7 +121,7 @@ export const steps = {
     await settle(page);
     // The words of the part nobody had heard come once it is heard, by
     // themselves: a block whose first word is said within ten seconds of
-    // the clip's new start, past the room.
+    // the clip's new start, past the stretch heard around it.
     const first = after.start + 10;
     await pageUntil(
       page,
@@ -129,9 +129,11 @@ export const steps = {
       first,
     );
     await settle(page);
-    // Heard as a part of the clip, not as room beside it, and only so far
-    // as nothing had heard it.
-    const hearing = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "transcribe" && !j.room);
+    // Heard as a part of the clip, not as the stretch around it, and only
+    // so far as nothing had heard it.
+    const hearing = (await ask(page, "Jobs")).findLast(
+      (j) => j.episode === path && j.kind === "transcribe" && j.label === "Transcribe the clip",
+    );
     console.log(JSON.stringify({ heardTo, at, before: before.start, after: after.start, hearing }));
     if (!hearing || hearing.state !== "done" || Math.abs(hearing.from - after.start) > 0.5 || hearing.to > reach + 1) {
       walk.wrong = `the part from ${after.start.toFixed(1)} s was heard by ${JSON.stringify(hearing)}`;

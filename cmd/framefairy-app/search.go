@@ -141,11 +141,11 @@ func (s *FrameFairy) Continue(id, click string) Job {
 	if carry.Kind == engine.JobClip {
 		return s.makeClip(path, carry.Clip(), carry.ID, click, false)
 	}
-	if carry.Kind == engine.JobTranscribe {
-		if carry.To > 0 {
-			return s.transcribe(path, carry.Part(), carry.Room)
-		}
+	switch carry.Hears() {
+	case engine.HearsWhole:
 		return s.Transcribe(path)
+	case engine.HearsPart, engine.HearsAround:
+		return s.transcribe(path, carry.Part(), carry.Hears() == engine.HearsAround)
 	}
 	return s.render(path, carry.Render(), carry)
 }

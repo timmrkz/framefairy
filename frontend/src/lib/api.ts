@@ -569,13 +569,11 @@ export interface Job {
   lane: Lane;
   // Where a search or a render is, empty for a job with no steps.
   step?: JobStep | "";
-  // The window of a search, or the part a transcription hears. To is 0
-  // for the end of the episode.
+  // The window of a search, or the part a transcription hears: a part of
+  // a clip or the stretch around one, issue #745. To is 0 for the end of
+  // the episode.
   from?: number;
   to?: number;
-  // A transcription's part that is room kept heard beside a clip made by
-  // hand, which nobody waits on yet, issue #745.
-  room?: boolean;
   // A clip made by hand: the moment I or O was pressed at, and whether it
   // was O.
   at?: number;

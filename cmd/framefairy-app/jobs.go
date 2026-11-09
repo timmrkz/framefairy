@@ -621,13 +621,13 @@ func jobLabel(rec engine.JobRecord) string {
 		return "Render"
 	case rec.Kind == engine.JobClip:
 		return "Make a clip"
-	case rec.Kind == engine.JobTranscribe && rec.Room:
-		// Room beside the clip chosen, see hearChosen.
+	case rec.Hears() == engine.HearsAround:
+		// The stretch around the clip chosen, see hearChosen.
 		return "Transcribe around the clip"
-	case rec.Kind == engine.JobTranscribe && rec.To > 0:
+	case rec.Hears() == engine.HearsPart:
 		// The part of the clip chosen not heard yet, see hearChosen.
 		return "Transcribe the clip"
-	case rec.Kind == engine.JobTranscribe:
+	case rec.Hears() == engine.HearsWhole:
 		return "Transcribe whole video"
 	}
 	return "Find clips"

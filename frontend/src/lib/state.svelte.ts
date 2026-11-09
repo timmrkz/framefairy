@@ -14,8 +14,15 @@ export type Work = "whole" | "clips" | "render";
 
 const works: Work[] = ["whole", "clips", "render"];
 
+// The whole video's transcription, Transcribe whole video in its menu. A
+// transcription with an end is a part of a clip or the stretch around
+// one, which the Go side hears by itself, see JobRecord.Hears there.
+function transcribesWhole(j: Job): boolean {
+  return j.kind === "transcribe" && !j.to;
+}
+
 function doing(work: Work, j: Job): boolean {
-  if (work === "whole") return j.kind === "transcribe";
+  if (work === "whole") return transcribesWhole(j);
   if (work === "render") return j.kind === "render";
   return j.kind === "search" || j.kind === "clip";
 }
@@ -173,10 +180,9 @@ export class JobStore {
   // menu, the newest there is: running, or stopped, cut off or failed,
   // which its menu offers to carry on. One that is done has nothing to say,
   // and neither has one settled, carried on by the next or forgotten with
-  // its video when the video left the library. A transcription with an
-  // end is the part of a clip the Go side hears by itself, not this one.
+  // its video when the video left the library.
   transcription(path: string): Job | undefined {
-    const last = this.list.findLast((j) => j.episode === path && j.kind === "transcribe" && !j.to);
+    const last = this.list.findLast((j) => j.episode === path && transcribesWhole(j));
     if (!outstanding(last)) return undefined;
     return last;
   }

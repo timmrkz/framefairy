@@ -74,26 +74,28 @@ report of 26 October, 12.27.
 
 A transcription also hears a part of the video by itself, for the clip
 chosen, issue #745, `hearChosen` in `export.go`, from the state the app
-reads of the video:
+reads of the video. What it hears is said by its record, `Hears` in
+`engine/jobs.go`, the one place that tells them apart:
 
-- **What of the clip is not heard yet**, which an edge dragged out, a cut
-  put back, an undo or a redo can bring in. Somebody waits on its words,
-  so it hears the way a clip made by hand does, ahead of the searches and
-  of the whole video.
-- **Room beside a clip made by hand**, so an edge dragged out finds its
-  words there already and nobody waits. A minute on each side is kept
-  heard, and a side is topped up once less than 30 s of it is heard,
-  the side with less room first, `engine.ClipRoom`. Its record says
-  `room`, and it hears in turn with the searches, so I, O and a part of
-  a clip still go first.
+- **A part of the clip not heard yet**, `transcribe-part`, which an edge
+  dragged out, a cut put back, an undo or a redo can bring in. Somebody
+  waits on its words, so it hears the way a clip made by hand does,
+  ahead of everything else.
+- **The stretch around a clip made by hand**, `transcribe-around`, so an
+  edge dragged out finds its words there already and nobody waits. A
+  minute on each side of the clip is kept heard. Once less than 30 s of
+  it is heard on either side, both sides are heard to a minute again in
+  one go, `engine.ClipAround`. It hears once the clip itself is heard,
+  after every clip made by hand and part of a clip, and ahead of the
+  searches: it takes the lane back from a search that hears, and does
+  not wait while a search finds.
 
-Either keeps a record of its own, `transcribe-part`, with the part in
-`from` and `to`, beside the whole video's, so the two run side by side:
-the whole video gives the part the lane and carries on once the part is
-heard. A search does not stop it. One part is heard at a time, the next
-once the state is read after it. A part is not asked for again after the
-same part failed or was stopped, and one the app was closed on carries
-on by itself.
+Each keeps a record of its own with the part in `from` and `to`, beside
+the whole video's, so they run side by side: the whole video gives them
+the lane and carries on once they are heard. A search does not stop
+them. One of each is heard at a time, the next once the state is read
+after it. A part is not asked for again after the same part failed or
+was stopped, and one the app was closed on carries on by itself.
 
 A clip made
 by hand goes **waiting**, **hearing** where the transcript does not reach
