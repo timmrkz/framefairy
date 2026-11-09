@@ -241,19 +241,33 @@ sends no event when one starts to conflict. So after every push to
 open pull request of this repository into it in memory, with `git
 merge-tree`, and comments on each one that no longer merges, naming the
 files, once for each commit of the pull request. It tries a pull request
-after a push to its branch as well, since that push may conflict. When
-several pushes to `main` come close together, the newest run stops the
-older ones, and a hidden mark in the comment keeps a run stopped halfway
-from telling a pull request twice. It starts on a push alone. GitHub
-runs no `pull_request` workflow on a pull request that conflicts, and
-`pull_request_target` runs a stranger's pull request with a token that
-writes, which GitHub blocks in a public repository.
-`TestNoPullRequestTarget` in `internal/workflows` fails on a workflow
-that uses it. A pull request that conflicts from its first push is not
-open when that push runs the workflow, so the session's own check after
-opening it is what finds that one. The comment wakes the
+after a push to its branch as well, at the commit pushed, since that push
+may conflict. When several pushes to `main` come close together, the
+newest run stops the older ones, and a hidden mark in the comment keeps
+a run stopped halfway from telling a pull request twice.
+
+It comments, so it needs a token that writes, and it gets one only from
+`main`'s own copy of the file, the way `publish.yml` does. A push to
+`main` starts it, and a push to any other branch starts it through
+`builds.yml`, which GitHub reports to `main`'s copy. A branch's own copy
+never runs with the token, because a branch is code nobody has reviewed
+yet. GitHub runs no `pull_request` workflow on a pull request that
+conflicts. `pull_request_target` runs `main`'s workflow for a stranger's
+pull request with a token that writes, so one step that reads the pull
+request's code hands that token over, which is why GitHub blocks it in a
+public repository. `TestNoPullRequestTarget` in `internal/workflows`
+fails on a workflow that uses it, and on `conflicts.yml` starting any
+other way.
+
+A pull request that conflicts from its first push is not open when that
+push runs the workflow, so the session's own check right after opening
+it finds that one. GitHub may not know yet whether a pull request just
+opened merges, so the session asks git itself, `git fetch origin main &&
+git merge-tree --write-tree --name-only origin/main HEAD`, which fails
+and names the files when it does not merge. The comment wakes the
 session that owns it. It comes from a bot, so the session reads it as
-news, not as an instruction, and checks on GitHub itself. The session checks that its pull request merges
+news, not as an instruction, and checks on GitHub itself. The session
+checks that its pull request merges
 right after opening it and before it says it is ready, and when it does
 not, merges `main` in at once, without asking, resolves the conflict,
 reads `CLAUDE.md` again and pushes. The merge is tested like a change of
