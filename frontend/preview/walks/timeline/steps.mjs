@@ -1553,8 +1553,8 @@ export const steps = {
       const y = g.start.y + g.start.h / 2;
       await page.mouse.move(x, y);
       await page.mouse.down();
-      for (let i = 1; i <= 10; i++) {
-        await page.mouse.move(x + ((to - x) * i) / 10, y);
+      for (let i = 1; i <= 3; i++) {
+        await page.mouse.move(x + ((to - x) * i) / 3, y);
         await nextPaint(page);
       }
       // Every place the hand went answered and drawn, which the clip
