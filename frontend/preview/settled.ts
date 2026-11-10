@@ -128,13 +128,32 @@ const moving = () =>
     return a.playState === "running" && Number.isFinite(end) && end <= SOON;
   });
 
-// Answers once nothing is on its way. When nothing is, it lets two of the
-// browser's frames go by, so a call the app makes as it draws is out by
-// then, and answers if nothing came or came back in between, or looks
-// again. The
-// frames are the browser's own, kept before a fake clock comes, see
-// fakeClock. While the app's time is held, held, its timers fire only
-// when the walk turns the clock on, so they are not waited for.
+// After a frame: a message posted to the page is taken once the page has
+// drawn the frame and run what drawing it set off, the observers of sizes
+// above all, and before the next frame.
+const after = (() => {
+  const channel = new MessageChannel();
+  const waiting: (() => void)[] = [];
+  channel.port1.onmessage = () => waiting.shift()?.();
+  return (fn: () => void) => {
+    waiting.push(fn);
+    channel.port2.postMessage(0);
+  };
+})();
+
+// Answers once nothing is on its way. When nothing is, it lets the
+// browser draw the next frame, so a call the app makes as it draws, or as
+// a size it observes changes, is out by then, and answers if nothing came
+// or came back in between, or looks again. The frame is the browser's
+// own, kept before a fake clock comes, see fakeClock. While the app's
+// time is held, held, its timers fire only when the walk turns the clock
+// on, so they are not waited for.
+//
+// What moves for a moment is ended at once rather than waited for: the
+// walk would only see it end, so it ends now, where it would have ended,
+// and what the app does when it ends, a row taken out once it has folded,
+// happens as it would. A walk that looks at a movement looks before it
+// settles.
 (window as any).__settled = (held: boolean) =>
   new Promise<void>((done) => {
     const frame: (fn: () => void) => void = (window as any).__real?.frame ?? requestAnimationFrame;
@@ -146,12 +165,16 @@ const moving = () =>
       }
       const going = moving();
       if (going.length) {
+        for (const a of going) {
+          try {
+            a.finish();
+          } catch {}
+        }
         Promise.all(going.map((a) => a.finished.catch(() => {}))).then(look);
         return;
       }
       const seen = back;
-      frame(() => frame(() => (back === seen && !busy() && !moving().length ? done() : look())));
+      frame(() => after(() => (back === seen && !busy() && !moving().length ? done() : look())));
     };
     look();
   });
-

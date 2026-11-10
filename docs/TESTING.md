@@ -1188,10 +1188,15 @@ its waveform and the 240 ms before a newly chosen clip is shown. Now
 `__settled` in `preview/settled.ts` answers once no call is out, no
 timer of the app's is set to fire within a second, and nothing on the
 page moves for a second or less, a row sliding open or the clip
-timeline gliding to its view. It is woken by the call coming back, the
-timer firing or being cleared, and the movement's own end, never by
-looking again on every frame. When nothing is left it lets two of the
-browser's frames go by and answers if nothing came in between. The timer
+timeline gliding to its view. It is woken by the call coming back and
+the timer firing or being cleared, never by looking again on every
+frame. A movement of a second or less it ends at once, where it would
+have ended, since the walk would only see it end, and what the app does
+when it ends happens as it would. A walk that looks at a movement looks
+before it settles. When nothing is left it lets the browser draw the
+next frame, and answers in the task after it, once whatever the frame
+set off, a size observed above all, has run, if nothing came in
+between. The timer
 that writes the log is left out, the same as its calls, marked
 `logOnly` in `said.ts`. A longer timer is how long something stays on
 screen, which a walk turns on itself with `holdClock`, and while the
@@ -1210,10 +1215,10 @@ timeline reads two presses within half a second and six pixels as a
 double-click, which cuts a part out. A walk that clicks where it clicked
 a step before uses `clickOnTrack`, which lands eight pixels beside the
 last spot first, so the click is one on its own. Opening
-the browser takes a second or two. The rest is the gestures, and the
-ones that play wait in real time: playing a clip to its end once took
-most of the playback walk, so it now starts a moment before the clip's
-last cut.
+the browser takes a second or two. The rest is the gestures. The ones
+that play once waited in real time, and playing a clip to its end took
+most of the playback walk. Now a play takes the refreshes that draw its
+frames, on the walk's sound card, see above.
 
 Time the app lets run out, the ten seconds of a toast or of a removed
 picture or clip, is not waited for. A walk holds the app's clock before
