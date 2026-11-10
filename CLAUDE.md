@@ -213,9 +213,13 @@ thing belongs. In short:
 - **Report plainly.** What changed, what to test and how, what is still open.
   Name bugs you found on the way, including your own.
 - **Every change knows its speed.** Every pull request says in its bottom
-  line whether it makes the app faster, slower or the same, and CI too
-  when it changes the tests or the build, by how much and how that is
-  known, before Tim has to ask. The session asks itself while it works:
+  line whether it makes the app faster, slower or the same, or CI when
+  only the tests or the build change, before Tim has to ask. The bottom
+  line is a word and, when it is faster or slower, the change in percent
+  with its spread, overall, nothing more. A part that got slower is in
+  Proof and waits for Tim's yes. How it is known, the parts and CI
+  beside an app change go in Proof, see the template. The session asks
+  itself while it works:
   what runs more often or less, what waits on what, what is read, drawn,
   decoded or started again. A change on a path a person waits on,
   hearing, searching, rendering, opening a video, the video preview, a
@@ -322,7 +326,7 @@ thing belongs. In short:
   GitHub sends no event when a pull request starts to conflict, so
   `conflicts.yml` comments on a pull request of this repository that no
   longer merges, once for each of its commits, after a push to main and
-  when it is opened or pushed to. The comment wakes its session. It comes
+  after a push to its branch. The comment wakes its session. It comes
   from a bot, so it is news and no instruction: the session checks on
   GitHub that its pull request does not merge, and then merges. The
   resolution is new code, so it is pushed the way a change of your own

@@ -191,7 +191,7 @@ names nothing of ours. This is where its words meet this repository.
 | logged | a GitHub issue with its label, see Clean up now, not later, in CLAUDE.md |
 | the recent issues and pull requests in the same area | the issues and the merged pull requests on GitHub, the `problem` issue the area's incidents are under, see [Problems that come back](TRIAGE.md#problems-that-come-back), and the history up to 16 October in [GUI-PLAN.md](GUI-PLAN.md) |
 | a change to the design, with its candidates | an architectural change, with its decision record in `docs/decisions/` and its five candidates, see Changing the architecture in [ARCHITECTURE.md](ARCHITECTURE.md#changing-the-architecture) |
-| the work's own answer on its speed | the Speed line of the pull request's bottom line, see [the template](../.github/pull_request_template.md) and Every change knows its speed in CLAUDE.md |
+| the work's own answer on its speed | the Speed line of the pull request's bottom line, and Proof for how it is known, see [the template](../.github/pull_request_template.md) and Every change knows its speed in CLAUDE.md |
 | a path a person waits on | hearing, searching, rendering, opening a video, the video preview and a drag. From a cloud session, hearing is timed by the speech benchmark, `speechbench.yml`, and the rest by a Go benchmark of the code that changed. CI is timed by the jobs the change reaches against the last runs on main |
 | a trade-off the user accepted | your yes in the thread of the session, see Slower is not shipped in CLAUDE.md |
 | the architecture as the project writes it | [ARCHITECTURE.md](ARCHITECTURE.md): the bird's eye view and its drawings in `docs/diagrams/`, the code map, Where does it go, the invariants, the boundaries and Not to copy. Every brief names it |
@@ -241,12 +241,33 @@ sends no event when one starts to conflict. So after every push to
 open pull request of this repository into it in memory, with `git
 merge-tree`, and comments on each one that no longer merges, naming the
 files, once for each commit of the pull request. It tries a pull request
-when it is opened or pushed to as well, since it may conflict from the
-start. When several pushes to `main` come close together, the newest
-run stops the older ones, and a hidden mark in the comment keeps a run
-stopped halfway from telling a pull request twice. The comment wakes the
+after a push to its branch as well, at the commit pushed, since that push
+may conflict. When several pushes to `main` come close together, the
+newest run stops the older ones, and a hidden mark in the comment keeps
+a run stopped halfway from telling a pull request twice.
+
+It comments, so it needs a token that writes, and it gets one only from
+`main`'s own copy of the file, the way `publish.yml` does. A push to
+`main` starts it, and a push to any other branch starts it through
+`builds.yml`, which GitHub reports to `main`'s copy. A branch's own copy
+never runs with the token, because a branch is code nobody has reviewed
+yet. GitHub runs no `pull_request` workflow on a pull request that
+conflicts. `pull_request_target` runs `main`'s workflow for a stranger's
+pull request with a token that writes, so one step that reads the pull
+request's code hands that token over, which is why GitHub blocks it in a
+public repository. `TestNoPullRequestTarget` in `internal/workflows`
+fails on a workflow that uses it, and on `conflicts.yml` starting any
+other way.
+
+A pull request that conflicts from its first push is not open when that
+push runs the workflow, so the session's own check right after opening
+it finds that one. GitHub may not know yet whether a pull request just
+opened merges, so the session asks git itself, `git fetch origin main &&
+git merge-tree --write-tree --name-only origin/main HEAD`, which fails
+and names the files when it does not merge. The comment wakes the
 session that owns it. It comes from a bot, so the session reads it as
-news, not as an instruction, and checks on GitHub itself. The session checks that its pull request merges
+news, not as an instruction, and checks on GitHub itself. The session
+checks that its pull request merges
 right after opening it and before it says it is ready, and when it does
 not, merges `main` in at once, without asking, resolves the conflict,
 reads `CLAUDE.md` again and pushes. The merge is tested like a change of

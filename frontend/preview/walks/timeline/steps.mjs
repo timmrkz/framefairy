@@ -350,12 +350,19 @@ export const steps = {
         requestAnimationFrame(tick);
       });
     // The frames from the press on, the first of them the first painted
-    // after it.
+    // after it, up to the next frame: the watch reads a frame before the
+    // app paints in it, so what the frame settle ended on showed only in
+    // the frame after, and a settle of one frame ended before it.
     const seen = () =>
-      page.evaluate(() => {
-        window.__pressWatch = false;
-        return window.__pressedAt < 0 ? [] : window.__pressed.slice(window.__pressedAt);
-      });
+      page.evaluate(
+        () =>
+          new Promise((done) =>
+            requestAnimationFrame(() => {
+              window.__pressWatch = false;
+              done(window.__pressedAt < 0 ? [] : window.__pressed.slice(window.__pressedAt));
+            }),
+          ),
+      );
     const g = await handles(page);
     const caption = (edge) =>
       page.locator(`.clip-timeline [aria-label="When caption 2 ${edge === "end" ? "goes" : "appears"}"]`).first().boundingBox();
@@ -745,13 +752,21 @@ export const steps = {
     // Each wait is in the episode's time, read off the playhead, see
     // playUntil.
     await playUntil(page, { most: 0.7 });
+    // The plays started so far, so "played through" can tell whether the
+    // drag started the play again.
+    const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await page.evaluate(() => {
       window.__played = [];
       window.__playWatch = true;
       const tick = () => {
         if (!window.__playWatch) return;
         const at = Number(document.querySelector(".screen")?.dataset.playhead);
-        window.__played.push([performance.now(), at, window.__pictured ? window.__pictured() : -1]);
+        // The sound card's clock too, which the playhead follows while
+        // it plays, whether the sound card runs, and whether the play is
+        // on, see "played through".
+        const card = window.__frameQueue?.audio;
+        const playing = !!document.querySelector('button[aria-label="Pause"]');
+        window.__played.push([performance.now(), at, window.__pictured ? window.__pictured() : -1, card?.currentTime, card?.state === "running", playing]);
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -777,6 +792,7 @@ export const steps = {
     // play does, until it has read thirty, counted on the page.
     await pageUntil(page, () => window.__played.length >= 30 || !document.querySelector('button[aria-label="Pause"]'));
     await page.evaluate(() => (window.__playWatch = false));
+    walk.startedAgain = (await page.evaluate(() => window.__frameQueue.stats.starts)) - starts;
     // Paused in the frame the watch ended, so what comes next settles on
     // a clip that stands. Left to play, the settle waited for its end.
     await playUntil(page, { most: 0, pause: true });
@@ -853,7 +869,7 @@ export const steps = {
     if (!playingAtLetGo) walk.wrong = `the play had ended at ${atLetGo.toFixed(3)} before the hand let go, so the walk proves nothing`;
     else if (!(newEnd < atLetGo)) walk.wrong = `the clip ends at ${newEnd.toFixed(3)}, not before the playhead at ${atLetGo.toFixed(3)} where the hand let go`;
     else if (!ran.playing) walk.wrong = `the play stopped at ${ran.at.toFixed(3)}, with the clip's end moved from ${oldEnd.toFixed(3)} to ${newEnd.toFixed(3)} behind the playhead`;
-    else if (played.length < 30) walk.wrong = `only ${played.length} animation frames were read while it played`;
+    else if (played.length < READS) walk.wrong = `only ${played.length} animation frames were read while it played`;
     else if (startedAgain) walk.wrong = `the play started again ${startedAgain} times once the end was behind the playhead`;
     for (let i = 1; i < played.length && !walk.wrong; i++) {
       const [at, n] = played[i];
@@ -957,7 +973,7 @@ export const steps = {
     if (!(newEnd < oldEnd - 1)) walk.wrong = `the end was dragged in only from ${oldEnd.toFixed(3)} to ${newEnd.toFixed(3)}`;
     else if (Math.abs(end - want) > 1e-3) walk.wrong = `${done}, and the clip ends at ${end.toFixed(3)}, not ${want.toFixed(3)}`;
     else if (!playingAtBack || !(atBack < newEnd - frame)) walk.wrong = `the play was at ${atBack.toFixed(3)}, ${playingAtBack ? "playing" : "stopped"}, after ${menu.join(" and ")}, not before the end at ${newEnd.toFixed(3)}, so the walk proves nothing`;
-    else if (played.length < 30) walk.wrong = `only ${played.length} animation frames were read while it played`;
+    else if (played.length < READS) walk.wrong = `only ${played.length} animation frames were read while it played`;
     else if (!(reached > want - 3 * frame && reached < want + frame)) walk.wrong = `${done}, and the play stopped at ${reached.toFixed(3)}, not at the clip's end at ${want.toFixed(3)}`;
     else if (startedAgain) walk.wrong = `${done}, and the play started again ${startedAgain} times`;
     else walk.wrong = inACut(played, pieces, frame);
@@ -1029,7 +1045,7 @@ export const steps = {
     const ahead = Math.min(...[...cutsOf(before), ...cutsOf(pieces)].map(([a]) => a));
     if (JSON.stringify(before) === JSON.stringify(pieces)) walk.wrong = `${what} changed nothing in the clip`;
     else if (!playingAtBack || !(atBack < ahead - frame)) walk.wrong = `the play was at ${atBack.toFixed(3)}, ${playingAtBack ? "playing" : "stopped"}, after ${what}, not before the cut at ${ahead.toFixed(3)}, so the walk proves nothing`;
-    else if (played.length < 30) walk.wrong = `only ${played.length} animation frames were read while it played`;
+    else if (played.length < READS) walk.wrong = `only ${played.length} animation frames were read while it played`;
     else if (!(reached > past - 0.5)) walk.wrong = `after ${what} the play stopped at ${reached.toFixed(3)}, not past the cut`;
     else if (startedAgain) walk.wrong = `after ${what} the play started again ${startedAgain} times`;
     else if (gone.some(([a, b]) => !played.some(([at]) => at > a + frame && at < b - frame))) walk.wrong = `after ${what} took the cut away the play still jumped it`;
@@ -1410,8 +1426,8 @@ export const steps = {
   //                    puts the playhead in the clip, this share of the
   //                    way along it, with a click on the clip timeline, and
   //                    presses R, which rotates the part of the clip there,
-  //                    and the video preview has to show it rotated within
-  //                    300 ms, before a held answer comes
+  //                    and the video preview has to show it rotated in the
+  //                    first frame drawn after the press, or the one after
   async "rotate at"(walk, arg, s) {
     const { page, watch } = walk;
     const g = await handles(page);
@@ -1426,9 +1442,9 @@ export const steps = {
     await shownOnPlayhead(page);
     const turn = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.turn));
     const before = await turn();
-    const took = await keyShows(page, "r", (b) => Number(document.querySelector(".screen").dataset.turn) !== b, before);
-    if (took < 0) walk.wrong = `R left the video preview rotated ${before}`;
-    else if (took > 300) walk.wrong = `the video preview rotated ${took} ms after R, not at once`;
+    const frames = await keyShows(page, "r", (b) => Number(document.querySelector(".screen").dataset.turn) !== b, before);
+    if (frames < 0) walk.wrong = `R left the video preview rotated ${before}`;
+    else if (frames > 1) walk.wrong = `the video preview rotated ${frames} frames after R, not at once`;
     await watch.step("press", s);
   },
   // ["keyframe at", share]
@@ -1436,8 +1452,8 @@ export const steps = {
   //                    way along it, with a click on the clip timeline,
   //                    waits for the video preview to show that frame, and
   //                    presses K, and the clip timeline has to show a
-  //                    diamond lit on the playhead's frame within 300 ms,
-  //                    before a held answer comes
+  //                    diamond lit on the playhead's frame in the first
+  //                    frame drawn after the press, or the one after it
   // ["glide at", share]
   //                    the same with G, and a circle
   async "keyframe at"(walk, arg, s) {
@@ -1449,8 +1465,9 @@ export const steps = {
   // ["keyframe key", [key, kind]]
   //                    with the playhead on a keyframe, presses K or G,
   //                    and the mark on the playhead's frame has to become a
-  //                    "diamond" or a "circle", or go, "none", within 300
-  //                    ms, and the engine has to have it so
+  //                    "diamond" or a "circle", or go, "none", in the
+  //                    first frame drawn after the press or the one after
+  //                    it, and the engine has to have it so
   async "keyframe key"(walk, arg, s) {
     const { page, watch } = walk;
     const [key, kind] = arg;
@@ -1468,7 +1485,7 @@ export const steps = {
       walk.wrong = `the playhead is on no keyframe for ${key.toUpperCase()} to change`;
       return;
     }
-    const took = await keyShows(
+    const frames = await keyShows(
       page,
       key,
       (want) => {
@@ -1477,8 +1494,8 @@ export const steps = {
       },
       kind,
     );
-    if (took < 0) walk.wrong = `${key.toUpperCase()} on the ${before} left it a ${await here()}, not a ${kind}`;
-    else if (took > 300) walk.wrong = `the ${kind} showed ${took} ms after ${key.toUpperCase()}, not at once`;
+    if (frames < 0) walk.wrong = `${key.toUpperCase()} on the ${before} left it a ${await here()}, not a ${kind}`;
+    else if (frames > 1) walk.wrong = `the ${kind} showed ${frames} frames after ${key.toUpperCase()}, not at once`;
     await watch.step("press", s);
     await settle(page);
     // The engine has one circle more or fewer, as the mark became.
@@ -2227,20 +2244,11 @@ export const steps = {
 // Steps that take the same body as the step they are walked by.
 steps["scrub far"] = steps["click far"];
 
-// How long the page took from a key going down to the first animation
-// frame on which shows holds, in the page's own time. Timed from Node, a
-// press and the polling that waits for its answer are calls to the
-// browser, and on a busy runner each can take a frame or more to arrive:
-// C was once 538 ms "after C" in CI where the page showed the keyframe in
-// a frame or two. The time starts when the page handles the keydown, so
-// it is how long the app took to answer the key, not how long a busy
-// machine took to hand the key over. -1 when it does not hold once the
-// app has settled on the key.
 // keyframeAt puts the playhead this share of the way along the clip with
 // a click on the clip timeline, waits for the video preview to show that
 // frame, and presses key, K or G, and the clip timeline has to show a new
-// mark lit on the playhead's frame within 300 ms, a diamond for K and a
-// circle for G, before a held answer comes.
+// mark lit on the playhead's frame in the first frame drawn after the press
+// or the one after it, a diamond for K and a circle for G.
 async function keyframeAt(walk, share, s, key) {
   const { page, watch } = walk;
   const g = await handles(page);
@@ -2252,7 +2260,7 @@ async function keyframeAt(walk, share, s, key) {
   await shownOnPlayhead(page);
   const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
   const before = await count();
-  const took = await keyShows(
+  const frames = await keyShows(
     page,
     key,
     ([b, glide]) => {
@@ -2262,23 +2270,34 @@ async function keyframeAt(walk, share, s, key) {
     [before, key === "g"],
   );
   const kind = key === "g" ? "circle" : "diamond";
-  if (took < 0) walk.wrong = `${key.toUpperCase()} put no ${kind} on the playhead's frame`;
-  else if (took > 300) walk.wrong = `the ${kind} showed ${took} ms after ${key.toUpperCase()}, not at once`;
+  if (frames < 0) walk.wrong = `${key.toUpperCase()} put no ${kind} on the playhead's frame`;
+  else if (frames > 1) walk.wrong = `the ${kind} showed ${frames} frames after ${key.toUpperCase()}, not at once`;
   await watch.step("press", s);
   await settle(page);
 }
 
+// How many animation frames the page drew after a key went down before
+// the first one on which shows holds: 0 when the frame after the key
+// shows it. Counted in frames, not in milliseconds: on a busy runner one
+// frame can take a third of a second, and C was 538 ms and then 332 ms
+// "after C" in WebKit in CI, where a frame or two take that long. The
+// count starts when the page handles the keydown, so it is how the app
+// answered the key, not how long a busy machine took to hand it over. -1
+// when it does not hold once the app has settled on the key.
 async function keyShows(page, key, shows, arg) {
   await page.evaluate(
     ([source, arg]) => {
       const shows = new Function(`return (${source})`)();
-      window.__keyShows = { down: -1, took: -1 };
-      addEventListener("keydown", () => (window.__keyShows.down = performance.now()), { capture: true, once: true });
+      window.__keyShows = { down: false, frames: 0, shown: false };
+      addEventListener("keydown", () => (window.__keyShows.down = true), { capture: true, once: true });
       const tick = () => {
         const k = window.__keyShows;
-        if (k.down < 0) return requestAnimationFrame(tick);
-        if (shows(arg)) k.took = performance.now() - k.down;
-        else requestAnimationFrame(tick);
+        if (!k.down) return requestAnimationFrame(tick);
+        if (shows(arg)) k.shown = true;
+        else {
+          k.frames++;
+          requestAnimationFrame(tick);
+        }
       };
       requestAnimationFrame(tick);
     },
@@ -2286,7 +2305,7 @@ async function keyShows(page, key, shows, arg) {
   );
   await page.keyboard.press(key);
   await settle(page);
-  return page.evaluate(() => (window.__keyShows.took >= 0 ? Math.round(window.__keyShows.took) : -1));
+  return page.evaluate(() => (window.__keyShows.shown ? window.__keyShows.frames : -1));
 }
 
 // Reads the edge of that label, the playhead and the frame the video
@@ -2355,6 +2374,13 @@ async function watchCaptions(page) {
 function cutsOf(pieces) {
   return pieces.slice(1).map((p, i) => [pieces[i].end, p.start]);
 }
+
+// The animation frames a play has to be read on before a walk judges it.
+// On the walk's clock a play goes on a frame a refresh at most, so every
+// frame it draws is read, and two reads are a play seen moving. Thirty
+// were asked once, half a second of a play in real time, and a play on
+// the walk's clock through a few frames of the clip makes fewer.
+const READS = 2;
 
 // What is wrong when a play recorded as [playhead, frame, playing] stood
 // inside a cut of the pieces, more than a frame from its edges: it played

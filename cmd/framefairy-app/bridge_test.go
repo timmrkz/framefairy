@@ -2125,8 +2125,8 @@ func bridgeDist(t *testing.T) string {
 // WALKERS. Each runs against a bridge of its own, started as a process of
 // its own: a desk sets HOME for the whole process it is in, so two bridges
 // in one would share the app's settings. One after another they took nine
-// minutes. A run spends most of its time waiting, on a clip that plays in
-// real time and on the quiet after every step, so four bridges kept four
+// minutes. A run spent most of its time waiting then, on a clip that
+// played in real time and on the quiet after every step, so four bridges kept four
 // cores busy only part of the time: six on the four cores of CI and the
 // cloud took the whole set from six and a half minutes to five and a half,
 // with the cores busy four fifths of it.
@@ -2346,7 +2346,7 @@ func TestWalks(t *testing.T) {
 		if after, ok := machineCPU(); ok && busy {
 			spent[machineSpent] = (after - busyBefore).Seconds()
 		}
-		summary := walkSummary(took, spent, len(runs), walkers, time.Since(started).Seconds()) //nolint:forbidigo // the seconds the walks took, reported, never waited on
+		summary := walkSummary(took, times, spent, len(runs), walkers, time.Since(started).Seconds()) //nolint:forbidigo // the seconds the walks took, reported, never waited on
 		if err := os.WriteFile(file, []byte(summary), 0o644); err != nil {
 			t.Error(err)
 		}
@@ -3067,11 +3067,15 @@ func busyOf(stat string) (time.Duration, bool) {
 // right in its column, so the tables read in a terminal as they do on
 // GitHub. The processor time varies less from one run to the next than
 // the seconds do, so it is what a change to the speed of the walks is
-// compared by.
-func walkSummary(took, spent map[string]float64, runs, walkers int, wall float64) string {
-	sum := 0.0
-	for _, s := range took {
+// compared by. It also says how long walk-times.tsv, kept, says the same
+// runs took last time, so a change that makes the walks slower shows in
+// the log of its walks job. It only says so and does not fail: how long a
+// run takes depends on how busy CI's machine is.
+func walkSummary(took, kept, spent map[string]float64, runs, walkers int, wall float64) string {
+	sum, before := 0.0, 0.0
+	for n, s := range took {
 		sum += s
+		before += kept[n]
 	}
 	busy := 0.0
 	if wall > 0 && walkers > 0 {
@@ -3083,6 +3087,13 @@ func walkSummary(took, spent map[string]float64, runs, walkers int, wall float64
 		several = "walker"
 	}
 	fmt.Fprintf(&out, "%d of %d runs on %d %s in %.0f s, %.0f s of walking together, the walkers busy %.0f %% of the time\n", len(took), runs, walkers, several, wall, sum, busy)
+	if before > 0 {
+		way := "slower"
+		if sum < before {
+			way = "faster"
+		}
+		fmt.Fprintf(&out, "walk-times.tsv says these runs took %.0f s last time, so this time they were %.0f %% %s\n", before, math.Abs(100*(sum-before)/before), way)
+	}
 	table(&out, "CPU (s)", "Programs", spent)
 	table(&out, "Seconds", "Run", took)
 	return out.String()
@@ -3130,8 +3141,10 @@ func envNumber(name string, otherwise int) int {
 func TestTheWalksSummarySaysWhereTheTimeWent(t *testing.T) {
 	took := map[string]float64{"sequences.mjs SEQUENCE=short": 4.4, "playback.mjs SEED=1": 83, "timeline.mjs SEED=2": 9.6, "words.mjs SEED=1": 12}
 	spent := map[string]float64{machineSpent: 151.4, bridgesSpent: 38}
-	got := walkSummary(took, spent, 5, 2, 60)
+	kept := map[string]float64{"playback.mjs SEED=1": 60, "timeline.mjs SEED=2": 10, "words.mjs SEED=1": 12, "sequences.mjs SEQUENCE=short": 4, "gone.mjs": 50}
+	got := walkSummary(took, kept, spent, 5, 2, 60)
 	want := "4 of 5 runs on 2 walkers in 60 s, 109 s of walking together, the walkers busy 91 % of the time\n" +
+		"walk-times.tsv says these runs took 86 s last time, so this time they were 27 % slower\n" +
 		"| CPU (s) | Programs                                    |\n" +
 		"| ------: | ------------------------------------------- |\n" +
 		"|     151 | the whole machine, the browsers in it       |\n" +
@@ -3145,7 +3158,7 @@ func TestTheWalksSummarySaysWhereTheTimeWent(t *testing.T) {
 	if got != want {
 		t.Errorf("the summary is\n%s\nwant\n%s", got, want)
 	}
-	if got := walkSummary(nil, nil, 3, 2, 0); got != "0 of 3 runs on 2 walkers in 0 s, 0 s of walking together, the walkers busy 0 % of the time\n" {
+	if got := walkSummary(nil, nil, nil, 3, 2, 0); got != "0 of 3 runs on 2 walkers in 0 s, 0 s of walking together, the walkers busy 0 % of the time\n" {
 		t.Errorf("with no runs walked the summary is %q", got)
 	}
 }

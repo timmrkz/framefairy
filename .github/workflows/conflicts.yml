@@ -2,27 +2,40 @@
 # that names the files in conflict, once for each commit of it. GitHub
 # sends no event when a pull request starts to conflict, and runs no CI
 # on one, so without the comment nothing wakes the session that owns it.
-# After a push to main every open pull request is tried, and when a pull
-# request is opened or pushed to, that one, since it may conflict from
-# the start. git merge-tree merges in memory, without a checkout of
-# either side, and no code of the pull request runs. A pull request from
-# a fork is left alone. The comment says what is so and asks nothing: a
-# session reads it as news and checks on GitHub itself, see When main
-# moves in docs/WORKFLOW.md.
+# After a push to main every open pull request is tried, and after a push
+# to another branch of this repository, the pull request of that branch,
+# at the commit pushed. git merge-tree merges in memory, without a
+# checkout of either side, and no code of the pull request runs. A pull
+# request from a fork is left alone.
+#
+# It writes a comment, so it runs from main alone, the way publish.yml
+# does: on a push to main, and when builds.yml starts on a push to any
+# other branch, which GitHub always runs from main. A branch's own copy
+# of this file never gets the token, because a branch is code nobody has
+# reviewed yet, see builds.yml. pull_request runs on no pull request that
+# conflicts. pull_request_target runs main's workflow for a stranger's
+# pull request with a token that writes, so one step that reads the pull
+# request's code hands that token over, which is why GitHub blocks it in
+# a public repository. A pull request that conflicts from its first push
+# is not open yet when that push runs this, so the session checks it after
+# opening. The comment says what is so and asks nothing: a session reads
+# it as news and checks on GitHub itself. See When main moves in
+# docs/WORKFLOW.md.
 name: Conflicts
 
 on:
   push:
     branches: [main]
-  pull_request_target:
-    branches: [main]
-    types: [opened, reopened, synchronize]
+  workflow_run:
+    workflows: ["Builds to update to"]
+    types: [requested]
 
 # A newer main says all there is to say, and so does a newer push to a
-# pull request. The hidden mark in each comment keeps a run that was
-# stopped halfway from telling a pull request twice.
+# branch. The hidden mark in each comment keeps a run that was stopped
+# halfway from telling a pull request twice. The event is in the group, so
+# a build of main, which this skips, stops no run of main.
 concurrency:
-  group: conflicts-${{ github.event.pull_request.number || 'main' }}
+  group: conflicts-${{ github.event_name }}-${{ github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -32,6 +45,12 @@ permissions:
 
 jobs:
   tell:
+    # A build of a push to a branch of this repository other than main.
+    if: >-
+      github.event_name == 'push' || (
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.head_branch != 'main')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -41,22 +60,30 @@ jobs:
           fetch-depth: 0
       - env:
           GH_TOKEN: ${{ github.token }}
-          ONLY: ${{ github.event.pull_request.number }}
+          # Empty on a push to main. On a branch, the commit pushed, which
+          # the pull request may not show as its head yet.
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          PUSHED: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
-          gh pr list --base main --state open --limit 100 --json number,headRefOid,isCrossRepository \
-            --jq '.[] | select(.isCrossRepository | not) | "\(.number) \(.headRefOid)"' |
-          while read -r n head; do
-            [ -z "$ONLY" ] || [ "$n" = "$ONLY" ] || continue
+          gh pr list --base main --state open --limit 100 --json number,headRefName,headRefOid,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository | not) | "\(.number) \(.headRefOid) \(.headRefName)"' |
+          while read -r n head branch; do
+            if [ -n "$BRANCH" ]; then
+              [ "$branch" = "$BRANCH" ] || continue
+              head=$PUSHED
+            fi
             mark="<!-- conflicts $head -->"
-            git fetch -q origin "pull/$n/head" || { echo "::warning::#$n: could not fetch it"; continue; }
-            out=$(git merge-tree --write-tree --name-only --no-messages HEAD "$head") && continue
+            git fetch -q origin "$head" || { echo "::warning::#$n: could not fetch it"; continue; }
+            out=$(git merge-tree --write-tree --name-only --no-messages HEAD "$head") &&
+              { echo "#$n at ${head:0:7} merges"; continue; }
             # 1 and a tree is a conflict, anything else git could not try.
             [ $? -eq 1 ] && [[ ${out%%$'\n'*} =~ ^[0-9a-f]{40,64}$ ]] ||
               { echo "::warning::#$n: git merge-tree could not merge it: $out"; continue; }
             said=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$n/comments" --jq '.[].body') ||
               { echo "::warning::#$n: could not read its comments"; continue; }
-            case $said in *"$mark"*) continue ;; esac
+            case $said in *"$mark"*) echo "#$n at ${head:0:7} conflicts, told already"; continue ;; esac
+            echo "#$n at ${head:0:7} conflicts, telling it"
             files=$(printf '%s\n' "$out" | tail -n +2 | sed 's/.*/- `&`/')
             gh pr comment "$n" --body "This pull request at $(git rev-parse --short "$head") no longer merges into main at $(git rev-parse --short HEAD). These files conflict:
 

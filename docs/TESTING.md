@@ -206,6 +206,48 @@ is found by putting a wait between the calls instead. The bridge puts the
 episode back the way it was first searched before every walk,
 `POST /reset`, so a walk starts from the same place every time.
 
+### What a walk is for
+
+Read this before writing a walk or reviewing one.
+
+**A walk checks what only the window can show.** It presses real keys and
+clicks in the real app, against the real Go side, and looks at the
+screen. So it is the right test for two things: that a key, a click or a
+drag does what the person meant, and that the screen shows what the Go
+side sent, in the right place and right away.
+
+**What does not belong in a walk:**
+
+- **Rules the Go side decides.** Which words a caption has, which frames
+  go into a short, what a render writes and what the file is called.
+  Each of those gets a Go test, case by case. A walk checks once that
+  the screen shows the result.
+- **Codecs.** The Go side turns every video into the same frames before
+  the window sees them, and `engine/episodeframes_test.go` tests that on
+  committed files. The window never sees the codec.
+- **Waiting for real time to pass.** A walk never waits for the wall
+  clock. A play runs on the walk's own sound card, see the walk's clock
+  below, so a 30 s clip plays as fast as its frames can be drawn. A
+  toast or a removed row waits on the clock `holdClock` holds, and an
+  animation is ended at once when the walk settles.
+- **Trying every value.** Every width or every frame belongs in a unit
+  test. A walk tries the edges and a few in between.
+
+**Every walk makes CI slower.** Each sequence opens the app from scratch
+on every push, which takes a few seconds before it does anything. So a
+new case goes into a walk that is already there, as a new step, and a
+new walk is the last resort. Each walks job prints how long its walks
+took against the times in `walk-times.tsv`, so a slowdown shows on the
+pull request.
+
+**Less waiting does not always mean a faster job.** CI runs six walks at
+once on a machine with four cores, and the cores are busy the whole
+time. When a walk waits less, the other five get the time, and the job
+gets only a little shorter. When plays stopped running in real time,
+they got twice as fast and the job only 3 % faster. What makes the job
+shorter is less work: fewer frames drawn, fewer renders, fewer times
+the app is opened.
+
 ### How a walk picks its steps
 
 Each gesture is the real key or click, pressed in the browser the walk
@@ -799,26 +841,33 @@ goes on until the video preview has shown ten frames or come to the end
 of the piece, not for two seconds, in which a busy machine showed two,
 issue #464.
 
-Every walk plays on the walk's clock, `preview/clock.ts`. The page the
-walks run on hands it to every frame queue it makes, see `FrameQueue.clock`
-in `lib/frames/queue.ts`, whose own clock is the sound card's. The app
-never builds `preview/`, so it holds no walk's clock and no switch for
-one. It moves on to the next frame only once
-the one before is up, and holds the sound card while a frame is still
-being decoded, so every frame of a play is shown on any machine and the
-sound stays with the picture. By the sound card's clock, the app's, a busy machine showed two
-frames of a glide's nine, issue #534, and a play of the captions showed
-fewer frames, each longer, issue #338. Each of those walks had a clock
-of its own, until a new walk that played was the next to fail, issue
-#588. A sequence that checks what a play does on the sound's own time
-plays on the sound card's clock instead, the way the app does: how much
-sound the sound card is handed, the loop switched off as the sound comes
-to the clip's end, and a playhead that never stands still while a hand
-drags. It asks for it by one of those steps, `soundCard` in
-`common/steps.mjs`, the way a sequence asks for motion, see Where they
-run below, and a new step of that kind goes in there. `smooth.mjs` asks
-`open` for it by name, `clock: "sound"`, which the page reads from
-`window.__playClock` before the app starts. A walk can also hold the sound
+Every walk plays on the walk's clock and the walk's sound card,
+`preview/clock.ts`. The page the walks run on hands both to every frame
+queue it makes, see `FrameQueue.clock` and `FrameQueue.soundCard` in
+`lib/frames/queue.ts`, whose own are the system's sound card and its
+clock. The app never builds `preview/`, so it holds no walk's clock, no
+walk's card and no switch for either. The walk's card plays nothing, and
+its time moves only when the walk's clock moves it: on to the next frame
+the moment that frame is decoded and its captions are here, never while
+either is on its way, and with no time made up for once it stood. So
+every frame of a play is shown with its captions on any machine, which
+the app manages by having the frame's time to fetch them, the sound stays with
+the picture, and a play takes the refreshes that draw its frames, not the
+time it lasts: 3 s of a 5 fps video are 15 refreshes, a quarter of a
+second. By the system's sound card a busy machine showed two frames of a
+glide's nine, issue #534, a play of the captions showed fewer frames,
+each longer, issue #338, and every play took as long as it lasts. Each of
+those walks had a clock of its own, until a new walk that played was the
+next to fail, issue #588. A sequence that checks what a play does on the
+sound's own time, or listens to the sound, plays on the system's sound
+card and its clock instead, the way the app does: how much sound the
+sound card is handed, the loop switched off as the sound comes to the
+clip's end, and a playhead that never stands still while a hand drags.
+It asks for it by one of those steps, `soundCard` in `common/steps.mjs`,
+the way a sequence asks for motion, see Where they run below, and a new
+step of that kind goes in there. `smooth.mjs` asks `open` for it by name,
+`clock: "sound"`, which the page reads from `window.__playClock` before
+the app starts. A walk can also hold the sound
 card a moment by hand, `holdSound`, as the end dragged back past the
 playing playhead does while the hand drags, issue #583. The fold of a removed row is held as Svelte makes it and stepped
 through by hand, in twenty steps, and at each the card under the row
@@ -1041,7 +1090,7 @@ a wait on a signal, or a comparison with a state that moved:
 
 `make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3
 unless set, each walk as long as it says, 60 steps, or 25 for playback,
-which plays in real time, or 30 for searching, unless `STEPS` is set, through the Go test `TestWalks`,
+whose every step is a play that draws all its frames, or 30 for searching, unless `STEPS` is set, through the Go test `TestWalks`,
 which fails with what a sequence or a walk printed. The seeds are the
 same every time, so a walk that breaks a rule breaks it again on the
 next run. `make walks WALKS=40` looks further.
@@ -1142,8 +1191,8 @@ Measured on four cores, the cloud's and CI's, with the 3 seeds: the
 sequences were once one run, and took twelve minutes on one bridge while
 the other three had finished the fifteen walks in four and waited. Handed
 out one by one they took six and a half minutes on four bridges. A run
-spends most of its time waiting, on a clip that plays in real time and
-on the quiet after every step, so four bridges kept the cores busy only
+spent most of its time waiting then, on a clip that played in real time
+and on the quiet after every step, so four bridges kept the cores busy only
 part of the time. Six took five and a half minutes, the cores busy four
 fifths of it. The slowest run, a sequence that renders a short and looks
 at 122 of its frames in the video preview, takes a little over a minute,
@@ -1187,10 +1236,15 @@ its waveform and the 240 ms before a newly chosen clip is shown. Now
 `__settled` in `preview/settled.ts` answers once no call is out, no
 timer of the app's is set to fire within a second, and nothing on the
 page moves for a second or less, a row sliding open or the clip
-timeline gliding to its view. It is woken by the call coming back, the
-timer firing or being cleared, and the movement's own end, never by
-looking again on every frame. When nothing is left it lets two of the
-browser's frames go by and answers if nothing came in between. The timer
+timeline gliding to its view. It is woken by the call coming back and
+the timer firing or being cleared, never by looking again on every
+frame. A movement of a second or less it ends at once, where it would
+have ended, since the walk would only see it end, and what the app does
+when it ends happens as it would. A walk that looks at a movement looks
+before it settles. When nothing is left it lets the browser draw the
+next frame, and answers in the task after it, once whatever the frame
+set off, a size observed above all, has run, if nothing came in
+between. The timer
 that writes the log is left out, the same as its calls, marked
 `logOnly` in `said.ts`. A longer timer is how long something stays on
 screen, which a walk turns on itself with `holdClock`, and while the
@@ -1209,10 +1263,10 @@ timeline reads two presses within half a second and six pixels as a
 double-click, which cuts a part out. A walk that clicks where it clicked
 a step before uses `clickOnTrack`, which lands eight pixels beside the
 last spot first, so the click is one on its own. Opening
-the browser takes a second or two. The rest is the gestures, and the
-ones that play wait in real time: playing a clip to its end once took
-most of the playback walk, so it now starts a moment before the clip's
-last cut.
+the browser takes a second or two. The rest is the gestures. The ones
+that play once waited in real time, and playing a clip to its end took
+most of the playback walk. Now a play takes the refreshes that draw its
+frames, on the walk's sound card, see above.
 
 Time the app lets run out, the ten seconds of a toast or of a removed
 picture or clip, is not waited for. A walk holds the app's clock before

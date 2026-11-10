@@ -299,6 +299,13 @@
   let over: HTMLDivElement;
   let canvas: HTMLCanvasElement;
   let width = $state(0);
+  // Whether the track is in the page. A workspace put away is taken out
+  // of it, see shelf in App.svelte, and a canvas out of the page has no
+  // height and no colour of its own. A waveform drawn then, for a clip a
+  // search chose while another video was in front, came out one pixel
+  // high and black, and stayed so when the workspace came back. Issue
+  // #759.
+  let inPage = $state(false);
   let view = $state({ from: 0, to: 1 });
   let words = $state<Word[]>([]);
   let peaks = $state<number[]>([]);
@@ -1281,7 +1288,9 @@
     void peaks;
     void width;
     void view;
-    if (!canvas || !width) return;
+    // Drawn again as the track comes back into the page, and not drawn
+    // while it is out of it, see inPage.
+    if (!canvas || !width || !inPage || !canvas.isConnected) return;
     const ratio = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(width * ratio));
     const h = Math.max(1, Math.round(canvas.clientHeight * ratio));
@@ -1355,9 +1364,11 @@
   onMount(() => {
     // A workspace put away for later is taken out of the page, see
     // App.svelte, and its track then measures nothing. It keeps the width
-    // it had, and what it drew, until it is back.
+    // it had, and what it drew, until it is back. Going out of the page
+    // and coming back each change its size, so the observer hears both.
     const observer = new ResizeObserver(() => {
-      if (track.isConnected && track.clientWidth) width = track.clientWidth;
+      inPage = track.isConnected && track.clientWidth > 0;
+      if (inPage) width = track.clientWidth;
     });
     observer.observe(track);
     // Not the listener Svelte would attach: a wheel we act on is ours, and

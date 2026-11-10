@@ -159,6 +159,25 @@ export const steps = {
   //                    AppFrames.ahead
   async "read ahead"(walk, arg, s) {
     const { page, watch } = walk;
+    // A read ahead held back, see ["hold the read ahead"], is let go
+    // only once the app has settled and the wait for what is read ahead
+    // was seen still waiting for it.
+    const held = walk.aheadHeld;
+    if (held) {
+      walk.aheadHeld = null;
+      await held.reached;
+      await page.evaluate(() => {
+        window.__aheadRested = false;
+        window.__readAheadRested().then(() => (window.__aheadRested = true));
+      });
+      await settle(page);
+      const early = await page.evaluate(() => window.__aheadRested);
+      held.letGo();
+      if (early) {
+        walk.wrong = "the wait for what is read ahead was over with a frame still being read ahead, so a walk pressed the key before its frame was in";
+        return;
+      }
+    }
     // The hand rests until what the video preview reads ahead is in.
     await settle(page);
     await restAhead(page);
@@ -194,6 +213,31 @@ export const steps = {
     // now, may come from a stream. The frame it lands on may not.
     if (!came.fromKept) walk.wrong = `${arg} to ${came.at.toFixed(3)} s had to fetch its frame, though the hand rested until what is read ahead was in`;
     await watch.step("press", s);
+  },
+  // ["hold the read ahead"]
+  //                    holds back the next frame the video preview reads
+  //                    ahead with a skip, the first frame of a word beside
+  //                    the playhead, until the next ["read ahead"] has
+  //                    seen the wait for it still waiting. The wait once
+  //                    asked a workspace built behind the one in front,
+  //                    asleep, so it was over at once, and a busy machine
+  //                    let the key go before the frame was in
+  async "hold the read ahead"(walk) {
+    const { page } = walk;
+    let reached;
+    let letGo;
+    const held = { reached: new Promise((done) => (reached = done)), letGo: () => letGo() };
+    const free = new Promise((done) => (letGo = done));
+    walk.aheadHeld = held;
+    await page.context().route(
+      /\/frames\/read\?.*skip=/,
+      async (route) => {
+        reached();
+        await free;
+        await route.continue();
+      },
+      { times: 1 },
+    );
   },
   // ["heard"]          rests until the app has settled, plays with the
   //                    space bar and asks that the sound card was handed
@@ -1370,38 +1414,50 @@ export const steps = {
     }
   },
   // ["played through"] since "drag while playing", the play went on as if
-  //                    no hand were there: the playhead never went back nor
-  //                    stood still for more of the page's refreshes than a
-  //                    frame of the video and 150 ms take, since it moves
-  //                    once a frame (#446), and no frame drawn was older
-  //                    than the one before it
+  //                    no hand were there: it never started again, the
+  //                    sound card ran all the while the play was on, the
+  //                    playhead never went back nor stood still while the
+  //                    sound card's clock ran on for longer than a frame of
+  //                    the video and 150 ms, since it moves once a frame
+  //                    with the sound heard (#446), and no frame drawn was
+  //                    older than the one before it
   async "played through"(walk) {
     const { page } = walk;
     const played = await page.evaluate(() => window.__played ?? []);
-    const frame = 1000 / (await rate(page));
-    // Counted in refreshes, not in milliseconds: the playhead can only be
-    // seen to move when the page refreshes, and WebKit with motion on a
-    // busy runner refreshed three times a second. A frame of 200 ms then
-    // stood for a refresh or two, 390 ms by the page's clock with no
-    // frame late, and a limit in milliseconds failed it, issue #715. A
-    // refresh is the typical gap between two of the page's frames.
-    const gaps = played.slice(1).map(([t], i) => t - played[i][0]).sort((a, b) => a - b);
-    const refresh = gaps[Math.floor(gaps.length / 2)] ?? 1000 / 60;
-    const most = Math.ceil((frame + 150) / refresh);
-    let still = 0;
+    const frame = 1 / (await rate(page));
+    // A play started again stands until its first frame and sound are
+    // in, however quickly, so a drag ahead of what was fed may start
+    // none, counted in plays and not by how long one took, issue #715.
+    if (walk.startedAgain) {
+      walk.wrong = `the play started again ${walk.startedAgain} time${walk.startedAgain === 1 ? "" : "s"} while the hand was on the edge`;
+      return;
+    }
+    // Read on the sound card's clock, which the playhead follows, and
+    // not by the page's refreshes, which come at no steady pace: in
+    // WebKit with motion on a busy runner, five came in 192 ms as the
+    // page caught up, and a frame of 200 ms stood for four of them,
+    // where the typical refresh of 142 ms allowed three, issue #715. A
+    // playhead seen the same from one refresh to another stood for at
+    // least the sound card's time from the first of them to the one
+    // before the last, whichever of the page's and the walk's frame
+    // callbacks runs first in a refresh. A sound card that stops stops
+    // its clock with the playhead, so it is to run while the play is on.
+    let first = 0;
     let longest = 0;
     for (let i = 1; i < played.length && !walk.wrong; i++) {
       const [, at, n] = played[i];
       const [, at0, n0] = played[i - 1];
       if (at < at0 - 1e-6) walk.wrong = `the playhead went back from ${at0.toFixed(3)} to ${at.toFixed(3)} while the hand was on the edge`;
       else if (n >= 0 && n0 >= 0 && n < n0) walk.wrong = `frame ${n} was drawn after frame ${n0} while the hand was on the edge`;
-      if (at === at0) still++;
-      else still = 0;
-      longest = Math.max(longest, still);
+      if (at !== at0) first = i;
+      else longest = Math.max(longest, played[i - 1][3] - played[first][3]);
     }
     if (!walk.wrong && played.length < 30) walk.wrong = `only ${played.length} animation frames were read`;
-    if (!walk.wrong && longest > most) {
-      walk.wrong = `the playhead stood still for ${longest} refreshes while the hand was on the edge, ${most} at most at ${refresh.toFixed(0)} ms a refresh, a frame is ${frame.toFixed(0)} ms`;
+    if (!walk.wrong && !played.every(([, , , clock]) => Number.isFinite(clock))) walk.wrong = "the sound card's clock was not read on every refresh";
+    const stopped = played.filter(([, , , , running, playing]) => playing && !running).length;
+    if (!walk.wrong && stopped) walk.wrong = `the sound card did not run on ${stopped} refreshes while the play was on`;
+    if (!walk.wrong && longest > frame + 0.15) {
+      walk.wrong = `the playhead stood still while the sound card's clock ran ${(longest * 1000).toFixed(0)} ms on, a frame is ${(frame * 1000).toFixed(0)} ms`;
     }
   },
   // ["stopped at its end"]
@@ -1477,7 +1533,29 @@ export const steps = {
       const [a, b] = [xs[from][0], xs[k][0]];
       if (b - a >= 64 && late.some(([p, q]) => a <= q + 128 && b >= p - 128)) silences.push([a, b]);
     }
-    const lateHere = (f) => silences.some(([a, b]) => f >= a - 1 && f <= b + 2);
+    // The play's first stretch is put on the sound card a lead ahead of
+    // its clock, START_LEAD in lib/frames/queue.ts. A sound card that has
+    // rendered past it by the time the stretch is put there starts it at
+    // its next buffer, from its first sample, and stops it where it was
+    // to end, so it is heard late by as much and clicks at its end, where
+    // the next stretch comes on time. The page reads the sound card's
+    // clock before it has caught up, so the stretch is not counted late
+    // there. CI's Chromium on a busy runner began it 208 frames late and
+    // clicked 4096 frames in, the length of a stretch, CHUNK in the same
+    // file, issue #466. The program's sound begins at the frame the clock
+    // starts, or the frame after where its first sample is faded to
+    // nothing. When it was heard later, by less than a stretch, a click
+    // where the first stretch was to end, and at the frame after, is the
+    // machine's. A play here always begins with a whole stretch, since
+    // 0.15 s of sound, SOUND_FIRST, is decoded before it starts.
+    const stretch = 4096;
+    const startFrame = Math.round(c0 * sr);
+    const seam = startFrame + stretch;
+    const begun = xs.find(([f, x]) => f >= startFrame && x !== 0)?.[0];
+    const startedLate = begun !== undefined && begun > startFrame + 1 && begun < seam;
+    const lateStart = (f) => startedLate && f >= seam - 1 && f <= seam + 2;
+    if (startedLate) console.log(`      the sound card began the play's sound ${begun - startFrame} frames after its clock started`);
+    const lateHere = (f) => lateStart(f) || silences.some(([a, b]) => f >= a - 1 && f <= b + 2);
     let clicks = 0;
     let firstClick = null;
     let after = 0;
@@ -1496,7 +1574,7 @@ export const steps = {
         firstClick ??= ((f - endFrame) / sr) * 1000;
       }
     }
-    if (starved) console.log(`      ${starved} clicks where the page handed the sound card its sound late, ${silences.length} silences heard`);
+    if (starved) console.log(`      ${starved} clicks where the sound card was handed its sound late or began it late, ${silences.length} silences heard`);
     if (walk.loopEnd.starts) walk.wrong = `the play started over ${walk.loopEnd.starts} times while L was pressed`;
     else if (walk.loopEnd.thrown) walk.wrong = `the presses of L took ${walk.loopEnd.thrown} stretches of sound off the sound card before they had played`;
     else if (walk.loopEnd.twice) walk.wrong = `the presses of L handed the sound card ${walk.loopEnd.twice} stretches of sound it had already been handed`;

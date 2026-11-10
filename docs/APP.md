@@ -898,7 +898,11 @@ from the settings alike. Only the one in front is awake. A kept one is
 taken out of the page, `shelf` in `App.svelte`, so a resize of the app
 lays out one workspace and nothing that looks the workspace up by the
 document finds a second one, and it keeps what is drawn on its canvases
-and how far its clip list was scrolled. Its video preview lets go of
+and how far its clip list was scrolled. Nothing is drawn on a canvas
+while it is out of the page, where it has no height and no colour of its
+own: a waveform drawn there came out a pixel high and black. The clip
+timeline draws its waveform again as it comes back, `inPage` in
+`ClipTimeline.svelte`. The video preview of a kept one lets go of
 everything costly, `sleeping` in `Player.svelte`:
 the frame queue is closed, with its decoder on the Go side, the frames it
 kept and its sound card, and only what it played and the frame on the
@@ -2388,12 +2392,16 @@ found is a place in the video, and I and O make a clip there.
   each is as strong as the row beside it: in the grey of a card's edge
   they were too bright, his report of 14.22. The range picker's own border is the edge
   of a part at the start or the end of the video, and its top and foot.
-  Its dots cover the whole part, to its foot and its sides,
-  as whole columns centred in the part, the same space on either side,
-  and the foot row a pixel up from the range picker's foot. A row and a
-  column left clear round them looked cut off, a pattern that started
-  wherever its grid fell looked off, and the foot row looked clutched to
-  the foot, all found by Tim. Lit, the part goes up
+  Its dots cover the whole part, to its foot and its sides, and the
+  foot row stands a pixel up from the range picker's foot, where it
+  looked clutched to it, found by Tim. Every part shows the one grid of
+  dots laid from the start of the range picker, never a grid of its own,
+  so a part that is split, shrunk, stopped or carried on only has dots
+  peeled away at its edges, and no dot ever moves. An edge cuts through a
+  dot as it passes. Each part once laid a grid of its own, centred in it
+  or laid from a moment its work picked, and each new state of a part
+  laid it again, so the dots walked sideways, Tim's reports of 24 and 25
+  October and of 9 November, issue #765. Lit, the part goes up
   a step with the grey of every lit card, which the card's dashes
   go into, the way every card's edge does, and its dots go up a step
   too, `--halftone-lit`, keeping their fade. On the range picker the
@@ -2406,13 +2414,8 @@ found is a place in the video, and I and O make a clip there.
   found by Tim. The parts give way as the work hears, from what is heard, not
   from the transcript, which is saved in pieces: a search hearing half an
   hour took the parts away in thirds, found by Tim. While the work hears
-  into a part, its dots stand still, laid from its right edge, which
-  never moves, and its left edge wipes over them as it goes. Centred, the
-  pattern walked back and forth as the edge passed, found by Tim. Once
-  the work stops or waits, a part it heard into keeps its dots where they
-  stand, whole columns from its right edge with the room left over on
-  the left: centred again, every dot jumped sideways, Tim's report of 24
-  October. A part nobody heard into is centred.
+  into a part, its dots stand still on the range picker's grid and its
+  left edge wipes over them as it goes.
 - **Escape steps back wherever the keyboard is**, unless the keyboard is
   in another field. The first takes back what was typed, so the whole of
   what was said is there again, and the next closes the search. Tim

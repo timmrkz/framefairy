@@ -1117,9 +1117,10 @@ export const steps = {
     const path = await episodeOn(page);
     await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
     await watch.step("click", s);
-    // Where its dots end on the right, too, which must not move while
-    // its left edge does: centred, the pattern walked back and forth
-    // as the edge passed over it, found by Tim. Read in every frame
+    // Where its grid of dots begins, too, which must not move while its
+    // left edge does: centred, the pattern walked back and forth as the
+    // edge passed over it, found by Tim. Every part shows the range
+    // picker's one grid, laid from its start. Read in every frame
     // until the nine pieces are heard and the state that says so is on
     // screen, with what the saved transcript holds asked after each. A
     // piece is counted, not a state: one piece can bring more than one
@@ -1138,7 +1139,7 @@ export const steps = {
               const cs = getComputedStyle(u, "::before");
               now = {
                 left: Math.round(box.left * 10) / 10,
-                end: Math.round((box.left + parseFloat(cs.left) + parseFloat(cs.width)) * 100) / 100,
+                grid: u.offsetLeft + parseFloat(cs.backgroundPositionX),
                 side: parseFloat(cs.left),
               };
             }
@@ -1170,12 +1171,12 @@ export const steps = {
       walk.wrong = `the first part not transcribed yet moved ${moves} times over ${times} pieces of audio heard while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
     else {
       // The samples taken while the edge moved, from the first move
-      // to the last, the dots' right end in each.
+      // to the last, where the grid of dots begins in each.
       const moving = dots.filter((d, i) => i && d.left !== dots[i - 1].left || dots[i + 1] && dots[i + 1].left !== d.left);
-      const ends = [...new Set(moving.map((d) => d.end))];
-      console.log(JSON.stringify({ moves, ends: ends.slice(0, 8), sides: [...new Set(moving.map((d) => d.side))].slice(0, 8) }));
-      if (ends.length > 1)
-        walk.wrong = `the dots of the part giving way moved while its edge did, their right end at ${ends.slice(0, 6).join(", ")} px`;
+      const grids = [...new Set(moving.map((d) => d.grid))];
+      console.log(JSON.stringify({ moves, grids: grids.slice(0, 8), sides: [...new Set(moving.map((d) => d.side))].slice(0, 8) }));
+      if (grids.length !== 1 || grids[0] !== 0)
+        walk.wrong = `the dots of the part giving way moved while its edge did, laid from ${grids.slice(0, 6).join(", ")} px of the range picker, not from its start`;
       else if (moving.some((d) => d.side !== 0))
         walk.wrong = `the dots of the part giving way stop short of its edge, ${moving.find((d) => d.side !== 0).side} px in, so the edge does not wipe them`;
     }
