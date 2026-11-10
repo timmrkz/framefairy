@@ -75,9 +75,8 @@ type Clip struct {
 	// back when the piece does.
 	Thumbnails []float64
 	// CropMarks are the crops placed by hand on frames of the clip, in
-	// time order, see CropMark. Only marks inside a kept piece are here,
-	// the way only such thumbnails are. One a trim or a cut hides still
-	// steers the pieces after it, see Segment.Marks.
+	// time order, see CropMark: those inside a kept piece, and the one
+	// each edge or cut carries, on the frame it carries it to, see carry.
 	CropMarks []CropMark
 	// Found is where the clip's outer edges were before anything changed
 	// them, start and end in seconds of the episode, so a double-click on an
@@ -376,16 +375,11 @@ func parseClips(data []byte) (Plan, []Clip, error) {
 			continue
 		}
 		oneCrop(segments, uprights)
-		// The keyframes on screen are those inside the pieces, and one a
-		// cut or a trim hides still steers, see markedPieces.
-		var marks []CropMark
-		all := readCropMarks(entry[keyCropMarks], spans)
-		for _, m := range all {
-			if insidePieces(segments, m.At) {
-				marks = append(marks, m)
-			}
-		}
-		markedPieces(segments, turns, all)
+		// The keyframes on screen are those inside the pieces and the ones
+		// an edge or a cut carries, and they are the ones that steer, see
+		// carry.
+		marks := carried(segments, readCropMarks(entry[keyCropMarks], spans))
+		markedPieces(segments, turns, marks)
 		fallback := fmt.Sprintf("%02d", index)
 		idValue, present := entry[keyID]
 		idText := fallback

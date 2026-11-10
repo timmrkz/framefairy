@@ -596,7 +596,7 @@ func (s PlanSummary) View() *PlanView {
 				v.Reason = runes.Scrub(reason, 300)
 			}
 		}
-		v.CropMarks = cropMarkViews(c.CropMarks)
+		v.CropMarks = CropMarkViews(c.CropMarks)
 		v.Rotations = []RotationView{}
 		for _, r := range c.Rotations {
 			v.Rotations = append(v.Rotations, rotationView(r))
@@ -619,7 +619,7 @@ func SegmentViews(segments []Segment) []SegmentView {
 	out := make([]SegmentView, 0, len(segments))
 	for i, s := range segments {
 		out = append(out, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
-			cropMarkViews(s.Marks), parts[i].Part})
+			CropMarkViews(s.Marks), parts[i].Part})
 	}
 	return out
 }

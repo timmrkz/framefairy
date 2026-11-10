@@ -1215,8 +1215,16 @@ the way thumbnails are put, each with the crop where it stands on that
 frame, `SetCropMark` in `engine/cropmarks.go`. They are kept in the clip as
 `crop_marks`, each `at`, the start of its frame, `x`, the left edge of
 the crop there, and `glide`, true for a circle, read like thumbnails: a mark that is not a number and a
-whole left edge is left out, and so is one outside every piece, which stays
-in the plan and comes back with its piece. A mark steers the pieces of the
+whole left edge is left out. A mark outside every piece stays in the plan
+at its own moment and comes back with its piece. Of those a trim or a cut
+covers, the clip shows and steers by the one it carries, `carry`: the start
+and a cut carry the latest they cover, on the first frame after them, and
+the end the earliest, on the clip's last frame, a mark with `Last` set,
+which `MarksOnFrames` sends the window on that frame. A carried circle no
+circle beside it joins is left out. Touching a carried mark, `realise`,
+writes it where it stands and sets the others it covered `aside`, which
+are carried no more until a reshape leaves them inside a piece again,
+`unsetAside`. Tim agreed the cases on #778. A mark steers the pieces of the
 clip turned the way it was placed, `markedPieces`. A piece is given each mark
 at the moment of the video it would be at on the piece's stretch were
 nothing cut out, the clip's clock read from the piece's start, so a

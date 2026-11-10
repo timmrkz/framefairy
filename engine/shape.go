@@ -134,9 +134,10 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 	}
 	shaped := Shaped{Playhead: playhead, Clip: clip}
 	shaped.Clip.Segments = nil
-	// Each piece with the keyframes that steer it, the way LoadClips gives
-	// them once the gesture is saved, so where the crop glides is worked
-	// out from the clip under the hand too, see Glides.
+	// Each piece with the keyframes that steer it, and the clip with the
+	// ones it shows, an edge or a cut carrying those it covers, the way
+	// LoadClips gives them once the gesture is saved. So the keyframes,
+	// where the crop glides and the crop itself follow the hand.
 	spans := rotationsOf(c)
 	turns := make([]int, len(out))
 	for i, seg := range out {
@@ -144,7 +145,8 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 		turns[i] = rotationOf(seg, spans)
 		shaped.Clip.Segments = append(shaped.Clip.Segments, Segment{Start: start, End: end, Rotate: turns[i]})
 	}
-	markedPieces(shaped.Clip.Segments, turns, cropMarksOf(c))
+	shaped.Clip.CropMarks = carried(shaped.Clip.Segments, cropMarksOf(c))
+	markedPieces(shaped.Clip.Segments, turns, shaped.Clip.CropMarks)
 	shaped.Pieces = pieceViews(shaped.Clip.Segments)
 	return shaped, nil
 }

@@ -47,30 +47,73 @@ import (
 // rotated when the keyframe was placed, the picture X is on. Glide is a
 // circle, which the crop glides into from a circle before it, rather than
 // switching on its frame.
+//
+// Aside is a keyframe an edge or a cut covers that was set aside when the
+// one it carried was removed: it is not carried, and steers nothing, until
+// the edge leaves it inside the clip again, see carry. Last is never in a
+// plan: it is a keyframe the clip's end carries, which stands on the last
+// frame before At, the end, rather than on At.
 type CropMark struct {
 	At    float64
 	X     int
 	Turn  int
 	Glide bool
+	Aside bool
+	Last  bool
 }
 
 // MaxCropMarks is how many keyframes one clip may have.
 const MaxCropMarks = 100
 
-// CropMarkView is a keyframe as the window reads it.
+// CropMarkView is a keyframe as the window reads it. Last is one the
+// clip's end carries, see CropMark, until MarksOnFrames puts it on its frame.
 type CropMarkView struct {
 	At    float64 `json:"at"`
 	X     int     `json:"x"`
 	Turn  int     `json:"turn"`
 	Glide bool    `json:"glide"`
+	Last  bool    `json:"-"`
 }
 
-func cropMarkViews(marks []CropMark) []CropMarkView {
+// CropMarkViews is keyframes as the window reads them.
+func CropMarkViews(marks []CropMark) []CropMarkView {
 	out := make([]CropMarkView, len(marks))
 	for i, m := range marks {
-		out[i] = CropMarkView{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide}
+		out[i] = CropMarkView{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide, Last: m.Last}
 	}
 	return out
+}
+
+// MarksOnFrames is keyframes as the window is sent them, each on the moment
+// its frame starts: one the clip's end carries on the clip's last frame,
+// unless another keyframe is on that frame already.
+func (s SourceInfo) MarksOnFrames(marks []CropMarkView) []CropMarkView {
+	out := make([]CropMarkView, 0, len(marks))
+	for _, m := range marks {
+		if !m.Last {
+			out = append(out, m)
+			continue
+		}
+		k := s.markFrame(m.At) - 1
+		taken := false
+		for _, o := range marks {
+			taken = taken || (!o.Last && s.markFrame(o.At) == k)
+		}
+		if taken {
+			continue
+		}
+		m.At, m.Last = s.frameAt(k), false
+		out = append(out, m)
+	}
+	return out
+}
+
+// frameAt is the moment frame k starts, as markFrame counts frames.
+func (s SourceInfo) frameAt(k int64) float64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return float64(k) / 1000
+	}
+	return s.keptAt(k)
 }
 
 // readCropMarks takes a clip's keyframes out of a plan, which is untrusted
@@ -122,7 +165,8 @@ func readCropMarks(raw any, spans []Rotation) []CropMark {
 			turn = int(n)
 		}
 		glide, _ := entry[keyGlide].(bool)
-		out = append(out, CropMark{At: num.RoundTo(at, 3), X: x - x%2, Turn: turn, Glide: glide})
+		aside, _ := entry[keyAside].(bool)
+		out = append(out, CropMark{At: num.RoundTo(at, 3), X: x - x%2, Turn: turn, Glide: glide, Aside: aside})
 	}
 	sort.Slice(out, func(a, b int) bool { return out[a].At < out[b].At })
 	if len(out) > MaxCropMarks {
@@ -163,7 +207,15 @@ func markedPieces(segments []Segment, turns []int, marks []CropMark) {
 	for _, m := range marks {
 		holder := -1
 		var onClip float64
+		if m.Last {
+			// On the clip's last frame, which the end carries it on.
+			last := len(segments) - 1
+			holder, onClip = last, into[last]+segments[last].End-segments[last].Start
+		}
 		for i, s := range segments {
+			if holder >= 0 {
+				break
+			}
 			if m.At < s.Start-frameHair {
 				// In a cut or before the clip: from the start of the next
 				// piece kept.
@@ -189,6 +241,202 @@ func markedPieces(segments []Segment, turns []int, marks []CropMark) {
 			segments[i].Marks = append(segments[i].Marks, at)
 		}
 	}
+}
+
+// The snow shovel, #778. An edge of a clip, or a cut, that is dragged over
+// keyframes carries them, Tim's word: the keyframe it reached last stands
+// on the clip's first frame, its last, or the first frame after the cut,
+// with its own crop, and the others it covers wait out of sight. Each
+// keeps its own moment in the plan, so the edge dragged back out leaves
+// each where it was. Of a circle carried, only one still joined to a
+// circle beside it stays, since a glide line needs somewhere to go. Tim
+// agreed the rules on 10 November, and that a carried keyframe keeps its
+// own crop: an edge dragged in over a glide makes the glide shorter and
+// faster, and dragged out longer and slower. The doc is "Keyframes at a
+// dragged edge".
+
+// carriage is a keyframe a clip shows: from, its place in the plan's
+// keyframes, and for one an edge or a cut carries, covers, the others that
+// edge or cut covers.
+type carriage struct {
+	mark    CropMark
+	from    int
+	carried bool
+	covers  []int
+}
+
+// coverOf is what covers a moment of a clip with these pieces: the cut
+// before piece i, or before the start for nought, the end for the number
+// of pieces, or minus one for a moment inside a piece. It is markedPieces'
+// reading, give or take frameHair.
+func coverOf(segments []Segment, at float64) int {
+	for i, s := range segments {
+		if at < s.Start-frameHair {
+			return i
+		}
+		if at < s.End-frameHair {
+			return -1
+		}
+	}
+	return len(segments)
+}
+
+// carry is a clip's keyframes as they stand with its pieces, in time
+// order: each inside a piece on its own moment, and of those the start, a
+// cut or the end covers, the one it carries. The start and a cut carry
+// the latest they cover, on the first frame of the piece after them, and
+// the end the earliest, on the last frame of the clip. A keyframe set
+// aside is never carried. One already on that frame keeps it, and nothing
+// is carried there. A carried circle no circle of its turn stands beside
+// is not shown.
+func carry(segments []Segment, marks []CropMark) []carriage {
+	if len(segments) == 0 {
+		return nil
+	}
+	var out []carriage
+	covered := map[int][]int{}
+	for i, m := range marks {
+		if c := coverOf(segments, m.At); c >= 0 {
+			covered[c] = append(covered[c], i)
+			continue
+		}
+		m.Aside = false
+		out = append(out, carriage{mark: m, from: i})
+	}
+	n := len(segments)
+	for c, list := range covered {
+		var live []int
+		for _, i := range list {
+			if !marks[i].Aside {
+				live = append(live, i)
+			}
+		}
+		if len(live) == 0 {
+			continue
+		}
+		pick := live[len(live)-1]
+		at := 0.0
+		if c == n {
+			pick, at = live[0], segments[n-1].End
+		} else {
+			at = segments[c].Start
+		}
+		taken := false
+		for _, o := range out {
+			taken = taken || (!o.carried && math.Abs(o.mark.At-at) <= frameHair)
+		}
+		if taken {
+			continue
+		}
+		m := marks[pick]
+		m.At, m.Last, m.Aside = at, c == n, false
+		var covers []int
+		for _, i := range list {
+			if i != pick {
+				covers = append(covers, i)
+			}
+		}
+		out = append(out, carriage{mark: m, from: pick, carried: true, covers: covers})
+	}
+	sort.SliceStable(out, func(a, b int) bool {
+		if out[a].mark.At != out[b].mark.At {
+			return out[a].mark.At < out[b].mark.At
+		}
+		return !out[a].mark.Last && out[b].mark.Last
+	})
+	kept := out[:0:0]
+	for i, c := range out {
+		if c.carried && c.mark.Glide && !joined(out, i) {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	return kept
+}
+
+// joined is whether the keyframe shown at i has a circle of its turn
+// right before or after it.
+func joined(shown []carriage, i int) bool {
+	turn := shown[i].mark.Turn
+	for j := i - 1; j >= 0; j-- {
+		if shown[j].mark.Turn == turn {
+			if shown[j].mark.Glide {
+				return true
+			}
+			break
+		}
+	}
+	for j := i + 1; j < len(shown); j++ {
+		if shown[j].mark.Turn == turn {
+			return shown[j].mark.Glide
+		}
+	}
+	return false
+}
+
+// carried is the keyframes a clip with these pieces shows, and that steer
+// its crop, see carry.
+func carried(segments []Segment, marks []CropMark) []CropMark {
+	shown := carry(segments, marks)
+	if len(shown) == 0 {
+		return nil
+	}
+	out := make([]CropMark, len(shown))
+	for i, c := range shown {
+		out[i] = c.mark
+	}
+	return out
+}
+
+// spansOf is the pieces of a clip of a plan being edited, start and end.
+func spansOf(pieces []*object) []Segment {
+	out := make([]Segment, len(pieces))
+	for i, seg := range pieces {
+		out[i] = Segment{Start: number(seg.values[keyStart]), End: number(seg.values[keyEnd])}
+	}
+	return out
+}
+
+// realise makes the keyframe a clip shows on frame k one of its own there,
+// when an edge or a cut carries it: Tim's rule that touching a carried
+// keyframe makes it real, by placing the crop on it, pressing K or G on it
+// or dragging it. Its moment in the plan becomes the frame it stands on,
+// its old place is forgotten, and the others the same edge or cut covers
+// are set aside, so none of them comes up on the edge when it leaves.
+// Keyframes on no carried frame are left as they are.
+func realise(frames SourceInfo, pieces []Segment, marks []CropMark, k int64) []CropMark {
+	for _, c := range carry(pieces, marks) {
+		if !c.carried {
+			continue
+		}
+		on := frames.markFrame(c.mark.At)
+		if c.mark.Last {
+			on--
+		}
+		if on != k {
+			continue
+		}
+		out := append([]CropMark(nil), marks...)
+		out[c.from].At, out[c.from].Aside = frames.frameAt(on), false
+		for _, i := range c.covers {
+			out[i].Aside = true
+		}
+		return out
+	}
+	return marks
+}
+
+// unsetAside lets the keyframes set aside that a clip's pieces hold again
+// be carried once more, since the edge that covered them was dragged back
+// out past them, and answers whether any changed.
+func unsetAside(pieces []Segment, marks []CropMark) bool {
+	changed := false
+	for i := range marks {
+		if marks[i].Aside && coverOf(pieces, marks[i].At) < 0 {
+			marks[i].Aside, changed = false, true
+		}
+	}
+	return changed
 }
 
 // markFrame is the frame of the video a moment means, by the frame rate
@@ -240,8 +488,14 @@ func (s SourceInfo) onFrames(marks []CropMark, cropW, width int) []frameMark {
 	for _, m := range marks {
 		x := m.X
 		f := frameMark{k: s.markFrame(m.At), x: ClampCropX(&x, cropW, width), glide: m.Glide}
+		if m.Last {
+			f.k--
+		}
 		if n := len(out); n > 0 && out[n-1].k == f.k {
-			out[n-1] = f
+			// One the end carries gives way to one of the frame's own.
+			if !m.Last {
+				out[n-1] = f
+			}
 			continue
 		}
 		out = append(out, f)
@@ -520,7 +774,7 @@ func (s SourceInfo) CropSteps(v SegmentView, cropW, width int) []CropStep {
 func segmentOf(v SegmentView) Segment {
 	seg := Segment{Start: v.Start, End: v.End, CropX: v.CropX}
 	for _, m := range v.Marks {
-		seg.Marks = append(seg.Marks, CropMark{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide})
+		seg.Marks = append(seg.Marks, CropMark{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide, Last: m.Last})
 	}
 	return seg
 }
@@ -592,6 +846,9 @@ func setCropMarks(c *object, marks []CropMark) {
 		if m.Glide {
 			o.set(keyGlide, true)
 		}
+		if m.Aside {
+			o.set(keyAside, true)
+		}
 		list[i] = o
 	}
 	c.set(keyCropMarks, list)
@@ -650,8 +907,11 @@ func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int
 		if err != nil {
 			return err
 		}
-		marks := cropMarksOf(c)
 		pieces := segmentObjects(c)
+		marks := cropMarksOf(c)
+		if !adding {
+			marks = realise(frames, spansOf(pieces), marks, frames.markFrame(from))
+		}
 		var kept []CropMark
 		var moving *CropMark
 		if !adding {
@@ -711,7 +971,7 @@ func SetCropGlide(fsys afero.Fs, planPath, clipID string, at float64, glide bool
 		if err != nil {
 			return err
 		}
-		marks := cropMarksOf(c)
+		marks := realise(frames, spansOf(segmentObjects(c)), cropMarksOf(c), frames.frameHolding(at))
 		for i := range marks {
 			if frames.markFrame(marks[i].At) == frames.frameHolding(at) {
 				marks[i].Glide = glide

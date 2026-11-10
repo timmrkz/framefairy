@@ -668,6 +668,11 @@ func editPieces(fsys afero.Fs, rec *Records, planPath, clipID string, change pie
 			kept[i] = seg
 		}
 		c.set(keySegments, kept)
+		// A keyframe set aside that the clip holds again is carried again
+		// the next time an edge covers it, see carry.
+		if marks := cropMarksOf(c); unsetAside(spansOf(out), marks) {
+			setCropMarks(c, marks)
+		}
 		return nil
 	})
 	if err != nil {
@@ -905,7 +910,7 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 		}
 		spans := rotationsOf(c)
 		turn := rotationOf(pieces[target], spans)
-		marks := cropMarksOf(c)
+		marks := realise(frames, spansOf(pieces), cropMarksOf(c), frames.frameHolding(at))
 		// The keyframe on the frame takes the crop, also one that waits,
 		// placed on the picture turned another way: it is the diamond
 		// under the playhead, and from now on it is on the picture as it
@@ -924,13 +929,12 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 		// playhead on a keyframe, whose diamond or circle is lit then, so
 		// what is moved is seen. Only a piece no keyframe steers has a crop
 		// of its own to place anywhere in it.
-		steered := make([]Segment, len(pieces))
+		steered := spansOf(pieces)
 		turns := make([]int, len(pieces))
 		for i, seg := range pieces {
-			steered[i] = Segment{Start: number(seg.values[keyStart]), End: number(seg.values[keyEnd])}
 			turns[i] = rotationOf(seg, spans)
 		}
-		markedPieces(steered, turns, marks)
+		markedPieces(steered, turns, carried(steered, marks))
 		if len(steered[target].Marks) > 0 {
 			return renderErr("put the playhead on a keyframe to move the crop, or press K or G to put one there")
 		}

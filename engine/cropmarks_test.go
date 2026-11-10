@@ -705,53 +705,210 @@ func TestAKeyframeOfAnOlderPlanBelongsToThePictureItLiesOn(t *testing.T) {
 	}
 }
 
-// A keyframe a cut or a trim covers still switches the crop, from the
-// first frame kept after it. A camera switch often lies in the pause a cut
-// takes out, and the keyframe there was dropped, so the new angle played
-// with the old crop, found by the review of #752.
-func TestAKeyframeACutOrATrimCoversStillSwitchesTheCrop(t *testing.T) {
+// A keyframe a trim or a cut covers is carried on the first frame kept
+// after it, with its own crop, and is a keyframe there like any other: on
+// screen, and the crop dragged there moves it, which makes it a keyframe
+// of its own on that frame.
+func TestAKeyframeACutOrATrimCoversIsCarriedOnTheFrameAfter(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		shape Gesture
 		piece int
 		at    float64
 	}{
-		{"a trim of the start past it", Gesture{Kind: "trim", Edge: "start", From: 10.8}, 0, 10.9},
-		{"a cut over it", Gesture{Kind: "cut", From: 10.4, To: 10.8}, 1, 10.9},
+		{"a trim of the start past it", Gesture{Kind: "trim", Edge: "start", From: 10.8}, 0, 10.8},
+		{"a cut over it", Gesture{Kind: "cut", From: 10.4, To: 10.8}, 1, 10.8},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			fsys, path := rotatablePlanPath(t)
 			cropMarks(t, fsys, path, CropMark{At: 10.6, X: 600})
 			reshape(t, fsys, path, c.shape)
 			clip := loadedClip(t, fsys, path)
-			if len(clip.CropMarks) != 0 {
-				t.Errorf("the hidden keyframe is on screen: %v", clip.CropMarks)
+			if want := []CropMark{{At: c.at, X: 600}}; !reflect.DeepEqual(clip.CropMarks, want) {
+				t.Errorf("the keyframes on screen are %v, not %v", clip.CropMarks, want)
 			}
 			for i, seg := range clip.Segments {
-				if seg.End <= c.at && i < c.piece {
+				if i < c.piece {
 					continue
 				}
 				at := max(c.at, seg.Start)
 				if got := at25.CropAt(seg, at, 608, 1920); got != 600 {
-					t.Errorf("piece %d at %.2f s has the crop at %v, not the hidden keyframe's 600", i, at, got)
+					t.Errorf("piece %d at %.2f s has the crop at %v, not the carried keyframe's 600", i, at, got)
 				}
 			}
-			// The piece is steered, so a drag there, on no keyframe on
-			// screen, moves nothing.
-			if err := SetCrop(fsys, path, "01", c.at, 500, at25); err == nil {
-				t.Error("a crop dragged on no keyframe was taken")
+			if err := SetCrop(fsys, path, "01", c.at, 500, at25); err != nil {
+				t.Fatalf("a crop dragged on the carried keyframe was refused: %v", err)
 			}
-			// K there, as the crop frame says, puts a keyframe on screen
-			// whose crop the drag places.
-			if err := SetCropMark(fsys, path, "01", -1, c.at, 600, false, at25); err != nil {
+			if got := planMarks(t, fsys, path); !reflect.DeepEqual(got, []CropMark{{At: c.at, X: 500}}) {
+				t.Errorf("the plan keeps %v, not the keyframe made real on %.2f s", got, c.at)
+			}
+		})
+	}
+}
+
+// planMarks is the keyframes the clip of a plan keeps, each at its own
+// moment.
+func planMarks(t *testing.T, fsys afero.Fs, path string) []CropMark {
+	t.Helper()
+	plan, _, err := LoadClips(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, _ := plan.Raw[keyClips].([]any)
+	entry, _ := list[0].(map[string]any)
+	return readCropMarks(entry[keyCropMarks], nil)
+}
+
+// The cases of "Keyframes at a dragged edge", which Tim agreed on 10
+// November: an edge carries the keyframe it reached last, on the clip's
+// first or last frame, a cut on the first frame after it, a circle only
+// while a circle beside it joins it, and every keyframe keeps its own
+// place. Diamonds A, B and C, circles X, Y and Z, in a clip from 10 to
+// 20 s.
+func TestAnEdgeCarriesTheKeyframeItReachedLast(t *testing.T) {
+	t.Parallel()
+	a, b, c := CropMark{At: 12, X: 200}, CropMark{At: 14, X: 400}, CropMark{At: 17, X: 600}
+	x, y, z := CropMark{At: 12, X: 200, Glide: true}, CropMark{At: 14, X: 400, Glide: true}, CropMark{At: 17, X: 600, Glide: true}
+	d := CropMark{At: 11, X: 100}
+	at := func(m CropMark, t float64) CropMark { m.At = t; return m }
+	last := func(m CropMark, t float64) CropMark { m.At, m.Last = t, true; return m }
+	one := func(from, to float64) []Segment { return []Segment{{Start: from, End: to}} }
+	for _, h := range []struct {
+		name   string
+		pieces []Segment
+		marks  []CropMark
+		want   []CropMark
+	}{
+		{"the start reaches A", one(12.5, 20), []CropMark{a, b, c}, []CropMark{at(a, 12.5), b, c}},
+		{"the start reaches B", one(14.5, 20), []CropMark{a, b, c}, []CropMark{at(b, 14.5), c}},
+		{"the start back out past A", one(10, 20), []CropMark{a, b, c}, []CropMark{a, b, c}},
+		{"the end reaches C", one(10, 16.5), []CropMark{a, b, c}, []CropMark{a, b, last(c, 16.5)}},
+		{"the end reaches B", one(10, 13.5), []CropMark{a, b, c}, []CropMark{a, last(b, 13.5)}},
+		{"only X and Y, the start reaches X", one(12.5, 20), []CropMark{x, y}, []CropMark{at(x, 12.5), y}},
+		{"only X and Y, the start reaches Y", one(14.5, 20), []CropMark{x, y}, nil},
+		{"X, Y and Z, the start reaches Y", one(14.5, 20), []CropMark{x, y, z}, []CropMark{at(y, 14.5), z}},
+		{"only X and Y, the end reaches Y", one(10, 13.5), []CropMark{x, y}, []CropMark{x, last(y, 13.5)}},
+		{"only X and Y, the end reaches X", one(10, 11.5), []CropMark{x, y}, nil},
+		{"D, X and Y, the start reaches X", one(12.5, 20), []CropMark{d, x, y}, []CropMark{at(x, 12.5), y}},
+		{"a cut over A and B", []Segment{{Start: 10, End: 11.5}, {Start: 14.5, End: 20}}, []CropMark{a, b, c}, []CropMark{at(b, 14.5), c}},
+		{"a cut over Y joined to X before it", []Segment{{Start: 10, End: 13.5}, {Start: 14.5, End: 20}}, []CropMark{x, y}, []CropMark{x, at(y, 14.5)}},
+		{"a keyframe of the first frame's own", one(12, 20), []CropMark{d, a, b}, []CropMark{a, b}},
+		{"a keyframe set aside", one(14.5, 20), []CropMark{a, {At: 14, X: 400, Aside: true}, c}, []CropMark{at(a, 14.5), c}},
+		{"every keyframe covered set aside", one(14.5, 20), []CropMark{{At: 12, X: 200, Aside: true}, {At: 14, X: 400, Aside: true}, c}, []CropMark{c}},
+	} {
+		if got := carried(h.pieces, h.marks); !reflect.DeepEqual(got, h.want) {
+			t.Errorf("%s: the clip shows %v, not %v", h.name, got, h.want)
+		}
+	}
+}
+
+// tenSecondClip is a clip of one piece from 10 to 20 s.
+const tenSecondClip = `{
+  "source": "ep.mp4",
+  "clips": [
+    {"id": "01", "slug": "eins",
+     "segments": [{"start": 10.0, "end": 20.0, "crop_x": 120}]}
+  ]
+}`
+
+// A carried keyframe keeps its own crop, Tim's choice on 10 November: an
+// edge dragged in over a glide makes it shorter and faster, so the crop
+// on the clip's first frame is the first circle's, not one part of the way
+// to the second.
+func TestACarriedCircleGlidesFromItsOwnCrop(t *testing.T) {
+	fsys, path := writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 12, X: 200, Glide: true}, CropMark{At: 16, X: 600, Glide: true})
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 14})
+	seg := loadedClip(t, fsys, path).Segments[0]
+	for _, h := range []struct{ at, want float64 }{{14, 200}, {15, 400}, {16, 600}, {19, 600}} {
+		if got := at25.CropAt(seg, h.at, 608, 1920); math.Abs(got-h.want) > 1e-9 {
+			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
+		}
+	}
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 10})
+	if got := at25.CropAt(loadedClip(t, fsys, path).Segments[0], 14, 608, 1920); got != 400 {
+		t.Errorf("dragged back out, the glide stands at %v at 14 s, not half way at 400", got)
+	}
+}
+
+// The end carries a keyframe on the clip's last frame, which switches the
+// crop there, and the window is sent it on that frame's start.
+func TestTheEndCarriesAKeyframeOnTheLastFrame(t *testing.T) {
+	fsys, path := writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 12, X: 200}, CropMark{At: 17, X: 600})
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "end", From: 16.52})
+	clip := loadedClip(t, fsys, path)
+	shown := at25.MarksOnFrames(CropMarkViews(clip.CropMarks))
+	if want := []CropMarkView{{At: 12, X: 200}, {At: 16.48, X: 600}}; !reflect.DeepEqual(shown, want) {
+		t.Errorf("the window is sent %v, not %v", shown, want)
+	}
+	seg := clip.Segments[0]
+	for _, h := range []struct{ at, want float64 }{{16.44, 200}, {16.48, 600}} {
+		if got := at25.CropAt(seg, h.at, 608, 1920); got != h.want {
+			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
+		}
+	}
+	// A keyframe of the last frame's own keeps it.
+	cropMarks(t, fsys, path, CropMark{At: 16.48, X: 300})
+	shown = at25.MarksOnFrames(CropMarkViews(loadedClip(t, fsys, path).CropMarks))
+	if want := []CropMarkView{{At: 12, X: 200}, {At: 16.48, X: 300}}; !reflect.DeepEqual(shown, want) {
+		t.Errorf("with a keyframe on the last frame, the window is sent %v, not %v", shown, want)
+	}
+}
+
+// Removing the keyframe an edge carries removes it, and no other it
+// covers comes up in its place, Tim on 10 November: "the last one is not
+// just magically popping up again because you removed one". Dragged back
+// out, the edge leaves the others where they were.
+func TestRemovingTheCarriedKeyframeBringsNoOtherUp(t *testing.T) {
+	fsys, path := writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 12, X: 200}, CropMark{At: 14, X: 400}, CropMark{At: 17, X: 600})
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 14.52})
+	if err := SetCropMark(fsys, path, "01", 14.52, -1, 0, false, at25); err != nil {
+		t.Fatal(err)
+	}
+	clip := loadedClip(t, fsys, path)
+	if want := []CropMark{{At: 17, X: 600}}; !reflect.DeepEqual(clip.CropMarks, want) {
+		t.Errorf("after the remove the clip shows %v, not %v", clip.CropMarks, want)
+	}
+	if got := at25.CropAt(clip.Segments[0], 14.52, 608, 1920); got != 120 {
+		t.Errorf("after the remove the clip starts with the crop at %v, not its own 120", got)
+	}
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 10})
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 12, X: 200}, {At: 17, X: 600}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("dragged back out, the clip shows %v, not %v", got, want)
+	}
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 12.52})
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 12.52, X: 200}, {At: 17, X: 600}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("dragged in again, the start carries %v, not %v", got, want)
+	}
+}
+
+// K or G on a carried keyframe, or dragging it, makes it a keyframe of its
+// own where it stands, and its old place is forgotten.
+func TestTouchingACarriedKeyframeMakesItReal(t *testing.T) {
+	for _, h := range []struct {
+		name  string
+		touch func(fsys afero.Fs, path string) error
+		want  CropMark
+	}{
+		{"G on it", func(fsys afero.Fs, path string) error {
+			return SetCropGlide(fsys, path, "01", 14.52, true, at25)
+		}, CropMark{At: 14.52, X: 400, Glide: true}},
+		{"dragged on", func(fsys afero.Fs, path string) error {
+			return SetCropMark(fsys, path, "01", 14.52, 15, 0, false, at25)
+		}, CropMark{At: 15, X: 400}},
+	} {
+		t.Run(h.name, func(t *testing.T) {
+			fsys, path := writePlanAt(t, tenSecondClip)
+			cropMarks(t, fsys, path, CropMark{At: 12, X: 200}, CropMark{At: 14, X: 400})
+			reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 14.52})
+			if err := h.touch(fsys, path); err != nil {
 				t.Fatal(err)
 			}
-			if err := SetCrop(fsys, path, "01", c.at, 500, at25); err != nil {
-				t.Fatalf("a crop dragged on the keyframe put there was refused: %v", err)
-			}
-			seg := loadedClip(t, fsys, path).Segments[c.piece]
-			if got := at25.CropAt(seg, c.at, 608, 1920); got != 500 {
-				t.Errorf("with a keyframe put on the hidden one's piece, the crop there stands at %v, not 500", got)
+			reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 10})
+			if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 12, X: 200}, h.want}; !reflect.DeepEqual(got, want) {
+				t.Errorf("dragged back out, the clip shows %v, not %v", got, want)
 			}
 		})
 	}

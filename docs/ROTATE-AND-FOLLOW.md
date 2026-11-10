@@ -143,6 +143,12 @@ there:
   keyframes of its own, so the rotate case needs nothing at all: the
   rotated part begins at the cut over the spin, and its crop is there from
   its first frame.
+- **An edge carries the keyframes it reaches.** An edge or a cut dragged
+  over keyframes carries the last one it reached on the clip's first or
+  last frame, or the first frame after the cut, with its own crop, and
+  the edge dragged back out leaves each where it was. So a glide whose
+  first circle the start passes gets shorter, and faster, Tim's choice on
+  #778.
 
 The first design glided the crop from one keyframe to the next over the
 whole time between them, easing out and in, so the tempo was where the

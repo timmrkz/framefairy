@@ -77,10 +77,12 @@ const (
 	// at, the moment the frame starts, x, the left edge of the crop there,
 	// turn, how far the picture was rotated when it was placed, and glide,
 	// true for a circle, which the crop glides to from a circle before
-	// it, see CropMark.
+	// it, see CropMark, and aside, true for one an edge or a cut covers
+	// that is not carried, see carry.
 	keyCropMarks = "crop_marks"
 	keyAt        = "at"
 	keyX         = "x"
 	keyTurn      = "turn"
 	keyGlide     = "glide"
+	keyAside     = "aside"
 )
