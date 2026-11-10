@@ -202,6 +202,43 @@ is found by putting a wait between the calls instead. The bridge puts the
 episode back the way it was first searched before every walk,
 `POST /reset`, so a walk starts from the same place every time.
 
+### What a walk is for
+
+Every walk and every sequence is held to this, when it is written and
+when it is reviewed.
+
+**A walk proves what only the window can show.** That a person's
+gesture does what they meant: the keys, the pointer, the focus, a drag,
+a drop. And that the window shows what the Go side says, in the right
+place, in the same frame, while it happens. It runs the real app against
+the real Go side, and checks the rules every step must keep.
+
+**A walk is not for:**
+
+- **A rule the Go side decides.** Which words a caption has, which
+  frames a short has, what a render writes and what it is called, what
+  happens to a model or a search. That is a Go test, case by case. The
+  walk checks once that the window shows Go's answer.
+- **Codecs.** The Go side decodes every file to the same frames for the
+  window, and `engine/episodeframes_test.go` proves it on committed
+  fixtures. The window never sees the codec.
+- **Time.** A walk never lets the clock on the wall run for the app's
+  time. A play runs on the walk's sound card, see the walk's clock
+  below, a toast or a removed row on the clock `holdClock` holds, and a
+  movement is ended where the settle would wait for it. A 30 s play
+  costs the work of its frames, never 30 s.
+- **Sweeps.** Every width or every frame is a sweep, which belongs in a
+  unit test of the rule. A walk takes the edges and a few between.
+
+**What a walk costs.** Every sequence pays for opening the app on every
+push. A new case is a step in a walk that is there, and a new walk is
+the last resort. The walks have a budget, `walkBudget` in
+`cmd/framefairy-app/bridge_test.go`, the seconds every run takes
+together on CI by `walk-times.tsv`. `TestWalks` fails when a run has no
+time there, when a time is for a run that is gone, or when the sum is
+over the budget. A change that adds walking raises it only with Tim's
+yes, and one that saves walking lowers it by what it saved.
+
 ### How a walk picks its steps
 
 Each gesture is the real key or click, pressed in the browser the walk

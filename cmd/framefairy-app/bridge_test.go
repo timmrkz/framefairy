@@ -31,6 +31,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"maps"
 	"math"
 	"net"
 	"net/http"
@@ -2201,6 +2202,13 @@ func TestWalks(t *testing.T) {
 	}
 	times := readWalkTimes(string(before))
 	all := runs
+	names := make([]string, len(all))
+	for i, r := range all {
+		names[i] = name(r)
+	}
+	for _, wrong := range offBudget(names, times, walkBudget) {
+		t.Error(wrong)
+	}
 	runs = shareOf(t, all, name, times, os.Getenv("WALKSHARD"))
 	if len(runs) == 0 {
 		t.Skip("this share has no runs")
@@ -2987,6 +2995,40 @@ func readWalkTimes(file string) map[string]float64 {
 	return took
 }
 
+// walkBudget is the seconds every walk run takes together on CI, the sum
+// of walk-times.tsv. Every walk pays for opening the app on every push, so
+// a new case is a step in a walk that is there, and a time that goes over
+// the budget needs Tim's yes to raise it. A change that saves walking
+// lowers it by what it saved, so the walks cannot creep back. See What a
+// walk is for in docs/TESTING.md.
+const walkBudget = 2540
+
+// offBudget says what is wrong with walk-times.tsv, took, for the runs
+// named: a run it has no time for, a time for a run there is not, and a
+// sum over the budget. A run with no time would walk outside the budget,
+// and a time left for a run that is gone would hide what a new one costs.
+func offBudget(names []string, took map[string]float64, budget float64) []string {
+	var wrong []string
+	runs := map[string]bool{}
+	for _, n := range names {
+		runs[n] = true
+		if _, ok := took[n]; !ok {
+			wrong = append(wrong, fmt.Sprintf("walk-times.tsv has no time for %q: write it from the walks job's log, see docs/TESTING.md", n))
+		}
+	}
+	sum := 0.0
+	for _, n := range slices.Sorted(maps.Keys(took)) {
+		sum += took[n]
+		if !runs[n] {
+			wrong = append(wrong, fmt.Sprintf("walk-times.tsv has a time for %q, which is no run", n))
+		}
+	}
+	if sum > budget {
+		wrong = append(wrong, fmt.Sprintf("the walks take %.0f s together by walk-times.tsv, over their budget of %.0f s, walkBudget: a new case is a step in a walk that is there, and only Tim raises the budget", sum, budget))
+	}
+	return wrong
+}
+
 // writeWalkTimes is walk-times.tsv for the runs named, with what a run
 // took now where it ran and what it took before where it did not, the
 // longest first and padded so the seconds line up.
@@ -3317,6 +3359,33 @@ func TestTheTimesOfTheWalksAreKept(t *testing.T) {
 	}
 	if again := writeWalkTimes(names, readWalkTimes(file), nil); again != file {
 		t.Errorf("read and written again\n%q\nwas\n%q", again, file)
+	}
+}
+
+// The walks keep to their budget: every run has its time, no time is
+// for a run that is gone, and the sum is at most the budget.
+func TestTheWalksKeepToTheirBudget(t *testing.T) {
+	names := []string{"walk.mjs SEED=1", "sequences.mjs SEQUENCE=a short"}
+	for _, c := range []struct {
+		name string
+		took map[string]float64
+		want []string
+	}{
+		{"within", map[string]float64{"walk.mjs SEED=1": 40, "sequences.mjs SEQUENCE=a short": 60}, nil},
+		{"no time", map[string]float64{"walk.mjs SEED=1": 40}, []string{`walk-times.tsv has no time for "sequences.mjs SEQUENCE=a short"`}},
+		{"gone", map[string]float64{"walk.mjs SEED=1": 40, "sequences.mjs SEQUENCE=a short": 50, "gone.mjs": 1}, []string{`walk-times.tsv has a time for "gone.mjs", which is no run`}},
+		{"over", map[string]float64{"walk.mjs SEED=1": 40, "sequences.mjs SEQUENCE=a short": 61}, []string{"the walks take 101 s together by walk-times.tsv, over their budget of 100 s"}},
+	} {
+		got := offBudget(names, c.took, 100)
+		if len(got) != len(c.want) {
+			t.Errorf("%s: said %q, want %q", c.name, got, c.want)
+			continue
+		}
+		for i := range got {
+			if !strings.HasPrefix(got[i], c.want[i]) {
+				t.Errorf("%s: said %q, want it to start %q", c.name, got[i], c.want[i])
+			}
+		}
 	}
 }
 
