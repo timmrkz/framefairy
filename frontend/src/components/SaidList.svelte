@@ -11,7 +11,7 @@
   import { clock, type ClipEntry, type Sentence } from "../lib/api";
   import { found } from "../lib/match";
   import { hoverClip } from "../lib/hover";
-  import { between, joined, offerCopy } from "../lib/copy";
+  import { between, copies, joined, pick, type Picked } from "../lib/copy";
   import { asleep } from "../lib/keys";
   import { onMount, tick, untrack } from "svelte";
 
@@ -354,20 +354,21 @@
   });
 
   // The cards picked with Shift and a click, the way files are in
-  // Finder: from the card marked current at the first, or the card the
-  // first was clicked on, to the card clicked last. The playhead stays.
-  // A click without Shift, or another search, picks none again, and then
-  // Copy copies the current card alone.
-  let picked = $state<{ from: string | null; to: string } | null>(null);
+  // Finder, see pick in lib/copy.ts. The playhead stays. A click without
+  // Shift, or another search, picks none again, and then Copy copies the
+  // current card alone.
+  let picked = $state<Picked | null>(null);
   const pickedKeys = $derived(new Set(picked ? between(rows.map((r) => r.key), picked.from, picked.to) : []));
 
-  // The words of the cards picked, or of the current card, for Copy in
-  // the Edit menu, see lib/copy.ts. A part not transcribed yet has none.
+  // The words of the cards picked, or of the current card, for Copy, see
+  // lib/copy.ts. Picked cards gone from the list leave the current card.
+  // A part not transcribed yet has none, and a list in a workspace that
+  // is not in front copies nothing.
   onMount(() =>
-    offerCopy(() => {
-      if (asleep(list)) return null;
-      const keys = picked ? pickedKeys : new Set([current]);
-      return joined(rows.flatMap((r) => ("sentence" in r && keys.has(r.key) ? [r.sentence] : [])));
+    copies(() => {
+      if (asleep(list)) return "";
+      const keys = pickedKeys.size ? pickedKeys : new Set([current]);
+      return joined(rows.flatMap((r) => ("sentence" in r && keys.has(r.key) ? [r.sentence.text] : [])));
     }),
   );
 
@@ -446,7 +447,7 @@
       >
         <button class="pick" class:inclip={!!row.clip} class:clip-edge={!!row.clip} class:current={row.key === current} class:picked={pickedKeys.has(row.key)} title="Put the playhead here. Shift-click picks every card from the current one to here, and Copy copies their words" onclick={(e) => {
           if (e.shiftKey) {
-            picked = { from: picked ? picked.from : (current ?? null), to: row.key };
+            picked = pick(picked, current ?? null, row.key);
             return;
           }
           picked = null;

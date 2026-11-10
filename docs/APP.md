@@ -2336,17 +2336,19 @@ found is a place in the video, and I and O make a clip there.
 - **Shift and a click pick cards, and Copy copies their words.** The
   way files are picked in Finder, Shift and a click pick every card
   from the card of the playhead to the one clicked, in the grey the card
-  of the playhead wears, and the playhead stays (#783). Another Shift and
-  a click moves the far end. A click without Shift, or another search,
+  of the playhead wears, and the playhead stays (#783). Among the answers
+  to a search, where no card need be current, the first Shift and click
+  picks the card clicked and the next picks on from it. Another Shift
+  and click moves the far end. A click without Shift, or another search,
   picks none again. Copy in the Edit menu, ⌘C, puts the words of the
-  cards picked on the clipboard as one running text, or the words of the
-  card of the playhead when none is picked, without times or clip names.
-  Two clips over the same words copy them once. Words chosen in a field
-  are copied first, the way Copy copies them everywhere. Copy in the menu
-  is the app's, `appMenu` in `menu.go`, the way Undo is, because the
-  stock one copies only text chosen on the page: the interface says what
-  to copy, `lib/copy.ts`, and the Go side puts it on the clipboard. The
-  app never reads the clipboard, see What is never signed in
+  cards picked on the clipboard as one running text, card by card as
+  they stand, or the words of the card of the playhead when none is
+  picked, without times or clip names. Copy is the system's own, and the
+  list answers the web view's copy event with the words, and its
+  beforecopy, which is how WebKit asks whether to offer Copy at all,
+  `lib/copy.ts`. Words chosen in a field or on the page are left to the
+  web view, so Copy copies them as everywhere. The app never reads the
+  clipboard by itself, see What is never signed in
   [UPDATES.md](UPDATES.md).
 - **A press elsewhere closes a list.** A list open, the font list among
   them, closes the moment anything else in the app is pressed, and the

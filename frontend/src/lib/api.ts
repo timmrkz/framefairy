@@ -1143,15 +1143,6 @@ export function onUndo(fn: (what: "undo" | "redo") => void): () => void {
   });
 }
 
-// Copy in the Edit menu, Cmd+C, which the menu has the way it has Undo, so
-// a card picked in the app is copied, not only text chosen on the page,
-// see lib/copy.ts. Only the window the person is in takes it.
-export function onCopy(fn: () => void): () => void {
-  return Events.On("copy", () => {
-    if (document.hasFocus()) fn();
-  });
-}
-
 // Acknowledgements in the Help menu, which is where apps keep the notices
 // of the work they are made with.
 // Cmd+Q heard by the Go side: "ask" while work runs and the key has to be

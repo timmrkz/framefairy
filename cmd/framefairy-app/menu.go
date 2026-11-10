@@ -6,8 +6,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// appMenu is the menu Wails gives every app, with three changes: Undo,
-// Redo and Copy in Edit belong to the app, and so does Help.
+// appMenu is the menu Wails gives every app, with two changes: Undo and
+// Redo in Edit belong to the app, and so does Help.
 //
 // The stock ones hand the keys to the web view, whose undo only knows about
 // text being typed. On macOS the menu takes Cmd-Z before the page ever sees
@@ -15,12 +15,6 @@ import (
 // These send the interface an event, and the interface decides: the text of
 // a field being typed in when there is one, the episode's last edit
 // otherwise.
-//
-// Copy is the app's for the same reason. The stock one copies only text
-// chosen on the page, and a card picked in the search of what was said is
-// no text chosen. The interface puts the text chosen in a field or on the
-// page on the clipboard when there is any, and the cards picked otherwise,
-// through Copy in licence.go. It never reads the clipboard.
 func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
 	menu := application.NewMenu()
 	// The app menu, the stock one with Check for Updates in it, where every
@@ -53,9 +47,7 @@ func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
 	})
 	edit.AddSeparator()
 	edit.AddRole(application.Cut)
-	edit.Add("Copy").SetAccelerator("CmdOrCtrl+c").OnClick(func(*application.Context) {
-		app.Event.Emit("copy", nil)
-	})
+	edit.AddRole(application.Copy)
 	edit.AddRole(application.Paste)
 	if runtime.GOOS == "darwin" {
 		edit.AddRole(application.PasteAndMatchStyle)

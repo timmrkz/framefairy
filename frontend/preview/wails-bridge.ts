@@ -121,8 +121,6 @@ let paused: { name: string; data: unknown }[] | null = null;
 // presses Undo and Redo with window.__menu("undo") and window.__menu("redo"),
 // the way the preview does.
 (window as any).__menu = (what: string) => tell("undo", what);
-// And Copy, Cmd+C, with window.__copy(), as the preview does.
-(window as any).__copy = () => tell("copy", null);
 // And Help, Acknowledgements with window.__help(), as the preview does.
 (window as any).__help = () => tell("acknowledgements", null);
 
