@@ -2181,9 +2181,6 @@ func TestWalks(t *testing.T) {
 		for _, script := range walkScripts(t, walks) {
 			runs = append(runs, walkRun{script: script, env: append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)})
 		}
-		// Playback again on an episode whose picture the Go side decodes,
-		// HEVC in 10-bit colour, which Chromium cannot.
-		runs = append(runs, walkRun{script: "playback.mjs", env: append([]string{fmt.Sprintf("SEED=%d", seed), "HEVC=1"}, steps...)})
 	}
 	for _, name := range sequenceNames(t, node, walks) {
 		runs = append(runs, walkRun{script: "sequences.mjs", env: []string{"SEQUENCE=" + name}, sequence: name})

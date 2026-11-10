@@ -352,11 +352,13 @@ settled. The rules, besides every walk's:
 | On every animation frame of a play, on the video the video preview lays nothing over the picture, no crop frame, no shade, no captions, and on the clip a frame or more inside a piece it shows the crop frame, and the captions wherever the engine has a caption, `overlaid` in `rules.mjs` | the crop frame and the captions staying up while the episode played on through the clip, found by Tim |
 | The episode played from before the clip goes on into it, and stays on the video on every animation frame, skips and all | the clip lighting up the moment Shift and the right arrow skipped into it, found by Tim |
 
-`make walks` also walks it on an episode whose picture is HEVC in 10-bit
-colour, `HEVC=1`, added with Add and searched first. The Chromium a walk
-drives cannot decode HEVC at all, so every frame of it comes from the Go
-side, see `lib/frames/app.ts`, and the walk fails at its start when the
-picture did not come that way. The sequence "a picture the browser's
+The playback walk can walk an HEVC video too, `HEVC=1`, which Chromium
+cannot decode, so every frame of it comes from the Go side, see
+`lib/frames/app.ts`. `make walks` no longer does that on every push: the
+window gets the same frames from the Go side whatever the video is, and
+`engine/episodeframes_test.go` decodes HEVC with open GOPs and in 10-bit
+colour in Go. The sequences that add an HEVC video, "a playhead dragged
+far over HEVC" among them, still show it in the app. The sequence "a picture the browser's
 decoder fails on comes from the Go side" makes Chromium's decoder say yes
 and then fail on the first frame, the way WebKit's does with Tim's
 `start.mp4`. The sequence "the picture comes back after the playhead

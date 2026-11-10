@@ -15,12 +15,9 @@
  40	searching.mjs SEED=1
  35	sequences.mjs SEQUENCE=a step onto a word pops it over the paused frame
  35	sequences.mjs SEQUENCE=the video preview shows the short's captions, frame for frame
- 34	playback.mjs SEED=3 HEVC=1
  34	words.mjs SEED=2
- 32	playback.mjs SEED=2 HEVC=1
  32	playback.mjs SEED=3
  32	sequences.mjs SEQUENCE=Dictating in the middle of a long report keeps the cursor in view
- 29	playback.mjs SEED=1 HEVC=1
  29	sequences.mjs SEQUENCE=a rotated part turns with its own frames under a dragged playhead, and stays rotated as its end moves
  29	sequences.mjs SEQUENCE=a slow drag of the playhead to the left reads its frames in runs, not a seek a step
  28	words.mjs SEED=1
