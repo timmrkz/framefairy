@@ -143,6 +143,38 @@ export const steps = {
     await page.mouse.wheel(0, 330);
     await page.keyboard.up("Control");
     await settle(page);
+    // Pinched out, every caption is still in a block as tall as before,
+    // and captions too narrow to see join the nearest into one: no block
+    // is narrower than it is tall, and the lane never goes bare. It went
+    // whole, Tim's report of 10 November, and he picked joined blocks.
+    const lane = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll(".clip-timeline .caption[data-first]")].map((b) => {
+          const r = b.getBoundingClientRect();
+          return { left: r.left, w: r.width, h: r.height, joined: Number(b.dataset.joined ?? 1) };
+        }),
+      );
+    const out = await lane();
+    const joined = out.filter((b) => b.joined > 1);
+    if (!joined.length || out.some((b) => b.h !== 16 || (out.length > 1 && b.w < 14 - 0.5))) {
+      walk.wrong = `pinched out, the caption lane is ${JSON.stringify(out.map((b) => [Math.round(b.w), b.h, b.joined]))}, as [width, height, captions]`;
+      return;
+    }
+    // A joined block clicked in its middle, between the edges of its
+    // first and last caption, puts the playhead where its first caption
+    // appears.
+    const one = joined.reduce((a, b) => (b.w > a.w ? b : a));
+    const band = await page.evaluate(() => {
+      const c = document.querySelector(".clip-timeline .captions").getBoundingClientRect();
+      return c.top + c.height / 2;
+    });
+    await page.mouse.click(one.left + one.w / 2, band);
+    await settle(page);
+    const head = await page.evaluate(() => document.querySelector(".clip-timeline .playhead").getBoundingClientRect().left);
+    if (head < one.left - 2 || head > one.left + 4) {
+      walk.wrong = `a joined block from ${one.left.toFixed(0)} px clicked in its middle put the playhead at ${head.toFixed(0)} px`;
+      return;
+    }
     g = await handles(page);
     const to = before.start - 120;
     const x = await xOf(page, to);

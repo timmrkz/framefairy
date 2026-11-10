@@ -2193,12 +2193,20 @@ bubble scrolled by those eight pixels.
       and while it is searched, lie over the track's top and bottom border
       rather than just inside or just outside it, so no grey line runs
       beside them. Found by Tim on #192.
-    - **Detail comes in as there is room for it.** The caption blocks are
-      drawn only while the caption in the middle of the clip is at least
-      as wide as a block is tall, 16 pixels. Narrower, a block's line has
-      no room inside its padding and the blocks run into one smear over the
-      waveform, so zoomed out there are the clips and the waveform and no
-      captions, and zoomed in to the clip they come back.
+    - **Captions too narrow to see join their neighbour.** A caption
+      block keeps its height and its line at every zoom, and only its
+      width follows the zoom. A block narrower than it is tall, 16 pixels,
+      has no room for its line and would vanish, so it joins the block
+      nearest to it, on whichever side the gap is smaller, until every
+      block is wide enough. Zoomed out, the lane shows phrases, and zoomed
+      in, every caption is a block again. A click on a joined block puts
+      the playhead where its first caption appears and picks nothing, so
+      delete removes a caption only where it is a block of its own. A
+      joined block has the edges of its first and last caption, and the
+      caption whose edge is being dragged joins nothing while it is. The
+      lane was hidden whole once the middle caption was narrower, and a
+      clip zoomed out to stood bare, Tim's report of 10 November. He
+      picked joined blocks from five mockups.
 - **The waveform comes first.** The moment an episode is added, the app
   measures its loudness on its own, without the speech model: the audio
   decoded and a reading every 10 ms, the same readings the transcription
