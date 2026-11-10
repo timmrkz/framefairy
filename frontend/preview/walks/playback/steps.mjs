@@ -1613,11 +1613,11 @@ export const steps = {
   // ["as previewed", rate]
   //                    the short Render wrote, read back from disk, has
   //                    this frame rate and as many frames as the clip's
-  //                    pieces last, and at every cut, at the clip's two
-  //                    ends and on every tenth frame between, its frame is
-  //                    the frame the video preview shows at the moment that
-  //                    frame stands for, read off the canvas with the
-  //                    playhead put there by a click on the clip timeline
+  //                    pieces last, and where each piece starts and ends,
+  //                    its frame is the frame the video preview shows at
+  //                    the moment that frame stands for, read off the
+  //                    canvas with the playhead put there by a click on the
+  //                    clip timeline
   // ["as previewed", rate, before]
   //                    the same, for an episode whose picture starts after
   //                    its sound: the clip's first piece starts before
@@ -2304,8 +2304,9 @@ steps["glides"] = steps["glides while playing"];
 // the preview shows the frame that holds that moment: after it, and
 // before the episode's next frame begins. Which frame begins where is read
 // from the episode with ffprobe. The clip timeline is pinched in for it,
-// and a frame whose time is still too short to click on is passed over,
-// but every piece is looked at where it starts and where it ends.
+// and a frame whose time is still too short to click on is passed over.
+// Every piece is looked at once where it starts and once where it ends,
+// and nowhere between, since Go's tests hold every frame.
 // The render takes a frame that begins up to a millisecond after a moment
 // for that moment, frameHair, and so does the video preview, so the
 // playhead goes after that too and ends a millisecond and a half before
@@ -2357,7 +2358,13 @@ async function asPreviewed(page, rate, before) {
   const seenAt = new Set();
   for (let j = 0; j < slots.length; j++) {
     const { q, n, at } = slots[j];
-    if (!(q < 3 || q >= n - 3 || q % 5 === 0)) continue;
+    // Only where each piece starts and ends, one frame each: the first
+    // of the three nearest the edge that the playhead can be put on.
+    // TestEveryFrameOfAShortIsAFrameOfTheVideoPreview and the engine's
+    // tests of the render and of the episode's decoder hold every frame
+    // between, so this only looks at the app showing what Go sends.
+    if (!(q < 3 || q >= n - 3)) continue;
+    if (seenAt.has(`${slots[j].piece} ${q < 3 ? "first" : "last"}`)) continue;
     // Where the frame that holds the moment is the one on screen: from the
     // moment until the episode's next frame begins.
     const from = at + 0.0015;
@@ -2401,7 +2408,7 @@ async function asPreviewed(page, rate, before) {
       continue;
     }
     looked++;
-    seenAt.add(`${slots[j].piece} ${q < 3 ? "first" : q >= n - 3 ? "last" : "inside"}`);
+    seenAt.add(`${slots[j].piece} ${q < 3 ? "first" : "last"}`);
     await filmedOnScreen(page);
     // The frame the preview shows, once the app says the frame it shows
     // is the one that holds the playhead. On a busy machine the frame
@@ -2421,10 +2428,9 @@ async function asPreviewed(page, rate, before) {
     }
   }
   // Every piece looked at where it starts and where it ends, so at both
-  // ends of the clip and on both sides of every cut, and inside.
+  // ends of the clip and on both sides of every cut.
   const unseen = pieces.flatMap((_, i) => ["first", "last"].filter((w) => !seenAt.has(`${i} ${w}`)).map((w) => `the ${w} frames of piece ${i + 1}`));
   if (unseen.length) problems.push(`the playhead could not be put on ${unseen.join(", ")}`);
-  if (looked < 20) problems.push(`only ${looked} frames could be looked at, the playhead missed ${missed}`);
   console.log(`      ${looked} frames of ${slots.length} looked at, the playhead missed ${missed} more`);
   return problems.length ? problems.slice(0, 8).join("\n") + (problems.length > 8 ? `\nand ${problems.length - 8} more` : "") : null;
 }

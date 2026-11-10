@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
@@ -264,4 +265,61 @@ func previewBars(frame []byte, w, h int) int {
 		}
 	}
 	return n
+}
+
+// Every frame of a short stands for a moment the video preview has a
+// frame for: the render's moments and the video preview's grid are the
+// same moments, so the frame the render takes for one and the frame the
+// episode's decoder hands over for it are the same frame of the episode.
+// TestARenderShowsTheFrameThatHoldsEachMoment and
+// TestTheVideoPreviewShowsTheFramesOfTheShort check that each side shows
+// the frame that holds its moment. This checks that the moments agree, on
+// every frame of clips placed all over videos of every kind of rate and
+// start, so a walk need not click through the frames of a short to find
+// it out. A walk only looks at the app showing the frame at a clip's
+// edges.
+func TestEveryFrameOfAShortIsAFrameOfTheVideoPreview(t *testing.T) {
+	videos := []struct {
+		name string
+		info SourceInfo
+	}{
+		{"25 fps", SourceInfo{FPSNum: 25, FPSDen: 1, Duration: 60}},
+		{"29.97 fps", SourceInfo{FPSNum: 30000, FPSDen: 1001, Duration: 60}},
+		{"29.97 fps, the picture a quarter second late", SourceInfo{FPSNum: 30000, FPSDen: 1001, VideoStart: 0.25, Duration: 60}},
+		{"30 fps, the picture 4 ms late", SourceInfo{FPSNum: 30, FPSDen: 1, VideoStart: 0.004, Duration: 60.01}},
+		{"23.976 fps, a length inside a frame", SourceInfo{FPSNum: 24000, FPSDen: 1001, VideoStart: 0.021, Duration: 59.99}},
+		{"60 fps", SourceInfo{FPSNum: 60, FPSDen: 1, VideoStart: 0.0333, Duration: 60}},
+	}
+	for _, v := range videos {
+		t.Run(v.name, func(t *testing.T) {
+			grid := v.info.Grid()
+			frame := float64(v.info.FPSDen) / float64(v.info.FPSNum)
+			// Clips of three pieces, their edges kept to the millisecond
+			// the way a plan keeps them, from before the picture starts
+			// to past the video's end.
+			r := rand.New(rand.NewPCG(1, 2))
+			for c := range 200 {
+				var segs []Segment
+				at := -0.3 + r.Float64()*58
+				for range 3 {
+					start := math.Round(at*1000) / 1000
+					end := math.Round((start+0.05+r.Float64()*3)*1000) / 1000
+					segs = append(segs, Segment{Start: start, End: end})
+					at = end + 0.05 + r.Float64()*2
+				}
+				clip := v.info.OnFrames(Clip{Segments: segs})
+				for p, seg := range clip.Segments {
+					n := int(math.Round(seg.Duration() / frame))
+					for q := range n {
+						moment := seg.Start + float64(q)*frame
+						k := grid.Holding(moment)
+						if math.Abs(grid.At(k)-moment) > 1e-6 {
+							t.Fatalf("clip %d, piece %d, frame %d of the short stands for %.6f s, the video preview's frame there is %d at %.6f s",
+								c, p+1, q, moment, k, grid.At(k))
+						}
+					}
+				}
+			}
+		})
+	}
 }
