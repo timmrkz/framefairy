@@ -1158,8 +1158,8 @@
     readSoon(zooming ? "pinched" : "swiped");
   }
 
-  // A new clip gets a new view. A trimmed clip keeps it unless an edge left
-  // it. With no clip the view follows the playhead, so there is always a
+  // A new clip gets a new view. A trimmed clip keeps it, and an edge that
+  // left it takes the view along at the zoom it has. With no clip the view follows the playhead, so there is always a
   // timeline saying where you are in the episode. A view moved by hand is
   // left alone until the clip changes or the playhead leaves it.
   $effect(() => {
@@ -1175,10 +1175,22 @@
       // again, without end.
       const a = Math.max(0, clip.segments[0].start);
       const b = Math.min(duration, clip.segments[clip.segments.length - 1].end);
-      const pad = Math.max(8, (b - a) * 0.3);
-      if (a < view.from || b > view.to) {
+      if (a >= view.from && b <= view.to) return;
+      const shown = view.to - view.from;
+      if (a < view.from && b > view.to) {
+        const pad = Math.max(8, (b - a) * 0.3);
         load(Math.max(0, a - pad), Math.min(duration, b + pad));
+        return;
       }
+      // One edge past the view, dragged there: the view goes along with
+      // it, the edge a tenth in from the side, and keeps its zoom, the way
+      // an editor's timeline scrolls with a trim. Zoomed out to the whole
+      // clip again, a clip dragged long stood at a zoom where its captions
+      // were too narrow to be drawn, and they all went, Tim's report of 10
+      // November.
+      const from = a < view.from ? a - shown * 0.1 : b + shown * 0.1 - shown;
+      const lo = Math.max(0, Math.min(from, Math.max(duration, shown) - shown));
+      load(lo, lo + shown);
       return;
     }
     // A view moved by hand stays where it was put, wherever the playhead

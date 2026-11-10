@@ -66,7 +66,10 @@ export const steps = {
   // ["drag past what was heard"]
   //                    on a video heard as far as its first search's
   //                    window, makes a clip with O two hundred seconds past
-  //                    it, pinches the clip timeline out, drags the clip's
+  //                    it, drags its start past the clip timeline's left
+  //                    side, which goes along at the zoom it had with the
+  //                    caption blocks still drawn, then pinches the clip
+  //                    timeline out, drags the clip's
   //                    start back a hundred and twenty seconds, past the
   //                    minute the app keeps heard around a clip made by
   //                    hand, lets go and pinches back in on it. The app
@@ -91,8 +94,31 @@ export const steps = {
       walk.wrong = `the clip made with O at ${at.toFixed(1)} s is ${JSON.stringify(before)}, not heard whole after ${reach.toFixed(1)} s`;
       return;
     }
-    // Pinched out, so the start can go far back on the track.
+    // Dragged past the clip timeline's left side first, the way Tim did:
+    // the view goes along with the start at the zoom it had, and the
+    // caption blocks stay drawn. Zoomed out to the whole clip, they were
+    // too narrow to draw and all went, his report of 10 November.
+    const perSecond = async () => {
+      const t = await timeline(page);
+      const w = await page.evaluate(() => document.querySelector(".clip-timeline .span.frame").getBoundingClientRect().width);
+      return w / (t.end - t.start);
+    };
+    const blocks = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .caption[data-first]").length);
     let g = await handles(page);
+    const near = await perSecond();
+    await drag(page, middle(g.start), high(g.track), g.track.x - 30 - middle(g.start), false);
+    await settle(page);
+    const past = (await ask(page, "Clips", path)).find((c) => c.plan === made.plan && c.id === made.clip);
+    const far = await perSecond();
+    g = await handles(page);
+    if (!(past.start < before.start - 1) || Math.abs(far / near - 1) > 0.01 || !g.start || !inside(g.track, middle(g.start)) || !(await blocks())) {
+      walk.wrong =
+        `the start dragged past the clip timeline went from ${before.start.toFixed(1)} s to ${past.start.toFixed(1)} s, ` +
+        `the clip timeline from ${near.toFixed(2)} to ${far.toFixed(2)} px a second, with ${await blocks()} caption blocks`;
+      return;
+    }
+    // Pinched out, so the start can go far back on the track.
+    g = await handles(page);
     await page.mouse.move(g.track.x + g.track.w / 2, high(g.track));
     await page.keyboard.down("Control");
     await page.mouse.wheel(0, 330);
