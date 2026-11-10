@@ -350,12 +350,19 @@ export const steps = {
         requestAnimationFrame(tick);
       });
     // The frames from the press on, the first of them the first painted
-    // after it.
+    // after it, up to the next frame: the watch reads a frame before the
+    // app paints in it, so what the frame settle ended on showed only in
+    // the frame after, and a settle of one frame ended before it.
     const seen = () =>
-      page.evaluate(() => {
-        window.__pressWatch = false;
-        return window.__pressedAt < 0 ? [] : window.__pressed.slice(window.__pressedAt);
-      });
+      page.evaluate(
+        () =>
+          new Promise((done) =>
+            requestAnimationFrame(() => {
+              window.__pressWatch = false;
+              done(window.__pressedAt < 0 ? [] : window.__pressed.slice(window.__pressedAt));
+            }),
+          ),
+      );
     const g = await handles(page);
     const caption = (edge) =>
       page.locator(`.clip-timeline [aria-label="When caption 2 ${edge === "end" ? "goes" : "appears"}"]`).first().boundingBox();
