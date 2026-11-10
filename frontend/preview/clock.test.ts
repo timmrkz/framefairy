@@ -14,6 +14,11 @@ async function played() {
   return { play, card, clock: walkClock(play) };
 }
 
+// The frame after the one on screen, ready, decoded and waiting with its
+// captions, or still on its way, see unshown in queue.ts.
+const ready = () => true;
+const onItsWay = () => false;
+
 // Lets what the sound card says after a call land, the way it does on
 // the system's card: once the call has returned.
 const said = () => new Promise<void>((done) => queueMicrotask(done));
@@ -25,7 +30,7 @@ describe("the walk's clock", () => {
     const { card, clock } = await played();
     let at = 0;
     for (let k = 1; k <= 15; k++) {
-      at = clock(card.currentTime, k * 0.2, true);
+      at = clock(card.currentTime, k * 0.2, ready);
       expect(at).toBe(k * 0.2);
     }
     expect(card.currentTime).toBeCloseTo(3, 9);
@@ -34,17 +39,17 @@ describe("the walk's clock", () => {
   // Issue #534: on the system's card a busy machine showed 2 frames of 9.
   test("stands on a frame still being decoded, and the sound card with it", async () => {
     const { card, clock } = await played();
-    expect(clock(0, 0.2, false)).toBe(0);
-    expect(clock(0, 0.2, false)).toBe(0);
+    expect(clock(0, 0.2, onItsWay)).toBe(0);
+    expect(clock(0, 0.2, onItsWay)).toBe(0);
     expect(card.currentTime).toBe(0);
-    expect(clock(0, 0.2, true)).toBe(0.2);
+    expect(clock(0, 0.2, ready)).toBe(0.2);
   });
 
   // A frame due before the moment heard is drawn first, never passed.
   test("stands on a frame due before the moment heard", async () => {
     const { card, clock } = await played();
     card.run(0.25);
-    expect(clock(0.25, 0.2, true)).toBe(0.2);
+    expect(clock(0.25, 0.2, ready)).toBe(0.2);
     expect(card.currentTime).toBe(0.25);
   });
 
@@ -55,12 +60,24 @@ describe("the walk's clock", () => {
     vi.useFakeTimers({ toFake: ["performance"] });
     const { card, clock } = await played();
     vi.advanceTimersByTime(100);
-    expect(clock(0, Infinity, false)).toBeCloseTo(0.1, 9);
+    expect(clock(0, Infinity, onItsWay)).toBeCloseTo(0.1, 9);
     expect(card.currentTime).toBeCloseTo(0.1, 9);
     // What a frame took the card on to is not counted again.
-    clock(card.currentTime, 0.3, true);
+    clock(card.currentTime, 0.3, ready);
     vi.advanceTimersByTime(50);
-    expect(clock(card.currentTime, Infinity, false)).toBeCloseTo(0.35, 9);
+    expect(clock(card.currentTime, Infinity, onItsWay)).toBeCloseTo(0.35, 9);
+  });
+
+  // The time the card stood on a frame is not made up for by the next
+  // frame that is nowhere, which would pass the frames between.
+  test("goes by the time since it last stood for a frame that is nowhere", async () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const { card, clock } = await played();
+    vi.advanceTimersByTime(500);
+    expect(clock(0, 0.2, onItsWay)).toBe(0);
+    vi.advanceTimersByTime(16);
+    expect(clock(0, Infinity, onItsWay)).toBeCloseTo(0.016, 9);
+    expect(card.currentTime).toBeCloseTo(0.016, 9);
   });
 
   // Issue #583: a walk holds the sound card while its hand drags, and the
@@ -70,14 +87,14 @@ describe("the walk's clock", () => {
     const { play, card, clock } = await played();
     await holdSound(play, "hand", true);
     vi.advanceTimersByTime(5000);
-    expect(clock(0, 0.2, true)).toBe(0);
-    expect(clock(0, Infinity, false)).toBe(0);
+    expect(clock(0, 0.2, ready)).toBe(0);
+    expect(clock(0, Infinity, onItsWay)).toBe(0);
     expect(card.currentTime).toBe(0);
     await holdSound(play, "hand", false);
     expect(card.state).toBe("running");
     // The time held is not made up for once let go.
-    expect(clock(0, Infinity, false)).toBe(0);
-    expect(clock(0, 0.2, true)).toBe(0.2);
+    expect(clock(0, Infinity, onItsWay)).toBe(0);
+    expect(clock(0, 0.2, ready)).toBe(0.2);
   });
 
   // The queue makes its clock before it opens its sound card.
@@ -87,12 +104,12 @@ describe("the walk's clock", () => {
     const card = new WalkCard({ sampleRate: 1000 });
     play.audio = card as unknown as AudioContext;
     await card.resume();
-    expect(clock(0, 0.2, true)).toBe(0.2);
+    expect(clock(0, 0.2, ready)).toBe(0.2);
   });
 
   test("refuses a sound card the walk does not move", () => {
     const play = { playing: true, audio: {} as AudioContext } satisfies Play;
-    expect(() => walkClock(play)(0, 0.2, true)).toThrow("the walk's clock moves only the walk's sound card");
+    expect(() => walkClock(play)(0, 0.2, ready)).toThrow("the walk's clock moves only the walk's sound card");
   });
 });
 

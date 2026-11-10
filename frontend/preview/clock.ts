@@ -6,7 +6,8 @@
 //
 // A play goes from frame to frame as fast as the page draws them: the
 // walk's clock moves the walk's sound card on to the next frame the moment
-// that frame is decoded, and stands while it is still being decoded. So a
+// that frame is decoded and its captions are here, and stands while either
+// is on its way. So a
 // walk sees every frame of a play on any machine, the sound stays with the
 // picture, and a play of 3 s of a 5 fps video takes the 15 refreshes that
 // draw its frames, not 3 s. By the system's sound card a busy machine
@@ -19,16 +20,18 @@ import { FrameQueue, type Play, type PlayClock } from "../src/lib/frames/queue";
 // The queue makes its clock as it is made and its sound card as it
 // opens, so the card is looked up on each tick.
 export function walkClock(play: Play): PlayClock {
-  return (heard, unshown, coming) => {
+  return (heard, unshown, ready) => {
     const card = play.audio;
     if (!(card instanceof WalkCard)) throw new Error("the walk's clock moves only the walk's sound card, see install");
     if (card.state !== "running") return Math.min(heard, unshown);
-    // A frame decoded and waiting goes up on this tick, so the card goes
-    // on to its moment. A frame the queue says is nowhere, see unshown in
-    // queue.ts, never comes, so the card goes by the time that passed, as
-    // the system's does. A frame still being decoded holds the card.
-    if (coming && unshown > heard) return Math.min(heard + card.run(unshown - heard), unshown);
+    // A frame ready, decoded and waiting with its captions, goes up on
+    // this tick, so the card goes on to its moment. A frame the queue says
+    // is nowhere, see unshown in queue.ts, never comes, so the card goes by
+    // the time that passed, as the system's does. A frame still on its way
+    // holds the card, and the time it stands is not counted later.
     if (unshown === Infinity) return heard + card.follow();
+    if (unshown > heard && ready()) return Math.min(heard + card.run(unshown - heard), unshown);
+    card.stand();
     return Math.min(heard, unshown);
   };
 }
@@ -48,7 +51,7 @@ export class WalkCard extends EventTarget {
   state: AudioContextState = "suspended";
   onstatechange: ((ev: Event) => unknown) | null = null;
   private time = 0;
-  // When the time last moved, on the page's clock, for follow.
+  // When the time last moved or stood, on the page's clock, for follow.
   private moved = 0;
   private playing = new Set<WalkSource>();
 
@@ -72,9 +75,16 @@ export class WalkCard extends EventTarget {
   }
 
   // Moves the time on by the time that passed on the page's clock since it
-  // last moved or the card started.
+  // last moved, stood or started.
   follow(): number {
     return this.run((performance.now() - this.moved) / 1000);
+  }
+
+  // Stands where it is: the time that passes until the next move is
+  // counted from now, so a frame that held the card is not made up for
+  // once the next one is nowhere.
+  stand() {
+    this.moved = performance.now();
   }
 
   resume(): Promise<void> {

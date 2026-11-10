@@ -668,7 +668,7 @@ describe("the clock a play runs on", () => {
   }
 
   test("is the sound card's in the app", () => {
-    expect(queue().playClock(3.2, 3.04, false)).toBe(3.2);
+    expect(queue().playClock(3.2, 3.04, () => false)).toBe(3.2);
   });
 
   // The page the walks run on hands in the walk's clock, see
@@ -676,32 +676,36 @@ describe("the clock a play runs on", () => {
   test("is the one handed in for every queue made after", () => {
     const app = FrameQueue.clock;
     const told: unknown[] = [];
-    FrameQueue.clock = (play) => (heard, unshown, coming) => {
-      told.push([play, heard, unshown, coming]);
+    FrameQueue.clock = (play) => (heard, unshown, ready) => {
+      told.push([play, heard, unshown, ready()]);
       return unshown;
     };
     try {
       const q = queue();
-      expect(q.playClock(3.2, 3.04, true)).toBe(3.04);
+      expect(q.playClock(3.2, 3.04, () => true)).toBe(3.04);
       expect(told).toEqual([[q, 3.2, 3.04, true]]);
     } finally {
       FrameQueue.clock = app;
     }
-    expect(queue().playClock(3.2, 3.04, false)).toBe(3.2);
+    expect(queue().playClock(3.2, 3.04, () => false)).toBe(3.2);
   });
 
   // The play as the clock is told it: frames 0.2 s apart from 35 s, of
   // one run, with the frame of rank 102 on screen. asked is how many
   // frames the run's decoder has been asked for and not given yet.
-  function standing(k: number, ready: number[] = [], thisPlay = true, asked = 1) {
+  function standing(k: number, ready: number[] = [], thisPlay = true, asked = 1, over: FrameQueue["over"] = null) {
     const inside = queue() as unknown as {
       k: number;
       shown: unknown;
       slots: unknown;
       putFor: number;
       ticket: number;
-      unshown(plan: unknown): { at: number; coming: boolean };
+      over: FrameQueue["over"];
+      video: unknown;
+      unshown(plan: unknown): { at: number; ready: () => boolean };
     };
+    inside.over = over;
+    inside.video = { width: 2, height: 2, samples: { count: 3000, timescale: 25, start: 0, step: 1 } };
     inside.k = k;
     inside.putFor = thisPlay ? inside.ticket : inside.ticket - 1;
     inside.shown = { run: 0, rank: 102 };
@@ -716,7 +720,7 @@ describe("the clock a play runs on", () => {
     for (const k of [2, 3]) {
       const next = standing(k);
       expect(next.at).toBeCloseTo(35.6);
-      expect(next.coming).toBe(false);
+      expect(next.ready()).toBe(false);
     }
   });
 
@@ -748,6 +752,25 @@ describe("the clock a play runs on", () => {
   test("is told when the frame is decoded and waiting", () => {
     const next = standing(2, [103]);
     expect(next.at).toBeCloseTo(35.6);
-    expect(next.coming).toBe(true);
+    expect(next.ready()).toBe(true);
+  });
+
+  // A clock that goes on to a frame as soon as it is ready, the walk's,
+  // drew a frame a refresh, faster than its captions came, and the frame
+  // stood without them. The captions of the frame are asked for as it is
+  // asked, by the moment it starts at in the episode.
+  test("is told the frame is ready only once its captions are here", () => {
+    const asked: number[] = [];
+    let here = false;
+    const over = {
+      at: () => null,
+      coming() {},
+      ready: (frame: number) => (asked.push(frame), here ? null : new Promise<void>(() => {})),
+    };
+    const next = standing(2, [103], true, 1, over);
+    expect(next.ready()).toBe(false);
+    here = true;
+    expect(next.ready()).toBe(true);
+    expect(asked).toEqual([103 / 25, 103 / 25]);
   });
 });
