@@ -839,8 +839,10 @@ queue it makes, see `FrameQueue.clock` and `FrameQueue.soundCard` in
 clock. The app never builds `preview/`, so it holds no walk's clock, no
 walk's card and no switch for either. The walk's card plays nothing, and
 its time moves only when the walk's clock moves it: on to the next frame
-the moment that frame is decoded, never while it is still being decoded.
-So every frame of a play is shown on any machine, the sound stays with
+the moment that frame is decoded and its captions are here, never while
+either is on its way, and with no time made up for once it stood. So
+every frame of a play is shown with its captions on any machine, which
+the app manages by having the frame's time to fetch them, the sound stays with
 the picture, and a play takes the refreshes that draw its frames, not the
 time it lasts: 3 s of a 5 fps video are 15 refreshes, a quarter of a
 second. By the system's sound card a busy machine showed two frames of a
@@ -1079,7 +1081,7 @@ a wait on a signal, or a comparison with a state that moved:
 
 `make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3
 unless set, each walk as long as it says, 60 steps, or 25 for playback,
-which plays in real time, or 30 for searching, unless `STEPS` is set, through the Go test `TestWalks`,
+whose every step is a play that draws all its frames, or 30 for searching, unless `STEPS` is set, through the Go test `TestWalks`,
 which fails with what a sequence or a walk printed. The seeds are the
 same every time, so a walk that breaks a rule breaks it again on the
 next run. `make walks WALKS=40` looks further.
@@ -1180,8 +1182,8 @@ Measured on four cores, the cloud's and CI's, with the 3 seeds: the
 sequences were once one run, and took twelve minutes on one bridge while
 the other three had finished the fifteen walks in four and waited. Handed
 out one by one they took six and a half minutes on four bridges. A run
-spends most of its time waiting, on a clip that plays in real time and
-on the quiet after every step, so four bridges kept the cores busy only
+spent most of its time waiting then, on a clip that played in real time
+and on the quiet after every step, so four bridges kept the cores busy only
 part of the time. Six took five and a half minutes, the cores busy four
 fifths of it. The slowest run, a sequence that renders a short and looks
 at 122 of its frames in the video preview, takes a little over a minute,
