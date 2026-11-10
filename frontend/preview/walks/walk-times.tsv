@@ -1,13 +1,10 @@
  96	sequences.mjs SEQUENCE=the app dragged a pixel at a time moves every part one way, the sides equal and set by the width
  71	sequences.mjs SEQUENCE=a short of a picture that starts after its sound shows what the video preview shows
  69	sequences.mjs SEQUENCE=a short of a phone's uneven frames shows what the video preview shows
- 56	sequences.mjs SEQUENCE=two episodes of one file name number their shorts
  55	sequences.mjs SEQUENCE=a video added is transcribed to its end from its menu
  52	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
- 52	sequences.mjs SEQUENCE=two episodes never overwrite each other's shorts
  50	timeline.mjs SEED=3
  49	searching.mjs SEED=3
- 48	sequences.mjs SEQUENCE=render again writes the short over in place, with its pictures beside it
  46	searching.mjs SEED=2
  46	timeline.mjs SEED=1
  45	timeline.mjs SEED=2
@@ -35,7 +32,6 @@
  21	sequences.mjs SEQUENCE=a cut's left edge dragged shows the frames before the cut, never one after it
  21	sequences.mjs SEQUENCE=a short rendered into the folder for shorts is known as rendered
  20	sequences.mjs SEQUENCE=a clip card clicked puts up its clip from what was read while the hand rested
- 20	sequences.mjs SEQUENCE=a render of a 29.97 fps episode cuts on whole frames
  20	sequences.mjs SEQUENCE=a search of what was said finds the sentences, names their clips and puts the playhead on one
  20	sequences.mjs SEQUENCE=a video in Matroska shows in the video preview the frames its short has
  19	sequences.mjs SEQUENCE=Shift+Enter and the arrow keys keep the cursor in view in the report
@@ -95,7 +91,6 @@
   8	sequences.mjs SEQUENCE=The start sound plays once Dictate hears back, however late that is
   8	sequences.mjs SEQUENCE=While dictating the field follows the words until scrolled away, like a terminal
   8	sequences.mjs SEQUENCE=a frame shown before its key frame comes and plays
-  8	sequences.mjs SEQUENCE=a model is not changed or removed while a search still hears
   8	sequences.mjs SEQUENCE=a rotated part keeps its rotation when the cut before it is put back and made again
   8	sequences.mjs SEQUENCE=a search that failed is red everywhere, and its row can be removed, put back first
   8	sequences.mjs SEQUENCE=a word typed in a face libass thickens is as heavy as libass draws it

@@ -155,7 +155,7 @@ each with a POST:
 
 | Path | What it does |
 | --- | --- |
-| `/pick?seconds=N` | puts a new video of N seconds, not in the library, for the Add button's box to hand over next. It is a copy of one committed in `internal/fixtures`, named by `walkFixture` in `bridge_test.go`, so only the lengths and kinds there are can be asked for, and any other is refused with the name it would have. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only put there, not handed to the box, for a walk to drop instead. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own. With `&size=1080` it is made rather than copied, 1920 by 1080, the size a camera makes, and with `&size=2160` 3840 by 2160, with a key frame every two seconds and frames stored after their key frame, and carries no frame number, for `speed.mjs` |
+| `/pick?seconds=N` | puts a new video of N seconds, not in the library, for the Add button's box to hand over next. It is a copy of one committed in `internal/fixtures`, named by `walkFixture` in `bridge_test.go`, so only the lengths and kinds there are can be asked for, and any other is refused with the name it would have. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only put there, not handed to the box, for a walk to drop instead. With `&size=1080` it is made rather than copied, 1920 by 1080, the size a camera makes, and with `&size=2160` 3840 by 2160, with a key frame every two seconds and frames stored after their key frame, and carries no frame number, for `speed.mjs` |
 | `/drop` | takes the files in its body, a JSON list of paths, as dropped on the app, the way `WindowFilesDropped` does in the app: adds the videos with `dropFiles` and sends the window `dropped`. A walk does not call it itself: it calls `window._wails.handleDragEnter()`, `window._wails.handleDragOver(x, y)` and `window._wails.handlePlatformFileDrop(files, x, y)`, which `wails-bridge.ts` defines the way the runtime does, so a drop reaches `/drop` only where the page marks a drop target. A walk makes the video to drop with `/pick` and `&box=0`, so Add's box does not hand it over too |
 | `/drop-report` | takes the files in its body, a JSON list of paths, as dropped on the report window, the way `WindowFilesDropped` does on it: `bugs.go` attaches the pictures and tells the window. `wails-bridge.ts` sends a drop there when the page is the report window |
 | `/report-window` | says how many report windows the app made and brought forward and whether one is open, and with `?close=1` closes it, the way its close button does. The walk opens the report window itself as a second page on `?window=report` |
@@ -163,7 +163,7 @@ each with a POST:
 | `/report-made` | the names of the files in the last report on the bridge's Desktop, and with `?file=what-happened.txt` what that file in it holds |
 | `/pick-sound` | puts a new file of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers. Told to answer again, it answers what it held too, the way a slow model answers in the end, so a search that was asked while it held does not find for good and keep every video added after it from being transcribed |
-| `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
+| `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. |
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
 | `/hold?call=Search&gate=shut&times=K&answer=1&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `answer=1` the call reaches the Go side at once and only its answer waits for `gate=open`, so the news of what it set going comes before it, `hold(page, name, true)`. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
 | `/clock?run=MS` | runs the clock removed work is timed by on by MS milliseconds, and makes every call due by then before it answers. The Go side keeps that time and forgets the work once it is up, see `removal.go`, and `runClock` in `walks/bridge.mjs` runs it on with the page's clock, so the ten seconds a walk runs on are the same ten seconds on both sides, on any machine. `/clock?hold` holds it with the page's clock and `/clock?go` lets it go again, see `holdClock` and `letClockGo`, so while a walk holds the page's time a busy machine spends none of Go's either. Let go, it goes as the system's clock does |
@@ -552,27 +552,13 @@ word, `blocks`, a block on the clip timeline for every caption the engine
 has, and `cuts`, how many cuts the clip timeline shows. For finding clips: `model` holds, fails or answers,
 `add` a video, press the clip list's `head` button and `restart` the app,
 and then `wait for` the head to say a word, a `row` to say something, and
-how many `cards` the list holds. For a render: `add` a video filmed at a
-frame rate, press `render` and wait for the short, and `short`, the short
-read back from disk holding exactly the frames of the clip's pieces, each
-the right frame of the episode by its bands, with its sound as long as
-its picture and quiet at each cut for no longer than the render's fade,
-and `rendered`, the clip saying its short is in its episode's folder
+how many `cards` the list holds. For a render: press `render` and wait for the short, and `rendered`,
+the clip saying its short is in its episode's folder
 inside the folder the settings name for shorts, which the bridge sets,
 with the file there, the app
 serving it, Render saying Render again and Show in folder there.
 For shorts: `thumbnail`, which presses T and waits for the clip to have
-one more thumbnail, `keep` the clip on screen with its short, its
-pictures and the shorts in its folder, `words again`, which makes the
-speech stand-in say its sentences from the first word so the next
-video's clip has the same name, and `add namesake`, a video of the
-bridge's episode's file name from another folder. Then `apart`, the
-clip on screen with a short of its own, the kept short the same file and
-still its clip's, and its pictures all there and untouched, `in place`,
-the clip's short rendered again at the path kept with no number, written
-again, and no other short in its folder, and `pictured`, the short's
-pictures beside it in its episode's folder, one for each thumbnail of
-the clip and no more, and `by its words`, the short named after the
+one more thumbnail, and `by its words`, the short named after the
 clip's words alone, `<slug>.mp4`, with nothing of its id.
 `captions like the short`, after `render`, makes the video preview as
 large as the short, steps to the start and the middle of a dozen words and
@@ -770,23 +756,16 @@ switch, and the clip timeline drew two pieces.
 presses Render, asks `rendered`, closes and opens the app, and asks it
 again. Against main's engine it fails at the first `rendered`: the clip
 says it has no short, because only the episode's own `out/` was looked
-in. Until then `short` and `shots` found the short in that folder by hand.
+in.
 
-`two episodes never overwrite each other's shorts` renders the bridge's
-episode, adds a video heard with the same words, so its clip has the same
-name, and renders that. Against main's engine it fails at `apart`: both
-episodes' shorts are the same file in the folder for shorts, so the
-second wrote over the first. `two episodes of one file name number their
-shorts` does the same with a video of the same file name, whose short
-has to be called as the first with ` 2` after it, in the same folder.
-Its first clip has two thumbnails and the second none, so a render of
-the second that took the pictures by the clip's name would take the
-first's away. `render again writes the short over in place, with its
-pictures beside it` gives the clip two thumbnails, renders, renders
-again and asks `in place` and `pictured`. With a render again that picks
-a new number it fails at `in place`, and with pictures named and cleared
-by the clip's name rather than the short's it fails the namesake
-sequence at `apart`. See 2.133 in [GUI-PLAN.md](GUI-PLAN.md).
+Where shorts go is the engine's rule and is tested in Go: two videos
+never write over each other's shorts, two of one file name number
+theirs, and a render again writes over the clip's own short with its
+pictures beside it, `TestTwoEpisodesKeepTheirOwnShorts`,
+`TestARenderAgainWritesOverOnlyItsOwnShort` and
+`TestARenderPutsItsShortWhereItsNameSays`. Three sequences did the same
+through the app, rendering two or three shorts each on every push. See
+2.133 in [GUI-PLAN.md](GUI-PLAN.md).
 
 #### What depends on how fast the machine is
 
@@ -1357,16 +1336,11 @@ in it. Every one of six walks showed it within sixteen steps. 2.121
 fixed it on main at the same time, `playFrom` in `lib/playhead.ts`, and
 the walk now holds it there.
 
-The render is held to its frames by a sequence too, "a render of a
-29.97 fps episode cuts on whole frames": a video of 40 seconds at 29.97
-fps added with Add, its clip cut twice with a double-click, rendered with
-Render, and the short read back. The cuts are where words end and start,
-whole milliseconds, but the frames they land on start between two, the
-case 2.125 is about. Against the render of main before 2.125 it fails
-with 567 frames where the pieces hold 565, the first piece running a
-frame into the part cut out, 169 frames more the wrong frame, the sound
-71 ms longer than the picture, and 30 to 40 ms of quiet at each cut
-where the fade is 15. With 2.125 it passes, in about 8 seconds.
+The render is held to its frames in Go, `TestARenderCutsOnWholeFrames`,
+the case 2.125 is about: cuts where words end and start, whole
+milliseconds, on frames that start between two. A sequence did the same
+through the app and rendered a short for it on every push. It was taken
+out, since the app only hands the clip to the engine.
 
 Two sequences hold the render to the video preview where the frames do
 not keep to their rate, plan row 2.130: "a short of a phone's uneven
@@ -1378,13 +1352,18 @@ picture begins, renders it with Render and reads the short back. Its
 rate has to be 30 for the phone's frames, their average of 29.75
 rounded, and 29.97 for the late picture, its own. Then, with the clip
 timeline pinched in to a tenth, the playhead is put with a click on the
-moments the short's frames stand for, the first and last three of every
-piece and every fifth between, and the frame on the video preview's
-canvas, read from its bands, has to be the short's frame. The playhead
-goes after the moment and before the episode's next frame begins, by the
-times ffprobe reads from the file, so the preview shows the frame that
-holds the moment. 114 and 121 frames are looked at, all of them the
-same, in three runs out of three. Against the render before 2.130 the
+moments the short's frames stand for, one where each piece starts and
+one where it ends, and the frame on the video preview's canvas, read
+from its bands, has to be the short's frame. The playhead goes after the
+moment and before the episode's next frame begins, by the times ffprobe
+reads from the file, so the preview shows the frame that holds the
+moment. They once looked at every fifth frame between as well, over a
+minute each. Go holds every frame now:
+`TestARenderShowsTheFrameThatHoldsEachMoment` and
+`TestTheVideoPreviewShowsTheFramesOfTheShort` check that the short and
+the video preview each show the frame that holds its moment, and
+`TestEveryFrameOfAShortIsAFrameOfTheVideoPreview` that their moments are
+the same. Against the render before 2.130 the
 phone's short is made at 50 frames a second and the late picture's
 holds 565 frames where its pieces last 564.
 
