@@ -1417,8 +1417,8 @@ export const steps = {
   //                    puts the playhead in the clip, this share of the
   //                    way along it, with a click on the clip timeline, and
   //                    presses R, which rotates the part of the clip there,
-  //                    and the video preview has to show it rotated within
-  //                    300 ms, before a held answer comes
+  //                    and the video preview has to show it rotated in the
+  //                    first frame drawn after the press, or the one after
   async "rotate at"(walk, arg, s) {
     const { page, watch } = walk;
     const g = await handles(page);
@@ -1433,9 +1433,9 @@ export const steps = {
     await shownOnPlayhead(page);
     const turn = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.turn));
     const before = await turn();
-    const took = await keyShows(page, "r", (b) => Number(document.querySelector(".screen").dataset.turn) !== b, before);
-    if (took < 0) walk.wrong = `R left the video preview rotated ${before}`;
-    else if (took > 300) walk.wrong = `the video preview rotated ${took} ms after R, not at once`;
+    const frames = await keyShows(page, "r", (b) => Number(document.querySelector(".screen").dataset.turn) !== b, before);
+    if (frames < 0) walk.wrong = `R left the video preview rotated ${before}`;
+    else if (frames > 1) walk.wrong = `the video preview rotated ${frames} frames after R, not at once`;
     await watch.step("press", s);
   },
   // ["keyframe at", share]
@@ -1443,8 +1443,8 @@ export const steps = {
   //                    way along it, with a click on the clip timeline,
   //                    waits for the video preview to show that frame, and
   //                    presses C, and the clip timeline has to show a crop
-  //                    mark lit on the playhead's frame within 300 ms,
-  //                    before a held answer comes
+  //                    mark lit on the playhead's frame in the first frame
+  //                    drawn after the press, or the one after it
   async "keyframe at"(walk, arg, s) {
     const { page, watch } = walk;
     const g = await handles(page);
@@ -1456,14 +1456,14 @@ export const steps = {
     await shownOnPlayhead(page);
     const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
     const before = await count();
-    const took = await keyShows(
+    const frames = await keyShows(
       page,
       "c",
       (b) => document.querySelectorAll(".clip-timeline .cropdot").length > b && !!document.querySelector(".clip-timeline .cropdot.here"),
       before,
     );
-    if (took < 0) walk.wrong = "C put no keyframe on the playhead's frame";
-    else if (took > 300) walk.wrong = `the keyframe showed ${took} ms after C, not at once`;
+    if (frames < 0) walk.wrong = "C put no keyframe on the playhead's frame";
+    else if (frames > 1) walk.wrong = `the keyframe showed ${frames} frames after C, not at once`;
     await watch.step("press", s);
     await settle(page);
   },
@@ -2033,26 +2033,28 @@ export const steps = {
 // Steps that take the same body as the step they are walked by.
 steps["scrub far"] = steps["click far"];
 
-// How long the page took from a key going down to the first animation
-// frame on which shows holds, in the page's own time. Timed from Node, a
-// press and the polling that waits for its answer are calls to the
-// browser, and on a busy runner each can take a frame or more to arrive:
-// C was once 538 ms "after C" in CI where the page showed the keyframe in
-// a frame or two. The time starts when the page handles the keydown, so
-// it is how long the app took to answer the key, not how long a busy
-// machine took to hand the key over. -1 when it does not hold once the
-// app has settled on the key.
+// How many animation frames the page drew after a key went down before
+// the first one on which shows holds: 0 when the frame after the key
+// shows it. Counted in frames, not in milliseconds: on a busy runner one
+// frame can take a third of a second, and C was 538 ms and then 332 ms
+// "after C" in WebKit in CI, where a frame or two take that long. The
+// count starts when the page handles the keydown, so it is how the app
+// answered the key, not how long a busy machine took to hand it over. -1
+// when it does not hold once the app has settled on the key.
 async function keyShows(page, key, shows, arg) {
   await page.evaluate(
     ([source, arg]) => {
       const shows = new Function(`return (${source})`)();
-      window.__keyShows = { down: -1, took: -1 };
-      addEventListener("keydown", () => (window.__keyShows.down = performance.now()), { capture: true, once: true });
+      window.__keyShows = { down: false, frames: 0, shown: false };
+      addEventListener("keydown", () => (window.__keyShows.down = true), { capture: true, once: true });
       const tick = () => {
         const k = window.__keyShows;
-        if (k.down < 0) return requestAnimationFrame(tick);
-        if (shows(arg)) k.took = performance.now() - k.down;
-        else requestAnimationFrame(tick);
+        if (!k.down) return requestAnimationFrame(tick);
+        if (shows(arg)) k.shown = true;
+        else {
+          k.frames++;
+          requestAnimationFrame(tick);
+        }
       };
       requestAnimationFrame(tick);
     },
@@ -2060,7 +2062,7 @@ async function keyShows(page, key, shows, arg) {
   );
   await page.keyboard.press(key);
   await settle(page);
-  return page.evaluate(() => (window.__keyShows.took >= 0 ? Math.round(window.__keyShows.took) : -1));
+  return page.evaluate(() => (window.__keyShows.shown ? window.__keyShows.frames : -1));
 }
 
 // Reads the edge of that label, the playhead and the frame the video
