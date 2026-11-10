@@ -751,7 +751,9 @@ export const steps = {
       const tick = () => {
         if (!window.__playWatch) return;
         const at = Number(document.querySelector(".screen")?.dataset.playhead);
-        window.__played.push([performance.now(), at, window.__pictured ? window.__pictured() : -1]);
+        // The sound card's clock too, which the playhead follows while
+        // it plays, see "played through".
+        window.__played.push([performance.now(), at, window.__pictured ? window.__pictured() : -1, window.__frameQueue.audio.currentTime]);
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
