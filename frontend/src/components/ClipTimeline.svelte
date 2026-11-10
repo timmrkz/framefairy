@@ -1689,31 +1689,37 @@
     const held = capDraft?.index;
     type Group = { blocks: typeof shownBlocks; from: number; to: number };
     const holds = (g: Group) => held !== undefined && g.blocks.some((b) => b.i === held);
-    const groups: Group[] = shownBlocks.map((b) => ({ blocks: [b], from: b.from, to: b.to }));
-    const stays = new Set<Group>();
-    for (;;) {
-      let narrow = -1;
-      for (let k = 0; k < groups.length; k++) {
-        const g = groups[k];
-        const wide = g.to - g.from;
-        if (wide >= least || stays.has(g) || holds(g)) continue;
-        if (narrow < 0 || wide < groups[narrow].to - groups[narrow].from) narrow = k;
+    // One pass from left to right: a block too narrow joins the one before
+    // it when that gap is the smaller, and is carried on to the next one
+    // otherwise, and what it joined is looked at again.
+    const groups: Group[] = [];
+    const join = (g: Group, b: Group) => {
+      g.blocks.push(...b.blocks);
+      g.from = Math.min(g.from, b.from);
+      g.to = Math.max(g.to, b.to);
+      return g;
+    };
+    let carried: Group | null = null;
+    shownBlocks.forEach((block, k) => {
+      const own: Group = { blocks: [block], from: block.from, to: block.to };
+      let g: Group | null = carried ? join(carried, own) : own;
+      carried = null;
+      const next = shownBlocks[k + 1];
+      while (g.to - g.from < least && !holds(g)) {
+        const before = groups.at(-1);
+        const left = before && !holds(before) ? g.from - before.to : Infinity;
+        const right = next && next.i !== held ? next.from - g.to : Infinity;
+        if (left === Infinity && right === Infinity) break;
+        if (left <= right) {
+          g = join(groups.pop()!, g);
+          continue;
+        }
+        carried = g;
+        g = null;
+        break;
       }
-      if (narrow < 0) break;
-      const g = groups[narrow];
-      const before = groups[narrow - 1];
-      const after = groups[narrow + 1];
-      const left = before && !holds(before) ? g.from - before.to : Infinity;
-      const right = after && !holds(after) ? after.from - g.to : Infinity;
-      if (left === Infinity && right === Infinity) {
-        stays.add(g);
-        continue;
-      }
-      const into = left <= right ? narrow - 1 : narrow;
-      const a = groups[into];
-      const b = groups[into + 1];
-      groups.splice(into, 2, { blocks: [...a.blocks, ...b.blocks], from: Math.min(a.from, b.from), to: Math.max(a.to, b.to) });
-    }
+      if (g) groups.push(g);
+    });
     return groups.map((g) => {
       if (g.blocks.length === 1) {
         const b = g.blocks[0];
