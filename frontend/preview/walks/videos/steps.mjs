@@ -815,11 +815,11 @@ export const steps = {
     // and nothing else's, Tim's call on #458.
     // Where the dots of what is not transcribed are, part by part,
     // from where to where each is drawn.
-    // And how far the columns of dots stand in from the part's right
-    // edge, which moves every dot sideways when it changes.
+    // And where its grid of dots begins, from the range picker's start,
+    // which moves every dot sideways when it changes.
     const dotsNow = () =>
       [...document.querySelectorAll(".unheard")]
-        .map((el) => `${el.style.getPropertyValue("--at")} to ${el.style.getPropertyValue("--to")} laid ${getComputedStyle(el, "::before").right} in`)
+        .map((el) => `${el.style.getPropertyValue("--at")} to ${el.style.getPropertyValue("--to")} laid from ${el.offsetLeft + parseFloat(getComputedStyle(el, "::before").backgroundPositionX)} px`)
         .join(", ");
     await page.evaluate(`window.dotsNow = ${dotsNow}`);
     const pick = (want) =>

@@ -615,13 +615,6 @@
     return [p.from ?? 0, p.covered];
   });
   const heard = $derived(mark.seen(path, saved, live, restarted));
-  // Where the work hears into a part not transcribed yet, so its dots
-  // stand still under the edge. The whole video on hold still holds its
-  // part, so the dots do not shift as it waits and carries on, Tim's
-  // report of 24 October. Nothing holds the edge on a stop: the engine
-  // keeps no piece heard after it, so the edge it last reported is the
-  // edge it saved, found by the third review of #458.
-  const givingAt = $derived(live ? live[1] : wholePart && !wholeHearing ? wholePart[0] : -1);
 
   // Whether the episode has been heard to the end of the window. A search
   // of a window not heard yet hears it first, which the title of Search says.
@@ -2867,8 +2860,6 @@
     {unheard}
     unheardLit={saying ? unheardLit : -1}
     unheardOn={saying ? unheardOn : -1}
-    giving={givingAt}
-    givingTo={transcribing && transcribing.to ? transcribing.to : -1}
     part={wholePart}
     partWaiting={!wholeHearing}
     partKey={wholeWork?.id ?? ""}
