@@ -745,6 +745,9 @@ export const steps = {
     // Each wait is in the episode's time, read off the playhead, see
     // playUntil.
     await playUntil(page, { most: 0.7 });
+    // The plays started so far, so "played through" can tell whether the
+    // drag started the play again.
+    const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
     await page.evaluate(() => {
       window.__played = [];
       window.__playWatch = true;
@@ -752,8 +755,11 @@ export const steps = {
         if (!window.__playWatch) return;
         const at = Number(document.querySelector(".screen")?.dataset.playhead);
         // The sound card's clock too, which the playhead follows while
-        // it plays, see "played through".
-        window.__played.push([performance.now(), at, window.__pictured ? window.__pictured() : -1, window.__frameQueue.audio.currentTime]);
+        // it plays, whether the sound card runs, and whether the play is
+        // on, see "played through".
+        const card = window.__frameQueue?.audio;
+        const playing = !!document.querySelector('button[aria-label="Pause"]');
+        window.__played.push([performance.now(), at, window.__pictured ? window.__pictured() : -1, card?.currentTime, card?.state === "running", playing]);
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -779,6 +785,7 @@ export const steps = {
     // play does, until it has read thirty, counted on the page.
     await pageUntil(page, () => window.__played.length >= 30 || !document.querySelector('button[aria-label="Pause"]'));
     await page.evaluate(() => (window.__playWatch = false));
+    walk.startedAgain = (await page.evaluate(() => window.__frameQueue.stats.starts)) - starts;
     // Paused in the frame the watch ended, so what comes next settles on
     // a clip that stands. Left to play, the settle waited for its end.
     await playUntil(page, { most: 0, pause: true });

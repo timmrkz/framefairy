@@ -1370,15 +1370,24 @@ export const steps = {
     }
   },
   // ["played through"] since "drag while playing", the play went on as if
-  //                    no hand were there: the playhead never went back nor
-  //                    stood still while the sound card played on for
-  //                    longer than a frame of the video and 150 ms, since
-  //                    it moves once a frame with the sound heard (#446),
-  //                    and no frame drawn was older than the one before it
+  //                    no hand were there: it never started again, the
+  //                    sound card ran all the while the play was on, the
+  //                    playhead never went back nor stood still while the
+  //                    sound card's clock ran on for longer than a frame of
+  //                    the video and 150 ms, since it moves once a frame
+  //                    with the sound heard (#446), and no frame drawn was
+  //                    older than the one before it
   async "played through"(walk) {
     const { page } = walk;
     const played = await page.evaluate(() => window.__played ?? []);
     const frame = 1 / (await rate(page));
+    // A play started again stands until its first frame and sound are
+    // in, however quickly, so a drag ahead of what was fed may start
+    // none, counted in plays and not by how long one took, issue #715.
+    if (walk.startedAgain) {
+      walk.wrong = `the play started again ${walk.startedAgain} time${walk.startedAgain === 1 ? "" : "s"} while the hand was on the edge`;
+      return;
+    }
     // Read on the sound card's clock, which the playhead follows, and
     // not by the page's refreshes, which come at no steady pace: in
     // WebKit with motion on a busy runner, five came in 192 ms as the
@@ -1387,7 +1396,8 @@ export const steps = {
     // playhead seen the same from one refresh to another stood for at
     // least the sound card's time from the first of them to the one
     // before the last, whichever of the page's and the walk's frame
-    // callbacks runs first in a refresh.
+    // callbacks runs first in a refresh. A sound card that stops stops
+    // its clock with the playhead, so it is to run while the play is on.
     let first = 0;
     let longest = 0;
     for (let i = 1; i < played.length && !walk.wrong; i++) {
@@ -1399,9 +1409,11 @@ export const steps = {
       else longest = Math.max(longest, played[i - 1][3] - played[first][3]);
     }
     if (!walk.wrong && played.length < 30) walk.wrong = `only ${played.length} animation frames were read`;
-    if (!walk.wrong && !played.every(([, , , card]) => Number.isFinite(card))) walk.wrong = "the sound card's clock was not read on every refresh";
+    if (!walk.wrong && !played.every(([, , , clock]) => Number.isFinite(clock))) walk.wrong = "the sound card's clock was not read on every refresh";
+    const stopped = played.filter(([, , , , running, playing]) => playing && !running).length;
+    if (!walk.wrong && stopped) walk.wrong = `the sound card did not run on ${stopped} refreshes while the play was on`;
     if (!walk.wrong && longest > frame + 0.15) {
-      walk.wrong = `the playhead stood still while the sound card played ${(longest * 1000).toFixed(0)} ms on, a frame is ${(frame * 1000).toFixed(0)} ms`;
+      walk.wrong = `the playhead stood still while the sound card's clock ran ${(longest * 1000).toFixed(0)} ms on, a frame is ${(frame * 1000).toFixed(0)} ms`;
     }
   },
   // ["stopped at its end"]
