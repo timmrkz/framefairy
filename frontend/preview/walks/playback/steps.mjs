@@ -159,6 +159,25 @@ export const steps = {
   //                    AppFrames.ahead
   async "read ahead"(walk, arg, s) {
     const { page, watch } = walk;
+    // A read ahead held back, see ["hold the read ahead"], is let go
+    // only once the app has settled and the wait for what is read ahead
+    // was seen still waiting for it.
+    const held = walk.aheadHeld;
+    if (held) {
+      walk.aheadHeld = null;
+      await held.reached;
+      await page.evaluate(() => {
+        window.__aheadRested = false;
+        window.__readAheadRested().then(() => (window.__aheadRested = true));
+      });
+      await settle(page);
+      const early = await page.evaluate(() => window.__aheadRested);
+      held.letGo();
+      if (early) {
+        walk.wrong = "the wait for what is read ahead was over with a frame still being read ahead, so a walk pressed the key before its frame was in";
+        return;
+      }
+    }
     // The hand rests until what the video preview reads ahead is in.
     await settle(page);
     await restAhead(page);
@@ -194,6 +213,31 @@ export const steps = {
     // now, may come from a stream. The frame it lands on may not.
     if (!came.fromKept) walk.wrong = `${arg} to ${came.at.toFixed(3)} s had to fetch its frame, though the hand rested until what is read ahead was in`;
     await watch.step("press", s);
+  },
+  // ["hold the read ahead"]
+  //                    holds back the next frame the video preview reads
+  //                    ahead with a skip, the first frame of a word beside
+  //                    the playhead, until the next ["read ahead"] has
+  //                    seen the wait for it still waiting. The wait once
+  //                    asked a workspace built behind the one in front,
+  //                    asleep, so it was over at once, and a busy machine
+  //                    let the key go before the frame was in
+  async "hold the read ahead"(walk) {
+    const { page } = walk;
+    let reached;
+    let letGo;
+    const held = { reached: new Promise((done) => (reached = done)), letGo: () => letGo() };
+    const free = new Promise((done) => (letGo = done));
+    walk.aheadHeld = held;
+    await page.context().route(
+      /\/frames\/read\?.*skip=/,
+      async (route) => {
+        reached();
+        await free;
+        await route.continue();
+      },
+      { times: 1 },
+    );
   },
   // ["heard"]          rests until the app has settled, plays with the
   //                    space bar and asks that the sound card was handed

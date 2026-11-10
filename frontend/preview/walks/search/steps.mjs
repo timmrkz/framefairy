@@ -666,8 +666,8 @@ export const steps = {
       // run at that pitch over exactly their span. The browser's own
       // dashes went their own way, dots on to the edge sat too close to
       // the dashes, and a row and a column left clear looked cut off,
-      // all found by Tim. On the range picker the dots are whole
-      // columns centred in the part.
+      // all found by Tim. On the range picker every part shows the one
+      // grid laid from its start, see below.
       const grid = await page.evaluate(() => {
         const li = document.querySelector("ol.said li.hole");
         const dots = li.querySelector(".dots");
@@ -686,33 +686,21 @@ export const steps = {
         const px = (t) => (t ?? "").match(/-?[\d.]+px/g)?.map(parseFloat) ?? [];
         const pitch = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dot-pitch"));
         const track = document.querySelector(".track");
-        const pad = parseFloat(getComputedStyle(track).borderLeftWidth);
         const columns = [...track.querySelectorAll(".unheard")].map((u) => {
-          // A part the work is hearing into has its dots laid from
-          // where its hearing stops, up to its left edge, see the walk
-          // of the parts giving way. What it is once the work stops is read with
-          // that taken off.
-          const giving = u.classList.contains("giving");
-          const g = getComputedStyle(u, "::before");
-          const laid = giving ? [parseFloat(g.left), parseFloat(g.right), g.backgroundPositionX] : null;
-          u.classList.remove("giving");
           const b = getComputedStyle(u, "::before");
           const part = u.getBoundingClientRect();
-          const left = parseFloat(b.left);
-          const width = parseFloat(b.width);
-          const at = {
-            // What is left either side of the columns of dots, and how
-            // many columns there are.
-            sides: [left, part.width - left - width].map((v) => Math.round(v * 100) / 100),
-            columns: width / pitch,
+          return {
+            // What is left either side of the dots, which reach both
+            // edges of the part.
+            sides: [parseFloat(b.left), part.width - parseFloat(b.left) - parseFloat(b.width)].map((v) => Math.round(v * 100) / 100),
+            // Where its grid of dots begins, from the start of the
+            // range picker, which is where every part's grid begins.
+            grid: u.offsetLeft + parseFloat(b.backgroundPositionX),
+            tile: b.backgroundSize,
             height: [parseFloat(b.top), parseFloat(b.height) - part.height],
             foot: b.backgroundPositionY,
             fade: b.maskImage,
-            laid,
-            worked: u.classList.contains("worked"),
           };
-          if (giving) u.classList.add("giving");
-          return at;
         });
         return {
           pitch,
@@ -802,23 +790,16 @@ export const steps = {
         walk.wrong = `the dashes of a card do not stand on its dots: dots ${grid.span.join(" by ")} px at ${grid.room[0]} and ${grid.room[2]} px in, dashes laid ${grid.dashes[0]} at ${grid.dashes[3]}, ${grid.dashes[1]}`;
       else if (grid.dots[2] !== grid.columns[0]?.fade)
         walk.wrong = `the dots of a card leave a row or a column clear round them: masked by ${grid.dots[2]}`;
-      else if (
-        grid.columns.some(
-          (c) => c.height.some(Boolean) || !c.fade.endsWith("rgb(0, 0, 0))") || !Number.isInteger(c.columns) || c.sides.some((v) => v < 0 || v >= (c.worked ? grid.pitch : grid.pitch / 2)),
-        )
-      )
-        walk.wrong = `the dots of a part on the range picker leave a row or a column clear round them: ${JSON.stringify(grid.columns)}`;
-      // Centred, the same either side, found by Tim, who measured it.
-      // A part the work heard into keeps its dots where they stood,
-      // whole columns laid from where its hearing stops, so none jumps
-      // sideways as the work stops, Tim's report of 24 October, see
-      // the walk of the dots after a search's window.
-      else if (grid.columns.some((c) => !c.worked && c.sides[0] !== c.sides[1]))
-        walk.wrong = `the dots of a part on the range picker are not centred in it: ${JSON.stringify(grid.columns.map((c) => [c.worked, c.sides]))}, worked and left and right`;
-      // While the work hears into a part, its edge wipes the dots, so
-      // they reach its left edge, and end on a whole column.
-      else if (grid.columns.some((c) => c.laid && (c.laid[0] !== 0 || !(c.laid[1] >= 0 && c.laid[1] < grid.pitch) || !/px$/.test(c.laid[2]))))
-        walk.wrong = `the dots of a part the work hears into do not reach its left edge as whole columns: ${JSON.stringify(grid.columns.map((c) => c.laid))}`;
+      // Every part on the range picker shows the one grid of dots laid
+      // from the start of the range picker, from edge to edge, so what is
+      // heard only peels dots away at its edges and no dot ever moves.
+      // A grid of its own, centred in the part or laid from a moment its
+      // work picked, was laid again as the part changed, and the dots
+      // walked sideways, Tim's reports of 24 October and 9 November.
+      else if (grid.columns.some((c) => c.height.some(Boolean) || !c.fade.endsWith("rgb(0, 0, 0))") || c.sides.some(Boolean) || c.tile !== tile))
+        walk.wrong = `the dots of a part on the range picker do not reach its edges: ${JSON.stringify(grid.columns)}`;
+      else if (grid.columns.some((c) => c.grid !== 0))
+        walk.wrong = `the dots of a part on the range picker are laid from a grid of its own, not from the range picker's start: ${JSON.stringify(grid.columns.map((c) => c.grid))} px from it`;
       // And the foot row a pixel up from the range picker's foot,
       // where it looked clutched to it, found by Tim.
       else if (grid.columns.some((c) => c.foot !== "calc(100% - 1px)"))
@@ -2102,8 +2083,8 @@ export const steps = {
   // ["dots begin at the window"]
   //                    once a search heard its window and the window moved
   //                    on, the part not transcribed yet begins where the
-  //                    window now begins, and its first column of dots
-  //                    stands at that edge, with no room left over there,
+  //                    window now begins, its dots reach that edge, laid
+  //                    from the range picker's start like every part's,
   //                    and that edge is a dashed line in the grey of a
   //                    card's edge, a dash beside each row of dots
   async "dots begin at the window"(walk, arg, s) {
@@ -2117,8 +2098,8 @@ export const steps = {
       walk.wrong = `the window begins at ${from} s and the transcript reaches ${reach} s, so no part begins where the window does`;
       return;
     }
-    // The part that begins at the window's edge, and how far in from
-    // that edge its first column of dots stands.
+    // The part that begins at the window's edge, how far in from that
+    // edge its dots begin, and where its grid of dots begins.
     const part = await page.evaluate(() => {
       const pitch = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dot-pitch"));
       const track = document.querySelector(".track").getBoundingClientRect();
@@ -2131,7 +2112,7 @@ export const steps = {
           width: r.width,
           in: parseFloat(b.left),
           out: parseFloat(b.right),
-          worked: u.classList.contains("worked"),
+          grid: u.offsetLeft + parseFloat(b.backgroundPositionX),
           // Its dashed edges: which sides, in what, and laid how.
           edges: [e.borderLeftStyle, e.borderRightStyle, e.borderTopStyle, e.borderBottomStyle],
           colour: e.borderLeftColor,
@@ -2154,9 +2135,9 @@ export const steps = {
       walk.wrong = `no part not transcribed yet after the window's edge: ${JSON.stringify(part)}`;
       return;
     }
-    if (first.in !== 0)
-      walk.wrong = `the first column of dots after the window stands ${first.in} px in from the window's edge, not at it: ${JSON.stringify(first)}, dots ${part.pitch} px apart`;
-    else if (first.out < 0 || first.out >= part.pitch) walk.wrong = `the dots after the window are not whole columns: ${JSON.stringify(first)}`;
+    if (first.in !== 0 || first.out !== 0)
+      walk.wrong = `the dots after the window stand ${first.in} px in from the window's edge and ${first.out} px in from their end, not at them: ${JSON.stringify(first)}, dots ${part.pitch} px apart`;
+    else if (first.grid !== 0) walk.wrong = `the dots after the window are laid ${first.grid} px from the range picker's start, a grid of their own: ${JSON.stringify(first)}`;
     // Its edge is dashed, a dash beside each row of dots, and it runs to
     // the end of the video, where the range picker's border is its edge,
     // Tim's report of 26 October, 12.27. The dashes are as strong as the

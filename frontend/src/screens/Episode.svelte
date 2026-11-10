@@ -1,3 +1,17 @@
+<script lang="ts" module>
+  // The workspaces made, for the walks, which wait on the read ahead of
+  // the one in front, the way the video preview's handles find theirs,
+  // see awake in Player.svelte, or while none is in front yet, the one
+  // asked for, which is the one not away. A handle each workspace set as
+  // it woke pointed the walks at one built behind it, asleep, so they
+  // waited on nothing and pressed a key with its frame still to come.
+  const made: { rested: () => Promise<void>; front: () => boolean; awake: () => boolean }[] = [];
+  Object.defineProperty(window, "__readAheadRested", {
+    configurable: true,
+    get: () => (made.findLast((w) => w.front()) ?? made.findLast((w) => w.awake()) ?? made.at(-1))?.rested,
+  });
+</script>
+
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
   import { fade } from "svelte/transition";
@@ -615,13 +629,6 @@
     return [p.from ?? 0, p.covered];
   });
   const heard = $derived(mark.seen(path, saved, live, restarted));
-  // Where the work hears into a part not transcribed yet, so its dots
-  // stand still under the edge. The whole video on hold still holds its
-  // part, so the dots do not shift as it waits and carries on, Tim's
-  // report of 24 October. Nothing holds the edge on a stop: the engine
-  // keeps no piece heard after it, so the edge it last reported is the
-  // edge it saved, found by the third review of #458.
-  const givingAt = $derived(live ? live[1] : wholePart && !wholeHearing ? wholePart[0] : -1);
 
   // Whether the episode has been heard to the end of the window. A search
   // of a window not heard yet hears it first, which the title of Search says.
@@ -1891,9 +1898,13 @@
       if (!viewAsking) return;
     }
   }
-  $effect(() => {
-    if (away) return;
-    (window as unknown as { __readAheadRested?: () => Promise<void> }).__readAheadRested = rested;
+  onMount(() => {
+    const me = { rested, front: () => !!root?.closest(".workspace.front"), awake: () => !away };
+    made.push(me);
+    return () => {
+      const at = made.indexOf(me);
+      if (at >= 0) made.splice(at, 1);
+    };
   });
 
   // Read again as the cards change, and as the pointer comes to one: the
@@ -2867,8 +2878,6 @@
     {unheard}
     unheardLit={saying ? unheardLit : -1}
     unheardOn={saying ? unheardOn : -1}
-    giving={givingAt}
-    givingTo={transcribing && transcribing.to ? transcribing.to : -1}
     part={wholePart}
     partWaiting={!wholeHearing}
     partKey={wholeWork?.id ?? ""}
