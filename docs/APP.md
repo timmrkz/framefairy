@@ -2333,6 +2333,21 @@ found is a place in the video, and I and O make a clip there.
   to where it began, found by Tim. Enter at a card walked to stays there,
   and so does a card clicked or the playhead moved off the card walked
   to, because then the person went where they meant to go.
+- **Shift and a click pick cards, and Copy copies their words.** The
+  way files are picked in Finder, Shift and a click pick every card
+  from the card of the playhead to the one clicked, in the grey the card
+  of the playhead wears, and the playhead stays (#783). Another Shift and
+  a click moves the far end. A click without Shift, or another search,
+  picks none again. Copy in the Edit menu, ⌘C, puts the words of the
+  cards picked on the clipboard as one running text, or the words of the
+  card of the playhead when none is picked, without times or clip names.
+  Two clips over the same words copy them once. Words chosen in a field
+  are copied first, the way Copy copies them everywhere. Copy in the menu
+  is the app's, `appMenu` in `menu.go`, the way Undo is, because the
+  stock one copies only text chosen on the page: the interface says what
+  to copy, `lib/copy.ts`, and the Go side puts it on the clipboard. The
+  app never reads the clipboard, see What is never signed in
+  [UPDATES.md](UPDATES.md).
 - **A press elsewhere closes a list.** A list open, the font list among
   them, closes the moment anything else in the app is pressed, and the
   keyboard goes to what was pressed, the way a menu on the Mac goes. The

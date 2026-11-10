@@ -11,7 +11,8 @@ export default [
     name: "a search of what was said finds the sentences, names their clips and puts the playhead on one",
     // A second clip, made with I, so choosing one on the range picker has
     // somewhere to take the list.
-    steps: [["trim", "start", 300], ["make while paused", "i"], ["search said", "Jahre"]],
+    // Shift and a click pick cards and Copy copies their words, Tim's ask.
+    steps: [["trim", "start", 300], ["make while paused", "i"], ["search said", ["Jahre", 0, "copy"]]],
   },
   {
     // Found by Tim: a word corrected in the caption box read corrected in

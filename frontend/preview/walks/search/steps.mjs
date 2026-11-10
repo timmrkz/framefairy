@@ -246,7 +246,13 @@ export const steps = {
   //                    putting the playhead on its sentence, and Escape,
   //                    with the keyboard on that card, giving the head and
   //                    the clips back. A word of "*" is the longest word
-  //                    of the first sentence
+  //                    of the first sentence.
+  // ["search said", [word, n, "copy"]]
+  //                    and Shift and a click picking the cards from the
+  //                    current one to the one clicked, with the playhead
+  //                    where it was, and Copy putting their words on the
+  //                    clipboard, the words chosen in the field when there
+  //                    are any, and a card clicked alone alone
   async "search said"(walk, arg, s) {
     const { page, settled, watch } = walk;
     const path = await episodeOn(page);
@@ -256,7 +262,7 @@ export const steps = {
     const listed = (await ask(page, "Clips", path)).filter((c) => !c.rejected).length;
     await pageUntil(page, (n) => document.querySelectorAll("aside ol li[data-key] button.pick").length >= n, listed);
     await settled();
-    let [word, unheardLeast = 0] = [arg].flat();
+    let [word, unheardLeast = 0, copying = false] = [arg].flat();
     if (word === "*") {
       const first = (await ask(page, "Sentences", path))[0]?.text ?? "";
       word = first.split(/[^\p{L}]+/u).sort((a, b) => b.length - a.length)[0] ?? "";
@@ -1368,6 +1374,85 @@ export const steps = {
         else if (up.followed !== squeezed.rows[0]) walk.wrong = `Shift and the up arrow went to ${up.followed}, not ${squeezed.rows[0]}`;
         else if (Math.abs(up.foot) > 1)
           walk.wrong = `the card walked up to above the top of the list stands ${up.foot.toFixed(0)} px above the foot, not turned to the foot`;
+      }
+    }
+    // Shift and a click pick every card from the card of the playhead
+    // to the one clicked, the way files are picked in Finder, and Copy
+    // in the Edit menu puts their words on the clipboard as one text,
+    // Tim's ask. The playhead stays where it is. A field with words
+    // chosen in it copies those, and a card clicked alone is copied
+    // alone. Once, in the walk that asks for it, since every walk of the
+    // search would only check the same again.
+    if (!walk.wrong && copying) {
+      await field.fill("");
+      await watch.step("type", s);
+      const copy = async () => {
+        const answered = page.waitForResponse((r) => {
+          if (!r.url().includes("/call")) return false;
+          try {
+            return JSON.parse(r.request().postData() ?? "{}").name?.split(".").pop() === "Copy";
+          } catch {
+            return false;
+          }
+        });
+        await page.evaluate(() => window.__copy());
+        await watch.step("press", s);
+        await answered;
+        return control(url, "/clipboard");
+      };
+      // The engine's words of a card, by the key the list knows it by.
+      const words = (key) => {
+        const [at, clip] = key.slice(1).split("|");
+        return sentences.find((x) => String(x.start) === at && (x.clip ?? "") === clip)?.text.trim();
+      };
+      const span = await page.evaluate(() => {
+        const ol = document.querySelector("ol.said");
+        const rows = [...ol.querySelectorAll("li[data-row]")].map((li) => ({ key: li.dataset.row, card: !!li.querySelector("button.pick") }));
+        const from = rows.findIndex((r) => r.key === ol.dataset.followed);
+        const to = rows.findIndex((r, i) => i > from + 1 && r.card);
+        return from < 0 || to < 0 || !rows[from].card ? null : { keys: rows.slice(from, to + 1).filter((r) => r.card).map((r) => r.key), at: document.querySelector(".screen")?.dataset.playhead };
+      });
+      if (!span) walk.wrong = "the card of the playhead has no card two below it to pick to";
+      else {
+        await page.locator(`ol.said li[data-row="${span.keys.at(-1)}"] button.pick`).click({ modifiers: ["Shift"] });
+        await watch.step("click", s);
+        const picked = await page.evaluate(() => ({
+          keys: [...document.querySelectorAll("ol.said button.pick.picked")].map((b) => b.closest("li").dataset.row),
+          grey: [...document.querySelectorAll("ol.said button.pick.picked")].map((b) => getComputedStyle(b).backgroundColor),
+          current: getComputedStyle(document.querySelector("ol.said button.pick.current") ?? document.body).backgroundColor,
+          at: document.querySelector(".screen")?.dataset.playhead,
+        }));
+        // Two clips over the same words each have a card of them, and
+        // the words are copied once.
+        const want = span.keys.filter((k, i) => i === 0 || k.split("|")[0] !== span.keys[i - 1].split("|")[0] || words(k) !== words(span.keys[i - 1])).map(words).join(" ");
+        const onClipboard = await copy();
+        if (picked.keys.join() !== span.keys.join()) walk.wrong = `Shift and a click picked ${JSON.stringify(picked.keys)}, not ${JSON.stringify(span.keys)}`;
+        else if (picked.grey.some((g) => g !== picked.current)) walk.wrong = `the cards picked wear ${[...new Set(picked.grey)]}, not the grey of the current card, ${picked.current}`;
+        else if (picked.at !== span.at) walk.wrong = `Shift and a click moved the playhead from ${span.at} to ${picked.at}`;
+        else if (onClipboard !== want) walk.wrong = `Copy put ${JSON.stringify(onClipboard)} on the clipboard, not the words of the ${span.keys.length} cards picked, ${JSON.stringify(want)}`;
+        // Words chosen in the field are what Copy copies, and the new
+        // search picks no card of the list before.
+        if (!walk.wrong) {
+          await field.fill(word);
+          await watch.step("type", s);
+          await field.selectText();
+          const inField = await copy();
+          const still = await page.evaluate(() => document.querySelectorAll("ol.said button.pick.picked").length);
+          if (inField !== word) walk.wrong = `Copy with ${word} chosen in the search field put ${JSON.stringify(inField)} on the clipboard`;
+          else if (still) walk.wrong = `a new search still shows ${still} cards picked`;
+        }
+        // A card clicked alone picks none, and Copy copies its words.
+        if (!walk.wrong) {
+          await field.fill("");
+          await watch.step("type", s);
+          const one = span.keys[1];
+          await page.locator(`ol.said li[data-row="${one}"] button.pick`).click();
+          await watch.step("click", s);
+          const alone = await copy();
+          const still = await page.evaluate(() => document.querySelectorAll("ol.said button.pick.picked").length);
+          if (still) walk.wrong = `a click without Shift left ${still} cards picked`;
+          else if (alone !== words(one)) walk.wrong = `Copy after a click on a card put ${JSON.stringify(alone)} on the clipboard, not its words, ${JSON.stringify(words(one))}`;
+        }
       }
     }
     // The keyboard on a card of what was typed, for Escape.

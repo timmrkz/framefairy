@@ -2323,6 +2323,11 @@ export const Events = {
       return () => delete (window as any).__quit;
     }
     // And Help, Acknowledgements with window.__help().
+    // And Copy, Cmd+C, with window.__copy().
+    if (name === "copy") {
+      (window as any).__copy = () => fn({ data: null });
+      return () => delete (window as any).__copy;
+    }
     if (name === "acknowledgements") {
       (window as any).__help = () => fn({ data: null });
       return () => delete (window as any).__help;
