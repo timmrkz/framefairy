@@ -671,6 +671,17 @@ A test is code we keep. It must still be right and readable in a year.
   browser engine or a platform of its own, run the same steps there too
   before saying it works there. Typing, focus, hover, painting and timing
   are where engines differ.
+- **Only what the window can show.** An interface test checks two
+  things: that a key or a click does what the person meant, and that
+  the screen shows what the core sent. Rules the core decides, file
+  formats and long lists of values go in unit tests of the core, and the
+  interface test checks once that the screen shows the result. Time in
+  an interface test runs on a clock the test moves, the sound card and
+  the timers too, so a one minute clip plays as fast as its frames can
+  be drawn.
+- **Add a step, not a test.** Every interface test starts the product
+  from scratch, which costs seconds on every run. A new case goes into
+  a test that is already there.
 
 ## 12. CI holds the rules
 

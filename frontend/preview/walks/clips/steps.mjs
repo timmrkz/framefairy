@@ -1688,22 +1688,28 @@ async function pickRested(page, n) {
   const problems = [];
   for (let i = 0; i < n; i++) {
     if (i === 1) {
-      const ahead = await page.evaluate(() => window.__appFrames.stats.ahead);
+      // Counted from before the press, and ended by the play's end too:
+      // on the walk's clock a play draws a frame a refresh, and counted
+      // from after the press, the clip's 103 frames ended with fewer than
+      // a hundred counted, and the walk waited for good.
+      const { ahead, drawn } = await page.evaluate(() => ({ ahead: window.__appFrames.stats.ahead, drawn: window.__frameQueue.stats.drawn }));
       await page.keyboard.press("Space");
-      await page.evaluate(
-        () =>
+      const playing = await page.evaluate(
+        (from) =>
           new Promise((done) => {
             const q = window.__frameQueue;
-            const from = q.stats.drawn;
-            const off = q.listen(() => {
-              if (q.stats.drawn - from < 100) return;
-              off();
-              done();
-            });
+            const look = (s) => {
+              if (q.stats.drawn - from < 100 && !s?.ended) return false;
+              done(!s?.ended);
+              return true;
+            };
+            if (look(null)) return;
+            const off = q.listen((s) => look(s) && off());
           }),
+        drawn,
       );
       const read = (await page.evaluate(() => window.__appFrames.stats.ahead)) - ahead;
-      await page.keyboard.press("Space");
+      if (playing) await page.keyboard.press("Space");
       if (read) problems.push(`${read} frames were read ahead while the clip played`);
     }
     await restAhead(page);

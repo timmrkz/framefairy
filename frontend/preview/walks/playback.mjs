@@ -132,9 +132,10 @@ const gestures = [
         return `nothing, ${why}`;
       };
       if (!(await playsClip())) return off("the playhead is on the video");
-      // Played from anywhere, a clip takes up to half a minute of real
-      // time to reach its end, and that was most of what the walks took.
-      // So the playhead goes a moment before the last cut first, which is
+      // Played from anywhere, a clip has up to half a minute to reach its
+      // end, every frame of it drawn, which took half a minute when plays
+      // ran in real time and is still most of what a walk draws. So the
+      // playhead goes a moment before the last cut first, which is
       // still a cut to jump on the way, or before the end when there is
       // none.
       await nearEnd(p, g);

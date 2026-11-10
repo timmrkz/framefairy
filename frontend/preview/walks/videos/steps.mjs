@@ -1142,22 +1142,47 @@ export const steps = {
       // is shorter than a piece, so the piece waiting is the last.
       await page.keyboard.press("Escape");
       await menu.waitFor({ state: "detached" });
+      // The share of the video the dots still cover, every part of it
+      // together. Read as the whole when there were two parts, it stayed
+      // the whole while a piece was heard, and the walk waited for good
+      // on a change that never came.
       const left = () =>
         page.evaluate(() => {
-          const parts = [...document.querySelectorAll(".unheard")].map((el) => Number(/round\(([\d.]+) \*/.exec(el.style.getPropertyValue("--at"))?.[1] ?? 0));
-          return parts.length === 1 ? 1 - parts[0] : 1;
+          const share = (el, edge) => Number(/round\(([\d.]+) \*/.exec(el.style.getPropertyValue(edge))?.[1] ?? 0);
+          return [...document.querySelectorAll(".unheard")].reduce((sum, el) => sum + share(el, "--to") - share(el, "--at"), 0);
         });
       const { duration } = await ask(page, "Source", source);
-      for (let n = 0; (await left()) * duration >= 25; n++) {
+      for (let n = 0, was = await left(); was * duration >= 25; n++) {
         if (n >= 200) {
           walk.wrong = "two hundred pieces heard, and the whole video still has more than a piece left";
           break;
         }
-        const seen = await news(page);
+        // The piece let on is waited for by the dots it moves, not by the
+        // next news of any kind: news of something else let the walk on
+        // before the piece was heard, it let on a second, and the last
+        // two went at once with nothing left to stop.
+        // A transcription that ended with the dots where they were has
+        // no piece left to move them, and says so once the app has
+        // caught up with its end, rather than waiting on it for good.
+        let seen = await news(page);
         await control(url, "/speech?step=1");
-        await nextNews(page, seen);
+        for (let now = was; now === was; now = await left()) {
+          const job = await transcription();
+          if (job?.state !== "running" && job?.state !== "queued") {
+            await caughtUp(page, url);
+            if ((await left()) === was) walk.wrong = `the whole video's transcription is ${job?.state ?? "gone"} with ${(was * 100).toFixed(1)} % of the video still dotted`;
+            break;
+          }
+          seen = await nextNews(page, seen);
+        }
+        if (walk.wrong) break;
+        was = await left();
       }
       if (walk.wrong) return;
+      if (!(await left())) {
+        walk.wrong = "the whole video was heard before its last piece, with none left to stop on";
+        return;
+      }
       await control(url, "/speech?hold=one");
       await row.hover();
       await row.locator("button.more").click();
