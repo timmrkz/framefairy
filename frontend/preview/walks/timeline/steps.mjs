@@ -860,7 +860,7 @@ export const steps = {
     if (!playingAtLetGo) walk.wrong = `the play had ended at ${atLetGo.toFixed(3)} before the hand let go, so the walk proves nothing`;
     else if (!(newEnd < atLetGo)) walk.wrong = `the clip ends at ${newEnd.toFixed(3)}, not before the playhead at ${atLetGo.toFixed(3)} where the hand let go`;
     else if (!ran.playing) walk.wrong = `the play stopped at ${ran.at.toFixed(3)}, with the clip's end moved from ${oldEnd.toFixed(3)} to ${newEnd.toFixed(3)} behind the playhead`;
-    else if (played.length < 30) walk.wrong = `only ${played.length} animation frames were read while it played`;
+    else if (played.length < READS) walk.wrong = `only ${played.length} animation frames were read while it played`;
     else if (startedAgain) walk.wrong = `the play started again ${startedAgain} times once the end was behind the playhead`;
     for (let i = 1; i < played.length && !walk.wrong; i++) {
       const [at, n] = played[i];
@@ -964,7 +964,7 @@ export const steps = {
     if (!(newEnd < oldEnd - 1)) walk.wrong = `the end was dragged in only from ${oldEnd.toFixed(3)} to ${newEnd.toFixed(3)}`;
     else if (Math.abs(end - want) > 1e-3) walk.wrong = `${done}, and the clip ends at ${end.toFixed(3)}, not ${want.toFixed(3)}`;
     else if (!playingAtBack || !(atBack < newEnd - frame)) walk.wrong = `the play was at ${atBack.toFixed(3)}, ${playingAtBack ? "playing" : "stopped"}, after ${menu.join(" and ")}, not before the end at ${newEnd.toFixed(3)}, so the walk proves nothing`;
-    else if (played.length < 30) walk.wrong = `only ${played.length} animation frames were read while it played`;
+    else if (played.length < READS) walk.wrong = `only ${played.length} animation frames were read while it played`;
     else if (!(reached > want - 3 * frame && reached < want + frame)) walk.wrong = `${done}, and the play stopped at ${reached.toFixed(3)}, not at the clip's end at ${want.toFixed(3)}`;
     else if (startedAgain) walk.wrong = `${done}, and the play started again ${startedAgain} times`;
     else walk.wrong = inACut(played, pieces, frame);
@@ -1036,7 +1036,7 @@ export const steps = {
     const ahead = Math.min(...[...cutsOf(before), ...cutsOf(pieces)].map(([a]) => a));
     if (JSON.stringify(before) === JSON.stringify(pieces)) walk.wrong = `${what} changed nothing in the clip`;
     else if (!playingAtBack || !(atBack < ahead - frame)) walk.wrong = `the play was at ${atBack.toFixed(3)}, ${playingAtBack ? "playing" : "stopped"}, after ${what}, not before the cut at ${ahead.toFixed(3)}, so the walk proves nothing`;
-    else if (played.length < 30) walk.wrong = `only ${played.length} animation frames were read while it played`;
+    else if (played.length < READS) walk.wrong = `only ${played.length} animation frames were read while it played`;
     else if (!(reached > past - 0.5)) walk.wrong = `after ${what} the play stopped at ${reached.toFixed(3)}, not past the cut`;
     else if (startedAgain) walk.wrong = `after ${what} the play started again ${startedAgain} times`;
     else if (gone.some(([a, b]) => !played.some(([at]) => at > a + frame && at < b - frame))) walk.wrong = `after ${what} took the cut away the play still jumped it`;
@@ -2129,6 +2129,13 @@ async function watchCaptions(page) {
 function cutsOf(pieces) {
   return pieces.slice(1).map((p, i) => [pieces[i].end, p.start]);
 }
+
+// The animation frames a play has to be read on before a walk judges it.
+// On the walk's clock a play goes on a frame a refresh at most, so every
+// frame it draws is read, and two reads are a play seen moving. Thirty
+// were asked once, half a second of a play in real time, and a play on
+// the walk's clock through a few frames of the clip makes fewer.
+const READS = 2;
 
 // What is wrong when a play recorded as [playhead, frame, playing] stood
 // inside a cut of the pieces, more than a frame from its edges: it played
