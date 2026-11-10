@@ -795,26 +795,31 @@ goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
 #464.
 
-Every walk plays on the walk's clock, `preview/clock.ts`. The page the
-walks run on hands it to every frame queue it makes, see `FrameQueue.clock`
-in `lib/frames/queue.ts`, whose own clock is the sound card's. The app
-never builds `preview/`, so it holds no walk's clock and no switch for
-one. It moves on to the next frame only once
-the one before is up, and holds the sound card while a frame is still
-being decoded, so every frame of a play is shown on any machine and the
-sound stays with the picture. By the sound card's clock, the app's, a busy machine showed two
-frames of a glide's nine, issue #534, and a play of the captions showed
-fewer frames, each longer, issue #338. Each of those walks had a clock
-of its own, until a new walk that played was the next to fail, issue
-#588. A sequence that checks what a play does on the sound's own time
-plays on the sound card's clock instead, the way the app does: how much
-sound the sound card is handed, the loop switched off as the sound comes
-to the clip's end, and a playhead that never stands still while a hand
-drags. It asks for it by one of those steps, `soundCard` in
-`common/steps.mjs`, the way a sequence asks for motion, see Where they
-run below, and a new step of that kind goes in there. `smooth.mjs` asks
-`open` for it by name, `clock: "sound"`, which the page reads from
-`window.__playClock` before the app starts. A walk can also hold the sound
+Every walk plays on the walk's clock and the walk's sound card,
+`preview/clock.ts`. The page the walks run on hands both to every frame
+queue it makes, see `FrameQueue.clock` and `FrameQueue.soundCard` in
+`lib/frames/queue.ts`, whose own are the system's sound card and its
+clock. The app never builds `preview/`, so it holds no walk's clock, no
+walk's card and no switch for either. The walk's card plays nothing, and
+its time moves only when the walk's clock moves it: on to the next frame
+the moment that frame is decoded, never while it is still being decoded.
+So every frame of a play is shown on any machine, the sound stays with
+the picture, and a play takes the refreshes that draw its frames, not the
+time it lasts: 3 s of a 5 fps video are 15 refreshes, a quarter of a
+second. By the system's sound card a busy machine showed two frames of a
+glide's nine, issue #534, a play of the captions showed fewer frames,
+each longer, issue #338, and every play took as long as it lasts. Each of
+those walks had a clock of its own, until a new walk that played was the
+next to fail, issue #588. A sequence that checks what a play does on the
+sound's own time, or listens to the sound, plays on the system's sound
+card and its clock instead, the way the app does: how much sound the
+sound card is handed, the loop switched off as the sound comes to the
+clip's end, and a playhead that never stands still while a hand drags.
+It asks for it by one of those steps, `soundCard` in `common/steps.mjs`,
+the way a sequence asks for motion, see Where they run below, and a new
+step of that kind goes in there. `smooth.mjs` asks `open` for it by name,
+`clock: "sound"`, which the page reads from `window.__playClock` before
+the app starts. A walk can also hold the sound
 card a moment by hand, `holdSound`, as the end dragged back past the
 playing playhead does while the hand drags, issue #583. The fold of a removed row is held as Svelte makes it and stepped
 through by hand, in twenty steps, and at each the card under the row

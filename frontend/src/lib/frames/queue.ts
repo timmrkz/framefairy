@@ -761,9 +761,9 @@ export class FrameQueue {
     // once, on its way out, rather than stretch by stretch. It starts held,
     // and the first play, a gesture, lets it go.
     try {
-      this.audio = new AudioContext(this.sound ? { sampleRate: this.sound.sampleRate } : {});
+      this.audio = FrameQueue.soundCard(this.sound ? { sampleRate: this.sound.sampleRate } : {});
     } catch {
-      this.audio = new AudioContext();
+      this.audio = FrameQueue.soundCard({});
     }
     this.out = this.audio.createGain();
     this.out.connect(this.audio.destination);
@@ -1553,6 +1553,11 @@ export class FrameQueue {
   // the walks run on hands in the walk's, see preview/clock.ts, which the
   // app never builds.
   static clock: (play: Play) => PlayClock = () => (heard) => heard;
+  // The sound card a queue plays on, made as it opens. The app's is the
+  // system's. What runs the queue hands in one of its own the same way as
+  // clock: the page the walks run on hands in a card whose time the walk's
+  // clock moves, see preview/clock.ts.
+  static soundCard: (options: AudioContextOptions) => AudioContext = (options) => new AudioContext(options);
   playClock: PlayClock = FrameQueue.clock(this);
   get playing(): boolean {
     return this.state === "playing";

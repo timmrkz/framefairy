@@ -1,52 +1,186 @@
 // The walk's clock, which a play runs on in the page the walks run on, see
-// install. It is a test's own clock, so it lives here with the walks and
-// the app never builds it: the app plays on the sound card's clock, see
-// FrameQueue.clock.
+// install, and the sound card it moves. Both are a test's own, so they
+// live here with the walks and the app never builds them: the app plays on
+// the system's sound card and its clock, see FrameQueue.clock and
+// FrameQueue.soundCard.
 //
-// It stands on each frame of a play until it is up, and holds the sound
-// card meanwhile, so a walk sees every frame of a play on any machine and
-// the sound stays with the picture. By the sound card's clock a busy
-// machine showed 2 frames of 9, issue #534, and standing on frames alone
-// left the sound running on ahead, so a loop switched off or a cut made
-// while playing went by the sound's moment, not the picture's, issue #588.
+// A play goes from frame to frame as fast as the page draws them: the
+// walk's clock moves the walk's sound card on to the next frame the moment
+// that frame is decoded, and stands while it is still being decoded. So a
+// walk sees every frame of a play on any machine, the sound stays with the
+// picture, and a play of 3 s of a 5 fps video takes the 15 refreshes that
+// draw its frames, not 3 s. By the system's sound card a busy machine
+// showed 2 frames of 9, issue #534, standing on frames alone left the sound
+// running on ahead, so a loop switched off or a cut made while playing went
+// by the sound's moment, not the picture's, issue #588, and every play took
+// as long as it lasts.
 import { FrameQueue, type Play, type PlayClock } from "../src/lib/frames/queue";
 
 export function walkClock(play: Play): PlayClock {
-  // A frame coming, decoded and waiting, goes up on this tick, so the
-  // sound card runs on for it.
+  const card = play.audio;
+  if (!(card instanceof WalkCard)) throw new Error("the walk's clock moves only the walk's sound card, see install");
   return (heard, unshown, coming) => {
-    void holdSound(play, "frame", heard > unshown && !coming);
+    if (card.state !== "running") return Math.min(heard, unshown);
+    // A frame decoded and waiting goes up on this tick, so the card goes
+    // on to its moment. A frame the queue says is nowhere, see unshown in
+    // queue.ts, never comes, so the card goes by the time that passed, as
+    // the system's does. A frame still being decoded holds the card.
+    if (coming && unshown > heard) return Math.min(heard + card.run(unshown - heard), unshown);
+    if (unshown === Infinity) return heard + card.follow();
     return Math.min(heard, unshown);
   };
 }
 
-// Who holds a play's sound card: the walk's clock for a frame not up yet,
-// "frame", and the walk's hand while it drags, "hand", see holdSound in
-// walks/bridge.mjs and issue #583. The sound card runs again only once
-// nobody holds it, and only while a play goes on: a play the app pauses or
-// ends holds it itself, and a play that starts starts it. Held again on
-// every tick, whoever holds it, since the app may have started it
-// meanwhile: a play asked for starts the sound card a moment after its
-// Pause button shows, so a hand that held it in between held a card that
-// was not running yet, and the play then ran to the clip's end on the
-// sound card's time, issue #702.
+// A sound card whose time moves only when the walk's clock moves it, see
+// walkClock, or by the time that passes while nothing is coming. It does
+// what the frame queue asks of the system's: it runs, is held and closed,
+// and takes stretches of sound and a gain, which it plays nowhere. A
+// stretch ends once the card's time has passed it, the way the system's
+// says so. What listens to the sound plays on the system's card instead,
+// see soundCard in walks/common/steps.mjs.
+export class WalkCard extends EventTarget {
+  readonly sampleRate: number;
+  readonly baseLatency = 0;
+  readonly outputLatency = 0;
+  readonly destination = new WalkNode();
+  state: AudioContextState = "suspended";
+  onstatechange: ((ev: Event) => unknown) | null = null;
+  private time = 0;
+  // When the time last moved, on the page's clock, for follow.
+  private moved = 0;
+  private playing = new Set<WalkSource>();
+
+  constructor(options: AudioContextOptions = {}) {
+    super();
+    this.sampleRate = options.sampleRate ?? 48000;
+  }
+
+  get currentTime(): number {
+    return this.time;
+  }
+
+  // Moves the time on by seconds while the card runs, and says by how
+  // much it moved.
+  run(seconds: number): number {
+    if (this.state !== "running" || !(seconds > 0)) return 0;
+    this.time += seconds;
+    this.moved = performance.now();
+    for (const s of this.playing) s.reached(this.time);
+    return seconds;
+  }
+
+  // Moves the time on by the time that passed on the page's clock since it
+  // last moved or the card started.
+  follow(): number {
+    return this.run((performance.now() - this.moved) / 1000);
+  }
+
+  resume(): Promise<void> {
+    return this.become("running");
+  }
+
+  suspend(): Promise<void> {
+    return this.become("suspended");
+  }
+
+  close(): Promise<void> {
+    return this.become("closed");
+  }
+
+  // Says the new state the way the system's card does, after the call
+  // that asked for it has returned.
+  private become(state: AudioContextState): Promise<void> {
+    return Promise.resolve().then(() => {
+      if (this.state === state || this.state === "closed") return;
+      this.state = state;
+      if (state === "running") this.moved = performance.now();
+      const e = new Event("statechange");
+      this.onstatechange?.(e);
+      this.dispatchEvent(e);
+    });
+  }
+
+  createGain(): GainNode {
+    const gain = {
+      value: 1,
+      cancelScheduledValues: () => gain,
+      setValueAtTime: (v: number) => ((gain.value = v), gain),
+      linearRampToValueAtTime: (v: number) => ((gain.value = v), gain),
+    };
+    return Object.assign(new WalkNode(), { gain }) as unknown as GainNode;
+  }
+
+  createBuffer(channels: number, length: number, rate: number): AudioBuffer {
+    return { numberOfChannels: channels, length, sampleRate: rate, duration: length / rate, copyToChannel() {} } as unknown as AudioBuffer;
+  }
+
+  createBufferSource(): AudioBufferSourceNode {
+    return new WalkSource(this, this.playing) as unknown as AudioBufferSourceNode;
+  }
+}
+
+class WalkNode {
+  connect<T>(to: T): T {
+    return to;
+  }
+  disconnect() {}
+}
+
+// A stretch of sound on the walk's sound card. It ends at its own end or
+// where it was stopped, once the card's time has passed that.
+class WalkSource extends WalkNode {
+  buffer: AudioBuffer | null = null;
+  onended: (() => void) | null = null;
+  private ends = Infinity;
+  private stops = Infinity;
+  private started = false;
+  private done = false;
+
+  constructor(
+    private card: WalkCard,
+    private playing: Set<WalkSource>,
+  ) {
+    super();
+  }
+
+  start(when = 0, offset = 0) {
+    if (this.started) throw new DOMException("a stretch of sound starts once", "InvalidStateError");
+    this.started = true;
+    const from = Math.max(when, this.card.currentTime);
+    this.ends = from + Math.max(0, (this.buffer?.duration ?? 0) - offset);
+    this.playing.add(this);
+    this.reached(this.card.currentTime);
+  }
+
+  stop(when = 0) {
+    if (!this.started) throw new DOMException("a stretch of sound stops only once it started", "InvalidStateError");
+    this.stops = when;
+    this.reached(this.card.currentTime);
+  }
+
+  reached(time: number) {
+    if (this.done || time < Math.min(this.ends, this.stops)) return;
+    this.done = true;
+    this.playing.delete(this);
+    queueMicrotask(() => this.onended?.());
+  }
+}
+
+// Holds a play's sound card by the walk's hand while it drags, "hand",
+// see holdSound in walks/bridge.mjs and issue #583, or lets it go. The
+// card runs again only once nobody holds it, and only while a play goes
+// on: a play the app pauses or ends holds it itself, and a play that
+// starts starts it. A play asked for starts the sound card a moment after
+// its Pause button shows, so a hand that held it in between held a card
+// that was not running yet, issue #702: the card is held again the moment
+// it says it runs. Without it a play the hand held from before the space
+// bar ran on while the walk settled, to the clip's end.
 //
-// Nobody holding it, the card runs for as long as a play goes on,
-// whoever stopped it: the browser suspends a card on its own too. WebKit
-// suspends it when its media session is interrupted, and when the
-// interruption is over before the suspension is done, the card stays
-// suspended and nobody is told, see suspendPlayback in WebKit's
-// AudioContext.cpp. A card made while its session was interrupted ran
-// for 98 ms of a play and then stood, and the walk waited six minutes on
-// a play that never moved. Started again only by a hand or a frame that
-// had held it, it stood for good. Settles once the sound card has done
-// what it was told.
-//
-// A play on the sound card's own clock has no tick of the walk's to hold
-// the card again, so the card is held again the moment it says it runs.
-// Without it a play the hand held from before the space bar ran on the
-// sound card's time while the walk settled, to the clip's end, in the
-// walks that listen to the sound.
+// Let go, the card runs for as long as a play goes on, whoever stopped
+// it: WebKit suspends the system's card on its own when its media session
+// is interrupted, and left it suspended, see suspendPlayback in WebKit's
+// AudioContext.cpp. Settles once the sound card has done what it was
+// told.
 const holders = new WeakMap<Play, Set<string>>();
 const starting = new WeakMap<Play, Promise<void>>();
 export function holdSound(play: Play, who: string, held: boolean): Promise<void> {
@@ -71,14 +205,17 @@ export function holdSound(play: Play, who: string, held: boolean): Promise<void>
   return start;
 }
 
-// Hands every queue the page makes the walk's clock, unless the walk asked
-// for the sound card's with window.__playClock, see open in
+// Hands every queue the page makes the walk's clock and sound card, unless
+// the walk asked for the system's with window.__playClock, see open in
 // walks/bridge.mjs. window.__holdSound(held) holds the sound card of the
 // queue on the video preview by the walk's hand, or lets it go. Called by
 // wails-bridge.ts before the app makes its first queue.
 export function install() {
   const page = window as unknown as { __playClock?: string; __frameQueue?: Play; __holdSound?: (held: boolean) => Promise<void> };
-  if (page.__playClock !== "sound") FrameQueue.clock = walkClock;
+  if (page.__playClock !== "sound") {
+    FrameQueue.soundCard = (options) => new WalkCard(options) as unknown as AudioContext;
+    FrameQueue.clock = walkClock;
+  }
   page.__holdSound = (held) => {
     if (!page.__frameQueue) throw new Error("there is no video preview whose sound card the hand could hold");
     return holdSound(page.__frameQueue, "hand", held);
