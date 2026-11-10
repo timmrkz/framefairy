@@ -191,7 +191,7 @@ func TestTheKeyframesAndTheCropFollowAnEdgeTheHandDrags(t *testing.T) {
 	}
 	plan := filepath.Join(engine.LogsDir(video), "clips.json")
 	if err := afero.WriteFile(svc.store.files, plan, []byte(`{"source": "ep.mp4", "clips": [
-	  {"id": "01", "slug": "eins", "segments": [{"start": 10.0, "end": 14.0}], "words": [[10.1, 10.5, "eins"]],
+	  {"id": "01", "slug": "eins", "segments": [{"start": 10.0, "end": 14.0, "crop_x": 40}], "words": [[10.1, 10.5, "eins"]],
 	   "crop_marks": [{"at": 11.0, "x": 10, "glide": true}, {"at": 13.0, "x": 300, "glide": true}]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}

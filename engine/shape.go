@@ -132,23 +132,57 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 	if err != nil {
 		return Shaped{}, err
 	}
-	shaped := Shaped{Playhead: playhead, Clip: clip}
-	shaped.Clip.Segments = nil
-	// Each piece with the keyframes that steer it, and the clip with the
-	// ones it shows, an edge or a cut carrying those it covers, the way
-	// LoadClips gives them once the gesture is saved. So the keyframes,
-	// where the crop glides and the crop itself follow the hand.
-	spans := rotationsOf(c)
-	turns := make([]int, len(out))
-	for i, seg := range out {
-		start, end := number(seg.values[keyStart]), number(seg.values[keyEnd])
-		turns[i] = rotationOf(seg, spans)
-		shaped.Clip.Segments = append(shaped.Clip.Segments, Segment{Start: start, End: end, Rotate: turns[i]})
+	// The clip with the pieces under the hand is read the way LoadClips
+	// reads it once saved, its crop, its turns and the keyframes it shows
+	// and steers by, an edge or a cut carrying those it covers, see carry.
+	// So the crop, the keyframes and the glides follow the hand, and are
+	// what is saved. A clip read a second way here once sent each piece
+	// with no crop of its own, and the crop jumped to the middle while an
+	// edge was dragged.
+	under, err := shapedClip(c, out)
+	if err != nil {
+		return Shaped{}, err
 	}
-	shaped.Clip.CropMarks = carried(shaped.Clip.Segments, cropMarksOf(c))
-	markedPieces(shaped.Clip.Segments, turns, shaped.Clip.CropMarks)
+	shaped := Shaped{Playhead: playhead, Clip: clip}
+	shaped.Clip.Segments, shaped.Clip.CropMarks = under.Segments, under.CropMarks
 	shaped.Pieces = pieceViews(shaped.Clip.Segments)
 	return shaped, nil
+}
+
+// shapedClip is a clip of a plan being edited with these pieces in place
+// of its own, read by readClip, the one reading of a clip there is.
+func shapedClip(c *object, pieces []*object) (Clip, error) {
+	entry, _ := plainOf(c).(map[string]any)
+	list := make([]any, len(pieces))
+	for i, p := range pieces {
+		list[i] = plainOf(p)
+	}
+	entry[keySegments] = list
+	clip, ok, err := readClip(entry, 1)
+	if err == nil && !ok {
+		err = renderErr("that would leave the clip with nothing in it")
+	}
+	return clip, err
+}
+
+// plainOf is a value of a plan being edited as parseClips reads one, its
+// objects as maps.
+func plainOf(v any) any {
+	switch v := v.(type) {
+	case *object:
+		out := make(map[string]any, len(v.keys))
+		for _, k := range v.keys {
+			out[k] = plainOf(v.values[k])
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = plainOf(item)
+		}
+		return out
+	}
+	return v
 }
 
 // Reshape makes a gesture's change to a clip and saves it, the same change

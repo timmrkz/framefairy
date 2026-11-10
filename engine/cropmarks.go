@@ -86,26 +86,42 @@ func CropMarkViews(marks []CropMark) []CropMarkView {
 
 // MarksOnFrames is keyframes as the window is sent them, each on the moment
 // its frame starts: one the clip's end carries on the clip's last frame,
-// unless another keyframe is on that frame already.
+// unless it gives way there, see givesWay.
 func (s SourceInfo) MarksOnFrames(marks []CropMarkView) []CropMarkView {
+	all := make([]CropMark, len(marks))
+	for i, m := range marks {
+		all[i] = CropMark{At: m.At, Last: m.Last}
+	}
 	out := make([]CropMarkView, 0, len(marks))
-	for _, m := range marks {
-		if !m.Last {
-			out = append(out, m)
-			continue
+	for i, m := range marks {
+		if m.Last {
+			if s.givesWay(all[i], all) {
+				continue
+			}
+			m.At, m.Last = s.frameAt(s.markFrame(m.At)-1), false
 		}
-		k := s.markFrame(m.At) - 1
-		taken := false
-		for _, o := range marks {
-			taken = taken || (!o.Last && s.markFrame(o.At) == k)
-		}
-		if taken {
-			continue
-		}
-		m.At, m.Last = s.frameAt(k), false
 		out = append(out, m)
 	}
 	return out
+}
+
+// givesWay is whether a keyframe the clip's end carries gives the clip's
+// last frame, where it would stand, to a keyframe of that frame's own
+// among marks. The start and a cut never carry one onto a frame that has
+// its own, see carry, but the end carries without knowing the frames, so
+// this is where that rule is kept for it, for what the window is sent,
+// what steers the crop and what a touch makes real.
+func (s SourceInfo) givesWay(m CropMark, marks []CropMark) bool {
+	if !m.Last {
+		return false
+	}
+	k := s.markFrame(m.At) - 1
+	for _, o := range marks {
+		if !o.Last && s.markFrame(o.At) == k {
+			return true
+		}
+	}
+	return false
 }
 
 // frameAt is the moment frame k starts, as markFrame counts frames.
@@ -405,8 +421,13 @@ func spansOf(pieces []*object) []Segment {
 // are set aside, so none of them comes up on the edge when it leaves.
 // Keyframes on no carried frame are left as they are.
 func realise(frames SourceInfo, pieces []Segment, marks []CropMark, k int64) []CropMark {
-	for _, c := range carry(pieces, marks) {
-		if !c.carried {
+	shown := carry(pieces, marks)
+	all := make([]CropMark, len(shown))
+	for i, c := range shown {
+		all[i] = c.mark
+	}
+	for _, c := range shown {
+		if !c.carried || frames.givesWay(c.mark, all) {
 			continue
 		}
 		on := frames.markFrame(c.mark.At)
@@ -486,16 +507,16 @@ type frameMark struct {
 func (s SourceInfo) onFrames(marks []CropMark, cropW, width int) []frameMark {
 	var out []frameMark
 	for _, m := range marks {
+		if s.givesWay(m, marks) {
+			continue
+		}
 		x := m.X
 		f := frameMark{k: s.markFrame(m.At), x: ClampCropX(&x, cropW, width), glide: m.Glide}
 		if m.Last {
 			f.k--
 		}
 		if n := len(out); n > 0 && out[n-1].k == f.k {
-			// One the end carries gives way to one of the frame's own.
-			if !m.Last {
-				out[n-1] = f
-			}
+			out[n-1] = f
 			continue
 		}
 		out = append(out, f)
@@ -759,6 +780,19 @@ func (s SourceInfo) CropSteps(v SegmentView, cropW, width int) []CropStep {
 	r := s.runOf(seg, cropW, width)
 	first, end := s.pieceFrames(seg.Start, seg.End)
 	var out []CropStep
+	if !r.glidesIn(first, end) {
+		// Only switches: a step where the piece starts and one at each
+		// switch, without a look at every frame between.
+		start, switches := r.heldCrops(first, end)
+		if len(switches) == 0 && start == r.base {
+			return nil
+		}
+		out = append(out, CropStep{Frame: first, X: float64(start)})
+		for _, m := range switches {
+			out = append(out, CropStep{Frame: m.k, X: float64(m.x)})
+		}
+		return out
+	}
 	for k := first; k < end; k++ {
 		if x := r.at(k); len(out) == 0 || out[len(out)-1].X != x {
 			out = append(out, CropStep{Frame: k, X: x})

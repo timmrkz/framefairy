@@ -848,11 +848,26 @@ func TestTheEndCarriesAKeyframeOnTheLastFrame(t *testing.T) {
 			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
 		}
 	}
-	// A keyframe of the last frame's own keeps it.
+	// A keyframe of the last frame's own keeps it, and a touch of it
+	// leaves the one the end covers where it was.
 	cropMarks(t, fsys, path, CropMark{At: 16.48, X: 300})
-	shown = at25.MarksOnFrames(CropMarkViews(loadedClip(t, fsys, path).CropMarks))
+	clip = loadedClip(t, fsys, path)
+	shown = at25.MarksOnFrames(CropMarkViews(clip.CropMarks))
 	if want := []CropMarkView{{At: 12, X: 200}, {At: 16.48, X: 300}}; !reflect.DeepEqual(shown, want) {
 		t.Errorf("with a keyframe on the last frame, the window is sent %v, not %v", shown, want)
+	}
+	if got := at25.CropAt(clip.Segments[0], 16.48, 608, 1920); got != 300 {
+		t.Errorf("the last frame has the crop at %v, not its own keyframe's 300", got)
+	}
+	if err := SetCrop(fsys, path, "01", 16.48, 400, at25); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetCropMark(fsys, path, "01", 16.48, -1, 0, false, at25); err != nil {
+		t.Fatal(err)
+	}
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "end", From: 20})
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 12, X: 200}, {At: 17, X: 600}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("after the last frame's own keyframe was moved and removed, the end dragged back out shows %v, not %v", got, want)
 	}
 }
 
