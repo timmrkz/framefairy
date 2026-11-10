@@ -89,16 +89,29 @@ export class WalkCard extends EventTarget {
     return this.become("closed");
   }
 
-  // Says the new state the way the system's card does, after the call
-  // that asked for it has returned.
+  // Does what was asked the way the system's card does, in a task of its
+  // own: it settles the call's promise, then takes the new state and says
+  // so, so what the call's promise waits for sees the card running, and a
+  // call made as the card says it runs comes in a task after. Done at once,
+  // the hand that holds the card while a play starts, see holdSound, held
+  // it again before the play saw it run, the play asked for it again, and
+  // the two went back and forth for good. A message, not a timer, so a
+  // clock the walk holds holds no card.
+  private asked: (() => void)[] = [];
+  private later = new MessageChannel();
   private become(state: AudioContextState): Promise<void> {
-    return Promise.resolve().then(() => {
-      if (this.state === state || this.state === "closed") return;
-      this.state = state;
-      if (state === "running") this.moved = performance.now();
-      const e = new Event("statechange");
-      this.onstatechange?.(e);
-      this.dispatchEvent(e);
+    this.later.port1.onmessage = () => this.asked.shift()?.();
+    return new Promise((done) => {
+      this.asked.push(() => {
+        done();
+        if (this.state === state || this.state === "closed") return;
+        this.state = state;
+        if (state === "running") this.moved = performance.now();
+        const e = new Event("statechange");
+        this.onstatechange?.(e);
+        this.dispatchEvent(e);
+      });
+      this.later.port2.postMessage(0);
     });
   }
 

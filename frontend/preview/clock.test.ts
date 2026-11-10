@@ -204,9 +204,11 @@ describe("the hand on the sound card", () => {
     const card = new WalkCard({ sampleRate: 1000 });
     const play = { playing: true, audio: card as unknown as AudioContext } satisfies Play;
     await holdSound(play, "hand", true);
+    const heldAgain = new Promise((done) => card.addEventListener("statechange", () => card.state === "suspended" && done(null)));
     await card.resume();
-    await said();
-    expect(card.state).toBe("suspended");
+    // The play that asked for it sees it run.
+    expect(card.state).toBe("running");
+    await heldAgain;
     await holdSound(play, "hand", false);
     expect(card.state).toBe("running");
   });
