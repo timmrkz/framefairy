@@ -12,6 +12,7 @@
     type CaptionsView,
     type CaptionSwitch,
     type ClipEntry,
+    type Framing,
     type Gesture,
     type Job,
     type KeptWindow,
@@ -2041,28 +2042,22 @@
     pieces: { start: number; end: number }[];
     track?: string;
     playhead?: number;
+    framing?: Framing;
   } | null>(null);
-  // Each piece keeps the framing of the piece it came from, the way the
-  // engine keeps it when the edit lands.
+  // The crop of the clip under the hand is the engine's answer, the same
+  // the clip will have once the hand lets go: the pieces with their
+  // framing, the keyframes an edge carries and how the crop runs, see
+  // Framing.
   const shownClip = $derived.by(() => {
-    if (!current || !reshaped) return current;
-    const old = current.segments;
-    const overlap = (a: { start: number; end: number }, b: { start: number; end: number }) =>
-      Math.min(a.end, b.end) - Math.max(a.start, b.start);
-    const from = reshaped.pieces.map((p) => {
-      let best = 0;
-      old.forEach((o, i) => {
-        if (overlap(p, o) > overlap(p, old[best])) best = i;
-      });
-      return best;
-    });
-    const lefts = current.cropLefts;
-    const steps = current.cropSteps;
+    if (!current || !reshaped?.framing) return current;
+    const f = reshaped.framing;
     return {
       ...current,
-      segments: reshaped.pieces.map((p, i) => ({ ...old[from[i]], start: p.start, end: p.end })),
-      cropLefts: from.map((i) => lefts[i]),
-      cropSteps: steps && from.map((i) => steps[i] ?? null),
+      segments: f.segments,
+      cropMarks: f.cropMarks,
+      cropLefts: f.cropLefts,
+      cropSteps: f.cropSteps,
+      glides: f.glides,
     };
   });
   const shownCaptions = $derived.by(() => {

@@ -2678,9 +2678,22 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   diamond or the circle lit under the playhead. Anywhere else the crop
   frame shows the crop as the short has it, and a drag moves nothing,
   and its title says to press K or G to put a keyframe there. That is
-  also how the crop before the first keyframe, or after one a trim or a
-  cut hides, is placed. A clip with no keyframes has one crop, dragged
-  anywhere in it.
+  also how the crop before the first keyframe is placed. A clip with no
+  keyframes has one crop, dragged anywhere in it.
+- **An edge works like a snow shovel**, Tim's word on #778. The start or
+  the end of the clip dragged over keyframes carries the one it reached
+  last on the clip's first or last frame, with its own crop, and the
+  others it covers wait out of sight. A cut carries the latest keyframe
+  it covers on the first frame after it. A carried circle stays only
+  while a circle beside it joins it, so its glide line has somewhere to
+  go. Every keyframe keeps its own place, so the edge dragged back out
+  leaves each where it was. Placing the crop on a carried keyframe,
+  pressing K or G on it or dragging it makes it a keyframe of its own
+  where it stands. Removing it removes only it, and the others it
+  covered stay out of sight until the edge is dragged back out past them,
+  so no keyframe comes up in its place. The keyframes, the glide line and
+  the crop in the video preview follow the edge while the hand is still
+  on it.
 - **The video preview switches and glides the crop on the keyframes'
   own frames** while the clip plays, so what plays is what renders.
 - **Each keyframe is a diamond or a circle** centred on the clip's top rule on the

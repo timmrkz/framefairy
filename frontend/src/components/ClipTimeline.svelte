@@ -41,6 +41,7 @@
     type Word,
     type CaptionCue,
     type CropMark,
+    type Framing,
     type GlideSpan,
   } from "../lib/api";
   import {
@@ -205,12 +206,19 @@
     onremovecaption?: (first: number) => Promise<void>;
     // The clip as a drag of an edge or a cut has it, its pieces and the
     // captions the engine made for them, or null when no drag is shaping
-    // it. The video preview shows the same clip as the timeline on the way.
+    // it. The video preview shows the same clip as the timeline on the way,
+    // with the crop as the engine says it runs then, framing.
     // Playhead is where the playhead goes with the edge dragged, which it
     // reaches a frame after the clip is handed over, see seekSoon, and
     // nothing while it stays where it is.
     onshape?: (
-      shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[]; track?: string; playhead?: number } | null,
+      shape: {
+        cues: CaptionCue[];
+        pieces: { start: number; end: number }[];
+        track?: string;
+        playhead?: number;
+        framing?: Framing;
+      } | null,
     ) => void;
     // The clip's thumbnails, the moments of the episode the render takes a
     // picture of the short at. Each is a mark along the foot of the track.
@@ -440,7 +448,7 @@
   let saving = $state(false);
   let shaped = $state<null | {
     pieces: { start: number; end: number; part: number }[];
-    glides?: GlideSpan[];
+    framing?: Framing;
     cues: CaptionCue[];
     track?: string;
     held: CaptionCue[];
@@ -520,7 +528,7 @@
       if (mine === shapeFor && clip?.key === asked.key && answer) {
         shaped = {
           pieces: answer.pieces,
-          glides: answer.glides,
+          framing: answer.framing,
           cues: answer.captions?.captions ?? [],
           track: answer.captions?.track,
           held,
@@ -1474,7 +1482,13 @@
   $effect(() => {
     onshape?.(
       shapedShown && shaped
-        ? { cues: shaped.cues, pieces: shaped.pieces, track: shaped.track, playhead: shaped.playhead }
+        ? {
+            cues: shaped.cues,
+            pieces: shaped.pieces,
+            track: shaped.track,
+            playhead: shaped.playhead,
+            framing: shaped.framing,
+          }
         : null,
     );
   });
@@ -1757,8 +1771,11 @@
       .map((at) => ({ at, shown: shownAt("thumbnail", at) }))
       .filter((m) => m.shown >= view.from && m.shown <= view.to),
   );
+  // While an edge or a cut is dragged, the keyframes are the ones the
+  // engine answers the hand with, an edge carrying those it reaches, so
+  // they move with it and not only once it is let go, Tim on #778.
   const cropDots = $derived(
-    cropMarks
+    (shapedShown && shaped?.framing ? shaped.framing.cropMarks : cropMarks)
       .map((m) => ({ at: m.at, shown: shownAt("crop", m.at), glide: !!m.glide }))
       .filter((m) => m.shown >= view.from && m.shown <= view.to),
   );
@@ -1770,7 +1787,7 @@
   // along, and an edge or a cut being dragged takes the line with it, as
   // the engine answers the hand, see drawnPieces.
   const glideLines = $derived(
-    ((shapedShown && shaped ? shaped.glides : clip?.glides) ?? []).flatMap((g) => {
+    ((shapedShown && shaped?.framing ? shaped.framing.glides : clip?.glides) ?? []).flatMap((g) => {
       const left = Math.max(0, x(onFrame(shownAt("crop", g.from))));
       const right = Math.min(100, x(onFrame(shownAt("crop", g.to))));
       return right > left ? [{ key: `${g.from}-${g.to}`, left, width: right - left }] : [];

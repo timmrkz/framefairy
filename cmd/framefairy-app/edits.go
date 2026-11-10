@@ -496,17 +496,19 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*Shaped
 		return nil, err
 	}
 	s.previews.tracks.keep(path, view.Captions)
-	return &ShapedClip{ShapedView: view, Glides: s.glidesOf(g.Frames, engine.SegmentViews(view.Clip.Segments))}, nil
+	framing := s.framingOf(g.Frames, engine.SegmentViews(view.Clip.Segments), engine.CropMarkViews(view.Clip.CropMarks))
+	return &ShapedClip{ShapedView: view, Framing: framing}, nil
 }
 
-// ShapedClip is what a gesture makes of a clip, and where its crop glides
-// then, so the line the clip timeline draws from a circle into the next
-// follows an edge or a cut the hand drags, and not only once it is let
-// go, found by Tim on #750. It is worked out the way the clip list's is,
-// see glidesOf, so what is drawn under the hand is what is saved.
+// ShapedClip is what a gesture makes of a clip, and how its crop runs
+// then, so the keyframes, the glide line from a circle into the next and
+// the crop in the video preview follow an edge or a cut the hand drags,
+// and not only once it is let go, found by Tim on #750 and #778. It is
+// worked out the way the clip list's is, see framingOf, so what is drawn
+// under the hand is what is saved.
 type ShapedClip struct {
 	*engine.ShapedView
-	Glides []engine.GlideSpan `json:"glides"`
+	Framing Framing `json:"framing"`
 }
 
 // Reshape makes the change a gesture on the clip timeline showed while the

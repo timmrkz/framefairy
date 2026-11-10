@@ -232,13 +232,26 @@ export interface Gesture {
 }
 
 // What a gesture makes of a clip: its pieces, where the playhead goes while
-// an edge is dragged, below nought when it stays, its captions, and where
-// its crop glides then, see ClipEntry.glides.
+// an edge is dragged, below nought when it stays, its captions, and how its
+// crop runs then.
 export interface Shaped {
   // Each with its part, see Segment.part.
   pieces: { start: number; end: number; part: number }[];
   playhead: number;
   captions: CaptionsView;
+  framing?: Framing;
+}
+
+// How a clip's crop runs over its pieces, worked out by the Go side for a
+// clip saved and for one under the hand alike, see Framing in
+// cmd/framefairy-app/views.go: its pieces with the keyframes that steer
+// each, the keyframes on screen, an edge's or a cut's carried one among
+// them, and the crop, see ClipEntry.
+export interface Framing {
+  segments: Segment[];
+  cropMarks: CropMark[];
+  cropLefts: number[];
+  cropSteps?: (CropStep[] | null)[];
   glides?: GlideSpan[];
 }
 

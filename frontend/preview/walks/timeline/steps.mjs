@@ -1527,24 +1527,34 @@ export const steps = {
   //                    holds the clip's start and drags it in to this
   //                    share of the way along the clip, past the first
   //                    circle, and with the hand still down and every
-  //                    place answered, the glide line starts on the start
-  //                    edge, where it stays once let go. Then drags the
-  //                    start back out to where it was, and the line starts
-  //                    on its circle again, held and let go. Found by Tim
-  //                    on #750: the line stood where it was until the hand
-  //                    let go of a cut's edge
+  //                    place answered, the first circle rides on the start
+  //                    edge and the glide line starts there, where both
+  //                    stay once let go. Then drags the start back out to
+  //                    where it was, and the circle and the line are on
+  //                    the circle's own place again, held and let go.
+  //                    Found by Tim on #750, the line stood where it was
+  //                    until the hand let go of a cut's edge, and on #778,
+  //                    the keyframes did
   async "glide under the hand"(walk, arg, s) {
     const { page, watch } = walk;
     const read = () =>
       page.evaluate(() => {
         const left = (e) => e.getBoundingClientRect().left;
         const frame = document.querySelector(".clip-timeline .frames .frame");
-        return { start: frame ? left(frame) : NaN, lines: [...document.querySelectorAll(".clip-timeline .glide")].map(left) };
+        const middle = (e) => {
+          const r = e.getBoundingClientRect();
+          return r.left + r.width / 2;
+        };
+        return {
+          start: frame ? left(frame) : NaN,
+          lines: [...document.querySelectorAll(".clip-timeline .glide")].map(left),
+          circles: [...document.querySelectorAll(".clip-timeline .cropdot[data-glide]")].map(middle),
+        };
       });
     const near = (a, b) => Math.abs(a - b) <= 1.5;
     const before = await read();
-    if (before.lines.length !== 1) {
-      walk.wrong = `the clip timeline draws ${before.lines.length} glide lines before the start is dragged, not 1`;
+    if (before.lines.length !== 1 || before.circles.length !== 2) {
+      walk.wrong = `the clip timeline draws ${before.lines.length} glide lines and ${before.circles.length} circles before the start is dragged, not 1 and 2`;
       return;
     }
     const drag = async (to, done) => {
@@ -1578,7 +1588,11 @@ export const steps = {
       await settle(page);
       const left = await read();
       const wrong = (got) =>
-        got.lines.length !== 1 ? `${got.lines.length} glide lines` : !done(got) ? `the glide line starting at ${got.lines[0].toFixed(1)} px, the clip at ${got.start.toFixed(1)} px` : "";
+        got.lines.length !== 1 || got.circles.length !== 2
+          ? `${got.lines.length} glide lines and ${got.circles.length} circles`
+          : !done(got)
+            ? `the glide line starting at ${got.lines[0].toFixed(1)} px and the first circle at ${got.circles[0].toFixed(1)} px, the clip at ${got.start.toFixed(1)} px`
+            : "";
       const whileHeld = wrong(held);
       const once = wrong(left);
       if (whileHeld) return `with the start ${to < x ? "dragged back out" : "dragged in"} and still held, the clip timeline draws ${whileHeld}`;
@@ -1588,8 +1602,15 @@ export const steps = {
     };
     const g = await handles(page);
     const into = g.start.x + g.start.w;
-    walk.wrong = await drag(into + arg * (g.end.x - into), (got) => near(got.lines[0], got.start) && !near(got.lines[0], before.lines[0]));
-    if (!walk.wrong) walk.wrong = await drag(middle(g.start), (got) => near(got.lines[0], before.lines[0]));
+    walk.wrong = await drag(
+      into + arg * (g.end.x - into),
+      (got) => near(got.lines[0], got.start) && near(got.circles[0], got.start) && !near(got.lines[0], before.lines[0]),
+    );
+    if (!walk.wrong)
+      walk.wrong = await drag(
+        middle(g.start),
+        (got) => near(got.lines[0], before.lines[0]) && near(got.circles[0], before.circles[0]),
+      );
     await watch.step("drag", s);
   },
   // ["keyframe on", "last"]
