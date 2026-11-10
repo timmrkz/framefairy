@@ -477,7 +477,7 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 // Shape works out what a gesture on the clip timeline makes of a clip,
 // with its captions, while the hand moves, and writes nothing. See
 // engine/shape.go.
-func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine.ShapedView, error) {
+func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*ShapedClip, error) {
 	if !s.store.PlanOf(path, plan) {
 		return nil, errNotInLibrary
 	}
@@ -492,10 +492,21 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 	}
 	view, err := engine.ShapeClipView(summary, clipID, g, t, s.store.Settings().options().KeepPause,
 		s.lookOf(path, summary))
-	if err == nil {
-		s.previews.tracks.keep(path, view.Captions)
+	if err != nil {
+		return nil, err
 	}
-	return view, err
+	s.previews.tracks.keep(path, view.Captions)
+	return &ShapedClip{ShapedView: view, Glides: s.glidesOf(g.Frames, engine.SegmentViews(view.Clip.Segments))}, nil
+}
+
+// ShapedClip is what a gesture makes of a clip, and where its crop glides
+// then, so the line the clip timeline draws from a circle into the next
+// follows an edge or a cut the hand drags, and not only once it is let
+// go, found by Tim on #750. It is worked out the way the clip list's is,
+// see glidesOf, so what is drawn under the hand is what is saved.
+type ShapedClip struct {
+	*engine.ShapedView
+	Glides []engine.GlideSpan `json:"glides"`
 }
 
 // Reshape makes the change a gesture on the clip timeline showed while the

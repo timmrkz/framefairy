@@ -67,7 +67,7 @@
  11	sequences.mjs SEQUENCE=a model a search finds clips with is not changed or removed under it
  11	sequences.mjs SEQUENCE=a part of a phone's video rotated with R stands up in the video preview and in its short
  11	sequences.mjs SEQUENCE=a search of what was said shows the parts not transcribed yet
- 11	sequences.mjs SEQUENCE=two circles put with G are joined by a glide line, K and G change their kind, and Put the crop back after Automatic crop brings them back
+ 11	sequences.mjs SEQUENCE=two circles put with G are joined by a glide line that follows the clip's start while it is dragged, K and G change their kind, and Put the crop back after Automatic crop brings them back
  10	sequences.mjs SEQUENCE=Relaunch waits while a search runs, and the search goes on
  10	sequences.mjs SEQUENCE=Transcribe video waits until the search is done
  10	sequences.mjs SEQUENCE=a play after the loop was switched off on the way plays the clip once

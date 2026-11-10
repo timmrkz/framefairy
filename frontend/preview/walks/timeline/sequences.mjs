@@ -461,12 +461,14 @@ export default [
     // line along the top rule as soon as the second is put, whatever their
     // crops. K on a circle makes it a diamond and the line goes, G a
     // circle again and the line comes back, and G on a circle removes it.
+    // The line follows the start edge while the hand still holds it, found
+    // by Tim on #750 with a cut's edge.
     // Found on #192: Automatic crop took the keyframes of the angle away
     // with the crop, and Put the crop back brought back the crop alone,
     // so what the keyframes did was lost to one click. Each comes back
     // with its crop and its kind. Where the crop glides is the engine's,
     // see the walk of K above.
-    name: "two circles put with G are joined by a glide line, K and G change their kind, and Put the crop back after Automatic crop brings them back",
+    name: "two circles put with G are joined by a glide line that follows the clip's start while it is dragged, K and G change their kind, and Put the crop back after Automatic crop brings them back",
     steps: [
       ["added", 30, "25"],
       ["glide at", 0.2],
@@ -478,6 +480,7 @@ export default [
       ["glides", 0],
       ["keyframe key", ["g", "circle"]],
       ["glides", 1],
+      ["glide under the hand", 0.5],
       ["crop before", 0.8],
       ["button", "Automatic crop"],
       ["keyframes", 0],

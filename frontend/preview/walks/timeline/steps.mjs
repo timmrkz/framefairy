@@ -1523,6 +1523,75 @@ export const steps = {
       else if (!(l.z < got.markZ)) walk.wrong = `a glide line is drawn over the keyframes`;
     }
   },
+  // ["glide under the hand", share]
+  //                    holds the clip's start and drags it in to this
+  //                    share of the way along the clip, past the first
+  //                    circle, and with the hand still down and every
+  //                    place answered, the glide line starts on the start
+  //                    edge, where it stays once let go. Then drags the
+  //                    start back out to where it was, and the line starts
+  //                    on its circle again, held and let go. Found by Tim
+  //                    on #750: the line stood where it was until the hand
+  //                    let go of a cut's edge
+  async "glide under the hand"(walk, arg, s) {
+    const { page, watch } = walk;
+    const read = () =>
+      page.evaluate(() => {
+        const left = (e) => e.getBoundingClientRect().left;
+        const frame = document.querySelector(".clip-timeline .frames .frame");
+        return { start: frame ? left(frame) : NaN, lines: [...document.querySelectorAll(".clip-timeline .glide")].map(left) };
+      });
+    const near = (a, b) => Math.abs(a - b) <= 1.5;
+    const before = await read();
+    if (before.lines.length !== 1) {
+      walk.wrong = `the clip timeline draws ${before.lines.length} glide lines before the start is dragged, not 1`;
+      return;
+    }
+    const drag = async (to, done) => {
+      const g = await handles(page);
+      const x = middle(g.start);
+      const y = g.start.y + g.start.h / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      for (let i = 1; i <= 10; i++) {
+        await page.mouse.move(x + ((to - x) * i) / 10, y);
+        await nextPaint(page);
+      }
+      // Every place the hand went answered and drawn, which the clip
+      // timeline says by dropping data-shaping, see "drag edge twice".
+      await page.evaluate(
+        () =>
+          new Promise((answered) => {
+            const timeline = document.querySelector(".clip-timeline");
+            if (!timeline.hasAttribute("data-shaping")) return answered();
+            const seen = new MutationObserver(() => {
+              if (timeline.hasAttribute("data-shaping")) return;
+              seen.disconnect();
+              answered();
+            });
+            seen.observe(timeline, { attributes: true, attributeFilter: ["data-shaping"] });
+          }),
+      );
+      await nextPaint(page);
+      const held = await read();
+      await page.mouse.up();
+      await settle(page);
+      const left = await read();
+      const wrong = (got) =>
+        got.lines.length !== 1 ? `${got.lines.length} glide lines` : !done(got) ? `the glide line starting at ${got.lines[0].toFixed(1)} px, the clip at ${got.start.toFixed(1)} px` : "";
+      const whileHeld = wrong(held);
+      const once = wrong(left);
+      if (whileHeld) return `with the start ${to < x ? "dragged back out" : "dragged in"} and still held, the clip timeline draws ${whileHeld}`;
+      if (once) return `with the start ${to < x ? "dragged back out" : "dragged in"} and let go, the clip timeline draws ${once}`;
+      if (!near(held.lines[0], left.lines[0])) return `the glide line stood at ${held.lines[0].toFixed(1)} px while the start was held and at ${left.lines[0].toFixed(1)} px once let go`;
+      return "";
+    };
+    const g = await handles(page);
+    const into = g.start.x + g.start.w;
+    walk.wrong = await drag(into + arg * (g.end.x - into), (got) => near(got.lines[0], got.start) && !near(got.lines[0], before.lines[0]));
+    if (!walk.wrong) walk.wrong = await drag(middle(g.start), (got) => near(got.lines[0], before.lines[0]));
+    await watch.step("drag", s);
+  },
   // ["keyframe on", "last"]
   //                    a click on the clip's end edge, which leaves the
   //                    playhead on the end with the last frame on the

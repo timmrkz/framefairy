@@ -99,15 +99,27 @@ func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceI
 		cw := s.cropWidth(upright)
 		entry.CropLefts = append(entry.CropLefts, engine.ClampCropX(seg.CropX, cw, upright.Width))
 		entry.CropSteps = append(entry.CropSteps, info.CropSteps(seg, cw, upright.Width))
-		entry.Glides = append(entry.Glides, info.Glides(seg, cw, upright.Width)...)
 	}
+	entry.Glides = s.glidesOf(info, c.Segments)
 	if entry.CropSteps == nil {
 		entry.CropSteps = make([][]engine.CropStep, len(entry.CropLefts))
 	}
-	if entry.Glides == nil {
-		entry.Glides = []engine.GlideSpan{}
-	}
 	return entry
+}
+
+// glidesOf is where the crop glides over a clip's pieces, each worked out
+// on the picture as its piece stands, for the clip timeline to draw, see
+// engine.Glides. Never nil, so the window is sent a list.
+func (s *FrameFairy) glidesOf(info engine.SourceInfo, segments []engine.SegmentView) []engine.GlideSpan {
+	out := []engine.GlideSpan{}
+	if info.Width == 0 {
+		return out
+	}
+	for _, seg := range segments {
+		upright := info.Rotated(seg.Rotate)
+		out = append(out, info.Glides(seg, s.cropWidth(upright), upright.Width)...)
+	}
+	return out
 }
 
 // keptCrop is a crop as the plan keeps it, for a clip with no picture to

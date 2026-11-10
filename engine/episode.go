@@ -601,11 +601,7 @@ func (s PlanSummary) View() *PlanView {
 		for _, r := range c.Rotations {
 			v.Rotations = append(v.Rotations, rotationView(r))
 		}
-		parts := pieceViews(c.Segments)
-		for i, s := range c.Segments {
-			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
-				cropMarkViews(s.Marks), parts[i].Part})
-		}
+		v.Segments = SegmentViews(c.Segments)
 		v.Rendered = renderedOf(plan, c)
 		v.Short = shortOf(plan, c)
 		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); fileio.IsFile(disk, prev) {
@@ -614,6 +610,18 @@ func (s PlanSummary) View() *PlanView {
 		view.Clips = append(view.Clips, v)
 	}
 	return view
+}
+
+// SegmentViews are a clip's pieces as the window is sent them, each with
+// the keyframes that steer it and its part.
+func SegmentViews(segments []Segment) []SegmentView {
+	parts := pieceViews(segments)
+	out := make([]SegmentView, 0, len(segments))
+	for i, s := range segments {
+		out = append(out, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
+			cropMarkViews(s.Marks), parts[i].Part})
+	}
+	return out
 }
 
 // shortOf is where a clip's short is, or "" when it has none there now.

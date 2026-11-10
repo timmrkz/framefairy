@@ -41,6 +41,7 @@
     type Word,
     type CaptionCue,
     type CropMark,
+    type GlideSpan,
   } from "../lib/api";
   import {
     heardIn,
@@ -439,6 +440,7 @@
   let saving = $state(false);
   let shaped = $state<null | {
     pieces: { start: number; end: number; part: number }[];
+    glides?: GlideSpan[];
     cues: CaptionCue[];
     track?: string;
     held: CaptionCue[];
@@ -518,6 +520,7 @@
       if (mine === shapeFor && clip?.key === asked.key && answer) {
         shaped = {
           pieces: answer.pieces,
+          glides: answer.glides,
           cues: answer.captions?.captions ?? [],
           track: answer.captions?.track,
           held,
@@ -1764,9 +1767,10 @@
   // track. Each is drawn along the top rule, from dark to light, so the
   // two circles read as joined, Tim's ask on #750, in the look he picked
   // from a sheet, number 4. A keyframe being dragged takes the ends on it
-  // along.
+  // along, and an edge or a cut being dragged takes the line with it, as
+  // the engine answers the hand, see drawnPieces.
   const glideLines = $derived(
-    (clip?.glides ?? []).flatMap((g) => {
+    ((shapedShown && shaped ? shaped.glides : clip?.glides) ?? []).flatMap((g) => {
       const left = Math.max(0, x(onFrame(shownAt("crop", g.from))));
       const right = Math.min(100, x(onFrame(shownAt("crop", g.to))));
       return right > left ? [{ key: `${g.from}-${g.to}`, left, width: right - left }] : [];

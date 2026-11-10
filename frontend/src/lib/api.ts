@@ -232,12 +232,14 @@ export interface Gesture {
 }
 
 // What a gesture makes of a clip: its pieces, where the playhead goes while
-// an edge is dragged, below nought when it stays, and its captions.
+// an edge is dragged, below nought when it stays, its captions, and where
+// its crop glides then, see ClipEntry.glides.
 export interface Shaped {
   // Each with its part, see Segment.part.
   pieces: { start: number; end: number; part: number }[];
   playhead: number;
   captions: CaptionsView;
+  glides?: GlideSpan[];
 }
 
 export interface Segment {

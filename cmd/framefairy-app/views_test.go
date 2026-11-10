@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -169,5 +171,57 @@ func TestThePlansAskedThroughTheAppFromEverywhereAtOnce(t *testing.T) {
 	v, err := svc.store.machine.Episode(video).ReadPlan(plan)
 	if err != nil || len(v.Clips) != 2 || v.Clips[0].Slug != "last" {
 		t.Errorf("once still, the plan read %v, want the one written last", err)
+	}
+}
+
+// The line from a circle into the next follows the hand: every step of a
+// drag on the clip timeline is answered with where the crop glides then,
+// and it is where the crop glides once the same gesture is let go and
+// saved. It came only with the clip saved, so the line stood where it was
+// while an edge or a cut was dragged across it, found by Tim on #750.
+func TestTheGlideLineFollowsAnEdgeTheHandDrags(t *testing.T) {
+	t.Parallel()
+	svc, mine := memoryLibrary(t, "ep.mp4")
+	video := mine[0]
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	svc.probeVideo = func(context.Context, string) (engine.SourceInfo, error) {
+		return engine.SourceInfo{Duration: 60, Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}, nil
+	}
+	plan := filepath.Join(engine.LogsDir(video), "clips.json")
+	if err := afero.WriteFile(svc.store.files, plan, []byte(`{"source": "ep.mp4", "clips": [
+	  {"id": "01", "slug": "eins", "segments": [{"start": 10.0, "end": 14.0}], "words": [[10.1, 10.5, "eins"]],
+	   "crop_marks": [{"at": 11.0, "x": 10, "glide": true}, {"at": 13.0, "x": 300, "glide": true}]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	before, err := svc.clipEntry(ctx, video, plan, "01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []engine.GlideSpan{{From: 11, To: 13}}; !reflect.DeepEqual(before.Glides, want) {
+		t.Fatalf("the clip glides over %v before the drag, not %v", before.Glides, want)
+	}
+	last := before.Glides
+	for _, g := range []engine.Gesture{
+		// A part cut out of the glide, and then the end dragged in over
+		// the second circle, which ends the glide.
+		{Kind: "cut", From: 11.6, To: 12.2},
+		{Kind: "trim", Edge: "end", From: 12.6},
+	} {
+		shaped, err := svc.Shape(video, plan, "01", g)
+		if err != nil {
+			t.Fatalf("%s: %v", g.Kind, err)
+		}
+		if reflect.DeepEqual(shaped.Glides, last) {
+			t.Errorf("%s: the glide line stays at %v under the hand", g.Kind, shaped.Glides)
+		}
+		saved, err := svc.Reshape(ctx, video, plan, "01", g, [2]float64{10, 10})
+		if err != nil {
+			t.Fatalf("%s: %v", g.Kind, err)
+		}
+		if !reflect.DeepEqual(shaped.Glides, saved.Glides) {
+			t.Errorf("%s: the glide line under the hand is %v, and %v once saved", g.Kind, shaped.Glides, saved.Glides)
+		}
+		last = saved.Glides
 	}
 }
