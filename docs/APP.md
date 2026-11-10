@@ -2150,12 +2150,13 @@ bubble scrolled by those eight pixels.
       or Shift and an arrow, that lands in the last twentieth of the view
       the way it goes, or out of the view, turns the page there, to the
       left as to the right. A skip of 5 s left the view behind, #677.
-      **An edge dragged past the view takes it along at the zoom it
-      has**, the edge a tenth in from the side, the way an editor's
-      timeline scrolls with a trim. It zoomed out to the whole clip
-      instead, and a clip dragged long then stood at a zoom where its
-      caption blocks were too narrow to be drawn, and they all went,
-      Tim's report of 10 November. The crosshair in the row under the track
+      **Only the hand zooms the clip timeline**, once a clip chosen or
+      made is fitted. An edge that moves past the side of the view, by a
+      drag or an undo, scrolls the view so the edge stands a tenth in, at
+      the zoom it has, the way an editor's timeline scrolls with a trim.
+      It zoomed out to the whole clip instead, and a clip dragged long
+      then stood at a zoom where its caption blocks were too narrow to be
+      drawn, and they all went, Tim's report of 10 November. The crosshair in the row under the track
       goes to the playhead and puts it in the middle. Clicking a clip in
       the list, the one that is already selected included, puts that clip
       back in view. A double-click on the track never did: one was meant

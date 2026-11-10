@@ -1158,39 +1158,49 @@
     readSoon(zooming ? "pinched" : "swiped");
   }
 
-  // A new clip gets a new view. A trimmed clip keeps it, and an edge that
-  // left it takes the view along at the zoom it has. With no clip the view follows the playhead, so there is always a
-  // timeline saying where you are in the episode. A view moved by hand is
-  // left alone until the clip changes or the playhead leaves it.
+  // The edges of the clip as the view last saw them, so it can tell the
+  // edge that moved. Not state: the view reads them and nothing else.
+  let edgesSeen = { key: "", a: 0, b: 0 };
+
+  // A new clip gets a new view, fitted, and that is the only time the clip
+  // timeline zooms by itself. After that only the hand zooms it. An edge
+  // moved past the side of the view, by a drag or an undo, scrolls the view
+  // so the edge stands a tenth in, at the zoom it has, the way an editor's
+  // timeline scrolls with a trim. The view zoomed out to the whole clip
+  // instead, and a clip dragged long stood at a zoom where its caption
+  // blocks were too narrow to be drawn, and they all went, Tim's report of
+  // 10 November: "When I want to zoom, I will zoom." With no clip the view
+  // follows the playhead, so there is always a timeline saying where you
+  // are in the episode. A view moved by hand is left alone until the clip
+  // changes or the playhead leaves it.
   $effect(() => {
     if (waiting) return;
     if (clip && clip.segments.length) {
-      if (viewFor !== clip.key) {
-        fitView();
-        return;
-      }
-      if (held) return;
       // Inside the episode, the way the view is, or a clip that reached
       // past either end was never inside the view and was read again and
       // again, without end.
       const a = Math.max(0, clip.segments[0].start);
       const b = Math.min(duration, clip.segments[clip.segments.length - 1].end);
-      if (a >= view.from && b <= view.to) return;
-      const shown = view.to - view.from;
-      if (a < view.from && b > view.to) {
-        const pad = Math.max(8, (b - a) * 0.3);
-        load(Math.max(0, a - pad), Math.min(duration, b + pad));
+      const seen = untrack(() => edgesSeen);
+      const same = seen.key === clip.key;
+      edgesSeen = { key: clip.key, a, b };
+      if (viewFor !== clip.key) {
+        fitView();
         return;
       }
-      // One edge past the view, dragged there: the view goes along with
-      // it, the edge a tenth in from the side, and keeps its zoom, the way
-      // an editor's timeline scrolls with a trim. Zoomed out to the whole
-      // clip again, a clip dragged long stood at a zoom where its captions
-      // were too narrow to be drawn, and they all went, Tim's report of 10
-      // November.
-      const from = a < view.from ? a - shown * 0.1 : b + shown * 0.1 - shown;
-      const lo = Math.max(0, Math.min(from, Math.max(duration, shown) - shown));
-      load(lo, lo + shown);
+      if (!same) return;
+      const { from: lo, to: hi } = untrack(() => view);
+      const shown = hi - lo;
+      // Only the edge that moved, so a clip longer than the view is not
+      // chased from one end to the other.
+      let from: number;
+      if (a !== seen.a && a < lo) from = a - shown * 0.1;
+      else if (b !== seen.b && b > hi) from = b + shown * 0.1 - shown;
+      else return;
+      // At the end of the episode the view ends on its end, exactly.
+      const whole = Math.max(duration, shown);
+      const at = Math.max(0, Math.min(from, whole - shown));
+      load(at, at === whole - shown ? whole : at + shown);
       return;
     }
     // A view moved by hand stays where it was put, wherever the playhead
