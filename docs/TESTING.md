@@ -204,45 +204,45 @@ episode back the way it was first searched before every walk,
 
 ### What a walk is for
 
-Every walk and every sequence is held to this, when it is written and
-when it is reviewed.
+Read this before writing a walk or reviewing one.
 
-**A walk proves what only the window can show.** That a person's
-gesture does what they meant: the keys, the pointer, the focus, a drag,
-a drop. And that the window shows what the Go side says, in the right
-place, in the same frame, while it happens. It runs the real app against
-the real Go side, and checks the rules every step must keep.
+**A walk checks what only the window can show.** It presses real keys and
+clicks in the real app, against the real Go side, and looks at the
+screen. So it is the right test for two things: that a key, a click or a
+drag does what the person meant, and that the screen shows what the Go
+side sent, in the right place and right away.
 
-**A walk is not for:**
+**What does not belong in a walk:**
 
-- **A rule the Go side decides.** Which words a caption has, which
-  frames a short has, what a render writes and what it is called, what
-  happens to a model or a search. That is a Go test, case by case. The
-  walk checks once that the window shows Go's answer.
-- **Codecs.** The Go side decodes every file to the same frames for the
-  window, and `engine/episodeframes_test.go` proves it on committed
-  fixtures. The window never sees the codec.
-- **Time.** A walk never lets the clock on the wall run for the app's
-  time. A play runs on the walk's sound card, see the walk's clock
-  below, a toast or a removed row on the clock `holdClock` holds, and a
-  movement is ended where the settle would wait for it. A 30 s play
-  costs the work of its frames, never 30 s.
-- **Sweeps.** Every width or every frame is a sweep, which belongs in a
-  unit test of the rule. A walk takes the edges and a few between.
+- **Rules the Go side decides.** Which words a caption has, which frames
+  go into a short, what a render writes and what the file is called.
+  Each of those gets a Go test, case by case. A walk checks once that
+  the screen shows the result.
+- **Codecs.** The Go side turns every video into the same frames before
+  the window sees them, and `engine/episodeframes_test.go` tests that on
+  committed files. The window never sees the codec.
+- **Waiting for real time to pass.** A walk never waits for the wall
+  clock. A play runs on the walk's own sound card, see the walk's clock
+  below, so a 30 s clip plays as fast as its frames can be drawn. A
+  toast or a removed row waits on the clock `holdClock` holds, and an
+  animation is ended at once when the walk settles.
+- **Trying every value.** Every width or every frame belongs in a unit
+  test. A walk tries the edges and a few in between.
 
-**What a walk costs.** Every sequence pays for opening the app on every
-push. A new case is a step in a walk that is there, and a new walk is
-the last resort. The walks have a budget, `walkBudget` in
-`cmd/framefairy-app/bridge_test.go`, the seconds every run takes
-together on CI by `walk-times.tsv`. `TestWalks` fails when a run has no
-time there, when a time is for a run that is gone, or when the sum is
-over the budget. A change that adds walking raises it only with Tim's
-yes, and one that saves walking lowers it by what it saved.
+**Every walk makes CI slower.** Each sequence opens the app from scratch
+on every push, which takes a few seconds before it does anything. So a
+new case goes into a walk that is already there, as a new step, and a
+new walk is the last resort. Each walks job prints how long its walks
+took against the times in `walk-times.tsv`, so a slowdown shows on the
+pull request.
 
-On CI six walkers keep the four cores busy all the time, so a walk
-costs the processor time it spends, not the time it waits. A wait taken
-out gives its time to the other walkers' work, and their runs grow by
-most of it: only work no longer done makes the walks job shorter.
+**Less waiting does not always mean a faster job.** CI runs six walks at
+once on a machine with four cores, and the cores are busy the whole
+time. When a walk waits less, the other five get the time, and the job
+gets only a little shorter. When plays stopped running in real time,
+they got twice as fast and the job only 3 % faster. What makes the job
+shorter is less work: fewer frames drawn, fewer renders, fewer times
+the app is opened.
 
 ### How a walk picks its steps
 
