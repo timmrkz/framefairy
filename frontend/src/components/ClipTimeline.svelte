@@ -2275,7 +2275,7 @@
             class="mark thumb"
             class:here={frameAt(m.shown, frame, frameStart) === playFrame}
             class:active={markDrag?.kind === "thumbnail" && markDrag.from === m.at}
-            style="left: {x(onFrame(m.shown))}%"
+            style="left: round({x(onFrame(m.shown))}%, 1px)"
             role="slider"
             tabindex="-1"
             aria-label="Thumbnail {i + 1}"
@@ -2298,7 +2298,7 @@
             class="mark cropdot"
             class:here={frameAt(m.shown, frame, frameStart) === playFrame}
             class:active={markDrag?.kind === "crop" && markDrag.from === m.at}
-            style="left: {x(onFrame(m.shown))}%"
+            style="left: round({x(onFrame(m.shown))}%, 1px)"
             role="slider"
             tabindex="-1"
             aria-label="Keyframe {i + 1}"
@@ -2322,8 +2322,9 @@
     {#if time >= view.from && time <= view.to}
       <!-- On the track's inside, where the waveform and every mark are
            placed, and on the start of the frame it is in, where a mark
-           lit by it stands. Plan row 2.234. -->
-      <div class="at" style="left: calc(1px + (100% - 2px) * {x(onFrame(time)) / 100})">
+           lit by it stands. Plan row 2.234. On a whole pixel, rounded the
+           way a mark is, see .mark. -->
+      <div class="at" style="left: round(1px + (100% - 2px) * {x(onFrame(time)) / 100}, 1px)">
         <!-- The playhead of the range picker too, drawn by .playhead in
              app.css. -->
         <div class="playhead" class:scrubbing title="Drag to move the playhead"></div>
@@ -2743,9 +2744,12 @@
      filled, with nothing behind it but its shape. The app's light colour,
      and white while the playhead is on its frame, under the hand or being
      dragged, the same for both kinds, so one is never the other drawn
-     inside out. Even sizes centred on the playhead's own grid, so on a
-     whole pixel or between two the mark's middle and the line's are the
-     same. Plan row 2.234. */
+     inside out. Even sizes centred on the playhead's own grid, and like
+     the playhead on a whole pixel, rounded in its style, so the mark's
+     middle and the line's are the same pixel. Left between two pixels,
+     the Mac put the line and the icon on different pixels, and drew the
+     mark half a pixel left of the playhead on its frame, found by Tim on
+     #750. Plan row 2.234. */
   .mark {
     position: absolute;
     width: 18px;

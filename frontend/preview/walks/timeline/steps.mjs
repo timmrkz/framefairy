@@ -1943,7 +1943,8 @@ export const steps = {
   },
   // ["keyframes", n]  the engine has n keyframes on the clip, at as many
   //                    left edges, and the clip timeline draws n
-  //                    diamonds, each 16 px wide
+  //                    diamonds, each 18 px wide, and every mark and the
+  //                    playhead with its middle on a whole pixel
   async keyframes(walk, arg) {
     const { page } = walk;
     const on = await chosen(page);
@@ -1960,7 +1961,20 @@ export const steps = {
     );
     const diamond = (d) => d.startsWith("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59");
     const sizes = await page.evaluate(() => [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.getBoundingClientRect().width));
-    if (got.length !== arg) walk.wrong = `the engine has ${got.length} keyframes, not ${arg}`;
+    // Each mark and the playhead with its middle on a whole pixel, so the
+    // Mac draws a mark on the playhead's own pixel: between two it drew
+    // the diamond half a pixel left of the playhead on its frame, found by
+    // Tim on #750.
+    const between = await page.evaluate(() =>
+      [...document.querySelectorAll(".clip-timeline .mark, .clip-timeline .playhead")]
+        .map((e) => {
+          const b = e.getBoundingClientRect();
+          return b.left + b.width / 2;
+        })
+        .filter((x) => Math.abs(x - Math.round(x)) > 0.01),
+    );
+    if (between.length) walk.wrong = `a mark or the playhead stands between two pixels, its middle at ${between.map((x) => x.toFixed(3)).join(", ")} px`;
+    else if (got.length !== arg) walk.wrong = `the engine has ${got.length} keyframes, not ${arg}`;
     else if (new Set(got.map((m) => m.x)).size !== arg) walk.wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
     else if (dots !== arg) walk.wrong = `the clip timeline draws ${dots} keyframes, not ${arg}`;
     else if (shapes.some((d, i) => diamond(d) === !!got[i]?.glide))
