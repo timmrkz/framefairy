@@ -16,10 +16,12 @@
 // as long as it lasts.
 import { FrameQueue, type Play, type PlayClock } from "../src/lib/frames/queue";
 
+// The queue makes its clock as it is made and its sound card as it
+// opens, so the card is looked up on each tick.
 export function walkClock(play: Play): PlayClock {
-  const card = play.audio;
-  if (!(card instanceof WalkCard)) throw new Error("the walk's clock moves only the walk's sound card, see install");
   return (heard, unshown, coming) => {
+    const card = play.audio;
+    if (!(card instanceof WalkCard)) throw new Error("the walk's clock moves only the walk's sound card, see install");
     if (card.state !== "running") return Math.min(heard, unshown);
     // A frame decoded and waiting goes up on this tick, so the card goes
     // on to its moment. A frame the queue says is nowhere, see unshown in

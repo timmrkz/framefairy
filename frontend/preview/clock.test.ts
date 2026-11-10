@@ -80,9 +80,19 @@ describe("the walk's clock", () => {
     expect(clock(0, 0.2, true)).toBe(0.2);
   });
 
+  // The queue makes its clock before it opens its sound card.
+  test("moves the sound card the play has when it ticks", async () => {
+    const play = { playing: true, audio: undefined as unknown as AudioContext };
+    const clock = walkClock(play);
+    const card = new WalkCard({ sampleRate: 1000 });
+    play.audio = card as unknown as AudioContext;
+    await card.resume();
+    expect(clock(0, 0.2, true)).toBe(0.2);
+  });
+
   test("refuses a sound card the walk does not move", () => {
     const play = { playing: true, audio: {} as AudioContext } satisfies Play;
-    expect(() => walkClock(play)).toThrow("the walk's clock moves only the walk's sound card");
+    expect(() => walkClock(play)(0, 0.2, true)).toThrow("the walk's clock moves only the walk's sound card");
   });
 });
 
