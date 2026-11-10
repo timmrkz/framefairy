@@ -239,6 +239,11 @@ time there, when a time is for a run that is gone, or when the sum is
 over the budget. A change that adds walking raises it only with Tim's
 yes, and one that saves walking lowers it by what it saved.
 
+On CI six walkers keep the four cores busy all the time, so a walk
+costs the processor time it spends, not the time it waits. A wait taken
+out gives its time to the other walkers' work, and their runs grow by
+most of it: only work no longer done makes the walks job shorter.
+
 ### How a walk picks its steps
 
 Each gesture is the real key or click, pressed in the browser the walk

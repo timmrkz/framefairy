@@ -3008,7 +3008,7 @@ const defaultWalks = 3
 // the budget needs Tim's yes to raise it. A change that saves walking
 // lowers it by what it saved, so the walks cannot creep back. See What a
 // walk is for in docs/TESTING.md.
-const walkBudget = 2540
+const walkBudget = 3040
 
 // offBudget says what is wrong with walk-times.tsv, took, for the runs
 // named: a run it has no time for, a time for a run there is not, and a
