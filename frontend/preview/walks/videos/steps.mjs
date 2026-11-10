@@ -1145,19 +1145,28 @@ export const steps = {
       const left = () =>
         page.evaluate(() => {
           const parts = [...document.querySelectorAll(".unheard")].map((el) => Number(/round\(([\d.]+) \*/.exec(el.style.getPropertyValue("--at"))?.[1] ?? 0));
-          return parts.length === 1 ? 1 - parts[0] : 1;
+          return parts.length === 0 ? 0 : parts.length === 1 ? 1 - parts[0] : 1;
         });
       const { duration } = await ask(page, "Source", source);
-      for (let n = 0; (await left()) * duration >= 25; n++) {
+      for (let n = 0, was = await left(); was * duration >= 25; n++) {
         if (n >= 200) {
           walk.wrong = "two hundred pieces heard, and the whole video still has more than a piece left";
           break;
         }
-        const seen = await news(page);
+        // The piece let on is waited for by the dots it moves, not by the
+        // next news of any kind: news of something else let the walk on
+        // before the piece was heard, it let on a second, and the last
+        // two went at once with nothing left to stop.
+        let seen = await news(page);
         await control(url, "/speech?step=1");
-        await nextNews(page, seen);
+        for (let now = was; now === was; now = await left()) seen = await nextNews(page, seen);
+        was = await left();
       }
       if (walk.wrong) return;
+      if (!(await left())) {
+        walk.wrong = "the whole video was heard before its last piece, with none left to stop on";
+        return;
+      }
       await control(url, "/speech?hold=one");
       await row.hover();
       await row.locator("button.more").click();
