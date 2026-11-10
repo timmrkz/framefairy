@@ -1,3 +1,16 @@
+<script lang="ts" module>
+  // The workspaces made, for the walks, which wait on the read ahead of
+  // the one in front, the way the video preview's handles find theirs,
+  // see awake in Player.svelte. A handle each workspace set as it woke
+  // pointed the walks at one built behind it, asleep, so they waited on
+  // nothing and pressed a key with its frame still to come.
+  const made: { rested: () => Promise<void>; front: () => boolean }[] = [];
+  Object.defineProperty(window, "__readAheadRested", {
+    configurable: true,
+    get: () => (made.findLast((w) => w.front()) ?? made.at(-1))?.rested,
+  });
+</script>
+
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
   import { fade } from "svelte/transition";
@@ -1884,9 +1897,13 @@
       if (!viewAsking) return;
     }
   }
-  $effect(() => {
-    if (away) return;
-    (window as unknown as { __readAheadRested?: () => Promise<void> }).__readAheadRested = rested;
+  onMount(() => {
+    const me = { rested, front: () => !!root?.closest(".workspace.front") };
+    made.push(me);
+    return () => {
+      const at = made.indexOf(me);
+      if (at >= 0) made.splice(at, 1);
+    };
   });
 
   // Read again as the cards change, and as the pointer comes to one: the

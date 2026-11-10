@@ -20,10 +20,14 @@ export default [
     // Tim's idea (2.269): paused, the frames of the word after the playhead
     // and of the word before are read while the hand rests, so Shift and an
     // arrow find their frame there. Before, a step to the next word read on
-    // in the open stream, or opened one, while the hand waited.
+    // in the open stream, or opened one, while the hand waited. The first
+    // frame read ahead is held back until the wait for it is seen still
+    // waiting: it once asked a workspace built behind, asleep, and a busy
+    // machine in CI let the key go before the frame was in, issue #780.
     name: "a step to the word beside finds its frame read while the hand rested",
     steps: [
       ["added", 40, "25"],
+      ["hold the read ahead"],
       ["heard"],
       ["read ahead", "Shift+ArrowRight"],
       ["read ahead", "Shift+ArrowRight"],
