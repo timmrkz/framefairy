@@ -229,4 +229,20 @@ describe("the hand on the sound card", () => {
     await holdSound(play, "hand", false);
     expect(card.state).toBe("running");
   });
+
+  // The hold asked as the card said it runs lands a task later, so the
+  // hand let go in between found the card running and left it, the hold
+  // landed with nobody holding, and the play stood for good.
+  test("starts the card again when a hold lands after the hand let go", async () => {
+    const card = new WalkCard({ sampleRate: 1000 });
+    const play = { playing: true, audio: card as unknown as AudioContext } satisfies Play;
+    await holdSound(play, "hand", true);
+    const states: AudioContextState[] = [];
+    card.addEventListener("statechange", () => states.push(card.state));
+    const back = new Promise((done) => card.addEventListener("statechange", () => states.length === 3 && done(null)));
+    await card.resume();
+    await holdSound(play, "hand", false);
+    await back;
+    expect(states).toEqual(["running", "suspended", "running"]);
+  });
 });

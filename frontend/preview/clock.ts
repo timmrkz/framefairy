@@ -199,7 +199,11 @@ class WalkSource extends WalkNode {
 // its Pause button shows, so a hand that held it in between held a card
 // that was not running yet, issue #702: the card is held again the moment
 // it says it runs. Without it a play the hand held from before the space
-// bar ran on while the walk settled, to the clip's end.
+// bar ran on while the walk settled, to the clip's end. And a hold asked
+// that way lands only after the card says so, so the hand can let go in
+// between and find the card running: the card is started again the moment
+// it says it was held with nobody holding it while a play goes on, or the
+// play stood for good, as one HEVC playback walk did.
 //
 // Let go, the card runs for as long as a play goes on, whoever stopped
 // it: WebKit suspends the system's card on its own when its media session
@@ -214,14 +218,21 @@ export function holdSound(play: Play, who: string, held: boolean): Promise<void>
     const holding = (by = new Set());
     holders.set(play, holding);
     play.audio.addEventListener("statechange", () => {
-      if (holding.size && play.audio.state === "running") void play.audio.suspend();
+      const state = play.audio.state;
+      if (holding.size && state === "running") void play.audio.suspend();
+      else if (!holding.size && state === "suspended") void letGo(play);
     });
   }
   if (held) by.add(who);
   else by.delete(who);
   if (by.size) return play.audio.state === "running" ? play.audio.suspend() : Promise.resolve();
+  return letGo(play);
+}
+
+// Starts a sound card nobody holds while a play goes on, asked once, not
+// again on every tick while the browser takes its time.
+function letGo(play: Play): Promise<void> {
   if (!play.playing || play.audio.state === "running" || play.audio.state === "closed") return Promise.resolve();
-  // Asked once, not again on every tick while the browser takes its time.
   let start = starting.get(play);
   if (!start) {
     start = play.audio.resume().finally(() => starting.delete(play));
