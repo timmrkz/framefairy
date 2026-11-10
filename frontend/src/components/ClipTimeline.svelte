@@ -936,11 +936,15 @@
   }
 
   // A card on its way written as its clip is the same clip under a new
-  // key, so the view stays where it is, held by the hand or not. Taken
-  // for a new clip, the view was laid out afresh around it, under a hand
-  // already at work on it, Tim's report of 9 November.
+  // key. While the hand is at work on the clip timeline, a view it moved,
+  // the playhead or an edge in its grip, the view stays where it is: laid
+  // out afresh, it moved under a hand already at work, Tim's report of 9
+  // November. Otherwise the clip is fitted as it is written, the way a
+  // clip made is: the card's view was fitted to where the clip was asked
+  // for, and the clip written stood off to one side, his report of 10
+  // November.
   export function follow(from: string, to: string) {
-    if (viewFor === from) viewFor = to;
+    if (viewFor === from && (held || scrubbing || gripping)) viewFor = to;
   }
 
   // Where the timeline sits when nobody has moved it: the clip with a little

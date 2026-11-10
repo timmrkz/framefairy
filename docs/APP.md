@@ -2156,7 +2156,11 @@ bubble scrolled by those eight pixels.
       the zoom it has, the way an editor's timeline scrolls with a trim.
       It zoomed out to the whole clip instead, and a clip dragged long
       then stood at a zoom where its caption blocks were too narrow to be
-      drawn, and they all went, Tim's report of 10 November. The crosshair in the row under the track
+      drawn, and they all went, Tim's report of 10 November. A clip made
+      with I or O is fitted again once it is written, the way a clip
+      picked from the list is, unless the hand is at work on the clip
+      timeline by then: its card was fitted to where it was asked for,
+      and the clip written stood off to one side. The crosshair in the row under the track
       goes to the playhead and puts it in the middle. Clicking a clip in
       the list, the one that is already selected included, puts that clip
       back in view. A double-click on the track never did: one was meant

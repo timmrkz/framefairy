@@ -94,6 +94,25 @@ export const steps = {
       walk.wrong = `the clip made with O at ${at.toFixed(1)} s is ${JSON.stringify(before)}, not heard whole after ${reach.toFixed(1)} s`;
       return;
     }
+    // Written, the clip made with O is fitted on the clip timeline the way
+    // a clip picked from the list is, since no hand was at work on it. The
+    // view stayed where its card had been fitted, and the clip written
+    // stood off to one side, Tim's report of 10 November.
+    const frame = () =>
+      page.evaluate(() => {
+        const f = document.querySelector(".clip-timeline .span.frame").getBoundingClientRect();
+        return { left: f.left, right: f.right };
+      });
+    const written = await frame();
+    await page.locator("aside ol li[data-key] button.pick.current").click();
+    await settle(page);
+    const picked = await frame();
+    if (Math.abs(written.left - picked.left) > 2 || Math.abs(written.right - picked.right) > 2) {
+      walk.wrong =
+        `the clip made with O stood from ${written.left.toFixed(0)} to ${written.right.toFixed(0)} px on the clip timeline, ` +
+        `and picked from the list from ${picked.left.toFixed(0)} to ${picked.right.toFixed(0)} px`;
+      return;
+    }
     // Dragged past the clip timeline's left side first, the way Tim did:
     // the view goes along with the start at the zoom it had, and the
     // caption blocks stay drawn. Zoomed out to the whole clip, they were
