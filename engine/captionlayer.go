@@ -43,7 +43,10 @@ import (
 // bits, see LaidCaption.appendName: writing out the shortest digits of
 // every time of every word as JSON took a quarter of a step of a drag.
 // The style and the clip, a few hundred bytes, are written as JSON, with
-// the keys of the style in order.
+// the keys of the style in order and every number as its bits too, so a
+// number JSON cannot write, a rotation with no end, still names the same
+// drawing the same. It used to fail the name, and a clip turned to its end
+// had a new name, and its captions a new file, on every read.
 func (d *CaptionDrawing) name() string {
 	h := sha256.New()
 	// One caption at a time, through one buffer, so the buffer stays as
@@ -59,14 +62,21 @@ func (d *CaptionDrawing) name() string {
 		Style map[string]any
 		Clip  Clip
 	}{d.Style, d.Clip}
-	if err := jsonv2.MarshalWrite(h, rest, jsonv2.Deterministic(true), jsontext.AllowInvalidUTF8(true)); err != nil {
-		// Only a number JSON cannot hold, which no caption has. The name is
-		// then of this drawing alone, which is still never another's.
+	if err := jsonv2.MarshalWrite(h, rest, nameOptions); err != nil {
+		// Nothing a drawing holds fails it. The name is then of this
+		// drawing alone, which is still never another's.
 		h.Reset()
 		fmt.Fprintf(h, "%p", d)
 	}
 	return hex.EncodeToString(h.Sum(nil)[:12])
 }
+
+// nameOptions is how the style and the clip of a drawing are written for
+// its name, see CaptionDrawing.name.
+var nameOptions = jsonv2.JoinOptions(jsonv2.Deterministic(true), jsontext.AllowInvalidUTF8(true),
+	jsonv2.WithMarshalers(jsonv2.MarshalToFunc(func(enc *jsontext.Encoder, f float64) error {
+		return enc.WriteToken(jsontext.Uint(math.Float64bits(f)))
+	})))
 
 // appendName writes what the caption is for its drawing's name, see
 // CaptionDrawing.name: every field the caption has, each number as its

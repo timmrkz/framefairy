@@ -1258,6 +1258,16 @@ func TestADrawingsNameHasEveryFieldOfItsCaptions(t *testing.T) {
 			t.Fatalf("the same drawing was named %s and %s", name, again)
 		}
 	}
+	// A clip turned from a moment to its end holds a number JSON cannot
+	// write, and keeps its name too.
+	turned := func() *CaptionDrawing {
+		d := drawing()
+		d.Clip.Rotations = []Rotation{{From: 12, To: math.Inf(1), Deg: 90}}
+		return d
+	}
+	if a, b := turned().name(), turned().name(); a != b {
+		t.Errorf("a clip turned to its end was named %s and then %s", a, b)
+	}
 	changes := map[string]func(d *CaptionDrawing){
 		"Start":  func(d *CaptionDrawing) { d.Laid[0].Start = 1.04 },
 		"End":    func(d *CaptionDrawing) { d.Laid[0].End = 2.04 },
@@ -1275,6 +1285,9 @@ func TestADrawingsNameHasEveryFieldOfItsCaptions(t *testing.T) {
 			d.Clip.Segments = []Segment{{Start: 10, End: 19.96}}
 		},
 		"a second caption": func(d *CaptionDrawing) { d.Laid = append(d.Laid, d.Laid[0]) },
+		"a turn to the end": func(d *CaptionDrawing) {
+			d.Clip.Rotations = []Rotation{{From: 12, To: math.Inf(1), Deg: 90}}
+		},
 	}
 	// Every exported field of a laid caption, the caption in it too.
 	var fields func(ty reflect.Type)

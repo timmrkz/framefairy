@@ -494,6 +494,10 @@ dragged. Only the edge dragged pushes, and only once it has moved in, so a
 press or a drag outward moves no cut. A cut the edge has gone past, beyond
 where its far side was, is not pushed: it stays behind and goes with the
 part trimmed off, so a long drag carries no cut into speech nobody cut.
+The cut's part comes back at once as the edge passes its far side. A clip
+with little more than a second besides a cut keeps its edge where the
+second runs out while the hand crosses the cut, and the edge catches up at
+the cut's far side, never ahead of the hand.
 Every step of a drag starts from the clip as saved, so a drag
 back out puts the cuts back where they were. A clip once also kept the
 pieces it was found with, `found_segments`, to frame what was put back by

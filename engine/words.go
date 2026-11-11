@@ -440,7 +440,7 @@ func between(words []timed.Cue, from, to float64) []timed.Cue {
 
 // captionReach is how far either side of a clip its captions look at the
 // words. They need only the words the clip holds and a word found within
-// 20 ms of a caption's, see SaidWord, so a second is plenty.
+// 20 ms of a caption's, see saidWords.at, so a second is plenty.
 const captionReach = 1.0
 
 // nearClip is the part of the words, in the order they were said, that a
