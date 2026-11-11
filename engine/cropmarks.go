@@ -60,7 +60,9 @@ import (
 // right before. It has no crop of its own: the glide starts from the crop
 // before it, so X is that crop, and FromClip says it is the piece's own
 // crop, with no keyframe of its turn before. Neither is in a plan, see
-// opened.
+// opened. Alone is a circle no circle of its turn stands beside among the
+// keyframes the clip shows, so no glide runs into or out of it and it does
+// nothing yet, see carried.
 type CropMark struct {
 	At       float64
 	X        int
@@ -70,6 +72,7 @@ type CropMark struct {
 	Last     bool
 	Opens    bool
 	FromClip bool
+	Alone    bool
 }
 
 // MaxCropMarks is how many keyframes one clip may have.
@@ -83,6 +86,7 @@ type CropMarkView struct {
 	Turn     int     `json:"turn"`
 	Glide    bool    `json:"glide"`
 	Opens    bool    `json:"opens,omitempty"`
+	Alone    bool    `json:"alone,omitempty"`
 	Last     bool    `json:"-"`
 	FromClip bool    `json:"-"`
 }
@@ -91,7 +95,7 @@ type CropMarkView struct {
 func CropMarkViews(marks []CropMark) []CropMarkView {
 	out := make([]CropMarkView, len(marks))
 	for i, m := range marks {
-		out[i] = CropMarkView{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide, Opens: m.Opens, Last: m.Last, FromClip: m.FromClip}
+		out[i] = CropMarkView{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide, Opens: m.Opens, Alone: m.Alone, Last: m.Last, FromClip: m.FromClip}
 	}
 	return out
 }
@@ -445,7 +449,9 @@ func joined(shown []carriage, i int) bool {
 }
 
 // carried is the keyframes a clip with these pieces shows, and that steer
-// its crop, see carry.
+// its crop, see carry. A circle no circle of its turn stands beside is
+// Alone: it does nothing until a second is put, so the clip timeline
+// shows it as doing nothing, Tim on #778.
 func carried(segments []Segment, marks []CropMark) []CropMark {
 	shown := carry(segments, marks)
 	if len(shown) == 0 {
@@ -454,6 +460,7 @@ func carried(segments []Segment, marks []CropMark) []CropMark {
 	out := make([]CropMark, len(shown))
 	for i, c := range shown {
 		out[i] = c.mark
+		out[i].Alone = c.mark.Glide && !joined(shown, i)
 	}
 	return out
 }
@@ -872,7 +879,7 @@ func segmentOf(v SegmentView) Segment {
 	seg := Segment{Start: v.Start, End: v.End, CropX: v.CropX}
 	for _, m := range v.Marks {
 		seg.Marks = append(seg.Marks, CropMark{
-			At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide, Opens: m.Opens, Last: m.Last, FromClip: m.FromClip,
+			At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide, Opens: m.Opens, Alone: m.Alone, Last: m.Last, FromClip: m.FromClip,
 		})
 	}
 	return seg

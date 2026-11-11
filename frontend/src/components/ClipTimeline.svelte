@@ -1787,7 +1787,7 @@
   // they move with it and not only once it is let go, Tim on #778.
   const cropDots = $derived(
     (shapedShown && shaped?.framing ? shaped.framing.cropMarks : cropMarks)
-      .map((m) => ({ at: m.at, shown: shownAt("crop", m.at), glide: !!m.glide, opens: !!m.opens }))
+      .map((m) => ({ at: m.at, shown: shownAt("crop", m.at), glide: !!m.glide, opens: !!m.opens, alone: !!m.alone }))
       .filter((m) => m.shown >= view.from && m.shown <= view.to),
   );
   // The stretches the crop glides over, each from a circle into the next,
@@ -2337,6 +2337,7 @@
             class="mark cropdot"
             class:here={frameAt(m.shown, frame, frameStart) === playFrame}
             class:active={markDrag?.kind === "crop" && markDrag.from === m.at}
+            class:alone={m.alone}
             style="left: round({x(onFrame(m.shown))}%, 1px)"
             role="slider"
             tabindex="-1"
@@ -2344,7 +2345,9 @@
             aria-valuenow={m.shown}
             title={locked
               ? "A keyframe. Click to see it"
-              : m.opens
+              : m.alone
+                ? "A glide keyframe on its own does nothing. Put a second one to glide between them. Click to see it, drag it to another frame, double-click to remove it"
+                : m.opens
                 ? "A glide keyframe. The crop glides from here, from the crop before it, into the next glide keyframe. Click to see it, drag it to another frame, double-click to remove it"
                 : m.glide
                 ? "A glide keyframe. The crop glides into it from the glide keyframe before. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"
@@ -2352,6 +2355,7 @@
             data-grip="mark"
             data-kind="crop"
             data-glide={m.glide || undefined}
+            data-alone={m.alone || undefined}
             data-at={m.at}
           >
             {@render solid(m.glide ? CIRCLE : DIAMOND, 18)}
@@ -2820,6 +2824,12 @@
      track's border and a pixel in from it. */
   .cropdot {
     top: calc(var(--frame-line) / 2 - 9px);
+  }
+
+  /* A glide keyframe with no other beside it does nothing yet, so it is
+     dimmed the way a control that does nothing is, Tim on #778. */
+  .cropdot.alone {
+    opacity: var(--dimmed);
   }
 
   /* The stretch the crop glides over from a circle into the next, over the

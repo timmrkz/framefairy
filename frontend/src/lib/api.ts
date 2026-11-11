@@ -287,6 +287,8 @@ export interface CropMark {
   // A circle that starts a glide, from the crop before it, with no crop
   // of its own, see engine.CropMark.
   opens?: boolean;
+  // A circle with no circle beside it, which does nothing yet.
+  alone?: boolean;
 }
 
 // A piece's crop from a frame of the video on, until the next step, see

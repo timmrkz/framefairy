@@ -552,7 +552,7 @@ func TestTheCropIsPlacedOnlyOnAKeyframe(t *testing.T) {
 	if err := SetCrop(fsys, path, "01", 10.2, 300, at25); err != nil {
 		t.Fatal(err)
 	}
-	marked(CropMark{At: 10.2, X: 300}, CropMark{At: 10.8, X: 300, Glide: true, Opens: true}, CropMark{At: 13.6, X: 60})
+	marked(CropMark{At: 10.2, X: 300}, CropMark{At: 10.8, X: 300, Glide: true, Opens: true, Alone: true}, CropMark{At: 13.6, X: 60})
 
 	// On the circle, between keyframes, after one, before the first and
 	// after a cut: nothing moves.
@@ -561,7 +561,7 @@ func TestTheCropIsPlacedOnlyOnAKeyframe(t *testing.T) {
 			t.Errorf("a crop dragged at %.2f s, on no keyframe, was taken", at)
 		}
 	}
-	marked(CropMark{At: 10.2, X: 300}, CropMark{At: 10.8, X: 300, Glide: true, Opens: true}, CropMark{At: 13.6, X: 60})
+	marked(CropMark{At: 10.2, X: 300}, CropMark{At: 10.8, X: 300, Glide: true, Opens: true, Alone: true}, CropMark{At: 13.6, X: 60})
 	if seg := pieceAt(t, fsys, path, 13.2); seg.CropX == nil || *seg.CropX != 80 {
 		t.Errorf("the crop of the clip is %v, not 80", seg.CropX)
 	}
@@ -585,7 +585,7 @@ func TestAKeyframeIsPutAsADiamondOrACircle(t *testing.T) {
 	if err := SetCropMark(fsys, path, "01", -1, 11.0, 100, false, at25); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.48, X: 300, Glide: true, Opens: true, FromClip: true}, {At: 11, X: 100}}; !reflect.DeepEqual(got, want) {
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.48, X: 300, Glide: true, Opens: true, FromClip: true, Alone: true}, {At: 11, X: 100}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("G at 10.5 s and S at 11 s made %v, not %v", got, want)
 	}
 	if err := SetCropMark(fsys, path, "01", 10.48, 10.2, -1, false, at25); err != nil {
@@ -597,7 +597,7 @@ func TestAKeyframeIsPutAsADiamondOrACircle(t *testing.T) {
 	if err := SetCropGlide(fsys, path, "01", 10.2, false, at25); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.2, X: 300}, {At: 11, X: 300, Glide: true, Opens: true}}; !reflect.DeepEqual(got, want) {
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.2, X: 300}, {At: 11, X: 300, Glide: true, Opens: true, Alone: true}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("the circle dragged to 10.2 s and both turned are %v, not %v", got, want)
 	}
 	if err := SetCropGlide(fsys, path, "01", 10.6, true, at25); err == nil {
@@ -774,6 +774,7 @@ func TestAnEdgeCarriesTheKeyframeItReachedLast(t *testing.T) {
 	x, y, z := CropMark{At: 12, X: 200, Glide: true}, CropMark{At: 14, X: 400, Glide: true}, CropMark{At: 17, X: 600, Glide: true}
 	d := CropMark{At: 11, X: 100}
 	at := func(m CropMark, t float64) CropMark { m.At = t; return m }
+	alone := func(m CropMark) CropMark { m.Alone = true; return m }
 	// A circle that starts a glide, from the crop before it, or the
 	// clip's own where there is none.
 	opens := func(m CropMark, before *CropMark) CropMark {
@@ -808,6 +809,8 @@ func TestAnEdgeCarriesTheKeyframeItReachedLast(t *testing.T) {
 		{"a cut over Y joined to X before it", []Segment{{Start: 10, End: 13.5}, {Start: 14.5, End: 20}}, []CropMark{x, y}, []CropMark{opens(x, nil), at(y, 14.5)}},
 		{"a keyframe of the first frame's own", one(12, 20), []CropMark{d, a, b}, []CropMark{a, b}},
 		{"a keyframe set aside", one(14.5, 20), []CropMark{a, {At: 14, X: 400, Aside: true}, c}, []CropMark{at(a, 14.5), c}},
+		{"a circle on its own does nothing", one(10, 20), []CropMark{d, x}, []CropMark{d, alone(opens(x, &d))}},
+		{"S on the second of two circles leaves the first on its own", one(10, 20), []CropMark{x, b}, []CropMark{alone(opens(x, nil)), b}},
 		{"every keyframe covered set aside", one(14.5, 20), []CropMark{{At: 12, X: 200, Aside: true}, {At: 14, X: 400, Aside: true}, c}, []CropMark{c}},
 	} {
 		if got := carried(h.pieces, h.marks); !reflect.DeepEqual(got, h.want) {
@@ -937,7 +940,7 @@ func TestTouchingACarriedKeyframeMakesItReal(t *testing.T) {
 	}{
 		{"G on it", func(fsys afero.Fs, path string) error {
 			return SetCropGlide(fsys, path, "01", 14.52, true, at25)
-		}, CropMark{At: 14.52, X: 200, Glide: true, Opens: true}},
+		}, CropMark{At: 14.52, X: 200, Glide: true, Opens: true, Alone: true}},
 		{"dragged on", func(fsys afero.Fs, path string) error {
 			return SetCropMark(fsys, path, "01", 14.52, 15, 0, false, at25)
 		}, CropMark{At: 15, X: 400}},
