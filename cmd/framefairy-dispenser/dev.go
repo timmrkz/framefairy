@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -227,28 +226,12 @@ func (d *dev) run(ctx context.Context, ticks <-chan time.Time) {
 	}
 }
 
-// keysOf is what the dispenser holds for a sale, read straight from the
-// engine, with whether each key is on the revocation list.
+// heldKey is a key the dispenser holds for a sale, as the dev page shows
+// it, with whether it is on the revocation list.
 type heldKey struct {
 	Key         licence.Key
 	Fingerprint string
 	Revoked     bool
-}
-
-func (d *dev) keysOf(ctx context.Context, source, ref string, revoked map[string]bool) ([]heldKey, error) {
-	keys, err := d.engine.Keys(ctx, source, ref)
-	if errors.Is(err, dispenser.ErrNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	out := make([]heldKey, len(keys))
-	for i, k := range keys {
-		f := k.Fingerprint().String()
-		out[i] = heldKey{Key: k, Fingerprint: f, Revoked: revoked[f]}
-	}
-	return out, nil
 }
 
 // ring keeps the last log lines for the dev page and writes them on.

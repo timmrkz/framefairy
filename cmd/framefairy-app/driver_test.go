@@ -489,12 +489,6 @@ func (s *speech) breaks(err error) {
 	s.mu.Unlock()
 }
 
-// hearing gives a channel that is closed when the speech model is next
-// given audio.
-func (s *speech) hearing() <-chan struct{} {
-	return s.hearingAfter(0)
-}
-
 // hearingAfter gives a channel that is closed when the speech model is
 // given audio once more after heard pieces, so those are heard to their
 // end. A piece still being heard when the work stops is let go, so a test

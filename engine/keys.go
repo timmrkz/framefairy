@@ -74,9 +74,6 @@ func (m *Machine) oldStore() keyStore {
 	return m.oldKeys
 }
 
-// keyAccount is the account every item is kept under.
-const keyAccount = "framefairy"
-
 // envKey is the key in the environment, which comes first, because that is
 // how the command line is given one.
 func envKey(p Provider) string {

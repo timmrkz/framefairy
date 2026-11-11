@@ -865,25 +865,14 @@ playing.
 
 The queue also has a page of its own in the harness, `preview/frames/`,
 one canvas and `window.__queue` to drive, which is the quickest way to
-look at the queue alone:
-
-```
-npx vite build --config frontend/preview/vite.config.ts
-node frontend/preview/frames/cuts.mjs                 # the clip, once
-node frontend/preview/frames/cuts.mjs loop
-node frontend/preview/frames/cuts.mjs seeks           # paused frames, a seek while playing
-node frontend/preview/frames/cuts.mjs memory          # a minute straight on
-node frontend/preview/frames/added.mjs                # an episode just added, see docs/TESTING.md
-```
-
-`frames()` in `open.mjs` opens it on its own episode, ten minutes made by
-the same recipe as the workspace's, see The episode the harness can play.
-`?read` reads the frame number back from the canvas and `?hear` records
-every sample handed to the sound card, and the probe lays it over the
-episode's own sound decoded by ffmpeg, cut and faded the way the render
-does it. A sample missing, doubled or taken from inside a cut no longer
-matches. `SHIFT=1` moves the expected sound by one sample after each cut:
-the check has to fail with it, and it does, from 2 percent off to 35.
+look at the queue alone. `frames()` in `open.mjs` opens it on its own
+episode, ten minutes made by the same recipe as the workspace's, see The
+episode the harness can play, and `queueUntil` waits for a report of the
+queue. `?read` reads the frame number back from the canvas and `?hear`
+records every sample handed to the sound card, for a probe to lay over
+the episode's own sound decoded by ffmpeg, cut and faded the way the
+render does it. A sample missing, doubled or taken from inside a cut no
+longer matches.
 
 In the workspace the same is measured on the path a person takes, see
 the proof under Playback above: the clip picked from the list, the space
