@@ -513,6 +513,8 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 		}
 	}()
 	var advance func(p heardPiece)
+	// Whether a piece heard was let go because the work was stopped.
+	dropped := false
 	collect := func() {
 		p := <-results
 		inflight--
@@ -562,7 +564,10 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 		// shown and the edge jumped when the work carried on, Tim's report
 		// of 24 October. So what was said to be heard at the stop is what
 		// is kept, and a piece is heard again when the work carries on.
+		// A piece let go is a stop, so the hearing never ends as if all of
+		// it was heard, see dropped below.
 		if ctx.Err() != nil {
+			dropped = true
 			return
 		}
 		raw = append(raw, p.words...)
@@ -665,7 +670,11 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 		recognise(pending, chunkStart)
 		drain()
 	}
-	if ctx.Err() != nil {
+	// Every piece is in by now, so a stop after this lets nothing go. A
+	// piece let go always comes with a stop, and both are asked, so what
+	// is written down as heard is never more than the words taken in,
+	// whatever order the checks above are in.
+	if dropped || ctx.Err() != nil {
 		// Stopped, by pause or by a search that wants the machine. What was
 		// heard since the last save is written down before it goes, so
 		// carrying on starts where the work really got to. Without this a
