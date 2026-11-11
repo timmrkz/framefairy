@@ -440,14 +440,24 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 	// block before it across the place it had been, which Tim read as the
 	// two merging.
 	var current []int
-	line := func(ks []int) string {
-		parts := make([]string, 0, len(ks))
-		for _, k := range ks {
-			if laid[k] != "" {
-				parts = append(parts, laid[k])
-			}
+	// chars is how many characters the words of current take on a line,
+	// the words shown with a space between each two, and shown how many
+	// of them are shown. They are counted as each word comes, where the
+	// line used to be joined and counted again for every word.
+	chars, shown := 0, 0
+	laidLen := make([]int, len(laid))
+	for k, text := range laid {
+		laidLen[k] = runes.Len(text)
+	}
+	// with is how many characters current takes with the word k added.
+	with := func(k int) int {
+		switch {
+		case laid[k] == "":
+			return chars
+		case shown == 0:
+			return laidLen[k]
 		}
-		return strings.Join(parts, " ")
+		return chars + 1 + laidLen[k]
 	}
 	closeGroup := func(isAlone bool) {
 		g := group{alone: isAlone, first: -1, from: all[current[0]].Start,
@@ -464,7 +474,7 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 		if len(g.words) > 0 || len(groups) > 0 {
 			groups = append(groups, g)
 		}
-		current = nil
+		current, chars, shown = nil, 0, 0
 	}
 	for k := range all {
 		if alone != nil && laid[k] != "" && alone(laid[k]) {
@@ -475,14 +485,18 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 			closeGroup(true)
 			continue
 		}
-		if len(current) > 0 && runes.Len(line(append(current[:len(current):len(current)], k))) > maxChars {
+		if len(current) > 0 && with(k) > maxChars {
 			closeGroup(false)
+		}
+		chars = with(k)
+		if laid[k] != "" {
+			shown++
 		}
 		current = append(current, k)
 		last := k == len(all)-1
 		pauseNext := !last && allWas[k+1].Start-allWas[k].End >= captionPause
 		sentence := endsWithBreak(laid[k]) &&
-			float64(runes.Len(line(current))) >= float64(maxChars)*0.55
+			float64(chars) >= float64(maxChars)*0.55
 		if last || pauseNext || sentence {
 			closeGroup(false)
 		}
@@ -793,10 +807,62 @@ func ShareTime(clip Clip, share float64) float64 {
 	return EpisodeTime(clip, share*clipLength(clip))
 }
 
-// SaidWord is the word being said at a moment of a clip, on the episode's
-// clock, out of the words the clip says.
-func SaidWord(clip Clip, words []timed.Cue, at float64) (timed.Cue, bool) {
+// saidWords are the words a clip says, on the episode's clock, to find the
+// word being said at a moment of the clip, see at.
+type saidWords struct {
+	words []timed.Cue
+	// ordered says every word ends where it starts or later, and starts
+	// and ends no sooner than the one before, as a transcript keeps them,
+	// so the word at a moment is found by halving the words.
+	ordered bool
+}
+
+// saidWordsOf is words to find the word being said in.
+func saidWordsOf(words []timed.Cue) saidWords {
+	ordered := true
+	for i, w := range words {
+		if w.End < w.Start || (i > 0 && (w.Start < words[i-1].Start || w.End < words[i-1].End)) {
+			ordered = false
+			break
+		}
+	}
+	return saidWords{words: words, ordered: ordered}
+}
+
+// at is the word being said at a moment of a clip, out of the words the
+// clip says: the word the moment is in, or the nearest within 20
+// milliseconds, the first of two as near. The caption box asks it for
+// every word a clip shows, and going through all the words for each made
+// a clip of a minute look at its words thousands of times on every step
+// of a drag. In order, they are halved, see saidWords.ordered.
+func (s saidWords) at(clip Clip, at float64) (timed.Cue, bool) {
 	when := EpisodeTime(clip, at)
+	if !s.ordered {
+		return wordAt(s.words, when)
+	}
+	words := s.words
+	// The first word that ends after the moment. Every word before it
+	// ends before, and every word after it starts later.
+	i := sort.Search(len(words), func(i int) bool { return words[i].End > when })
+	if i < len(words) && words[i].Start <= when {
+		return words[i], true
+	}
+	near, off := timed.Cue{}, math.Inf(1)
+	if i > 0 {
+		// The first of the words before that end the latest, as near as
+		// any of them.
+		j := sort.Search(i, func(j int) bool { return words[j].End >= words[i-1].End })
+		near, off = words[j], when-words[j].End
+	}
+	if i < len(words) && words[i].Start-when < off {
+		near, off = words[i], words[i].Start-when
+	}
+	return near, off <= 0.02
+}
+
+// wordAt is the word being said at a moment of the episode, out of words
+// in any order, looked at one by one, see saidWords.at.
+func wordAt(words []timed.Cue, when float64) (timed.Cue, bool) {
 	near, off := timed.Cue{}, math.Inf(1)
 	for _, w := range words {
 		if when >= w.Start && when < w.End {

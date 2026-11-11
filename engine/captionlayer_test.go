@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -1230,4 +1231,88 @@ func TestAWholeFileThereCallsOffTheOneStartedBeforeIt(t *testing.T) {
 			t.Error("the file of 98 was not called off")
 		}
 	})
+}
+
+// A drawing's name changes with every field of its captions, so two
+// drawings that differ never share a name, and two that are the same
+// always do, whatever order the words hidden are kept in. The captions are
+// written out by hand for the name, see LaidCaption.appendName, so a field
+// added to a caption has to be added there too, and this test says so.
+func TestADrawingsNameHasEveryFieldOfItsCaptions(t *testing.T) {
+	drawing := func() *CaptionDrawing {
+		return &CaptionDrawing{
+			Laid: []LaidCaption{{
+				Caption: Caption{Start: 1, End: 2, Text: "eins zwei", Opens: 11, Closes: 12,
+					Words: []timed.Cue{{Start: 1, End: 1.4, Text: "eins"}, {Start: 1.5, End: 2, Text: "zwei"}}},
+				Lines:  [][]timed.Cue{{{Start: 1, End: 1.4, Text: "eins"}}, {{Start: 1.5, End: 2, Text: "zwei"}}},
+				Hidden: map[int]bool{0: true, 1: true, 3: true},
+				Lift:   LiftWord,
+			}},
+			Style: map[string]any{"size": 80.0, "primary": "&H00FFFFFF", "box": 1.0},
+			Clip:  Clip{ID: "01", Segments: []Segment{{Start: 10, End: 20}}},
+		}
+	}
+	name := drawing().name()
+	for range 20 {
+		if again := drawing().name(); again != name {
+			t.Fatalf("the same drawing was named %s and %s", name, again)
+		}
+	}
+	changes := map[string]func(d *CaptionDrawing){
+		"Start":  func(d *CaptionDrawing) { d.Laid[0].Start = 1.04 },
+		"End":    func(d *CaptionDrawing) { d.Laid[0].End = 2.04 },
+		"Text":   func(d *CaptionDrawing) { d.Laid[0].Text = "eins drei" },
+		"Words":  func(d *CaptionDrawing) { d.Laid[0].Words = d.Laid[0].Words[:1] },
+		"Opens":  func(d *CaptionDrawing) { d.Laid[0].Opens = 11.5 },
+		"Closes": func(d *CaptionDrawing) { d.Laid[0].Closes = 12.5 },
+		"Lines": func(d *CaptionDrawing) {
+			d.Laid[0].Lines = [][]timed.Cue{{d.Laid[0].Lines[0][0], d.Laid[0].Lines[1][0]}}
+		},
+		"Hidden": func(d *CaptionDrawing) { d.Laid[0].Hidden = map[int]bool{0: true} },
+		"Lift":   func(d *CaptionDrawing) { d.Laid[0].Lift = LiftRest },
+		"a size": func(d *CaptionDrawing) { d.Style["size"] = 81.0 },
+		"a piece": func(d *CaptionDrawing) {
+			d.Clip.Segments = []Segment{{Start: 10, End: 19.96}}
+		},
+		"a second caption": func(d *CaptionDrawing) { d.Laid = append(d.Laid, d.Laid[0]) },
+	}
+	// Every exported field of a laid caption, the caption in it too.
+	var fields func(ty reflect.Type)
+	fields = func(ty reflect.Type) {
+		for f := range ty.Fields() {
+			if f.Anonymous {
+				fields(f.Type)
+			} else if f.IsExported() && changes[f.Name] == nil {
+				t.Errorf("a caption's %s is not in its drawing's name, see LaidCaption.appendName", f.Name)
+			}
+		}
+	}
+	fields(reflect.TypeFor[LaidCaption]())
+	// Every field of a word, in the words and in the lines.
+	for f := range reflect.TypeFor[timed.Cue]().Fields() {
+		for _, where := range []string{"words", "lines"} {
+			changes[fmt.Sprintf("a word's %s in the %s", f.Name, where)] = func(d *CaptionDrawing) {
+				word := &d.Laid[0].Words[0]
+				if where == "lines" {
+					word = &d.Laid[0].Lines[0][0]
+				}
+				v := reflect.ValueOf(word).Elem().FieldByIndex(f.Index)
+				switch v.Kind() {
+				case reflect.Float64:
+					v.SetFloat(v.Float() + 0.04)
+				case reflect.String:
+					v.SetString(v.String() + "s")
+				default:
+					t.Fatalf("a word's %s is a %s, which this test cannot change", f.Name, v.Kind())
+				}
+			}
+		}
+	}
+	for what, change := range changes {
+		d := drawing()
+		change(d)
+		if d.name() == name {
+			t.Errorf("with %s changed the drawing keeps its name", what)
+		}
+	}
 }

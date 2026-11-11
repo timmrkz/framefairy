@@ -31,6 +31,11 @@ type faceMetrics struct {
 	numH  int
 	hmtx  []byte
 	cmap  []byte
+	// latin is the advance of every character up to U+00FF, the letters
+	// of English and German, worked out as the face is read, so laying
+	// out a caption takes no lock for them. Every other character is
+	// worked out the first time it is asked for and kept in cache.
+	latin [256]float64
 	cache map[rune]float64
 }
 
@@ -208,8 +213,12 @@ func readMetrics(data []byte) *faceMetrics {
 			scale = float64(upem) / float64(int(ascent)+int(descent))
 		}
 	}
-	return &faceMetrics{upem: float64(upem), scale: scale, numH: int(numH),
+	f := &faceMetrics{upem: float64(upem), scale: scale, numH: int(numH),
 		hmtx: hmtx, cmap: sub, cache: map[rune]float64{}}
+	for r := range f.latin {
+		f.latin[r] = f.measure(rune(r))
+	}
+	return f
 }
 
 // glyph is the glyph a character uses, or zero when the face has none.
@@ -289,11 +298,21 @@ func (f *faceMetrics) glyph12(r rune) int {
 
 // advance is how far the pen moves for a character, as a share of the em.
 func (f *faceMetrics) advance(r rune) float64 {
+	if r >= 0 && int(r) < len(f.latin) {
+		return f.latin[r]
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if width, seen := f.cache[r]; seen {
 		return width
 	}
+	width := f.measure(r)
+	f.cache[r] = width
+	return width
+}
+
+// measure is how far the pen moves for a character, read from the face.
+func (f *faceMetrics) measure(r rune) float64 {
 	index := f.glyph(r)
 	if index >= f.numH {
 		index = f.numH - 1
@@ -302,9 +321,7 @@ func (f *faceMetrics) advance(r rune) float64 {
 	if !ok {
 		raw, _ = u16(f.hmtx, 0)
 	}
-	width := float64(raw) / f.upem
-	f.cache[r] = width
-	return width
+	return float64(raw) / f.upem
 }
 
 // TextWidth is how wide a line of text comes out at a size, in the same

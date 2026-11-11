@@ -109,27 +109,21 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 	if err != nil {
 		return Shaped{}, err
 	}
-	value, err := decodeOrdered(s.data)
+	clips, err := s.clipObjects()
 	if err != nil {
 		return Shaped{}, err
-	}
-	top, _ := value.(*object)
-	if top == nil {
-		return Shaped{}, renderErr("clip plan must be a JSON object")
-	}
-	var clips []*object
-	if list, ok := top.values[keyClips].([]any); ok {
-		for _, item := range list {
-			if c, ok := item.(*object); ok {
-				clips = append(clips, c)
-			}
-		}
 	}
 	c, err := findClip(clips, clipID)
 	if err != nil {
 		return Shaped{}, err
 	}
-	out, err := checkedPieces(change, segmentObjects(c), rotationsOf(c), g.Frames)
+	// The clip is the summary's, shared by every step of the drag, so the
+	// gesture is made on copies of its pieces.
+	pieces := segmentObjects(c)
+	for i, p := range pieces {
+		pieces[i] = copyObject(p)
+	}
+	out, err := checkedPieces(change, pieces, rotationsOf(c), g.Frames)
 	if err != nil {
 		return Shaped{}, err
 	}

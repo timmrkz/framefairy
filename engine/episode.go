@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/afero"
@@ -74,6 +75,54 @@ type PlanSummary struct {
 	plan  Plan
 	clips []Clip
 	data  []byte
+	// ordered is the clips of data in the plan's own order, read once, the
+	// first time a gesture asks, see clipObjects.
+	ordered *orderedClips
+}
+
+// orderedClips is a plan's clips read in its own order, with every key
+// it has, once for every step of a drag, see PlanSummary.clipObjects.
+type orderedClips struct {
+	once  sync.Once
+	clips []*object
+	err   error
+}
+
+// clipObjects is the summary's clips in the plan's own order, read from
+// its bytes the first time a gesture asks and shared by every step after.
+// A drag read the whole plan again on every step of the hand, and a plan
+// of thirty clips took a quarter of the step. They are shared, so nothing
+// changes them: a gesture works on copies of a clip's pieces, see
+// ShapeClip.
+func (s PlanSummary) clipObjects() ([]*object, error) {
+	if s.ordered == nil {
+		return orderedClipsOf(s.data)
+	}
+	s.ordered.once.Do(func() {
+		s.ordered.clips, s.ordered.err = orderedClipsOf(s.data)
+	})
+	return s.ordered.clips, s.ordered.err
+}
+
+// orderedClipsOf reads the clips of a plan's bytes in its own order.
+func orderedClipsOf(data []byte) ([]*object, error) {
+	value, err := decodeOrdered(data)
+	if err != nil {
+		return nil, err
+	}
+	top, _ := value.(*object)
+	if top == nil {
+		return nil, renderErr("clip plan must be a JSON object")
+	}
+	var clips []*object
+	if list, ok := top.values[keyClips].([]any); ok {
+		for _, item := range list {
+			if c, ok := item.(*object); ok {
+				clips = append(clips, c)
+			}
+		}
+	}
+	return clips, nil
 }
 
 // Over is the part of the episode the clip set was made over, see
@@ -265,7 +314,7 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 		return PlanSummary{}, err
 	}
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
-		Modified: info.ModTime(), plan: plan, clips: clips, data: data}
+		Modified: info.ModTime(), plan: plan, clips: clips, data: data, ordered: &orderedClips{}}
 	made := plan.PlannedWith()
 	if v, ok := num.AsFloat(made[keyFrom]); ok {
 		s.From = v
@@ -1093,7 +1142,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 	if s.BorderStyle != 3 && s.BorderStyle != 4 {
 		view.Style.Box = "rgba(0, 0, 0, 0)"
 	}
-	said := Said(clip, t.Words)
+	said := saidWordsOf(Said(clip, t.Words))
 	for _, c := range laid {
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {
@@ -1106,7 +1155,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 				word := WordView{Start: w.Start, End: w.End, Text: runes.Scrub(w.Text, 200)}
 				// The word of the episode it stands for, the one a correction
 				// in the caption box is kept against, and all of it.
-				if at, ok := SaidWord(clip, said, (w.Start+w.End)/2); ok {
+				if at, ok := said.at(clip, (w.Start+w.End)/2); ok {
 					if heard, ok := t.HeardAt(at.Start); ok {
 						start := heard.Start
 						word.Said, word.Whole = &start, runes.Scrub(heard.Text, 200)

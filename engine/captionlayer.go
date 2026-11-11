@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -20,6 +22,7 @@ import (
 
 	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 	"framefairy/internal/framewire"
 )
 
@@ -34,15 +37,85 @@ import (
 // what the captions are, written out in full: a pointer in the clip, like
 // its crop or the height of its captions, is followed to its value, where
 // formatting it would give its address and a new name every time.
+//
+// Every step of a drag names a drawing, so it is written straight into the
+// hash. The captions laid out, most of it, are written as their numbers'
+// bits, see LaidCaption.appendName: writing out the shortest digits of
+// every time of every word as JSON took a quarter of a step of a drag.
+// The style and the clip, a few hundred bytes, are written as JSON, with
+// the keys of the style in order.
 func (d *CaptionDrawing) name() string {
-	body, err := json.Marshal(d)
-	if err != nil {
+	h := sha256.New()
+	// One caption at a time, through one buffer, so the buffer stays as
+	// big as one caption.
+	buf := binary.AppendUvarint(make([]byte, 0, 512), uint64(len(d.Laid)))
+	for _, c := range d.Laid {
+		buf = c.appendName(buf)
+		h.Write(buf)
+		buf = buf[:0]
+	}
+	h.Write(buf)
+	rest := struct {
+		Style map[string]any
+		Clip  Clip
+	}{d.Style, d.Clip}
+	if err := jsonv2.MarshalWrite(h, rest, jsonv2.Deterministic(true), jsontext.AllowInvalidUTF8(true)); err != nil {
 		// Only a number JSON cannot hold, which no caption has. The name is
 		// then of this drawing alone, which is still never another's.
-		body = fmt.Appendf(nil, "%p", d)
+		h.Reset()
+		fmt.Fprintf(h, "%p", d)
 	}
-	sum := sha256.Sum256(body)
-	return hex.EncodeToString(sum[:12])
+	return hex.EncodeToString(h.Sum(nil)[:12])
+}
+
+// appendName writes what the caption is for its drawing's name, see
+// CaptionDrawing.name: every field the caption has, each number as its
+// bits and each text and list with its length before it, so no two
+// captions write the same. A field added to LaidCaption or Caption is
+// added here too, which TestADrawingsNameHasEveryFieldOfItsCaptions holds.
+func (c LaidCaption) appendName(b []byte) []byte {
+	b = appendCue(b, c.Cue())
+	b = appendCues(b, c.Words)
+	b = binary.LittleEndian.AppendUint64(b, math.Float64bits(c.Opens))
+	b = binary.LittleEndian.AppendUint64(b, math.Float64bits(c.Closes))
+	b = binary.AppendUvarint(b, uint64(len(c.Lines)))
+	for _, line := range c.Lines {
+		b = appendCues(b, line)
+	}
+	hidden := make([]int, 0, len(c.Hidden))
+	for at, on := range c.Hidden {
+		if on {
+			hidden = append(hidden, at)
+		}
+	}
+	slices.Sort(hidden)
+	b = binary.AppendUvarint(b, uint64(len(hidden)))
+	for _, at := range hidden {
+		b = binary.AppendVarint(b, int64(at))
+	}
+	return appendText(b, c.Lift)
+}
+
+// appendCues writes words for a drawing's name, how many and then each.
+func appendCues(b []byte, cues []timed.Cue) []byte {
+	b = binary.AppendUvarint(b, uint64(len(cues)))
+	for _, cue := range cues {
+		b = appendCue(b, cue)
+	}
+	return b
+}
+
+// appendCue writes a word or a caption for a drawing's name.
+func appendCue(b []byte, cue timed.Cue) []byte {
+	b = binary.LittleEndian.AppendUint64(b, math.Float64bits(cue.Start))
+	b = binary.LittleEndian.AppendUint64(b, math.Float64bits(cue.End))
+	return appendText(b, cue.Text)
+}
+
+// appendText writes a text for a drawing's name, its length and then it.
+func appendText(b []byte, text string) []byte {
+	b = binary.AppendUvarint(b, uint64(len(text)))
+	return append(b, text...)
 }
 
 // CaptionDrafts are the parts of a caption style the hand changes while it

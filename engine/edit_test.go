@@ -1431,3 +1431,65 @@ func TestAnEdgeOnWordsGoesTheWayOfTheHand(t *testing.T) {
 		})
 	}
 }
+
+// Every step of a drag shapes the clip from the plan its video holds, read
+// once and shared, so steps asked from several goroutines at once each get
+// what one asked alone gets, and none changes the plan the next one reads.
+func TestStepsOfADragFromSeveralAtOnceShareThePlan(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	path := filepath.Join("/", "ep.framefairy", "logs", "clips.json")
+	if err := afero.WriteFile(fsys, path, []byte(shovelPlan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := planAt(t, fsys, path)
+	tr := editableTranscript()
+	gestures := []Gesture{
+		{Kind: "trim", Edge: "start", From: 12.5}, {Kind: "trim", Edge: "end", From: 13.3},
+		{Kind: "trim", Edge: "start", From: 9}, {Kind: "cut", From: 15, To: 16},
+		{Kind: "move", Index: 0, Edge: "to", To: 12.6}, {Kind: "trim", Edge: "start", From: 13.1},
+	}
+	alone := make([]string, len(gestures))
+	for i, g := range gestures {
+		if g.To == 0 {
+			g.To = g.From
+		}
+		g.Frames = at25
+		gestures[i] = g
+		shown, err := ShapeClip(s, "01", g, tr, 0.1, nil)
+		if err != nil {
+			t.Fatalf("%s %s: %v", g.Kind, g.Edge, err)
+		}
+		alone[i] = spans(shown.Clip.Segments)
+	}
+	var wg sync.WaitGroup
+	for range 8 {
+		for i, g := range gestures {
+			wg.Go(func() {
+				shown, err := ShapeClip(s, "01", g, tr, 0.1, nil)
+				if err != nil {
+					t.Errorf("%s %s: %v", g.Kind, g.Edge, err)
+					return
+				}
+				if got := spans(shown.Clip.Segments); got != alone[i] {
+					t.Errorf("%s %s from several at once made %s, alone %s", g.Kind, g.Edge, got, alone[i])
+				}
+			})
+		}
+	}
+	wg.Wait()
+	clips, err := s.clipObjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := findClip(clips, "01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []Segment
+	for _, p := range segmentObjects(c) {
+		kept = append(kept, Segment{Start: number(p.values[keyStart]), End: number(p.values[keyEnd])})
+	}
+	if got := spans(kept); got != "10.000-12.000 13.000-13.200 13.520-20.000" {
+		t.Errorf("after the drag the plan held is %s, as saved it is 10.000-12.000 13.000-13.200 13.520-20.000", got)
+	}
+}
