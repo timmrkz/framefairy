@@ -62,8 +62,9 @@ machines of their own, `WALKBROWSER=webkit`, so a pull request waits for
 one browser and both engines are walked every day, see
 [the decision](decisions/2026-11-05-walks-in-chromium-on-a-push.md). Only
 the walks in Chromium count the lines they run. The WebKit is Playwright's own build
-for Linux, which takes real key presses, and CI's image holds it beside
-the Chromium, see `.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
+for Linux, which takes real key presses, and the CI image the nightly
+walks in WebKit run in holds it beside the Chromium, see
+`.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
 which a machine without a graphics chip runs on the CPU, and drawing is
 37 % of the walks' CPU there, measured once over every walk in a cloud
 session, so the walks give it two threads to draw

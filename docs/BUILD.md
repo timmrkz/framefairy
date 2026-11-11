@@ -492,15 +492,18 @@ run in a container, the CI image, built from
 `.github/ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
 with every package the Go side compiles against,
 ffmpeg, meson, ninja, nasm and patchelf beside them. The walks run in a
-second image of the same file, the first with the headless Chromium and
-the WebKit of the Playwright version in `frontend/package-lock.json`,
-with the libraries and fonts they need. With WebKit in one image for
-every job, pulling it took 73 to 80 s where 24 to 30 s had done, so the
-jobs that open no browser take the first. Go is in both, the version
-`go.mod` names, so a job in them downloads none, which took setup-go
-about 6 s of every job. `.github/actions/prepare` takes it when it is the
-version `go.mod` names and sets that one up otherwise. Node is in
-neither: setup-node finds it in the runner's tool cache at once.
+second image of the same file, the first with the headless Chromium of
+the Playwright version in `frontend/package-lock.json`, with the
+libraries and fonts it needs. The walks in WebKit, which run at night,
+run in a third, the second with Playwright's WebKit too. With WebKit in
+one image for every job, pulling it took 73 to 80 s where 24 to 30 s had
+done, so the jobs that open no browser take the first, and the walks of
+a push, which open only Chromium, the second. Go is in all three, the
+version `go.mod` names, so a job in them downloads none, which took
+setup-go 6 to 9 s of every job. `.github/actions/prepare` takes it when
+it is the version `go.mod` names and sets that one up otherwise, and
+`internal/workflows` fails when the image's Go and `go.mod` part. Node
+is in none: setup-node finds it in the runner's tool cache at once.
 
 On some days the runners' Ubuntu mirror gave 18 to 40 kB a second, and
 the libraries Chromium needs, mostly fonts, held a walks job for up to
@@ -513,13 +516,14 @@ image's Dockerfile builds a new one, and every job in it runs on that.
 
 `.github/workflows/ci-image.yml`, which `ci.yml` calls as the job
 `image`, and `fuzz-nightly.yml`, `walks-nightly.yml` and `security.yml` call too, names the image by a sum of
-the Dockerfile and of the Playwright version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`, and the walks' image
-as `<sum>-walks`. When the registry has both tags, the job is done in
-seconds, and when it does not, which is only when one of the three
-changed, it builds both images and pushes them,
-and the jobs in it wait for it. Both images the Dockerfile starts from
-are pinned to a digest, so the same sum always means the same image, and
-moving them is a change to the file. Dependabot moves both once a week,
+the Dockerfile and of the Playwright version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`, the walks' image
+as `<sum>-walks` and the one with WebKit as `<sum>-webkit`. When the
+registry has all three tags, the job is done in seconds, and when it
+does not, which is only when the Dockerfile or the Playwright version
+changed, it builds the images and pushes them,
+and the jobs in it wait for it. Every image the Dockerfile starts from
+is pinned to a digest, so the same sum always means the same image, and
+moving one is a change to the file. Dependabot moves them once a week,
 in one pull request. A Playwright update from Dependabot likewise builds
 its own image on its own pull request. A file the Dockerfile comes to
 read joins the sum and the job's sparse checkout, or a change to it

@@ -125,6 +125,36 @@ func TestNodeIsPinnedOnce(t *testing.T) {
 	}
 }
 
+// The CI image brings the Go that go.mod names, so a job in it downloads
+// none. .github/actions/prepare takes the image's Go only when it is that
+// version, so an image moved on to the next Go without go.mod, which
+// Dependabot proposes, would quietly bring back setup-go's download to
+// every job.
+//
+// On the real disk: what is read is the repository's own go.mod and CI image.
+func TestTheCIImageBringsTheGoOfGoMod(t *testing.T) {
+	t.Parallel()
+	mod, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "none"
+	if m := regexp.MustCompile(`(?m)^go (\d+\.\d+)`).FindSubmatch(mod); m != nil {
+		want = string(m[1])
+	}
+	docker, err := os.ReadFile(filepath.Join("..", "..", ".github", "ci-image", "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	image := "none"
+	if m := regexp.MustCompile(`(?m)^FROM golang:(\d+\.\d+)[.-]`).FindSubmatch(docker); m != nil {
+		image = string(m[1])
+	}
+	if image != want {
+		t.Errorf("the CI image brings Go %s, and go.mod names %s", image, want)
+	}
+}
+
 // read is a path a Go test names to read a file of the interface or the
 // docs, relative to the repository's root however many ../ lead there.
 var read = regexp.MustCompile(`"(?:\.\./)*((?:frontend|docs)/[^"]+)"`)

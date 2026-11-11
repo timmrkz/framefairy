@@ -2,9 +2,10 @@
 # among them, tools.yml alone left out, see docs/BUILD.md: Ubuntu
 # 24.04, the runners' own system, with every system package they use and
 # the Chromium and WebKit the pinned Playwright drives, with their
-# libraries, already installed. A job that runs in it downloads nothing
-# from the Ubuntu mirror, which on some days gave the runners 18 kB a
-# second and held a walks job for twelve minutes, #462.
+# libraries, already installed, in three images of this one file. A job
+# that runs in one downloads nothing from the Ubuntu mirror, which on some
+# days gave the runners 18 kB a second and held a walks job for twelve
+# minutes, #462.
 #
 # .github/workflows/ci-image.yml builds it and keeps it in GitHub's
 # container registry, tagged by a sum of this file and of the Playwright
@@ -62,24 +63,31 @@ RUN rm -f /var/lib/man-db/auto-update && \
 COPY --from=go /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH FRAMEFAIRY_CI_GO=/usr/local/go/bin/go
 
-# The walks' machine is the one above with the browsers: Chromium and
-# WebKit for the Playwright the interface pins, with the libraries and
-# fonts they need, in the place Playwright's own images keep them. Of
-# Chromium only its headless shell, which is the one a headless launch
-# runs, as the walks' is: the full browser beside it would add some 170 MB
-# to every pull and never start. WebKit is the engine the app runs in on a
-# Mac, which the walks run in too, see Two browsers in docs/TESTING.md.
-# With WebKit in it, pulling one image for every job took 73 to 80 s where
-# 24 to 30 s had done, so the jobs that open no browser take the one
-# above, #380. Node is lent from the image above for this step only.
+LABEL org.opencontainers.image.source=https://github.com/timmrkz/framefairy
+LABEL org.opencontainers.image.description="The machine framefairy's Linux CI jobs run on"
+
+# The walks' machine is the one above with Chromium for the Playwright
+# the interface pins, with the libraries and fonts it needs, in the place
+# Playwright's own images keep them. Of Chromium only its headless shell,
+# which is the one a headless launch runs, as the walks' is: the full
+# browser beside it would add some 170 MB to every pull and never start.
+# A push walks in Chromium alone, so WebKit, the engine the app runs in on
+# a Mac, is in an image of its own below, for the nightly walks, see Two
+# browsers in docs/TESTING.md. With WebKit in one image for every job,
+# pulling it took 73 to 80 s where 24 to 30 s had done, so the jobs that
+# open no browser take the one above, #380. Node is lent from the image
+# above for these steps only.
 FROM base AS walks
 ARG PLAYWRIGHT
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN --mount=type=bind,from=node,source=/usr/local,target=/opt/node \
 	test -n "$PLAYWRIGHT" && \
 	PATH="/opt/node/bin:$PATH" npx --yes "playwright@$PLAYWRIGHT" install --with-deps --only-shell chromium && \
-	PATH="/opt/node/bin:$PATH" npx --yes "playwright@$PLAYWRIGHT" install --with-deps webkit && \
 	rm -rf /root/.npm /var/lib/apt/lists/*
 
-LABEL org.opencontainers.image.source=https://github.com/timmrkz/framefairy
-LABEL org.opencontainers.image.description="The machine framefairy's Linux CI jobs run on"
+FROM walks AS webkit
+ARG PLAYWRIGHT
+RUN --mount=type=bind,from=node,source=/usr/local,target=/opt/node \
+	test -n "$PLAYWRIGHT" && \
+	PATH="/opt/node/bin:$PATH" npx --yes "playwright@$PLAYWRIGHT" install --with-deps webkit && \
+	rm -rf /root/.npm /var/lib/apt/lists/*
