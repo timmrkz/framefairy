@@ -130,6 +130,16 @@ type EpisodeStatus struct {
 	Label *Label `json:"label,omitempty"`
 }
 
+// HeardIn is every part of a video of duration seconds that is heard, from
+// and to: Heard, or all of it once the video is transcribed, whose last
+// part ends where the words do and not always where the video does.
+func (s EpisodeStatus) HeardIn(duration float64) [][2]float64 {
+	if s.Transcribed {
+		return [][2]float64{{0, duration}}
+	}
+	return s.Heard
+}
+
 // Status is the episode's state as its files say it now. silenceDB is the
 // floor the words are placed on the sound with, Options.SilenceDB, nil for
 // the one worked out from the episode. What the transcript has heard and

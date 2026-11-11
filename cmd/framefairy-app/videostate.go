@@ -84,11 +84,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {
 		st.Window = s.windowFor(ctx, path, st, info.Duration)
-		heard := st.Status.Heard
-		if st.Status.Transcribed {
-			heard = [][2]float64{{0, info.Duration}}
-		}
-		st.Marking = engine.MarkingOf(heard, st.Status.Said, info.Duration)
+		st.Marking = engine.MarkingOf(st.Status.HeardIn(info.Duration), st.Status.Said, info.Duration)
 	}
 	st.Chosen, st.ChosenCard = s.chosenFor(path, st)
 	return st, nil
@@ -250,10 +246,7 @@ func (n *videoNews) stop() {
 // how it ended, from the video's status and its length, see
 // engine.SearchEnded.
 func searchesEnded(jobs []Job, status engine.EpisodeStatus, duration float64) {
-	heard := status.Heard
-	if status.Transcribed {
-		heard = [][2]float64{{0, duration}}
-	}
+	heard := status.HeardIn(duration)
 	for i := range jobs {
 		j := &jobs[i]
 		if j.Kind != engine.JobSearch || (j.State != JobDone && !j.unfinished()) {
