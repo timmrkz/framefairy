@@ -145,19 +145,21 @@ const after = (() => {
 // browser draw the next frame, so a call the app makes as it draws, or as
 // a size it observes changes, is out by then, and answers if nothing came
 // or came back in between, or looks again. The frame is the browser's
-// own, kept before a fake clock comes, see fakeClock. While the app's
-// time is held, held, its timers fire only when the walk turns the clock
-// on, so they are not waited for.
+// own, kept before a fake clock comes, see fakeClock. With timersAside
+// the app's timers are not waited for: while the app's time is held,
+// they fire only when the walk turns the clock on, and a step may also
+// leave a timer that moves nothing on screen for the next settle, see
+// settleButTheSave in walks/report/steps.mjs.
 //
 // What moves for a moment is ended at once rather than waited for: the
 // walk would only see it end, so it ends now, where it would have ended,
 // and what the app does when it ends, a row taken out once it has folded,
 // happens as it would. A walk that looks at a movement looks before it
 // settles.
-(window as any).__settled = (held: boolean) =>
+(window as any).__settled = (timersAside: boolean) =>
   new Promise<void>((done) => {
     const frame: (fn: () => void) => void = (window as any).__real?.frame ?? requestAnimationFrame;
-    const busy = () => out > 0 || (!held && soon.size > 0);
+    const busy = () => out > 0 || (!timersAside && soon.size > 0);
     const look = () => {
       if (busy()) {
         woken.push(look);
