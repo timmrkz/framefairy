@@ -566,6 +566,9 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		if n, err := strconv.Atoi(q.Get("step")); err == nil {
 			b.words.save.Store(q.Has("save"))
 			b.words.step(min(max(n, 0), 100))
+			if q.Has("heard") {
+				b.words.heard(r.Context())
+			}
 			answer(w, nil, nil)
 			return
 		}
@@ -800,6 +803,27 @@ func (p *prose) step(n int) {
 	defer p.gate.Unlock()
 	p.steps += n
 	p.cond().Broadcast()
+}
+
+// heard returns once every piece step let on has been heard and the next
+// piece waits, so a walk can let many pieces on at once and go on when
+// they are all in. The engine hears one piece after the other and says
+// how far it came after each, before it asks for the next, so by then it
+// has said so of all of them. It is for pieces that are not the last: a
+// video heard to its end asks for no next piece. A walk that gives up on
+// it, or a reset, ends the wait.
+func (p *prose) heard(ctx context.Context) {
+	stop := context.AfterFunc(ctx, func() {
+		p.gate.Lock()
+		defer p.gate.Unlock()
+		p.cond().Broadcast()
+	})
+	defer stop()
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	for (p.steps > 0 || p.hearing > 0 || p.waiting == 0) && p.held && ctx.Err() == nil {
+		p.cond().Wait()
+	}
 }
 
 // whileClosing lets every piece through for as long as close takes, and

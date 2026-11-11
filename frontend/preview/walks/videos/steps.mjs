@@ -1108,6 +1108,18 @@ export const steps = {
           walk.wrong = "two hundred pieces heard, and the whole video still has more than a piece left";
           break;
         }
+        // A piece is 15 to 30 s of the video, see chunkMin in
+        // engine/audio.go, so all but the last minute's worth is let on at
+        // once, never the last piece: one at a time, the 750 s left took
+        // about 37 pieces, each waited on. The bridge answers once the
+        // engine has said how far it came with each and asks for the next.
+        const many = Math.floor((was * duration) / 30) - 2;
+        if (many > 1) {
+          await control(url, `/speech?step=${many}&heard`);
+          await caughtUp(page, url);
+          was = await left();
+          continue;
+        }
         // The piece let on is waited for by the dots it moves, not by the
         // next news of any kind: news of something else let the walk on
         // before the piece was heard, it let on a second, and the last
