@@ -1,33 +1,26 @@
  96	sequences.mjs SEQUENCE=the app dragged a pixel at a time moves every part one way, the sides equal and set by the width
- 71	sequences.mjs SEQUENCE=a short of a picture that starts after its sound shows what the video preview shows
- 69	sequences.mjs SEQUENCE=a short of a phone's uneven frames shows what the video preview shows
- 56	sequences.mjs SEQUENCE=two episodes of one file name number their shorts
  55	sequences.mjs SEQUENCE=a video added is transcribed to its end from its menu
  52	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
- 52	sequences.mjs SEQUENCE=two episodes never overwrite each other's shorts
  50	timeline.mjs SEED=3
  49	searching.mjs SEED=3
- 48	sequences.mjs SEQUENCE=render again writes the short over in place, with its pictures beside it
  46	searching.mjs SEED=2
  46	timeline.mjs SEED=1
  45	timeline.mjs SEED=2
- 44	sequences.mjs SEQUENCE=a video whose folder is deleted outside the app leaves the list
  40	searching.mjs SEED=1
  35	sequences.mjs SEQUENCE=a step onto a word pops it over the paused frame
  35	sequences.mjs SEQUENCE=the video preview shows the short's captions, frame for frame
- 34	playback.mjs SEED=3 HEVC=1
  34	words.mjs SEED=2
- 32	playback.mjs SEED=2 HEVC=1
  32	playback.mjs SEED=3
  32	sequences.mjs SEQUENCE=Dictating in the middle of a long report keeps the cursor in view
- 29	playback.mjs SEED=1 HEVC=1
  29	sequences.mjs SEQUENCE=a rotated part turns with its own frames under a dragged playhead, and stays rotated as its end moves
  29	sequences.mjs SEQUENCE=a slow drag of the playhead to the left reads its frames in runs, not a seek a step
  28	words.mjs SEED=1
  27	sequences.mjs SEQUENCE=a label tells a video apart and the video keeps its name
  27	sequences.mjs SEQUENCE=a search that found its clips moves the window on in the frame they show
+ 27	sequences.mjs SEQUENCE=a short of a picture that starts after its sound shows what the video preview shows
  26	playback.mjs SEED=1
  26	playback.mjs SEED=2
+ 26	sequences.mjs SEQUENCE=a short of a phone's uneven frames shows what the video preview shows
  25	sequences.mjs SEQUENCE=a render cut off by the app closing says so at its Render button, and Continue carries it on
  24	sequences.mjs SEQUENCE=a restart brings back a clip trimmed, its short and a search stopped, as they were
  22	sequences.mjs SEQUENCE=The arrow keys scroll the report a line at a time, while dictating and after
@@ -38,7 +31,6 @@
  21	sequences.mjs SEQUENCE=a cut's left edge dragged shows the frames before the cut, never one after it
  21	sequences.mjs SEQUENCE=a short rendered into the folder for shorts is known as rendered
  20	sequences.mjs SEQUENCE=a clip card clicked puts up its clip from what was read while the hand rested
- 20	sequences.mjs SEQUENCE=a render of a 29.97 fps episode cuts on whole frames
  20	sequences.mjs SEQUENCE=a search of what was said finds the sentences, names their clips and puts the playhead on one
  20	sequences.mjs SEQUENCE=a video in Matroska shows in the video preview the frames its short has
  19	sequences.mjs SEQUENCE=Shift+Enter and the arrow keys keep the cursor in view in the report
@@ -71,12 +63,13 @@
  11	sequences.mjs SEQUENCE=The settings say each thing once, in one way
  11	sequences.mjs SEQUENCE=a clip made by hand that stopped can be removed, and put back first
  11	sequences.mjs SEQUENCE=a keyframe dragged past the clip's edge stops on its first or last frame and stays where it was let go
- 11	sequences.mjs SEQUENCE=a model a search finds clips with is not changed or removed under it
  11	sequences.mjs SEQUENCE=a video shorter than a clip gets its clip again once it was removed
+ 11	sequences.mjs SEQUENCE=a video whose folder is deleted outside the app leaves the list
  11	sequences.mjs SEQUENCE=shift and the arrows skip ahead through a clip on the video, and walk its words on the clip
  11	sequences.mjs SEQUENCE=the hand and the keys light a card of the transcript and a part not transcribed yet the same
  10	sequences.mjs SEQUENCE=I after the last word is not offered, and says why
  10	sequences.mjs SEQUENCE=Moving the cursor up while dictating keeps it in view, and the words coming in leave the field where it is
+ 10	sequences.mjs SEQUENCE=a model a search finds clips with is not changed or removed under it
  10	sequences.mjs SEQUENCE=a playhead dragged far over HEVC shows the key frame on the way, and the frame under the hand once it rests
  10	sequences.mjs SEQUENCE=a rotated part keeps its keyframe, and has the rotate icon drawn in its middle
  10	sequences.mjs SEQUENCE=a search stopped with Cancel can be removed, and stays removed
@@ -98,7 +91,6 @@
   8	sequences.mjs SEQUENCE=The start sound plays once Dictate hears back, however late that is
   8	sequences.mjs SEQUENCE=While dictating the field follows the words until scrolled away, like a terminal
   8	sequences.mjs SEQUENCE=a frame shown before its key frame comes and plays
-  8	sequences.mjs SEQUENCE=a model is not changed or removed while a search still hears
   8	sequences.mjs SEQUENCE=a rotated part keeps its rotation when the cut before it is put back and made again
   8	sequences.mjs SEQUENCE=a search that failed is red everywhere, and its row can be removed, put back first
   8	sequences.mjs SEQUENCE=a word typed in a face libass thickens is as heavy as libass draws it

@@ -134,7 +134,11 @@ export default [
   {
     // Tim chose another model in the settings while a search ran, and
     // nothing stopped him. What a search uses stays as it is until it is
-    // done, and once it is, it can be changed again.
+    // done, and once it is, it can be changed again. The settings refuse
+    // a pick and the two bins themselves, so each is pressed here. Go
+    // refuses them too, from the moment a search starts to hear,
+    // TestNothingASearchUsesChangesUnderIt, so the walk of a search still
+    // hearing went.
     name: "a model a search finds clips with is not changed or removed under it",
     steps: [
       ["model", "holds"],
@@ -155,22 +159,6 @@ export default [
       ["asks"],
       ["pick model"],
       ["changed"],
-    ],
-  },
-  {
-    // The same from the first moment of a search, while it still hears a
-    // video just added and has not come to the model yet.
-    name: "a model is not changed or removed while a search still hears",
-    steps: [
-      ["speech", "hold"],
-      ["add", 120],
-      ["wait for", "Cancel"],
-      ["settings"],
-      ["pick model"],
-      ["refused", "finding"],
-      ["remove model", "speech"],
-      ["refused", "speech"],
-      ["hearing"],
     ],
   },
   {
