@@ -23,7 +23,7 @@ import (
 // after a diamond, or into the first, the crop switches, because a
 // diamond is a switch with nothing happening before or after it. Tim
 // chose the two kinds, a diamond put with K and a circle put with G, from
-// mockups on #750, and that a glide runs only between circles. See
+// mockups on #750, the switch keyframe on S since #778, and that a glide runs only between circles. See
 // docs/ROTATE-AND-FOLLOW.md.
 //
 // A mark is a moment of the video, like a thumbnail, and belongs to the
@@ -415,7 +415,7 @@ func spansOf(pieces []*object) []Segment {
 
 // realise makes the keyframe a clip shows on frame k one of its own there,
 // when an edge or a cut carries it: Tim's rule that touching a carried
-// keyframe makes it real, by placing the crop on it, pressing K or G on it
+// keyframe makes it real, by placing the crop on it, pressing S or G on it
 // or dragging it. Its moment in the plan becomes the frame it stands on,
 // its old place is forgotten, and the others the same edge or cut covers
 // are set aside, so none of them comes up on the edge when it leaves.
@@ -993,7 +993,7 @@ func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int
 
 // SetCropGlide makes the keyframe of a clip on the frame that holds a
 // moment, at in seconds of the video, one the crop glides into, or one it
-// switches on: G and K on a keyframe of the other kind, the way a
+// switches on: G and S on a keyframe of the other kind, the way a
 // keyframe is put with either. Framing is not a judgement of the clip, so
 // nothing is recorded for training.
 func SetCropGlide(fsys afero.Fs, planPath, clipID string, at float64, glide bool, frames SourceInfo) error {

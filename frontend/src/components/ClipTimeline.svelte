@@ -2345,8 +2345,8 @@
             title={locked
               ? "A keyframe. Click to see it"
               : m.glide
-                ? "A gliding keyframe. From one of these the crop glides into the next. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"
-                : "A keyframe the crop switches on. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"}
+                ? "A glide keyframe. From one of these the crop glides into the next. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"
+                : "A switch keyframe. The crop switches on it. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"}
             data-grip="mark"
             data-kind="crop"
             data-glide={m.glide || undefined}

@@ -1550,9 +1550,10 @@
     }
   }
 
-  // The two keyframe buttons, K and G: a keyframe on the frame under the
-  // playhead, with the crop where it stands there now, a diamond the crop
-  // switches on for K and a circle for G, which the crop glides to from a
+  // The two keyframe buttons, S and G: a keyframe on the frame under the
+  // playhead, with the crop where it stands there now, a switch keyframe,
+  // a diamond the crop switches on, for S and a glide keyframe, a circle,
+  // for G, which the crop glides to from a
   // circle before. On a keyframe of
   // the button's own kind it is removed, so what one click adds one click
   // takes away, and on one of the other kind it becomes the button's.
@@ -1724,15 +1725,16 @@
     void rotatePart();
   }
 
-  // K puts a keyframe the crop switches on, on the frame under the
-  // playhead, and G one it glides into, or each removes the one of its
-  // kind there, the keys of the two keyframe buttons, the way T is the
-  // thumbnail's. K for keyframe, the word the button says, and G for
-  // glide. K was C while keyframes were called crop marks, and Tim asked
-  // for K and G on #750.
+  // S puts a switch keyframe, which the crop switches on, on the frame
+  // under the playhead, and G a glide keyframe, which it glides into, or
+  // each removes the one of its kind there, the keys of the two keyframe
+  // buttons, the way T is the thumbnail's. S for switch and G for glide,
+  // the words the buttons say. K was the switch keyframe's key while it
+  // was the only keyframe, and C while keyframes were called crop marks.
+  // Tim asked for S on #778: with two kinds, K says neither.
   function cropMarkKey(event: KeyboardEvent) {
     const key = event.key.toLowerCase();
-    if (key !== "k" && key !== "g") return;
+    if (key !== "s" && key !== "g") return;
     if (!workspaceKey(event, root)) return;
     if (!current) return;
     event.preventDefault();
@@ -3583,38 +3585,38 @@
           <button
             class="glyph"
             aria-label={cropHere === null
-              ? "Put a keyframe that switches the crop"
+              ? "Put a switch keyframe"
               : cropHere.glide
-                ? "Make this keyframe switch the crop"
-                : "Remove this keyframe"}
+                ? "Make this a switch keyframe"
+                : "Remove this switch keyframe"}
             disabled={renderingCurrent || (cropHere === null && !inShort)}
             onclick={() => toggleCropMark(false)}
             title={cropHere === null
               ? inShort
-                ? "Put a keyframe on the frame under the playhead. The crop switches there and holds until the next keyframe. K does the same"
+                ? "Put a switch keyframe on the frame under the playhead. The crop switches there and holds until the next keyframe. S does the same"
                 : "Put the playhead in the clip to put a keyframe on the frame there"
               : cropHere.glide
-                ? "Make the keyframe at the playhead a switch, with no glide into or out of it. K does the same"
-                : "Remove the keyframe at the playhead. K does the same"}
+                ? "Make the keyframe at the playhead a switch keyframe, with no glide into or out of it. S does the same"
+                : "Remove the switch keyframe at the playhead. S does the same"}
           >
             <Icon name={cropHere !== null && !cropHere.glide ? "keyframe-remove" : "keyframe-add"} />
           </button>
           <button
             class="glyph"
             aria-label={cropHere === null
-              ? "Put a gliding keyframe"
+              ? "Put a glide keyframe"
               : cropHere.glide
-                ? "Remove this keyframe"
-                : "Make this keyframe a gliding one"}
+                ? "Remove this glide keyframe"
+                : "Make this a glide keyframe"}
             disabled={renderingCurrent || (cropHere === null && !inShort)}
             onclick={() => toggleCropMark(true)}
             title={cropHere === null
               ? inShort
-                ? "Put a gliding keyframe on the frame under the playhead. From one of these the crop glides into the next. G does the same"
+                ? "Put a glide keyframe on the frame under the playhead. From one of these the crop glides into the next. G does the same"
                 : "Put the playhead in the clip to put a keyframe on the frame there"
               : cropHere.glide
-                ? "Remove the keyframe at the playhead. G does the same"
-                : "Make the keyframe at the playhead a gliding one, which the crop glides to from a gliding keyframe before. G does the same"}
+                ? "Remove the glide keyframe at the playhead. G does the same"
+                : "Make the keyframe at the playhead a glide keyframe, which the crop glides to from a glide keyframe before. G does the same"}
           >
             <Icon name={cropHere !== null && cropHere.glide ? "glide-remove" : "glide-add"} />
           </button>

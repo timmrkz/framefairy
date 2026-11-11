@@ -96,10 +96,11 @@ Tim decided this on #188: a keyframe is made the way a thumbnail is,
 with a button and a key, and dragging the crop frame only places the
 crop.
 
-- **K and G, and two keyframe buttons** in the row under the clip
+- **S and G, and two keyframe buttons** in the row under the clip
   timeline beside the thumbnail button, put a keyframe on the frame under
-  the playhead, with the crop where it stands there now: K a diamond, where
-  the crop switches, and G a circle, between which the crop glides. With the
+  the playhead, with the crop where it stands there now: S a switch
+  keyframe, a diamond, where the crop switches, and G a glide keyframe, a
+  circle, between which the crop glides. With the
   playhead on a keyframe of its kind, the button or its key removes it,
   the way the thumbnail button does, and on one of the other kind it
   turns it into its own. Their icons are a diamond and a circle with a
@@ -226,6 +227,6 @@ two above:
 - **Proof.** A test video in `engine/testdata` with a part rotated a
   quarter: a render test that reads the short back and finds the part
   upright, a test that the crop of a render with keyframes is where they
-  hold it on every frame, and walks that press R and K and drag the
+  hold it on every frame, and walks that press R and S and drag the
   crop, checking the canvas and the plan, so Tim does not have to
   try it by hand to know it holds.

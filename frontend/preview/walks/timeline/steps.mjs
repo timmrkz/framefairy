@@ -1436,7 +1436,7 @@ export const steps = {
     await settle(page);
     // R works on the frame the video preview shows, inShort in
     // Episode.svelte, and the turn read is that frame's, so R is
-    // pressed once it is the playhead's frame, as K is, see keyframe
+    // pressed once it is the playhead's frame, as S is, see keyframe
     // at. On a busy machine R was pressed while the video preview
     // still showed the frame from before the click, issue #320.
     await shownOnPlayhead(page);
@@ -1451,19 +1451,19 @@ export const steps = {
   //                    puts the playhead in the clip, this share of the
   //                    way along it, with a click on the clip timeline,
   //                    waits for the video preview to show that frame, and
-  //                    presses K, and the clip timeline has to show a
+  //                    presses S, and the clip timeline has to show a
   //                    diamond lit on the playhead's frame in the first
   //                    frame drawn after the press, or the one after it
   // ["glide at", share]
   //                    the same with G, and a circle
   async "keyframe at"(walk, arg, s) {
-    await keyframeAt(walk, arg, s, "k");
+    await keyframeAt(walk, arg, s, "s");
   },
   async "glide at"(walk, arg, s) {
     await keyframeAt(walk, arg, s, "g");
   },
   // ["keyframe key", [key, kind]]
-  //                    with the playhead on a keyframe, presses K or G,
+  //                    with the playhead on a keyframe, presses S or G,
   //                    and the mark on the playhead's frame has to become a
   //                    "diamond" or a "circle", or go, "none", in the
   //                    first frame drawn after the press or the one after
@@ -1641,8 +1641,8 @@ export const steps = {
   // ["keyframe on", "last"]
   //                    a click on the clip's end edge, which leaves the
   //                    playhead on the end with the last frame on the
-  //                    video preview, then K: a keyframe comes on the
-  //                    clip's last frame and its diamond lights, and K again
+  //                    video preview, then S: a keyframe comes on the
+  //                    clip's last frame and its diamond lights, and S again
   //                    removes it
   // ["keyframe on", "first"]
   //                    a click on the clip's start edge and three steps
@@ -1666,7 +1666,7 @@ export const steps = {
         await settle(page);
       }
     }
-    // K puts the keyframe on the frame the video preview shows, so it is
+    // S puts the keyframe on the frame the video preview shows, so it is
     // pressed once the playhead stands on the clip's frame and the video
     // preview shows that frame, both the app's own word. settle does not
     // count the frame on its way from the decoder, and under load the key once
@@ -1684,17 +1684,17 @@ export const steps = {
     const marks = async () => (await entry()).cropMarks ?? [];
     const before = (await marks()).length;
     const lit = () => page.evaluate(() => !!document.querySelector(".clip-timeline .cropdot.here"));
-    await page.keyboard.press("k");
+    await page.keyboard.press("s");
     await settle(page);
     const got = await marks();
     const near = got.find((m) => Math.abs(m.at - want) < 0.5 / src.fps);
     if (got.length <= before) {
       const at = await page.evaluate(() => document.querySelector(".screen").dataset.playhead);
-      walk.wrong = `K put no keyframe with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
+      walk.wrong = `S put no keyframe with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
       return;
     }
     if (!near) {
-      walk.wrong = `K put a keyframe at ${got.map((m) => m.at).join(", ")}, not on the clip's ${arg} frame at ${want.toFixed(3)} s`;
+      walk.wrong = `S put a keyframe at ${got.map((m) => m.at).join(", ")}, not on the clip's ${arg} frame at ${want.toFixed(3)} s`;
       return;
     }
     await settle(page);
@@ -1702,9 +1702,9 @@ export const steps = {
       walk.wrong = `the keyframe on the clip's ${arg} frame does not light while that frame is on the video preview`;
       return;
     }
-    await page.keyboard.press("k");
+    await page.keyboard.press("s");
     await settle(page);
-    if ((await marks()).length > before) walk.wrong = `K again did not remove the keyframe on the clip's ${arg} frame`;
+    if ((await marks()).length > before) walk.wrong = `S again did not remove the keyframe on the clip's ${arg} frame`;
     await settle(page);
   },
   // ["thumbnail at", share]
@@ -2254,9 +2254,9 @@ steps["scrub far"] = steps["click far"];
 
 // keyframeAt puts the playhead this share of the way along the clip with
 // a click on the clip timeline, waits for the video preview to show that
-// frame, and presses key, K or G, and the clip timeline has to show a new
+// frame, and presses key, S or G, and the clip timeline has to show a new
 // mark lit on the playhead's frame in the first frame drawn after the press
-// or the one after it, a diamond for K and a circle for G.
+// or the one after it, a diamond for S and a circle for G.
 async function keyframeAt(walk, share, s, key) {
   const { page, watch } = walk;
   const g = await handles(page);

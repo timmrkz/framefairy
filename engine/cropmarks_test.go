@@ -458,7 +458,7 @@ func TestACropMarkThatDoesNotHoldIsLeftOut(t *testing.T) {
 	}
 }
 
-// K puts a mark on the start of the frame it means, a drag moves it to
+// S puts a mark on the start of the frame it means, a drag moves it to
 // another frame with its crop, and a double-click removes it. A mark has
 // to be in the clip, and one frame holds one.
 func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
@@ -467,7 +467,7 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 1 || got[0] != (CropMark{At: 10.52, X: 300}) {
-		t.Fatalf("K at 10.557 s made %v, not a mark on the frame from 10.52 s", got)
+		t.Fatalf("S at 10.557 s made %v, not a mark on the frame from 10.52 s", got)
 	}
 	for _, c := range []struct {
 		name     string
@@ -501,7 +501,7 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 }
 
 // Tim's camera switch, #750: one keyframe where the camera switches, put
-// with K with the crop where it stands, and the crop dragged with the
+// with S with the crop where it stands, and the crop dragged with the
 // playhead on it. The part before keeps the clip's own crop, and the crop
 // switches on the keyframe's own frame.
 func TestOneKeyframeIsACameraSwitch(t *testing.T) {
@@ -571,8 +571,8 @@ func TestTheCropIsPlacedOnlyOnAKeyframe(t *testing.T) {
 	}
 }
 
-// K puts a diamond and G a circle, a drag along the clip timeline keeps a
-// keyframe's kind, and G or K on one of the other kind turns it into its
+// S puts a diamond and G a circle, a drag along the clip timeline keeps a
+// keyframe's kind, and G or S on one of the other kind turns it into its
 // own. The plan says glide only for a circle.
 func TestAKeyframeIsPutAsADiamondOrACircle(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
@@ -583,7 +583,7 @@ func TestAKeyframeIsPutAsADiamondOrACircle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.48, X: 300, Glide: true}, {At: 11, X: 100}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("G at 10.5 s and K at 11 s made %v, not %v", got, want)
+		t.Fatalf("G at 10.5 s and S at 11 s made %v, not %v", got, want)
 	}
 	if err := SetCropMark(fsys, path, "01", 10.48, 10.2, -1, false, at25); err != nil {
 		t.Fatal(err)
@@ -899,7 +899,7 @@ func TestRemovingTheCarriedKeyframeBringsNoOtherUp(t *testing.T) {
 	}
 }
 
-// K or G on a carried keyframe, or dragging it, makes it a keyframe of its
+// S or G on a carried keyframe, or dragging it, makes it a keyframe of its
 // own where it stands, and its old place is forgotten.
 func TestTouchingACarriedKeyframeMakesItReal(t *testing.T) {
 	for _, h := range []struct {

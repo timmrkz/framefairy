@@ -54,7 +54,7 @@
  12	sequences.mjs SEQUENCE=a press on an edge or a mark puts the playhead on it at once
  12	sequences.mjs SEQUENCE=a video just added shows its waveform before its first clip
  12	sequences.mjs SEQUENCE=an edge dragged with shift goes the way of the hand
- 12	sequences.mjs SEQUENCE=one keyframe put with K switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it
+ 12	sequences.mjs SEQUENCE=one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it
  12	sequences.mjs SEQUENCE=the episode played through a clip with cuts shows only the video, and the clip its frame and captions
  12	sequences.mjs SEQUENCE=undo takes back a crop moved, a word corrected and a font picked, in turn, and redo does them again
  11	sequences.mjs SEQUENCE=Relaunch waits while a search runs, and the search goes on
@@ -66,7 +66,7 @@
  11	sequences.mjs SEQUENCE=a video whose folder is deleted outside the app leaves the list
  11	sequences.mjs SEQUENCE=shift and the arrows skip ahead through a clip on the video, and walk its words on the clip
  11	sequences.mjs SEQUENCE=the hand and the keys light a card of the transcript and a part not transcribed yet the same
- 11	sequences.mjs SEQUENCE=two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, K and G change their kind, and Put the crop back after Automatic crop brings them back
+ 11	sequences.mjs SEQUENCE=two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back
  10	sequences.mjs SEQUENCE=I after the last word is not offered, and says why
  10	sequences.mjs SEQUENCE=Moving the cursor up while dictating keeps it in view, and the words coming in leave the field where it is
  10	sequences.mjs SEQUENCE=a model a search finds clips with is not changed or removed under it
@@ -91,7 +91,7 @@
   8	sequences.mjs SEQUENCE=The start sound plays once Dictate hears back, however late that is
   8	sequences.mjs SEQUENCE=While dictating the field follows the words until scrolled away, like a terminal
   8	sequences.mjs SEQUENCE=a frame shown before its key frame comes and plays
-  8	sequences.mjs SEQUENCE=a keyframe goes on a clip's first and last frame with K, and comes off with K
+  8	sequences.mjs SEQUENCE=a keyframe goes on a clip's first and last frame with S, and comes off with S
   8	sequences.mjs SEQUENCE=a rotated part keeps its rotation when the cut before it is put back and made again
   8	sequences.mjs SEQUENCE=a search that failed is red everywhere, and its row can be removed, put back first
   8	sequences.mjs SEQUENCE=a word typed in a face libass thickens is as heavy as libass draws it

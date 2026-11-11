@@ -385,7 +385,7 @@ export default [
     ],
   },
   {
-    // Tim's camera switch, #750: one keyframe put with K where the camera
+    // Tim's camera switch, #750: one switch keyframe put with S where the camera
     // switches, and the crop dragged with the playhead on it. The crop
     // switches on the keyframe's own frame and holds, and the part before
     // keeps the clip's own crop, in the video preview frame by frame while
@@ -403,7 +403,7 @@ export default [
     // playing and past a cut. A glide is no more steps to the window.
     // A keyframe before a cut once stopped holding its crop after it,
     // found by Tim, plan row 2.238.
-    name: "one keyframe put with K switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it",
+    name: "one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it",
     steps: [
       ["added", 30, "25"],
       ["hold", "SetCropMark"],
@@ -447,9 +447,9 @@ export default [
     // Found by Tim on #192: C put no mark on a clip's first or last frame,
     // only one frame in. Found by Tim on #752: on a video whose picture
     // starts 4 ms after its sound, the way OBS records, the video preview
-    // showed the frame before the playhead's, so K was not offered on the
+    // showed the frame before the playhead's, so S was not offered on the
     // clip's first frame and a keyframe was never the one shown.
-    name: "a keyframe goes on a clip's first and last frame with K, and comes off with K",
+    name: "a keyframe goes on a clip's first and last frame with S, and comes off with S",
     steps: [
       ["added", 30, "25", "late4ms"],
       ["keyframe on", "last"],
@@ -459,7 +459,7 @@ export default [
   {
     // Tim's glide, #750: G puts a circle, and two circles are joined by a
     // line along the top rule as soon as the second is put, whatever their
-    // crops. K on a circle makes it a diamond and the line goes, G a
+    // crops. S on a circle makes it a diamond and the line goes, G a
     // circle again and the line comes back, and G on a circle removes it.
     // The line follows the start edge while the hand still holds it, found
     // by Tim on #750 with a cut's edge.
@@ -467,8 +467,8 @@ export default [
     // with the crop, and Put the crop back brought back the crop alone,
     // so what the keyframes did was lost to one click. Each comes back
     // with its crop and its kind. Where the crop glides is the engine's,
-    // see the walk of K above.
-    name: "two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, K and G change their kind, and Put the crop back after Automatic crop brings them back",
+    // see the walk of S above.
+    name: "two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back",
     steps: [
       ["added", 30, "25"],
       ["glide at", 0.2],
@@ -476,7 +476,7 @@ export default [
       ["glides", 1],
       ["drag crop", 400],
       ["glides", 1],
-      ["keyframe key", ["k", "diamond"]],
+      ["keyframe key", ["s", "diamond"]],
       ["glides", 0],
       ["keyframe key", ["g", "circle"]],
       ["glides", 1],

@@ -1896,7 +1896,7 @@
         style="left: {shownCrop.left}%; width: {shownCrop.width}%"
         title={cropMovable
           ? "Drag sideways to place the crop"
-          : "The crop as the short has it here. Put the playhead on a keyframe to place its crop, or press K or G to put one here"}
+          : "The crop as the short has it here. Put the playhead on a keyframe to place its crop, or press S or G to put one here"}
         data-movable={cropMovable}
         onpointerdown={dragCrop}
       ></div>

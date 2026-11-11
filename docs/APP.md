@@ -2657,8 +2657,10 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
 
 - **Two keyframe buttons**, beside the thumbnail button under the clip
   timeline, each put a keyframe on the frame under the playhead, with the
-  crop where it stands there now. **K** puts a diamond, where the crop
-  switches, and **G** a circle, between which the crop glides. Like the
+  crop where it stands there now. **S** puts a switch keyframe, a diamond,
+  where the crop switches, and **G** a glide keyframe, a circle, between
+  which the crop glides. S was K while there was one kind, and Tim asked
+  for S on #778, since K says neither kind. Like the
   thumbnail button neither is a mode: the icon is a diamond or a circle
   with a plus, and with a minus while the playhead stands on a keyframe
   of its kind, where a click removes it. On a keyframe of the other kind
@@ -2680,7 +2682,7 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   moves that keyframe's crop, Tim's rule on #750, so what moves is the
   diamond or the circle lit under the playhead. Anywhere else the crop
   frame shows the crop as the short has it, and a drag moves nothing,
-  and its title says to press K or G to put a keyframe there. That is
+  and its title says to press S or G to put a keyframe there. That is
   also how the crop before the first keyframe is placed. A clip with no
   keyframes has one crop, dragged anywhere in it.
 - **An edge works like a snow shovel**, Tim's word on #778. The start or
@@ -2691,7 +2693,7 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   while a circle beside it joins it, so its glide line has somewhere to
   go. Every keyframe keeps its own place, so the edge dragged back out
   leaves each where it was. Placing the crop on a carried keyframe,
-  pressing K or G on it or dragging it makes it a keyframe of its own
+  pressing S or G on it or dragging it makes it a keyframe of its own
   where it stands. Removing it removes only it, and the others it
   covered stay out of sight until the edge is dragged back out past them,
   so no keyframe comes up in its place. The keyframes, the glide line and
