@@ -24,7 +24,7 @@
     "eslint": "10.14.0",
     "eslint-plugin-playwright": "2.12.2",
     "globals": "17.14.0",
-    "monocart-coverage-reports": "3.2.0",
+    "monocart-coverage-reports": "3.2.1",
     "playwright": "1.65.0",
     "svelte": "^5.57.3",
     "svelte-check": "^4.7.8",
