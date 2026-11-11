@@ -1,31 +1,23 @@
  96	sequences.mjs SEQUENCE=the app dragged a pixel at a time moves every part one way, the sides equal and set by the width
  55	sequences.mjs SEQUENCE=a video added is transcribed to its end from its menu
  52	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
- 50	timeline.mjs SEED=3
- 49	searching.mjs SEED=3
- 46	searching.mjs SEED=2
- 46	timeline.mjs SEED=1
- 45	timeline.mjs SEED=2
- 40	searching.mjs SEED=1
+ 47	timeline.mjs
+ 45	searching.mjs
  35	sequences.mjs SEQUENCE=a step onto a word pops it over the paused frame
  35	sequences.mjs SEQUENCE=the video preview shows the short's captions, frame for frame
- 34	words.mjs SEED=2
- 32	playback.mjs SEED=3
  32	sequences.mjs SEQUENCE=Dictating in the middle of a long report keeps the cursor in view
  29	sequences.mjs SEQUENCE=a rotated part turns with its own frames under a dragged playhead, and stays rotated as its end moves
  29	sequences.mjs SEQUENCE=a slow drag of the playhead to the left reads its frames in runs, not a seek a step
- 28	words.mjs SEED=1
+ 28	playback.mjs
+ 28	words.mjs
  27	sequences.mjs SEQUENCE=a label tells a video apart and the video keeps its name
  27	sequences.mjs SEQUENCE=a search that found its clips moves the window on in the frame they show
  27	sequences.mjs SEQUENCE=a short of a picture that starts after its sound shows what the video preview shows
- 26	playback.mjs SEED=1
- 26	playback.mjs SEED=2
  26	sequences.mjs SEQUENCE=a short of a phone's uneven frames shows what the video preview shows
  25	sequences.mjs SEQUENCE=a render cut off by the app closing says so at its Render button, and Continue carries it on
  24	sequences.mjs SEQUENCE=a restart brings back a clip trimmed, its short and a search stopped, as they were
  22	sequences.mjs SEQUENCE=The arrow keys scroll the report a line at a time, while dictating and after
  22	sequences.mjs SEQUENCE=the dots after a search's window begin at the window it moves on to, with a dashed edge
- 22	words.mjs SEED=3
  21	sequences.mjs SEQUENCE=Transcribe video waits until the search is done
  21	sequences.mjs SEQUENCE=a clip stays rendered after its short is removed from its folder
  21	sequences.mjs SEQUENCE=a cut's left edge dragged shows the frames before the cut, never one after it

@@ -1066,12 +1066,17 @@ a wait on a signal, or a comparison with a state that moved:
 
 ### Where they run
 
-`make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3
+`make walks` runs the sequences and every walk for `WALKS` seeds, 1
 unless set, each walk as long as it says, 60 steps, or 25 for playback,
 whose every step is a play that draws all its frames, or 30 for searching, unless `STEPS` is set, through the Go test `TestWalks`,
-which fails with what a sequence or a walk printed. The seeds are the
-same every time, so a walk that breaks a rule breaks it again on the
-next run. `make walks WALKS=40` looks further.
+which fails with what a sequence or a walk printed. CI sets `WALKSEED`
+to the commit, and the seeds are worked out from it, so every push walks
+ground no push walked before and the four jobs of a run take the same
+seeds. The nightly walks take 3 seeds of their own every night, in both
+browsers. Without `WALKSEED` the seeds are 1 to `WALKS`, the same every
+time. A walk that breaks a rule prints its seed, and `SEED=n` walks it
+again step for step. `make walks WALKS=40` looks further.
+`walk-times.tsv` times a walk by its file, whatever its seed.
 
 They run side by side, half as many again as the machine has cores, or
 `WALKERS`. Each runs against a bridge of its own, which `TestWalks`

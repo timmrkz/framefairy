@@ -45,7 +45,7 @@
 #                   walk or interface test waits on the clock
 #   make walks      the interface against the real Go side, in Chromium
 #                   or the browser WALKBROWSER names, see below:
-#                   the sequences, and every walk WALKS times, each of
+#                   the sequences, and every walk for WALKS seeds, each of
 #                   its own length unless STEPS says, WALKERS at once,
 #                   stopped after WALKTIMEOUT, 30m unless set, with
 #                   a trace of each that failed in WALKTRACES, with
@@ -552,7 +552,7 @@ fuzz: toolchain modules
 		&& printf "ok  \t%s %s\n" "$$1" "$$2" || { printf "FAIL\t%s\n%s\n" "$$1" "$$out"; exit 1; }' <$(STAMPS)/fuzz-runs
 
 # The interface against the real Go side, see docs/TESTING.md:
-# every sequence and every walk for seeds 1 to WALKS, half as many again at
+# every sequence and every walk for WALKS seeds, half as many again at
 # once as the machine has cores unless WALKERS says. It needs Node, ffmpeg and
 # the Chromium and WebKit Playwright drives, which CI's image holds and a
 # cloud session gets from its SessionStart hook. Built for the bridge
@@ -560,7 +560,10 @@ fuzz: toolchain modules
 # Every walk walks in Playwright's Chromium, the engine the app runs in on
 # Windows, see Two browsers there. WALKBROWSER=webkit walks every walk in
 # Playwright's WebKit, the engine of the Mac, as the nightly walks do.
-WALKS ?= 3
+# The seeds are worked out from WALKSEED, the commit in CI, so every push
+# walks new ground, and are 1 to WALKS without it.
+WALKS ?= 1
+WALKSEED ?= $(GITHUB_SHA)
 WALKBROWSER ?=
 STEPS ?=
 WALKERS ?=
@@ -597,7 +600,7 @@ TRACE ?= light
 WALKCOVER = $(COVERDIR)/walks$(if $(WALKSHARD),-$(subst /,-of-,$(WALKSHARD)))
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@rm -f '$(WALKSUMMARY)'; mkdir -p '$(dir $(WALKSUMMARY))'; $(if $(COVERAGE),rm -rf '$(WALKCOVER)-pages' && mkdir -p '$(COVERDIR)' && )FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKBROWSER='$(WALKBROWSER)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKSUMMARY='$(WALKSUMMARY)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) $(if $(COVERAGE),$(COVERPKG) -coverprofile='$(WALKCOVER)-go.txt') -run '^TestWalks$$' ./cmd/framefairy-app; \
+	@rm -f '$(WALKSUMMARY)'; mkdir -p '$(dir $(WALKSUMMARY))'; $(if $(COVERAGE),rm -rf '$(WALKCOVER)-pages' && mkdir -p '$(COVERDIR)' && )FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' WALKSEED='$(WALKSEED)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKBROWSER='$(WALKBROWSER)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKSUMMARY='$(WALKSUMMARY)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) $(if $(COVERAGE),$(COVERPKG) -coverprofile='$(WALKCOVER)-go.txt') -run '^TestWalks$$' ./cmd/framefairy-app; \
 		status=$$?; cat '$(WALKSUMMARY)' 2>/dev/null; exit $$status
 ifneq ($(COVERAGE),)
 	@awk -F'[ ]' '/^framefairy\/cmd\/framefairy-app\/jobs\.go:/ && $$NF > 0 { found = 1 } END { exit !found }' '$(WALKCOVER)-go.txt' || { echo "$(WALKCOVER)-go.txt counts no line of the job queue, so the bridge did not count what the walks ran"; exit 1; }
