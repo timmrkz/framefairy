@@ -790,44 +790,78 @@ func TestAHearingStoppedOnItsLastPieceKeepsOnlyWhatItHeard(t *testing.T) {
 }
 
 // stoppedOnLastPiece is TestAHearingStoppedOnItsLastPieceKeepsOnlyWhatItHeard
-// with the speech model as copies makes it.
+// with the speech model as copies makes it. It hears in the order Tim ran
+// into: the stretch around a clip is stopped on its last piece, the part a
+// drag brings in is heard beside it, and then the whole video. After each
+// hearing, nothing written down as heard may be without words.
 //
 // On the real disk: ffmpeg reads the episode the speech model hears.
 func stoppedOnLastPiece(t *testing.T, copies func(Recognizer) Recognizer) {
 	t.Helper()
 	source := testEpisode(t, "70")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var calls int32
+	model := t.TempDir()
+	// hear hears span, stopped while it hears the given piece, counted
+	// from 1, or not at all for 0, and says in how many pieces it heard.
+	hear := func(span timed.Window, piece int32) (int32, error) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var calls int32
+		rec := &stopsOnPiece{inner: fakeRecognizer{&calls}, piece: piece, stop: cancel}
+		e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+		e.checkpointEvery = time.Hour
+		e.OpenRecognizer = func(string) (Recognizer, error) { return copies(rec), nil }
+		base := DefaultOptions()
+		base.ASRModel = model
+		err := NewProject(e, source, base).Hear(ctx, span)
+		return rec.n.Load(), err
+	}
+
 	// 40 s and the audio on either side is two pieces, the second the
 	// last, heard after the reading ends. It is stopped while it is heard.
-	rec := &stopsOnPiece{inner: fakeRecognizer{&calls}, piece: 2, stop: cancel}
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
-	e.checkpointEvery = time.Hour
-	e.OpenRecognizer = func(string) (Recognizer, error) { return copies(rec), nil }
-	base := DefaultOptions()
-	base.ASRModel = t.TempDir()
-	p := NewProject(e, source, base)
-	if err := p.Hear(ctx, timed.Window{Start: 0, End: 40}); err == nil {
+	n, err := hear(timed.Window{Start: 0, End: 40}, 2)
+	if err == nil {
 		t.Error("a hearing stopped on its last piece finished")
 	}
-	if n := rec.n.Load(); n != 2 {
+	if n != 2 {
 		t.Fatalf("heard in %d pieces, want 2", n)
 	}
-	// What is written down as heard has its words to its end: one every
-	// 0.6 s from the fake recogniser.
-	_, words, _, _ := readEpisodeTranscript(disk, source, base.ASRModel)
-	last := 0.0
-	if len(words) > 0 {
-		last = words[len(words)-1].Start
-	}
-	for _, part := range HeardParts(disk, source, base.ASRModel) {
-		if part[1]-last > 1 {
-			t.Errorf("heard to %.2f s with its last word at %.2f s", part[1], last)
-		}
-	}
-	if gaps := Unheard(disk, source, base.ASRModel, timed.Window{Start: 0, End: 40}); len(gaps) == 0 {
+	heardHasWords(t, "stopped on its last piece", source, model)
+	if gaps := Unheard(disk, source, model, timed.Window{Start: 0, End: 40}); len(gaps) == 0 {
 		t.Error("nothing is left to hear after the last piece was stopped")
+	}
+
+	if _, err := hear(timed.Window{Start: 20, End: 70}, 0); err != nil {
+		t.Fatalf("hearing the part beside it: %v", err)
+	}
+	heardHasWords(t, "the part beside it heard", source, model)
+	if _, err := hear(timed.Window{Start: 0, End: 70}, 0); err != nil {
+		t.Fatalf("hearing the whole video: %v", err)
+	}
+	heardHasWords(t, "the whole video heard", source, model)
+	if gaps := Unheard(disk, source, model, timed.Window{Start: 0, End: 70}); len(gaps) > 0 {
+		t.Errorf("left unheard %v", gaps)
+	}
+}
+
+// heardHasWords fails when a part written down as heard goes more than
+// 1.5 s without a word. The fake recogniser gives one every 0.6 s.
+func heardHasWords(t *testing.T, after, source, model string) {
+	t.Helper()
+	_, words, _, _ := readEpisodeTranscript(disk, source, model)
+	for _, part := range HeardParts(disk, source, model) {
+		prev := part[0]
+		for _, w := range words {
+			if w.Start < part[0]-0.01 || w.Start >= part[1] {
+				continue
+			}
+			if w.Start-prev > 1.5 {
+				t.Errorf("%s: heard %.2f to %.2f s, without words from %.2f to %.2f s", after, part[0], part[1], prev, w.Start)
+			}
+			prev = w.Start
+		}
+		if part[1]-prev > 1.5 {
+			t.Errorf("%s: heard %.2f to %.2f s, without words from %.2f s to its end", after, part[0], part[1], prev)
+		}
 	}
 }
 
