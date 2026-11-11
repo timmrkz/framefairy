@@ -26,6 +26,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"sync"
 )
 
 // watching are the functions and the Objective-C classes that read input
@@ -165,26 +166,46 @@ func checkInputs(zipPath string) error {
 		return fmt.Errorf("the build is not a zip: %w", err)
 	}
 	defer z.Close()
-	var found []string
-	for _, f := range z.File {
+	// Each file is unpacked and read on its own goroutine: unpacking is
+	// most of the time, and the programs of the app are five of about the
+	// same size.
+	type read struct {
+		found []string
+		err   error
+	}
+	reads := make([]read, len(z.File))
+	var wg sync.WaitGroup
+	for i, f := range z.File {
 		if f.Mode()&setID != 0 {
-			found = append(found, f.Name+": runs as its owner, set-user-ID or set-group-ID")
+			reads[i].found = append(reads[i].found, f.Name+": runs as its owner, set-user-ID or set-group-ID")
 		}
 		if f.FileInfo().IsDir() {
 			continue
 		}
-		r, err := f.Open()
-		if err != nil {
-			return fmt.Errorf("%s: %w", f.Name, err)
+		wg.Go(func() {
+			r, err := f.Open()
+			if err != nil {
+				reads[i].err = fmt.Errorf("%s: %w", f.Name, err)
+				return
+			}
+			data, err := io.ReadAll(r)
+			r.Close()
+			if err != nil {
+				reads[i].err = fmt.Errorf("%s: %w", f.Name, err)
+				return
+			}
+			for _, p := range inputsOf(f.Name, data) {
+				reads[i].found = append(reads[i].found, f.Name+": "+p)
+			}
+		})
+	}
+	wg.Wait()
+	var found []string
+	for _, r := range reads {
+		if r.err != nil {
+			return r.err
 		}
-		data, err := io.ReadAll(r)
-		r.Close()
-		if err != nil {
-			return fmt.Errorf("%s: %w", f.Name, err)
-		}
-		for _, p := range inputsOf(f.Name, data) {
-			found = append(found, f.Name+": "+p)
-		}
+		found = append(found, r.found...)
 	}
 	if len(found) > 0 {
 		return fmt.Errorf("the build could read input meant for other apps, watch the screen or the camera, or ask for administrator rights, so it is not signed. If that is meant, the lists in cmd/framefairy-release/inputs.go change on main first, in a pull request that says why:\n  %s", strings.Join(found, "\n  "))
