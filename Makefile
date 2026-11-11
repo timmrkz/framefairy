@@ -604,8 +604,11 @@ TRACE ?= light
 # the job queue, jobs.go, which only a bridge runs, and no line of any
 # component.
 WALKCOVER = $(COVERDIR)/walks$(if $(WALKSHARD),-$(subst /,-of-,$(WALKSHARD)))
-walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
-	@cd frontend && $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
+# The decoder is built while the interface is, side by side: one after the
+# other they were most of the half minute before the first walk in CI.
+walks: toolchain modules frontend/node_modules/.package-lock.json
+	@$(if $(FRESH_FRAMES),$(MAKE) --no-print-directory $(FRESH_FRAMES) & frames=$$!; )cd frontend && $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error; \
+		built=$$?; $(if $(FRESH_FRAMES),wait $$frames || exit $$?; )exit $$built
 	@rm -f '$(WALKSUMMARY)'; mkdir -p '$(dir $(WALKSUMMARY))'; $(if $(COVERAGE),rm -rf '$(WALKCOVER)-pages' && mkdir -p '$(COVERDIR)' && )FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' WALKSEED='$(WALKSEED)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKBROWSER='$(WALKBROWSER)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKSWEEP='$(WALKSWEEP)' WALKSUMMARY='$(WALKSUMMARY)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) $(if $(COVERAGE),$(COVERPKG) -coverprofile='$(WALKCOVER)-go.txt') -run '^TestWalks$$' ./cmd/framefairy-app; \
 		status=$$?; cat '$(WALKSUMMARY)' 2>/dev/null; exit $$status
 ifneq ($(COVERAGE),)
