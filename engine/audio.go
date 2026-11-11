@@ -655,8 +655,16 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 	}
 	// What is still being heard is waited for before anything is saved
 	// or said, whichever way the reading ended, and taken in unless the
-	// work was stopped, see advance.
+	// work was stopped, see advance. The last piece is heard here too,
+	// before the work is asked whether it was stopped: a stop while it was
+	// heard let its words go, and the whole part was still written down as
+	// heard, so a patch of it had no words and was never heard again, Tim's
+	// report of 11 November.
 	drain()
+	if ctx.Err() == nil && waitErr == nil && err == nil && float64(len(pending))/SampleRate >= 0.2 {
+		recognise(pending, chunkStart)
+		drain()
+	}
 	if ctx.Err() != nil {
 		// Stopped, by pause or by a search that wants the machine. What was
 		// heard since the last save is written down before it goes, so
@@ -674,10 +682,6 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 		e.Log.ClearProgress()
 		return nil, renderErr("could not read the audio of %s:\n%s", path,
 			tailRunes(runes.Trim(stderr.String()), 400))
-	}
-	if float64(len(pending))/SampleRate >= 0.2 {
-		recognise(pending, chunkStart)
-		drain()
 	}
 	e.Log.ClearProgress()
 	if count == 0 {

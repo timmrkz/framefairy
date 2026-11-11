@@ -768,6 +768,86 @@ func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 	stoppedKeepsWhatItHeard(t, fakeRecognizer{&calls})
 }
 
+// A hearing stopped while its last piece is heard keeps only what it
+// heard, and says it was stopped. The last piece is heard after the audio
+// has been read, and the stretch around a clip made by hand is taken back
+// by the part of the clip a drag brings in, issue #745. Stopped there,
+// the piece's words were let go and the whole stretch was still written
+// down as heard, so a patch of the clip had no captions and was never
+// heard again, Tim's report of 11 November.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func TestAHearingStoppedOnItsLastPieceKeepsOnlyWhatItHeard(t *testing.T) {
+	t.Parallel()
+	t.Run("one copy", func(t *testing.T) {
+		t.Parallel()
+		stoppedOnLastPiece(t, func(r Recognizer) Recognizer { return r })
+	})
+	t.Run("side by side", func(t *testing.T) {
+		t.Parallel()
+		stoppedOnLastPiece(t, func(r Recognizer) Recognizer { return &sideBySide{inner: r, copies: 4} })
+	})
+}
+
+// stoppedOnLastPiece is TestAHearingStoppedOnItsLastPieceKeepsOnlyWhatItHeard
+// with the speech model as copies makes it.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func stoppedOnLastPiece(t *testing.T, copies func(Recognizer) Recognizer) {
+	t.Helper()
+	source := testEpisode(t, "70")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var calls int32
+	// 40 s and the audio on either side is two pieces, the second the
+	// last, heard after the reading ends. It is stopped while it is heard.
+	rec := &stopsOnPiece{inner: fakeRecognizer{&calls}, piece: 2, stop: cancel}
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	e.checkpointEvery = time.Hour
+	e.OpenRecognizer = func(string) (Recognizer, error) { return copies(rec), nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	if err := p.Hear(ctx, timed.Window{Start: 0, End: 40}); err == nil {
+		t.Error("a hearing stopped on its last piece finished")
+	}
+	if n := rec.n.Load(); n != 2 {
+		t.Fatalf("heard in %d pieces, want 2", n)
+	}
+	// What is written down as heard has its words to its end: one every
+	// 0.6 s from the fake recogniser.
+	_, words, _, _ := readEpisodeTranscript(disk, source, base.ASRModel)
+	last := 0.0
+	if len(words) > 0 {
+		last = words[len(words)-1].Start
+	}
+	for _, part := range HeardParts(disk, source, base.ASRModel) {
+		if part[1]-last > 1 {
+			t.Errorf("heard to %.2f s with its last word at %.2f s", part[1], last)
+		}
+	}
+	if gaps := Unheard(disk, source, base.ASRModel, timed.Window{Start: 0, End: 40}); len(gaps) == 0 {
+		t.Error("nothing is left to hear after the last piece was stopped")
+	}
+}
+
+// stopsOnPiece stops the hearing while it hears a given piece, counted from 1.
+type stopsOnPiece struct {
+	inner Recognizer
+	piece int32
+	stop  func()
+	n     atomic.Int32
+}
+
+func (s *stopsOnPiece) Recognize(samples []float32, rate int) []Token {
+	if s.n.Add(1) == s.piece {
+		s.stop()
+	}
+	return s.inner.Recognize(samples, rate)
+}
+
+func (s *stopsOnPiece) Close() {}
+
 // stoppedKeepsWhatItHeard transcribes a test episode with rec, stops it
 // once more than 20 s are heard, and checks all of that was written down.
 // It is shared with TestHearingSideBySideStoppedKeepsWhatItHeard.
