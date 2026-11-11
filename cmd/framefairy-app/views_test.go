@@ -231,7 +231,7 @@ func TestTheKeyframesAndTheCropFollowAnEdgeTheHandDrags(t *testing.T) {
 		}
 		last = framing(saved)
 	}
-	if want := []engine.CropMarkView{{At: 11.2, X: 10, Glide: true}, {At: 12.88, X: 300, Glide: true}}; !reflect.DeepEqual(last.CropMarks, want) {
+	if want := []engine.CropMarkView{{At: 11.2, X: 10, Glide: true, Opens: true, FromClip: true}, {At: 12.88, X: 300, Glide: true}}; !reflect.DeepEqual(last.CropMarks, want) {
 		t.Errorf("the edges carry %v, not %v", last.CropMarks, want)
 	}
 }

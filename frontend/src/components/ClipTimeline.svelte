@@ -1787,7 +1787,7 @@
   // they move with it and not only once it is let go, Tim on #778.
   const cropDots = $derived(
     (shapedShown && shaped?.framing ? shaped.framing.cropMarks : cropMarks)
-      .map((m) => ({ at: m.at, shown: shownAt("crop", m.at), glide: !!m.glide }))
+      .map((m) => ({ at: m.at, shown: shownAt("crop", m.at), glide: !!m.glide, opens: !!m.opens }))
       .filter((m) => m.shown >= view.from && m.shown <= view.to),
   );
   // The stretches the crop glides over, each from a circle into the next,
@@ -2344,8 +2344,10 @@
             aria-valuenow={m.shown}
             title={locked
               ? "A keyframe. Click to see it"
-              : m.glide
-                ? "A glide keyframe. From one of these the crop glides into the next. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"
+              : m.opens
+                ? "A glide keyframe. The crop glides from here, from the crop before it, into the next glide keyframe. Click to see it, drag it to another frame, double-click to remove it"
+                : m.glide
+                ? "A glide keyframe. The crop glides into it from the glide keyframe before. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"
                 : "A switch keyframe. The crop switches on it. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"}
             data-grip="mark"
             data-kind="crop"

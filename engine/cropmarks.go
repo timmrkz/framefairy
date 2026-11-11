@@ -19,9 +19,11 @@ import (
 // clip's own. A keyframe switches the crop on its frame, so one keyframe
 // where the camera switches is all a switch takes, or it is a circle,
 // which glides: from a circle the crop glides into the next circle, over
-// the whole time between them, and reaches it on its frame. Into a circle
-// after a diamond, or into the first, the crop switches, because a
-// diamond is a switch with nothing happening before or after it. Tim
+// the whole time between them, and reaches it on its frame. A circle
+// after a diamond, or the first, starts a glide from the crop before it
+// and has no crop of its own, see opened, because a diamond is a switch
+// with nothing happening before or after it, and a circle never makes the
+// crop jump. Tim
 // chose the two kinds, a diamond put with K and a circle put with G, from
 // mockups on #750, the switch keyframe on S since #778, and that a glide runs only between circles. See
 // docs/ROTATE-AND-FOLLOW.md.
@@ -53,13 +55,21 @@ import (
 // the edge leaves it inside the clip again, see carry. Last is never in a
 // plan: it is a keyframe the clip's end carries, which stands on the last
 // frame before At, the end, rather than on At.
+//
+// Opens is a circle that starts a glide, one no circle of its turn comes
+// right before. It has no crop of its own: the glide starts from the crop
+// before it, so X is that crop, and FromClip says it is the piece's own
+// crop, with no keyframe of its turn before. Neither is in a plan, see
+// opened.
 type CropMark struct {
-	At    float64
-	X     int
-	Turn  int
-	Glide bool
-	Aside bool
-	Last  bool
+	At       float64
+	X        int
+	Turn     int
+	Glide    bool
+	Aside    bool
+	Last     bool
+	Opens    bool
+	FromClip bool
 }
 
 // MaxCropMarks is how many keyframes one clip may have.
@@ -68,18 +78,20 @@ const MaxCropMarks = 100
 // CropMarkView is a keyframe as the window reads it. Last is one the
 // clip's end carries, see CropMark, until MarksOnFrames puts it on its frame.
 type CropMarkView struct {
-	At    float64 `json:"at"`
-	X     int     `json:"x"`
-	Turn  int     `json:"turn"`
-	Glide bool    `json:"glide"`
-	Last  bool    `json:"-"`
+	At       float64 `json:"at"`
+	X        int     `json:"x"`
+	Turn     int     `json:"turn"`
+	Glide    bool    `json:"glide"`
+	Opens    bool    `json:"opens,omitempty"`
+	Last     bool    `json:"-"`
+	FromClip bool    `json:"-"`
 }
 
 // CropMarkViews is keyframes as the window reads them.
 func CropMarkViews(marks []CropMark) []CropMarkView {
 	out := make([]CropMarkView, len(marks))
 	for i, m := range marks {
-		out[i] = CropMarkView{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide, Last: m.Last}
+		out[i] = CropMarkView{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide, Opens: m.Opens, Last: m.Last, FromClip: m.FromClip}
 	}
 	return out
 }
@@ -309,6 +321,7 @@ func carry(segments []Segment, marks []CropMark) []carriage {
 	if len(segments) == 0 {
 		return nil
 	}
+	marks = opened(marks)
 	var out []carriage
 	covered := map[int][]int{}
 	for i, m := range marks {
@@ -368,6 +381,47 @@ func carry(segments []Segment, marks []CropMark) []carriage {
 		kept = append(kept, c)
 	}
 	return kept
+}
+
+// opened is keyframes in time order with each circle that starts a glide
+// marked Opens and given the crop before it, the crop of the keyframe of
+// its turn before it, or FromClip where there is none. Tim on #778: "the
+// first glide keyframe starts the transition based on the crop that was
+// set previously", and a crop that jumps is a switch keyframe's. It is
+// worked out on the clip as were nothing cut out, before an edge or a cut
+// carries anything, so a circle an edge carries starts the glide from the
+// same crop it did. A keyframe set aside steers nothing, so it is no crop
+// before.
+func opened(marks []CropMark) []CropMark {
+	var out []CropMark
+	for i, m := range marks {
+		if !m.Glide {
+			continue
+		}
+		before := -1
+		for j := i - 1; j >= 0; j-- {
+			if marks[j].Turn == m.Turn && !marks[j].Aside {
+				before = j
+				break
+			}
+		}
+		if before >= 0 && marks[before].Glide {
+			continue
+		}
+		if out == nil {
+			out = append([]CropMark(nil), marks...)
+		}
+		out[i].Opens = true
+		if before < 0 {
+			out[i].FromClip = true
+		} else {
+			out[i].X = marks[before].X
+		}
+	}
+	if out == nil {
+		return marks
+	}
+	return out
 }
 
 // joined is whether the keyframe shown at i has a circle of its turn
@@ -499,6 +553,9 @@ type frameMark struct {
 	k     int64
 	x     int
 	glide bool
+	// fromClip is a circle whose glide starts from the piece's own crop,
+	// see CropMark.FromClip.
+	fromClip bool
 }
 
 // onFrames is a piece's keyframes on their frames, each left edge kept
@@ -511,7 +568,7 @@ func (s SourceInfo) onFrames(marks []CropMark, cropW, width int) []frameMark {
 			continue
 		}
 		x := m.X
-		f := frameMark{k: s.markFrame(m.At), x: ClampCropX(&x, cropW, width), glide: m.Glide}
+		f := frameMark{k: s.markFrame(m.At), x: ClampCropX(&x, cropW, width), glide: m.Glide, fromClip: m.FromClip}
 		if m.Last {
 			f.k--
 		}
@@ -535,10 +592,16 @@ type cropRun struct {
 // runOf is the crop of a piece as it runs over the frames, its left edges
 // kept inside a picture so wide for a crop so wide.
 func (s SourceInfo) runOf(seg Segment, cropW, width int) cropRun {
-	return cropRun{
+	r := cropRun{
 		marks: s.onFrames(seg.Marks, cropW, width),
 		base:  ClampCropX(seg.CropX, cropW, width),
 	}
+	for i := range r.marks {
+		if r.marks[i].fromClip {
+			r.marks[i].x = r.base
+		}
+	}
+	return r
 }
 
 // before is where the crop stands as the stretch up to keyframe i starts:
@@ -554,7 +617,7 @@ func (r cropRun) before(i int) frameMark {
 // a circle into the next circle, to a crop of its own over at least one
 // frame. A diamond is a switch, with nothing happening before or after it,
 // so a circle after a diamond, or the first of the clip, is where a glide
-// starts and the crop switches to it there. Tim on #750: "The only
+// starts, from the crop before it, see opened. Tim on #750: "The only
 // gradient connection to be shown is between circles, ... because
 // between those a glide happens, nowhere else."
 func (r cropRun) gliding(i int) bool {
@@ -808,7 +871,9 @@ func (s SourceInfo) CropSteps(v SegmentView, cropW, width int) []CropStep {
 func segmentOf(v SegmentView) Segment {
 	seg := Segment{Start: v.Start, End: v.End, CropX: v.CropX}
 	for _, m := range v.Marks {
-		seg.Marks = append(seg.Marks, CropMark{At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide, Last: m.Last})
+		seg.Marks = append(seg.Marks, CropMark{
+			At: m.At, X: m.X, Turn: m.Turn, Glide: m.Glide, Opens: m.Opens, Last: m.Last, FromClip: m.FromClip,
+		})
 	}
 	return seg
 }

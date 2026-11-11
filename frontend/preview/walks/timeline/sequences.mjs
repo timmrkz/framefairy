@@ -463,6 +463,9 @@ export default [
     // circle again and the line comes back, and G on a circle removes it.
     // The line follows the start edge while the hand still holds it, found
     // by Tim on #750 with a cut's edge.
+    // The first circle has no crop of its own, so a drag of the crop on
+    // it moves nothing: the glide starts from the crop before it, Tim on
+    // #778.
     // Found on #192: Automatic crop took the keyframes of the angle away
     // with the crop, and Put the crop back brought back the crop alone,
     // so what the keyframes did was lost to one click. Each comes back
@@ -472,6 +475,9 @@ export default [
     steps: [
       ["added", 30, "25"],
       ["glide at", 0.2],
+      ["crop before", 0.2],
+      ["drag crop", 400],
+      ["crop kept", 0.2],
       ["glide at", 0.8],
       ["glides", 1],
       ["drag crop", 400],

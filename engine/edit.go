@@ -911,6 +911,18 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 		spans := rotationsOf(c)
 		turn := rotationOf(pieces[target], spans)
 		marks := realise(frames, spansOf(pieces), cropMarksOf(c), frames.frameHolding(at))
+		// A circle that starts a glide has no crop of its own: it starts
+		// from the crop before it, Tim on #778, so that crop is placed on
+		// the keyframe before.
+		for _, m := range carried(spansOf(pieces), marks) {
+			on := frames.markFrame(m.At)
+			if m.Last {
+				on--
+			}
+			if m.Opens && on == frames.frameHolding(at) {
+				return renderErr("the glide starts here from the crop before it. Move that crop on the keyframe before, or put a switch keyframe before this one")
+			}
+		}
 		// The keyframe on the frame takes the crop, also one that waits,
 		// placed on the picture turned another way: it is the diamond
 		// under the playhead, and from now on it is on the picture as it

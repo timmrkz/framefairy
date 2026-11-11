@@ -133,8 +133,10 @@ there:
   time between them, easing out and in the way a camera operator pans,
   and reaches the second circle's crop on its frame. A glide runs only
   between circles, Tim's rule: a diamond is an instant switch with
-  nothing before or after it, so into a circle after a diamond, or into
-  the first, the crop switches. So a person who walks across the picture
+  nothing before or after it. A circle that starts a glide has no crop
+  of its own: the glide starts from the crop before it, a diamond's or
+  the clip's own, so a circle never makes the crop jump, Tim on #778.
+  So a person who walks across the picture
   takes a circle where the walk starts and a circle where it ends.
 - **A drag places one keyframe.** Dragging a keyframe along the clip
   timeline moves where its switch or the end of its glide is.

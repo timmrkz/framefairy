@@ -284,6 +284,9 @@ export interface CropMark {
   // A circle, which the crop glides to from a circle before it, rather
   // than a diamond it switches on.
   glide?: boolean;
+  // A circle that starts a glide, from the crop before it, with no crop
+  // of its own, see engine.CropMark.
+  opens?: boolean;
 }
 
 // A piece's crop from a frame of the video on, until the next step, see

@@ -2672,15 +2672,19 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   camera switch takes one keyframe, put where the camera switches. From a
   circle the crop glides into the next circle, over the whole time between
   them, easing out and in. A glide runs only between circles, Tim's rule
-  on #750: a diamond is an instant switch with nothing before or after it,
-  so into a circle after a diamond, or into the first, the crop switches.
+  on #750: a diamond is an instant switch with nothing before or after it.
+  A circle that starts a glide, after a diamond or the first, has no crop
+  of its own: the glide starts from the crop before it, so a circle never
+  makes the crop jump, Tim on #778. A jump is a switch keyframe's.
   So a person who walks across takes a circle where the walk starts and a
   circle where it ends. A keyframe holds across a cut by the time the
   short plays. A part turned with Rotate has a crop of its own, so its
   crop still starts at its cut.
 - **The crop frame is dragged only with the playhead on a keyframe**, and
   moves that keyframe's crop, Tim's rule on #750, so what moves is the
-  diamond or the circle lit under the playhead. Anywhere else the crop
+  diamond or the circle lit under the playhead. On a circle that starts a
+  glide the crop frame stays put too, and its title says the glide starts
+  from the crop before it. Anywhere else the crop
   frame shows the crop as the short has it, and a drag moves nothing,
   and its title says to press S or G to put a keyframe there. That is
   also how the crop before the first keyframe is placed. A clip with no

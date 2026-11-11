@@ -1254,7 +1254,10 @@ switches the crop on its frame, so one keyframe where the camera switches is
 all a switch takes, Tim's ask on #750. From a circle, `glide`, the crop
 glides into the next circle, over the whole time between them, by
 smoothstep, `cropRun.gliding`. A glide runs only between circles, Tim's
-rule: into a circle after a diamond, or into the first, the crop switches.
+rule. A circle that starts a glide, after a diamond or the first, has no
+crop of its own: `opened` gives it the crop of the keyframe before it, or
+the piece's own, `FromClip`, before an edge or a cut carries anything, and
+`SetCrop` refuses a crop placed on it, Tim on #778.
 `SetCropGlide` turns one kind into the
 other. A piece that only switches is cropped by one crop whose left edge
 is an expression in the frame, `holdExpr`, nested by halving so a hundred
