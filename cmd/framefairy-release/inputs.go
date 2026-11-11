@@ -57,9 +57,10 @@ var watching = []string{
 //
 // Some look alike and stay. SMAppService's mainAppService, which Wails
 // links to open the app at login, runs it as the person. setuid and
-// setgid, which Go's own os/exec imports on every Mac, only ever give
-// rights up, unless the program was started with more than the person's,
-// which a file of the build marked set-user-ID would be, see setID. sudo
+// setgid, which Go's own os/exec imports on every Mac, and seteuid like
+// them, only ever give rights up, unless the program was started with
+// more than the person's, which a file of the build marked set-user-ID
+// would be, see setID. sudo
 // is named by its path, because "sudo" is a word inside Go's own runtime,
 // its sudog.
 var raising = []string{

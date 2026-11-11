@@ -1238,7 +1238,7 @@ func TestATranscriptionSaysItIsStoppingFromTheMomentItIsTold(t *testing.T) {
 	if held().Stopping {
 		t.Fatal("the transcription says it is stopping before it was told")
 	}
-	svc.stopTranscribing(ep, "a search")
+	svc.jobs.stopTranscribing(ep, "a search")
 	if j := held(); j.State != JobRunning || !j.Stopping {
 		t.Errorf("told to stop, the transcription is %s, stopping %v", j.State, j.Stopping)
 	}

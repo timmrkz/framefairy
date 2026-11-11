@@ -848,6 +848,51 @@ func (q *queue) stopByHand(id string) {
 	q.cancel(id)
 }
 
+// makeWayForSearch readies the queue for a search of a video, asked for
+// by Search or Continue. A search called off a moment ago may still be on
+// its way out, and it writes the same record as it goes, so the new one
+// waits for it. The video's transcription and the work on its clips go one
+// at a time, so the whole video being transcribed stops, see
+// makeWayForTranscribe. And a search that stopped is settled, since the
+// new one writes a record of its own in its place.
+func (q *queue) makeWayForSearch(path string) {
+	for _, j := range q.list() {
+		if j.Episode == path && j.Kind == engine.JobSearch && j.State == JobRunning && j.ctx.Err() != nil {
+			q.waitJob(j.ID)
+		}
+	}
+	q.stopTranscribing(path, "search")
+	q.settle(path, engine.JobSearch, "")
+}
+
+// makeWayForTranscribe readies the queue for the whole video to be
+// transcribed, asked for by Transcribe video or Continue transcribing. It
+// says false while a search or a clip made by hand of the video runs,
+// since those go first. A transcription that stopped is settled, since
+// the new one writes the record again in its place. The one before may
+// still be on its way out, see carriedOnLocked.
+func (q *queue) makeWayForTranscribe(path string) bool {
+	for _, j := range q.list() {
+		if j.Episode == path && makesClips(j.Kind) && j.going() {
+			return false
+		}
+	}
+	q.settle(path, engine.JobTranscribe, "")
+	return true
+}
+
+// stopTranscribing stops the whole video's transcription the way Stop
+// transcribing does, for a search or a clip made by hand of the video,
+// see makeWayForTranscribe. What it heard stays.
+func (q *queue) stopTranscribing(path, why string) {
+	for _, j := range q.list() {
+		if j.Episode == path && j.Kind == engine.JobTranscribe && j.going() {
+			theLog.jobLine(zerolog.InfoLevel, &j).Str("why", why).Msg("the whole video's transcription is stopped for the work on its clips")
+			q.stopByHand(j.ID)
+		}
+	}
+}
+
 // stopClips is Cancel at the head of the clip list: it calls off all the
 // work on the clips of an episode, the search and every clip made by hand,
 // the way stopByHand calls off one of them. It names the episode and not a
