@@ -1811,9 +1811,12 @@ made over no part of the episode, so it counts as no search of any part.
 Every job that makes clips says which it has on the way, `Log.Underway`,
 the whole list each time it changes: the builder from the moment a clip is
 queued to be framed until it is written or let go, and a clip made by hand
-from the moment it is asked for, at the playhead. Each list carries how
-many clips the job has written, and a clip that is written leaves the list
-in the event that counts it, before the search says it found one more. The app puts the list on
+from the moment it is asked for, at the playhead. Each list carries the
+clips the job has written, each with the card it was and the key it was
+written as, `runlog.Landed`, and a clip that is written leaves the list
+in the event that counts it, before the search says it found one more. So
+whatever chose a card knows its clip in the same event that takes the card
+away, see `landedClip` in the app's `choose.go`. The app puts the list on
 the job, and a record gives it back after a restart.
 
 ## The code

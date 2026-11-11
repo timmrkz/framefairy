@@ -65,6 +65,16 @@ type Underway struct {
 	Clip string `json:"clip,omitempty"`
 }
 
+// Landed is a clip on its way that was written: which of its job's clips
+// it was, N, and the key it has in the clip list, Clip. A card leaves the
+// list of clips on the way in the event that writes it, and its job says
+// from then on what it became, so whatever chose the card can choose the
+// clip in the same state that no longer shows the card.
+type Landed struct {
+	N    int    `json:"n"`
+	Clip string `json:"clip"`
+}
+
 // Unknown marks a fraction or a remaining time that cannot be given yet.
 const Unknown = -1.0
 
@@ -95,6 +105,9 @@ type Event struct {
 	Found int `json:"found,omitempty"`
 	// Underway is every clip the job has on the way, on EventUnderway.
 	Underway []Underway `json:"underway,omitempty"`
+	// Landed is every clip the job has written, with its key, on
+	// EventUnderway, the clips Found counts.
+	Landed []Landed `json:"landed,omitempty"`
 	// Whole is, on EventUnderway, that every clip still to come is on the
 	// list: a search's answer is read to its end.
 	Whole bool `json:"whole,omitempty"`
