@@ -766,8 +766,8 @@ export const steps = {
     await watch.step("block after", s);
   },
   // ["captions like the short"]
-  //                    puts the playhead on the first frame of the clip's
-  //                    words and in their middle, and holds the lower half
+  //                    puts the playhead on the first frame of one of the
+  //                    clip's words and in its middle, and holds the lower half
   //                    of the crop in the video preview to the frame of
   //                    the short Render wrote that shows the same moment
   async "captions like the short"(walk) {
@@ -840,7 +840,14 @@ export const steps = {
     let compared = 0;
     let apart = 0;
     const report = [];
-    for (const at of moments.slice(0, 12)) {
+    // TestTheVideoPreviewDrawsTheShortsCaptions in engine/ holds every
+    // frame of a short to the decoder's layer for it, the bounce
+    // included. What is left for the window is that it lays the layer
+    // over the frame the way the render does, and asks for the moment
+    // the playhead stands on: the first frame of one word, where the
+    // highlight bounces, and the middle of it, where it has settled.
+    const word = Math.min(2, Math.floor(moments.length / 2) - 1) * 2;
+    for (const at of moments.slice(word, word + 2)) {
       if (!(await seekTo(sized, at, fps))) {
         walk.wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
         break;
@@ -940,8 +947,8 @@ export const steps = {
       }
     }
     if (process.env.VERBOSE) console.log(`        ${report.join("\n        ")}`);
-    if (!walk.wrong && apart < 4) walk.wrong = `only ${apart} frames of the short either side were told apart from the video preview, so a frame off would pass`;
-    if (!walk.wrong && compared < 6) walk.wrong = `only ${compared} frames of the short were compared`;
+    if (!walk.wrong && apart < 2) walk.wrong = `only ${apart} frames of the short either side were told apart from the video preview, so a frame off would pass`;
+    if (!walk.wrong && compared < 2) walk.wrong = `only ${compared} frames of the short were compared`;
     // A comparison that failed leaves its page open, so its trace is kept
     // with the walk's, see keepTraces. Closed, the trace of the page the
     // comparison was made on went with it, and the one kept held only the
