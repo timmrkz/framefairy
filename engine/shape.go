@@ -226,7 +226,7 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 		var pushed []shoved
 		if g.Edge != "both" {
 			playhead = g.edgePlayhead(start, end, g.Edge == "start")
-			pushed = shovel(clip.Segments, start, end, g.leastPiece())
+			pushed = shovel(clip.Segments, start, end, g.leastPiece(), g.Edge == "start")
 		}
 		return func(pieces []*object) ([]*object, error) {
 			out, err := trimPieces(joinAt(pieces, clip.Rotations, pushed), clip.Rotations, start, end)
@@ -288,7 +288,7 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 		// frames a cut and a piece are a frame at least, or putting their
 		// edges on frames closes them, at five frames a second where a frame
 		// is longer than the least a cut may be.
-		least := math.Max(MinCut, g.frame())
+		least := g.leastPiece()
 		low := clip.Segments[i].Start + least
 		high := clip.Segments[i+1].End - least
 		// Moving one edge never moves the other. The other edge is where
@@ -368,9 +368,10 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 	return nil, -1, renderErr("there is no gesture called %s", runes.Scrub(g.Kind, 20))
 }
 
-// leastPiece is the least of a clip an edge keeps before a cut it
-// pushes, MinCut, in whole frames, so putting the pieces on frames
-// never closes it.
+// leastPiece is the least a piece of a clip holds, MinCut in whole
+// frames, so putting the pieces on frames never closes it: beside a cut
+// whose edge is moved, and between a cut and the edge of the clip that
+// pushes it.
 func (g Gesture) leastPiece() float64 {
 	frame := g.frame()
 	if frame <= 0 {
@@ -462,30 +463,38 @@ type shoved struct {
 // clip as it was saved. The edge used to take the cut away, and its rest
 // played again, and Tim, whose finger was still at the cut's edge, saw
 // the clip's edge jump past it.
-func shovel(pieces []Segment, start, end, least float64) []shoved {
+//
+// Only the edge dragged pushes, and only once it has moved in. A press
+// that moves nothing, or a drag outward, leaves every cut where it is,
+// however little of the clip lies before it.
+func shovel(pieces []Segment, start, end, least float64, fromStart bool) []shoved {
 	var cuts []shoved
 	for i := 1; i < len(pieces); i++ {
 		if from, to := pieces[i-1].End, pieces[i].Start; to > from {
 			cuts = append(cuts, shoved{was: from, wasTo: to, from: from, to: to})
 		}
 	}
-	at := start + least
-	for i := range cuts {
-		c := &cuts[i]
-		if c.from >= at {
-			break
+	if fromStart && len(pieces) > 0 && start > pieces[0].Start {
+		at := start + least
+		for i := range cuts {
+			c := &cuts[i]
+			if c.from >= at {
+				break
+			}
+			c.from, c.to = at, at+c.wasTo-c.was
+			at = c.to + least
 		}
-		c.from, c.to = at, at+c.wasTo-c.was
-		at = c.to + least
 	}
-	at = end - least
-	for i := len(cuts) - 1; i >= 0; i-- {
-		c := &cuts[i]
-		if c.to <= at {
-			break
+	if !fromStart && len(pieces) > 0 && end < pieces[len(pieces)-1].End {
+		at := end - least
+		for i := len(cuts) - 1; i >= 0; i-- {
+			c := &cuts[i]
+			if c.to <= at {
+				break
+			}
+			c.from, c.to = at-(c.wasTo-c.was), at
+			at = c.from - least
 		}
-		c.from, c.to = at-(c.wasTo-c.was), at
-		at = c.from - least
 	}
 	var pushed []shoved
 	for _, c := range cuts {

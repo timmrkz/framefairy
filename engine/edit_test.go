@@ -1144,7 +1144,9 @@ const shovelPlan = `{
   "plan_id": "p1",
   "clips": [
     {"id": "01", "slug": "eins",
-     "segments": [{"start": 10.0, "end": 12.0}, {"start": 13.0, "end": 13.2}, {"start": 13.52, "end": 20.0}]}
+     "segments": [{"start": 10.0, "end": 12.0}, {"start": 13.0, "end": 13.2}, {"start": 13.52, "end": 20.0}]},
+    {"id": "02", "slug": "zwei",
+     "segments": [{"start": 30.0, "end": 30.04}, {"start": 31.0, "end": 39.0}, {"start": 39.52, "end": 39.56}]}
   ]
 }`
 
@@ -1154,24 +1156,32 @@ const shovelPlan = `{
 // and every edge can still be dragged. The edge used to take the cut away,
 // and Tim saw it jump past the cut while his finger was still at its edge.
 // Every step starts from the clip as saved, so dragged back, the cuts are
-// where they were.
+// where they were. A press, or a drag outward, pushes nothing, even past
+// a piece a frame long, which moving a cut's edge made before.
 func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
 	tr := editableTranscript()
 	// At 25 frames a second, the least a piece may hold is MinCut, 0.05, in whole frames, 0.08,
 	// and the pieces are put on frames as they are saved.
 	cases := []struct {
 		name string
+		clip string
 		g    Gesture
 		want string
 	}{
-		{"the start short of the cut", Gesture{Edge: "start", From: 11}, "11.000-12.000 13.000-13.200 13.520-20.000"},
-		{"the start into the first cut, which pushes the second", Gesture{Edge: "start", From: 12.5},
+		{"the start short of the cut", "01", Gesture{Edge: "start", From: 11}, "11.000-12.000 13.000-13.200 13.520-20.000"},
+		{"the start into the first cut, which pushes the second", "01", Gesture{Edge: "start", From: 12.5},
 			"12.520-12.600 13.600-13.680 14.000-20.000"},
-		{"the start as far as the clip keeps a second", Gesture{Edge: "start", From: 19.5},
+		{"the start as far as the clip keeps a second", "01", Gesture{Edge: "start", From: 19.5},
 			"17.560-17.640 18.640-18.720 19.040-20.000"},
-		{"the end into the second cut, which pushes the first", Gesture{Edge: "end", From: 13.3},
+		{"the end into the second cut, which pushes the first", "01", Gesture{Edge: "end", From: 13.3},
 			"10.000-11.840 12.840-12.920 13.240-13.320"},
-		{"the start dragged back out", Gesture{Edge: "start", From: 9}, "9.000-12.000 13.000-13.200 13.520-20.000"},
+		{"the start dragged back out", "01", Gesture{Edge: "start", From: 9}, "9.000-12.000 13.000-13.200 13.520-20.000"},
+		{"a press on a start a frame from a cut", "02", Gesture{Edge: "start", From: 30},
+			"30.000-30.040 31.000-39.000 39.520-39.560"},
+		{"a press on an end a frame from a cut", "02", Gesture{Edge: "end", From: 39.56},
+			"30.000-30.040 31.000-39.000 39.520-39.560"},
+		{"a start a frame from a cut dragged out", "02", Gesture{Edge: "start", From: 29},
+			"29.000-30.040 31.000-39.000 39.520-39.560"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1182,21 +1192,25 @@ func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
 			}
 			g := c.g
 			g.Kind, g.Frames, g.To = "trim", at25, g.From
-			shown, err := ShapeClip(planAt(t, fsys, path), "01", g, tr, 0.1, nil)
+			shown, err := ShapeClip(planAt(t, fsys, path), c.clip, g, tr, 0.1, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if got := spans(shown.Clip.Segments); got != c.want {
 				t.Errorf("while the edge is dragged the clip is %s, want %s", got, c.want)
 			}
-			if err := Reshape(fsys, nil, path, "01", g, tr, 0.1, nil); err != nil {
+			if err := Reshape(fsys, nil, path, c.clip, g, tr, 0.1, nil); err != nil {
 				t.Fatal(err)
 			}
 			_, clips, err := LoadClips(fsys, path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := spans(clips[0].Segments); got != c.want {
+			saved, err := findIn(clips, c.clip, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := spans(saved.Segments); got != c.want {
 				t.Errorf("the clip was saved as %s, want %s", got, c.want)
 			}
 		})
