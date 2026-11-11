@@ -1,10 +1,11 @@
 package main
 
 // The app must never read keys typed into other apps, or watch the screen
-// or the camera, issue #369. macOS asks the person before any of that
-// works, so what is checked here is that a build never asks: a build that
-// can is refused before it is signed, and no app installs a build that is
-// not signed, see updates.Verify. sign runs from main, see publish.yml, so
+// or the camera, issue #369, and never runs anything as the root user or
+// with administrator rights, issue #751. macOS asks the person before any
+// of that works, so what is checked here is that a build never asks: a
+// build that can is refused before it is signed, and no app installs a
+// build that is not signed, see updates.Verify. sign runs from main, see publish.yml, so
 // these lists are main's, and a branch that changes them changes nothing
 // about how its own build is judged.
 //
@@ -21,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"path"
 	"slices"
 	"strings"
@@ -44,6 +46,30 @@ var watching = []string{
 	// The camera.
 	"AVCaptureDevice",
 }
+
+// raising are the ways a program on a Mac gets administrator rights, or
+// runs something as the root user: the Authorization calls that ask for
+// an administrator's password, a helper installed to run as root with
+// SMJobBless or as a daemon of SMAppService, AppleScript's "with
+// administrator privileges", and sudo. Each is refused the way watching
+// is, as an import and as text anywhere in a program.
+//
+// Some look alike and stay. SMAppService's mainAppService, which Wails
+// links to open the app at login, runs it as the person. setuid and
+// setgid, which Go's own os/exec imports on every Mac, only ever give
+// rights up, unless the program was started with more than the person's,
+// which a file of the build marked set-user-ID would be, see setID. sudo
+// is named by its path, because "sudo" is a word inside Go's own runtime,
+// its sudog.
+var raising = []string{
+	"AuthorizationExecuteWithPrivileges", "AuthorizationCreate", "AuthorizationCopyRights",
+	"SMJobBless", "daemonServiceWithPlistName",
+	"with administrator privileges", "/usr/bin/sudo",
+}
+
+// setID are the bits of a file's mode that make whatever runs it run as
+// the file's owner or group, root's when it was installed by root.
+const setID = fs.ModeSetuid | fs.ModeSetgid
 
 // linked are the libraries each program of the app links, by the name of
 // its file. A library not on its list, ScreenCaptureKit, AVFoundation or
@@ -131,7 +157,8 @@ var asks = []string{
 var entitled = []string{"com.apple.security.device.audio-input"}
 
 // checkInputs reads every file of the zip and says everything in it that
-// could read input meant for other apps or watch the screen or the camera.
+// could read input meant for other apps, watch the screen or the camera,
+// or ask for administrator rights.
 func checkInputs(zipPath string) error {
 	z, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -140,6 +167,9 @@ func checkInputs(zipPath string) error {
 	defer z.Close()
 	var found []string
 	for _, f := range z.File {
+		if f.Mode()&setID != 0 {
+			found = append(found, f.Name+": runs as its owner, set-user-ID or set-group-ID")
+		}
 		if f.FileInfo().IsDir() {
 			continue
 		}
@@ -157,13 +187,13 @@ func checkInputs(zipPath string) error {
 		}
 	}
 	if len(found) > 0 {
-		return fmt.Errorf("the build could read input meant for other apps, or watch the screen or the camera, so it is not signed. If that is meant, the lists in cmd/framefairy-release/inputs.go change on main first, in a pull request that says why:\n  %s", strings.Join(found, "\n  "))
+		return fmt.Errorf("the build could read input meant for other apps, watch the screen or the camera, or ask for administrator rights, so it is not signed. If that is meant, the lists in cmd/framefairy-release/inputs.go change on main first, in a pull request that says why:\n  %s", strings.Join(found, "\n  "))
 	}
 	return nil
 }
 
-// inputsOf says what in one file of the build could read input, or
-// nothing.
+// inputsOf says what in one file of the build could read input or ask
+// for administrator rights, or nothing.
 func inputsOf(name string, data []byte) []string {
 	if path.Base(name) == "Info.plist" {
 		keys, err := plistKeys(data)
@@ -199,7 +229,7 @@ func inputsOf(name string, data []byte) []string {
 		return nil
 	}
 	var found []string
-	for _, n := range watching {
+	for _, n := range slices.Concat(watching, raising) {
 		if bytes.Contains(data, []byte(n)) {
 			found = append(found, "names "+n)
 		}
@@ -212,7 +242,8 @@ func inputsOf(name string, data []byte) []string {
 }
 
 // machoInputs says what one program, or one architecture of it, imports,
-// links or is entitled to that could read input.
+// links or is entitled to that could read input or ask for administrator
+// rights.
 func machoInputs(base string, f *macho.File, data []byte) []string {
 	var found []string
 	syms, err := f.ImportedSymbols()
@@ -221,7 +252,7 @@ func machoInputs(base string, f *macho.File, data []byte) []string {
 	}
 	for _, s := range syms {
 		bare := strings.TrimPrefix(strings.TrimPrefix(s, "_"), "OBJC_CLASS_$_")
-		if slices.Contains(watching, bare) {
+		if slices.Contains(watching, bare) || slices.Contains(raising, bare) {
 			found = append(found, "imports "+s)
 		}
 	}
