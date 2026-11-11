@@ -134,10 +134,11 @@ export default [
   {
     // Tim chose another model in the settings while a search ran, and
     // nothing stopped him. What a search uses stays as it is until it is
-    // done, and once it is, it can be changed again. Every model and
-    // setting a search uses, from the moment it starts to hear, is held in
-    // Go, TestNothingASearchUsesChangesUnderIt, so this looks once at the
-    // settings saying no, and once at them taking the change after.
+    // done, and once it is, it can be changed again. The settings refuse
+    // a pick and the two bins themselves, so each is pressed here. Go
+    // refuses them too, from the moment a search starts to hear,
+    // TestNothingASearchUsesChangesUnderIt, so the walk of a search still
+    // hearing went.
     name: "a model a search finds clips with is not changed or removed under it",
     steps: [
       ["model", "holds"],
@@ -146,6 +147,10 @@ export default [
       ["settings"],
       ["pick model"],
       ["refused", "finding"],
+      ["remove model", "language"],
+      ["refused", "finding"],
+      ["remove model", "speech"],
+      ["refused", "speech"],
       ["episode"],
       ["head"],
       ["wait for", "Continue"],

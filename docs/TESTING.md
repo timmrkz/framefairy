@@ -352,13 +352,14 @@ settled. The rules, besides every walk's:
 | On every animation frame of a play, on the video the video preview lays nothing over the picture, no crop frame, no shade, no captions, and on the clip a frame or more inside a piece it shows the crop frame, and the captions wherever the engine has a caption, `overlaid` in `rules.mjs` | the crop frame and the captions staying up while the episode played on through the clip, found by Tim |
 | The episode played from before the clip goes on into it, and stays on the video on every animation frame, skips and all | the clip lighting up the moment Shift and the right arrow skipped into it, found by Tim |
 
-The playback walk can walk an HEVC video too, `HEVC=1`, which Chromium
-cannot decode, so every frame of it comes from the Go side, see
-`lib/frames/app.ts`. `make walks` no longer does that on every push: the
-window gets the same frames from the Go side whatever the video is, and
-`engine/episodeframes_test.go` decodes HEVC with open GOPs and in 10-bit
-colour in Go. The sequences that add an HEVC video, "a playhead dragged
-far over HEVC" among them, still show it in the app. The sequence "a picture the browser's
+The playback walk can walk an HEVC video too, `HEVC=1`. `make walks` no
+longer does that on every push. The browser decodes no video at all:
+every frame of every video comes from the Go side, see
+`lib/frames/app.ts`, so the window gets the same kind of frames whatever
+the video is. `engine/episodeframes_test.go` decodes HEVC with open GOPs
+and in 10-bit colour in Go, and the sequences that add an HEVC video, "a
+playhead dragged far over HEVC" among them, still show one in the app.
+The sequence "a picture the browser's
 decoder fails on comes from the Go side" makes Chromium's decoder say yes
 and then fail on the first frame, the way WebKit's does with Tim's
 `start.mp4`. The sequence "the picture comes back after the playhead
@@ -668,11 +669,11 @@ it. It starts a search the model holds, opens the settings, picks another
 model, and presses the bins of the language model and of the speech
 model. Each time the card has to shake, no list or box may open and the
 settings have to name what they named. Then it cancels the search and
-asks the same again, where the box now asks and the pick now takes. `a
-model is not changed or removed while a search still hears` does it while
-the first search of a video just added is still hearing. Against the
-interface before the change both fail at the first pick: the list opens
-and nothing shakes. For the settings to stand as they do on a machine
+asks the same again, where the box now asks and the pick now takes.
+Against the interface before the change it fails at the first pick: the
+list opens and nothing shakes. The same while a search still hears is
+held in Go, `TestNothingASearchUsesChangesUnderIt`, since the settings
+lock the same way whatever the search is doing. For the settings to stand as they do on a machine
 that has searched, the bridge counts a language model as chosen and
 installed, and the setup check counts both models and llama-server as
 there, since the stand-ins hear and find the clips.

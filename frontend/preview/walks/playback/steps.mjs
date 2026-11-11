@@ -2358,14 +2358,19 @@ async function asPreviewed(page, rate, before) {
   let looked = 0;
   let missed = 0;
   const seenAt = new Set();
-  for (let j = 0; j < slots.length; j++) {
+  // Only where each piece starts and ends, one frame each: of the three
+  // frames nearest the edge, the nearest one the playhead can be put on,
+  // so the frames either side of a cut are tried first.
+  // TestEveryFrameOfAShortIsAFrameOfTheVideoPreview and the engine's tests
+  // of the render and of the episode's decoder hold every frame between,
+  // so this only looks at the app showing what Go sends.
+  const near = (j) => (slots[j].q < 3 ? slots[j].q : slots[j].n - 1 - slots[j].q);
+  const order = slots
+    .map((_, j) => j)
+    .filter((j) => slots[j].q < 3 || slots[j].q >= slots[j].n - 3)
+    .sort((a, b) => slots[a].piece - slots[b].piece || (slots[a].q < 3 ? 0 : 1) - (slots[b].q < 3 ? 0 : 1) || near(a) - near(b));
+  for (const j of order) {
     const { q, n, at } = slots[j];
-    // Only where each piece starts and ends, one frame each: the first
-    // of the three nearest the edge that the playhead can be put on.
-    // TestEveryFrameOfAShortIsAFrameOfTheVideoPreview and the engine's
-    // tests of the render and of the episode's decoder hold every frame
-    // between, so this only looks at the app showing what Go sends.
-    if (!(q < 3 || q >= n - 3)) continue;
     if (seenAt.has(`${slots[j].piece} ${q < 3 ? "first" : "last"}`)) continue;
     // Where the frame that holds the moment is the one on screen: from the
     // moment until the episode's next frame begins.
