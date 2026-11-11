@@ -1891,13 +1891,14 @@ export const steps = {
   },
   // ["slow drag left", n]
   //                    presses the clip timeline near the clip's end and
-  //                    drags the playhead to the left a pixel every frame
-  //                    of the page, the way a slow hand does, until its
-  //                    frame is n frames back, then lets go. The frames
-  //                    under the hand come from no more new streams than
-  //                    one for every 15 frames back and one more: each
-  //                    step back was a stream of its own, a seek, and the
-  //                    picture stood for each, issue #596
+  //                    drags the playhead to the left a pixel at a time,
+  //                    the way a slow hand does, a frame of the page after
+  //                    each step onto the frame before, until its frame
+  //                    is n frames back, then lets go. The frames under
+  //                    the hand come from no more new streams than one for
+  //                    every 15 frames back and one more: each step back
+  //                    was a stream of its own, a seek, and the picture
+  //                    stood for each, issue #596
   async "slow drag left"(walk, arg, s) {
     const { page, watch } = walk;
     const fps = await rate(page);
@@ -1915,12 +1916,29 @@ export const steps = {
     const from = Math.floor((await at()) * fps + 1e-6);
     const was = await page.evaluate(() => window.__appFrames.stats.streams);
     const calls = await page.evaluate(() => window.__calls.length);
+    // A frame of the clip is some 8 pixels wide on the clip timeline, so
+    // a frame of the page after each pixel waited 333 frames of the page
+    // for 40 back. The pixels that stay on the same frame ask for no
+    // other, so the hand goes on over them to the pixel before the next
+    // frame, by as many as the frame before took, and on from there a
+    // pixel at a time, and the page draws a frame once the playhead is
+    // on the next frame back.
     let back = 0;
+    let wide = 1;
+    let since = 0;
     while (back < arg && x > g.start.x + g.start.w) {
-      x -= 1;
+      const by = since ? 1 : Math.max(1, wide - 1);
+      x -= by;
+      since += by;
       await page.mouse.move(x, y);
+      const now = from - Math.floor((await at()) * fps + 1e-6);
+      if (now === back) continue;
+      // A frame passed over would be a frame never asked for, so the
+      // hand goes back to a pixel at a time.
+      wide = now === back + 1 ? since : 1;
+      since = 0;
+      back = now;
       await nextPaint(page);
-      back = from - Math.floor((await at()) * fps + 1e-6);
     }
     await page.mouse.up();
     await settle(page);
