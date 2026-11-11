@@ -984,24 +984,20 @@ func TestACircleKeepsNoHiddenCrop(t *testing.T) {
 	}
 }
 
-// On a circle that starts a glide with no keyframe before it, a drag
-// places the clip's own crop, which the glide starts from: on the clip's
-// first frame there is no room for a keyframe before it, found by the
-// review of #778.
-func TestADragOnAFirstCircleWithNothingBeforeItPlacesTheClipsCrop(t *testing.T) {
+// On a circle that starts a glide with no keyframe before it, the crop
+// frame stays put too: the glide starts from the clip's own crop, and the
+// refusal says so rather than name a keyframe that is not there, Tim on
+// #778 and the review of it.
+func TestACropDraggedOnAFirstCircleWithNothingBeforeItIsRefused(t *testing.T) {
 	fsys, path := writePlanAt(t, tenSecondClip)
 	cropMarks(t, fsys, path, CropMark{At: 10, X: 120, Glide: true}, CropMark{At: 14, X: 600, Glide: true})
-	if err := SetCrop(fsys, path, "01", 10, 300, at25); err != nil {
-		t.Fatalf("a crop dragged on the first circle, with nothing before it, was refused: %v", err)
+	err := SetCrop(fsys, path, "01", 10, 300, at25)
+	if err == nil || !strings.Contains(err.Error(), "the clip's own crop") {
+		t.Fatalf("a crop dragged on the first circle, with nothing before it, gave %v, not a refusal that names the clip's own crop", err)
 	}
 	clip := loadedClip(t, fsys, path)
-	for _, h := range []struct{ at, want float64 }{{10, 300}, {12, 450}, {14, 600}} {
-		if got := at25.CropAt(clip.Segments[0], h.at, 608, 1920); math.Abs(got-h.want) > 1e-9 {
-			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
-		}
-	}
-	if got, want := clip.CropMarks, []CropMark{{At: 10, X: 300, Glide: true, Opens: true, FromClip: true}, {At: 14, X: 600, Glide: true}}; !reflect.DeepEqual(got, want) {
-		t.Errorf("the keyframes are %v, not %v", got, want)
+	if got := at25.CropAt(clip.Segments[0], 10, 608, 1920); got != 120 {
+		t.Errorf("the crop on the first circle moved to %v, not stayed at 120", got)
 	}
 }
 

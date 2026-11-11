@@ -288,7 +288,7 @@ export interface CropMark {
   // of its own, see engine.CropMark.
   opens?: boolean;
   // A circle that starts a glide from the clip's own crop, with no
-  // keyframe before it, where a drag places that crop.
+  // keyframe before it.
   fromClip?: boolean;
   // A circle with no circle beside it, which does nothing yet.
   alone?: boolean;

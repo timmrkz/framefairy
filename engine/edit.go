@@ -914,9 +914,7 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 		// A circle that starts a glide has no crop of its own: it starts
 		// from the crop before it, Tim on #778, so that crop is placed on
 		// the keyframe before. With no keyframe before, it is the clip's
-		// own crop, placed here, since a circle on the clip's first frame
-		// leaves no room for a keyframe before it, Tim on #778.
-		own := false
+		// own crop, and the crop frame stays put there too, Tim on #778.
 		for _, m := range carried(spansOf(pieces), marks) {
 			on := frames.markFrame(m.At)
 			if m.Last {
@@ -925,17 +923,17 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 			if !m.Opens || on != frames.frameHolding(at) {
 				continue
 			}
-			if !m.FromClip {
-				return renderErr("the glide starts here from the crop of the keyframe before it. Move that crop there")
+			if m.FromClip {
+				return renderErr("the glide starts here from the clip's own crop")
 			}
-			own = true
+			return renderErr("the glide starts here from the crop of the keyframe before it. Move that crop there")
 		}
 		// The keyframe on the frame takes the crop, also one that waits,
 		// placed on the picture turned another way: it is the diamond
 		// under the playhead, and from now on it is on the picture as it
 		// stands.
 		for i := range marks {
-			if !own && frames.markFrame(marks[i].At) == frames.frameHolding(at) {
+			if frames.markFrame(marks[i].At) == frames.frameHolding(at) {
 				marks[i].X = left
 				marks[i].Turn = turn
 				setCropMarks(c, marks)
@@ -954,7 +952,7 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 			turns[i] = rotationOf(seg, spans)
 		}
 		markedPieces(steered, turns, carried(steered, marks))
-		if len(steered[target].Marks) > 0 && !own {
+		if len(steered[target].Marks) > 0 {
 			return renderErr("put the playhead on a keyframe to move the crop, or press S or G to put one there")
 		}
 		// The crop as filmed is the whole clip's, so a piece that is
@@ -975,10 +973,6 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 			}
 			seg.set(keyCropXAuto, auto)
 			seg.set(keyCropX, left)
-		}
-		if own {
-			// The circle keeps the crop it starts from, see settled.
-			setCropMarks(c, marks)
 		}
 		return nil
 	})
