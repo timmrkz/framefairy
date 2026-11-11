@@ -1156,7 +1156,9 @@ const shovelPlan = `{
 // and every edge can still be dragged. The edge used to take the cut away,
 // and Tim saw it jump past the cut while his finger was still at its edge.
 // Every step starts from the clip as saved, so dragged back, the cuts are
-// where they were. A press, or a drag outward, pushes nothing, even past
+// where they were. A cut the edge has gone past stays behind with the
+// part trimmed off, so a long drag carries no cut into speech nobody cut,
+// which Tim chose. A press, or a drag outward, pushes nothing, even past
 // a piece a frame long, which moving a cut's edge made before.
 func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
 	tr := editableTranscript()
@@ -1171,8 +1173,12 @@ func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
 		{"the start short of the cut", "01", Gesture{Edge: "start", From: 11}, "11.000-12.000 13.000-13.200 13.520-20.000"},
 		{"the start into the first cut, which pushes the second", "01", Gesture{Edge: "start", From: 12.5},
 			"12.520-12.600 13.600-13.680 14.000-20.000"},
-		{"the start as far as the clip keeps a second", "01", Gesture{Edge: "start", From: 19.5},
-			"17.560-17.640 18.640-18.720 19.040-20.000"},
+		{"the start past the first cut, which stays behind", "01", Gesture{Edge: "start", From: 13.1},
+			"13.120-13.200 13.520-20.000"},
+		{"the start past both cuts, as far as the clip keeps a second", "01", Gesture{Edge: "start", From: 19.5},
+			"19.000-20.000"},
+		{"the end past the second cut into the first", "01", Gesture{Edge: "end", From: 12.5},
+			"10.000-11.440 12.440-12.520"},
 		{"the end into the second cut, which pushes the first", "01", Gesture{Edge: "end", From: 13.3},
 			"10.000-11.840 12.840-12.920 13.240-13.320"},
 		{"the start dragged back out", "01", Gesture{Edge: "start", From: 9}, "9.000-12.000 13.000-13.200 13.520-20.000"},

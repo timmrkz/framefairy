@@ -491,7 +491,10 @@ width and pushes the next, each with the least a piece may hold before it,
 in whole frames, `leastPiece`, the same least a moved cut's edge leaves
 beside it, so the edge stays under the hand and every edge can still be
 dragged. Only the edge dragged pushes, and only once it has moved in, so a
-press or a drag outward moves no cut. Every step of a drag starts from the clip as saved, so a drag
+press or a drag outward moves no cut. A cut the edge has gone past, beyond
+where its far side was, is not pushed: it stays behind and goes with the
+part trimmed off, so a long drag carries no cut into speech nobody cut.
+Every step of a drag starts from the clip as saved, so a drag
 back out puts the cuts back where they were. A clip once also kept the
 pieces it was found with, `found_segments`, to frame what was put back by
 the camera it showed. A clip used to be parted at every camera switch with

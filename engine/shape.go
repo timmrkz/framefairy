@@ -187,18 +187,31 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 				goes = captionsGo(runOn(clip, g.From), t, s)
 			}
 		}
-		// The cuts stay in the clip as an edge pushes them, see shovel, so
-		// the clip keeps a second besides them, and a frame for each edge
-		// that is put on frames as it is saved.
-		cut := cutWidth(clip.Segments) + g.frame()*float64(len(clip.Segments))
+		// A cut the edge has not passed stays in the clip as the edge
+		// pushes it, see shovel, so the clip keeps a second besides the
+		// cuts ahead of the edge. Holding the edge back can put a cut it
+		// had passed ahead of it again, so it is held back until that
+		// settles, once for each cut at most.
 		switch g.Edge {
 		case "start":
 			start = toward(first, g.From, g.landStart(words, g.From, keepPause))
-			start = math.Min(start, end-MinClip-cut)
+			for range len(clip.Segments) {
+				held := math.Min(start, end-MinClip-cutsAhead(clip.Segments, start, true, g.frame()))
+				if held == start {
+					break
+				}
+				start = held
+			}
 			start = math.Max(start, end-MaxClipSpan)
 		case "end":
 			end = toward(last, g.From, g.landEnd(words, goes, g.From, keepPause))
-			end = math.Max(end, start+MinClip+cut)
+			for range len(clip.Segments) {
+				held := math.Max(end, start+MinClip+cutsAhead(clip.Segments, end, false, g.frame()))
+				if held == end {
+					break
+				}
+				end = held
+			}
 			// Not past the end of the video, which is where the hand
 			// goes when it pulls the last clip of a video out to the end.
 			// A word or a second more than the clip has left there.
@@ -466,7 +479,11 @@ type shoved struct {
 //
 // Only the edge dragged pushes, and only once it has moved in. A press
 // that moves nothing, or a drag outward, leaves every cut where it is,
-// however little of the clip lies before it.
+// however little of the clip lies before it. A cut the edge has passed,
+// gone beyond where its far side was, is not pushed: it stays behind and
+// goes with the part trimmed off, the way a keyframe the edge passed
+// does, so a long drag carries no cut into speech nobody cut. Tim chose
+// that over carrying every cut along.
 func shovel(pieces []Segment, start, end, least float64, fromStart bool) []shoved {
 	var cuts []shoved
 	for i := 1; i < len(pieces); i++ {
@@ -478,6 +495,9 @@ func shovel(pieces []Segment, start, end, least float64, fromStart bool) []shove
 		at := start + least
 		for i := range cuts {
 			c := &cuts[i]
+			if c.wasTo <= start {
+				continue
+			}
 			if c.from >= at {
 				break
 			}
@@ -489,6 +509,9 @@ func shovel(pieces []Segment, start, end, least float64, fromStart bool) []shove
 		at := end - least
 		for i := len(cuts) - 1; i >= 0; i-- {
 			c := &cuts[i]
+			if c.was >= end {
+				continue
+			}
 			if c.to <= at {
 				break
 			}
@@ -506,11 +529,19 @@ func shovel(pieces []Segment, start, end, least float64, fromStart bool) []shove
 	return pushed
 }
 
-// cutWidth is how much of the clip its cuts take out.
-func cutWidth(pieces []Segment) float64 {
+// cutsAhead is how much of the clip the cuts ahead of an edge at at take
+// out, the cuts it has not passed, see shovel, with a frame for each,
+// since the pieces beside them are put on frames as they are saved. A
+// start passes a cut once it is beyond the cut's far side, an end once it
+// is before the cut's near side.
+func cutsAhead(pieces []Segment, at float64, fromStart bool, frame float64) float64 {
 	var w float64
 	for i := 1; i < len(pieces); i++ {
-		w += math.Max(0, pieces[i].Start-pieces[i-1].End)
+		from, to := pieces[i-1].End, pieces[i].Start
+		if to <= from || (fromStart && to <= at) || (!fromStart && from >= at) {
+			continue
+		}
+		w += to - from + frame
 	}
 	return w
 }
