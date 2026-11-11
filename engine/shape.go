@@ -186,14 +186,18 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 				goes = captionsGo(runOn(clip, g.From), t, s)
 			}
 		}
+		// The cuts stay in the clip as an edge pushes them, see shovel, so
+		// the clip keeps a second besides them, and a frame for each edge
+		// that is put on frames as it is saved.
+		cut := cutWidth(clip.Segments) + g.frame()*float64(len(clip.Segments))
 		switch g.Edge {
 		case "start":
 			start = toward(first, g.From, g.landStart(words, g.From, keepPause))
-			start = math.Min(start, end-MinClip)
+			start = math.Min(start, end-MinClip-cut)
 			start = math.Max(start, end-MaxClipSpan)
 		case "end":
 			end = toward(last, g.From, g.landEnd(words, goes, g.From, keepPause))
-			end = math.Max(end, start+MinClip)
+			end = math.Max(end, start+MinClip+cut)
 			// Not past the end of the video, which is where the hand
 			// goes when it pulls the last clip of a video out to the end.
 			// A word or a second more than the clip has left there.
@@ -216,14 +220,19 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 		default:
 			return nil, -1, renderErr("a clip has a start and an end, not %s", runes.Scrub(g.Edge, 20))
 		}
-		start, end = outOfCuts(clip.Segments, math.Max(0, start), end)
-		start, end = num.RoundTo(start, 3), num.RoundTo(end, 3)
+		start, end = num.RoundTo(math.Max(0, start), 3), num.RoundTo(end, 3)
 		playhead := -1.0
+		var pushed []shoved
 		if g.Edge != "both" {
 			playhead = g.edgePlayhead(start, end, g.Edge == "start")
+			pushed = shovel(clip.Segments, start, end, g.leastPiece())
 		}
 		return func(pieces []*object) ([]*object, error) {
-			return trimPieces(pieces, clip.Rotations, start, end)
+			out, err := trimPieces(joinAt(pieces, clip.Rotations, pushed), clip.Rotations, start, end)
+			for _, p := range pushed {
+				out = applyCut(out, p.from, p.to)
+			}
+			return out, err
 		}, playhead, nil
 
 	case "cut", "restore":
@@ -358,6 +367,17 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 	return nil, -1, renderErr("there is no gesture called %s", runes.Scrub(g.Kind, 20))
 }
 
+// leastPiece is the least of a clip an edge keeps before a cut it
+// pushes, MinCut, in whole frames, so putting the pieces on frames
+// never closes it.
+func (g Gesture) leastPiece() float64 {
+	frame := g.frame()
+	if frame <= 0 {
+		return MinCut
+	}
+	return math.Ceil(MinCut/frame-1e-9) * frame
+}
+
 // onFrame puts a moment on the start of the frame it means, the only place
 // a video is cut, see PieceOnFrames.
 func (g Gesture) onFrame(at float64) float64 {
@@ -426,26 +446,82 @@ func runOn(clip Clip, at float64) Clip {
 	return clip
 }
 
-// outOfCuts keeps the clip's cuts out when an edge lands in one: a start
-// in a cut moves on to where the cut ends, and an end in a cut moves back
-// to where it starts. An edge on the cut's own edge is in it, since the
-// piece it meets there is gone. The rest of the cut came back as a piece
-// of its own, framedBack in trimPieces, and the cut went away under the
-// hand.
-func outOfCuts(pieces []Segment, start, end float64) (float64, float64) {
+// shoved is a cut an edge of the clip pushed: where it was, was and
+// wasTo, and where it goes, from and to, as wide as it was.
+type shoved struct {
+	was, wasTo, from, to float64
+}
+
+// shovel is where the cuts go that an edge of the clip pushes, like a snow
+// shovel: a start dragged in, toward a cut, pushes it ahead of it, and the
+// cut pushes the next, each with least of the clip kept before it, so the
+// edge and every cut stay apart and each can be dragged. An end does the
+// same the other way. The cuts keep their widths, and a drag back puts
+// them back where they were, since every step of a drag starts from the
+// clip as it was saved. The edge used to take the cut away, and its rest
+// played again, and Tim, whose finger was still at the cut's edge, saw
+// the clip's edge jump past it.
+func shovel(pieces []Segment, start, end, least float64) []shoved {
+	var cuts []shoved
 	for i := 1; i < len(pieces); i++ {
-		from, to := pieces[i-1].End, pieces[i].Start
-		if to <= from {
-			continue
-		}
-		if start >= from && start < to {
-			start = to
-		}
-		if end > from && end <= to {
-			end = from
+		if from, to := pieces[i-1].End, pieces[i].Start; to > from {
+			cuts = append(cuts, shoved{was: from, wasTo: to, from: from, to: to})
 		}
 	}
-	return start, end
+	at := start + least
+	for i := range cuts {
+		c := &cuts[i]
+		if c.from >= at {
+			break
+		}
+		c.from, c.to = at, at+c.wasTo-c.was
+		at = c.to + least
+	}
+	at = end - least
+	for i := len(cuts) - 1; i >= 0; i-- {
+		c := &cuts[i]
+		if c.to <= at {
+			break
+		}
+		c.from, c.to = at-(c.wasTo-c.was), at
+		at = c.from - least
+	}
+	var pushed []shoved
+	for _, c := range cuts {
+		if c.from != c.was {
+			c.from, c.to = num.RoundTo(c.from, 3), num.RoundTo(c.to, 3)
+			pushed = append(pushed, c)
+		}
+	}
+	return pushed
+}
+
+// cutWidth is how much of the clip its cuts take out.
+func cutWidth(pieces []Segment) float64 {
+	var w float64
+	for i := 1; i < len(pieces); i++ {
+		w += math.Max(0, pieces[i].Start-pieces[i-1].End)
+	}
+	return w
+}
+
+// joinAt puts back what the cuts an edge pushes took out where they were,
+// framed the way the clip is, the way a join does, so they can be cut
+// again where the edge pushed them.
+func joinAt(pieces []*object, spans []Rotation, pushed []shoved) []*object {
+	out := pieces
+	for _, c := range pushed {
+		for i := 0; i+1 < len(out); i++ {
+			end, next := number(out[i].values[keyEnd]), number(out[i+1].values[keyStart])
+			if end == c.was && next == c.wasTo {
+				back := meet(meet(out[i:i+1], framedBack(end, next, pieces, spans)), out[i+1:i+2])
+				joined := append(append([]*object{}, out[:i]...), back...)
+				out = append(joined, out[i+2:]...)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // toward is where an edge that stood at was lands, when the hand is at hand

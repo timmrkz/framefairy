@@ -1138,39 +1138,56 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 	}
 }
 
-// An edge of the clip dragged into a cut keeps the rest of the cut out:
-// the clip starts where the cut ends, or ends where it starts. The cut
-// went away and its rest played again, and Tim saw it vanish.
-func TestAnEdgeDraggedIntoACutKeepsTheCut(t *testing.T) {
+// A clip from 10 to 20 with cuts from 12 to 13 and from 13.2 to 13.52, on frames.
+const shovelPlan = `{
+  "source": "ep.mp4",
+  "plan_id": "p1",
+  "clips": [
+    {"id": "01", "slug": "eins",
+     "segments": [{"start": 10.0, "end": 12.0}, {"start": 13.0, "end": 13.2}, {"start": 13.52, "end": 20.0}]}
+  ]
+}`
+
+// An edge of the clip dragged into a cut pushes the cut ahead of it, like
+// a snow shovel, and the cut pushes the next. Each keeps its width and
+// the least a piece may hold before it, so the edge stays under the hand
+// and every edge can still be dragged. The edge used to take the cut away,
+// and Tim saw it jump past the cut while his finger was still at its edge.
+// Every step starts from the clip as saved, so dragged back, the cuts are
+// where they were.
+func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
 	tr := editableTranscript()
-	// Clip 01 is 10 to 11.1 and 11.9 to 13.1, with its cut between, and
-	// the edges land on frames of 25 a second: 11.12, 11.92 and 13.12.
+	// At 25 frames a second, the least a piece may hold is MinCut, 0.05, in whole frames, 0.08,
+	// and the pieces are put on frames as they are saved.
 	cases := []struct {
 		name string
 		g    Gesture
-		want []Segment
+		want string
 	}{
-		{"the start into the cut", Gesture{Edge: "start", From: 11.5}, []Segment{{Start: 11.92, End: 13.12}}},
-		{"the start onto the cut's start", Gesture{Edge: "start", From: 11.1}, []Segment{{Start: 11.92, End: 13.12}}},
-		{"the start onto words in the cut", Gesture{Edge: "start", From: 11.5, ToWords: true}, []Segment{{Start: 11.92, End: 13.12}}},
-		{"the end into the cut", Gesture{Edge: "end", From: 11.5}, []Segment{{Start: 10, End: 11.12}}},
-		{"the end a frame short of the cut's end", Gesture{Edge: "end", From: 11.86}, []Segment{{Start: 10, End: 11.12}}},
-		{"both edges, the start in the cut", Gesture{Edge: "both", From: 11.5, To: 13.1}, []Segment{{Start: 11.92, End: 13.12}}},
+		{"the start short of the cut", Gesture{Edge: "start", From: 11}, "11.000-12.000 13.000-13.200 13.520-20.000"},
+		{"the start into the first cut, which pushes the second", Gesture{Edge: "start", From: 12.5},
+			"12.520-12.600 13.600-13.680 14.000-20.000"},
+		{"the start as far as the clip keeps a second", Gesture{Edge: "start", From: 19.5},
+			"17.560-17.640 18.640-18.720 19.040-20.000"},
+		{"the end into the second cut, which pushes the first", Gesture{Edge: "end", From: 13.3},
+			"10.000-11.840 12.840-12.920 13.240-13.320"},
+		{"the start dragged back out", Gesture{Edge: "start", From: 9}, "9.000-12.000 13.000-13.200 13.520-20.000"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			fsys, path := editablePlanPath(t)
-			g := c.g
-			g.Kind, g.Frames = "trim", at25
-			if g.To == 0 {
-				g.To = g.From
+			fsys := afero.NewMemMapFs()
+			path := filepath.Join("/", "ep.framefairy", "logs", "clips.json")
+			if err := afero.WriteFile(fsys, path, []byte(shovelPlan), 0o644); err != nil {
+				t.Fatal(err)
 			}
+			g := c.g
+			g.Kind, g.Frames, g.To = "trim", at25, g.From
 			shown, err := ShapeClip(planAt(t, fsys, path), "01", g, tr, 0.1, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if spans(shown.Clip.Segments) != spans(c.want) {
-				t.Errorf("while the edge is dragged the clip is %v, want %v", shown.Clip.Segments, c.want)
+			if got := spans(shown.Clip.Segments); got != c.want {
+				t.Errorf("while the edge is dragged the clip is %s, want %s", got, c.want)
 			}
 			if err := Reshape(fsys, nil, path, "01", g, tr, 0.1, nil); err != nil {
 				t.Fatal(err)
@@ -1179,8 +1196,8 @@ func TestAnEdgeDraggedIntoACutKeepsTheCut(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := clips[0].Segments; spans(got) != spans(c.want) {
-				t.Errorf("the clip was saved as %v, want %v", got, c.want)
+			if got := spans(clips[0].Segments); got != c.want {
+				t.Errorf("the clip was saved as %s, want %s", got, c.want)
 			}
 		})
 	}
@@ -1225,8 +1242,8 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 	// Each edge then lands on the start of its frame, at 25 frames a
 	// second, see PieceOnFrames: 11.1 is half way between two and goes to
 	// the later, 11.12, and so does the cut's right edge at 11.9.
-	// An end dragged into the cut stops at the cut, see
-	// TestAnEdgeDraggedIntoACutKeepsTheCut, so the end of the clip is
+	// An end dragged into the cut pushes the cut, see
+	// TestAnEdgeDraggedIntoACutPushesIt, so the end of the clip is
 	// dragged in clip 02, which has none.
 	cases := []struct {
 		name string
