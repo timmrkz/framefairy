@@ -733,8 +733,9 @@ export const steps = {
     const now = await modelsNamed(page);
     if (JSON.stringify(now) === JSON.stringify(walk.named)) walk.wrong = `the settings still name ${JSON.stringify(now)}`;
   },
-  // ["resize"]         drags the app's height and then its width a pixel at
-  //                    a time, down to the app's smallest, and on every step every part of the
+  // ["resize"]         drags the app's height and then its width down to
+  //                    the app's smallest, a pixel at a time at places
+  //                    along the way, see resizeSizes, and on every step every part of the
   //                    workspace moves only one way the whole drag, stands
   //                    on a whole pixel, and meets the app's edges, and the
   //                    two sides beside the picture, measured from the
@@ -1312,13 +1313,30 @@ function fitProblem() {
   return null;
 }
 
-// What is wrong with the workspace as the app is dragged smaller a pixel at
-// a time, by its height and then by its width, or null.
+// The sizes from `from` down to `to` the resize steps through, largest
+// first. Every one when WALKSWEEP=every, as the nightly walks do. Else
+// pairs of neighbouring sizes, a pixel apart, 13 pixels from one pair to
+// the next, and the smallest. The rules are about one step to the next,
+// and a part that saws by a half pixel every other step does it in any
+// pair. 13 is odd, so one pair starts on an odd size and the next on an
+// even one.
+function resizeSizes(from, to, every = process.env.WALKSWEEP === "every") {
+  const sizes = [];
+  for (let s = from; s >= to; s -= every ? 1 : 13) {
+    sizes.push(s);
+    if (!every && s - 1 >= to) sizes.push(s - 1);
+  }
+  if (sizes.at(-1) !== to) sizes.push(to);
+  return sizes;
+}
+
+// What is wrong with the workspace as the app is dragged smaller, by its
+// height and then by its width, see resizeSizes, or null.
 async function resizeProblem(page) {
   const sweeps = [
     // Down to the app's smallest, 960 by 640, see main.go.
-    { by: "height", sizes: Array.from({ length: 361 }, (_, i) => [1500, 1000 - i]) },
-    { by: "width", sizes: Array.from({ length: 741 }, (_, i) => [1700 - i, 1000]) },
+    { by: "height", sizes: resizeSizes(1000, 640).map((h) => [1500, h]) },
+    { by: "width", sizes: resizeSizes(1700, 960).map((w) => [w, 1000]) },
   ];
   const sideColumns = await page.evaluate(() => {
     const s = document.querySelector(".stage");

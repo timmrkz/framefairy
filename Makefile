@@ -577,8 +577,11 @@ WALKSHARD ?=
 WALKTIMES ?=
 WALKSUMMARY = $(CURDIR)/$(STAMPS)/walk-summary.txt
 # STILL=none walks every sequence with the app's motion, see moving in
-# frontend/preview/walks/common/steps.mjs.
+# frontend/preview/walks/common/steps.mjs. WALKSWEEP=every resizes the app
+# a pixel at a time the whole way, as the nightly walks do, see
+# resizeSizes in frontend/preview/walks/app/steps.mjs.
 STILL ?=
+WALKSWEEP ?=
 # How long the runs may take before go test stops them. TestWalks stops
 # what still runs a minute before and names it with what it printed. CI
 # sets a few minutes over what a share takes, so a run that hangs is
@@ -600,7 +603,7 @@ TRACE ?= light
 WALKCOVER = $(COVERDIR)/walks$(if $(WALKSHARD),-$(subst /,-of-,$(WALKSHARD)))
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@rm -f '$(WALKSUMMARY)'; mkdir -p '$(dir $(WALKSUMMARY))'; $(if $(COVERAGE),rm -rf '$(WALKCOVER)-pages' && mkdir -p '$(COVERDIR)' && )FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' WALKSEED='$(WALKSEED)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKBROWSER='$(WALKBROWSER)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKSUMMARY='$(WALKSUMMARY)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) $(if $(COVERAGE),$(COVERPKG) -coverprofile='$(WALKCOVER)-go.txt') -run '^TestWalks$$' ./cmd/framefairy-app; \
+	@rm -f '$(WALKSUMMARY)'; mkdir -p '$(dir $(WALKSUMMARY))'; $(if $(COVERAGE),rm -rf '$(WALKCOVER)-pages' && mkdir -p '$(COVERDIR)' && )FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' WALKSEED='$(WALKSEED)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKBROWSER='$(WALKBROWSER)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKSWEEP='$(WALKSWEEP)' WALKSUMMARY='$(WALKSUMMARY)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) $(if $(COVERAGE),$(COVERPKG) -coverprofile='$(WALKCOVER)-go.txt') -run '^TestWalks$$' ./cmd/framefairy-app; \
 		status=$$?; cat '$(WALKSUMMARY)' 2>/dev/null; exit $$status
 ifneq ($(COVERAGE),)
 	@awk -F'[ ]' '/^framefairy\/cmd\/framefairy-app\/jobs\.go:/ && $$NF > 0 { found = 1 } END { exit !found }' '$(WALKCOVER)-go.txt' || { echo "$(WALKCOVER)-go.txt counts no line of the job queue, so the bridge did not count what the walks ran"; exit 1; }

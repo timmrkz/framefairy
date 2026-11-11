@@ -1,4 +1,3 @@
- 96	sequences.mjs SEQUENCE=the app dragged a pixel at a time moves every part one way, the sides equal and set by the width
  55	sequences.mjs SEQUENCE=a video added is transcribed to its end from its menu
  52	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
  47	timeline.mjs
@@ -17,6 +16,7 @@
  25	sequences.mjs SEQUENCE=a render cut off by the app closing says so at its Render button, and Continue carries it on
  24	sequences.mjs SEQUENCE=a restart brings back a clip trimmed, its short and a search stopped, as they were
  22	sequences.mjs SEQUENCE=The arrow keys scroll the report a line at a time, while dictating and after
+ 22	sequences.mjs SEQUENCE=the app dragged a pixel at a time moves every part one way, the sides equal and set by the width
  22	sequences.mjs SEQUENCE=the dots after a search's window begin at the window it moves on to, with a dashed edge
  21	sequences.mjs SEQUENCE=Transcribe video waits until the search is done
  21	sequences.mjs SEQUENCE=a clip stays rendered after its short is removed from its folder
