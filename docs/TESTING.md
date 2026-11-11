@@ -1069,14 +1069,24 @@ a wait on a signal, or a comparison with a state that moved:
 `make walks` runs the sequences and every walk for `WALKS` seeds, 1
 unless set, each walk as long as it says, 60 steps, or 25 for playback,
 whose every step is a play that draws all its frames, or 30 for searching, unless `STEPS` is set, through the Go test `TestWalks`,
-which fails with what a sequence or a walk printed. CI sets `WALKSEED`
-to the commit, and the seeds are worked out from it, so every push walks
-ground no push walked before and the four jobs of a run take the same
-seeds. The nightly walks take 3 seeds of their own every night, in both
-browsers. Without `WALKSEED` the seeds are 1 to `WALKS`, the same every
-time. A walk that breaks a rule prints its seed, and `SEED=n` walks it
-again step for step. `make walks WALKS=40` looks further.
+which fails with what a sequence or a walk printed. In CI the seeds are
+worked out from the commit the run tests, which make takes from
+`GITHUB_SHA` as `WALKSEED`. On a pull request that is the commit GitHub
+makes to test it merged into main, a new one on every push. So every
+push walks ground no push walked before, and the four jobs of a run take
+the same seeds. The nightly walks take 3 seeds of their own every night,
+in both browsers. Without `WALKSEED` the seeds are 1 to `WALKS`, the
+same every time. `make walks WALKS=40` looks further.
 `walk-times.tsv` times a walk by its file, whatever its seed.
+
+A walk that breaks a rule prints its seed, and `SEED=n` walks it again
+step for step. A walk that fails at a new seed has found a bug, not a
+flake, even on a pull request that did not cause it, because the next
+push takes another seed and would walk past it. So the seed goes into
+`kept-seeds.txt` beside the walks, with a line that says what it found,
+and from then on every push walks it beside its own. If the pull request
+cannot fix the bug, it becomes an issue and the seed waits in the file
+for its fix.
 
 They run side by side, half as many again as the machine has cores, or
 `WALKERS`. Each runs against a bridge of its own, which `TestWalks`

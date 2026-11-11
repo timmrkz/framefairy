@@ -2173,11 +2173,25 @@ func TestWalks(t *testing.T) {
 	if n := envNumber("STEPS", 0); n > 0 {
 		steps = append(steps, fmt.Sprintf("STEPS=%d", n))
 	}
-	// Every walk in the folder, each for the same seeds.
+	// Every walk in the folder, each for the same seeds, and the seeds
+	// kept because they found a bug, each for its own walk.
+	scripts := walkScripts(t, walks)
 	for _, seed := range walkSeeds(os.Getenv("WALKSEED"), walksWanted) {
-		for _, script := range walkScripts(t, walks) {
+		for _, script := range scripts {
 			runs = append(runs, walkRun{script: script, env: append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)})
 		}
+	}
+	// On the real disk: the kept seeds are a file beside the walks.
+	keptFile, err := os.ReadFile(filepath.Join(walks, "kept-seeds.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := keptSeeds(string(keptFile), scripts)
+	if err != nil {
+		t.Fatal("kept-seeds.txt: ", err)
+	}
+	for _, k := range kept {
+		runs = append(runs, walkRun{script: k.script, env: append([]string{fmt.Sprintf("SEED=%d", k.seed)}, steps...)})
 	}
 	for _, name := range sequenceNames(t, node, walks) {
 		runs = append(runs, walkRun{script: "sequences.mjs", env: []string{"SEQUENCE=" + name}, sequence: name})
@@ -2984,6 +2998,37 @@ func walkSeeds(commit string, n int) []int {
 	return seeds
 }
 
+// keptSeed is a seed that found a bug in a walk, walked on every push
+// from then on.
+type keptSeed struct {
+	script string
+	seed   int
+}
+
+// keptSeeds reads kept-seeds.txt: a line for each seed, the walk's file,
+// a space and the seed, and lines that start with # say why. A seed for
+// a walk that is not in scripts is refused, so a walk renamed or removed
+// does not quietly drop the seeds kept for it.
+func keptSeeds(text string, scripts []string) ([]keptSeed, error) {
+	var out []keptSeed
+	for i, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		script, n, ok := strings.Cut(line, " ")
+		seed, err := strconv.Atoi(strings.TrimSpace(n))
+		if !ok || err != nil || seed < 1 {
+			return nil, fmt.Errorf("line %d, %q, is not a walk's file and a seed", i+1, line)
+		}
+		if !slices.Contains(scripts, script) {
+			return nil, fmt.Errorf("line %d keeps a seed for %s, which is no walk", i+1, script)
+		}
+		out = append(out, keptSeed{script, seed})
+	}
+	return out, nil
+}
+
 // timedAs is the name a run is timed under in walk-times.tsv: a
 // sequence by its own name, a walk by its file, whatever its seed, since
 // the seeds change with every commit.
@@ -3369,7 +3414,8 @@ func TestTheTimesOfTheWalksAreKept(t *testing.T) {
 }
 
 // Every commit walks seeds of its own, the same in every share of its
-// run, and a walk is timed by its file whatever seed it took.
+// run, beside the seeds kept because they found a bug, and a walk is
+// timed by its file whatever seed it took.
 func TestEveryCommitWalksSeedsOfItsOwn(t *testing.T) {
 	if got := walkSeeds("", 3); !slices.Equal(got, []int{1, 2, 3}) {
 		t.Errorf("with no commit the seeds are %v, not 1 to 3", got)
@@ -3385,6 +3431,15 @@ func TestEveryCommitWalksSeedsOfItsOwn(t *testing.T) {
 	}
 	if len(slices.Compact(slices.Sorted(slices.Values(one)))) != 3 {
 		t.Errorf("one commit's seeds %v repeat", one)
+	}
+	kept, err := keptSeeds("# found the hang of #1\nplayback.mjs 328041\n\nwords.mjs 7\n", []string{"playback.mjs", "words.mjs"})
+	if err != nil || !slices.Equal(kept, []keptSeed{{"playback.mjs", 328041}, {"words.mjs", 7}}) {
+		t.Errorf("kept %v, %v, not the two seeds the file names", kept, err)
+	}
+	for _, wrong := range []string{"gone.mjs 3", "playback.mjs", "playback.mjs three", "playback.mjs 0"} {
+		if _, err := keptSeeds(wrong, []string{"playback.mjs"}); err == nil {
+			t.Errorf("kept %q, which names no walk or no seed", wrong)
+		}
 	}
 	took := timedTook(map[string]float64{"playback.mjs SEED=815": 30, "playback.mjs SEED=17": 20, "sequences.mjs SEQUENCE=a short": 5})
 	if !maps.Equal(took, map[string]float64{"playback.mjs": 25, "sequences.mjs SEQUENCE=a short": 5}) {

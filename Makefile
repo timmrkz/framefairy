@@ -560,8 +560,11 @@ fuzz: toolchain modules
 # Every walk walks in Playwright's Chromium, the engine the app runs in on
 # Windows, see Two browsers there. WALKBROWSER=webkit walks every walk in
 # Playwright's WebKit, the engine of the Mac, as the nightly walks do.
-# The seeds are worked out from WALKSEED, the commit in CI, so every push
-# walks new ground, and are 1 to WALKS without it.
+# The seeds are worked out from WALKSEED, the commit a CI run tests, so
+# every push walks new ground, and are 1 to WALKS without it. On a pull
+# request GITHUB_SHA is the commit GitHub makes to test it merged into
+# main. The seeds frontend/preview/walks/kept-seeds.txt keeps are walked
+# beside them.
 WALKS ?= 1
 WALKSEED ?= $(GITHUB_SHA)
 WALKBROWSER ?=
