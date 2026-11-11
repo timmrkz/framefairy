@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/spf13/afero"
 
@@ -509,17 +510,20 @@ func cutWidth(pieces []Segment) float64 {
 // framed the way the clip is, the way a join does, so they can be cut
 // again where the edge pushed them.
 func joinAt(pieces []*object, spans []Rotation, pushed []shoved) []*object {
-	out := pieces
-	for _, c := range pushed {
-		for i := 0; i+1 < len(out); i++ {
-			end, next := number(out[i].values[keyEnd]), number(out[i+1].values[keyStart])
-			if end == c.was && next == c.wasTo {
-				back := meet(meet(out[i:i+1], framedBack(end, next, pieces, spans)), out[i+1:i+2])
-				joined := append(append([]*object{}, out[:i]...), back...)
-				out = append(joined, out[i+2:]...)
-				break
+	if len(pushed) == 0 {
+		return pieces
+	}
+	out := make([]*object, 0, len(pieces))
+	for _, seg := range pieces {
+		if len(out) > 0 {
+			end, next := number(out[len(out)-1].values[keyEnd]), number(seg.values[keyStart])
+			if slices.ContainsFunc(pushed, func(c shoved) bool { return c.was == end && c.wasTo == next }) {
+				back := meet(meet(out[len(out)-1:], framedBack(end, next, pieces, spans)), []*object{seg})
+				out = append(out[:len(out)-1], back...)
+				continue
 			}
 		}
+		out = append(out, seg)
 	}
 	return out
 }
