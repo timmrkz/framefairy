@@ -159,22 +159,35 @@ export const steps = {
   //                    AppFrames.ahead
   async "read ahead"(walk, arg, s) {
     const { page, watch } = walk;
-    // A read ahead held back, see ["hold the read ahead"], is let go
-    // only once the app has settled and the wait for what is read ahead
-    // was seen still waiting for it.
-    const held = walk.aheadHeld;
-    if (held) {
-      walk.aheadHeld = null;
-      await held.reached;
-      await page.evaluate(() => {
-        window.__aheadRested = false;
-        window.__readAheadRested().then(() => (window.__aheadRested = true));
-      });
+    // With ["hold the read ahead"] before it, the wait for what is read
+    // ahead is asked while the video preview in front holds what it reads
+    // ahead, and has to be still waiting once the app has settled.
+    if (walk.aheadHeld) {
+      walk.aheadHeld = false;
       await settle(page);
-      const early = await page.evaluate(() => window.__aheadRested);
-      held.letGo();
+      await page.evaluate(() => {
+        const frames = window.__appFrames;
+        const own = frames.rested;
+        let open;
+        const gate = new Promise((done) => (open = done));
+        frames.rested = () => gate.then(() => own.call(frames));
+        window.__aheadOver = false;
+        window.__aheadLetGo = () => {
+          frames.rested = own;
+          open();
+        };
+        void window.__readAheadRested().then(() => (window.__aheadOver = true));
+      });
+      // A wait that asked anything but the video preview in front is
+      // over by the time the app has settled.
+      await settle(page);
+      const early = await page.evaluate(() => {
+        const over = window.__aheadOver;
+        window.__aheadLetGo();
+        return over;
+      });
       if (early) {
-        walk.wrong = "the wait for what is read ahead was over with a frame still being read ahead, so a walk pressed the key before its frame was in";
+        walk.wrong = "the wait for what is read ahead was over while the video preview in front still held what it reads ahead, so a walk pressed the key before its frame was in";
         return;
       }
     }
@@ -215,29 +228,18 @@ export const steps = {
     await watch.step("press", s);
   },
   // ["hold the read ahead"]
-  //                    holds back the next frame the video preview reads
-  //                    ahead with a skip, the first frame of a word beside
-  //                    the playhead, until the next ["read ahead"] has
-  //                    seen the wait for it still waiting. The wait once
-  //                    asked a workspace built behind the one in front,
-  //                    asleep, so it was over at once, and a busy machine
-  //                    let the key go before the frame was in
+  //                    has the next ["read ahead"] ask the wait for what is
+  //                    read ahead while the video preview in front holds
+  //                    what it reads ahead back, and find it still
+  //                    waiting. The wait once asked a workspace built
+  //                    behind the one in front, asleep, so it was over at
+  //                    once, and a busy machine let the key go before the
+  //                    frame was in, issue #780. It held a request for a
+  //                    frame read ahead with a skip, which a run did not
+  //                    always make after this step, and then waited for
+  //                    it for good
   async "hold the read ahead"(walk) {
-    const { page } = walk;
-    let reached;
-    let letGo;
-    const held = { reached: new Promise((done) => (reached = done)), letGo: () => letGo() };
-    const free = new Promise((done) => (letGo = done));
-    walk.aheadHeld = held;
-    await page.context().route(
-      /\/frames\/read\?.*skip=/,
-      async (route) => {
-        reached();
-        await free;
-        await route.continue();
-      },
-      { times: 1 },
-    );
+    walk.aheadHeld = true;
   },
   // ["heard"]          rests until the app has settled, plays with the
   //                    space bar and asks that the sound card was handed
