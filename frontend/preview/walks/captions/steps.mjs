@@ -1952,9 +1952,11 @@ export const steps = {
   },
   async "step frame by frame and see nothing pop"(walk, arg) {
     const { page, watch } = walk;
-    // arg steps of a frame from the clip's first frame, each onto the
-    // frame as the short shows it, and nothing played over it, a step
-    // onto a new word too.
+    // Steps of a frame from the clip's first frame, each onto the frame
+    // as the short shows it, and nothing played over it, a step onto a
+    // new word too: until two steps have landed on a new word, or after
+    // arg steps. Every step between two words is the same case, and was
+    // most of the walk.
     const fps = await rate(page);
     const state = await engineState(page, watch.at);
     if (!(await seekTo(page, state.segments[0].start + 0.5 / fps, fps))) {
@@ -1965,6 +1967,7 @@ export const steps = {
     await page.evaluate(() => document.body.focus());
     const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
     const words = new Set();
+    let stepped = 0;
     for (let k = 0; k < arg && !walk.wrong; k++) {
       await page.keyboard.press("ArrowRight");
       // Once the frame is drawn with its own layer, which is when a
@@ -1978,9 +1981,11 @@ export const steps = {
       }));
       if (now.word) words.add(now.word);
       if (now.popped !== count) walk.wrong = `step ${k + 1} of a frame, onto "${now.word}", played a bounce over the frame`;
+      stepped = k + 1;
+      if (words.size >= 3) break;
     }
-    console.log(`    ${arg} frames over ${words.size} words, nothing played over them`);
-    if (!walk.wrong && words.size < 2) walk.wrong = `${arg} frames lit only ${words.size} word`;
+    console.log(`    ${stepped} frames over ${words.size} words, nothing played over them`);
+    if (!walk.wrong && words.size < 3) walk.wrong = `${arg} frames lit only ${words.size} words`;
   },
   // ["frames on the pills", n]
   //                    puts the playhead in the middle of each of the first
