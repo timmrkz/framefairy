@@ -746,11 +746,12 @@
   // the crop frame shows the crop as the short has it, held or gliding,
   // and takes only a click, Tim on #750. A circle that starts a glide has
   // no crop of its own, the engine says so with opens: the glide starts
-  // from the crop before it, Tim on #778. The engine refuses a drag there
-  // too, see engine.SetCrop.
+  // from the crop before it, Tim on #778, which is placed on the keyframe
+  // before, or here where it is the clip's own, fromClip. The engine
+  // refuses a drag where this does, see engine.SetCrop.
   const markHere = $derived(clip ? markOn(clip.cropMarks, frameAt, source.fps, source.videoStart ?? 0) : null);
   const cropMovable = $derived(
-    !!clip && (!clip.segments[cropped]?.marks?.length || (markHere !== null && !markHere.opens)),
+    !!clip && (!clip.segments[cropped]?.marks?.length || (markHere !== null && (!markHere.opens || !!markHere.fromClip))),
   );
 
   // The crop's left edge as the video preview shows it now, which a crop
@@ -1896,9 +1897,11 @@
         class:fixed={!cropMovable}
         style="left: {shownCrop.left}%; width: {shownCrop.width}%"
         title={cropMovable
-          ? "Drag sideways to place the crop"
+          ? markHere?.opens
+            ? "Drag sideways to place the clip's own crop, which the glide starts from"
+            : "Drag sideways to place the crop"
           : markHere?.opens
-            ? "The glide starts here from the crop before it. Move that crop on the keyframe before, or put a switch keyframe before this one"
+            ? "The glide starts here from the crop of the keyframe before it. Move that crop there"
             : "The crop as the short has it here. Put the playhead on a keyframe to place its crop, or press S or G to put one here"}
         data-movable={cropMovable}
         onpointerdown={dragCrop}

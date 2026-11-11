@@ -1999,8 +1999,9 @@ export const steps = {
       walk.wrong = `the keyframe was held at ${held[held.length - 1].toFixed(2)} px and stays at ${left.toFixed(2)} px once let go`;
     await watch.step("drag", s);
   },
-  // ["keyframes", n]  the engine has n keyframes on the clip, at as many
-  //                    left edges, and the clip timeline draws n
+  // ["keyframes", n]  the engine has n keyframes on the clip, each with
+  //                    its own left edge but a circle that starts a glide,
+  //                    which has the one before it, and the clip timeline draws n
   //                    diamonds, each 18 px wide, and every mark and the
   //                    playhead with its middle on a whole pixel
   async keyframes(walk, arg) {
@@ -2033,7 +2034,10 @@ export const steps = {
     );
     if (between.length) walk.wrong = `a mark or the playhead stands between two pixels, its middle at ${between.map((x) => x.toFixed(3)).join(", ")} px`;
     else if (got.length !== arg) walk.wrong = `the engine has ${got.length} keyframes, not ${arg}`;
-    else if (new Set(got.map((m) => m.x)).size !== arg) walk.wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
+    // A circle that starts a glide stands where the crop before it does,
+    // with no crop of its own, Tim on #778.
+    else if (new Set(got.filter((m) => !m.opens).map((m) => m.x)).size !== got.filter((m) => !m.opens).length)
+      walk.wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
     else if (dots !== arg) walk.wrong = `the clip timeline draws ${dots} keyframes, not ${arg}`;
     else if (shapes.some((d, i) => diamond(d) === !!got[i]?.glide))
       walk.wrong = `a keyframe is not drawn as its kind, a diamond to switch and a circle to glide: ${shapes.join(", ")}`;

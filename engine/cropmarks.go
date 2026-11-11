@@ -87,8 +87,8 @@ type CropMarkView struct {
 	Glide    bool    `json:"glide"`
 	Opens    bool    `json:"opens,omitempty"`
 	Alone    bool    `json:"alone,omitempty"`
+	FromClip bool    `json:"fromClip,omitempty"`
 	Last     bool    `json:"-"`
-	FromClip bool    `json:"-"`
 }
 
 // CropMarkViews is keyframes as the window reads them.

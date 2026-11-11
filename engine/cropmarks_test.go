@@ -984,6 +984,27 @@ func TestACircleKeepsNoHiddenCrop(t *testing.T) {
 	}
 }
 
+// On a circle that starts a glide with no keyframe before it, a drag
+// places the clip's own crop, which the glide starts from: on the clip's
+// first frame there is no room for a keyframe before it, found by the
+// review of #778.
+func TestADragOnAFirstCircleWithNothingBeforeItPlacesTheClipsCrop(t *testing.T) {
+	fsys, path := writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 10, X: 120, Glide: true}, CropMark{At: 14, X: 600, Glide: true})
+	if err := SetCrop(fsys, path, "01", 10, 300, at25); err != nil {
+		t.Fatalf("a crop dragged on the first circle, with nothing before it, was refused: %v", err)
+	}
+	clip := loadedClip(t, fsys, path)
+	for _, h := range []struct{ at, want float64 }{{10, 300}, {12, 450}, {14, 600}} {
+		if got := at25.CropAt(clip.Segments[0], h.at, 608, 1920); math.Abs(got-h.want) > 1e-9 {
+			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
+		}
+	}
+	if got, want := clip.CropMarks, []CropMark{{At: 10, X: 300, Glide: true, Opens: true, FromClip: true}, {At: 14, X: 600, Glide: true}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the keyframes are %v, not %v", got, want)
+	}
+}
+
 // A glide between two circles in two pieces runs across the cut between
 // them, and the crop holds after the second across the next cut. A first
 // circle alone moves nothing: it starts a glide from the crop before it,
