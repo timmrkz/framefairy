@@ -451,9 +451,6 @@ func inPause(words []timed.Cue, at, keepPause float64) bool {
 	return i+1 == len(words) || at < words[i+1].Start
 }
 
-// MaxClipSpan keeps a trimmed clip to a sensible length.
-const MaxClipSpan = 600.0
-
 func copyObject(o *object) *object {
 	out := &object{keys: append([]string(nil), o.keys...), values: map[string]any{}}
 	for k, v := range o.values {

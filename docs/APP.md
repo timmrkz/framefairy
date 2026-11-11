@@ -1874,6 +1874,9 @@ bubble scrolled by those eight pixels.
       because it is the key Tim reached for first. It used to snap to words
       always, which left no way to take a breath off the end of a clip or
       keep the first frame of a gesture before the first word.
+      A clip is as long as the hand makes it, only the video's own end
+      stops it. It stopped at ten minutes, and Tim could not make a clip
+      any longer.
     - **A double-click on an edge puts it back where the clip was found**,
       the way a double-click on a caption's edge puts that back where its
       words put it. Tim asked for the two to be the same. The clip keeps
