@@ -395,15 +395,17 @@ impossible.
 ## When it only goes wrong on the Mac, try WebKit
 
 The app on a Mac is WebKit. The walks walk in Playwright's WebKit, see
-Two browsers in `docs/TESTING.md`, and the probes of
-`frontend/preview/open.mjs` still in Chromium. Where the two keep time or paint
-differently, a probe in Chromium passes and Tim still sees the bug. The fill of a removed row grew back under the pointer on
+Two browsers in `docs/TESTING.md`, and so does a probe of
+`frontend/preview/open.mjs`, with `WALKBROWSER=webkit` in front of it.
+Where the two keep time or paint differently, a probe in Chromium passes
+and Tim still sees the bug. The fill of a removed row grew back under the pointer on
 his Mac for two rounds while every Chromium probe said it held still:
 WebKit plays a paused animation on from its timeline's last frame, and
 Chromium from now.
 
 Walk one sequence in WebKit the way you walk one in Chromium, with
-`WALKBROWSER=webkit` in front of `node frontend/preview/walks/sequences.mjs`.
+`WALKBROWSER=webkit` in front of `node frontend/preview/walks/sequences.mjs`,
+and a probe the same way, in front of `node` and the probe.
 A cloud session installs Playwright's WebKit in the background as it starts,
 see `/tmp/framefairy-webkit.log`.
 
