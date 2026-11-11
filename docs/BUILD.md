@@ -598,8 +598,7 @@ scan made once is out of date the week after.
 - **The tools we build ourselves**, and the pins Dependabot cannot move,
   which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
   four libraries it is built with, llama.cpp, the speech library and Node
-  with their newest releases, and says when the snapshot of Ubuntu the CI
-  image's packages come from is a month old, and
+  with their newest releases, and
   the same workflow keeps one issue open while anything is behind and
   closes it once everything is current. llama.cpp makes a build a day, so
   it counts only once it is a month behind. ffmpeg is the one that matters
@@ -610,9 +609,13 @@ scan made once is out of date the week after.
   so it leaves the image's Node alone too, `scripts/upstream.sh` says
   when a newer Node of the same major is out, and `internal/workflows` fails
   when the two differ or a workflow names a Node of its own. The CI
-  image's packages come from Ubuntu's archive as it stood at the moment
-  `SNAPSHOT` in the image's Dockerfile names, through Ubuntu's snapshot
-  service, so the same Dockerfile builds the same image on any day. The
+  image's packages come from Ubuntu's archive of the day it is built,
+  and the image is kept in the registry under the sum of its Dockerfile,
+  so the jobs run the same packages until the Dockerfile changes.
+  Dependabot moves its base images once a week, which builds it again
+  with that day's security fixes. Ubuntu's snapshot service pinned them
+  to a day before, and answered 503 for hours on 11 November, which held
+  every change to the image. The
   Python packages CI and make install are in `requirements.txt`, each
   with the hashes of its files, and Dependabot moves them: pyarrow for the
   speech benchmark, and cmake, meson, ninja and pkg-config, which build

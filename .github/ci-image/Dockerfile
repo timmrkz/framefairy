@@ -27,35 +27,35 @@ FROM golang:1.27.4-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e13857
 
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac AS base
 
-# Every package comes from Ubuntu's archive as it stood at SNAPSHOT,
-# through Ubuntu's snapshot service, so the same file builds the same
-# image whatever day it is built, #591. The base image's digest pins what
-# Ubuntu installed, this pins what is added to it, and scripts/upstream.sh
-# says when it is a month old, so the security fixes since come in by
-# moving it. ca-certificates comes first, from the archive of the day,
-# because the snapshot service is reached over https.
-ARG SNAPSHOT=20261030T000000Z
+# Every package comes from Ubuntu's archive of the day the image is
+# built. The image is built once for each sum of this file and kept in
+# the registry, so what the jobs run stays the same until this file
+# changes, and the base images' digests pin the rest. Dependabot moves
+# them once a week, so the image is built again then with the security
+# fixes of that day. Ubuntu's snapshot service, which pinned the packages
+# to a day before, #591, answered 503 for hours on 11 November and held
+# every change to this file.
 
 # What a runner has and an Ubuntu image does not: a compiler, git for the
-# checkout, ps, curl, xz and zstd, the last for actions/cache, which keeps
-# what it saves with zstd when it finds it. GTK and WebKit, which every Go
+# checkout, ps, curl and the certificates it checks https against, xz and
+# zstd, the last for actions/cache, which keeps what it saves with zstd
+# when it finds it. GTK and WebKit, which every Go
 # job compiles the app's package against, the fuzzing too, since one of
 # its targets is there, with pkg-config to find them. And what the walks
 # and the tests use beside it: ffmpeg, which makes the bridge's episode,
 # meson, ninja and nasm, which build the ffmpeg we ship when its cache is
 # missed, and patchelf, which make looks for before it builds. man-db
 # would index every manual page installed, and nobody reads one here. A
-# download that stalls is tried again rather than waited on.
+# download that stalls is tried again rather than waited on, and a list
+# the archive did not hand over stops the build there: apt only warns of
+# it, and then finds none of the packages, which hid the 503 behind them.
 ENV LANG=C.UTF-8
 RUN rm -f /var/lib/man-db/auto-update && \
 	printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "20";' >/etc/apt/apt.conf.d/99ci-retries && \
-	apt-get -q update && \
-	apt-get -q install -y --no-install-recommends ca-certificates && \
-	printf 'APT::Snapshot "%s";\n' "$SNAPSHOT" >/etc/apt/apt.conf.d/99ci-snapshot && \
-	apt-get -q update && \
+	apt-get -q update --error-on=any && \
 	apt-get -q install -y --no-install-recommends \
 		pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev \
-		build-essential curl git procps xz-utils zstd \
+		build-essential ca-certificates curl git procps xz-utils zstd \
 		ffmpeg meson ninja-build nasm patchelf && \
 	rm -rf /etc/apt/apt.conf.d/99ci-retries /var/lib/apt/lists/*
 
