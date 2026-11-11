@@ -614,8 +614,8 @@ scan made once is out of date the week after.
   so the jobs run the same packages until the Dockerfile changes.
   Dependabot moves its base images once a week, which builds it again
   with that day's security fixes. Ubuntu's snapshot service pinned them
-  to a day before, and answered 503 for hours on 11 November, which held
-  every change to the image. The
+  to a day before, and answered 500 to 503 for most of an hour on 11
+  November, which held every change to the image. The
   Python packages CI and make install are in `requirements.txt`, each
   with the hashes of its files, and Dependabot moves them: pyarrow for the
   speech benchmark, and cmake, meson, ninja and pkg-config, which build

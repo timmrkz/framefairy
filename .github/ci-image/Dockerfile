@@ -33,8 +33,8 @@ FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f57
 # changes, and the base images' digests pin the rest. Dependabot moves
 # them once a week, so the image is built again then with the security
 # fixes of that day. Ubuntu's snapshot service, which pinned the packages
-# to a day before, #591, answered 503 for hours on 11 November and held
-# every change to this file.
+# to a day before, #591, answered 500 to 503 for most of an hour on 11
+# November and held every change to this file.
 
 # What a runner has and an Ubuntu image does not: a compiler, git for the
 # checkout, ps, curl and the certificates it checks https against, xz and

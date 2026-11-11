@@ -8,8 +8,8 @@
 #
 # Every Monday also scripts/upstream.sh, which compares ffmpeg, the
 # libraries it is built with, llama.cpp, the speech library and Node with
-# their newest releases, and the CI image's Ubuntu snapshot with today. While anything is behind, one issue says so and is kept
-# up to date, and it is closed once everything is current. An issue is
+# their newest releases. While anything is behind, one issue says so and
+# is kept up to date, and it is closed once everything is current. An issue is
 # what reaches Tim: GitHub tells whoever watches the repository.
 # See docs/BUILD.md, Keeping up.
 name: Security
