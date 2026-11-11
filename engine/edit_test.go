@@ -1138,6 +1138,63 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 	}
 }
 
+// An edge of the clip dragged into a cut keeps the rest of the cut out:
+// the clip starts where the cut ends, or ends where it starts. The cut
+// went away and its rest played again, and Tim saw it vanish.
+func TestAnEdgeDraggedIntoACutKeepsTheCut(t *testing.T) {
+	tr := editableTranscript()
+	// Clip 01 is 10 to 11.1 and 11.9 to 13.1, with its cut between, and
+	// the edges land on frames of 25 a second: 11.12, 11.92 and 13.12.
+	cases := []struct {
+		name string
+		g    Gesture
+		want []Segment
+	}{
+		{"the start into the cut", Gesture{Edge: "start", From: 11.5}, []Segment{{Start: 11.92, End: 13.12}}},
+		{"the start onto the cut's start", Gesture{Edge: "start", From: 11.1}, []Segment{{Start: 11.92, End: 13.12}}},
+		{"the start onto words in the cut", Gesture{Edge: "start", From: 11.5, ToWords: true}, []Segment{{Start: 11.92, End: 13.12}}},
+		{"the end into the cut", Gesture{Edge: "end", From: 11.5}, []Segment{{Start: 10, End: 11.12}}},
+		{"the end a frame short of the cut's end", Gesture{Edge: "end", From: 11.86}, []Segment{{Start: 10, End: 11.12}}},
+		{"both edges, the start in the cut", Gesture{Edge: "both", From: 11.5, To: 13.1}, []Segment{{Start: 11.92, End: 13.12}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fsys, path := editablePlanPath(t)
+			g := c.g
+			g.Kind, g.Frames = "trim", at25
+			if g.To == 0 {
+				g.To = g.From
+			}
+			shown, err := ShapeClip(planAt(t, fsys, path), "01", g, tr, 0.1, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if spans(shown.Clip.Segments) != spans(c.want) {
+				t.Errorf("while the edge is dragged the clip is %v, want %v", shown.Clip.Segments, c.want)
+			}
+			if err := Reshape(fsys, nil, path, "01", g, tr, 0.1, nil); err != nil {
+				t.Fatal(err)
+			}
+			_, clips, err := LoadClips(fsys, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := clips[0].Segments; spans(got) != spans(c.want) {
+				t.Errorf("the clip was saved as %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// spans is where each piece starts and ends, to compare.
+func spans(pieces []Segment) string {
+	var out []string
+	for _, p := range pieces {
+		out = append(out, fmt.Sprintf("%.3f-%.3f", p.Start, p.End))
+	}
+	return strings.Join(out, " ")
+}
+
 // A caption stays up a little after its last word, and the clip timeline
 // draws its block that long. An edge put on words stops where that block
 // ends before it goes on to the word. It went straight to the word, past
@@ -1146,41 +1203,52 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 	tr := editableTranscript()
 	// zwei ends at 11.0 and drei begins at 12.0, so "eins zwei" stays up
 	// until 11.4. The clip's cut takes 11.1 to 11.9 and with it that hold.
-	segments := func(fsys afero.Fs, path string, g Gesture) []Segment {
+	// In clip 02, sechs ends at 21.5 and "fünf sechs" stays up until 21.9.
+	segments := func(fsys afero.Fs, path, clip string, g Gesture) []Segment {
 		t.Helper()
 		g.Frames, g.ToWords = at25, true
-		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1, nil); err != nil {
+		if err := Reshape(fsys, nil, path, clip, g, tr, 0.1, nil); err != nil {
 			t.Fatal(err)
 		}
 		_, clips, err := LoadClips(fsys, path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return clips[0].Segments
+		for _, c := range clips {
+			if c.ID == clip {
+				return c.Segments
+			}
+		}
+		t.Fatalf("no clip %s", clip)
+		return nil
 	}
 	// Each edge then lands on the start of its frame, at 25 frames a
 	// second, see PieceOnFrames: 11.1 is half way between two and goes to
 	// the later, 11.12, and so does the cut's right edge at 11.9.
+	// An end dragged into the cut stops at the cut, see
+	// TestAnEdgeDraggedIntoACutKeepsTheCut, so the end of the clip is
+	// dragged in clip 02, which has none.
 	cases := []struct {
 		name string
+		clip string
 		g    Gesture
 		end  float64
 	}{
-		{"the left edge of a cut past where the caption goes",
+		{"the left edge of a cut past where the caption goes", "01",
 			Gesture{Kind: "move", Edge: "from", From: 11.6, To: 11.9}, 11.4},
-		{"the left edge of a cut inside the time the caption stays",
+		{"the left edge of a cut inside the time the caption stays", "01",
 			Gesture{Kind: "move", Edge: "from", From: 11.3, To: 11.9}, 11.12},
-		{"the left edge of a cut into the word",
+		{"the left edge of a cut into the word", "01",
 			Gesture{Kind: "move", Edge: "from", From: 10.9, To: 11.9}, 10.6},
-		{"the end of the clip near where the caption goes",
-			Gesture{Kind: "trim", Edge: "end", From: 11.45}, 11.4},
-		{"the end of the clip near the word",
-			Gesture{Kind: "trim", Edge: "end", From: 11.15}, 11.12},
+		{"the end of the clip near where the caption goes", "02",
+			Gesture{Kind: "trim", Edge: "end", From: 21.85}, 21.92},
+		{"the end of the clip inside the time the caption stays", "02",
+			Gesture{Kind: "trim", Edge: "end", From: 21.6}, 21.6},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			fsys, path := editablePlanPath(t)
-			got := segments(fsys, path, c.g)
+			got := segments(fsys, path, c.clip, c.g)
 			if got[0].End != c.end {
 				t.Errorf("the edge landed at %v, want %v: %+v", got[0].End, c.end, got)
 			}

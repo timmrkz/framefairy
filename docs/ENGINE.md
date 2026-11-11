@@ -485,7 +485,10 @@ out, is framed like the pieces turned the way it is, `framedBack` in
 `engine/shape.go`, so a crop placed by hand comes back with it. Pieces
 that meet become one piece again, `meet`, unless a rotation starts or ends
 between them, `partedAtTurns`. Two pieces that meet have no cut between
-them, so a join or a move there is refused. A clip once also kept the
+them, so a join or a move there is refused. An edge of the clip dragged
+into a cut keeps the rest of the cut out, `outOfCuts`: the clip starts
+where the cut ends, or ends where it starts. Only the part outside the
+clip's edges is put back. A clip once also kept the
 pieces it was found with, `found_segments`, to frame what was put back by
 the camera it showed. A clip used to be parted at every camera switch with
 a crop for each camera, which Tim never saw at work in his own two-camera

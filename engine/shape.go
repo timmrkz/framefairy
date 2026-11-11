@@ -216,7 +216,8 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 		default:
 			return nil, -1, renderErr("a clip has a start and an end, not %s", runes.Scrub(g.Edge, 20))
 		}
-		start, end = num.RoundTo(math.Max(0, start), 3), num.RoundTo(end, 3)
+		start, end = outOfCuts(clip.Segments, math.Max(0, start), end)
+		start, end = num.RoundTo(start, 3), num.RoundTo(end, 3)
 		playhead := -1.0
 		if g.Edge != "both" {
 			playhead = g.edgePlayhead(start, end, g.Edge == "start")
@@ -423,6 +424,28 @@ func runOn(clip Clip, at float64) Clip {
 	out[len(out)-1].End = math.Max(out[len(out)-1].End, at) + 60
 	clip.Segments = out
 	return clip
+}
+
+// outOfCuts keeps the clip's cuts out when an edge lands in one: a start
+// in a cut moves on to where the cut ends, and an end in a cut moves back
+// to where it starts. An edge on the cut's own edge is in it, since the
+// piece it meets there is gone. The rest of the cut came back as a piece
+// of its own, framedBack in trimPieces, and the cut went away under the
+// hand.
+func outOfCuts(pieces []Segment, start, end float64) (float64, float64) {
+	for i := 1; i < len(pieces); i++ {
+		from, to := pieces[i-1].End, pieces[i].Start
+		if to <= from {
+			continue
+		}
+		if start >= from && start < to {
+			start = to
+		}
+		if end > from && end <= to {
+			end = from
+		}
+	}
+	return start, end
 }
 
 // toward is where an edge that stood at was lands, when the hand is at hand
