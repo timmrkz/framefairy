@@ -2739,7 +2739,11 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   two lines, and a diamond has none. Tim picked the look from a sheet of
   nine. The engine says where each glide runs, `Glides`, so the line
   starts where the short's glide does, at a circle a cut hides too. The
-  line comes with the second circle, before its crop is dragged.
+  line comes with the second circle, before its crop is dragged. A circle
+  with no circle beside it does nothing yet, so it is drawn as an empty
+  ring of the same size and colour, which fills in once a second circle
+  is put, and its title says it needs a second glide keyframe to glide.
+  Tim picked the ring from a sheet of eight, over a dimmed circle.
 - **Automatic crop** removes every keyframe of the clip and brings back
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing a keyframe gives its part the crop of

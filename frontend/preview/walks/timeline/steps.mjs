@@ -1507,8 +1507,9 @@ export const steps = {
   //                    rule, each from a circle to the next circle, as
   //                    thick as the rule, on it, brightening into the
   //                    second circle, and under the marks. A circle no
-  //                    line reaches does nothing yet and is dimmed, and
-  //                    one a line reaches is not, Tim on #778
+  //                    line reaches does nothing yet and is drawn as an
+  //                    empty ring, and one a line reaches is filled, Tim on
+  //                    #778
   async glides(walk, arg) {
     const { page } = walk;
     await settle(page);
@@ -1517,7 +1518,7 @@ export const steps = {
       const dots = [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => ({
         x: box(e).left + box(e).width / 2,
         glide: !!e.dataset.glide,
-        opacity: Number(getComputedStyle(e).opacity),
+        hollow: !!e.querySelector("svg .hollow"),
       }));
       const rule = document.querySelector(".clip-timeline .frames .frame");
       return {
@@ -1548,8 +1549,8 @@ export const steps = {
     if (walk.wrong) return;
     for (const d of got.dots.filter((d) => d.glide)) {
       const joined = got.lines.some((l) => near(d.x, l.left) || near(d.x, l.right));
-      if (joined && d.opacity < 1) walk.wrong = `the circle at ${d.x.toFixed(1)} px is on a glide line and dimmed to ${d.opacity}`;
-      else if (!joined && !(d.opacity < 1)) walk.wrong = `the circle at ${d.x.toFixed(1)} px is on its own and not dimmed`;
+      if (joined && d.hollow) walk.wrong = `the circle at ${d.x.toFixed(1)} px is on a glide line and drawn empty`;
+      else if (!joined && !d.hollow) walk.wrong = `the circle at ${d.x.toFixed(1)} px is on its own and drawn filled, not as an empty ring`;
     }
   },
   // ["glide under the hand", share]

@@ -2346,7 +2346,7 @@
             title={locked
               ? "A keyframe. Click to see it"
               : m.alone
-                ? "A glide keyframe on its own does nothing. Put a second one to glide between them. Click to see it, drag it to another frame, double-click to remove it"
+                ? "Needs a second glide keyframe to glide. Click to see it, drag it to another frame, double-click to remove it"
                 : m.opens
                 ? "A glide keyframe. The crop glides from here, from the crop before it, into the next glide keyframe. Click to see it, drag it to another frame, double-click to remove it"
                 : m.glide
@@ -2358,7 +2358,11 @@
             data-alone={m.alone || undefined}
             data-at={m.at}
           >
-            {@render solid(m.glide ? CIRCLE : DIAMOND, 18)}
+            {#if m.alone}
+              {@render ring(18)}
+            {:else}
+              {@render solid(m.glide ? CIRCLE : DIAMOND, 18)}
+            {/if}
           </div>
         {/each}
       </div>
@@ -2382,6 +2386,19 @@
      the track's dark round it, so it reads over the waveform and over the
      app's colour alike. The ring is the line drawn under the fill, so half
      of it shows, outside the shape. -->
+<!-- A glide keyframe with no other beside it does nothing yet, so it is
+     drawn empty, a ring of the same size and colour that fills in once a
+     second one is put, the way an unset radio button reads. The well's
+     outline around it is the solid mark's, so the two stand alike on the
+     rule. Tim picked it from a sheet of eight on #778, over a dimmed
+     circle that looked like a mistake. -->
+{#snippet ring(size: number)}
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="8.5" fill="var(--well)" stroke="var(--well)" stroke-width={(3 * 24) / size} />
+    <circle class="hollow" cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="3" />
+  </svg>
+{/snippet}
+
 {#snippet solid(d: string, size: number, lens = false)}
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
     <path {d} fill="currentColor" stroke="var(--well)" stroke-width={(3 * 24) / size} stroke-linejoin="round" paint-order="stroke" />
@@ -2824,12 +2841,6 @@
      track's border and a pixel in from it. */
   .cropdot {
     top: calc(var(--frame-line) / 2 - 9px);
-  }
-
-  /* A glide keyframe with no other beside it does nothing yet, so it is
-     dimmed the way a control that does nothing is, Tim on #778. */
-  .cropdot.alone {
-    opacity: var(--dimmed);
   }
 
   /* The stretch the crop glides over from a circle into the next, over the
