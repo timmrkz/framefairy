@@ -159,22 +159,35 @@ export const steps = {
   //                    AppFrames.ahead
   async "read ahead"(walk, arg, s) {
     const { page, watch } = walk;
-    // A read ahead held back, see ["hold the read ahead"], is let go
-    // only once the app has settled and the wait for what is read ahead
-    // was seen still waiting for it.
-    const held = walk.aheadHeld;
-    if (held) {
-      walk.aheadHeld = null;
-      await held.reached;
-      await page.evaluate(() => {
-        window.__aheadRested = false;
-        window.__readAheadRested().then(() => (window.__aheadRested = true));
-      });
+    // With ["hold the read ahead"] before it, the wait for what is read
+    // ahead is asked while the video preview in front holds what it reads
+    // ahead, and has to be still waiting once the app has settled.
+    if (walk.aheadHeld) {
+      walk.aheadHeld = false;
       await settle(page);
-      const early = await page.evaluate(() => window.__aheadRested);
-      held.letGo();
+      await page.evaluate(() => {
+        const frames = window.__appFrames;
+        const own = frames.rested;
+        let open;
+        const gate = new Promise((done) => (open = done));
+        frames.rested = () => gate.then(() => own.call(frames));
+        window.__aheadOver = false;
+        window.__aheadLetGo = () => {
+          frames.rested = own;
+          open();
+        };
+        void window.__readAheadRested().then(() => (window.__aheadOver = true));
+      });
+      // A wait that asked anything but the video preview in front is
+      // over by the time the app has settled.
+      await settle(page);
+      const early = await page.evaluate(() => {
+        const over = window.__aheadOver;
+        window.__aheadLetGo();
+        return over;
+      });
       if (early) {
-        walk.wrong = "the wait for what is read ahead was over with a frame still being read ahead, so a walk pressed the key before its frame was in";
+        walk.wrong = "the wait for what is read ahead was over while the video preview in front still held what it reads ahead, so a walk pressed the key before its frame was in";
         return;
       }
     }
@@ -215,29 +228,18 @@ export const steps = {
     await watch.step("press", s);
   },
   // ["hold the read ahead"]
-  //                    holds back the next frame the video preview reads
-  //                    ahead with a skip, the first frame of a word beside
-  //                    the playhead, until the next ["read ahead"] has
-  //                    seen the wait for it still waiting. The wait once
-  //                    asked a workspace built behind the one in front,
-  //                    asleep, so it was over at once, and a busy machine
-  //                    let the key go before the frame was in
+  //                    has the next ["read ahead"] ask the wait for what is
+  //                    read ahead while the video preview in front holds
+  //                    what it reads ahead back, and find it still
+  //                    waiting. The wait once asked a workspace built
+  //                    behind the one in front, asleep, so it was over at
+  //                    once, and a busy machine let the key go before the
+  //                    frame was in, issue #780. It held a request for a
+  //                    frame read ahead with a skip, which a run did not
+  //                    always make after this step, and then waited for
+  //                    it for good
   async "hold the read ahead"(walk) {
-    const { page } = walk;
-    let reached;
-    let letGo;
-    const held = { reached: new Promise((done) => (reached = done)), letGo: () => letGo() };
-    const free = new Promise((done) => (letGo = done));
-    walk.aheadHeld = held;
-    await page.context().route(
-      /\/frames\/read\?.*skip=/,
-      async (route) => {
-        reached();
-        await free;
-        await route.continue();
-      },
-      { times: 1 },
-    );
+    walk.aheadHeld = true;
   },
   // ["heard"]          rests until the app has settled, plays with the
   //                    space bar and asks that the sound card was handed
@@ -1613,11 +1615,11 @@ export const steps = {
   // ["as previewed", rate]
   //                    the short Render wrote, read back from disk, has
   //                    this frame rate and as many frames as the clip's
-  //                    pieces last, and at every cut, at the clip's two
-  //                    ends and on every tenth frame between, its frame is
-  //                    the frame the video preview shows at the moment that
-  //                    frame stands for, read off the canvas with the
-  //                    playhead put there by a click on the clip timeline
+  //                    pieces last, and where each piece starts and ends,
+  //                    its frame is the frame the video preview shows at
+  //                    the moment that frame stands for, read off the
+  //                    canvas with the playhead put there by a click on the
+  //                    clip timeline
   // ["as previewed", rate, before]
   //                    the same, for an episode whose picture starts after
   //                    its sound: the clip's first piece starts before
@@ -2293,8 +2295,9 @@ steps["crop holds"] = steps["crop holds while playing"];
 // the preview shows the frame that holds that moment: after it, and
 // before the episode's next frame begins. Which frame begins where is read
 // from the episode with ffprobe. The clip timeline is pinched in for it,
-// and a frame whose time is still too short to click on is passed over,
-// but every piece is looked at where it starts and where it ends.
+// and a frame whose time is still too short to click on is passed over.
+// Every piece is looked at once where it starts and once where it ends,
+// and nowhere between, since Go's tests hold every frame.
 // The render takes a frame that begins up to a millisecond after a moment
 // for that moment, frameHair, and so does the video preview, so the
 // playhead goes after that too and ends a millisecond and a half before
@@ -2344,9 +2347,20 @@ async function asPreviewed(page, rate, before) {
   let looked = 0;
   let missed = 0;
   const seenAt = new Set();
-  for (let j = 0; j < slots.length; j++) {
+  // Only where each piece starts and ends, one frame each: of the three
+  // frames nearest the edge, the nearest one the playhead can be put on,
+  // so the frames either side of a cut are tried first.
+  // TestEveryFrameOfAShortIsAFrameOfTheVideoPreview and the engine's tests
+  // of the render and of the episode's decoder hold every frame between,
+  // so this only looks at the app showing what Go sends.
+  const near = (j) => (slots[j].q < 3 ? slots[j].q : slots[j].n - 1 - slots[j].q);
+  const order = slots
+    .map((_, j) => j)
+    .filter((j) => slots[j].q < 3 || slots[j].q >= slots[j].n - 3)
+    .sort((a, b) => slots[a].piece - slots[b].piece || (slots[a].q < 3 ? 0 : 1) - (slots[b].q < 3 ? 0 : 1) || near(a) - near(b));
+  for (const j of order) {
     const { q, n, at } = slots[j];
-    if (!(q < 3 || q >= n - 3 || q % 5 === 0)) continue;
+    if (seenAt.has(`${slots[j].piece} ${q < 3 ? "first" : "last"}`)) continue;
     // Where the frame that holds the moment is the one on screen: from the
     // moment until the episode's next frame begins.
     const from = at + 0.0015;
@@ -2390,7 +2404,7 @@ async function asPreviewed(page, rate, before) {
       continue;
     }
     looked++;
-    seenAt.add(`${slots[j].piece} ${q < 3 ? "first" : q >= n - 3 ? "last" : "inside"}`);
+    seenAt.add(`${slots[j].piece} ${q < 3 ? "first" : "last"}`);
     await filmedOnScreen(page);
     // The frame the preview shows, once the app says the frame it shows
     // is the one that holds the playhead. On a busy machine the frame
@@ -2410,10 +2424,9 @@ async function asPreviewed(page, rate, before) {
     }
   }
   // Every piece looked at where it starts and where it ends, so at both
-  // ends of the clip and on both sides of every cut, and inside.
+  // ends of the clip and on both sides of every cut.
   const unseen = pieces.flatMap((_, i) => ["first", "last"].filter((w) => !seenAt.has(`${i} ${w}`)).map((w) => `the ${w} frames of piece ${i + 1}`));
   if (unseen.length) problems.push(`the playhead could not be put on ${unseen.join(", ")}`);
-  if (looked < 20) problems.push(`only ${looked} frames could be looked at, the playhead missed ${missed}`);
   console.log(`      ${looked} frames of ${slots.length} looked at, the playhead missed ${missed} more`);
   return problems.length ? problems.slice(0, 8).join("\n") + (problems.length > 8 ? `\nand ${problems.length - 8} more` : "") : null;
 }

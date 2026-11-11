@@ -199,21 +199,11 @@ export default [
     name: "a clip made with I is chosen when the answer to the press comes after the clip",
     steps: [["trim", "start", 300], ["make with its answer late", "i"]],
   },
-  {
-    // Found while 2.124 was proven: from a 29.97 fps episode every piece
-    // of a short had a frame too many and about 30 ms of padded silence at
-    // each cut, because a piece went to ffmpeg rounded to the millisecond.
-    // TestARenderCutsOnWholeFrames holds the engine to it, this the app.
-    name: "a render of a 29.97 fps episode cuts on whole frames",
-    steps: [
-      ["added", 40, "30000/1001"],
-      ["cut at", 0.3],
-      ["cut at", 0.7],
-      ["cuts", 2],
-      ["render"],
-      ["short", 2],
-    ],
-  },
+  // Where a short goes, its name, a render again over it and a render
+  // cut on whole frames are the engine's rules, tested in Go, see
+  // TestTwoEpisodesKeepTheirOwnShorts, TestARenderAgainWritesOverOnlyItsOwnShort
+  // and TestARenderCutsOnWholeFrames. The sequences here look at what the
+  // app shows of a render.
   {
     // Found while 2.125 was proven: with a folder for shorts named in the
     // settings, which the bridge does, a clip never learnt it was
@@ -241,73 +231,6 @@ export default [
     // green mark, as if it had never been rendered.
     name: "a clip stays rendered after its short is removed from its folder",
     steps: [["thumbnail"], ["render"], ["rendered"], ["short removed"], ["restart"], ["rendered, short gone"]],
-  },
-  {
-    // Plan row 2.133, found while 2.127 was fixed: a short is named after
-    // its clip, and two episodes render into the one folder for shorts the
-    // bridge names, so the clip of a second episode with the same name
-    // wrote over the first episode's short, and the first episode's clip
-    // went on saying it was rendered, over the other episode's short.
-    name: "two episodes never overwrite each other's shorts",
-    steps: [
-      ["thumbnail"],
-      ["render"],
-      ["pictured"],
-      ["keep", "first"],
-      ["words again"],
-      ["add", 120],
-      ["wait for", "Search"],
-      ["cards", 1],
-      ["render"],
-      ["apart", "first"],
-      ["rendered"],
-    ],
-  },
-  {
-    // Plan row 2.133: two episodes of the same file name share their
-    // folder in the folder for shorts, so the second short of the same
-    // name gets a number, the way Finder gives one.
-    // The first clip has two pictures and the second none, so a render of
-    // the second that went by the clip's name would take them away.
-    name: "two episodes of one file name number their shorts",
-    steps: [
-      ["thumbnail"],
-      ["press", "Shift+ArrowRight"],
-      ["press", "Shift+ArrowRight"],
-      ["press", "Shift+ArrowRight"],
-      ["thumbnail"],
-      ["render"],
-      ["pictured"],
-      ["keep", "first"],
-      ["words again"],
-      ["add namesake", 120],
-      ["wait for", "Search"],
-      ["cards", 1],
-      ["render"],
-      ["apart", "first", " 2"],
-      ["rendered"],
-    ],
-  },
-  {
-    // Plan row 2.133: Render again writes over the clip's own short, in
-    // its place and under its name, with its pictures beside it, and
-    // nothing else in the folder.
-    name: "render again writes the short over in place, with its pictures beside it",
-    steps: [
-      ["thumbnail"],
-      ["press", "Shift+ArrowRight"],
-      ["press", "Shift+ArrowRight"],
-      ["press", "Shift+ArrowRight"],
-      ["thumbnail"],
-      ["render"],
-      ["rendered"],
-      ["pictured"],
-      ["keep", "first"],
-      ["render"],
-      ["in place", "first"],
-      ["rendered"],
-      ["pictured"],
-    ],
   },
   {
     // Tim played the episode and pressed I to make a clip of what he was

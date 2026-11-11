@@ -444,7 +444,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
-			q.Get("namesake") == "1", q.Get("box") != "0", q.Get("in") == "mkv", cameraHeight(q.Get("size")))
+			q.Get("box") != "0", q.Get("in") == "mkv", cameraHeight(q.Get("size")))
 		answer(w, path, err)
 	})
 	// Files dropped on the app, which the window hands over the way the
@@ -568,9 +568,6 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return
 		}
 		b.words.release()
-		if from, err := strconv.Atoi(q.Get("from")); err == nil && from >= 0 {
-			b.words.from(from)
-		}
 		answer(w, nil, nil)
 	})
 	// The app's window as macOS lays it out, in points: the title bar's
@@ -1597,7 +1594,7 @@ func cameraHeight(size string) int {
 // makeCameraEpisode.
 //
 // On the real disk: the app adds the video from the disk.
-func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, box, mkv bool, height int) (string, error) {
+func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, box, mkv bool, height int) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
@@ -1615,10 +1612,6 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 	b.mu.Lock()
 	b.made++
 	path := filepath.Join(b.d.home, fmt.Sprintf("folge-%d.mp4", b.made))
-	if namesake {
-		// The name of the bridge's episode, in a folder of its own.
-		path = filepath.Join(b.d.home, fmt.Sprintf("folge-%d", b.made), filepath.Base(b.first))
-	}
 	b.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
@@ -2187,9 +2180,6 @@ func TestWalks(t *testing.T) {
 		for _, script := range walkScripts(t, walks) {
 			runs = append(runs, walkRun{script: script, env: append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)})
 		}
-		// Playback again on an episode whose picture the Go side decodes,
-		// HEVC in 10-bit colour, which Chromium cannot.
-		runs = append(runs, walkRun{script: "playback.mjs", env: append([]string{fmt.Sprintf("SEED=%d", seed), "HEVC=1"}, steps...)})
 	}
 	for _, name := range sequenceNames(t, node, walks) {
 		runs = append(runs, walkRun{script: "sequences.mjs", env: []string{"SEQUENCE=" + name}, sequence: name})

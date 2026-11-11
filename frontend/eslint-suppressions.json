@@ -59,10 +59,5 @@
     "no-restricted-properties": {
       "count": 1
     }
-  },
-  "preview/walks/videos/steps.mjs": {
-    "no-restricted-properties": {
-      "count": 1
-    }
   }
 }
