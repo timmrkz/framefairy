@@ -1823,9 +1823,20 @@
     });
   });
 
+  // Where the playhead is drawn. While an edge is held it is where the
+  // engine's answer to the hand puts it, the answer the edge and the
+  // keyframes riding on it are drawn from, so all three move in one frame.
+  // The video preview's frame comes a frame or more later, and a keyframe
+  // lit by it flickered on and off at every step of a drag, Tim on #778.
+  const handHead = $derived(reshaping ? shaped?.playhead : undefined);
+  const head = $derived(handHead ?? time);
+
   // The frame on the video preview, which is how a mark knows it is the
-  // one on screen. A state, never a distance.
-  const playFrame = $derived(frameAt(Number.isFinite(shown) ? shown : time, frame, frameStart));
+  // one on screen. A state, never a distance. While an edge is held, the
+  // frame the answer puts the playhead on, see head.
+  const playFrame = $derived(
+    frameAt(handHead ?? (Number.isFinite(shown) ? shown : time), frame, frameStart),
+  );
 
   // The frame a moment falls in, inside a piece the clip keeps: a moment
   // that was cut out is not in the short, so a mark held over a cut stays
@@ -2347,12 +2358,12 @@
       </div>
       </div>
     {/if}
-    {#if time >= view.from && time <= view.to}
+    {#if head >= view.from && head <= view.to}
       <!-- On the track's inside, where the waveform and every mark are
            placed, and on the start of the frame it is in, where a mark
            lit by it stands. Plan row 2.234. On a whole pixel, rounded the
            way a mark is, see .mark. -->
-      <div class="at" style="left: round(1px + (100% - 2px) * {x(onFrame(time)) / 100}, 1px)">
+      <div class="at" style="left: round(1px + (100% - 2px) * {x(onFrame(head)) / 100}, 1px)">
         <!-- The playhead of the range picker too, drawn by .playhead in
              app.css. -->
         <div class="playhead" class:scrubbing title="Drag to move the playhead"></div>

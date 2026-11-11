@@ -1549,9 +1549,11 @@ export const steps = {
   //                    stay once let go. Then drags the start back out to
   //                    where it was, and the circle and the line are on
   //                    the circle's own place again, held and let go.
-  //                    Found by Tim on #750, the line stood where it was
-  //                    until the hand let go of a cut's edge, and on #778,
-  //                    the keyframes did
+  //                    The circle riding on the edge is lit as soon as the
+  //                    answer to the hand is drawn. Found by Tim on #750,
+  //                    the line stood where it was until the hand let go
+  //                    of a cut's edge, and on #778, the keyframes did, and
+  //                    the circle on the edge flickered
   async "glide under the hand"(walk, arg, s) {
     const { page, watch } = walk;
     const read = () =>
@@ -1586,15 +1588,20 @@ export const steps = {
       }
       // Every place the hand went answered and drawn, which the clip
       // timeline says by dropping data-shaping, see "drag edge twice".
-      await page.evaluate(
+      // Whether the first circle is lit is read in the same moment, before
+      // the video preview has shown the frame the answer put the playhead
+      // on: the circle riding on the edge is lit by the answer that put it
+      // there, or it flickers, Tim on #778.
+      const litWhenAnswered = await page.evaluate(
         () =>
           new Promise((answered) => {
             const timeline = document.querySelector(".clip-timeline");
-            if (!timeline.hasAttribute("data-shaping")) return answered();
+            const lit = () => !!timeline.querySelector(".cropdot[data-glide]")?.classList.contains("here");
+            if (!timeline.hasAttribute("data-shaping")) return answered(lit());
             const seen = new MutationObserver(() => {
               if (timeline.hasAttribute("data-shaping")) return;
               seen.disconnect();
-              answered();
+              answered(lit());
             });
             seen.observe(timeline, { attributes: true, attributeFilter: ["data-shaping"] });
           }),
@@ -1613,6 +1620,7 @@ export const steps = {
       const whileHeld = wrong(held);
       const once = wrong(left);
       if (whileHeld) return `with the start ${to < x ? "dragged back out" : "dragged in"} and still held, the clip timeline draws ${whileHeld}`;
+      if (to > x && !litWhenAnswered) return "with the start dragged in and still held, the first circle riding on it is not lit when the answer to the hand is drawn";
       if (once) return `with the start ${to < x ? "dragged back out" : "dragged in"} and let go, the clip timeline draws ${once}`;
       if (!near(held.lines[0], left.lines[0])) return `the glide line stood at ${held.lines[0].toFixed(1)} px while the start was held and at ${left.lines[0].toFixed(1)} px once let go`;
       return "";
