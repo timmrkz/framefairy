@@ -104,7 +104,7 @@ type EpisodeStatus struct {
 	// words as they are placed on the sound, not as the recogniser timed
 	// them. I after the last line and O before the first make no clip, so
 	// where the parts around the playhead are heard the app offers
-	// neither there.
+	// neither there, see MarkingOf.
 	Said *[2]float64 `json:"said,omitempty"`
 	// Measured is how many seconds of the loudness are measured, which is
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says

@@ -36,6 +36,10 @@ type VideoState struct {
 	// Window is the video's window, with its limits, see WindowView, or
 	// nil while the video cannot be read.
 	Window *WindowView `json:"window"`
+	// Marking is where I and O can make a clip, see engine.MarkingOf, or
+	// nil while the video's length is not known: the keys are offered
+	// then and the engine says why a clip could not be made.
+	Marking *engine.Marking `json:"marking"`
 	// Chosen is the key of the clip chosen, by a hand or by the app, see
 	// choose.go, or nothing. It is read after the clips, and chosen from
 	// them and the jobs, so a clip the app chose comes with the state that
@@ -80,6 +84,11 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {
 		st.Window = s.windowFor(ctx, path, st, info.Duration)
+		heard := st.Status.Heard
+		if st.Status.Transcribed {
+			heard = [][2]float64{{0, info.Duration}}
+		}
+		st.Marking = engine.MarkingOf(heard, st.Status.Said, info.Duration)
 	}
 	st.Chosen, st.ChosenCard = s.chosenFor(path, st)
 	return st, nil

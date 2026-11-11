@@ -481,6 +481,16 @@ export interface VideoState {
   // The card the clip chosen was on its way as, when the app chose it
   // because that card was written as it.
   chosenCard?: string;
+  // Where I and O can make a clip, see engine.MarkingOf, or none while
+  // the video's length is not known.
+  marking?: Marking | null;
+}
+
+// Where in a video I and O can make a clip: I, which starts one, at a
+// moment before inBefore, and O, which ends one, from outFrom on.
+export interface Marking {
+  inBefore: number;
+  outFrom: number;
 }
 
 export interface EngineEvent {

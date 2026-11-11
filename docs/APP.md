@@ -2585,7 +2585,10 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     in its title, and the key does nothing. Tim found I at the end of the
     video making a card that could only fail, on #456. A part not heard
     yet is heard first, so they are offered there, and a clip that then
-    finds nothing said fails with Continue and why in a toast.
+    finds nothing said fails with Continue and why in a toast. Where
+    each key makes a clip, the Go side says in the video's state,
+    `marking`, from `engine.MarkingOf`, and the workspace keeps no rule
+    of its own for it.
   - **The playhead is on the clip it makes.** The clip is made around
     the playhead, so from the frame it is there, on its way and once it
     is written, it is not dimmed, and its crop frame and its captions

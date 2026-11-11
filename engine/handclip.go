@@ -1,10 +1,13 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -169,6 +172,87 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, host
 
 // HandPlanPath is where this episode's clips made by hand are kept.
 func (p *Project) HandPlanPath() string { return filepath.Join(p.LogsDir(), HandPlanName) }
+
+// Marking is where in a video I and O can make a clip, see MarkingOf: I,
+// which starts a clip, at a moment before InBefore, and O, which ends
+// one, at a moment from OutFrom on.
+type Marking struct {
+	InBefore float64 `json:"inBefore"`
+	OutFrom  float64 `json:"outFrom"`
+}
+
+// markRoom is how much of the part on the playhead's side may be unheard
+// and still count as heard, the half second the rest of the workspace
+// allows an edge, and the last moments of a video where I makes nothing:
+// play that runs out stops the playhead where the last frame or the sound
+// ends, short of the duration, and a clip cannot start in so little.
+const (
+	markRoom  = 0.5
+	markLeast = 0.05
+)
+
+// MarkingOf is where I and O can make a clip in a video of duration
+// seconds, of which heard is heard and said is from the start of the
+// first line to the end of the last, see EpisodeStatus.Said, or nil
+// while no word is. I makes none after the last line, and O none before
+// the first, wherever the part on that side of the playhead is heard:
+// handEntry finds nothing there. Where that part is not heard yet, a
+// clip is made by hearing it first, so it is offered. Neither makes one
+// in the last or the first moments of the video, see markLeast. It is
+// nil for a video of no known length.
+func MarkingOf(heard [][2]float64, said *[2]float64, duration float64) *Marking {
+	if !(duration > 0) {
+		return nil
+	}
+	gaps := unheardIn(heard, duration)
+	// From where the part after the playhead counts as heard: the moment
+	// the unheard after it add up to markRoom, counted from the end.
+	after, left := 0.0, markRoom
+	for i := len(gaps) - 1; i >= 0; i-- {
+		g := gaps[i]
+		if g[1]-g[0] > left {
+			after = g[1] - left
+			break
+		}
+		left -= g[1] - g[0]
+	}
+	// Up to where the part before the playhead counts as heard.
+	before, left := duration, markRoom
+	for _, g := range gaps {
+		if g[1]-g[0] > left {
+			before = g[0] + left
+			break
+		}
+		left -= g[1] - g[0]
+	}
+	in, out := after, before
+	if said != nil {
+		in, out = math.Max(after, said[1]), math.Min(before, said[0])
+	}
+	return &Marking{InBefore: math.Min(in, duration-markLeast), OutFrom: math.Max(out, markLeast)}
+}
+
+// unheardIn is what of 0 to duration the parts heard do not hold, in
+// order.
+func unheardIn(heard [][2]float64, duration float64) [][2]float64 {
+	parts := slices.Clone(heard)
+	slices.SortFunc(parts, func(a, b [2]float64) int { return cmp.Compare(a[0], b[0]) })
+	var gaps [][2]float64
+	at := 0.0
+	for _, p := range parts {
+		if p[0] > at {
+			gaps = append(gaps, [2]float64{at, math.Min(p[0], duration)})
+		}
+		at = math.Max(at, p[1])
+		if at >= duration {
+			break
+		}
+	}
+	if at < duration {
+		gaps = append(gaps, [2]float64{at, duration})
+	}
+	return gaps
+}
 
 // handEntry is the clip the playhead proposes: forward, it starts with the
 // sentence the playhead stands in, from that sentence's beginning, and

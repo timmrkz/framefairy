@@ -315,3 +315,59 @@ func TestWhatThePlayheadProposes(t *testing.T) {
 		t.Errorf("titled %q", entry.Title)
 	}
 }
+
+// Where I and O make a clip, the rule the app's I and O keys go by:
+// MarkingOf says it with the video's state, and the workspace offers I
+// before InBefore and O from OutFrom on.
+func TestWhereIAndOMakeAClip(t *testing.T) {
+	all := [][2]float64{{0, 120}}
+	said := func(a, b float64) *[2]float64 { return &[2]float64{a, b} }
+	cases := []struct {
+		name     string
+		at       float64
+		out      bool
+		heard    [][2]float64
+		said     *[2]float64
+		duration float64
+		makes    bool
+	}{
+		{"I at the very end, nothing heard", 120, false, nil, nil, 120, false},
+		{"I a moment before the end, nothing heard", 119.97, false, nil, nil, 120, false},
+		{"I on the last frame, where play stops short of the end", 120 - 1.0/15, false, nil, nil, 120, false},
+		{"I on the last frame, half heard", 120 - 1.0/15, false, [][2]float64{{0, 60}}, said(3, 58), 120, false},
+		{"I in the last half second, half heard", 119.6, false, [][2]float64{{0, 60}}, said(3, 58), 120, false},
+		{"O at the very start, nothing heard", 0, true, nil, nil, 120, false},
+		{"I after the last word, all heard", 115, false, all, said(3, 110), 120, false},
+		{"I on the end of the last word, all heard", 110, false, all, said(3, 110), 120, false},
+		{"O before the first word, all heard", 2, true, all, said(3, 110), 120, false},
+		{"I before the last word", 109.9, false, all, said(3, 110), 120, true},
+		{"O on the first word", 3, true, all, said(3, 110), 120, true},
+		{"O after the first word", 115, true, all, said(3, 110), 120, true},
+		{"I before the first word", 2, false, all, said(3, 110), 120, true},
+		{"I with no word in a video heard to its end", 60, false, all, nil, 120, false},
+		{"O with no word in a video heard to its end", 60, true, all, nil, 120, false},
+		{"I where the part after is not heard yet", 100, false, [][2]float64{{0, 60}}, said(3, 58), 120, true},
+		{"O where the part before is not heard yet", 100, true, [][2]float64{{60, 120}}, said(70, 110), 120, true},
+		{"O with nothing heard", 60, true, nil, nil, 120, true},
+		{"I with parts out of order and a gap under half a second", 115, false,
+			[][2]float64{{60.3, 120}, {0, 60}}, said(3, 110), 120, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := MarkingOf(c.heard, c.said, c.duration)
+			if m == nil {
+				t.Fatal("no marking for a video with a length")
+			}
+			makes := c.at < m.InBefore
+			if c.out {
+				makes = c.at >= m.OutFrom
+			}
+			if makes != c.makes {
+				t.Errorf("at %v it makes a clip %v, want %v, with %+v", c.at, makes, c.makes, *m)
+			}
+		})
+	}
+	if m := MarkingOf(nil, nil, 0); m != nil {
+		t.Errorf("a video of no length has %+v, and nothing to decide", *m)
+	}
+}

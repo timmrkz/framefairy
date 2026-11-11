@@ -581,3 +581,30 @@ func TestAStateSaysHowEachSearchEnded(t *testing.T) {
 		t.Errorf("a search stopped on a video heard to its end ended %q", transcribed[0].Ended)
 	}
 }
+
+// A video's state says where I and O can make a clip, from what of it is
+// heard and said and how long it is, engine.MarkingOf, so the workspace
+// keeps no rule of its own for its keys. A video whose length is not
+// known says nothing, and the keys are offered.
+func TestAStateSaysWhereIAndOMakeAClip(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	unknown, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unknown.Marking != nil {
+		t.Errorf("a video that cannot be read says I and O make a clip only in %+v", *unknown.Marking)
+	}
+	svc.probeVideo = func(context.Context, string) (engine.SourceInfo, error) {
+		return engine.SourceInfo{Duration: 120}, nil
+	}
+	st, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := engine.MarkingOf(st.Status.Heard, st.Status.Said, 120)
+	if st.Marking == nil || *st.Marking != *want {
+		t.Errorf("the state says %v, not %+v", st.Marking, *want)
+	}
+}

@@ -1807,6 +1807,10 @@ model's scanner uses too. The builder shapes, frames and writes it into
 take the next number under the set's lock as they are written. The set
 says it was made by hand, `planned_with.by`, and `madeOver` reads that as
 made over no part of the episode, so it counts as no search of any part.
+Where I and O make a clip at all is `MarkingOf`, from what is heard and
+said and how long the video is: I before the last line and O after the
+first, wherever that side of the playhead is heard, and neither in the
+last or first moments of the video. The app sends it in the video's state.
 
 Every job that makes clips says which it has on the way, `Log.Underway`,
 the whole list each time it changes: the builder from the moment a clip is
