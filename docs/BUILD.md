@@ -496,8 +496,11 @@ second image of the same file, the first with the headless Chromium and
 the WebKit of the Playwright version in `frontend/package-lock.json`,
 with the libraries and fonts they need. With WebKit in one image for
 every job, pulling it took 73 to 80 s where 24 to 30 s had done, so the
-jobs that open no browser take the first. Go and Node are in neither:
-setup-go and setup-node bring them as in every other job.
+jobs that open no browser take the first. Go is in both, the version
+`go.mod` names, so a job in them downloads none, which took setup-go
+about 6 s of every job. `.github/actions/prepare` takes it when it is the
+version `go.mod` names and sets that one up otherwise. Node is in
+neither: setup-node finds it in the runner's tool cache at once.
 
 On some days the runners' Ubuntu mirror gave 18 to 40 kB a second, and
 the libraries Chromium needs, mostly fonts, held a walks job for up to

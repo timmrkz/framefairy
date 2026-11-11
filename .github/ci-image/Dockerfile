@@ -11,13 +11,18 @@
 # version in frontend/package-lock.json. So a change to either makes a new
 # image and an unchanged one is pulled as it is. A file this one comes to
 # read must join that sum and the job's sparse checkout too, or a change
-# to it reuses the old image. Go and Node are not in it: the jobs take
-# them from go.mod and setup-node as every other job does.
+# to it reuses the old image. Go is in it, the version go.mod names, so a
+# job in it downloads none, which took setup-go about 6 s of every job.
+# .github/actions/prepare takes this Go when it is the one go.mod names,
+# and sets up the one it names otherwise. Node is not in it: setup-node
+# finds it in the runner's tool cache at once.
 #
-# Both images below are pinned to a digest, so the same file always means
+# The images below are pinned to a digest, so the same file always means
 # the same image. Moving them is a change to this file, which builds anew,
 # and Dependabot moves them once a week, see .github/dependabot.yml.
 FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS node
+
+FROM golang:1.27.4-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea AS go
 
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac AS base
 
@@ -52,6 +57,10 @@ RUN rm -f /var/lib/man-db/auto-update && \
 		build-essential curl git procps xz-utils zstd \
 		ffmpeg meson ninja-build nasm patchelf && \
 	rm -rf /etc/apt/apt.conf.d/99ci-retries /var/lib/apt/lists/*
+
+# Go, from the official image above, see the head of this file.
+COPY --from=go /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:$PATH FRAMEFAIRY_CI_GO=/usr/local/go/bin/go
 
 # The walks' machine is the one above with the browsers: Chromium and
 # WebKit for the Playwright the interface pins, with the libraries and
