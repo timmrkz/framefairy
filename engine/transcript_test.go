@@ -845,6 +845,8 @@ func stoppedOnLastPiece(t *testing.T, copies func(Recognizer) Recognizer) {
 
 // heardHasWords fails when a part written down as heard goes more than
 // 1.5 s without a word. The fake recogniser gives one every 0.6 s.
+//
+// On the real disk: it reads the transcript that hearing with ffmpeg wrote.
 func heardHasWords(t *testing.T, after, source, model string) {
 	t.Helper()
 	_, words, _, _ := readEpisodeTranscript(disk, source, model)
