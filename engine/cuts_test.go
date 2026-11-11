@@ -753,6 +753,29 @@ func TestAGestureIsHeldInsideWhatTheClipCanBe(t *testing.T) {
 	}
 }
 
+// A double-click in a piece near its end, on a video of five frames a
+// second, the clip the walks' timeline seed 454045 made: the cut stopped a
+// twentieth of a second before the piece's end, between two frames, and
+// the sliver left was grown to a whole frame, over the start of the next
+// piece, so the cut was refused. A cut lands on frames, and so do the
+// pieces it leaves.
+func TestACutNearAPiecesEndLeavesItWholeFrames(t *testing.T) {
+	five := SourceInfo{FPSNum: 5, FPSDen: 1, Duration: 60}
+	g := Gesture{Kind: "cut", Frames: five}
+	clip := Clip{Segments: []Segment{{Start: 6, End: 7.2}, {Start: 7.4, End: 7.6}}}
+	a, b, ok := g.cutOnFrames(clip, 6.354, 7.292)
+	if !ok {
+		t.Fatal("no cut")
+	}
+	onFrame := func(x float64) bool { return math.Abs(x*5-math.Round(x*5)) < 1e-6 }
+	if !onFrame(a) || !onFrame(b) {
+		t.Errorf("the cut is %v to %v, not on frames", a, b)
+	}
+	if _, end := five.PieceOnFrames(b, 7.2); end >= 7.4 {
+		t.Errorf("the cut %v to %v leaves a piece that ends at %v, over the next piece's start", a, b, end)
+	}
+}
+
 // A cut put on frames, the way a shift double-click puts one, asked for a
 // width the zoom worked out. These were the interface's own rules, cutAt,
 // until the engine took them over.

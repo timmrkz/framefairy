@@ -49,7 +49,7 @@ jobs:
         shard: [1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    container: &walks-container
+    container:
       image: ${{ needs.image.outputs.walks }}
       options: --init --ipc=host
       volumes:
@@ -120,7 +120,11 @@ jobs:
         shard: [1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    container: *walks-container
+    container:
+      image: ${{ needs.image.outputs.webkit }}
+      options: --init --ipc=host
+      volumes:
+        - /home/runner/work:/home/runner/work
     steps: *walks-steps
 
   # The Go tests, counting the lines they run, in three shares like the

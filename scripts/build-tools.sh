@@ -19,7 +19,7 @@
 # --then runs COMMAND with the four tools first on the path, installed in
 # .build/tools first. That is how scripts/tools.sh, make ffmpeg and make
 # llama build on a Mac. Elsewhere it runs COMMAND as it is, with the
-# system's tools, which the CI image takes from a dated snapshot.
+# system's tools, which the CI image takes from Ubuntu's archive.
 #
 # The tools came from Homebrew, which installs only its newest version,
 # so what built ffmpeg changed with the day it was built, #591. It does
