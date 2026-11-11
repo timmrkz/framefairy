@@ -397,8 +397,12 @@ func carry(segments []Segment, marks []CropMark) []carriage {
 // same crop it did. A keyframe set aside steers nothing, so it is no crop
 // before.
 func opened(marks []CropMark) []CropMark {
-	var out []CropMark
+	if len(marks) == 0 {
+		return marks
+	}
+	out := append([]CropMark(nil), marks...)
 	for i, m := range marks {
+		out[i].Opens, out[i].FromClip = false, false
 		if !m.Glide {
 			continue
 		}
@@ -412,18 +416,12 @@ func opened(marks []CropMark) []CropMark {
 		if before >= 0 && marks[before].Glide {
 			continue
 		}
-		if out == nil {
-			out = append([]CropMark(nil), marks...)
-		}
 		out[i].Opens = true
 		if before < 0 {
 			out[i].FromClip = true
 		} else {
 			out[i].X = marks[before].X
 		}
-	}
-	if out == nil {
-		return marks
 	}
 	return out
 }
@@ -932,7 +930,48 @@ func (s SourceInfo) CropAt(seg Segment, at float64, cropW, width int) float64 {
 // cropMarksOf is the keyframes a clip of a plan being edited has, as the
 // plan holds them.
 func cropMarksOf(c *object) []CropMark {
-	return readCropMarks(c.values[keyCropMarks], rotationsOf(c))
+	return settled(c, readCropMarks(c.values[keyCropMarks], rotationsOf(c)))
+}
+
+// settled is a clip's keyframes in time order with each circle that
+// starts a glide keeping the crop it starts from, see opened: the crop of
+// the keyframe before it, or the clip's own for its turn. A circle keeps
+// no crop of its own that nobody sees, so turning it into a diamond, or
+// putting a circle before it, brings back no crop from before, found by
+// the review of #778. Every edit reads the keyframes and writes them
+// settled.
+func settled(c *object, marks []CropMark) []CropMark {
+	out := opened(marks)
+	for i := range out {
+		if !out[i].FromClip {
+			continue
+		}
+		if x, ok := ownCrop(c, out[i].Turn); ok {
+			out[i].X = x - x%2
+		}
+	}
+	return out
+}
+
+// ownCrop is the crop a clip of a plan being edited has of its own for
+// the picture turned so far, before any keyframe: the crop as filmed, or
+// the crop of the pieces turned that way, and false where the plan places
+// none.
+func ownCrop(c *object, turn int) (int, bool) {
+	spans := rotationsOf(c)
+	key := keyCropX
+	if turn != 0 {
+		key = keyCropXTurned
+	}
+	for _, seg := range segmentObjects(c) {
+		if rotationOf(seg, spans) != turn {
+			continue
+		}
+		if n, ok := num.AsInt(seg.values[key]); ok && n >= 0 {
+			return n, true
+		}
+	}
+	return 0, false
 }
 
 // setCropMarks writes a clip's keyframes in time order, or takes the key
@@ -943,6 +982,7 @@ func setCropMarks(c *object, marks []CropMark) {
 		return
 	}
 	sort.Slice(marks, func(a, b int) bool { return marks[a].At < marks[b].At })
+	marks = settled(c, marks)
 	list := make([]any, len(marks))
 	for i, m := range marks {
 		o := newObject()

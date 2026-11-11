@@ -585,7 +585,7 @@ func TestAKeyframeIsPutAsADiamondOrACircle(t *testing.T) {
 	if err := SetCropMark(fsys, path, "01", -1, 11.0, 100, false, at25); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.48, X: 300, Glide: true, Opens: true, FromClip: true, Alone: true}, {At: 11, X: 100}}; !reflect.DeepEqual(got, want) {
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.48, X: 120, Glide: true, Opens: true, FromClip: true, Alone: true}, {At: 11, X: 100}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("G at 10.5 s and S at 11 s made %v, not %v", got, want)
 	}
 	if err := SetCropMark(fsys, path, "01", 10.48, 10.2, -1, false, at25); err != nil {
@@ -597,7 +597,7 @@ func TestAKeyframeIsPutAsADiamondOrACircle(t *testing.T) {
 	if err := SetCropGlide(fsys, path, "01", 10.2, false, at25); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.2, X: 300}, {At: 11, X: 300, Glide: true, Opens: true, Alone: true}}; !reflect.DeepEqual(got, want) {
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.2, X: 120}, {At: 11, X: 120, Glide: true, Opens: true, Alone: true}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("the circle dragged to 10.2 s and both turned are %v, not %v", got, want)
 	}
 	if err := SetCropGlide(fsys, path, "01", 10.6, true, at25); err == nil {
@@ -960,6 +960,30 @@ func TestTouchingACarriedKeyframeMakesItReal(t *testing.T) {
 	}
 }
 
+// A circle that starts a glide keeps no crop of its own that nobody sees:
+// turned into a diamond, or given a circle before it, it keeps the crop it
+// showed, found by the review of #778.
+func TestACircleKeepsNoHiddenCrop(t *testing.T) {
+	fsys, path := writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 11, X: 300}, CropMark{At: 12, X: 500, Glide: true})
+	if err := SetCropGlide(fsys, path, "01", 12, false, at25); err != nil {
+		t.Fatal(err)
+	}
+	if got := at25.CropAt(loadedClip(t, fsys, path).Segments[0], 12, 608, 1920); got != 300 {
+		t.Errorf("the circle made a diamond switches the crop to %v, not the 300 it showed", got)
+	}
+
+	fsys, path = writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 11, X: 300}, CropMark{At: 13, X: 500, Glide: true}, CropMark{At: 15, X: 700, Glide: true})
+	cropMarks(t, fsys, path, CropMark{At: 12, X: 300, Glide: true})
+	seg := loadedClip(t, fsys, path).Segments[0]
+	for _, h := range []struct{ at, want float64 }{{12, 300}, {13, 300}, {15, 700}} {
+		if got := at25.CropAt(seg, h.at, 608, 1920); got != h.want {
+			t.Errorf("with a circle put before the glide, at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
+		}
+	}
+}
+
 // A glide between two circles in two pieces runs across the cut between
 // them, and the crop holds after the second across the next cut. A first
 // circle alone moves nothing: it starts a glide from the crop before it,
@@ -976,7 +1000,8 @@ func TestAGlideBetweenTwoCirclesRunsAcrossACut(t *testing.T) {
 			t.Errorf("with a first circle alone the crop stands at %v at %.2f s, not the clip's own 120", got, h.at)
 		}
 	}
-	cropMarks(t, fsys, path, CropMark{At: 10.0, X: 120, Glide: true})
+	fsys, path = rotatablePlanPath(t)
+	cropMarks(t, fsys, path, CropMark{At: 10.0, X: 120, Glide: true}, CropMark{At: 11.52, X: 600, Glide: true})
 	c := loadedClip(t, fsys, path)
 	for _, h := range []struct {
 		piece int
