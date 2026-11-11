@@ -234,8 +234,10 @@ by Stop transcribing, a search or a clip made by hand, or ends. On Stop
 transcribing it comes back in the frame of the click, as the part's
 frame starts to fade.
 The dots follow the work again once other work hears, or once the video
-is transcribed to its end, which a stop on its last piece can still
-bring. The video's
+is transcribed to its end. A stop on its last piece keeps the dots on
+that piece, like a stop anywhere else: the piece was once written down
+as heard without its words, and never heard again, Tim's report of 11
+November. The video's
 dot in the sidebar pulses the way it does for all work, from the frame
 Transcribe video is clicked until the frame Stop transcribing is.
 Nothing else says how far it has come, Tim's calls on #458: a number in
