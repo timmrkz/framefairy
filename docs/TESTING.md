@@ -1461,11 +1461,11 @@ set.
 
 ### The sequences
 
-What is checked is written in one place, `internal/outside/sequences.go`,
-the same way the walks' cases are in `sequences.mjs`: named sequences of
-steps, each a verb and its words, the actions and what has to come of
-them alike. The verbs are explained at the top of that file. The first
-sequence reads:
+What is checked is written in one place,
+`internal/outside/sequences_test.go`, the same way the walks' cases are
+in `sequences.mjs`: named sequences of steps, each a verb and its words,
+the actions and what has to come of them alike. The verbs are explained
+at the top of that file. The first sequence reads:
 
 ```go
 {"set up"},
@@ -1504,8 +1504,8 @@ most, so a step says what has to be true and never how long to wait.
 
 Three files, each with one job:
 
-- `sequences.go`, the sequences and the verbs. It builds everywhere, and
-  `TestEveryStepIsOneTheRunnerKnows` reads it in `make unit`: a verb
+- `sequences_test.go`, the sequences and the verbs. Every `go test`
+  builds it, and `TestEveryStepIsOneTheRunnerKnows` reads it in `make unit`: a verb
   misspelt, a word too few or a key nobody bought fails on Linux in
   seconds, not on the Mac at the end of a CI run.
 - `run_test.go`, how each verb is done on the Mac, the same for every
@@ -1513,7 +1513,7 @@ Three files, each with one job:
 - `cmd/framefairy-app/probe_outside.go`, what the app can be asked.
 
 A new case is a new sequence. A new verb is a line in the list at the
-top of `sequences.go`, its words in `verbs`, and how it is done in `done`
+top of `sequences_test.go`, its words in `verbs`, and how it is done in `done`
 in `run_test.go`. `go test -tags outside -run 'TestSequences/<part of a
 name>'` runs one.
 

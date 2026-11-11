@@ -41,13 +41,6 @@ type memoryDB struct {
 	notes   map[string]string
 }
 
-// clone copies all of it, for a backup.
-func (db memoryDB) clone() memoryDB {
-	c := db.begin()
-	c.record = slices.Clone(db.record)
-	return c
-}
-
 // begin copies what a transaction may change in place. The record is only
 // ever appended to, so a transaction shares it: what it appends lies past
 // the end the store knows until it commits, and a transaction that does

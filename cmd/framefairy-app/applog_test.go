@@ -688,3 +688,28 @@ func TestTheLogCanBeRemovedWhole(t *testing.T) {
 		t.Fatalf("the new log says %v, want what went", gone)
 	}
 }
+
+// close stops writing the log, for the tests.
+func (l *appLog) close() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.root.Store(nil)
+	if l.file != nil {
+		_ = l.file.Close()
+		l.file = nil
+	}
+}
+
+// forget lets the kept lines go, for the tests.
+func (r *recentLines) forget() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lines, r.next = nil, 0
+}
+
+// forget lets go of every failure counted, as a log opened again starts.
+func (f *repeatedFailures) forget() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.last = nil
+}

@@ -265,8 +265,12 @@ test case for the bug, and it becomes a seed for every later run.
 
 golangci-lint's `unused`, in `make lint` with forbidigo, fails on a
 function, a type, a constant or a variable nothing calls, not even a
-test. Code only one system calls, like the keychain on a Mac, lives in
-that system's own file, so the run on Linux reads none of it.
+test. A second run reads the code without the tests, so code only a
+test calls fails too, and lives in a `_test.go` file beside the test.
+Code only one system calls, like the keychain on a Mac, lives in that
+system's own file, so the run on Linux reads none of it. Code that only
+a build tag the lint cannot build calls, like the frames decoder's
+`ffmpeglibs`, says so on its line with `//nolint:unused`.
 
 ### No test waits on the clock
 

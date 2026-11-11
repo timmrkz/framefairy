@@ -668,7 +668,8 @@ interface:
 # and nothing the interface's packages carry, #471. That no Go test waits
 # on the clock, see .golangci.yml. The checks from outside the app build
 # only on a Mac with the outside tag, so they are read a second time the
-# way they build. Every script read by the shell its first line names, and
+# way they build. That no code only tests call is outside the tests, read
+# without them. Every script read by the shell its first line names, and
 # the rule for a build, see scripts/needs-build.sh. That
 # docs/GUI-PLAN.md stays the history it is, by the hash git gives it: open
 # work is in the issues. And the tests of the repository's own rules,
@@ -687,6 +688,8 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	@out=$$($(GOLANGCI_LINT) run ./... 2>&1) || { echo "$$out"; exit 1; }
 	@out=$$(GOOS=darwin $(GOLANGCI_LINT) run --build-tags outside ./internal/outside/ 2>&1) || { echo "$$out"; exit 1; }
 	@printf 'ok  \tGo tests wait on no clock\n'
+	@out=$$($(GOLANGCI_LINT) run --tests=false --enable-only=unused --build-tags outside ./... 2>&1) || { echo "$$out"; exit 1; }
+	@printf 'ok  \tno code only tests call\n'
 	@for s in $$(git ls-files '*.sh'); do \
 		case $$(head -n 1 "$$s") in *bash*) bash -n "$$s" ;; *) sh -n "$$s" ;; esac || exit 1; \
 	done

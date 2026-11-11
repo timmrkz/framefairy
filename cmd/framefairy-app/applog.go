@@ -112,17 +112,6 @@ func (l *appLog) open(path string) {
 	l.root.Store(&lg)
 }
 
-// close stops writing the log, for the tests.
-func (l *appLog) close() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.root.Store(nil)
-	if l.file != nil {
-		_ = l.file.Close()
-		l.file = nil
-	}
-}
-
 // files are the log's files, the older ones first, the one in use last,
 // or none while it is not open.
 func (l *appLog) files() []string {
@@ -312,13 +301,6 @@ func (r *recentLines) all() []byte {
 		out = append(out, r.lines[(r.next+i)%len(r.lines)]...)
 	}
 	return out
-}
-
-// forget lets the kept lines go, for the tests.
-func (r *recentLines) forget() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.lines, r.next = nil, 0
 }
 
 // line starts a line of one part of the app at this moment, with the act
@@ -592,13 +574,6 @@ type repeat struct {
 // failuresQuiet is how long the same failure is counted rather than
 // written again.
 const failuresQuiet = 10 * time.Second
-
-// forget lets go of every failure counted, as a log opened again starts.
-func (f *repeatedFailures) forget() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.last = nil
-}
 
 // seen notes a failure of the video at path for reason, and gives -1
 // while it is counted, or how many times it came since it was last

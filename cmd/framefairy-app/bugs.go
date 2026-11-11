@@ -204,22 +204,6 @@ func (s *FrameFairy) ReportWindowOpen() bool {
 	return s.report.front != nil
 }
 
-// end ends the report the way the app's process ending does: a write in
-// hand is let finish, and every write after it fails. The walks' bridge
-// ends the report of the app it closes, so nothing lands in the config
-// folder while it is removed, see bridge.quit. The app itself does not:
-// the report window saves its draft as it closes on the way out, and that
-// save is kept. Every write of the report goes through its files under
-// its lock.
-func (r *reporting) end() {
-	if r == nil {
-		return
-	}
-	r.mu.Lock()
-	r.files = afero.NewReadOnlyFs(r.files)
-	r.mu.Unlock()
-}
-
 func (r *reporting) open(how string) {
 	r.mu.Lock()
 	if front := r.front; front != nil {
