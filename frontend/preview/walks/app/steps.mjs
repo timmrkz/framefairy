@@ -733,8 +733,9 @@ export const steps = {
     const now = await modelsNamed(page);
     if (JSON.stringify(now) === JSON.stringify(walk.named)) walk.wrong = `the settings still name ${JSON.stringify(now)}`;
   },
-  // ["resize"]         drags the app's height and then its width a pixel at
-  //                    a time, down to the app's smallest, and on every step every part of the
+  // ["resize"]         drags the app's height and then its width down to
+  //                    the app's smallest, a pixel at a time at places
+  //                    along the way, see resizeSizes, and on every step every part of the
   //                    workspace moves only one way the whole drag, stands
   //                    on a whole pixel, and meets the app's edges, and the
   //                    two sides beside the picture, measured from the
@@ -1312,13 +1313,48 @@ function fitProblem() {
   return null;
 }
 
-// What is wrong with the workspace as the app is dragged smaller a pixel at
-// a time, by its height and then by its width, or null.
+// The sizes from `from` down to `to` the resize steps through, largest
+// first. Every one when WALKSWEEP=every, as the nightly walks do. Else
+// pairs of neighbouring sizes, a pixel apart, 13 pixels from one pair to
+// the next, and the smallest. The rules are about one step to the next,
+// and a part that saws by a half pixel every other step does it in any
+// pair. 13 is odd, so one pair starts on an odd size and the next on an
+// even one. Each size in `around`, where the layout switches from one
+// rule to another, is walked with the size on either side of it.
+function resizeSizes(from, to, around = [], every = process.env.WALKSWEEP === "every") {
+  const sizes = new Set();
+  for (let s = from; s >= to; s -= every ? 1 : 13) {
+    sizes.add(s);
+    if (!every && s - 1 >= to) sizes.add(s - 1);
+  }
+  sizes.add(to);
+  for (const at of around) for (const s of [at + 1, at, at - 1]) if (s <= from && s >= to) sizes.add(s);
+  return [...sizes].sort((a, b) => b - a);
+}
+
+// What is wrong with the workspace as the app is dragged smaller, by its
+// height and then by its width, see resizeSizes, or null.
 async function resizeProblem(page) {
+  // Where the layout switches from one rule to another, worked out from
+  // the tokens in app.css and the workspace in Episode.svelte: the width
+  // where the sides beside the picture stop standing at their smallest
+  // and grow with the app, 2/5 of it, see --spans, and the height where
+  // the picture stops taking the height and is as wide as the middle
+  // column, at the 1500 the height sweep walks, see --pic-h.
+  const [spansGrow, picWidest] = await page.evaluate((width) => {
+    const token = (n, at = document.documentElement) => parseFloat(getComputedStyle(at).getPropertyValue(n));
+    const least = 2 * (token("--rail") + token("--gap") + token("--settings-w"));
+    const spans = Math.max(least, Math.floor((width * 2) / 5));
+    const ar = token("--ar", document.querySelector("section[style*='--ar']"));
+    const widest = (width - spans - 2 * token("--gap")) / ar;
+    const down = 4 * token("--gap") + 1 + token("--row-h");
+    const above = token("--bar-h") + token("--gap") + token("--edge");
+    return [Math.round((least * 5) / 2), Math.round(widest + down + 1.5 * token("--wave-min") + above)];
+  }, 1500);
   const sweeps = [
     // Down to the app's smallest, 960 by 640, see main.go.
-    { by: "height", sizes: Array.from({ length: 361 }, (_, i) => [1500, 1000 - i]) },
-    { by: "width", sizes: Array.from({ length: 741 }, (_, i) => [1700 - i, 1000]) },
+    { by: "height", sizes: resizeSizes(1000, 640, [picWidest]).map((h) => [1500, h]) },
+    { by: "width", sizes: resizeSizes(1700, 960, [spansGrow]).map((w) => [w, 1000]) },
   ];
   const sideColumns = await page.evaluate(() => {
     const s = document.querySelector(".stage");
