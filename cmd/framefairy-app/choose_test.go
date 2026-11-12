@@ -279,6 +279,74 @@ func TestACardPickedAfterItsClipWasWrittenIsAnsweredWithTheClip(t *testing.T) {
 	}
 }
 
+// A card on its way is picked by a hand, and a state lands it on its
+// clip. The hand's pick of the card, answered after that state, still
+// leaves the clip chosen, written as the card, in a state read at the
+// rev that landed it and answered after the pick. Before, that state
+// said the card was chosen, which a list that holds its clip leaves
+// out, so for a frame nothing was chosen and the clip timeline dimmed,
+// issue #697.
+func TestACardPickedAgainAfterItLandedStaysItsClip(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	if _, err := svc.State(ctx, mine); err != nil {
+		t.Fatal(err)
+	}
+	job := Job{ID: "c1", Episode: mine, State: JobDone, Result: "clips.json/02", JobRecord: engine.JobRecord{Kind: engine.JobClip}}
+	svc.jobs.mu.Lock()
+	svc.jobs.jobs = append(svc.jobs.jobs, &job)
+	svc.jobs.mu.Unlock()
+	if err := svc.pick(mine, "c1/1"); err != nil {
+		t.Fatal(err)
+	}
+	landed, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landed.Chosen != "clips.json/02" || landed.ChosenCard != "c1/1" {
+		t.Fatalf("the state that landed the card says %q, written as %q", landed.Chosen, landed.ChosenCard)
+	}
+	if err := svc.pick(mine, "c1/1"); err != nil {
+		t.Fatal(err)
+	}
+	if clip, card := svc.chosenFor(mine, landed); clip != "clips.json/02" || card != "c1/1" {
+		t.Errorf("a state at the rev that landed the card, answered after the card was picked again, says %q, written as %q", clip, card)
+	}
+	after, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Chosen != "clips.json/02" || after.ChosenCard != "c1/1" {
+		t.Errorf("the state after the card was picked again says %q, written as %q", after.Chosen, after.ChosenCard)
+	}
+}
+
+// A hand picks a card its window still shows after its clip was written,
+// while another clip was chosen, so the card never landed. A state read
+// before the pick and answered after it says the card's clip is chosen,
+// written as the card, and never the card its list has left out.
+func TestACardPickedAfterItsClipWasWrittenIsItsClipInAStateFromBefore(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	job := Job{ID: "c1", Episode: mine, State: JobDone, Result: "clips.json/02", JobRecord: engine.JobRecord{Kind: engine.JobClip}}
+	svc.jobs.mu.Lock()
+	svc.jobs.jobs = append(svc.jobs.jobs, &job)
+	svc.jobs.mu.Unlock()
+	older, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.State(ctx, mine); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.pick(mine, "c1/1"); err != nil {
+		t.Fatal(err)
+	}
+	if clip, card := svc.chosenFor(mine, older); clip != "clips.json/02" || card != "c1/1" {
+		t.Errorf("a state from before the card was picked, answered after, says %q, written as %q", clip, card)
+	}
+}
+
 // Everything the window can do to what is chosen at once, from several
 // goroutines, while states are read: picks, plays and pauses, removes
 // and states, under the race detector.

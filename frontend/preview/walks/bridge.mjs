@@ -148,10 +148,11 @@ export function noDeadlines(page) {
 // every walk a twentieth of the processor time of opening its video. The
 // counts of the lines a page runs are Chromium's, so WALKCOVERAGE counts
 // in Chromium only. name is the browser, the walks' unless said, see
-// browserFor.
-export async function newBrowser(name = browserFor(), { gpu = false } = {}) {
+// browserFor. args are more for Chromium's command line, as a probe of
+// open.mjs asks, and WebKit takes none.
+export async function newBrowser(name = browserFor(), { gpu = false, args = [] } = {}) {
   if (coverage && name !== "chromium") throw new Error("WALKCOVERAGE counts lines through Chromium's own tools, so it walks in Chromium only, WALKBROWSER=chromium");
-  const browser = await launch(name, gpu ? ["--enable-unsafe-webgpu"] : []);
+  const browser = await launch(name, [...(gpu ? ["--enable-unsafe-webgpu"] : []), ...args]);
   if (traces) {
     const plain = browser.newPage.bind(browser);
     browser.newPage = async (options) => {

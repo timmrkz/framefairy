@@ -4,10 +4,10 @@
 // it the walk so far, the step's argument, what the caption box showed
 // before it and the step's name. A sequence of any folder can take it.
 // Below them the helpers only these steps use. See docs/TESTING.md.
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { ask, caughtUp, clipList, control, episodeOn, fromSidebar, hold, letHeld, news, nextNews, pageUntil, seenUntil, settle, sidebarStill, reload } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, episodeOn, fromSidebar, hold, letHeld, news, nextNews, pageUntil, seenUntil, settle, sidebarStill } from "../bridge.mjs";
 import { dropOn, halfOf, standsAt, stillStands, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -524,23 +524,15 @@ export const steps = {
     });
     if (kind !== arg) walk.wrong = `the video's dot in the sidebar is "${kind}", not "${arg}"`;
   },
-  // ["folder removed", when]
+  // ["folder removed", "in front"]
   //                    deletes the folder beside the video on screen,
-  //                    <name>.framefairy, from outside the app, the way
-  //                    Finder does: "away" while the app is behind
-  //                    another, which then comes back to the front, and
-  //                    "closed" while the app is closed, which is then
-  //                    opened again, and "with the video" deletes the
-  //                    video too, while the app is behind another. "in
-  //                    front" deletes it while the app stays in front,
-  //                    the way a terminal, the command line or a sync
-  //                    service does, so nothing but the app's watch on
-  //                    the disk can tell it, issue #673.
-  //                    "written back" deletes both while the app is
-  //                    closed and writes the chosen clip back into a new
-  //                    folder, the way the app did when it was asked
-  //                    about a video whose folder was gone, before 2.247
-  async "folder removed"(walk, arg) {
+  //                    <name>.framefairy, from outside the app while the
+  //                    app stays in front, the way a terminal, the
+  //                    command line or a sync service does, so nothing
+  //                    but the app's watch on the disk can tell it, issue
+  //                    #673. The other ways it is deleted are held in Go,
+  //                    see letgo_test.go and reconcile_test.go
+  async "folder removed"(walk) {
     const { page } = walk;
     walk.folderGone = await episodeOn(page);
     const folder = join(dirname(walk.folderGone), `${basename(walk.folderGone, extname(walk.folderGone))}.framefairy`);
@@ -558,44 +550,20 @@ export const steps = {
     // Go side told it, however often that takes on a busy machine. What
     // the app must not do, make the folder again once it is gone, is
     // what the walk then looks for.
-    // Closed is closed before anything is deleted: the app watches the
-    // folders of its videos, so a folder deleted while it runs is heard at
-    // once, which is the "in front" case, not this one.
-    const closed = arg === "closed" || arg === "written back";
-    if (closed) await control(url, "/close");
     for (;;) {
       try {
         rmSync(folder, { recursive: true, force: true });
         break;
       } catch (err) {
         if (err.code !== "ENOTEMPTY") throw err;
-        // Closed, nothing writes it, so a folder not empty is one more
-        // try away. Open, the interface catches up first.
-        if (!closed) await caughtUp(page, url);
+        await caughtUp(page, url);
       }
-    }
-    walk.videoGone = arg === "with the video" || arg === "written back";
-    if (walk.videoGone) rmSync(walk.folderGone, { force: true });
-    if (arg === "written back") {
-      mkdirSync(folder);
-      writeFileSync(join(folder, "chosen.json"), JSON.stringify({ clip: "", opened: Date.now() }));
-    }
-    if (closed) {
-      await control(url, "/open");
-      await reload(page);
-    } else if (arg !== "in front") {
-      // The person went to Finder and came back: the app lost the
-      // keyboard and has it again.
-      await page.evaluate(() => {
-        window.dispatchEvent(new FocusEvent("blur"));
-        window.dispatchEvent(new FocusEvent("focus"));
-      });
     }
   },
   // ["let go"]         the video whose folder was removed has left the
   //                    sidebar and the library, its workspace is closed,
   //                    nothing writes its folder back and the video file
-  //                    itself is still there, unless it was deleted too
+  //                    itself is still there
   async "let go"(walk) {
     const { page } = walk;
     const name = basename(walk.folderGone);
@@ -620,7 +588,7 @@ export const steps = {
     // With what was written into it, which says what wrote it.
     else if (existsSync(folder))
       walk.wrong = `${basename(folder)} was written back, with ${readdirSync(folder, { recursive: true }).join(", ") || "nothing in it"}`;
-    else if (!walk.videoGone && !existsSync(walk.folderGone)) walk.wrong = `${name} itself was deleted`;
+    else if (!existsSync(walk.folderGone)) walk.wrong = `${name} itself was deleted`;
     else if ((await page.locator(".workspace.front").count()) && !(await episodeOn(page))) {
       walk.wrong = `a workspace is still open with no video picked in the sidebar`;
     }
@@ -721,23 +689,6 @@ export const steps = {
       walk.wrong = "the file is back, and the video preview says it could not be shown";
     }
   },
-  // ["add namesake", seconds]
-  //                    adds a new video of so many seconds with the file
-  //                    name of the bridge's episode, from another folder
-  async "add namesake"(walk, arg, s) {
-    const { page, watch } = walk;
-    await control(url, `/pick?seconds=${arg}&namesake=1`);
-    await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
-    await watch.step("add", s);
-  },
-  // ["words again"]    the speech stand-in says its sentences again from
-  //                    the first word, so a video added next is heard as
-  //                    the bridge's episode was and its clip has the same
-  //                    name
-  async "words again"(walk) {
-    await control(url, "/speech?go&from=0");
-    walk.speechHeld = false;
-  },
   // ["transcript", how] opens the three dots of the video on screen in the
   //                    sidebar, whose row about the words says the one
   //                    thing that can be done with them now, issue #432.
@@ -815,11 +766,11 @@ export const steps = {
     // and nothing else's, Tim's call on #458.
     // Where the dots of what is not transcribed are, part by part,
     // from where to where each is drawn.
-    // And how far the columns of dots stand in from the part's right
-    // edge, which moves every dot sideways when it changes.
+    // And where its grid of dots begins, from the range picker's start,
+    // which moves every dot sideways when it changes.
     const dotsNow = () =>
       [...document.querySelectorAll(".unheard")]
-        .map((el) => `${el.style.getPropertyValue("--at")} to ${el.style.getPropertyValue("--to")} laid ${getComputedStyle(el, "::before").right} in`)
+        .map((el) => `${el.style.getPropertyValue("--at")} to ${el.style.getPropertyValue("--to")} laid from ${el.offsetLeft + parseFloat(getComputedStyle(el, "::before").backgroundPositionX)} px`)
         .join(", ");
     await page.evaluate(`window.dotsNow = ${dotsNow}`);
     const pick = (want) =>
@@ -1146,22 +1097,59 @@ export const steps = {
       // shorter than a piece, so the piece waiting is the last.
       await page.keyboard.press("Escape");
       await menu.waitFor({ state: "detached" });
+      // The share of the video the dots still cover, every part of it
+      // together. Read as the whole when there were two parts, it stayed
+      // the whole while a piece was heard, and the walk waited for good
+      // on a change that never came.
       const left = () =>
         page.evaluate(() => {
-          const parts = [...document.querySelectorAll(".unheard")].map((el) => Number(/round\(([\d.]+) \*/.exec(el.style.getPropertyValue("--at"))?.[1] ?? 0));
-          return parts.length === 1 ? 1 - parts[0] : 1;
+          const share = (el, edge) => Number(/round\(([\d.]+) \*/.exec(el.style.getPropertyValue(edge))?.[1] ?? 0);
+          return [...document.querySelectorAll(".unheard")].reduce((sum, el) => sum + share(el, "--to") - share(el, "--at"), 0);
         });
       const { duration } = await ask(page, "Source", source);
-      for (let n = 0; (await left()) * duration >= 25; n++) {
+      for (let n = 0, was = await left(); was * duration >= 25; n++) {
         if (n >= 200) {
           walk.wrong = "two hundred pieces heard, and the whole video still has more than a piece left";
           break;
         }
-        const seen = await news(page);
+        // A piece is 15 to 30 s of the video, see chunkMin in
+        // engine/audio.go, so all but the last minute's worth is let on at
+        // once, never the last piece: one at a time, the 750 s left took
+        // about 37 pieces, each waited on. The bridge answers once the
+        // engine has said how far it came with each and asks for the next.
+        const many = Math.floor((was * duration) / 30) - 2;
+        if (many > 1) {
+          await control(url, `/speech?step=${many}&heard`);
+          await caughtUp(page, url);
+          was = await left();
+          continue;
+        }
+        // The piece let on is waited for by the dots it moves, not by the
+        // next news of any kind: news of something else let the walk on
+        // before the piece was heard, it let on a second, and the last
+        // two went at once with nothing left to stop.
+        // A transcription that ended with the dots where they were has
+        // no piece left to move them, and says so once the app has
+        // caught up with its end, rather than waiting on it for good.
+        let seen = await news(page);
         await control(url, "/speech?step=1");
-        await nextNews(page, seen);
+        for (let now = was; now === was; now = await left()) {
+          const job = await transcription();
+          if (job?.state !== "running" && job?.state !== "queued") {
+            await caughtUp(page, url);
+            if ((await left()) === was) walk.wrong = `the whole video's transcription is ${job?.state ?? "gone"} with ${(was * 100).toFixed(1)} % of the video still dotted`;
+            break;
+          }
+          seen = await nextNews(page, seen);
+        }
+        if (walk.wrong) break;
+        was = await left();
       }
       if (walk.wrong) return;
+      if (!(await left())) {
+        walk.wrong = "the whole video was heard before its last piece, with none left to stop on";
+        return;
+      }
       await control(url, "/speech?hold=one");
       await row.hover();
       await row.locator("button.more").click();

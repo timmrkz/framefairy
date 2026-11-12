@@ -27,20 +27,14 @@ engine answers is tried against the bridge.
 The frame queue the video preview plays from, `frontend/src/lib/frames/`,
 has a third page, the preview's `preview/frames/`: one canvas playing an
 episode made for it, whose picture carries its frame number and whose
-sound can be laid over the episode's own sample by sample.
-`frontend/preview/frames/cuts.mjs` was written to play a clip with cuts
-on it and check every frame drawn and every sample heard, and shows no
-picture today, see below. The preview's own episode is made the same way,
-so the same is measured in the workspace. What it
-measures and how to read it is in the interface skill, under Playback and
-The frame queue.
+sound can be laid over the episode's own sample by sample. The preview's
+own episode is made the same way, so the same is measured in the
+workspace. What it measures and how to read it is in the interface
+skill, under Playback and The frame queue.
 
 Adding a video runs against the bridge: a walk asks `/pick` for a test
 video, the bridge has the Add button's box hand it over, and the walk
-clicks Add, `walks/searching.mjs`. The probes `frames/added.mjs` and `frames/cuts.mjs`
-are older, from before the bridge could add a video. No make target or
-workflow runs them, and they have shown no picture since plan row 2.156,
-see #613.
+clicks Add, `walks/searching.mjs`.
 
 ## Two browsers
 
@@ -62,8 +56,9 @@ machines of their own, `WALKBROWSER=webkit`, so a pull request waits for
 one browser and both engines are walked every day, see
 [the decision](decisions/2026-11-05-walks-in-chromium-on-a-push.md). Only
 the walks in Chromium count the lines they run. The WebKit is Playwright's own build
-for Linux, which takes real key presses, and CI's image holds it beside
-the Chromium, see `.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
+for Linux, which takes real key presses, and the CI image the nightly
+walks in WebKit run in holds it beside the Chromium, see
+`.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
 which a machine without a graphics chip runs on the CPU, and drawing is
 37 % of the walks' CPU there, measured once over every walk in a cloud
 session, so the walks give it two threads to draw
@@ -155,7 +150,7 @@ each with a POST:
 
 | Path | What it does |
 | --- | --- |
-| `/pick?seconds=N` | puts a new video of N seconds, not in the library, for the Add button's box to hand over next. It is a copy of one committed in `internal/fixtures`, named by `walkFixture` in `bridge_test.go`, so only the lengths and kinds there are can be asked for, and any other is refused with the name it would have. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only put there, not handed to the box, for a walk to drop instead. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own. With `&size=1080` it is made rather than copied, 1920 by 1080, the size a camera makes, and with `&size=2160` 3840 by 2160, with a key frame every two seconds and frames stored after their key frame, and carries no frame number, for `speed.mjs` |
+| `/pick?seconds=N` | puts a new video of N seconds, not in the library, for the Add button's box to hand over next. It is a copy of one committed in `internal/fixtures`, named by `walkFixture` in `bridge_test.go`, so only the lengths and kinds there are can be asked for, and any other is refused with the name it would have. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only put there, not handed to the box, for a walk to drop instead. With `&size=1080` it is made rather than copied, 1920 by 1080, the size a camera makes, and with `&size=2160` 3840 by 2160, with a key frame every two seconds and frames stored after their key frame, and carries no frame number, for `speed.mjs` |
 | `/drop` | takes the files in its body, a JSON list of paths, as dropped on the app, the way `WindowFilesDropped` does in the app: adds the videos with `dropFiles` and sends the window `dropped`. A walk does not call it itself: it calls `window._wails.handleDragEnter()`, `window._wails.handleDragOver(x, y)` and `window._wails.handlePlatformFileDrop(files, x, y)`, which `wails-bridge.ts` defines the way the runtime does, so a drop reaches `/drop` only where the page marks a drop target. A walk makes the video to drop with `/pick` and `&box=0`, so Add's box does not hand it over too |
 | `/drop-report` | takes the files in its body, a JSON list of paths, as dropped on the report window, the way `WindowFilesDropped` does on it: `bugs.go` attaches the pictures and tells the window. `wails-bridge.ts` sends a drop there when the page is the report window |
 | `/report-window` | says how many report windows the app made and brought forward and whether one is open, and with `?close=1` closes it, the way its close button does. The walk opens the report window itself as a second page on `?window=report` |
@@ -163,7 +158,7 @@ each with a POST:
 | `/report-made` | the names of the files in the last report on the bridge's Desktop, and with `?file=what-happened.txt` what that file in it holds |
 | `/pick-sound` | puts a new file of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers. Told to answer again, it answers what it held too, the way a slow model answers in the end, so a search that was asked while it held does not find for good and keep every video added after it from being transcribed |
-| `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
+| `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&heard` it answers once every piece it let on is heard and the next one waits, so a walk can let many on at once. It is never for the last pieces, which ask for no next one: then it answers when the hearing ends, and the walk sees how it ended. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. |
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
 | `/hold?call=Search&gate=shut&times=K&answer=1&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `answer=1` the call reaches the Go side at once and only its answer waits for `gate=open`, so the news of what it set going comes before it, `hold(page, name, true)`. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
 | `/clock?run=MS` | runs the clock removed work is timed by on by MS milliseconds, and makes every call due by then before it answers. The Go side keeps that time and forgets the work once it is up, see `removal.go`, and `runClock` in `walks/bridge.mjs` runs it on with the page's clock, so the ten seconds a walk runs on are the same ten seconds on both sides, on any machine. `/clock?hold` holds it with the page's clock and `/clock?go` lets it go again, see `holdClock` and `letClockGo`, so while a walk holds the page's time a busy machine spends none of Go's either. Let go, it goes as the system's clock does |
@@ -201,6 +196,48 @@ the browser's calls from Node, so a walk that times a gesture from Node
 is found by putting a wait between the calls instead. The bridge puts the
 episode back the way it was first searched before every walk,
 `POST /reset`, so a walk starts from the same place every time.
+
+### What a walk is for
+
+Read this before writing a walk or reviewing one.
+
+**A walk checks what only the window can show.** It presses real keys and
+clicks in the real app, against the real Go side, and looks at the
+screen. So it is the right test for two things: that a key, a click or a
+drag does what the person meant, and that the screen shows what the Go
+side sent, in the right place and right away.
+
+**What does not belong in a walk:**
+
+- **Rules the Go side decides.** Which words a caption has, which frames
+  go into a short, what a render writes and what the file is called.
+  Each of those gets a Go test, case by case. A walk checks once that
+  the screen shows the result.
+- **Codecs.** The Go side turns every video into the same frames before
+  the window sees them, and `engine/episodeframes_test.go` tests that on
+  committed files. The window never sees the codec.
+- **Waiting for real time to pass.** A walk never waits for the wall
+  clock. A play runs on the walk's own sound card, see the walk's clock
+  below, so a 30 s clip plays as fast as its frames can be drawn. A
+  toast or a removed row waits on the clock `holdClock` holds, and an
+  animation is ended at once when the walk settles.
+- **Trying every value.** Every width or every frame belongs in a unit
+  test. A walk tries the edges and a few in between.
+
+**Every walk makes CI slower.** Each sequence opens the app from scratch
+on every push, which takes a few seconds before it does anything. So a
+new case goes into a walk that is already there, as a new step, and a
+new walk is the last resort. Each walks job prints how long its walks
+took against the times in `walk-times.tsv`, so a slowdown shows on the
+pull request.
+
+**Less waiting does not always mean a faster job.** CI runs six walks at
+once on a machine with four cores, and the cores are busy the whole
+time. When a walk waits less, the other five get the time, and the job
+gets only a little shorter. When plays stopped running in real time,
+they got twice as fast and the job only 3 % faster. What makes the job
+shorter is less work: fewer frames drawn, fewer renders, fewer times
+the app is opened.
 
 ### How a walk picks its steps
 
@@ -310,11 +347,14 @@ settled. The rules, besides every walk's:
 | On every animation frame of a play, on the video the video preview lays nothing over the picture, no crop frame, no shade, no captions, and on the clip a frame or more inside a piece it shows the crop frame, and the captions wherever the engine has a caption, `overlaid` in `rules.mjs` | the crop frame and the captions staying up while the episode played on through the clip, found by Tim |
 | The episode played from before the clip goes on into it, and stays on the video on every animation frame, skips and all | the clip lighting up the moment Shift and the right arrow skipped into it, found by Tim |
 
-`make walks` also walks it on an episode whose picture is HEVC in 10-bit
-colour, `HEVC=1`, added with Add and searched first. The Chromium a walk
-drives cannot decode HEVC at all, so every frame of it comes from the Go
-side, see `lib/frames/app.ts`, and the walk fails at its start when the
-picture did not come that way. The sequence "a picture the browser's
+The playback walk can walk an HEVC video too, `HEVC=1`. `make walks` no
+longer does that on every push. The browser decodes no video at all:
+every frame of every video comes from the Go side, see
+`lib/frames/app.ts`, so the window gets the same kind of frames whatever
+the video is. `engine/episodeframes_test.go` decodes HEVC with open GOPs
+and in 10-bit colour in Go, and the sequences that add an HEVC video, "a
+playhead dragged far over HEVC" among them, still show one in the app.
+The sequence "a picture the browser's
 decoder fails on comes from the Go side" makes Chromium's decoder say yes
 and then fail on the first frame, the way WebKit's does with Tim's
 `start.mp4`. The sequence "the picture comes back after the playhead
@@ -508,27 +548,13 @@ word, `blocks`, a block on the clip timeline for every caption the engine
 has, and `cuts`, how many cuts the clip timeline shows. For finding clips: `model` holds, fails or answers,
 `add` a video, press the clip list's `head` button and `restart` the app,
 and then `wait for` the head to say a word, a `row` to say something, and
-how many `cards` the list holds. For a render: `add` a video filmed at a
-frame rate, press `render` and wait for the short, and `short`, the short
-read back from disk holding exactly the frames of the clip's pieces, each
-the right frame of the episode by its bands, with its sound as long as
-its picture and quiet at each cut for no longer than the render's fade,
-and `rendered`, the clip saying its short is in its episode's folder
+how many `cards` the list holds. For a render: press `render` and wait for the short, and `rendered`,
+the clip saying its short is in its episode's folder
 inside the folder the settings name for shorts, which the bridge sets,
 with the file there, the app
 serving it, Render saying Render again and Show in folder there.
 For shorts: `thumbnail`, which presses T and waits for the clip to have
-one more thumbnail, `keep` the clip on screen with its short, its
-pictures and the shorts in its folder, `words again`, which makes the
-speech stand-in say its sentences from the first word so the next
-video's clip has the same name, and `add namesake`, a video of the
-bridge's episode's file name from another folder. Then `apart`, the
-clip on screen with a short of its own, the kept short the same file and
-still its clip's, and its pictures all there and untouched, `in place`,
-the clip's short rendered again at the path kept with no number, written
-again, and no other short in its folder, and `pictured`, the short's
-pictures beside it in its episode's folder, one for each thumbnail of
-the clip and no more, and `by its words`, the short named after the
+one more thumbnail, and `by its words`, the short named after the
 clip's words alone, `<slug>.mp4`, with nothing of its id.
 `captions like the short`, after `render`, makes the video preview as
 large as the short, steps to the start and the middle of a dozen words and
@@ -638,11 +664,11 @@ it. It starts a search the model holds, opens the settings, picks another
 model, and presses the bins of the language model and of the speech
 model. Each time the card has to shake, no list or box may open and the
 settings have to name what they named. Then it cancels the search and
-asks the same again, where the box now asks and the pick now takes. `a
-model is not changed or removed while a search still hears` does it while
-the first search of a video just added is still hearing. Against the
-interface before the change both fail at the first pick: the list opens
-and nothing shakes. For the settings to stand as they do on a machine
+asks the same again, where the box now asks and the pick now takes.
+Against the interface before the change it fails at the first pick: the
+list opens and nothing shakes. The same while a search still hears is
+held in Go, `TestNothingASearchUsesChangesUnderIt`, since the settings
+lock the same way whatever the search is doing. For the settings to stand as they do on a machine
 that has searched, the bridge counts a language model as chosen and
 installed, and the setup check counts both models and llama-server as
 there, since the stand-ins hear and find the clips.
@@ -726,23 +752,16 @@ switch, and the clip timeline drew two pieces.
 presses Render, asks `rendered`, closes and opens the app, and asks it
 again. Against main's engine it fails at the first `rendered`: the clip
 says it has no short, because only the episode's own `out/` was looked
-in. Until then `short` and `shots` found the short in that folder by hand.
+in.
 
-`two episodes never overwrite each other's shorts` renders the bridge's
-episode, adds a video heard with the same words, so its clip has the same
-name, and renders that. Against main's engine it fails at `apart`: both
-episodes' shorts are the same file in the folder for shorts, so the
-second wrote over the first. `two episodes of one file name number their
-shorts` does the same with a video of the same file name, whose short
-has to be called as the first with ` 2` after it, in the same folder.
-Its first clip has two thumbnails and the second none, so a render of
-the second that took the pictures by the clip's name would take the
-first's away. `render again writes the short over in place, with its
-pictures beside it` gives the clip two thumbnails, renders, renders
-again and asks `in place` and `pictured`. With a render again that picks
-a new number it fails at `in place`, and with pictures named and cleared
-by the clip's name rather than the short's it fails the namesake
-sequence at `apart`. See 2.133 in [GUI-PLAN.md](GUI-PLAN.md).
+Where shorts go is the engine's rule and is tested in Go: two videos
+never write over each other's shorts, two of one file name number
+theirs, and a render again writes over the clip's own short with its
+pictures beside it, `TestTwoEpisodesKeepTheirOwnShorts`,
+`TestARenderAgainWritesOverOnlyItsOwnShort` and
+`TestARenderPutsItsShortWhereItsNameSays`. Three sequences did the same
+through the app, rendering two or three shorts each on every push. See
+2.133 in [GUI-PLAN.md](GUI-PLAN.md).
 
 #### What depends on how fast the machine is
 
@@ -795,26 +814,33 @@ goes on until the video preview has shown ten frames or come to the next
 keyframe, not for two seconds, in which a busy machine showed two, issue
 #464.
 
-Every walk plays on the walk's clock, `preview/clock.ts`. The page the
-walks run on hands it to every frame queue it makes, see `FrameQueue.clock`
-in `lib/frames/queue.ts`, whose own clock is the sound card's. The app
-never builds `preview/`, so it holds no walk's clock and no switch for
-one. It moves on to the next frame only once
-the one before is up, and holds the sound card while a frame is still
-being decoded, so every frame of a play is shown on any machine and the
-sound stays with the picture. By the sound card's clock, the app's, a busy machine showed two
-frames of a glide's nine, issue #534, and a play of the captions showed
-fewer frames, each longer, issue #338. Each of those walks had a clock
-of its own, until a new walk that played was the next to fail, issue
-#588. A sequence that checks what a play does on the sound's own time
-plays on the sound card's clock instead, the way the app does: how much
-sound the sound card is handed, the loop switched off as the sound comes
-to the clip's end, and a playhead that never stands still while a hand
-drags. It asks for it by one of those steps, `soundCard` in
-`common/steps.mjs`, the way a sequence asks for motion, see Where they
-run below, and a new step of that kind goes in there. `smooth.mjs` asks
-`open` for it by name, `clock: "sound"`, which the page reads from
-`window.__playClock` before the app starts. A walk can also hold the sound
+Every walk plays on the walk's clock and the walk's sound card,
+`preview/clock.ts`. The page the walks run on hands both to every frame
+queue it makes, see `FrameQueue.clock` and `FrameQueue.soundCard` in
+`lib/frames/queue.ts`, whose own are the system's sound card and its
+clock. The app never builds `preview/`, so it holds no walk's clock, no
+walk's card and no switch for either. The walk's card plays nothing, and
+its time moves only when the walk's clock moves it: on to the next frame
+the moment that frame is decoded and its captions are here, never while
+either is on its way, and with no time made up for once it stood. So
+every frame of a play is shown with its captions on any machine, which
+the app manages by having the frame's time to fetch them, the sound stays with
+the picture, and a play takes the refreshes that draw its frames, not the
+time it lasts: 3 s of a 5 fps video are 15 refreshes, a quarter of a
+second. By the system's sound card a busy machine showed two frames of a
+glide's nine, issue #534, a play of the captions showed fewer frames,
+each longer, issue #338, and every play took as long as it lasts. Each of
+those walks had a clock of its own, until a new walk that played was the
+next to fail, issue #588. A sequence that checks what a play does on the
+sound's own time, or listens to the sound, plays on the system's sound
+card and its clock instead, the way the app does: how much sound the
+sound card is handed, the loop switched off as the sound comes to the
+clip's end, and a playhead that never stands still while a hand drags.
+It asks for it by one of those steps, `soundCard` in `common/steps.mjs`,
+the way a sequence asks for motion, see Where they run below, and a new
+step of that kind goes in there. `smooth.mjs` asks `open` for it by name,
+`clock: "sound"`, which the page reads from `window.__playClock` before
+the app starts. A walk can also hold the sound
 card a moment by hand, `holdSound`, as the end dragged back past the
 playing playhead does while the hand drags, issue #583. The fold of a removed row is held as Svelte makes it and stepped
 through by hand, in twenty steps, and at each the card under the row
@@ -1035,12 +1061,27 @@ a wait on a signal, or a comparison with a state that moved:
 
 ### Where they run
 
-`make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3
+`make walks` runs the sequences and every walk for `WALKS` seeds, 1
 unless set, each walk as long as it says, 60 steps, or 25 for playback,
-which plays in real time, or 30 for searching, unless `STEPS` is set, through the Go test `TestWalks`,
-which fails with what a sequence or a walk printed. The seeds are the
-same every time, so a walk that breaks a rule breaks it again on the
-next run. `make walks WALKS=40` looks further.
+whose every step is a play that draws all its frames, or 30 for searching, unless `STEPS` is set, through the Go test `TestWalks`,
+which fails with what a sequence or a walk printed. In CI the seeds are
+worked out from the commit the run tests, which make takes from
+`GITHUB_SHA` as `WALKSEED`. On a pull request that is the commit GitHub
+makes to test it merged into main, a new one on every push. So every
+push walks ground no push walked before, and the four jobs of a run take
+the same seeds. The nightly walks take 3 seeds of their own every night,
+in both browsers. Without `WALKSEED` the seeds are 1 to `WALKS`, the
+same every time. `make walks WALKS=40` looks further.
+`walk-times.tsv` times a walk by its file, whatever its seed.
+
+A walk that breaks a rule prints its seed, and `SEED=n` walks it again
+step for step. A walk that fails at a new seed has found a bug, not a
+flake, even on a pull request that did not cause it, because the next
+push takes another seed and would walk past it. So the seed goes into
+`kept-seeds.txt` beside the walks, with a line that says what it found,
+and from then on every push walks it beside its own. If the pull request
+cannot fix the bug, it becomes an issue and the seed waits in the file
+for its fix.
 
 They run side by side, half as many again as the machine has cores, or
 `WALKERS`. Each runs against a bridge of its own, which `TestWalks`
@@ -1138,8 +1179,8 @@ Measured on four cores, the cloud's and CI's, with the 3 seeds: the
 sequences were once one run, and took twelve minutes on one bridge while
 the other three had finished the fifteen walks in four and waited. Handed
 out one by one they took six and a half minutes on four bridges. A run
-spends most of its time waiting, on a clip that plays in real time and
-on the quiet after every step, so four bridges kept the cores busy only
+spent most of its time waiting then, on a clip that played in real time
+and on the quiet after every step, so four bridges kept the cores busy only
 part of the time. Six took five and a half minutes, the cores busy four
 fifths of it. The slowest run, a sequence that renders a short and looks
 at 122 of its frames in the video preview, takes a little over a minute,
@@ -1183,10 +1224,15 @@ its waveform and the 240 ms before a newly chosen clip is shown. Now
 `__settled` in `preview/settled.ts` answers once no call is out, no
 timer of the app's is set to fire within a second, and nothing on the
 page moves for a second or less, a row sliding open or the clip
-timeline gliding to its view. It is woken by the call coming back, the
-timer firing or being cleared, and the movement's own end, never by
-looking again on every frame. When nothing is left it lets two of the
-browser's frames go by and answers if nothing came in between. The timer
+timeline gliding to its view. It is woken by the call coming back and
+the timer firing or being cleared, never by looking again on every
+frame. A movement of a second or less it ends at once, where it would
+have ended, since the walk would only see it end, and what the app does
+when it ends happens as it would. A walk that looks at a movement looks
+before it settles. When nothing is left it lets the browser draw the
+next frame, and answers in the task after it, once whatever the frame
+set off, a size observed above all, has run, if nothing came in
+between. The timer
 that writes the log is left out, the same as its calls, marked
 `logOnly` in `said.ts`. A longer timer is how long something stays on
 screen, which a walk turns on itself with `holdClock`, and while the
@@ -1205,10 +1251,10 @@ timeline reads two presses within half a second and six pixels as a
 double-click, which cuts a part out. A walk that clicks where it clicked
 a step before uses `clickOnTrack`, which lands eight pixels beside the
 last spot first, so the click is one on its own. Opening
-the browser takes a second or two. The rest is the gestures, and the
-ones that play wait in real time: playing a clip to its end once took
-most of the playback walk, so it now starts a moment before the clip's
-last cut.
+the browser takes a second or two. The rest is the gestures. The ones
+that play once waited in real time, and playing a clip to its end took
+most of the playback walk. Now a play takes the refreshes that draw its
+frames, on the walk's sound card, see above.
 
 Time the app lets run out, the ten seconds of a toast or of a removed
 picture or clip, is not waited for. A walk holds the app's clock before
@@ -1301,16 +1347,11 @@ in it. Every one of six walks showed it within sixteen steps. 2.121
 fixed it on main at the same time, `playFrom` in `lib/playhead.ts`, and
 the walk now holds it there.
 
-The render is held to its frames by a sequence too, "a render of a
-29.97 fps episode cuts on whole frames": a video of 40 seconds at 29.97
-fps added with Add, its clip cut twice with a double-click, rendered with
-Render, and the short read back. The cuts are where words end and start,
-whole milliseconds, but the frames they land on start between two, the
-case 2.125 is about. Against the render of main before 2.125 it fails
-with 567 frames where the pieces hold 565, the first piece running a
-frame into the part cut out, 169 frames more the wrong frame, the sound
-71 ms longer than the picture, and 30 to 40 ms of quiet at each cut
-where the fade is 15. With 2.125 it passes, in about 8 seconds.
+The render is held to its frames in Go, `TestARenderCutsOnWholeFrames`,
+the case 2.125 is about: cuts where words end and start, whole
+milliseconds, on frames that start between two. A sequence did the same
+through the app and rendered a short for it on every push. It was taken
+out, since the app only hands the clip to the engine.
 
 Two sequences hold the render to the video preview where the frames do
 not keep to their rate, plan row 2.130: "a short of a phone's uneven
@@ -1322,13 +1363,18 @@ picture begins, renders it with Render and reads the short back. Its
 rate has to be 30 for the phone's frames, their average of 29.75
 rounded, and 29.97 for the late picture, its own. Then, with the clip
 timeline pinched in to a tenth, the playhead is put with a click on the
-moments the short's frames stand for, the first and last three of every
-piece and every fifth between, and the frame on the video preview's
-canvas, read from its bands, has to be the short's frame. The playhead
-goes after the moment and before the episode's next frame begins, by the
-times ffprobe reads from the file, so the preview shows the frame that
-holds the moment. 114 and 121 frames are looked at, all of them the
-same, in three runs out of three. Against the render before 2.130 the
+moments the short's frames stand for, one where each piece starts and
+one where it ends, and the frame on the video preview's canvas, read
+from its bands, has to be the short's frame. The playhead goes after the
+moment and before the episode's next frame begins, by the times ffprobe
+reads from the file, so the preview shows the frame that holds the
+moment. They once looked at every fifth frame between as well, over a
+minute each. Go holds every frame now:
+`TestARenderShowsTheFrameThatHoldsEachMoment` and
+`TestTheVideoPreviewShowsTheFramesOfTheShort` check that the short and
+the video preview each show the frame that holds its moment, and
+`TestEveryFrameOfAShortIsAFrameOfTheVideoPreview` that their moments are
+the same. Against the render before 2.130 the
 phone's short is made at 50 frames a second and the late picture's
 holds 565 frames where its pieces last 564.
 
@@ -1415,11 +1461,11 @@ set.
 
 ### The sequences
 
-What is checked is written in one place, `internal/outside/sequences.go`,
-the same way the walks' cases are in `sequences.mjs`: named sequences of
-steps, each a verb and its words, the actions and what has to come of
-them alike. The verbs are explained at the top of that file. The first
-sequence reads:
+What is checked is written in one place,
+`internal/outside/sequences_test.go`, the same way the walks' cases are
+in `sequences.mjs`: named sequences of steps, each a verb and its words,
+the actions and what has to come of them alike. The verbs are explained
+at the top of that file. The first sequence reads:
 
 ```go
 {"set up"},
@@ -1458,8 +1504,8 @@ most, so a step says what has to be true and never how long to wait.
 
 Three files, each with one job:
 
-- `sequences.go`, the sequences and the verbs. It builds everywhere, and
-  `TestEveryStepIsOneTheRunnerKnows` reads it in `make unit`: a verb
+- `sequences_test.go`, the sequences and the verbs. Every `go test`
+  builds it, and `TestEveryStepIsOneTheRunnerKnows` reads it in `make unit`: a verb
   misspelt, a word too few or a key nobody bought fails on Linux in
   seconds, not on the Mac at the end of a CI run.
 - `run_test.go`, how each verb is done on the Mac, the same for every
@@ -1467,7 +1513,7 @@ Three files, each with one job:
 - `cmd/framefairy-app/probe_outside.go`, what the app can be asked.
 
 A new case is a new sequence. A new verb is a line in the list at the
-top of `sequences.go`, its words in `verbs`, and how it is done in `done`
+top of `sequences_test.go`, its words in `verbs`, and how it is done in `done`
 in `run_test.go`. `go test -tags outside -run 'TestSequences/<part of a
 name>'` runs one.
 

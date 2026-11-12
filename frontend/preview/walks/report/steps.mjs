@@ -1255,7 +1255,7 @@ export const steps = {
       const was = await page.locator(".telling").evaluate((f) => f.value);
       await control(url, "/microphone?until=hearing");
       await pageUntil(page, (was) => document.querySelector(".telling").value !== was, was);
-      await settle(page);
+      await settleButTheSave(page);
       const c = await page.locator(".telling").evaluate(cursorInView);
       if (c) walk.wrong = `after ${i + 1} rounds of words ${c}`;
     }
@@ -1863,6 +1863,17 @@ async function redrawMissed(page) {
 // way the page measures it, caretBox in lib/caret.ts, which the page
 // scrolls by too. The check that the browser scrolled nothing after the
 // page, in pressed, does not rest on it.
+// Waits as settle does, but for the timers the app has set: the window
+// keeps the report's text 300 ms after its last change, see keepText in
+// Report.svelte, which settle waits for, and which moves nothing on
+// screen. A step that looks at the field after each round of words would
+// wait the 300 ms each round, 11 s of the 13 s of a walk that talks two
+// lines into a long report. What is kept is still waited for by the next
+// settle, the way a step that reads it back does.
+function settleButTheSave(page) {
+  return page.evaluate(() => window.__settled(true));
+}
+
 function cursorInView(f) {
   if (document.activeElement !== f) return "the cursor is not in the field";
   if (f.selectionStart !== f.selectionEnd) return "the selection is not a cursor";

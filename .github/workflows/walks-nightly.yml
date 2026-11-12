@@ -49,7 +49,7 @@ jobs:
         shard: [1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    container: &walks-container
+    container:
       image: ${{ needs.image.outputs.walks }}
       options: --init --ipc=host
       volumes:
@@ -72,9 +72,13 @@ jobs:
             go-v3-walks-${{ runner.os }}-
           node: npm
           ffmpeg: true
+      # Three seeds of every random walk a night, taken from the run, so a
+      # night walks new ground even when main stood still. A push walks
+      # one, taken from its commit. The app resized a pixel at a time the
+      # whole way, where a push takes pairs of sizes along it.
       - name: Sequences and walks with motion
         id: walks
-        run: make walks STILL=none WALKBROWSER=${{ matrix.browser }} WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=12m ${{ matrix.browser == 'chromium' && 'COVERAGE=.build/coverage' || '' }}
+        run: make walks WALKS=3 WALKSEED=${{ github.sha }}-${{ github.run_id }} WALKSWEEP=every STILL=none WALKBROWSER=${{ matrix.browser }} WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=12m ${{ matrix.browser == 'chromium' && 'COVERAGE=.build/coverage' || '' }}
       # The traces of the walks that failed, threw or hung, the same as
       # the walks in ci.yml keep, see Finding why a walk failed in
       # docs/TESTING.md.
@@ -116,7 +120,11 @@ jobs:
         shard: [1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    container: *walks-container
+    container:
+      image: ${{ needs.image.outputs.webkit }}
+      options: --init --ipc=host
+      volumes:
+        - /home/runner/work:/home/runner/work
     steps: *walks-steps
 
   # The Go tests, counting the lines they run, in three shares like the

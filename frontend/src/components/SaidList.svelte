@@ -11,7 +11,9 @@
   import { clock, type ClipEntry, type Sentence } from "../lib/api";
   import { found } from "../lib/match";
   import { hoverClip } from "../lib/hover";
-  import { tick, untrack } from "svelte";
+  import { between, copies, joined, pick, type Picked } from "../lib/copy";
+  import { asleep } from "../lib/keys";
+  import { onMount, tick, untrack } from "svelte";
 
   let {
     sentences,
@@ -105,6 +107,8 @@
     const was = typedWas;
     typedWas = now;
     if (was === null || now === was) return;
+    // A new list picks nothing of the one before.
+    picked = null;
     if (now.trim() || !was.trim()) {
       scroller()?.scrollTo({ top: 0 });
       return;
@@ -349,6 +353,25 @@
     return out.sort((a, b) => a.at - b.at);
   });
 
+  // The cards picked with Shift and a click, the way files are in
+  // Finder, see pick in lib/copy.ts. The playhead stays. A click without
+  // Shift, or another search, picks none again, and then Copy copies the
+  // current card alone.
+  let picked = $state<Picked | null>(null);
+  const pickedKeys = $derived(new Set(picked ? between(rows.map((r) => r.key), picked.from, picked.to) : []));
+
+  // The words of the cards picked, or of the current card, for Copy, see
+  // lib/copy.ts. Picked cards gone from the list leave the current card.
+  // A part not transcribed yet has none, and a list in a workspace that
+  // is not in front copies nothing.
+  onMount(() =>
+    copies(() => {
+      if (asleep(list)) return "";
+      const keys = pickedKeys.size ? pickedKeys : new Set([current]);
+      return joined(rows.flatMap((r) => ("sentence" in r && keys.has(r.key) ? [r.sentence.text] : [])));
+    }),
+  );
+
   // Cards that come in above the ones in view, as the transcript grows
   // over the part the playhead stands in, leave the ones in view where
   // they stand. WebKit keeps no anchor of its own, so the card of the
@@ -422,7 +445,12 @@
         data-clip={row.clip?.key}
         {@attach row.clip ? hoverClip(row.clip.key, onhover) : undefined}
       >
-        <button class="pick" class:inclip={!!row.clip} class:clip-edge={!!row.clip} class:current={row.key === current} title="Put the playhead here" onclick={() => {
+        <button class="pick" class:inclip={!!row.clip} class:clip-edge={!!row.clip} class:current={row.key === current} class:picked={pickedKeys.has(row.key)} title="Put the playhead here. Shift-click picks every card from the current one to here, and Copy copies their words" onclick={(e) => {
+          if (e.shiftKey) {
+            picked = pick(picked, current ?? null, row.key);
+            return;
+          }
+          picked = null;
           // The playhead put on a card is where the list already is.
           followed = row.key;
           aimed = row.key;
@@ -450,6 +478,10 @@
     list-style: none;
     margin: 0;
     padding: var(--veil, 16px) 0;
+    /* A card is picked whole with Shift and a click, so the click never
+       chooses the text between two cards, which Copy would take first. */
+    user-select: none;
+    -webkit-user-select: none;
     display: flex;
     flex-direction: column;
     gap: var(--gap);
@@ -568,8 +600,10 @@
 
   /* The card the playhead is in, the way the chosen clip's card is in the
      clip list, so a walk through three answers shows where it is, found
-     by Tim. */
+     by Tim. The cards picked with Shift wear the same grey, the way the
+     files picked in Finder all wear one. */
   .pick.current,
+  .pick.picked,
   li.hole:hover,
   li.hole.lit,
   li.hole.current {

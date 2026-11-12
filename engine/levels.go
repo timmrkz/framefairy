@@ -421,11 +421,6 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	return nil
 }
 
-// levelsLead is how many frames before where it starts a reading decodes
-// and throws away, soundLead in frames. The conversion only compiles while
-// soundLead is a whole number of frames.
-const levelsLead = int(soundLead / (timed.FrameSeconds * 1_000_000))
-
 // audioFrom is how ffmpeg reads the episode's audio as 16 kHz mono samples
 // from frame start on, for the loudness and for the transcription alike,
 // see soundFrom.

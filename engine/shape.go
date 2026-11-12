@@ -357,6 +357,24 @@ func (g Gesture) onFrame(at float64) float64 {
 	return g.Frames.FrameAt(at)
 }
 
+// frameAfter and frameBefore are the first frame at or after a moment and
+// the last at or before it, the moment itself where the rate is not known.
+func (g Gesture) frameAfter(at float64) float64 {
+	f := g.onFrame(at)
+	if f < at-1e-9 {
+		f += g.frame()
+	}
+	return f
+}
+
+func (g Gesture) frameBefore(at float64) float64 {
+	f := g.onFrame(at)
+	if f > at+1e-9 {
+		f -= g.frame()
+	}
+	return f
+}
+
 // frame is one frame of the episode in seconds, or nought where its rate
 // is not known.
 func (g Gesture) frame() float64 {
@@ -495,7 +513,10 @@ func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, boo
 		if inOther(from, i) || inOther(to, i) {
 			break
 		}
-		low, high := p.Start+MinCut, p.End-MinCut
+		// The room keeps a little of the piece either side, on frames, so
+		// the pieces left end on a frame and are not grown to one, which
+		// pushed a sliver over the start of the next piece.
+		low, high := g.frameAfter(p.Start+MinCut), g.frameBefore(p.End-MinCut)
 		if high-low < MinCut {
 			return 0, 0, false
 		}

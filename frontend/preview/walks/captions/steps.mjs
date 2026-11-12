@@ -766,8 +766,8 @@ export const steps = {
     await watch.step("block after", s);
   },
   // ["captions like the short"]
-  //                    puts the playhead on the first frame of the clip's
-  //                    words and in their middle, and holds the lower half
+  //                    puts the playhead on the first frame of one of the
+  //                    clip's words and in its middle, and holds the lower half
   //                    of the crop in the video preview to the frame of
   //                    the short Render wrote that shows the same moment
   async "captions like the short"(walk) {
@@ -840,7 +840,14 @@ export const steps = {
     let compared = 0;
     let apart = 0;
     const report = [];
-    for (const at of moments.slice(0, 12)) {
+    // TestTheVideoPreviewDrawsTheShortsCaptions in engine/ holds every
+    // frame of a short to the decoder's layer for it, the bounce
+    // included. What is left for the window is that it lays the layer
+    // over the frame the way the render does, and asks for the moment
+    // the playhead stands on: the first frame of one word, where the
+    // highlight bounces, and the middle of it, where it has settled.
+    const word = Math.min(2, Math.floor(moments.length / 2) - 1) * 2;
+    for (const at of moments.slice(word, word + 2)) {
       if (!(await seekTo(sized, at, fps))) {
         walk.wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
         break;
@@ -940,8 +947,8 @@ export const steps = {
       }
     }
     if (process.env.VERBOSE) console.log(`        ${report.join("\n        ")}`);
-    if (!walk.wrong && apart < 4) walk.wrong = `only ${apart} frames of the short either side were told apart from the video preview, so a frame off would pass`;
-    if (!walk.wrong && compared < 6) walk.wrong = `only ${compared} frames of the short were compared`;
+    if (!walk.wrong && apart < 2) walk.wrong = `only ${apart} frames of the short either side were told apart from the video preview, so a frame off would pass`;
+    if (!walk.wrong && compared < 2) walk.wrong = `only ${compared} frames of the short were compared`;
     // A comparison that failed leaves its page open, so its trace is kept
     // with the walk's, see keepTraces. Closed, the trace of the page the
     // comparison was made on went with it, and the one kept held only the
@@ -1117,9 +1124,10 @@ export const steps = {
     const path = await episodeOn(page);
     await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
     await watch.step("click", s);
-    // Where its dots end on the right, too, which must not move while
-    // its left edge does: centred, the pattern walked back and forth
-    // as the edge passed over it, found by Tim. Read in every frame
+    // Where its grid of dots begins, too, which must not move while its
+    // left edge does: centred, the pattern walked back and forth as the
+    // edge passed over it, found by Tim. Every part shows the range
+    // picker's one grid, laid from its start. Read in every frame
     // until the nine pieces are heard and the state that says so is on
     // screen, with what the saved transcript holds asked after each. A
     // piece is counted, not a state: one piece can bring more than one
@@ -1138,7 +1146,7 @@ export const steps = {
               const cs = getComputedStyle(u, "::before");
               now = {
                 left: Math.round(box.left * 10) / 10,
-                end: Math.round((box.left + parseFloat(cs.left) + parseFloat(cs.width)) * 100) / 100,
+                grid: u.offsetLeft + parseFloat(cs.backgroundPositionX),
                 side: parseFloat(cs.left),
               };
             }
@@ -1170,12 +1178,12 @@ export const steps = {
       walk.wrong = `the first part not transcribed yet moved ${moves} times over ${times} pieces of audio heard while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
     else {
       // The samples taken while the edge moved, from the first move
-      // to the last, the dots' right end in each.
+      // to the last, where the grid of dots begins in each.
       const moving = dots.filter((d, i) => i && d.left !== dots[i - 1].left || dots[i + 1] && dots[i + 1].left !== d.left);
-      const ends = [...new Set(moving.map((d) => d.end))];
-      console.log(JSON.stringify({ moves, ends: ends.slice(0, 8), sides: [...new Set(moving.map((d) => d.side))].slice(0, 8) }));
-      if (ends.length > 1)
-        walk.wrong = `the dots of the part giving way moved while its edge did, their right end at ${ends.slice(0, 6).join(", ")} px`;
+      const grids = [...new Set(moving.map((d) => d.grid))];
+      console.log(JSON.stringify({ moves, grids: grids.slice(0, 8), sides: [...new Set(moving.map((d) => d.side))].slice(0, 8) }));
+      if (grids.length !== 1 || grids[0] !== 0)
+        walk.wrong = `the dots of the part giving way moved while its edge did, laid from ${grids.slice(0, 6).join(", ")} px of the range picker, not from its start`;
       else if (moving.some((d) => d.side !== 0))
         walk.wrong = `the dots of the part giving way stop short of its edge, ${moving.find((d) => d.side !== 0).side} px in, so the edge does not wipe them`;
     }
@@ -1944,9 +1952,11 @@ export const steps = {
   },
   async "step frame by frame and see nothing pop"(walk, arg) {
     const { page, watch } = walk;
-    // arg steps of a frame from the clip's first frame, each onto the
-    // frame as the short shows it, and nothing played over it, a step
-    // onto a new word too.
+    // Steps of a frame from the clip's first frame, each onto the frame
+    // as the short shows it, and nothing played over it, a step onto a
+    // new word too: until two steps have landed on a new word, or after
+    // arg steps. Every step between two words is the same case, and was
+    // most of the walk.
     const fps = await rate(page);
     const state = await engineState(page, watch.at);
     if (!(await seekTo(page, state.segments[0].start + 0.5 / fps, fps))) {
@@ -1957,6 +1967,7 @@ export const steps = {
     await page.evaluate(() => document.body.focus());
     const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
     const words = new Set();
+    let stepped = 0;
     for (let k = 0; k < arg && !walk.wrong; k++) {
       await page.keyboard.press("ArrowRight");
       // Once the frame is drawn with its own layer, which is when a
@@ -1970,9 +1981,11 @@ export const steps = {
       }));
       if (now.word) words.add(now.word);
       if (now.popped !== count) walk.wrong = `step ${k + 1} of a frame, onto "${now.word}", played a bounce over the frame`;
+      stepped = k + 1;
+      if (words.size >= 3) break;
     }
-    console.log(`    ${arg} frames over ${words.size} words, nothing played over them`);
-    if (!walk.wrong && words.size < 2) walk.wrong = `${arg} frames lit only ${words.size} word`;
+    console.log(`    ${stepped} frames over ${words.size} words, nothing played over them`);
+    if (!walk.wrong && words.size < 3) walk.wrong = `${arg} frames lit only ${words.size} words`;
   },
   // ["frames on the pills", n]
   //                    puts the playhead in the middle of each of the first

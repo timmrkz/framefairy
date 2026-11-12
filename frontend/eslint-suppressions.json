@@ -1,14 +1,4 @@
 {
-  "preview/frames/added.mjs": {
-    "no-restricted-properties": {
-      "count": 2
-    }
-  },
-  "preview/frames/cuts.mjs": {
-    "no-restricted-properties": {
-      "count": 4
-    }
-  },
   "preview/walks/bridge.mjs": {
     "no-restricted-properties": {
       "count": 3
@@ -56,11 +46,6 @@
     "no-restricted-globals": {
       "count": 1
     },
-    "no-restricted-properties": {
-      "count": 3
-    }
-  },
-  "preview/walks/videos/steps.mjs": {
     "no-restricted-properties": {
       "count": 1
     }

@@ -17,7 +17,7 @@
   // turns into the window, and back into the mark when they are. Nothing
   // on the range picker says what has been searched: any part can be
   // searched, as often as anyone likes.
-  import { onMount, untrack } from "svelte";
+  import { onMount } from "svelte";
   import { fade } from "svelte/transition";
   import { clock } from "../lib/api";
   import { hoverClip } from "../lib/hover";
@@ -52,8 +52,6 @@
     unheard = [],
     unheardLit = -1,
     unheardOn = -1,
-    giving = -1,
-    givingTo = -1,
     part = null,
     partWaiting = false,
     partKey = "",
@@ -121,14 +119,6 @@
     unheardLit?: number;
     // The one whose card the playhead is in, lit the same way.
     unheardOn?: number;
-    // Where the work is hearing now, or -1. The part that starts there
-    // gives way as the work hears, so its dots stand still while its edge
-    // passes over them.
-    giving?: number;
-    // Where the hearing in hand stops, or -1 for the end of the part: a
-    // search hears to the end of its window, which is where the window
-    // moves on to and where the dots left after it begin.
-    givingTo?: number;
     // The part of the video Transcribe whole video works on, or nothing.
     // It is framed, breathing and shedding the motes, the way the window
     // of a search is while it hears, over the dots of that part, which
@@ -383,31 +373,6 @@
   // mark's.
   let unheardHere = $state(-1);
 
-  // The parts the work has heard into, by where they end, which never
-  // moves, each with the moment its dots are laid from. Their dots stay
-  // laid from it once the work stops or waits, whole columns, so not one
-  // dot moves: centred again, they jumped sideways each time the work
-  // stopped, went on hold or carried on, Tim's report of 24 October. It is
-  // where the hearing stops, the end of a search's window, so the dots
-  // after it begin where the window moves on to, or else the end of the
-  // part: laid from the end, the room left over was at the window's left
-  // edge, and the dots started a few pixels right of it, Tim's report of
-  // 25 October, 21.40. A part nobody has heard into is centred, the way
-  // Tim measured it.
-  let worked = $state<{ end: number; grid: number }[]>([]);
-  const givingEnd = $derived(giving >= 0 ? (unheard.find(([a]) => Math.abs(a - giving) < 0.5)?.[1] ?? -1) : -1);
-  // The part the work begins to hear into, laid from its moment in the
-  // same frame, and kept from then on.
-  const fresh = $derived.by(() => {
-    if (givingEnd < 0 || untrack(() => worked).some((w) => Math.abs(w.end - givingEnd) < 0.5)) return null;
-    return { end: givingEnd, grid: givingTo > giving && givingTo < givingEnd - 0.5 ? givingTo : givingEnd };
-  });
-  $effect(() => {
-    const part = fresh;
-    if (part) untrack(() => (worked = [...worked, part]));
-  });
-  const workedOn = (b: number) =>
-    worked.find((w) => Math.abs(w.end - b) < 0.5) ?? (fresh && Math.abs(fresh.end - b) < 0.5 ? fresh : undefined);
   function hoverUnheard(event: PointerEvent) {
     const over = event.type === "pointerleave" || !track || (event.target as Element | null)?.closest?.(".clipmark") ? -1 : timeAt(event.clientX);
     const i = over < 0 ? -1 : unheard.findIndex(([a, b]) => a <= over && over < b);
@@ -461,11 +426,9 @@
     <div
       class="unheard"
       class:lit={i === unheardLit || i === unheardOn || i === unheardHere}
-      class:giving={giving >= 0 && Math.abs(a - giving) < 0.5}
-      class:worked={!!workedOn(b)}
       class:first={a < 0.5}
       class:last={b > duration - 0.5}
-      style="--at: {on(a)}; --to: {on(b)}; --grid: {on(workedOn(b)?.grid ?? b)}"
+      style="--at: {on(a)}; --to: {on(b)}"
     ></div>
   {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
@@ -923,55 +886,25 @@
   }
 
   /* Its dots, the card's, rising from the foot, so the minutes stand
-     clear above them. With no edge at all, a part whose dots began a few
-     pixels in looked as if it began there, so its sides are dashed, see
-     below, Tim's report of 26 October, 12.27. They fill the part as whole columns, centred, so the
-     space from the last dot to the edge is the same on both sides and
-     about half the space between two dots: a pattern that started
-     wherever its grid fell looked off, and a row and a column left clear
-     round it looked cut off, both found by Tim. The space left over is
-     shared out exactly, so a side can take half a pixel, which is a
-     whole pixel on a Retina screen. The foot row stands a pixel up from
-     the range picker's foot, where it looked clutched to it, found by
-     Tim. Lit, the part takes the grey of a card under the hand and keeps
-     its fade, found by Tim. */
+     clear above them. Every part shows the one grid of dots laid from
+     the start of the range picker, never a grid of its own, so what is
+     heard only peels dots away at a part's edges and no dot ever moves.
+     A grid for each part, centred in it or laid from a moment its work
+     picked, was laid again each time a part was split, shrunk, stopped
+     or carried on, and the dots walked sideways, Tim's reports of 24 and
+     25 October and of 9 November. The edge cuts through a dot as it
+     passes, so it wipes them away smoothly. With no edge at all, a part
+     whose dots began a few pixels in looked as if it began there, so its
+     sides are dashed, see below, Tim's report of 26 October, 12.27. The
+     foot row stands a pixel up from the range picker's foot, where it
+     looked clutched to it, found by Tim. Lit, the part takes the grey of
+     a card under the hand and keeps its fade, found by Tim. */
   .unheard::before {
-    --width: calc(var(--to) - var(--at));
-    --side: calc((var(--width) - round(down, var(--width), var(--dot-pitch))) / 2);
     content: "";
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: var(--side);
-    right: var(--side);
-    background: var(--halftone) right 0 bottom 1px / var(--dot-pitch) var(--dot-pitch);
+    inset: 0;
+    background: var(--halftone) left calc(0px - var(--at)) bottom 1px / var(--dot-pitch) var(--dot-pitch);
     mask-image: var(--halftone-fade);
-  }
-
-  /* While the work hears into a part, its dots stand still and the edge
-     wipes over them, a dot at a time and smoothly. Centred, they moved
-     half a pixel with every pixel of the edge and stepped back half a dot
-     each time a column went, so the pattern walked back and forth, found
-     by Tim. They are laid from --grid, a moment that never moves: where
-     the hearing stops, the end of a search's window, or the right edge,
-     where something heard begins or the video ends. Once the work stops
-     or waits, the part holds still and keeps them where they are, whole
-     columns from that moment, the room left over at the edges: centred
-     again, every dot jumped sideways, Tim's report of 24 October. Laid
-     from the right edge alone, the room left over was where the window
-     moved on to, and the dots began a few pixels right of its edge, his
-     report of 25 October, 21.40. */
-  .unheard.worked::before {
-    left: mod(calc(var(--grid) - var(--at)), var(--dot-pitch));
-    right: mod(calc(var(--to) - var(--grid)), var(--dot-pitch));
-    background-position: left 0 bottom 1px;
-  }
-
-  .unheard.giving::before {
-    --side: 0px;
-    left: 0;
-    right: mod(calc(var(--to) - var(--grid)), var(--dot-pitch));
-    background-position: left mod(calc(var(--grid) - var(--at)), var(--dot-pitch)) bottom 1px;
   }
 
   .unheard.lit::before {

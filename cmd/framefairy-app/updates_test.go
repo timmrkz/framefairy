@@ -1218,3 +1218,32 @@ func TestShuttingDownEndsTheLooks(t *testing.T) {
 		t.Errorf("%d checks ran after shutting down", got-n)
 	}
 }
+
+// shutDown stops looking: the loop ends at its next wait, the check in
+// hand is let go of the way a pick lets go of one, and no check starts
+// after. It returns once they have all ended. The download a check waited
+// for goes on into the cache, see updates/fetch.go.
+//
+// The app's looks end with the app. This is for whatever holds an
+// updating for a while and then lets it go, the tests above all: a loop
+// left looking every twenty milliseconds after its test went on reading
+// whichever later test's server was given the same port.
+func (c *updating) shutDown() {
+	c.mu.Lock()
+	c.halted = true
+	c.mu.Unlock()
+	if c.end != nil {
+		c.end()
+	}
+	c.running.Wait()
+}
+
+// staged is where the build that is ready was unpacked, or empty.
+func (c *updating) staged() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.held == nil {
+		return ""
+	}
+	return c.held.DownloadedPath()
+}

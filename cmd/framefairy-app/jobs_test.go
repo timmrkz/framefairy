@@ -1249,7 +1249,7 @@ func TestATranscriptionSaysItIsStoppingFromTheMomentItIsTold(t *testing.T) {
 		return "", nil
 	})
 	<-partStarted
-	svc.stopTranscribing(ep, "a search")
+	svc.jobs.stopTranscribing(ep, "a search")
 	if j := held(); j.State != JobRunning || !j.Stopping {
 		t.Errorf("told to stop, the transcription is %s, stopping %v", j.State, j.Stopping)
 	}
@@ -1286,4 +1286,56 @@ func TestASearchOfAWindowNotHeardWaitsToTranscribeFromThePress(t *testing.T) {
 	if job.Lane != LaneHearing {
 		t.Errorf("a search of a window not heard waits in the lane %q, not %q", job.Lane, LaneHearing)
 	}
+}
+
+// What only the tests ask of the queue. The app asks through addSteps,
+// addOnce and its own lookups, see the step path's race test.
+
+// newIdleQueue builds the queue without setting it running, so work can be
+// asked for and nothing does it.
+//
+// It is here for the tests about what gets queued. Some of the work is a
+// real download of half a gigabyte: a test that asks for one and lets the
+// queue run is a test that needs the network, and on a build runner it is
+// half a gigabyte an hour and a part file still being written when the
+// test's own folder is taken away. That is exactly what happened, as
+// "TempDir RemoveAll cleanup: directory not empty".
+func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
+	q := newQueue(s, emit, notify)
+	q.idle = true
+	return q
+}
+
+func (q *queue) add(episode, kind, label string,
+	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
+	return q.queue(episode, kind, label, false, work)
+}
+
+// busy says whether any job runs or waits to.
+func (q *queue) busy() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.busyLocked()
+}
+
+// cancelEpisode stops every job of an episode and waits until none of them
+// is running any more. It says whether they all stopped, because what the
+// caller does next is delete the episode's files and there is no safe way
+// to do that while something is still writing them.
+func (q *queue) cancelEpisode(episode string) bool {
+	reopen := q.closeEpisode(episode)
+	defer reopen()
+	return q.waitEpisode(episode)
+}
+
+// find returns the newest job of a kind for an episode, if any.
+func (q *queue) find(episode, kind string) (Job, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for i := len(q.jobs) - 1; i >= 0; i-- {
+		if j := q.jobs[i]; j.Episode == episode && j.Kind == kind {
+			return *j, true
+		}
+	}
+	return Job{}, false
 }

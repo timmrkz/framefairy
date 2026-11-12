@@ -96,7 +96,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make unit` | every Go test under the race detector, the fuzz seeds included. On a Mac without the race detector and without the licence server's packages, which run on a Linux server only. `RACE=` and `UNITSKIP=` say otherwise. `UNITSHARD=1/3` to `3/3` runs a third of the tests, which is how CI spreads them over three machines. `UNITFLAGS` adds one flag for go test, like `-run`. `UNITPKGS` names the packages, `./...` unless it says. `UNITTIMEOUT` is how long one package's tests may take before go test ends them and prints every goroutine, Go's own 10m unless it says, and 4m in CI: a test waits on signals, so one whose signal never comes hangs until then. go test runs through [gotestsum](https://github.com/gotestyourself/gotestsum), which prints what go test prints and, at the end, every test that failed with what it printed. Then every test that took over `SLOWEST`, 5s, slowest first. Every test's time is kept in `.build/unit-tests.json` for a closer look. `COVERAGE=` a folder counts the lines the tests run, see [Coverage](TESTING.md#coverage) |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `CORES` how many run at once |
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node. `COVERAGE=` a folder counts the lines its tests run |
-| `make walks` | the interface in Chromium against the real Go side, or in the browser `WALKBROWSER` names: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own and the sequences of a walker walked by one node, each with less motion unless it looks at motion or `STILL=none` is set, stopped after `WALKTIMEOUT`, 30m unless set, each keeping a Playwright trace when it fails, with a film of the screen for those `walks/filmed.mjs` names, or for every walk with `TRACE=film`, and no trace with `TRACE=none`. Needs Node, ffmpeg and Playwright's Chromium, or its WebKit for `WALKBROWSER=webkit`. `COVERAGE=` a folder counts the lines of the app and the interface they run. See [TESTING.md](TESTING.md) |
+| `make walks` | the interface in Chromium against the real Go side, or in the browser `WALKBROWSER` names: the sequences of the cases found by hand, and every walk for `WALKS` seeds, 1 unless set, worked out from the commit `WALKSEED` names, `GITHUB_SHA` in CI, and 1 to `WALKS` without it, with the seeds `walks/kept-seeds.txt` keeps, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own and the sequences of a walker walked by one node, each with less motion unless it looks at motion or `STILL=none` is set, stopped after `WALKTIMEOUT`, 30m unless set, each keeping a Playwright trace when it fails, with a film of the screen for those `walks/filmed.mjs` names, or for every walk with `TRACE=film`, and no trace with `TRACE=none`. `WALKSWEEP=every` resizes the app a pixel at a time the whole way, as the nightly walks do. Needs Node, ffmpeg and Playwright's Chromium, or its WebKit for `WALKBROWSER=webkit`. `COVERAGE=` a folder counts the lines of the app and the interface they run. See [TESTING.md](TESTING.md) |
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and Python, and `scripts/build-tools.sh` what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
 | `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line, through the engine's own installers, so each is held to its pinned size and SHA-256. The app does this itself |
@@ -261,13 +261,24 @@ lines they run on Linux, and the counts go to Codecov, see
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.
 
+### No code nothing calls
+
+golangci-lint's `unused`, in `make lint` with forbidigo, fails on a
+function, a type, a constant or a variable nothing calls, not even a
+test. A second run reads the code without the tests, so code only a
+test calls fails too, and lives in a `_test.go` file beside the test.
+Code only one system calls, like the keychain on a Mac, lives in that
+system's own file, so the run on Linux reads none of it. Code that only
+a build tag the lint cannot build calls, like the frames decoder's
+`ffmpeglibs`, says so on its line with `//nolint:unused`.
+
 ### No test waits on the clock
 
 A test never waits, and never on the clock, see CLAUDE.md and the
 testing skill in `.claude/skills/testing/`, and two linters hold every
 test to the part about the clock, each with that one rule:
 
-- golangci-lint, `make lint`, with only forbidigo, and only on test files,
+- golangci-lint, `make lint`, with forbidigo, here only on test files,
   see `.golangci.yml`. It refuses `time.Sleep`, `time.After`, `time.Tick`,
   `time.NewTimer`, `time.NewTicker` and `time.AfterFunc`, and a context
   with a deadline, `context.WithTimeout` and `context.WithDeadline`, and a
@@ -492,12 +503,18 @@ run in a container, the CI image, built from
 `.github/ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
 with every package the Go side compiles against,
 ffmpeg, meson, ninja, nasm and patchelf beside them. The walks run in a
-second image of the same file, the first with the headless Chromium and
-the WebKit of the Playwright version in `frontend/package-lock.json`,
-with the libraries and fonts they need. With WebKit in one image for
-every job, pulling it took 73 to 80 s where 24 to 30 s had done, so the
-jobs that open no browser take the first. Go and Node are in neither:
-setup-go and setup-node bring them as in every other job.
+second image of the same file, the first with the headless Chromium of
+the Playwright version in `frontend/package-lock.json`, with the
+libraries and fonts it needs. The walks in WebKit, which run at night,
+run in a third, the second with Playwright's WebKit too. With WebKit in
+one image for every job, pulling it took 73 to 80 s where 24 to 30 s had
+done, so the jobs that open no browser take the first, and the walks of
+a push, which open only Chromium, the second. Go is in all three, the
+version `go.mod` names, so a job in them downloads none, which took
+setup-go 6 to 9 s of every job. `.github/actions/prepare` takes it when
+it is the version `go.mod` names and sets that one up otherwise, and
+`internal/workflows` fails when the image's Go and `go.mod` part. Node
+is in none: setup-node finds it in the runner's tool cache at once.
 
 On some days the runners' Ubuntu mirror gave 18 to 40 kB a second, and
 the libraries Chromium needs, mostly fonts, held a walks job for up to
@@ -510,13 +527,14 @@ image's Dockerfile builds a new one, and every job in it runs on that.
 
 `.github/workflows/ci-image.yml`, which `ci.yml` calls as the job
 `image`, and `fuzz-nightly.yml`, `walks-nightly.yml` and `security.yml` call too, names the image by a sum of
-the Dockerfile and of the Playwright version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`, and the walks' image
-as `<sum>-walks`. When the registry has both tags, the job is done in
-seconds, and when it does not, which is only when one of the three
-changed, it builds both images and pushes them,
-and the jobs in it wait for it. Both images the Dockerfile starts from
-are pinned to a digest, so the same sum always means the same image, and
-moving them is a change to the file. Dependabot moves both once a week,
+the Dockerfile and of the Playwright version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`, the walks' image
+as `<sum>-walks` and the one with WebKit as `<sum>-webkit`. When the
+registry has all three tags, the job is done in seconds, and when it
+does not, which is only when the Dockerfile or the Playwright version
+changed, it builds the images and pushes them,
+and the jobs in it wait for it. Every image the Dockerfile starts from
+is pinned to a digest, so the same sum always means the same image, and
+moving one is a change to the file. Dependabot moves them once a week,
 in one pull request. A Playwright update from Dependabot likewise builds
 its own image on its own pull request. A file the Dockerfile comes to
 read joins the sum and the job's sparse checkout, or a change to it
@@ -591,8 +609,7 @@ scan made once is out of date the week after.
 - **The tools we build ourselves**, and the pins Dependabot cannot move,
   which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
   four libraries it is built with, llama.cpp, the speech library and Node
-  with their newest releases, and says when the snapshot of Ubuntu the CI
-  image's packages come from is a month old, and
+  with their newest releases, and
   the same workflow keeps one issue open while anything is behind and
   closes it once everything is current. llama.cpp makes a build a day, so
   it counts only once it is a month behind. ffmpeg is the one that matters
@@ -603,9 +620,13 @@ scan made once is out of date the week after.
   so it leaves the image's Node alone too, `scripts/upstream.sh` says
   when a newer Node of the same major is out, and `internal/workflows` fails
   when the two differ or a workflow names a Node of its own. The CI
-  image's packages come from Ubuntu's archive as it stood at the moment
-  `SNAPSHOT` in the image's Dockerfile names, through Ubuntu's snapshot
-  service, so the same Dockerfile builds the same image on any day. The
+  image's packages come from Ubuntu's archive of the day it is built,
+  and the image is kept in the registry under the sum of its Dockerfile,
+  so the jobs run the same packages until the Dockerfile changes.
+  Dependabot moves its base images once a week, which builds it again
+  with that day's security fixes. Ubuntu's snapshot service pinned them
+  to a day before, and answered 500 to 503 for most of an hour on 11
+  November, which held every change to the image. The
   Python packages CI and make install are in `requirements.txt`, each
   with the hashes of its files, and Dependabot moves them: pyarrow for the
   speech benchmark, and cmake, meson, ninja and pkg-config, which build

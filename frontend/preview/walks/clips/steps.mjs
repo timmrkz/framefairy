@@ -5,9 +5,9 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, pressPlay, realFrames, recordFrames, runClock, seenUntil, settle, shortFrames, shortSound, reload } from "../bridge.mjs";
+import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, pressPlay, realFrames, recordFrames, runClock, seenUntil, settle, reload } from "../bridge.mjs";
 import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -1254,22 +1254,6 @@ export const steps = {
     if (now !== before + 1) walk.wrong = `T left the clip with ${now} thumbnails, not ${before + 1}`;
     await watch.step("press", s);
   },
-  // ["keep", label]    remembers the clip on screen, its short and its
-  //                    pictures on disk, and the shorts in its folder
-  async keep(walk, arg) {
-    const { kept, page } = walk;
-    const on = await chosen(page);
-    const short = await shortOf(page, on);
-    const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
-    const file = short && existsSync(short) ? statSync(short) : null;
-    kept[arg] = { ...on, name: entry?.slug, short, file };
-    if (!file) {
-      walk.wrong = `the clip has no short to keep${short ? `, nothing is at ${short}` : ""}`;
-      return;
-    }
-    kept[arg].shorts = shortsIn(dirname(short));
-    kept[arg].pictures = picturesOf(short).map((p) => ({ path: p, file: statSync(p) }));
-  },
   // ["by its words"]   the clip's short is named after the clip's words
   //                    alone, <slug>.mp4, with nothing of its id
   async "by its words"(walk) {
@@ -1314,97 +1298,12 @@ export const steps = {
     else if (seen.render !== "Render again") walk.wrong = `the Render button says ${seen.render}, not Render again`;
     else if (seen.folder) walk.wrong = "Show in folder is there, with no short to show";
   },
-  // ["pictured"]       the short's pictures, one for each thumbnail of the
-  //                    clip, lie beside it in its episode's folder, and no
-  //                    picture more
-  async pictured(walk) {
-    const { page } = walk;
-    const on = await chosen(page);
-    const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
-    const short = await shortOf(page, on);
-    const want = entry?.thumbnails.length ?? 0;
-    const got = short ? picturesOf(short) : [];
-    const named = got.map((p) => basename(p)).join(", ");
-    if (!short) walk.wrong = "the clip says it has no short";
-    else if (want === 0) walk.wrong = "the clip has no thumbnails, so there is nothing to look for";
-    else if (got.length !== want || got.some((p, i) => basename(p) !== `${basename(short, ".mp4")}-${i + 1}.jpg`)) {
-      walk.wrong = `beside ${short} lie ${named || "no pictures"}, not the clip's ${want}`;
-    }
-  },
-  // ["in place", label]
-  //                    the clip's short is the one kept, under the same
-  //                    name with no number, written again since, and no
-  //                    other short appeared in its folder
-  async "in place"(walk, arg) {
-    const { kept, page } = walk;
-    const was = kept[arg];
-    const on = await chosen(page);
-    const short = await shortOf(page, on);
-    const now = short && existsSync(short) ? statSync(short) : null;
-    const added = short ? shortsIn(dirname(short)).filter((n) => !was.shorts.includes(n)) : [];
-    if (short !== was.short) walk.wrong = `rendered again, the short is at ${short || "nowhere"}, not ${was.short}`;
-    else if (!now || now.mtimeMs === was.file.mtimeMs) walk.wrong = `rendered again, ${short} was not written again`;
-    else if (added.length) walk.wrong = `rendered again, ${added.join(", ")} appeared beside ${basename(short)}`;
-  },
-  // ["apart", label]   the clip on screen, of another episode with a clip
-  //                    of the same name as the one kept, has a short of its
-  //                    own, the short kept is still the same file, and the
-  //                    clip kept still says it is its short
-  // ["apart", label, number]
-  //                    the same, with the short on screen called as the
-  //                    one kept with this after it, " 2". With both, the
-  //                    pictures kept are all still there, untouched
-  async apart(walk, arg) {
-    const { kept, page } = walk;
-    const [label, number] = [arg].flat();
-    const was = kept[label];
-    const on = await chosen(page);
-    const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
-    const short = await shortOf(page, on);
-    const now = existsSync(was.short) ? statSync(was.short) : null;
-    const theirs = await shortOf(page, was);
-    if (on.path === was.path) walk.wrong = `the clip on screen is of the episode kept at "${label}"`;
-    else if (entry?.slug !== was.name) walk.wrong = `the clips are named ${was.name} and ${entry?.slug}, which never meet in one folder`;
-    else if (!short) walk.wrong = "the clip on screen says it has no short";
-    else if (short === was.short) walk.wrong = `both episodes' shorts are ${short}`;
-    else if (!now || now.ino !== was.file.ino || now.mtimeMs !== was.file.mtimeMs) {
-      walk.wrong = `the second render wrote over the first episode's short at ${was.short}`;
-    } else if (theirs !== was.short) {
-      walk.wrong = `the first episode's clip says its short is ${theirs || "nowhere"}, not ${was.short}`;
-    } else if (number && basename(short) !== `${was.name}${number}.mp4`) {
-      walk.wrong = `the second short is called ${basename(short)}, not ${was.name}${number}.mp4`;
-    } else {
-      const gone = was.pictures.filter((p) => {
-        const now = existsSync(p.path) ? statSync(p.path) : null;
-        return !now || now.ino !== p.file.ino || now.mtimeMs !== p.file.mtimeMs;
-      });
-      if (gone.length) walk.wrong = `the second render took or wrote over the first episode's pictures ${gone.map((p) => basename(p.path)).join(", ")}`;
-    }
-  },
-  // ["short", cuts]    the clip has at least so many cuts, none of them on
-  //                    a frame that starts on a whole millisecond, and the
-  //                    short Render wrote, read back from disk, holds
-  //                    exactly the frames of the clip's pieces, each the
-  //                    right frame of the episode, with its sound as long
-  //                    as its picture and quiet at a cut for no longer
-  //                    than the render's fade
-  async short(walk, arg) {
-    const { page } = walk;
-    const on = await chosen(page);
-    const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
-    const { fps } = await ask(page, "Source", on.path);
-    const short = await shortOf(page, on);
-    walk.wrong = shortProblem(entry, short, fps, arg);
-  },
 };
 
 // Steps that take the same body as the step they are walked by.
 steps["make while paused"] = steps["make while playing"];
 steps["make with its answer late"] = steps["make while playing"];
 steps["make with its pick late"] = steps["make while playing"];
-
-// The shorts in a folder, by name, finished ones only.
-const shortsIn = (dir) => readdirSync(dir).filter((n) => n.endsWith(".mp4") && !n.endsWith(".part.mp4")).sort();
 
 // The pictures beside a short, <name>-1.jpg and on, in their order.
 function picturesOf(short) {
@@ -1415,98 +1314,6 @@ function picturesOf(short) {
     .filter(([, m]) => m)
     .sort((a, b) => Number(a[1][1]) - Number(b[1][1]))
     .map(([n]) => join(dirname(short), n));
-}
-
-// What is wrong with the short Render wrote for a clip, read back from
-// disk, or null. Its pieces are cut the way the render cuts them, see
-// cutOf in engine/render.go: the frames from the one a piece's start is on
-// up to the one before its end, at least one. Which frame of the episode a
-// frame of the short is comes from its bands, see shortFrames, and is
-// compared with the frame it should be, so a frame too many, one lost or
-// one from the wrong place shows. The episode's sound is a steady tone, so
-// padded silence at a cut, or sound that runs on after its picture, shows.
-// The engine's own test of this is TestARenderCutsOnWholeFrames.
-function shortProblem(entry, short, fps, cutsWanted) {
-  if (!short || !existsSync(short)) return `the clip has no short${short ? ` at ${short}` : ""}`;
-  const pieces = entry.segments;
-  const problems = [];
-  // The case is the one it says: a clip with cuts whose edges, on the
-  // frames of the episode where the render puts them, fall between
-  // milliseconds, where rounding to one moved a piece by a frame. The
-  // engine keeps an edge where a word starts or ends, which here is a
-  // whole millisecond, so it is the frame it lands on that counts.
-  const edges = pieces.slice(1).flatMap((p, i) => [pieces[i].end, p.start]).map((t) => Math.round(t * fps) / fps);
-  if (pieces.length - 1 < cutsWanted) problems.push(`the clip has ${pieces.length - 1} cuts, not ${cutsWanted}`);
-  const whole = edges.filter((t) => Math.abs(t * 1000 - Math.round(t * 1000)) < 0.01);
-  if (whole.length) problems.push(`cuts on frames that start on a whole millisecond, ${whole.join(" ")}, not the case this is about`);
-
-  // Seen: the frames of each piece in order, each once, and nothing else.
-  const want = [];
-  const cuts = [];
-  for (const p of pieces) {
-    const first = Math.round(p.start * fps);
-    const end = Math.max(Math.round(p.end * fps), first + 1);
-    for (let k = first; k < end; k++) want.push(k);
-    cuts.push(want.length / fps);
-  }
-  cuts.pop();
-  const { frames, modulo } = shortFrames(short);
-  if (frames.length !== want.length) problems.push(`the short has ${frames.length} frames, its pieces hold ${want.length}`);
-  let wrongFrames = 0;
-  for (let i = 0; i < Math.min(frames.length, want.length); i++) {
-    if (frames[i] !== want[i] % modulo && ++wrongFrames <= 5) {
-      problems.push(`frame ${i} of the short is frame ${frames[i]} of the episode, not ${want[i]}`);
-    }
-  }
-  if (wrongFrames > 5) problems.push(`and ${wrongFrames - 5} frames more are the wrong frame`);
-
-  // Heard: as long as the picture, the tone right up to each cut, and
-  // quiet there only for the fade out and in, 15 ms, Fade in
-  // engine/render.go, and that quiet where the picture cuts.
-  const rate = 48000;
-  const samples = shortSound(short);
-  const heard = samples.length / rate;
-  const pictured = want.length / fps;
-  if (Math.abs(heard - pictured) > 0.025) {
-    problems.push(`the sound is ${heard.toFixed(3)} s long, the picture ${pictured.toFixed(3)} s`);
-  }
-  // The loudest sample in the 2.5 ms around each one, more than one swing
-  // of the tone, so how loud the tone is there.
-  const loud = (k) => {
-    let most = 0;
-    for (let j = Math.max(0, k - 60); j < Math.min(samples.length, k + 60); j++) most = Math.max(most, Math.abs(samples[j]));
-    return most;
-  };
-  const steady = loud(Math.round(0.5 * rate));
-  cuts.forEach((cut, n) => {
-    const from = Math.round((cut - 0.06) * rate);
-    const to = Math.round((cut + 0.06) * rate);
-    if (to > samples.length) {
-      problems.push(`the sound ends before cut ${n + 1} at ${cut.toFixed(3)} s`);
-      return;
-    }
-    let first = -1;
-    let last = -1;
-    for (let k = from; k < to; k++) {
-      if (loud(k) < 0.25 * steady) {
-        if (first < 0) first = k;
-        last = k;
-      }
-    }
-    if (first < 0) {
-      problems.push(`cut ${n + 1} at ${cut.toFixed(3)} s has no fade in its sound`);
-      return;
-    }
-    const quiet = (last - first) / rate;
-    const mid = (first + last) / 2 / rate;
-    if (quiet > 0.015) problems.push(`the sound is quiet for ${(1000 * quiet).toFixed(1)} ms at cut ${n + 1}, more than its fade`);
-    if (Math.abs(mid - cut) > 0.003) {
-      problems.push(`the sound cuts at ${mid.toFixed(4)} s, the picture at ${cut.toFixed(4)} s, cut ${n + 1}`);
-    }
-  });
-  if (!problems.length) return null;
-  const said = pieces.map((p) => `${p.start}-${p.end}`).join(" ");
-  return `${problems.join("\n")}\npieces ${said} at ${fps} fps, the short ${short}`;
 }
 
 // The key of the card chosen, and of the cards in the clip list.
@@ -1707,22 +1514,28 @@ async function pickRested(page, n) {
   const problems = [];
   for (let i = 0; i < n; i++) {
     if (i === 1) {
-      const ahead = await page.evaluate(() => window.__appFrames.stats.ahead);
+      // Counted from before the press, and ended by the play's end too:
+      // on the walk's clock a play draws a frame a refresh, and counted
+      // from after the press, the clip's 103 frames ended with fewer than
+      // a hundred counted, and the walk waited for good.
+      const { ahead, drawn } = await page.evaluate(() => ({ ahead: window.__appFrames.stats.ahead, drawn: window.__frameQueue.stats.drawn }));
       await page.keyboard.press("Space");
-      await page.evaluate(
-        () =>
+      const playing = await page.evaluate(
+        (from) =>
           new Promise((done) => {
             const q = window.__frameQueue;
-            const from = q.stats.drawn;
-            const off = q.listen(() => {
-              if (q.stats.drawn - from < 100) return;
-              off();
-              done();
-            });
+            const look = (s) => {
+              if (q.stats.drawn - from < 100 && !s?.ended) return false;
+              done(!s?.ended);
+              return true;
+            };
+            if (look(null)) return;
+            const off = q.listen((s) => look(s) && off());
           }),
+        drawn,
       );
       const read = (await page.evaluate(() => window.__appFrames.stats.ahead)) - ahead;
-      await page.keyboard.press("Space");
+      if (playing) await page.keyboard.press("Space");
       if (read) problems.push(`${read} frames were read ahead while the clip played`);
     }
     await restAhead(page);

@@ -27,10 +27,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
+	"maps"
 	"math"
 	"net"
 	"net/http"
@@ -444,7 +446,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
-			q.Get("namesake") == "1", q.Get("box") != "0", q.Get("in") == "mkv", cameraHeight(q.Get("size")))
+			q.Get("box") != "0", q.Get("in") == "mkv", cameraHeight(q.Get("size")))
 		answer(w, path, err)
 	})
 	// Files dropped on the app, which the window hands over the way the
@@ -563,14 +565,15 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		}
 		if n, err := strconv.Atoi(q.Get("step")); err == nil {
 			b.words.save.Store(q.Has("save"))
-			b.words.step(min(max(n, 0), 100))
+			if q.Has("heard") {
+				b.words.stepHeard(r.Context(), min(max(n, 0), 100))
+			} else {
+				b.words.step(min(max(n, 0), 100))
+			}
 			answer(w, nil, nil)
 			return
 		}
 		b.words.release()
-		if from, err := strconv.Atoi(q.Get("from")); err == nil && from >= 0 {
-			b.words.from(from)
-		}
 		answer(w, nil, nil)
 	})
 	// The app's window as macOS lays it out, in points: the title bar's
@@ -754,6 +757,10 @@ type prose struct {
 	// the walk holds ends the way a piece being heard ends as the app
 	// quits. It stays held after.
 	closing bool
+	// ended counts the hearings that have ended, done, called off or
+	// failed, each of which closes it, so a wait for the next piece
+	// ends with the hearing that would have asked for it.
+	ended int
 }
 
 func (p *prose) cond() *sync.Cond {
@@ -801,6 +808,73 @@ func (p *prose) step(n int) {
 	defer p.gate.Unlock()
 	p.steps += n
 	p.cond().Broadcast()
+}
+
+// stepHeard lets n pieces more be heard, the way step does, and returns
+// once they have all been heard and the next piece waits, so a walk can let many pieces on at once and go on when
+// they are all in. The engine hears one piece after the other and says
+// how far it came after each, before it asks for the next, so by then it
+// has said so of all of them. It is for pieces that are not the last: a
+// video heard to its end asks for no next piece, and the wait ends with
+// the hearing instead, the same as for one that fails or is called off,
+// and the walk then finds out how it ended. A walk that gives up on it,
+// or a reset, ends the wait too.
+// The pieces are let on under the same lock the count of hearings ended
+// is read under, so a hearing that ends before the wait starts is not
+// missed.
+func (p *prose) stepHeard(ctx context.Context, n int) {
+	stop := context.AfterFunc(ctx, func() {
+		p.gate.Lock()
+		defer p.gate.Unlock()
+		p.cond().Broadcast()
+	})
+	defer stop()
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	ended := p.ended
+	p.steps += n
+	p.cond().Broadcast()
+	for (p.steps > 0 || p.hearing > 0 || p.waiting == 0) && p.held && p.ended == ended && ctx.Err() == nil {
+		p.cond().Wait()
+	}
+}
+
+// The walk that lets many pieces on at once goes on once they are heard
+// and the next waits, and does not wait for good when the hearing ends
+// with no next piece, done, called off or failed.
+func TestHeardWaitsForTheNextPieceOrTheEndOfTheHearing(t *testing.T) {
+	t.Parallel()
+	p := &prose{}
+	p.hold()
+	samples := make([]float32, 16000)
+	hears := func(n int) {
+		for range n {
+			p.Recognize(samples, 16000)
+		}
+	}
+	// Two pieces let on, and a third asked for, which waits.
+	done := make(chan struct{})
+	go func() { hears(3); close(done) }()
+	p.stepHeard(t.Context(), 2)
+	p.gate.Lock()
+	waiting, steps := p.waiting, p.steps
+	p.gate.Unlock()
+	if waiting != 1 || steps != 0 {
+		t.Fatalf("heard returned with %d pieces waiting and %d steps left, not 1 and 0", waiting, steps)
+	}
+	p.release()
+	<-done
+
+	// One piece let on, and the hearing ends after it with no next.
+	p.hold()
+	go func() { hears(1); p.Close() }()
+	p.stepHeard(t.Context(), 1)
+	p.gate.Lock()
+	ended := p.ended
+	p.gate.Unlock()
+	if ended != 1 {
+		t.Fatalf("heard returned before the hearing ended, %d ended", ended)
+	}
 }
 
 // whileClosing lets every piece through for as long as close takes, and
@@ -894,7 +968,13 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	return tokens
 }
 
-func (*prose) Close() {}
+// Close is called as each hearing ends, see ended.
+func (p *prose) Close() {
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	p.ended++
+	p.cond().Broadcast()
+}
 
 // SaveHeard says whether what is heard so far is saved now, which the
 // engine asks in place of its clock: once after a step that asked for it.
@@ -1591,7 +1671,7 @@ func cameraHeight(size string) int {
 // makeCameraEpisode.
 //
 // On the real disk: the app adds the video from the disk.
-func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, box, mkv bool, height int) (string, error) {
+func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, box, mkv bool, height int) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
@@ -1609,10 +1689,6 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 	b.mu.Lock()
 	b.made++
 	path := filepath.Join(b.d.home, fmt.Sprintf("folge-%d.mp4", b.made))
-	if namesake {
-		// The name of the bridge's episode, in a folder of its own.
-		path = filepath.Join(b.d.home, fmt.Sprintf("folge-%d", b.made), filepath.Base(b.first))
-	}
 	b.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
@@ -2111,16 +2187,18 @@ func bridgeDist(t *testing.T) string {
 //	make walks
 //	make walks WALKS=40 STEPS=80   to look further
 //
-// The walks are seeds 1 to WALKS, the same every time, so a walk that
-// breaks a rule breaks it again on the next run, and a change that only
-// moves what a seed walks into is not a red run of its own.
+// Each walk takes WALKS seeds. With WALKSEED, which CI sets to the
+// commit, the seeds are worked out from it, so every push walks ground no
+// push walked before, and every share of one run takes the same seeds.
+// Without it they are 1 to WALKS, the same every time. A walk prints its
+// seed, so SEED=n walks a failure again step for step.
 //
 // They run side by side, half as many again as the machine has cores, or
 // WALKERS. Each runs against a bridge of its own, started as a process of
 // its own: a desk sets HOME for the whole process it is in, so two bridges
 // in one would share the app's settings. One after another they took nine
-// minutes. A run spends most of its time waiting, on a clip that plays in
-// real time and on the quiet after every step, so four bridges kept four
+// minutes. A run spent most of its time waiting then, on a clip that
+// played in real time and on the quiet after every step, so four bridges kept four
 // cores busy only part of the time: six on the four cores of CI and the
 // cloud took the whole set from six and a half minutes to five and a half,
 // with the cores busy four fifths of it.
@@ -2176,14 +2254,25 @@ func TestWalks(t *testing.T) {
 	if n := envNumber("STEPS", 0); n > 0 {
 		steps = append(steps, fmt.Sprintf("STEPS=%d", n))
 	}
-	// Every walk in the folder, each for the same seeds.
-	for seed := 1; seed <= walksWanted; seed++ {
-		for _, script := range walkScripts(t, walks) {
+	// Every walk in the folder, each for the same seeds, and the seeds
+	// kept because they found a bug, each for its own walk.
+	scripts := walkScripts(t, walks)
+	for _, seed := range walkSeeds(os.Getenv("WALKSEED"), walksWanted) {
+		for _, script := range scripts {
 			runs = append(runs, walkRun{script: script, env: append([]string{fmt.Sprintf("SEED=%d", seed)}, steps...)})
 		}
-		// Playback again on an episode whose picture the Go side decodes,
-		// HEVC in 10-bit colour, which Chromium cannot.
-		runs = append(runs, walkRun{script: "playback.mjs", env: append([]string{fmt.Sprintf("SEED=%d", seed), "HEVC=1"}, steps...)})
+	}
+	// On the real disk: the kept seeds are a file beside the walks.
+	keptFile, err := os.ReadFile(filepath.Join(walks, "kept-seeds.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := keptSeeds(string(keptFile), scripts)
+	if err != nil {
+		t.Fatal("kept-seeds.txt: ", err)
+	}
+	for _, k := range kept {
+		runs = append(runs, walkRun{script: k.script, env: append([]string{fmt.Sprintf("SEED=%d", k.seed)}, steps...)})
 	}
 	for _, name := range sequenceNames(t, node, walks) {
 		runs = append(runs, walkRun{script: "sequences.mjs", env: []string{"SEQUENCE=" + name}, sequence: name})
@@ -2201,7 +2290,7 @@ func TestWalks(t *testing.T) {
 	}
 	times := readWalkTimes(string(before))
 	all := runs
-	runs = shareOf(t, all, name, times, os.Getenv("WALKSHARD"))
+	runs = shareOf(t, all, func(r walkRun) string { return timedAs(name(r)) }, times, os.Getenv("WALKSHARD"))
 	if len(runs) == 0 {
 		t.Skip("this share has no runs")
 	}
@@ -2340,7 +2429,7 @@ func TestWalks(t *testing.T) {
 		if after, ok := machineCPU(); ok && busy {
 			spent[machineSpent] = (after - busyBefore).Seconds()
 		}
-		summary := walkSummary(took, spent, len(runs), walkers, time.Since(started).Seconds()) //nolint:forbidigo // the seconds the walks took, reported, never waited on
+		summary := walkSummary(took, times, spent, len(runs), walkers, time.Since(started).Seconds()) //nolint:forbidigo // the seconds the walks took, reported, never waited on
 		if err := os.WriteFile(file, []byte(summary), 0o644); err != nil {
 			t.Error(err)
 		}
@@ -2354,11 +2443,13 @@ func TestWalks(t *testing.T) {
 	// WALKTIMES=1 keeps what the runs took for the next split, and drops
 	// the runs that are gone.
 	if os.Getenv("WALKTIMES") != "" {
-		names := make([]string, len(all))
-		for i, r := range all {
-			names[i] = name(r)
+		var names []string
+		for _, r := range all {
+			if n := timedAs(name(r)); !slices.Contains(names, n) {
+				names = append(names, n)
+			}
 		}
-		if err := os.WriteFile(timesFile, []byte(writeWalkTimes(names, times, took)), 0o644); err != nil {
+		if err := os.WriteFile(timesFile, []byte(writeWalkTimes(names, times, timedTook(took))), 0o644); err != nil {
 			t.Error(err)
 		}
 	}
@@ -2972,6 +3063,76 @@ func shareOf[T any](t *testing.T, all []T, name func(T) string, took map[string]
 	return mine
 }
 
+// walkSeeds gives the n seeds each walk takes. Worked out from commit
+// when there is one, so the shares of one run agree and the next commit
+// walks others, and 1 to n when there is none.
+func walkSeeds(commit string, n int) []int {
+	seeds := make([]int, n)
+	for i := range seeds {
+		seeds[i] = i + 1
+		if commit != "" {
+			h := fnv.New32a()
+			fmt.Fprintf(h, "%s %d", commit, i)
+			seeds[i] = int(h.Sum32()%999_999) + 1
+		}
+	}
+	return seeds
+}
+
+// keptSeed is a seed that found a bug in a walk, walked on every push
+// from then on.
+type keptSeed struct {
+	script string
+	seed   int
+}
+
+// keptSeeds reads kept-seeds.txt: a line for each seed, the walk's file,
+// a space and the seed, and lines that start with # say why. A seed for
+// a walk that is not in scripts is refused, so a walk renamed or removed
+// does not quietly drop the seeds kept for it.
+func keptSeeds(text string, scripts []string) ([]keptSeed, error) {
+	var out []keptSeed
+	for i, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		script, n, ok := strings.Cut(line, " ")
+		seed, err := strconv.Atoi(strings.TrimSpace(n))
+		if !ok || err != nil || seed < 1 {
+			return nil, fmt.Errorf("line %d, %q, is not a walk's file and a seed", i+1, line)
+		}
+		if !slices.Contains(scripts, script) {
+			return nil, fmt.Errorf("line %d keeps a seed for %s, which is no walk", i+1, script)
+		}
+		out = append(out, keptSeed{script, seed})
+	}
+	return out, nil
+}
+
+// timedAs is the name a run is timed under in walk-times.tsv: a
+// sequence by its own name, a walk by its file, whatever its seed, since
+// the seeds change with every commit.
+func timedAs(run string) string {
+	return seedOf.ReplaceAllString(run, "")
+}
+
+var seedOf = regexp.MustCompile(` SEED=\d+`)
+
+// timedTook is what the runs took by the name they are timed under, the
+// mean of the seeds a walk took.
+func timedTook(took map[string]float64) map[string]float64 {
+	sum, count := map[string]float64{}, map[string]float64{}
+	for n, s := range took {
+		sum[timedAs(n)] += s
+		count[timedAs(n)]++
+	}
+	for n := range sum {
+		sum[n] /= count[n]
+	}
+	return sum
+}
+
 // readWalkTimes reads walk-times.tsv: whole seconds, a tab and the name
 // of the run, one run to a line. A line it cannot read is left out.
 func readWalkTimes(file string) map[string]float64 {
@@ -3061,11 +3222,15 @@ func busyOf(stat string) (time.Duration, bool) {
 // right in its column, so the tables read in a terminal as they do on
 // GitHub. The processor time varies less from one run to the next than
 // the seconds do, so it is what a change to the speed of the walks is
-// compared by.
-func walkSummary(took, spent map[string]float64, runs, walkers int, wall float64) string {
-	sum := 0.0
-	for _, s := range took {
+// compared by. It also says how long walk-times.tsv, kept, says the same
+// runs took last time, so a change that makes the walks slower shows in
+// the log of its walks job. It only says so and does not fail: how long a
+// run takes depends on how busy CI's machine is.
+func walkSummary(took, kept, spent map[string]float64, runs, walkers int, wall float64) string {
+	sum, before := 0.0, 0.0
+	for n, s := range took {
 		sum += s
+		before += kept[timedAs(n)]
 	}
 	busy := 0.0
 	if wall > 0 && walkers > 0 {
@@ -3077,6 +3242,13 @@ func walkSummary(took, spent map[string]float64, runs, walkers int, wall float64
 		several = "walker"
 	}
 	fmt.Fprintf(&out, "%d of %d runs on %d %s in %.0f s, %.0f s of walking together, the walkers busy %.0f %% of the time\n", len(took), runs, walkers, several, wall, sum, busy)
+	if before > 0 {
+		way := "slower"
+		if sum < before {
+			way = "faster"
+		}
+		fmt.Fprintf(&out, "walk-times.tsv says these runs took %.0f s last time, so this time they were %.0f %% %s\n", before, math.Abs(100*(sum-before)/before), way)
+	}
 	table(&out, "CPU (s)", "Programs", spent)
 	table(&out, "Seconds", "Run", took)
 	return out.String()
@@ -3124,8 +3296,10 @@ func envNumber(name string, otherwise int) int {
 func TestTheWalksSummarySaysWhereTheTimeWent(t *testing.T) {
 	took := map[string]float64{"sequences.mjs SEQUENCE=short": 4.4, "playback.mjs SEED=1": 83, "timeline.mjs SEED=2": 9.6, "words.mjs SEED=1": 12}
 	spent := map[string]float64{machineSpent: 151.4, bridgesSpent: 38}
-	got := walkSummary(took, spent, 5, 2, 60)
+	kept := map[string]float64{"playback.mjs": 60, "timeline.mjs": 10, "words.mjs": 12, "sequences.mjs SEQUENCE=short": 4, "gone.mjs": 50}
+	got := walkSummary(took, kept, spent, 5, 2, 60)
 	want := "4 of 5 runs on 2 walkers in 60 s, 109 s of walking together, the walkers busy 91 % of the time\n" +
+		"walk-times.tsv says these runs took 86 s last time, so this time they were 27 % slower\n" +
 		"| CPU (s) | Programs                                    |\n" +
 		"| ------: | ------------------------------------------- |\n" +
 		"|     151 | the whole machine, the browsers in it       |\n" +
@@ -3139,7 +3313,7 @@ func TestTheWalksSummarySaysWhereTheTimeWent(t *testing.T) {
 	if got != want {
 		t.Errorf("the summary is\n%s\nwant\n%s", got, want)
 	}
-	if got := walkSummary(nil, nil, 3, 2, 0); got != "0 of 3 runs on 2 walkers in 0 s, 0 s of walking together, the walkers busy 0 % of the time\n" {
+	if got := walkSummary(nil, nil, nil, 3, 2, 0); got != "0 of 3 runs on 2 walkers in 0 s, 0 s of walking together, the walkers busy 0 % of the time\n" {
 		t.Errorf("with no runs walked the summary is %q", got)
 	}
 }
@@ -3317,6 +3491,40 @@ func TestTheTimesOfTheWalksAreKept(t *testing.T) {
 	}
 	if again := writeWalkTimes(names, readWalkTimes(file), nil); again != file {
 		t.Errorf("read and written again\n%q\nwas\n%q", again, file)
+	}
+}
+
+// Every commit walks seeds of its own, the same in every share of its
+// run, beside the seeds kept because they found a bug, and a walk is
+// timed by its file whatever seed it took.
+func TestEveryCommitWalksSeedsOfItsOwn(t *testing.T) {
+	if got := walkSeeds("", 3); !slices.Equal(got, []int{1, 2, 3}) {
+		t.Errorf("with no commit the seeds are %v, not 1 to 3", got)
+	}
+	one, again, next := walkSeeds("18aeb49", 3), walkSeeds("18aeb49", 3), walkSeeds("91c88dc", 3)
+	if !slices.Equal(one, again) {
+		t.Errorf("one commit took %v and then %v, so two shares of its run would walk different seeds", one, again)
+	}
+	for _, s := range one {
+		if slices.Contains(next, s) || s < 1 || s > 999_999 {
+			t.Errorf("seed %d of %v: the next commit's seeds %v hold it, or it is no seed a walk takes", s, one, next)
+		}
+	}
+	if len(slices.Compact(slices.Sorted(slices.Values(one)))) != 3 {
+		t.Errorf("one commit's seeds %v repeat", one)
+	}
+	kept, err := keptSeeds("# found the hang of #1\nplayback.mjs 328041\n\nwords.mjs 7\n", []string{"playback.mjs", "words.mjs"})
+	if err != nil || !slices.Equal(kept, []keptSeed{{"playback.mjs", 328041}, {"words.mjs", 7}}) {
+		t.Errorf("kept %v, %v, not the two seeds the file names", kept, err)
+	}
+	for _, wrong := range []string{"gone.mjs 3", "playback.mjs", "playback.mjs three", "playback.mjs 0"} {
+		if _, err := keptSeeds(wrong, []string{"playback.mjs"}); err == nil {
+			t.Errorf("kept %q, which names no walk or no seed", wrong)
+		}
+	}
+	took := timedTook(map[string]float64{"playback.mjs SEED=815": 30, "playback.mjs SEED=17": 20, "sequences.mjs SEQUENCE=a short": 5})
+	if !maps.Equal(took, map[string]float64{"playback.mjs": 25, "sequences.mjs SEQUENCE=a short": 5}) {
+		t.Errorf("timed %v, not a walk by its file with the mean of its seeds", took)
 	}
 }
 

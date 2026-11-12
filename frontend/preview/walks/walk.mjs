@@ -14,7 +14,7 @@ import { Watch } from "./rules.mjs";
 
 // The page on the bridge, the seed's random numbers, and the watch. A walk
 // says how many steps it takes unless STEPS says otherwise: one whose steps
-// play the episode in real time takes fewer.
+// play the episode, every frame drawn, takes fewer.
 export async function begin({ steps: usual = 60 } = {}) {
   const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
   const seed = Number(process.env.SEED ?? Math.floor(Math.random() * 1e6));

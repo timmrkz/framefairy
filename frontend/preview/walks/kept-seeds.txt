@@ -1,0 +1,9 @@
+# Seeds that found a bug, walked on every push from then on, beside the
+# seeds each commit takes of its own. A line for each: the walk's file, a
+# space and the seed, under a line that says what it found, see Where
+# they run in docs/TESTING.md.
+
+# A double-click in a piece near a short gap, on the walks' video of five
+# frames a second, cut between two frames and was refused: the sliver it
+# left grew to a whole frame, over the next piece.
+timeline.mjs 454045

@@ -246,7 +246,14 @@ export const steps = {
   //                    putting the playhead on its sentence, and Escape,
   //                    with the keyboard on that card, giving the head and
   //                    the clips back. A word of "*" is the longest word
-  //                    of the first sentence
+  //                    of the first sentence.
+  // ["search said", [word, n, "copy"]]
+  //                    and Shift and a click picking the cards from the
+  //                    current one to the one clicked, with the playhead
+  //                    where it was, among the answers to a search too,
+  //                    and Copy putting their words on the clipboard,
+  //                    leaving words chosen in the field to the web view,
+  //                    and a card clicked alone alone
   async "search said"(walk, arg, s) {
     const { page, settled, watch } = walk;
     const path = await episodeOn(page);
@@ -256,7 +263,7 @@ export const steps = {
     const listed = (await ask(page, "Clips", path)).filter((c) => !c.rejected).length;
     await pageUntil(page, (n) => document.querySelectorAll("aside ol li[data-key] button.pick").length >= n, listed);
     await settled();
-    let [word, unheardLeast = 0] = [arg].flat();
+    let [word, unheardLeast = 0, copying = false] = [arg].flat();
     if (word === "*") {
       const first = (await ask(page, "Sentences", path))[0]?.text ?? "";
       word = first.split(/[^\p{L}]+/u).sort((a, b) => b.length - a.length)[0] ?? "";
@@ -666,8 +673,8 @@ export const steps = {
       // run at that pitch over exactly their span. The browser's own
       // dashes went their own way, dots on to the edge sat too close to
       // the dashes, and a row and a column left clear looked cut off,
-      // all found by Tim. On the range picker the dots are whole
-      // columns centred in the part.
+      // all found by Tim. On the range picker every part shows the one
+      // grid laid from its start, see below.
       const grid = await page.evaluate(() => {
         const li = document.querySelector("ol.said li.hole");
         const dots = li.querySelector(".dots");
@@ -686,33 +693,21 @@ export const steps = {
         const px = (t) => (t ?? "").match(/-?[\d.]+px/g)?.map(parseFloat) ?? [];
         const pitch = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dot-pitch"));
         const track = document.querySelector(".track");
-        const pad = parseFloat(getComputedStyle(track).borderLeftWidth);
         const columns = [...track.querySelectorAll(".unheard")].map((u) => {
-          // A part the work is hearing into has its dots laid from
-          // where its hearing stops, up to its left edge, see the walk
-          // of the parts giving way. What it is once the work stops is read with
-          // that taken off.
-          const giving = u.classList.contains("giving");
-          const g = getComputedStyle(u, "::before");
-          const laid = giving ? [parseFloat(g.left), parseFloat(g.right), g.backgroundPositionX] : null;
-          u.classList.remove("giving");
           const b = getComputedStyle(u, "::before");
           const part = u.getBoundingClientRect();
-          const left = parseFloat(b.left);
-          const width = parseFloat(b.width);
-          const at = {
-            // What is left either side of the columns of dots, and how
-            // many columns there are.
-            sides: [left, part.width - left - width].map((v) => Math.round(v * 100) / 100),
-            columns: width / pitch,
+          return {
+            // What is left either side of the dots, which reach both
+            // edges of the part.
+            sides: [parseFloat(b.left), part.width - parseFloat(b.left) - parseFloat(b.width)].map((v) => Math.round(v * 100) / 100),
+            // Where its grid of dots begins, from the start of the
+            // range picker, which is where every part's grid begins.
+            grid: u.offsetLeft + parseFloat(b.backgroundPositionX),
+            tile: b.backgroundSize,
             height: [parseFloat(b.top), parseFloat(b.height) - part.height],
             foot: b.backgroundPositionY,
             fade: b.maskImage,
-            laid,
-            worked: u.classList.contains("worked"),
           };
-          if (giving) u.classList.add("giving");
-          return at;
         });
         return {
           pitch,
@@ -802,23 +797,16 @@ export const steps = {
         walk.wrong = `the dashes of a card do not stand on its dots: dots ${grid.span.join(" by ")} px at ${grid.room[0]} and ${grid.room[2]} px in, dashes laid ${grid.dashes[0]} at ${grid.dashes[3]}, ${grid.dashes[1]}`;
       else if (grid.dots[2] !== grid.columns[0]?.fade)
         walk.wrong = `the dots of a card leave a row or a column clear round them: masked by ${grid.dots[2]}`;
-      else if (
-        grid.columns.some(
-          (c) => c.height.some(Boolean) || !c.fade.endsWith("rgb(0, 0, 0))") || !Number.isInteger(c.columns) || c.sides.some((v) => v < 0 || v >= (c.worked ? grid.pitch : grid.pitch / 2)),
-        )
-      )
-        walk.wrong = `the dots of a part on the range picker leave a row or a column clear round them: ${JSON.stringify(grid.columns)}`;
-      // Centred, the same either side, found by Tim, who measured it.
-      // A part the work heard into keeps its dots where they stood,
-      // whole columns laid from where its hearing stops, so none jumps
-      // sideways as the work stops, Tim's report of 24 October, see
-      // the walk of the dots after a search's window.
-      else if (grid.columns.some((c) => !c.worked && c.sides[0] !== c.sides[1]))
-        walk.wrong = `the dots of a part on the range picker are not centred in it: ${JSON.stringify(grid.columns.map((c) => [c.worked, c.sides]))}, worked and left and right`;
-      // While the work hears into a part, its edge wipes the dots, so
-      // they reach its left edge, and end on a whole column.
-      else if (grid.columns.some((c) => c.laid && (c.laid[0] !== 0 || !(c.laid[1] >= 0 && c.laid[1] < grid.pitch) || !/px$/.test(c.laid[2]))))
-        walk.wrong = `the dots of a part the work hears into do not reach its left edge as whole columns: ${JSON.stringify(grid.columns.map((c) => c.laid))}`;
+      // Every part on the range picker shows the one grid of dots laid
+      // from the start of the range picker, from edge to edge, so what is
+      // heard only peels dots away at its edges and no dot ever moves.
+      // A grid of its own, centred in the part or laid from a moment its
+      // work picked, was laid again as the part changed, and the dots
+      // walked sideways, Tim's reports of 24 October and 9 November.
+      else if (grid.columns.some((c) => c.height.some(Boolean) || !c.fade.endsWith("rgb(0, 0, 0))") || c.sides.some(Boolean) || c.tile !== tile))
+        walk.wrong = `the dots of a part on the range picker do not reach its edges: ${JSON.stringify(grid.columns)}`;
+      else if (grid.columns.some((c) => c.grid !== 0))
+        walk.wrong = `the dots of a part on the range picker are laid from a grid of its own, not from the range picker's start: ${JSON.stringify(grid.columns.map((c) => c.grid))} px from it`;
       // And the foot row a pixel up from the range picker's foot,
       // where it looked clutched to it, found by Tim.
       else if (grid.columns.some((c) => c.foot !== "calc(100% - 1px)"))
@@ -1368,6 +1356,114 @@ export const steps = {
         else if (up.followed !== squeezed.rows[0]) walk.wrong = `Shift and the up arrow went to ${up.followed}, not ${squeezed.rows[0]}`;
         else if (Math.abs(up.foot) > 1)
           walk.wrong = `the card walked up to above the top of the list stands ${up.foot.toFixed(0)} px above the foot, not turned to the foot`;
+      }
+    }
+    // Shift and a click pick every card from the card of the playhead
+    // to the one clicked, the way files are picked in Finder, and Copy
+    // puts their words on the clipboard as one text, Tim's ask. The
+    // playhead stays where it is. Among the answers to a search, where
+    // no card need be current, a second Shift and click picks on from
+    // the first. Words chosen in a field are the web view's to copy, and
+    // a card clicked alone is copied alone. Once, in the walk that asks
+    // for it, since every walk of the search would only check the same
+    // again.
+    if (!walk.wrong && copying) {
+      await field.fill("");
+      await watch.step("type", s);
+      // Copy as the web view does it on Cmd+C: it asks with beforecopy
+      // whether the page has something to copy, which turns Copy in the
+      // Edit menu on, then lets the page fill the clipboard's data in
+      // copy. What the page put there is read back from that data.
+      const copy = async () => {
+        const seen = await page.evaluate(() => {
+          const on = document.activeElement ?? document.body;
+          const ask = new Event("beforecopy", { bubbles: true, cancelable: true });
+          on.dispatchEvent(ask);
+          const data = new DataTransfer();
+          const copied = new ClipboardEvent("copy", { clipboardData: data, bubbles: true, cancelable: true });
+          on.dispatchEvent(copied);
+          return { on: ask.defaultPrevented, took: copied.defaultPrevented, text: data.getData("text/plain") };
+        });
+        await watch.step("press", s);
+        return seen;
+      };
+      // The engine's words of a card, by the key the list knows it by.
+      const words = (key) => {
+        const [at, clip] = key.slice(1).split("|");
+        return sentences.find((x) => String(x.start) === at && (x.clip ?? "") === clip)?.text.trim();
+      };
+      const lit = () =>
+        page.evaluate(() => ({
+          keys: [...document.querySelectorAll("ol.said button.pick.picked")].map((b) => b.closest("li").dataset.row),
+          grey: [...document.querySelectorAll("ol.said button.pick.picked")].map((b) => getComputedStyle(b).backgroundColor),
+          current: getComputedStyle(document.querySelector("ol.said button.pick.current") ?? document.body).backgroundColor,
+          at: document.querySelector(".screen")?.dataset.playhead,
+        }));
+      const span = await page.evaluate(() => {
+        const ol = document.querySelector("ol.said");
+        const rows = [...ol.querySelectorAll("li[data-row]")].map((li) => ({ key: li.dataset.row, card: !!li.querySelector("button.pick") }));
+        const from = rows.findIndex((r) => r.key === ol.dataset.followed);
+        const to = rows.findIndex((r, i) => i > from + 1 && r.card);
+        return from < 0 || to < 0 || !rows[from].card ? null : { keys: rows.slice(from, to + 1).filter((r) => r.card).map((r) => r.key), at: document.querySelector(".screen")?.dataset.playhead };
+      });
+      if (!span) walk.wrong = "the card of the playhead has no card two below it to pick to";
+      else {
+        await page.locator(`ol.said li[data-row="${span.keys.at(-1)}"] button.pick`).click({ modifiers: ["Shift"] });
+        await watch.step("click", s);
+        const picked = await lit();
+        const want = span.keys.map(words).join(" ");
+        const copied = await copy();
+        if (picked.keys.join() !== span.keys.join()) walk.wrong = `Shift and a click picked ${JSON.stringify(picked.keys)}, not ${JSON.stringify(span.keys)}`;
+        else if (picked.grey.some((g) => g !== picked.current)) walk.wrong = `the cards picked wear ${[...new Set(picked.grey)]}, not the grey of the current card, ${picked.current}`;
+        else if (picked.at !== span.at) walk.wrong = `Shift and a click moved the playhead from ${span.at} to ${picked.at}`;
+        else if (!copied.on) walk.wrong = "with cards picked, the page said it had nothing to copy, so Copy in the Edit menu stays greyed out";
+        else if (!copied.took || copied.text !== want)
+          walk.wrong = `Copy put ${JSON.stringify(copied.text)} on the clipboard, not the words of the ${span.keys.length} cards picked, ${JSON.stringify(want)}`;
+        // Among the answers to a search, two Shift and clicks pick the
+        // cards between them, wherever the playhead is.
+        if (!walk.wrong) {
+          await field.fill("e");
+          await watch.step("type", s);
+          const answers = await page.evaluate(() => [...document.querySelectorAll("ol.said li[data-row]")].filter((li) => li.querySelector("button.pick")).map((li) => li.dataset.row));
+          const current = await page.evaluate(() => document.querySelector("ol.said button.pick.current")?.closest("li").dataset.row ?? null);
+          if (answers.length < 4) walk.wrong = `only ${answers.length} cards answer e, too few to pick among`;
+          else {
+            await page.locator(`ol.said li[data-row="${answers[1]}"] button.pick`).click({ modifiers: ["Shift"] });
+            await watch.step("click", s);
+            await page.locator(`ol.said li[data-row="${answers[3]}"] button.pick`).click({ modifiers: ["Shift"] });
+            await watch.step("click", s);
+            const among = await lit();
+            const from = answers.indexOf(current ?? answers[1]);
+            const should = answers.slice(Math.min(from, 3), Math.max(from, 3) + 1);
+            const copied = await copy();
+            if (among.keys.join() !== should.join())
+              walk.wrong = `two Shift and clicks among the answers picked ${JSON.stringify(among.keys)}, not ${JSON.stringify(should)}, with ${current ?? "no card"} current`;
+            else if (copied.text !== should.map(words).join(" ")) walk.wrong = `Copy among the answers put ${JSON.stringify(copied.text)} on the clipboard`;
+          }
+        }
+        // Words chosen in the field are the web view's to copy, and the
+        // new search picks no card of the list before.
+        if (!walk.wrong) {
+          await field.fill(word);
+          await watch.step("type", s);
+          await field.selectText();
+          const inField = await copy();
+          const still = await page.evaluate(() => document.querySelectorAll("ol.said button.pick.picked").length);
+          if (inField.took || inField.text) walk.wrong = `Copy with ${word} chosen in the search field put ${JSON.stringify(inField.text)} on the clipboard, not the words chosen`;
+          else if (still) walk.wrong = `a new search still shows ${still} cards picked`;
+        }
+        // A card clicked alone picks none, and Copy copies its words.
+        if (!walk.wrong) {
+          await field.fill("");
+          await watch.step("type", s);
+          const one = span.keys[1];
+          await page.locator(`ol.said li[data-row="${one}"] button.pick`).click();
+          await watch.step("click", s);
+          const alone = await copy();
+          const still = await page.evaluate(() => document.querySelectorAll("ol.said button.pick.picked").length);
+          if (still) walk.wrong = `a click without Shift left ${still} cards picked`;
+          else if (alone.text !== words(one)) walk.wrong = `Copy after a click on a card put ${JSON.stringify(alone.text)} on the clipboard, not its words, ${JSON.stringify(words(one))}`;
+        }
       }
     }
     // The keyboard on a card of what was typed, for Escape.
@@ -2102,8 +2198,8 @@ export const steps = {
   // ["dots begin at the window"]
   //                    once a search heard its window and the window moved
   //                    on, the part not transcribed yet begins where the
-  //                    window now begins, and its first column of dots
-  //                    stands at that edge, with no room left over there,
+  //                    window now begins, its dots reach that edge, laid
+  //                    from the range picker's start like every part's,
   //                    and that edge is a dashed line in the grey of a
   //                    card's edge, a dash beside each row of dots
   async "dots begin at the window"(walk, arg, s) {
@@ -2117,8 +2213,8 @@ export const steps = {
       walk.wrong = `the window begins at ${from} s and the transcript reaches ${reach} s, so no part begins where the window does`;
       return;
     }
-    // The part that begins at the window's edge, and how far in from
-    // that edge its first column of dots stands.
+    // The part that begins at the window's edge, how far in from that
+    // edge its dots begin, and where its grid of dots begins.
     const part = await page.evaluate(() => {
       const pitch = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dot-pitch"));
       const track = document.querySelector(".track").getBoundingClientRect();
@@ -2131,7 +2227,7 @@ export const steps = {
           width: r.width,
           in: parseFloat(b.left),
           out: parseFloat(b.right),
-          worked: u.classList.contains("worked"),
+          grid: u.offsetLeft + parseFloat(b.backgroundPositionX),
           // Its dashed edges: which sides, in what, and laid how.
           edges: [e.borderLeftStyle, e.borderRightStyle, e.borderTopStyle, e.borderBottomStyle],
           colour: e.borderLeftColor,
@@ -2154,9 +2250,9 @@ export const steps = {
       walk.wrong = `no part not transcribed yet after the window's edge: ${JSON.stringify(part)}`;
       return;
     }
-    if (first.in !== 0)
-      walk.wrong = `the first column of dots after the window stands ${first.in} px in from the window's edge, not at it: ${JSON.stringify(first)}, dots ${part.pitch} px apart`;
-    else if (first.out < 0 || first.out >= part.pitch) walk.wrong = `the dots after the window are not whole columns: ${JSON.stringify(first)}`;
+    if (first.in !== 0 || first.out !== 0)
+      walk.wrong = `the dots after the window stand ${first.in} px in from the window's edge and ${first.out} px in from their end, not at them: ${JSON.stringify(first)}, dots ${part.pitch} px apart`;
+    else if (first.grid !== 0) walk.wrong = `the dots after the window are laid ${first.grid} px from the range picker's start, a grid of their own: ${JSON.stringify(first)}`;
     // Its edge is dashed, a dash beside each row of dots, and it runs to
     // the end of the video, where the range picker's border is its edge,
     // Tim's report of 26 October, 12.27. The dashes are as strong as the

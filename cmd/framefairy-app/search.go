@@ -34,19 +34,7 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 			j.From, j.To, j.Count, j.Min = req.From, req.To, req.Count, req.Min
 		})
 	}
-	// A search called off a moment ago may still be on its way out, and it
-	// writes the same record as it goes, so this one waits for it.
-	for _, j := range s.jobs.list() {
-		if j.Episode == path && j.Kind == engine.JobSearch && j.State == JobRunning && j.ctx.Err() != nil {
-			s.jobs.waitJob(j.ID)
-		}
-	}
-	// The video's transcription and the work on its clips go one at a
-	// time, see Transcribe.
-	s.stopTranscribing(path, "search")
-	// A search that stopped is taken up by this one, which writes a record
-	// of its own in its place.
-	s.jobs.settle(path, engine.JobSearch, "")
+	s.jobs.makeWayForSearch(path)
 	first := s.firstLane(path, req)
 	job := s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobRecord{Kind: engine.JobSearch}), true, func(j *Job) {
 		j.JobRecord.ID, j.From, j.To, j.Count, j.Min, j.click = engine.SearchID, req.From, req.To, req.Count, req.Min, click
@@ -231,7 +219,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 	if math.IsNaN(req.At) || math.IsInf(req.At, 0) || req.At < 0 || req.At > engine.MaxEpisodeSeconds {
 		return s.jobs.refuse(path, engine.JobClip, label, "there is no such moment in the video")
 	}
-	s.stopTranscribing(path, "clip made by hand")
+	s.jobs.stopTranscribing(path, "clip made by hand")
 	id := engine.NewClipID()
 	if carry != "" {
 		id = carry

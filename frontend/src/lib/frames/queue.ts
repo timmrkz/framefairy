@@ -84,8 +84,11 @@ export type Shown = {
 
 // Where a play is on the program, see tick: from where the sound card says
 // it is, heard, and where the first frame of the play not on screen yet
-// starts, unshown, which is decoded and waiting when coming, see unshown.
-export type PlayClock = (heard: number, unshown: number, coming: boolean) => number;
+// starts, unshown, and whether that frame is ready, decoded and waiting
+// with what lies over it here, see unshown. Ready is asked only by a clock
+// that wants it, so the app's, which goes by the sound card alone, costs
+// nothing for it.
+export type PlayClock = (heard: number, unshown: number, ready: () => boolean) => number;
 // What a clock may reach of the queue it runs: the sound card, and whether
 // a play goes on.
 export type Play = { readonly audio: AudioContext; readonly playing: boolean };
@@ -761,9 +764,9 @@ export class FrameQueue {
     // once, on its way out, rather than stretch by stretch. It starts held,
     // and the first play, a gesture, lets it go.
     try {
-      this.audio = new AudioContext(this.sound ? { sampleRate: this.sound.sampleRate } : {});
+      this.audio = FrameQueue.soundCard(this.sound ? { sampleRate: this.sound.sampleRate } : {});
     } catch {
-      this.audio = new AudioContext();
+      this.audio = FrameQueue.soundCard({});
     }
     this.out = this.audio.createGain();
     this.out.connect(this.audio.destination);
@@ -1553,6 +1556,11 @@ export class FrameQueue {
   // the walks run on hands in the walk's, see preview/clock.ts, which the
   // app never builds.
   static clock: (play: Play) => PlayClock = () => (heard) => heard;
+  // The sound card a queue plays on, made as it opens. The app's is the
+  // system's. What runs the queue hands in one of its own the same way as
+  // clock: the page the walks run on hands in a card whose time the walk's
+  // clock moves, see preview/clock.ts.
+  static soundCard: (options: AudioContextOptions) => AudioContext = (options) => new AudioContext(options);
   playClock: PlayClock = FrameQueue.clock(this);
   get playing(): boolean {
     return this.state === "playing";
@@ -2013,7 +2021,7 @@ export class FrameQueue {
     // a hair less than the last one is the clock's jitter.
     const h = this.heardOn(now);
     const next = this.unshown(plan);
-    const pos = Math.max(this.playClock(h.pos, next.at, next.coming), this.reached);
+    const pos = Math.max(this.playClock(h.pos, next.at, next.ready), this.reached);
     this.reached = pos;
     if (this.behind) this.began?.even.behind();
     else this.began?.even.tick(now, pos, h.source);
@@ -2084,8 +2092,11 @@ export class FrameQueue {
   }
 
   // Where the first frame of the play not on screen yet starts on the
-  // program, see playClock, and whether it is coming, decoded and waiting:
-  // the frame due last, or the first after the frame on screen. A run's
+  // program, see playClock, and whether it is ready: the frame due last, or
+  // the first after the frame on screen. Ready is decoded and waiting with
+  // what lies over it here, so a clock that goes on to it at once shows it
+  // with its captions, the way the app does, which has the frame's time to
+  // fetch them. A layer still on its way is asked for first. A run's
   // frames only go on, so in a play a frame of the run before the one on
   // screen is up too. A pause puts up the frame that holds the playhead,
   // see hold, which can be the one after the frame due, and the frame due
@@ -2094,7 +2105,7 @@ export class FrameQueue {
   // never comes, so the clock stands on it nowhere, and the play goes by
   // the sound card's time the way it does in the app. Past what the plan
   // has worked out, nowhere too.
-  private unshown(plan: VideoPlan): { at: number; coming: boolean } {
+  private unshown(plan: VideoPlan): { at: number; ready: () => boolean } {
     const s = this.shown;
     const thisPlay = this.putFor === this.ticket;
     const up = (need: Need | null) =>
@@ -2103,10 +2114,11 @@ export class FrameQueue {
     if (up(plan.need(k))) do k++; while (plan.need(k) && up(plan.need(k)));
     const need = plan.need(k);
     const slot = need && this.slotOf(need.run);
-    const coming = !!slot && slot.ready.some((h) => h.rank === need.rank);
+    const decoded = !!slot && slot.ready.some((h) => h.rank === need.rank);
     const at = plan.at(k);
-    const onItsWay = coming || (slot?.decoder.decodeQueueSize ?? 0) > 0;
-    return { at: Number.isNaN(at) || !onItsWay ? Infinity : at, coming };
+    const onItsWay = decoded || (slot?.decoder.decodeQueueSize ?? 0) > 0;
+    const ready = () => decoded && !(this.video && this.over?.ready?.(this.shownAt(need!.rank)));
+    return { at: Number.isNaN(at) || !onItsWay ? Infinity : at, ready };
   }
 
   // When the page next has nothing to do after an animation frame: a

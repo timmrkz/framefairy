@@ -55,7 +55,17 @@ runs:
     # the commit it stamps, fails with it.
     - shell: bash
       run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+    # The CI image brings Go, see .github/ci-image/Dockerfile. It is taken
+    # when it is the version go.mod names, and setup-go downloads that one
+    # otherwise, as it does on a runner of its own.
+    - id: image-go
+      shell: bash
+      run: |
+        want=$(sed -n 's/^go \([0-9.]*\)$/\1/p' go.mod)
+        have=$([ -z "${FRAMEFAIRY_CI_GO:-}" ] || "$FRAMEFAIRY_CI_GO" env GOVERSION | sed 's/^go//')
+        case "$have" in "$want" | "$want".*) echo "Go $have from the CI image" && echo "there=true" >>"$GITHUB_OUTPUT" ;; esac
+    - if: steps.image-go.outputs.there != 'true'
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version-file: go.mod
         cache: false
@@ -100,11 +110,17 @@ runs:
       if: inputs.ffmpeg == 'true' && runner.os == 'macOS'
       shell: bash
       run: echo "recipe=-$(sh scripts/build-tools.sh --recipe)" >> "$GITHUB_OUTPUT"
+    # Without work, the sources it was built from: 543 MB of the 659,
+    # which every job unpacked, 6 s of a walks job. build-ffmpeg.sh
+    # fetches them again for every build, and only make notices reads
+    # them after it, which no job runs.
     - id: ffmpeg
       if: inputs.ffmpeg == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: .build/ffmpeg
+        path: |
+          .build/ffmpeg
+          !.build/ffmpeg/work
         key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}${{ steps.tools.outputs.recipe }}
     - id: llama
       if: inputs.llama == 'true'
