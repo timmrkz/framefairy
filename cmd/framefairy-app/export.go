@@ -27,7 +27,7 @@ import (
 //
 // It and the work on the video's clips go one at a time: it is refused
 // while a search or a clip made by hand of the video runs, and either of
-// those stops it, see stopTranscribing. Tim's report of 26 October, 12.27:
+// those stops it, see queue.makeWayForTranscribe. Tim's report of 26 October, 12.27:
 // carried on behind a search by itself, the two needed a menu nobody could
 // read.
 func (s *FrameFairy) Transcribe(path string) Job {
@@ -35,14 +35,9 @@ func (s *FrameFairy) Transcribe(path string) Job {
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobTranscribe, label, notInLibrary)
 	}
-	for _, j := range s.jobs.list() {
-		if j.Episode == path && makesClips(j.Kind) && j.going() {
-			return s.jobs.refuse(path, engine.JobTranscribe, label, errClipsFirst)
-		}
+	if !s.jobs.makeWayForTranscribe(path) {
+		return s.jobs.refuse(path, engine.JobTranscribe, label, errClipsFirst)
 	}
-	// One that stopped is taken up by this one, which writes the record
-	// again in its place.
-	s.jobs.settle(path, engine.JobTranscribe, "")
 	return s.jobs.addSteps(path, engine.JobTranscribe, label, true, func(j *Job) {
 		j.JobRecord.ID = engine.TranscribeID
 	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
@@ -53,18 +48,6 @@ func (s *FrameFairy) Transcribe(path string) Job {
 // errClipsFirst is Transcribe video asked for while the work on the
 // video's clips runs, which the menu does not offer.
 const errClipsFirst = "the video's clips are being found, transcribe it once that is done"
-
-// stopTranscribing stops the whole video's transcription of a video the
-// way Stop transcribing does, for a search or a clip made by hand of the
-// video asked for, see Transcribe. What it heard stays.
-func (s *FrameFairy) stopTranscribing(path, why string) {
-	for _, j := range s.jobs.list() {
-		if j.Episode == path && j.Kind == engine.JobTranscribe && j.going() {
-			theLog.jobLine(zerolog.InfoLevel, &j).Str("why", why).Msg("the whole video's transcription is stopped for the work on its clips")
-			s.CancelJob(j.ID)
-		}
-	}
-}
 
 // errNotWhole is Export transcript asked for before the video is
 // transcribed to its end, which the menu does not offer.

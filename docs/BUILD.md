@@ -261,13 +261,24 @@ lines they run on Linux, and the counts go to Codecov, see
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.
 
+### No code nothing calls
+
+golangci-lint's `unused`, in `make lint` with forbidigo, fails on a
+function, a type, a constant or a variable nothing calls, not even a
+test. A second run reads the code without the tests, so code only a
+test calls fails too, and lives in a `_test.go` file beside the test.
+Code only one system calls, like the keychain on a Mac, lives in that
+system's own file, so the run on Linux reads none of it. Code that only
+a build tag the lint cannot build calls, like the frames decoder's
+`ffmpeglibs`, says so on its line with `//nolint:unused`.
+
 ### No test waits on the clock
 
 A test never waits, and never on the clock, see CLAUDE.md and the
 testing skill in `.claude/skills/testing/`, and two linters hold every
 test to the part about the clock, each with that one rule:
 
-- golangci-lint, `make lint`, with only forbidigo, and only on test files,
+- golangci-lint, `make lint`, with forbidigo, here only on test files,
   see `.golangci.yml`. It refuses `time.Sleep`, `time.After`, `time.Tick`,
   `time.NewTimer`, `time.NewTicker` and `time.AfterFunc`, and a context
   with a deadline, `context.WithTimeout` and `context.WithDeadline`, and a

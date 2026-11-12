@@ -27,20 +27,14 @@ engine answers is tried against the bridge.
 The frame queue the video preview plays from, `frontend/src/lib/frames/`,
 has a third page, the preview's `preview/frames/`: one canvas playing an
 episode made for it, whose picture carries its frame number and whose
-sound can be laid over the episode's own sample by sample.
-`frontend/preview/frames/cuts.mjs` was written to play a clip with cuts
-on it and check every frame drawn and every sample heard, and shows no
-picture today, see below. The preview's own episode is made the same way,
-so the same is measured in the workspace. What it
-measures and how to read it is in the interface skill, under Playback and
-The frame queue.
+sound can be laid over the episode's own sample by sample. The preview's
+own episode is made the same way, so the same is measured in the
+workspace. What it measures and how to read it is in the interface
+skill, under Playback and The frame queue.
 
 Adding a video runs against the bridge: a walk asks `/pick` for a test
 video, the bridge has the Add button's box hand it over, and the walk
-clicks Add, `walks/searching.mjs`. The probes `frames/added.mjs` and `frames/cuts.mjs`
-are older, from before the bridge could add a video. No make target or
-workflow runs them, and they have shown no picture since plan row 2.156,
-see #613.
+clicks Add, `walks/searching.mjs`.
 
 ## Two browsers
 
@@ -1467,11 +1461,11 @@ set.
 
 ### The sequences
 
-What is checked is written in one place, `internal/outside/sequences.go`,
-the same way the walks' cases are in `sequences.mjs`: named sequences of
-steps, each a verb and its words, the actions and what has to come of
-them alike. The verbs are explained at the top of that file. The first
-sequence reads:
+What is checked is written in one place,
+`internal/outside/sequences_test.go`, the same way the walks' cases are
+in `sequences.mjs`: named sequences of steps, each a verb and its words,
+the actions and what has to come of them alike. The verbs are explained
+at the top of that file. The first sequence reads:
 
 ```go
 {"set up"},
@@ -1510,8 +1504,8 @@ most, so a step says what has to be true and never how long to wait.
 
 Three files, each with one job:
 
-- `sequences.go`, the sequences and the verbs. It builds everywhere, and
-  `TestEveryStepIsOneTheRunnerKnows` reads it in `make unit`: a verb
+- `sequences_test.go`, the sequences and the verbs. Every `go test`
+  builds it, and `TestEveryStepIsOneTheRunnerKnows` reads it in `make unit`: a verb
   misspelt, a word too few or a key nobody bought fails on Linux in
   seconds, not on the Mac at the end of a CI run.
 - `run_test.go`, how each verb is done on the Mac, the same for every
@@ -1519,7 +1513,7 @@ Three files, each with one job:
 - `cmd/framefairy-app/probe_outside.go`, what the app can be asked.
 
 A new case is a new sequence. A new verb is a line in the list at the
-top of `sequences.go`, its words in `verbs`, and how it is done in `done`
+top of `sequences_test.go`, its words in `verbs`, and how it is done in `done`
 in `run_test.go`. `go test -tags outside -run 'TestSequences/<part of a
 name>'` runs one.
 

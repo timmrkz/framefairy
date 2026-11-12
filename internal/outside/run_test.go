@@ -2,7 +2,7 @@
 
 package outside
 
-// How each step in sequences.go is done on a Mac, against the app's probe,
+// How each step in sequences_test.go is done on a Mac, against the app's probe,
 // cmd/framefairy-app/probe_outside.go. Only make outside runs this, in CI.
 
 import (
@@ -174,7 +174,7 @@ func (m *mac) play(t *testing.T, seq sequence) {
 	say("notice", seq.name, "passed:\n"+strings.Join(lines, "\n"))
 }
 
-// done is how each verb in sequences.go is done.
+// done is how each verb in sequences_test.go is done.
 var done = map[string]func(m *mac, args []string) error{
 	"set up":        (*mac).setUp,
 	"buy":           (*mac).buy,
@@ -261,7 +261,7 @@ var done = map[string]func(m *mac, args []string) error{
 	},
 }
 
-// Every verb sequences.go knows is one the runner can do.
+// Every verb sequences_test.go knows is one the runner can do.
 func TestEveryVerbIsDone(t *testing.T) {
 	for v := range verbs {
 		if done[v] == nil {

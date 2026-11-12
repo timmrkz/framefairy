@@ -151,3 +151,10 @@ func (s *fakeShop) Refs(ctx context.Context, email string) ([]string, error) {
 	slices.Sort(refs)
 	return refs, nil
 }
+
+// clone copies all of it, for a backup.
+func (db memoryDB) clone() memoryDB {
+	c := db.begin()
+	c.record = slices.Clone(db.record)
+	return c
+}

@@ -14,6 +14,8 @@ import (
 // frame, so most of a frame is rows that are compared whole and passed.
 // Each frame the video preview plays asks for its own layer, see
 // docs/CAPTIONS.md.
+//
+//nolint:unused // captions.go calls it, and only builds with the tag ffmpeglibs
 func inked(black, white []byte, width, height int, video bool) framewire.Layer {
 	stride := width * 3
 	clear := func(y int) bool {
@@ -54,6 +56,8 @@ func inked(black, white []byte, width, height int, video bool) framewire.Layer {
 }
 
 // allOf says whether every byte of b is v.
+//
+//nolint:unused // captions.go calls it, and only builds with the tag ffmpeglibs
 func allOf(b []byte, v byte) bool {
 	if len(b) == 0 {
 		return true
@@ -67,6 +71,8 @@ func allOf(b []byte, v byte) bool {
 // the three colours. In video range, see videoRange, a colour c times its
 // alpha a is put back in full range as (c − 16·a/255)·255/219, since the
 // 16 the range adds is blended by the alpha too.
+//
+//nolint:unused // captions.go calls it, and only builds with the tag ffmpeglibs
 func layerOf(black, white []byte, video bool) []byte {
 	n := len(black) / 3
 	out := make([]byte, 4*n)
