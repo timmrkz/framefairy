@@ -170,7 +170,13 @@ export const steps = {
     });
     await page.mouse.click(one.left + one.w / 2, band);
     await settle(page);
-    const head = await page.evaluate(() => document.querySelector(".clip-timeline .playhead").getBoundingClientRect().left);
+    // The playhead is a line centred on its moment, see .playhead, and it
+    // stands on a whole pixel since #752, so its left edge is up to a
+    // pixel and a half before the moment. Its middle is the moment.
+    const head = await page.evaluate(() => {
+      const r = document.querySelector(".clip-timeline .playhead").getBoundingClientRect();
+      return r.left + r.width / 2;
+    });
     if (head < one.left - 2 || head > one.left + 4) {
       walk.wrong = `a joined block from ${one.left.toFixed(0)} px clicked in its middle put the playhead at ${head.toFixed(0)} px`;
       return;
