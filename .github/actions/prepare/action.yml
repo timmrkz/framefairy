@@ -73,7 +73,13 @@ runs:
     - id: pinned-go
       if: steps.image-go.outputs.there != 'true'
       shell: bash
-      run: echo "version=$(sed -n 's/^FROM golang:\([0-9.]*\)-.*/\1/p' .github/ci-image/Dockerfile)" >> "$GITHUB_OUTPUT"
+      run: |
+        version=$(sed -n 's/^FROM golang:\([0-9.]*\)-.*/\1/p' .github/ci-image/Dockerfile)
+        if [ -z "$version" ]; then
+          echo "::error::no Go version in the FROM golang: line of .github/ci-image/Dockerfile"
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
     - if: steps.image-go.outputs.there != 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
