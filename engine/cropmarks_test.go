@@ -764,9 +764,10 @@ func planMarks(t *testing.T, fsys afero.Fs, path string) []CropMark {
 
 // The cases of "Keyframes at a dragged edge", which Tim agreed on 10
 // November: an edge carries the keyframe it reached last, on the clip's
-// first or last frame, a cut on the first frame after it, a circle only
-// while a circle beside it joins it, and every keyframe keeps its own
-// place. Diamonds A, B and C, circles X, Y and Z, in a clip from 10 to
+// first or last frame, a cut on the first frame after it, and every
+// keyframe keeps its own place. A circle carried with no circle beside it
+// rides on the edge on its own, until the edge reaches another keyframe,
+// Tim's report of 12 November. Diamonds A, B and C, circles X, Y and Z, in a clip from 10 to
 // 20 s.
 func TestAnEdgeCarriesTheKeyframeItReachedLast(t *testing.T) {
 	t.Parallel()
@@ -800,10 +801,12 @@ func TestAnEdgeCarriesTheKeyframeItReachedLast(t *testing.T) {
 		{"the end reaches C", one(10, 16.5), []CropMark{a, b, c}, []CropMark{a, b, last(c, 16.5)}},
 		{"the end reaches B", one(10, 13.5), []CropMark{a, b, c}, []CropMark{a, last(b, 13.5)}},
 		{"only X and Y, the start reaches X", one(12.5, 20), []CropMark{x, y}, []CropMark{at(opens(x, nil), 12.5), y}},
-		{"only X and Y, the start reaches Y", one(14.5, 20), []CropMark{x, y}, nil},
+		{"only X and Y, the start reaches Y", one(14.5, 20), []CropMark{x, y}, []CropMark{alone(at(y, 14.5))}},
 		{"X, Y and Z, the start reaches Y", one(14.5, 20), []CropMark{x, y, z}, []CropMark{at(y, 14.5), z}},
 		{"only X and Y, the end reaches Y", one(10, 13.5), []CropMark{x, y}, []CropMark{opens(x, nil), last(y, 13.5)}},
-		{"only X and Y, the end reaches X", one(10, 11.5), []CropMark{x, y}, nil},
+		{"only X and Y, the end reaches X", one(10, 11.5), []CropMark{x, y}, []CropMark{alone(last(opens(x, nil), 11.5))}},
+		{"a cut over X and Y rides Y on its own up to C", []Segment{{Start: 10, End: 11.5}, {Start: 14.5, End: 20}}, []CropMark{x, y, c}, []CropMark{alone(at(y, 14.5)), c}},
+		{"a cut over X, Y and C carries C", []Segment{{Start: 10, End: 11.5}, {Start: 17.5, End: 20}}, []CropMark{x, y, c}, []CropMark{at(c, 17.5)}},
 		{"D, X and Y, the start reaches X", one(12.5, 20), []CropMark{d, x, y}, []CropMark{at(opens(x, &d), 12.5), y}},
 		{"a cut over A and B", []Segment{{Start: 10, End: 11.5}, {Start: 14.5, End: 20}}, []CropMark{a, b, c}, []CropMark{at(b, 14.5), c}},
 		{"a cut over Y joined to X before it", []Segment{{Start: 10, End: 13.5}, {Start: 14.5, End: 20}}, []CropMark{x, y}, []CropMark{opens(x, nil), at(y, 14.5)}},

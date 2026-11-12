@@ -2710,9 +2710,10 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   the end of the clip dragged over keyframes carries the one it reached
   last on the clip's first or last frame, with its own crop, and the
   others it covers wait out of sight. A cut carries the latest keyframe
-  it covers on the first frame after it. A carried circle stays only
-  while a circle beside it joins it, so its glide line has somewhere to
-  go. Every keyframe keeps its own place, so the edge dragged back out
+  it covers on the first frame after it. A glide keyframe is pushed the
+  same way when no second one is left beside it: it rides on the edge as
+  an empty ring until the edge reaches another keyframe, which then
+  rides in its place, Tim's report of 12 November. Every keyframe keeps its own place, so the edge dragged back out
   leaves each where it was. Placing the crop on a carried keyframe,
   pressing S or G on it or dragging it makes it a keyframe of its own
   where it stands. Removing it removes only it, and the others it

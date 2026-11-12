@@ -1239,7 +1239,8 @@ covers, the clip shows and steers by the one it carries, `carry`: the start
 and a cut carry the latest they cover, on the first frame after them, and
 the end the earliest, on the clip's last frame, a mark with `Last` set,
 which `MarksOnFrames` sends the window on that frame. A carried circle no
-circle beside it joins is left out. Touching a carried mark, `realise`,
+circle beside it joins is carried all the same, `Alone`, until the edge
+reaches another keyframe, Tim's report of 12 November. Touching a carried mark, `realise`,
 writes it where it stands and sets the others it covered `aside`, which
 are carried no more until a reshape leaves them inside a piece again,
 `unsetAside`. Tim agreed the cases on #778. A mark steers the pieces of the

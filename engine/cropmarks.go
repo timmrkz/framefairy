@@ -280,9 +280,10 @@ func markedPieces(segments []Segment, turns []int, marks []CropMark) {
 // on the clip's first frame, its last, or the first frame after the cut,
 // with its own crop, and the others it covers wait out of sight. Each
 // keeps its own moment in the plan, so the edge dragged back out leaves
-// each where it was. Of a circle carried, only one still joined to a
-// circle beside it stays, since a glide line needs somewhere to go. Tim
-// agreed the rules on 10 November, and that a carried keyframe keeps its
+// each where it was. A circle carried with no circle beside it rides on
+// the edge on its own, an empty ring that glides nowhere, until the edge
+// reaches another keyframe and carries that one instead, Tim's report of
+// 12 November: it is pushed, never dropped. Tim agreed the rules on 10 November, and that a carried keyframe keeps its
 // own crop: an edge dragged in over a glide makes the glide shorter and
 // faster, and dragged out longer and slower. The doc is "Keyframes at a
 // dragged edge".
@@ -319,8 +320,7 @@ func coverOf(segments []Segment, at float64) int {
 // the latest they cover, on the first frame of the piece after them, and
 // the end the earliest, on the last frame of the clip. A keyframe set
 // aside is never carried. One already on that frame keeps it, and nothing
-// is carried there. A carried circle no circle of its turn stands beside
-// is not shown.
+// is carried there.
 func carry(segments []Segment, marks []CropMark) []carriage {
 	if len(segments) == 0 {
 		return nil
@@ -377,14 +377,7 @@ func carry(segments []Segment, marks []CropMark) []carriage {
 		}
 		return !out[a].mark.Last && out[b].mark.Last
 	})
-	kept := out[:0:0]
-	for i, c := range out {
-		if c.carried && c.mark.Glide && !joined(out, i) {
-			continue
-		}
-		kept = append(kept, c)
-	}
-	return kept
+	return out
 }
 
 // opened is keyframes in time order with each circle that starts a glide
