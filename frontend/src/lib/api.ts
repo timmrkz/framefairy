@@ -232,12 +232,27 @@ export interface Gesture {
 }
 
 // What a gesture makes of a clip: its pieces, where the playhead goes while
-// an edge is dragged, below nought when it stays, and its captions.
+// an edge is dragged, below nought when it stays, its captions, and how its
+// crop runs then.
 export interface Shaped {
   // Each with its part, see Segment.part.
   pieces: { start: number; end: number; part: number }[];
   playhead: number;
   captions: CaptionsView;
+  framing?: Framing;
+}
+
+// How a clip's crop runs over its pieces, worked out by the Go side for a
+// clip saved and for one under the hand alike, see Framing in
+// cmd/framefairy-app/views.go: its pieces with the keyframes that steer
+// each, the keyframes on screen, an edge's or a cut's carried one among
+// them, and the crop, see ClipEntry.
+export interface Framing {
+  segments: Segment[];
+  cropMarks: CropMark[];
+  cropLefts: number[];
+  cropSteps?: (CropStep[] | null)[];
+  glides?: GlideSpan[];
 }
 
 export interface Segment {
@@ -249,8 +264,9 @@ export interface Segment {
   // 270, by the stretch of the clip's rotations it lies in. Its crop is on
   // the picture rotated, see lib/rotate.ts.
   rotate?: number;
-  // The keyframes that steer the piece's crop, which glides over them,
-  // see lib/glide.ts. With none the crop stands at cropX.
+  // The keyframes that steer the piece's crop, which switches on each or
+  // glides into it, and holds until the next, see ClipEntry.cropSteps.
+  // Before the first, and with none, the crop stands at cropX.
   marks?: CropMark[];
   // The part of the clip the piece is in, counted from nought: pieces that
   // play straight on from each other, with no cut between them, have the
@@ -265,6 +281,32 @@ export interface CropMark {
   at: number;
   x: number;
   turn?: number;
+  // A circle, which the crop glides to from a circle before it, rather
+  // than a diamond it switches on.
+  glide?: boolean;
+  // A circle that starts a glide, from the crop before it, with no crop
+  // of its own, see engine.CropMark.
+  opens?: boolean;
+  // A circle that starts a glide from the clip's own crop, with no
+  // keyframe before it.
+  fromClip?: boolean;
+  // A circle with no circle beside it, which does nothing yet.
+  alone?: boolean;
+}
+
+// A piece's crop from a frame of the video on, until the next step, see
+// engine.CropStep.
+export interface CropStep {
+  frame: number;
+  x: number;
+}
+
+// A stretch the crop glides over, from the frame the glide starts on to
+// the circle's frame, each as the moment its frame starts. See
+// engine.GlideSpan.
+export interface GlideSpan {
+  from: number;
+  to: number;
 }
 
 // A stretch of the video a person rotated deg degrees to the left, 90,
@@ -461,6 +503,13 @@ export interface ClipEntry extends ClipView {
   // the entry changes as the words land, so its captions are asked for
   // again, issue #745.
   unheard?: [number, number][];
+  // For each piece with keyframes, how its crop switches over its frames,
+  // worked out by the engine, and null for a piece whose crop is its
+  // cropLefts throughout. See engine.CropSteps.
+  cropSteps?: (CropStep[] | null)[];
+  // Where the crop glides, each glide from a circle into the next cut to a piece, worked
+  // out by the engine, see engine.Glides.
+  glides?: GlideSpan[];
   // On the answer to an edit, when the edit was written, on the clock a
   // video's state is read by, see VideoState.
   rev?: number;
@@ -1008,8 +1057,10 @@ export const api = {
   // A keyframe added, moved or removed. A from below nought adds one at to
   // with its crop at x, a to below nought removes the one at from, and
   // both move it with its crop.
-  setCropMark: (path: string, plan: string, clip: string, from: number, to: number, x: number) =>
-    call<ClipEntry>("SetCropMark", path, plan, clip, from, to, x),
+  setCropMark: (path: string, plan: string, clip: string, from: number, to: number, x: number, glide: boolean) =>
+    call<ClipEntry>("SetCropMark", path, plan, clip, from, to, x, glide),
+  setCropGlide: (path: string, plan: string, clip: string, at: number, glide: boolean) =>
+    call<ClipEntry>("SetCropGlide", path, plan, clip, at, glide),
   clipPlayed: (plan: string, clip: string) => call<void>("ClipPlayed", plan, clip),
   removeClip: (path: string, plan: string, clip: string, removed: boolean) =>
     call<ClipEntry>("RemoveClip", path, plan, clip, removed),

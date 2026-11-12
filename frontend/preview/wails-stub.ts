@@ -149,8 +149,8 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     thumbnails: (((window as any).__thumbs ??= {})[`0${n}`] ?? [])
       .filter((t: number) => segments.some((p) => t >= p.start && t < p.end))
       .sort((a: number, b: number) => a - b),
-    // The same for keyframes. The stub glides nothing: the walks against
-    // the real Go side are where the glide is proven.
+    // The same for keyframes. The stub works out no crop: the walks
+    // against the real Go side are where the crop is proven.
     cropMarks: ((((window as any).__cropMarks ??= {})[`0${n}`] ?? []) as { at: number; x: number }[])
       .filter((m) => segments.some((p) => m.at >= p.start && m.at < p.end))
       .sort((a, b) => a.at - b.at),
@@ -900,6 +900,7 @@ const edits = new Set([
   "RotatePart",
   "SetThumbnail",
   "SetCropMark",
+  "SetCropGlide",
   "SetCaptionTime",
   "ResetCrop",
   "RemoveClip",
@@ -1704,18 +1705,28 @@ const Answers = {
         return Promise.resolve(clipOf(id));
       }
       case "SetCropMark": {
-        const [, , id, from, to, x] = args as [string, string, string, number, number, number];
-        const all = ((window as any).__cropMarks ??= {}) as Record<string, { at: number; x: number }[]>;
+        const [, , id, from, to, x, glide] = args as [string, string, string, number, number, number, boolean];
+        const all = ((window as any).__cropMarks ??= {}) as Record<string, { at: number; x: number; glide: boolean }[]>;
         const list = (all[id] ??= []);
         const ms = (t: number) => Math.round(t * 1000);
         let left = x;
+        let kind = !!glide;
         if (from >= 0) {
           const at = list.findIndex((m) => ms(m.at) === ms(from));
           if (at < 0) return Promise.reject(new Error("the clip has no keyframe there"));
           left = list[at].x;
+          kind = list[at].glide;
           list.splice(at, 1);
         }
-        if (to >= 0) list.push({ at: Math.round(to * 1000) / 1000, x: left });
+        if (to >= 0) list.push({ at: Math.round(to * 1000) / 1000, x: left, glide: kind });
+        return Promise.resolve(clipOf(id));
+      }
+      case "SetCropGlide": {
+        const [, , id, at, glide] = args as [string, string, string, number, boolean];
+        const list = (((window as any).__cropMarks ??= {})[id] ??= []) as { at: number; glide: boolean }[];
+        const mark = list.find((m) => Math.round(m.at * 1000) === Math.round(at * 1000));
+        if (!mark) return Promise.reject(new Error("the clip has no keyframe there"));
+        mark.glide = glide;
         return Promise.resolve(clipOf(id));
       }
       // The captions with the edge moved, and no word taken out: the

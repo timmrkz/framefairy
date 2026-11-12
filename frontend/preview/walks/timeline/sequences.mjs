@@ -400,39 +400,46 @@ export default [
     ],
   },
   {
-    // Plan row 3.26: keyframes put with C, the second dragged to another
-    // place, glide the crop from the one to the other, in the video
-    // preview frame by frame while it plays as the render crops it.
-    // TestTheRenderGlidesTheCropOverTheMarks holds the render to the same
-    // glide, and glide.cases.json the window and the engine to each other.
-    name: "keyframes put with C glide the crop from one to the next in the video preview, frame by frame",
+    // Tim's camera switch, #750: one switch keyframe put with S where the camera
+    // switches, and the crop dragged with the playhead on it. The crop
+    // switches on the keyframe's own frame and holds, and the part before
+    // keeps the clip's own crop, in the video preview frame by frame while
+    // it plays, and after a cut, as the render crops it. Off the keyframe
+    // the crop frame shows the crop and a drag moves nothing, Tim on #750.
+    // The rule itself, two keyframes, a glide from one circle into the
+    // next and a glide across a cut, is the engine's and tested there:
+    // TestTheCropHoldsFromEachKeyframeToTheNext,
+    // TestTheCropGlidesOnlyFromACircleIntoTheNext and
+    // TestAGlideBetweenTwoCirclesRunsAcrossACut. The window only looks
+    // the crop up in the steps Go sends,
+    // TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy holds those to
+    // the render on every frame and keyframes.test.ts the lookup, so a
+    // walk shows once that the video preview follows them, still,
+    // playing and past a cut. A glide is no more steps to the window.
+    // A keyframe before a cut once stopped holding its crop after it,
+    // found by Tim, plan row 2.238.
+    name: "one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it",
     steps: [
       ["added", 30, "25"],
       ["hold", "SetCropMark"],
-      ["keyframe at", 0.2],
-      ["keyframe at", 0.8],
-      ["drag crop", 400],
-      ["keyframes", 2],
-      ["glides"],
-      ["glides while playing"],
+      ["crop before", 0.25],
+      ["keyframe at", 0.5],
+      ["drag crop", 300],
+      ["crop kept", 0.25],
+      ["crop before", 0.75],
+      ["playhead at", 0.25],
+      ["drag crop", -150],
+      ["crop kept", 0.25],
+      ["crop kept", 0.75],
+      ["keyframes", 1],
+      ["crop holds"],
+      ["crop holds while playing"],
+      ["cut at", 0.75],
+      ["cuts", 1],
+      ["crop holds across the cut"],
       ["under the hand", "crop"],
       ["remove mark", "crop"],
-      ["keyframes", 1],
-    ],
-  },
-  {
-    // Found by Tim: a keyframe before a cut and the next one after it did
-    // not glide, the crop stood still on both sides. Plan row 2.238.
-    name: "a keyframe before a cut glides to one after it",
-    steps: [
-      ["added", 30, "25"],
-      ["keyframe at", 0.2],
-      ["keyframe at", 0.8],
-      ["drag crop", 400],
-      ["keyframes", 2],
-      ["cut at", 0.5],
-      ["cuts", 1],
-      ["glides across the cut"],
+      ["keyframes", 0],
     ],
   },
   {
@@ -453,30 +460,57 @@ export default [
   },
   {
     // Found by Tim on #192: C put no mark on a clip's first or last frame,
-    // only one frame in.
-    name: "a keyframe goes on a clip's first and last frame with C, and comes off with C",
+    // only one frame in. Found by Tim on #752: on a video whose picture
+    // starts 4 ms after its sound, the way OBS records, the video preview
+    // showed the frame before the playhead's, so S was not offered on the
+    // clip's first frame and a keyframe was never the one shown.
+    name: "a keyframe goes on a clip's first and last frame with S, and comes off with S",
     steps: [
-      ["added", 30, "25"],
+      ["added", 30, "25", "late4ms"],
       ["keyframe on", "last"],
       ["keyframe on", "first"],
     ],
   },
   {
+    // Tim's glide, #750: G puts a circle, and two circles are joined by a
+    // line along the top rule as soon as the second is put, whatever their
+    // crops. S on a circle makes it a diamond and the line goes, G a
+    // circle again and the line comes back, and G on a circle removes it.
+    // The line follows the start edge while the hand still holds it, found
+    // by Tim on #750 with a cut's edge.
+    // The first circle has no crop of its own, so a drag of the crop on
+    // it moves nothing: the glide starts from the crop before it, Tim on
+    // #778.
     // Found on #192: Automatic crop took the keyframes of the angle away
     // with the crop, and Put the crop back brought back the crop alone,
-    // so the glide was lost to one click.
-    name: "Put the crop back after Automatic crop brings back the keyframes and their glide",
+    // so what the keyframes did was lost to one click. Each comes back
+    // with its crop and its kind. Where the crop glides is the engine's,
+    // see the walk of S above.
+    name: "two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back",
     steps: [
       ["added", 30, "25"],
-      ["keyframe at", 0.2],
-      ["keyframe at", 0.8],
+      ["glide at", 0.2],
+      ["crop before", 0.2],
       ["drag crop", 400],
-      ["keyframes", 2],
+      ["crop kept", 0.2],
+      ["glide at", 0.8],
+      ["glides", 1],
+      ["drag crop", 400],
+      ["glides", 1],
+      ["keyframe key", ["s", "diamond"]],
+      ["glides", 0],
+      ["keyframe key", ["g", "circle"]],
+      ["glides", 1],
+      ["glide under the hand", 0.5],
+      ["crop before", 0.8],
       ["button", "Automatic crop"],
       ["keyframes", 0],
       ["button", "Put the crop back"],
       ["keyframes", 2],
-      ["glides"],
+      ["glides", 1],
+      ["crop kept", 0.8],
+      ["keyframe key", ["g", "none"]],
+      ["keyframes", 1],
     ],
   },
   {

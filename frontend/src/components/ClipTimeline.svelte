@@ -14,9 +14,12 @@
   // The shapes of a keyframe and a thumbnail on the clip timeline:
   // Lucide's diamond and camera, the icons of their
   // buttons, drawn filled rather than as a line, the camera with its lens
-  // left open. Plan row 2.234.
+  // left open. Plan row 2.234. A keyframe the crop glides into is the
+  // circle of its button, round where the diamond's points say the crop
+  // switches, #750, and about as much of the track as the diamond covers.
   const DIAMOND =
     "M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0Z";
+  const CIRCLE = "M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17Z";
   const CAMERA =
     "M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z";
 </script>
@@ -38,6 +41,8 @@
     type Word,
     type CaptionCue,
     type CropMark,
+    type Framing,
+    type GlideSpan,
   } from "../lib/api";
   import {
     heardIn,
@@ -201,12 +206,19 @@
     onremovecaption?: (first: number) => Promise<void>;
     // The clip as a drag of an edge or a cut has it, its pieces and the
     // captions the engine made for them, or null when no drag is shaping
-    // it. The video preview shows the same clip as the timeline on the way.
+    // it. The video preview shows the same clip as the timeline on the way,
+    // with the crop as the engine says it runs then, framing.
     // Playhead is where the playhead goes with the edge dragged, which it
     // reaches a frame after the clip is handed over, see seekSoon, and
     // nothing while it stays where it is.
     onshape?: (
-      shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[]; track?: string; playhead?: number } | null,
+      shape: {
+        cues: CaptionCue[];
+        pieces: { start: number; end: number }[];
+        track?: string;
+        playhead?: number;
+        framing?: Framing;
+      } | null,
     ) => void;
     // The clip's thumbnails, the moments of the episode the render takes a
     // picture of the short at. Each is a mark along the foot of the track.
@@ -215,8 +227,8 @@
     // was let go, both in the episode.
     onthumbnail?: (from: number, to: number) => Promise<void>;
     // The clip's keyframes, each a crop placed by hand on one frame. Each
-    // is a diamond on the foot line of the track, under the thumbnails. Plan
-    // row 3.26.
+    // is a diamond, or a circle, which the crop glides to from a circle, on the top
+    // rule of the track. Plan row 3.26.
     cropMarks?: CropMark[];
     // A keyframe dragged to another frame, from where it was to where it
     // was let go, or removed, with to below nought.
@@ -443,6 +455,7 @@
   let saving = $state(false);
   let shaped = $state<null | {
     pieces: { start: number; end: number; part: number }[];
+    framing?: Framing;
     cues: CaptionCue[];
     track?: string;
     held: CaptionCue[];
@@ -522,6 +535,7 @@
       if (mine === shapeFor && clip?.key === asked.key && answer) {
         shaped = {
           pieces: answer.pieces,
+          framing: answer.framing,
           cues: answer.captions?.captions ?? [],
           track: answer.captions?.track,
           held,
@@ -1513,7 +1527,13 @@
   $effect(() => {
     onshape?.(
       shapedShown && shaped
-        ? { cues: shaped.cues, pieces: shaped.pieces, track: shaped.track, playhead: shaped.playhead }
+        ? {
+            cues: shaped.cues,
+            pieces: shaped.pieces,
+            track: shaped.track,
+            playhead: shaped.playhead,
+            framing: shaped.framing,
+          }
         : null,
     );
   });
@@ -1873,10 +1893,27 @@
       .map((at) => ({ at, shown: shownAt("thumbnail", at) }))
       .filter((m) => m.shown >= view.from && m.shown <= view.to),
   );
+  // While an edge or a cut is dragged, the keyframes are the ones the
+  // engine answers the hand with, an edge carrying those it reaches, so
+  // they move with it and not only once it is let go, Tim on #778.
   const cropDots = $derived(
-    cropMarks
-      .map((m) => ({ at: m.at, shown: shownAt("crop", m.at) }))
+    (shapedShown && shaped?.framing ? shaped.framing.cropMarks : cropMarks)
+      .map((m) => ({ at: m.at, shown: shownAt("crop", m.at), glide: !!m.glide, opens: !!m.opens, alone: !!m.alone }))
       .filter((m) => m.shown >= view.from && m.shown <= view.to),
+  );
+  // The stretches the crop glides over, each from a circle into the next,
+  // as the engine works them out, see engine.Glides, as shares of the
+  // track. Each is drawn along the top rule, from dark to light, so the
+  // two circles read as joined, Tim's ask on #750, in the look he picked
+  // from a sheet, number 4. A keyframe being dragged takes the ends on it
+  // along, and an edge or a cut being dragged takes the line with it, as
+  // the engine answers the hand, see drawnPieces.
+  const glideLines = $derived(
+    ((shapedShown && shaped?.framing ? shaped.framing.glides : clip?.glides) ?? []).flatMap((g) => {
+      const left = Math.max(0, x(onFrame(shownAt("crop", g.from))));
+      const right = Math.min(100, x(onFrame(shownAt("crop", g.to))));
+      return right > left ? [{ key: `${g.from}-${g.to}`, left, width: right - left }] : [];
+    }),
   );
   const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
 
@@ -1897,9 +1934,20 @@
     });
   });
 
+  // Where the playhead is drawn. While an edge is held it is where the
+  // engine's answer to the hand puts it, the answer the edge and the
+  // keyframes riding on it are drawn from, so all three move in one frame.
+  // The video preview's frame comes a frame or more later, and a keyframe
+  // lit by it flickered on and off at every step of a drag, Tim on #778.
+  const handHead = $derived(reshaping ? shaped?.playhead : undefined);
+  const head = $derived(handHead ?? time);
+
   // The frame on the video preview, which is how a mark knows it is the
-  // one on screen. A state, never a distance.
-  const playFrame = $derived(frameAt(Number.isFinite(shown) ? shown : time, frame, frameStart));
+  // one on screen. A state, never a distance. While an edge is held, the
+  // frame the answer puts the playhead on, see head.
+  const playFrame = $derived(
+    frameAt(handHead ?? (Number.isFinite(shown) ? shown : time), frame, frameStart),
+  );
 
   // The frame a moment falls in, inside a piece the clip keeps: a moment
   // that was cut out is not in the short, so a mark held over a cut stays
@@ -2386,7 +2434,7 @@
             class="mark thumb"
             class:here={frameAt(m.shown, frame, frameStart) === playFrame}
             class:active={markDrag?.kind === "thumbnail" && markDrag.from === m.at}
-            style="left: {x(onFrame(m.shown))}%"
+            style="left: round({x(onFrame(m.shown))}%, 1px)"
             role="slider"
             tabindex="-1"
             aria-label="Thumbnail {i + 1}"
@@ -2401,34 +2449,51 @@
             {@render solid(CAMERA, 18, true)}
           </div>
         {/each}
+        {#each glideLines as g (g.key)}
+          <div class="glide" style="left: {g.left}%; width: {g.width}%"></div>
+        {/each}
         {#each cropDots as m, i (m.at)}
           <div
             class="mark cropdot"
             class:here={frameAt(m.shown, frame, frameStart) === playFrame}
             class:active={markDrag?.kind === "crop" && markDrag.from === m.at}
-            style="left: {x(onFrame(m.shown))}%"
+            class:alone={m.alone}
+            style="left: round({x(onFrame(m.shown))}%, 1px)"
             role="slider"
             tabindex="-1"
             aria-label="Keyframe {i + 1}"
             aria-valuenow={m.shown}
             title={locked
               ? "A keyframe. Click to see it"
-              : "A keyframe, where the crop stands on this frame. Click to see it, drag it to another frame, double-click to remove it"}
+              : m.alone
+                ? "Needs a second glide keyframe to glide. Click to see it, drag it to another frame, double-click to remove it"
+                : m.opens
+                ? "A glide keyframe. The crop glides from here, from the crop before it, into the next glide keyframe. Click to see it, drag it to another frame, double-click to remove it"
+                : m.glide
+                ? "A glide keyframe. The crop glides into it from the glide keyframe before. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"
+                : "A switch keyframe. The crop switches on it. With the playhead on it, drag the crop to place it. Click to see it, drag it to another frame, double-click to remove it"}
             data-grip="mark"
             data-kind="crop"
+            data-glide={m.glide || undefined}
+            data-alone={m.alone || undefined}
             data-at={m.at}
           >
-            {@render solid(DIAMOND, 18)}
+            {#if m.alone}
+              {@render ring(18)}
+            {:else}
+              {@render solid(m.glide ? CIRCLE : DIAMOND, 18)}
+            {/if}
           </div>
         {/each}
       </div>
       </div>
     {/if}
-    {#if time >= view.from && time <= view.to}
+    {#if head >= view.from && head <= view.to}
       <!-- On the track's inside, where the waveform and every mark are
            placed, and on the start of the frame it is in, where a mark
-           lit by it stands. Plan row 2.234. -->
-      <div class="at" style="left: calc(1px + (100% - 2px) * {x(onFrame(time)) / 100})">
+           lit by it stands. Plan row 2.234. On a whole pixel, rounded the
+           way a mark is, see .mark. -->
+      <div class="at" style="left: round(1px + (100% - 2px) * {x(onFrame(head)) / 100}, 1px)">
         <!-- The playhead of the range picker too, drawn by .playhead in
              app.css. -->
         <div class="playhead" class:scrubbing title="Drag to move the playhead"></div>
@@ -2441,6 +2506,19 @@
      the track's dark round it, so it reads over the waveform and over the
      app's colour alike. The ring is the line drawn under the fill, so half
      of it shows, outside the shape. -->
+<!-- A glide keyframe with no other beside it does nothing yet, so it is
+     drawn empty, a ring of the same size and colour that fills in once a
+     second one is put, the way an unset radio button reads. The well's
+     outline around it is the solid mark's, so the two stand alike on the
+     rule. Tim picked it from a sheet of eight on #778, over a dimmed
+     circle that looked like a mistake. -->
+{#snippet ring(size: number)}
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="8.5" fill="var(--well)" stroke="var(--well)" stroke-width={(3 * 24) / size} />
+    <circle class="hollow" cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="3" />
+  </svg>
+{/snippet}
+
 {#snippet solid(d: string, size: number, lens = false)}
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
     <path {d} fill="currentColor" stroke="var(--well)" stroke-width={(3 * 24) / size} stroke-linejoin="round" paint-order="stroke" />
@@ -2848,9 +2926,12 @@
      filled, with nothing behind it but its shape. The app's light colour,
      and white while the playhead is on its frame, under the hand or being
      dragged, the same for both kinds, so one is never the other drawn
-     inside out. Even sizes centred on the playhead's own grid, so on a
-     whole pixel or between two the mark's middle and the line's are the
-     same. Plan row 2.234. */
+     inside out. Even sizes centred on the playhead's own grid, and like
+     the playhead on a whole pixel, rounded in its style, so the mark's
+     middle and the line's are the same pixel. Left between two pixels,
+     the Mac put the line and the icon on different pixels, and drew the
+     mark half a pixel left of the playhead on its frame, found by Tim on
+     #750. Plan row 2.234. */
   .mark {
     position: absolute;
     width: 18px;
@@ -2880,6 +2961,21 @@
      track's border and a pixel in from it. */
   .cropdot {
     top: calc(var(--frame-line) / 2 - 9px);
+  }
+
+  /* The stretch the crop glides over from a circle into the next, over the
+     top rule and as thick: the black of the well where it leaves the first
+     circle, brightening to the brightest point of the app's colour at the
+     second, so it reads as the way from one into the other. Under the
+     marks, which stand on it. Number 4 of a sheet of nine drawn for Tim on
+     #750, his pick. */
+  .glide {
+    position: absolute;
+    top: 0;
+    height: var(--frame-line);
+    background: linear-gradient(90deg, var(--well), var(--accent-lit));
+    pointer-events: none;
+    z-index: 6;
   }
 
   /* A thumbnail is centred on the clip's bottom rule, at the other end of

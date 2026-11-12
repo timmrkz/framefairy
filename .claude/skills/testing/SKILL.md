@@ -681,7 +681,8 @@ A test is code we keep. It must still be right and readable in a year.
   be drawn.
 - **Add a step, not a test.** Every interface test starts the product
   from scratch, which costs seconds on every run. A new case goes into
-  a test that is already there.
+  a test that is already there, and a new one says why no test there
+  could take its steps.
 
 ## 12. CI holds the rules
 
@@ -782,6 +783,7 @@ wrong, and this skill wins:
 3. Nothing already tested it, or the old test was strengthened instead.
 4. It failed on the main branch, for the reason given, and passes now.
 5. It never waits, and nothing in it defeats the test cache.
-6. A change to tests or CI has its numbers against the main branch.
+6. A change to tests or CI has its numbers against the main branch, and
+   the end-to-end tests take no longer than they did there.
 7. CI passed on the last commit, and every rule here that CI does not
    check yet has an issue asking for the check.

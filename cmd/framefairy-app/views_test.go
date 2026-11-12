@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -170,4 +173,102 @@ func TestThePlansAskedThroughTheAppFromEverywhereAtOnce(t *testing.T) {
 	if err != nil || len(v.Clips) != 2 || v.Clips[0].Slug != "last" {
 		t.Errorf("once still, the plan read %v, want the one written last", err)
 	}
+}
+
+// The keyframes, the line from a circle into the next and the crop all
+// follow the hand: every step of a drag on the clip timeline is answered
+// with how the crop runs then, and it is how the crop runs once the same
+// gesture is let go and saved. The glide line came only with the clip
+// saved, found by Tim on #750, and then the keyframes, which an edge
+// carries, found by him on #778.
+func TestTheKeyframesAndTheCropFollowAnEdgeTheHandDrags(t *testing.T) {
+	t.Parallel()
+	svc, mine := memoryLibrary(t, "ep.mp4")
+	video := mine[0]
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	svc.probeVideo = func(context.Context, string) (engine.SourceInfo, error) {
+		return engine.SourceInfo{Duration: 60, Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}, nil
+	}
+	plan := filepath.Join(engine.LogsDir(video), "clips.json")
+	if err := afero.WriteFile(svc.store.files, plan, []byte(`{"source": "ep.mp4", "clips": [
+	  {"id": "01", "slug": "eins", "segments": [{"start": 10.0, "end": 14.0, "crop_x": 40}], "words": [[10.1, 10.5, "eins"]],
+	   "crop_marks": [{"at": 11.0, "x": 10, "glide": true}, {"at": 13.0, "x": 300, "glide": true}]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	before, err := svc.clipEntry(ctx, video, plan, "01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []engine.GlideSpan{{From: 11, To: 13}}; !reflect.DeepEqual(before.Glides, want) {
+		t.Fatalf("the clip glides over %v before the drag, not %v", before.Glides, want)
+	}
+	framing := func(e ClipEntry) Framing {
+		return Framing{e.Segments, e.CropMarks, e.CropLefts, e.CropSteps, e.Glides}
+	}
+	last := framing(before)
+	for _, g := range []engine.Gesture{
+		// A part cut out of the glide, the start dragged in over the first
+		// circle, which it carries, and then the end over the second, which
+		// it carries on the last frame, still joined to the first.
+		{Kind: "cut", From: 11.6, To: 12.2},
+		{Kind: "trim", Edge: "start", From: 11.2},
+		{Kind: "trim", Edge: "end", From: 12.92},
+	} {
+		shaped, err := svc.Shape(video, plan, "01", g)
+		if err != nil {
+			t.Fatalf("%s %s: %v", g.Kind, g.Edge, err)
+		}
+		if reflect.DeepEqual(shaped.Framing, last) {
+			t.Errorf("%s %s: the crop stays as it was under the hand, %+v", g.Kind, g.Edge, shaped.Framing)
+		}
+		saved, err := svc.Reshape(ctx, video, plan, "01", g, [2]float64{10, 10})
+		if err != nil {
+			t.Fatalf("%s %s: %v", g.Kind, g.Edge, err)
+		}
+		if !reflect.DeepEqual(shaped.Framing, framing(saved)) {
+			t.Errorf("%s %s: under the hand the crop runs as\n%+v\nand once saved as\n%+v", g.Kind, g.Edge, shaped.Framing, framing(saved))
+		}
+		last = framing(saved)
+	}
+	if want := []engine.CropMarkView{{At: 11.2, X: 10, Glide: true, Opens: true, FromClip: true}, {At: 12.88, X: 300, Glide: true}}; !reflect.DeepEqual(last.CropMarks, want) {
+		t.Errorf("the edges carry %v, not %v", last.CropMarks, want)
+	}
+}
+
+// BenchmarkAShapeAnswer is one answer to a step of a drag of the start of
+// a 30 s clip at 30 fps, worked out and written as JSON, with two diamonds
+// in it and with two circles gliding over 20 s of it.
+func BenchmarkAShapeAnswer(b *testing.B) {
+	b.Run("two diamonds", func(b *testing.B) { benchShape(b, "false") })
+	b.Run("a 20 s glide", func(b *testing.B) { benchShape(b, "true") })
+}
+
+func benchShape(b *testing.B, glide string) {
+	svc, mine := memoryLibrary(b, "ep.mp4")
+	video := mine[0]
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	svc.probeVideo = func(context.Context, string) (engine.SourceInfo, error) {
+		return engine.SourceInfo{Duration: 600, Width: 1920, Height: 1080, FPSNum: 30, FPSDen: 1}, nil
+	}
+	plan := filepath.Join(engine.LogsDir(video), "clips.json")
+	if err := afero.WriteFile(svc.store.files, plan, []byte(`{"source": "ep.mp4", "clips": [
+	  {"id": "01", "slug": "eins", "segments": [{"start": 10.0, "end": 40.0}], "words": [[10.1, 10.5, "eins"]],
+	   "crop_marks": [{"at": 15.0, "x": 100, "glide": `+glide+`}, {"at": 35.0, "x": 1200, "glide": `+glide+`}]}]}`), 0o644); err != nil {
+		b.Fatal(err)
+	}
+	if _, err := svc.clipEntry(context.Background(), video, plan, "01"); err != nil {
+		b.Fatal(err)
+	}
+	g := engine.Gesture{Kind: "trim", Edge: "start", From: 12}
+	size := 0
+	for b.Loop() {
+		shaped, err := svc.Shape(video, plan, "01", g)
+		if err != nil {
+			b.Fatal(err)
+		}
+		out, _ := json.Marshal(shaped)
+		size = len(out)
+	}
+	b.ReportMetric(float64(size), "bytes/answer")
 }

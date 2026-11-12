@@ -251,9 +251,10 @@ Code that breaks this map today, with the issue that fixes it. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
 - Rules of the engine in `frontend/src/lib/flow.ts` and
-  `frontend/src/lib/rotate.ts`, and the two held to Go by a shared case
-  file, `frontend/src/lib/glide.ts` and `frontend/src/lib/flow.ts`'s
-  frames, #610.
+  `frontend/src/lib/rotate.ts`, `flow.ts`'s frames held to Go by a shared
+  case file, and `frameOf` in `frontend/src/lib/keyframes.ts`, #610. The
+  crop a keyframe holds is no longer one of them: Go sends each piece's
+  crop steps, `engine.CropSteps`, and the window only looks them up.
 
 ## Changing the architecture
 
