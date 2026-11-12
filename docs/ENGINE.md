@@ -492,14 +492,15 @@ with the least a piece may hold between them, in whole frames,
 edge stays under the hand and both can still be dragged. The cut's far
 edge stays where it is, so the cut gets narrower as the edge goes in, and
 once less than that least of it is left it is gone and the edge goes on
-into what it took out. A cut the edge has gone past goes with the part
-trimmed off. Only the edge dragged pushes, and only once it has moved in,
-so a press or a drag outward moves no cut. The keyframes the edge and the
-narrower cut cover are carried as they are with no cut, see `carry` in
-`engine/cropmarks.go`. A clip with little more than a second besides a cut
-keeps its edge where the second runs out while the hand crosses the cut,
-and the edge catches up at the cut's far side, never ahead of the hand.
-Every step of a drag starts from the clip as saved, so a drag
+into what it took out. So a cut goes a little before the edge reaches its
+far side, at 25 frames a second four frames before, and a cut two frames
+wide goes as soon as the edge comes within the least of it. A cut the
+edge has gone past goes with the part trimmed off. Only the edge dragged
+pushes, and only once it has moved in, so a press or a drag outward moves
+no cut. The keyframes the edge and the narrower cut cover are carried as
+they are with no cut, see `carry` in `engine/cropmarks.go`. The edge goes
+as far as the clip keeps a second, counting each cut ahead of it as
+narrow as the edge has pushed it, `cutsAhead`. Every step of a drag starts from the clip as saved, so a drag
 back out puts the cuts back where they were. A clip once also kept the
 pieces it was found with, `found_segments`, to frame what was put back by
 the camera it showed. A clip used to be parted at every camera switch with

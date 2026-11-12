@@ -233,7 +233,7 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 		case "start":
 			start = toward(first, g.From, g.landStart(words, g.From, keepPause))
 			for range len(clip.Segments) {
-				held := math.Min(start, end-MinClip-cutsAhead(clip.Segments, start, true, g.frame()))
+				held := math.Min(start, end-MinClip-cutsAhead(clip.Segments, start, end, g.leastPiece(), true, g.frame()))
 				if held == start {
 					break
 				}
@@ -243,7 +243,7 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 		case "end":
 			end = toward(last, g.From, g.landEnd(words, goes, g.From, keepPause))
 			for range len(clip.Segments) {
-				held := math.Max(end, start+MinClip+cutsAhead(clip.Segments, end, false, g.frame()))
+				held := math.Max(end, start+MinClip+cutsAhead(clip.Segments, start, end, g.leastPiece(), false, g.frame()))
 				if held == end {
 					break
 				}
@@ -281,7 +281,9 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 		return func(pieces []*object) ([]*object, error) {
 			out, err := trimPieces(joinAt(pieces, clip.Rotations, pushed), clip.Rotations, start, end)
 			for _, p := range pushed {
-				out = applyCut(out, p.from, p.to)
+				if !p.gone {
+					out = applyCut(out, p.from, p.to)
+				}
 			}
 			return out, err
 		}, playhead, nil
@@ -518,9 +520,11 @@ func runOn(clip Clip, at float64) Clip {
 
 // shoved is a cut an edge of the clip pushed: where it was, was and
 // wasTo, and where it is now, from and to, its near edge pushed in and
-// its far edge where it was.
+// its far edge where it was. A cut pushed until too little of it is left
+// is gone, and what it took out plays.
 type shoved struct {
 	was, wasTo, from, to float64
+	gone                 bool
 }
 
 // shovel is the cut an edge of the clip pushes into, like a snow shovel:
@@ -564,28 +568,38 @@ func shovel(pieces []Segment, start, end, least float64, fromStart bool) []shove
 		if c.from == c.was && c.to == c.wasTo {
 			continue
 		}
-		if c.to-c.from < least {
-			// Too little of it is left to be a cut: the edge has all
-			// but passed it, and what it took out plays.
-			continue
-		}
+		// Too little of it is left to be a cut: the edge has all but
+		// passed it, and what it took out plays. A cut two frames wide
+		// is gone as soon as the edge comes within least of it, or the
+		// edge would leave a piece shorter than least before it.
+		c.gone = c.to-c.from < least
 		c.from, c.to = num.RoundTo(c.from, 3), num.RoundTo(c.to, 3)
 		pushed = append(pushed, c)
 	}
 	return pushed
 }
 
-// cutsAhead is how much of the clip the cuts ahead of an edge at at take
-// out, the cuts it has not passed, see shovel, with a frame for each,
-// since the pieces beside them are put on frames as they are saved. A
-// start passes a cut once it is beyond the cut's far side, an end once it
-// is before the cut's near side.
-func cutsAhead(pieces []Segment, at float64, fromStart bool, frame float64) float64 {
+// cutsAhead is how much of the clip the cuts ahead of the edge dragged
+// take out, start for a start and end for an end, as narrow as the edge
+// has pushed them, see shovel, with a frame for each, since the pieces
+// beside them are put on frames as they are saved. A cut the edge has
+// passed, or pushed until it is gone, takes nothing out. Counted at its
+// full width, a cut the edge pushes held a start back before it while
+// the hand went on, where the part after the cut was short, until the
+// hand had passed the cut and the edge jumped.
+func cutsAhead(pieces []Segment, start, end, least float64, fromStart bool, frame float64) float64 {
+	pushed := shovel(pieces, start, end, least, fromStart)
 	var w float64
 	for i := 1; i < len(pieces); i++ {
 		from, to := pieces[i-1].End, pieces[i].Start
-		if to <= from || (fromStart && to <= at) || (!fromStart && from >= at) {
+		if to <= from || (fromStart && to <= start) || (!fromStart && from >= end) {
 			continue
+		}
+		if k := slices.IndexFunc(pushed, func(c shoved) bool { return c.was == from && c.wasTo == to }); k >= 0 {
+			if pushed[k].gone {
+				continue
+			}
+			from, to = pushed[k].from, pushed[k].to
 		}
 		w += to - from + frame
 	}
