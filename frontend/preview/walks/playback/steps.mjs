@@ -332,7 +332,7 @@ export const steps = {
       walk.wrong = `the sound card was handed sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
   },
   // ["loop off near the end", seconds]
-  //                    trims the clip's start to two and a half seconds
+  //                    trims the clip's start to four and a half seconds
   //                    more than that before its end, which puts the
   //                    playhead there, records every sample handed to
   //                    the sound card, plays the clip, presses L to loop
@@ -349,11 +349,12 @@ export const steps = {
     // READ_AHEAD in lib/frames/queue.ts, so the play works out the next
     // time through on its own, the way it did when Tim pressed L. The
     // rest of the clip before that took the sound card's own time to
-    // play and checked nothing, so the clip starts there, #692. The play
-    // starts on its edge, which fades its sound in, as the clip's start
-    // did.
+    // play and checked nothing, so the clip starts there, #692. It
+    // starts two and a half seconds before the play reads the clip's
+    // end, so L is in on a busy machine too. The play starts on its edge,
+    // which fades its sound in, as the clip's start did.
     const g = await handles(page);
-    await drag(page, middle(g.start), high(g.track), (await xOf(page, end - arg - 2.5)) - middle(g.start), false);
+    await drag(page, middle(g.start), high(g.track), (await xOf(page, end - arg - 4.5)) - middle(g.start), false);
     await watch.step("trim", s);
     await preview(page, 0.2);
     // Every sample the sound card is handed, with the sound card's own

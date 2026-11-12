@@ -39,6 +39,7 @@
  14	sequences.mjs SEQUENCE=a search of what was said shows the parts not transcribed yet
  14	sequences.mjs SEQUENCE=a short rendered into the folder for shorts is known as rendered
  14	sequences.mjs SEQUENCE=a video whose file is moved away says so once, in a toast, and shows again once it is back
+ 14	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
  13	sequences.mjs SEQUENCE=a rotated part keeps its keyframe, and has the rotate icon drawn in its middle
  12	sequences.mjs SEQUENCE=a playhead dragged far over HEVC shows the key frame on the way, and the frame under the hand once it rests
  12	sequences.mjs SEQUENCE=a video gone back to after its first clip came while it was away has its waveform
@@ -46,7 +47,6 @@
  12	sequences.mjs SEQUENCE=the episode played through a clip with cuts shows only the video, and the clip its frame and captions
  12	sequences.mjs SEQUENCE=the hand and the keys light a card of the transcript and a part not transcribed yet the same
  12	sequences.mjs SEQUENCE=undo takes back a crop moved, a word corrected and a font picked, in turn, and redo does them again
- 12	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
  12	sequences.mjs SEQUENCE=one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it
  11	sequences.mjs SEQUENCE=Relaunch waits while a search runs, and the search goes on
  11	sequences.mjs SEQUENCE=a cut's edges dragged take the playhead along, the way the clip's edges do
