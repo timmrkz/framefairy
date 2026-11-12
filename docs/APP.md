@@ -2972,7 +2972,8 @@ things and no others, and each one means one thing.
   of a card on the card's own lines, the line over the row, the card's
   sides and the line under it, going round the card's corner where the row
   meets one. The fill and the motes stay inside that line, with corners
-  that follow the inside of its corners. A round is five turns and
+  that follow the inside of its corners. A clip card draws its line inside
+  itself, so its fill lies over that line, as it always has. A round is five turns and
   no two of them alike: the comet gets away, eases right off through one
   long side, comes back hard through the next, sits down again and finishes
   quickly, so the slow part falls somewhere else on the edge each turn, and
