@@ -919,6 +919,12 @@ export const steps = {
     if (!went) walk.wrong = "a removed picture still stands in its place after its time";
     await letClockGo(page);
   },
+  // ["microphone answered"] the Mac's question about the microphone is
+  //                    answered, and the microphone that starts then is
+  //                    stopped at once, since its recording has ended
+  async "microphone answered"() {
+    await control(url, "/microphone?answer=1");
+  },
   // ["microphone moves"]
   //                    while it listens, the microphone grows with the hum
   //                    on a spring, in its place: it goes a little past the
@@ -1541,10 +1547,30 @@ export const steps = {
   //                    "hearing" waits for more
   //                    to be said and settled, "settled" waits for words
   //                    before a pause to be settled, and a recording
-  //                    already running is only ended
+  //                    already running is only ended. "asked" presses
+  //                    Dictate while the Mac asks whether the app may use
+  //                    the microphone, and Stop while it still asks, and
+  //                    sees Dictate again at once, with the question left
+  //                    open for "microphone answered"
   async dictate(walk, arg, s) {
     const { kept, page, watch } = walk;
     const button = page.locator("button.dictate");
+    if (arg === "asked") {
+      // Tim pressed Dictate, the Mac asked about the microphone, and
+      // nothing he pressed did anything until the question went 45 s
+      // later, #792. Stop ends a recording whose microphone has not
+      // started, and Report then makes the report.
+      await control(url, "/microphone?ask=1");
+      await button.click();
+      const said = await button.getAttribute("aria-label");
+      if (said !== "Stop") {
+        walk.wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
+        return;
+      }
+      await button.click();
+      await pageUntil(page, () => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate");
+      return;
+    }
     if (arg === "hearing") {
       // More is said after what was there, and settled. The stand-in
       // speech model hears new words each time it is asked, so the

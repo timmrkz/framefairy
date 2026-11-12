@@ -47,6 +47,49 @@ type sound struct {
 	told      Dictation
 	hearing   bool
 	spoken    int
+	// asking holds the start of the next microphone until a walk answers,
+	// the way a Mac holds it while it asks the person whether the app may
+	// use the microphone, #792, and asked is the microphone it holds.
+	asking chan struct{}
+	asked  *bridgeMicrophone
+}
+
+// ask has the next microphone wait to start until answer.
+func (s *sound) ask() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.asking == nil {
+		s.asking, s.asked = make(chan struct{}), nil
+	}
+}
+
+// answer lets the microphone that waits to start go on, and gives it, or
+// nil when none waited.
+func (s *sound) answer() *bridgeMicrophone {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.asking != nil {
+		close(s.asking)
+	}
+	m := s.asked
+	s.asking, s.asked = nil, nil
+	return m
+}
+
+// answered lets the microphone that waits to start go on, and returns
+// once it has been stopped, the walk's own timeout ending it if it never
+// is.
+func (s *sound) answered(ctx context.Context) error {
+	m := s.answer()
+	if m == nil {
+		return errors.New("no microphone was waiting to start")
+	}
+	select {
+	case <-m.stopped:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("the microphone that started after its recording ended was left on: %w", ctx.Err())
+	}
 }
 
 func newSound() *sound {
@@ -242,6 +285,15 @@ type bridgeMicrophone struct {
 }
 
 func (m *bridgeMicrophone) start(heard func([]float32)) error {
+	m.s.mu.Lock()
+	asking := m.s.asking
+	if asking != nil {
+		m.s.asked = m
+	}
+	m.s.mu.Unlock()
+	if asking != nil {
+		<-asking
+	}
 	m.heard = heard
 	m.s.mu.Lock()
 	defer m.s.mu.Unlock()

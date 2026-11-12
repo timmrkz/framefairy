@@ -782,14 +782,18 @@ export default [
   },
   {
     // Plan row 2.244. Report makes one zip with what was written and the
-    // pictures, and the next report starts empty.
+    // pictures, and the next report starts empty. Issue #792: Dictate
+    // stopped while the Mac still asks about the microphone holds up
+    // nothing, and Report makes the report.
     name: "Report makes one zip with the pictures, and the next report starts empty",
     steps: [
       ["bugs"],
       ["write", "It froze.", 0],
       ["attach", 2],
+      ["dictate", "asked"],
       ["report lines up"],
       ["report", 2],
+      ["microphone answered"],
       ["close report"],
       ["bugs"],
       ["pictures", 0],

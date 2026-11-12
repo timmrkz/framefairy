@@ -531,11 +531,23 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	// step. It answers how many steps it took. Or ahead=n hands over n
 	// tenths of a second with no pass of the speech model, the person
 	// talking faster than it writes down, and answers how many it handed.
+	// Or ask=1 holds the next microphone's start the way a Mac does while
+	// it asks whether the app may use it, and answer=1 lets it start and
+	// answers once it was stopped.
 	mux.HandleFunc("/microphone", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Has("silent") {
 			b.sound.silent.Store(q.Get("silent") == "1")
 			answer(w, nil, nil)
+			return
+		}
+		if q.Has("ask") {
+			b.sound.ask()
+			answer(w, nil, nil)
+			return
+		}
+		if q.Has("answer") {
+			answer(w, nil, b.sound.answered(r.Context()))
 			return
 		}
 		if n, err := strconv.Atoi(q.Get("ahead")); err == nil {
@@ -2057,6 +2069,7 @@ func quit(svc *FrameFairy) bool {
 // On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
 func (b *bridge) reset() error {
 	b.sound.silent.Store(false)
+	b.sound.answer()
 	b.words.release()
 	b.words.wordless.Store(false)
 	b.words.save.Store(false)
