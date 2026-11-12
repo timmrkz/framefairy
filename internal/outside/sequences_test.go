@@ -1,106 +1,186 @@
 package outside
 
-import (
-	"os"
-	"path/filepath"
-	"slices"
-	"strconv"
-	"testing"
-
-	"framefairy/internal/fixtures"
-)
-
-// The sequences are read on every machine, in make unit, so a step that
-// is misspelt, has a word too few or names a key nobody bought fails here
-// rather than on the Mac at the end of a CI run.
+// The sequences make outside runs on a Mac: what starts outside the app,
+// step by step, and what has to come of it. This file is the whole of what
+// a sequence does. How a step is done is in run_test.go, and is the same
+// for every sequence. See From outside the app in docs/TESTING.md.
 //
-// On the real disk: a video added is a committed fixture, and it has to be there.
-func TestEveryStepIsOneTheRunnerKnows(t *testing.T) {
-	names := map[string]bool{}
-	for _, seq := range sequences {
-		if seq.name == "" || names[seq.name] {
-			t.Errorf("a sequence needs a name of its own: %q", seq.name)
-		}
-		names[seq.name] = true
-		if len(seq.steps) == 0 {
-			t.Errorf("%s has no steps", seq.name)
-		}
-		bought, videos := 0, 0
-		for i, s := range seq.steps {
-			at := func(format string, a ...any) {
-				t.Errorf("%s, step %d, %v: "+format, append([]any{seq.name, i + 1, s}, a...)...)
-			}
-			if len(s) == 0 {
-				at("an empty step")
-				continue
-			}
-			n, ok := verbs[s[0]]
-			if !ok {
-				at("no such verb")
-				continue
-			}
-			if words := len(s) - 1; words < n[0] || words > n[1] {
-				at("takes %d to %d words after the verb, not %d", n[0], n[1], words)
-				continue
-			}
-			switch s[0] {
-			case "buy":
-				seats, err := strconv.Atoi(s[1])
-				if err != nil || seats < 1 {
-					at("buys a number of seats")
-				}
-				bought += seats
-			case "open link":
-				if k, err := strconv.Atoi(s[1]); err != nil || k < 1 || k > bought {
-					at("names key %s, and %d were bought before it", s[1], bought)
-				}
-			case "field":
-				if s[1] != "empty" {
-					if k, err := strconv.Atoi(s[1]); err != nil || k < 1 || k > bought {
-						at("names key %s, and %d were bought before it", s[1], bought)
-					}
-				}
-			case "mark":
-				if !slices.Contains([]string{"ok", "err", "none"}, s[1]) {
-					at("a mark is ok, err or none")
-				}
-			case "saved", "waiting":
-				if s[1] != "yes" && s[1] != "no" {
-					at("yes or no")
-				}
-			case "add video":
-				if n, err := strconv.Atoi(s[1]); err != nil || n < 1 {
-					at("a video is a number of seconds long")
-				} else if _, err := os.Stat(filepath.Join(fixtures.Dir(), "grey-"+s[1]+"s.mp4")); err != nil {
-					at("internal/fixtures has no video of that length")
-				}
-				videos++
-			case "search ends", "search and quit", "search":
-				if videos == 0 {
-					at("no video was added before it")
-				}
-				window := s[1:]
-				if s[0] == "search" {
-					if !slices.Contains([]string{"interrupted", "failed"}, s[1]) {
-						at("a search ended interrupted or failed")
-					}
-					window = s[2:]
-				}
-				if len(window) == 2 {
-					from, err1 := strconv.ParseFloat(window[0], 64)
-					to, err2 := strconv.ParseFloat(window[1], 64)
-					if err1 != nil || err2 != nil || from < 0 || to <= from {
-						at("a window is two numbers of seconds, the first the smaller")
-					}
-				}
-			}
-		}
-	}
+// A step is a list, its verb first. The verbs that do something:
+//
+//   {"set up"}             makes this Mac one whose setup is done: a speech
+//                          model in place and clips found in the cloud,
+//                          so no model of its own is needed for them. A
+//                          new copy of the app holds a
+//                          link until its setup is done
+//   {"buy", n}             buys n seats at the local dispenser's checkout
+//                          and reads the keys out of the letter on its dev
+//                          page. The keys are numbered from 1, in the order
+//                          bought, across every buy in the sequence
+//   {"quit"}               quits the app if it runs, and waits until it is
+//                          gone
+//   {"open link", n}       hands key n's Unlock link to macOS, the way a
+//                          browser or a mail app does once the link is
+//                          clicked, and waits until the app has it. A closed
+//                          app is started by it
+//   {"open link", n, more} the same link with more after it, "&more=1"
+//   {"bring forward", app} opens another app, "Calculator", and waits until
+//                          it is in front
+//   {"click", words}       presses the button on screen that says this
+//   {"start"}              starts the app the way the Dock does, and waits
+//                          until it answers
+//   {"add video", seconds} adds a video so many seconds long, a length
+//                          internal/fixtures has, the way Add does once a
+//                          file is picked. Its first search starts by itself
+//   {"search and quit", from, to}
+//                          asks for a search of the window from and to, in
+//                          seconds, and quits the app in the same moment,
+//                          the way the second Cmd+Q stops everything
+//   {"close", window}      closes the window of this name the way its close
+//                          button does, "report" for the report window
+//
+// and what has to come of them. Each waits until it holds, and the step
+// fails when it does not within 20 seconds:
+//
+//   {"front", app}         this app is the one in front
+//   {"head", text}         the Licence row is called this, "Licence key",
+//                          or "Licensed" once a key is kept
+//   {"field", n}           the Licence field holds key n, or nothing for
+//                          "empty", which is also what a row with no field
+//                          reads as
+//   {"line", text}         the words under Licence key read this
+//   {"line has", text}     the words under Licence key have this in them
+//   {"mark", m}            the mark beside them is "ok", "err" or "none"
+//   {"saved", yes}         a key is in the keychain, "yes" or "no"
+//   {"waiting", yes}       a key from a link waits for the settings to take
+//                          it, "yes" or "no"
+//   {"windows", names}     the app has these windows open and no others,
+//                          their names in any order with a comma between
+//                          them: "app" is the app's own, "report" the
+//                          report window that Bugs opens
+//   {"search ends"}        no search of the video added runs any more
+//   {"search", how, from, to}
+//                          the video's search says how it ended,
+//                          "interrupted" or "failed", about the window from
+//                          and to
+//
+// The sequences run in order on one Mac, and what one leaves behind, a key
+// in the keychain or the setup, is there for the next. Each starts by
+// quitting the app.
+
+import "strings"
+
+type step []string
+
+type sequence struct {
+	name  string
+	steps []step
 }
 
-// A sequence fails the way it is read: the step that broke, as written.
-func TestAStepReadsAsWritten(t *testing.T) {
-	if got := (step{"open link", "1", "&more=1"}).String(); got != "open link 1 &more=1" {
-		t.Errorf("%q", got)
-	}
+var sequences = []sequence{
+	{
+		name: "the Unlock link in the letter, with the app closed and open",
+		steps: []step{
+			{"set up"},
+			{"buy", "2"},
+			{"quit"},
+
+			// The app is closed and no key is kept. The first key's Unlock
+			// in the mail opens the app and unlocks it, with nothing to
+			// press, and the settings say so.
+			{"open link", "1"},
+			{"front", "Frame Fairy"},
+			{"saved", "yes"},
+			{"head", "Licensed"},
+			{"mark", "ok"},
+			{"line has", "Unlocked from the link"},
+			{"field", "empty"},
+
+			// The same key again changes nothing.
+			{"open link", "1"},
+			{"line has", "already on this Mac"},
+
+			// Another app in front, and the second key's Unlock. The app
+			// comes back to the front with the second key kept in place of
+			// the first, and nothing to press: every key unlocks the same
+			// app.
+			{"bring forward", "Calculator"},
+			{"open link", "2"},
+			{"front", "Frame Fairy"},
+			{"head", "Licensed"},
+			{"mark", "ok"},
+			{"line has", "from the link, in place of key ID"},
+			{"field", "empty"},
+
+			// A link with more in it than one key changes nothing.
+			{"open link", "1", "&more=1"},
+			{"field", "empty"},
+			{"waiting", "no"},
+		},
+	},
+	{
+		// The walk searching.mjs pressed New and closed the app at once.
+		// The search had not written its record yet, so after the restart
+		// nothing said it had been asked for. It has to say Interrupted,
+		// with Continue, about the window it was asked for.
+		name: "a search asked for as the app quits says Interrupted after it opens again",
+		steps: []step{
+			{"set up"},
+			{"start"},
+			{"add video", "72"},
+			{"search ends"},
+			{"search and quit", "30", "60"},
+			{"start"},
+			{"search", "interrupted", "30", "60"},
+		},
+	},
+	{
+		// Plan row 2.244. Bugs opens Report a Problem in a window of its
+		// own, so a person can talk about a problem while they go through
+		// it in the app. There is one at a time: Bugs again brings it
+		// forward rather than opening another, and once it is closed Bugs
+		// opens it again. Quitting closes it with the app.
+		name: "Bugs opens one report window at a time",
+		steps: []step{
+			{"set up"},
+			{"start"},
+			{"windows", "app"},
+			{"click", "Bugs"},
+			{"windows", "app, report"},
+			{"click", "Bugs"},
+			{"windows", "app, report"},
+			{"close", "report"},
+			{"windows", "app"},
+			{"click", "Bugs"},
+			{"windows", "app, report"},
+			{"quit"},
+		},
+	},
 }
+
+// verbs is every verb a step can start with, and how many words may follow
+// it, at least and at most.
+var verbs = map[string][2]int{
+	"set up":          {0, 0},
+	"buy":             {1, 1},
+	"quit":            {0, 0},
+	"open link":       {1, 2},
+	"bring forward":   {1, 1},
+	"click":           {1, 1},
+	"front":           {1, 1},
+	"head":            {1, 1},
+	"field":           {1, 1},
+	"line":            {1, 1},
+	"line has":        {1, 1},
+	"mark":            {1, 1},
+	"saved":           {1, 1},
+	"waiting":         {1, 1},
+	"start":           {0, 0},
+	"add video":       {1, 1},
+	"search ends":     {0, 0},
+	"search and quit": {2, 2},
+	"search":          {3, 3},
+	"windows":         {1, 1},
+	"close":           {1, 1},
+}
+
+func (s step) String() string { return strings.Join(s, " ") }

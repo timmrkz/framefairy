@@ -3,7 +3,7 @@
 // is used that nothing declares or imports. The walks are split over a
 // folder for each part of the app, and a step that uses what it does not
 // import would otherwise fail only once a walk reaches it. It reads the
-// walks, the probes in preview/ and preview/frames/, and the interface's
+// walks, the probes in preview/, and the interface's
 // own tests, and has no rule about style. And the interface's scripts open
 // no microphone, camera or screen and read no clipboard by themselves,
 // issue #369, see What is never signed in docs/UPDATES.md. A component
@@ -56,7 +56,7 @@ const clock = {
 
 export default [
   {
-    files: ["preview/walks/**/*.mjs", "preview/*.mjs", "preview/frames/*.mjs"],
+    files: ["preview/walks/**/*.mjs", "preview/*.mjs"],
     // Node's names, and the page's, for what a walk hands the page to run.
     languageOptions: { ecmaVersion: "latest", sourceType: "module", globals: { ...globals.node, ...globals.browser } },
     plugins: { playwright },

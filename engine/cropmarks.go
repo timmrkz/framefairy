@@ -749,20 +749,6 @@ func (r cropRun) heldCrops(first, end int64) (start int, steps []frameMark) {
 // way can be taken to the pixel of the short.
 const glideMargin = 2
 
-// glideCrop is how the render places a gliding crop whose left edge is x
-// on a picture so wide: first a cut glideMargin wider than the crop, on
-// the even pixel at or left of x, kept inside the picture, and then, once
-// that is scaled to wide pixels, the crop from off pixels into it. scaled
-// is how many pixels wide the cut is once scaled, and its own width where
-// it is not. cropFilters writes the same steps for ffmpeg.
-func glideCrop(x float64, cropW, width, scaled int) (cut, off int) {
-	most := width - cropW - glideMargin
-	most -= most % 2
-	at := min(float64(2*math.Floor(float64(x/2))), float64(most))
-	in := float64(float64(float64(x-at)*float64(scaled)) / float64(cropW+glideMargin))
-	return int(at), int(math.Floor(float64(in + 0.5)))
-}
-
 // cropFilters are the filters that crop a piece for the render and scale
 // it to outW by outH, or leave it as cropped where those are the crop's
 // own size. A crop that stands still is one cut on an even pixel, the way

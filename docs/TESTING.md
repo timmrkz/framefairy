@@ -27,20 +27,14 @@ engine answers is tried against the bridge.
 The frame queue the video preview plays from, `frontend/src/lib/frames/`,
 has a third page, the preview's `preview/frames/`: one canvas playing an
 episode made for it, whose picture carries its frame number and whose
-sound can be laid over the episode's own sample by sample.
-`frontend/preview/frames/cuts.mjs` was written to play a clip with cuts
-on it and check every frame drawn and every sample heard, and shows no
-picture today, see below. The preview's own episode is made the same way,
-so the same is measured in the workspace. What it
-measures and how to read it is in the interface skill, under Playback and
-The frame queue.
+sound can be laid over the episode's own sample by sample. The preview's
+own episode is made the same way, so the same is measured in the
+workspace. What it measures and how to read it is in the interface
+skill, under Playback and The frame queue.
 
 Adding a video runs against the bridge: a walk asks `/pick` for a test
 video, the bridge has the Add button's box hand it over, and the walk
-clicks Add, `walks/searching.mjs`. The probes `frames/added.mjs` and `frames/cuts.mjs`
-are older, from before the bridge could add a video. No make target or
-workflow runs them, and they have shown no picture since plan row 2.156,
-see #613.
+clicks Add, `walks/searching.mjs`.
 
 ## Two browsers
 
@@ -62,8 +56,9 @@ machines of their own, `WALKBROWSER=webkit`, so a pull request waits for
 one browser and both engines are walked every day, see
 [the decision](decisions/2026-11-05-walks-in-chromium-on-a-push.md). Only
 the walks in Chromium count the lines they run. The WebKit is Playwright's own build
-for Linux, which takes real key presses, and CI's image holds it beside
-the Chromium, see `.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
+for Linux, which takes real key presses, and the CI image the nightly
+walks in WebKit run in holds it beside the Chromium, see
+`.github/ci-image/Dockerfile`. It draws every frame through OpenGL,
 which a machine without a graphics chip runs on the CPU, and drawing is
 37 % of the walks' CPU there, measured once over every walk in a cloud
 session, so the walks give it two threads to draw
@@ -167,7 +162,7 @@ each with a POST:
 | `/report-made` | the names of the files in the last report on the bridge's Desktop, and with `?file=what-happened.txt` what that file in it holds |
 | `/pick-sound` | puts a new file of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers. Told to answer again, it answers what it held too, the way a slow model answers in the end, so a search that was asked while it held does not find for good and keep every video added after it from being transcribed |
-| `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. |
+| `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&heard` it answers once every piece it let on is heard and the next one waits, so a walk can let many on at once. It is never for the last pieces, which ask for no next one: then it answers when the hearing ends, and the walk sees how it ended. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. |
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
 | `/hold?call=Search&gate=shut&times=K&answer=1&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `answer=1` the call reaches the Go side at once and only its answer waits for `gate=open`, so the news of what it set going comes before it, `hold(page, name, true)`. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
 | `/clock?run=MS` | runs the clock removed work is timed by on by MS milliseconds, and makes every call due by then before it answers. The Go side keeps that time and forgets the work once it is up, see `removal.go`, and `runClock` in `walks/bridge.mjs` runs it on with the page's clock, so the ten seconds a walk runs on are the same ten seconds on both sides, on any machine. `/clock?hold` holds it with the page's clock and `/clock?go` lets it go again, see `holdClock` and `letClockGo`, so while a walk holds the page's time a busy machine spends none of Go's either. Let go, it goes as the system's clock does |
@@ -1470,11 +1465,11 @@ set.
 
 ### The sequences
 
-What is checked is written in one place, `internal/outside/sequences.go`,
-the same way the walks' cases are in `sequences.mjs`: named sequences of
-steps, each a verb and its words, the actions and what has to come of
-them alike. The verbs are explained at the top of that file. The first
-sequence reads:
+What is checked is written in one place,
+`internal/outside/sequences_test.go`, the same way the walks' cases are
+in `sequences.mjs`: named sequences of steps, each a verb and its words,
+the actions and what has to come of them alike. The verbs are explained
+at the top of that file. The first sequence reads:
 
 ```go
 {"set up"},
@@ -1513,8 +1508,8 @@ most, so a step says what has to be true and never how long to wait.
 
 Three files, each with one job:
 
-- `sequences.go`, the sequences and the verbs. It builds everywhere, and
-  `TestEveryStepIsOneTheRunnerKnows` reads it in `make unit`: a verb
+- `sequences_test.go`, the sequences and the verbs. Every `go test`
+  builds it, and `TestEveryStepIsOneTheRunnerKnows` reads it in `make unit`: a verb
   misspelt, a word too few or a key nobody bought fails on Linux in
   seconds, not on the Mac at the end of a CI run.
 - `run_test.go`, how each verb is done on the Mac, the same for every
@@ -1522,7 +1517,7 @@ Three files, each with one job:
 - `cmd/framefairy-app/probe_outside.go`, what the app can be asked.
 
 A new case is a new sequence. A new verb is a line in the list at the
-top of `sequences.go`, its words in `verbs`, and how it is done in `done`
+top of `sequences_test.go`, its words in `verbs`, and how it is done in `done`
 in `run_test.go`. `go test -tags outside -run 'TestSequences/<part of a
 name>'` runs one.
 

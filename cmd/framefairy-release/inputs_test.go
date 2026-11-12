@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -237,6 +238,101 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 			got := inputsOf(c.file, c.data)
 			if !slices.Equal(got, c.want) {
 				t.Errorf("found %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// The app never runs anything as the root user or with administrator
+// rights, issue #751, and a build that could ask for them is never signed.
+func TestWhatCouldAskForAdministratorRightsIsFound(t *testing.T) {
+	with := func(change func(p *program)) []byte {
+		p := app
+		p.links = slices.Clone(app.links)
+		p.imports = slices.Clone(app.imports)
+		change(&p)
+		return p.bytes()
+	}
+	cases := []struct {
+		name, file string
+		data       []byte
+		want       []string
+	}{
+		{"an administrator's password asked for", "framefairy-app",
+			with(func(p *program) { p.imports = append(p.imports, "_AuthorizationExecuteWithPrivileges") }),
+			[]string{"imports _AuthorizationExecuteWithPrivileges", "names AuthorizationExecuteWithPrivileges"}},
+		{"a right asked of the system", "framefairy-app",
+			with(func(p *program) { p.imports = append(p.imports, "_AuthorizationCreate", "_AuthorizationCopyRights") }),
+			[]string{"imports _AuthorizationCopyRights", "imports _AuthorizationCreate",
+				"names AuthorizationCopyRights", "names AuthorizationCreate"}},
+		{"a helper installed to run as root", "llama-server",
+			with(func(p *program) { p.links = nil; p.imports = []string{"_SMJobBless"} }),
+			[]string{"imports _SMJobBless", "names SMJobBless"}},
+		// An Objective-C method is called by its name, so it is only ever
+		// text in the program.
+		{"a daemon of SMAppService, by name", "framefairy-app",
+			with(func(p *program) { p.text += "daemonServiceWithPlistName:" }),
+			[]string{"names daemonServiceWithPlistName"}},
+		{"AppleScript as an administrator", "ffmpeg",
+			with(func(p *program) { p.links = nil; p.text = `do shell script "x" with administrator privileges` }),
+			[]string{"names with administrator privileges"}},
+		{"sudo", "framefairy-frames",
+			with(func(p *program) { p.links = nil; p.text = "/usr/bin/sudo" }),
+			[]string{"names /usr/bin/sudo"}},
+		// What the app links today and looks alike: Go's os/exec imports
+		// setuid and setgid, which only give rights up, Wails opens the
+		// app at login as the person with mainAppService, and Go's
+		// runtime keeps its sudog.
+		{"what the app links today", "framefairy-app",
+			with(func(p *program) {
+				p.imports = append(p.imports, "_setuid", "_setgid", "_OBJC_CLASS_$_SMAppService")
+				p.text += "mainAppService runtime.adjustsudogs sudogcache"
+			}), nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := inputsOf(c.file, c.data)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("found %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// A program marked set-user-ID or set-group-ID runs with its owner's
+// rights, root's once it is installed by root, so a build that carries
+// one is refused, whatever the program is.
+//
+// On the real disk: the release tool reads the build as a zip file.
+func TestABuildWithAProgramThatRunsAsItsOwnerIsNotSigned(t *testing.T) {
+	for _, mode := range []fs.FileMode{0o755 | fs.ModeSetuid, 0o755 | fs.ModeSetgid} {
+		t.Run(mode.String(), func(t *testing.T) {
+			var b bytes.Buffer
+			w := zip.NewWriter(&b)
+			for name, data := range theApp("main") {
+				h := &zip.FileHeader{Name: name, Method: zip.Deflate}
+				h.SetMode(0o644)
+				if strings.HasSuffix(name, "/framefairy-app") {
+					h.SetMode(mode)
+				}
+				f, err := w.CreateHeader(h)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := f.Write(data); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			zipPath := filepath.Join(t.TempDir(), "app.zip")
+			if err := os.WriteFile(zipPath, b.Bytes(), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := checkInputs(zipPath)
+			if err == nil || !strings.Contains(err.Error(), "Frame Fairy.app/Contents/MacOS/framefairy-app: runs as its owner, set-user-ID or set-group-ID") {
+				t.Errorf("a build whose app is %v said %v", mode, err)
 			}
 		})
 	}

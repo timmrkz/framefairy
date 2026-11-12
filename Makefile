@@ -604,8 +604,11 @@ TRACE ?= light
 # the job queue, jobs.go, which only a bridge runs, and no line of any
 # component.
 WALKCOVER = $(COVERDIR)/walks$(if $(WALKSHARD),-$(subst /,-of-,$(WALKSHARD)))
-walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
-	@cd frontend && $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
+# The decoder is built while the interface is, side by side: one after the
+# other they were most of the half minute before the first walk in CI.
+walks: toolchain modules frontend/node_modules/.package-lock.json
+	@$(if $(FRESH_FRAMES),$(MAKE) --no-print-directory $(FRESH_FRAMES) & frames=$$!; )cd frontend && $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error; \
+		built=$$?; $(if $(FRESH_FRAMES),wait $$frames || exit $$?; )exit $$built
 	@rm -f '$(WALKSUMMARY)'; mkdir -p '$(dir $(WALKSUMMARY))'; $(if $(COVERAGE),rm -rf '$(WALKCOVER)-pages' && mkdir -p '$(COVERDIR)' && )FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' WALKSEED='$(WALKSEED)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKBROWSER='$(WALKBROWSER)' WALKTIMES='$(WALKTIMES)' STILL='$(STILL)' WALKSWEEP='$(WALKSWEEP)' WALKSUMMARY='$(WALKSUMMARY)' WALKTRACES='$(WALKTRACES)' TRACE='$(TRACE)' $(if $(COVERAGE),WALKCOVERAGE='$(WALKCOVER)-pages') $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) $(if $(COVERAGE),$(COVERPKG) -coverprofile='$(WALKCOVER)-go.txt') -run '^TestWalks$$' ./cmd/framefairy-app; \
 		status=$$?; cat '$(WALKSUMMARY)' 2>/dev/null; exit $$status
 ifneq ($(COVERAGE),)
@@ -665,7 +668,8 @@ interface:
 # and nothing the interface's packages carry, #471. That no Go test waits
 # on the clock, see .golangci.yml. The checks from outside the app build
 # only on a Mac with the outside tag, so they are read a second time the
-# way they build. Every script read by the shell its first line names, and
+# way they build. That no code only tests call is outside the tests, read
+# without them. Every script read by the shell its first line names, and
 # the rule for a build, see scripts/needs-build.sh. That
 # docs/GUI-PLAN.md stays the history it is, by the hash git gives it: open
 # work is in the issues. And the tests of the repository's own rules,
@@ -684,6 +688,8 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 	@out=$$($(GOLANGCI_LINT) run ./... 2>&1) || { echo "$$out"; exit 1; }
 	@out=$$(GOOS=darwin $(GOLANGCI_LINT) run --build-tags outside ./internal/outside/ 2>&1) || { echo "$$out"; exit 1; }
 	@printf 'ok  \tGo tests wait on no clock\n'
+	@out=$$($(GOLANGCI_LINT) run --tests=false --enable-only=unused --build-tags outside ./... 2>&1) || { echo "$$out"; exit 1; }
+	@printf 'ok  \tno code only tests call\n'
 	@for s in $$(git ls-files '*.sh'); do \
 		case $$(head -n 1 "$$s") in *bash*) bash -n "$$s" ;; *) sh -n "$$s" ;; esac || exit 1; \
 	done
