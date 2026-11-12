@@ -484,11 +484,17 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		}
 	}()
 	// The speech model loads once the microphone is open. A recording
-	// that ended before has nothing to write down.
+	// that ended before has nothing to write down. One that ended once it
+	// was open has, though both are ready by the time this looks, and a
+	// select picks either.
 	select {
 	case <-r.live:
 	case <-r.ended:
-		return
+		select {
+		case <-r.live:
+		default:
+			return
+		}
 	}
 	rec, err := r.speech(dir)
 	if err != nil {
