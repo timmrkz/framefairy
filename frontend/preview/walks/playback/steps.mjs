@@ -332,17 +332,29 @@ export const steps = {
       walk.wrong = `the sound card was handed sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
   },
   // ["loop off near the end", seconds]
-  //                    records every sample handed to the sound card,
-  //                    plays the clip from where the playhead is, presses
-  //                    L to loop it, and once the playhead is so many
-  //                    seconds before the clip's end presses L five times
+  //                    trims the clip's start to two and a half seconds
+  //                    more than that before its end, which puts the
+  //                    playhead there, records every sample handed to
+  //                    the sound card, plays the clip, presses L to loop
+  //                    it, and once the playhead is so many seconds
+  //                    before the clip's end presses L five times
   //                    quickly, the loop off after the last, then reads
   //                    the playhead, the frame on screen and the play
   //                    button on every animation frame until the play
   //                    stops, and a second after
-  async "loop off near the end"(walk, arg) {
+  async "loop off near the end"(walk, arg, s) {
     const { page, watch } = walk;
     const end = (await engineState(page, watch.at)).segments.at(-1).end;
+    // The loop is on before the play reads the last four seconds,
+    // READ_AHEAD in lib/frames/queue.ts, so the play works out the next
+    // time through on its own, the way it did when Tim pressed L. The
+    // rest of the clip before that took the sound card's own time to
+    // play and checked nothing, so the clip starts there, #692. The play
+    // starts on its edge, which fades its sound in, as the clip's start
+    // did.
+    const g = await handles(page);
+    await drag(page, middle(g.start), high(g.track), (await xOf(page, end - arg - 2.5)) - middle(g.start), false);
+    await watch.step("trim", s);
     await preview(page, 0.2);
     // Every sample the sound card is handed, with the sound card's own
     // frame it plays at, the way the frame queue's probe records it.

@@ -1,4 +1,3 @@
- 50	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
  45	sequences.mjs SEQUENCE=a video added is transcribed to its end from its menu
  44	sequences.mjs SEQUENCE=a step onto a word pops it over the paused frame
  42	timeline.mjs
@@ -49,6 +48,7 @@
  12	sequences.mjs SEQUENCE=the episode played through a clip with cuts shows only the video, and the clip its frame and captions
  12	sequences.mjs SEQUENCE=the hand and the keys light a card of the transcript and a part not transcribed yet the same
  12	sequences.mjs SEQUENCE=undo takes back a crop moved, a word corrected and a font picked, in turn, and redo does them again
+ 12	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
  11	sequences.mjs SEQUENCE=Relaunch waits while a search runs, and the search goes on
  11	sequences.mjs SEQUENCE=a cut's edges dragged take the playhead along, the way the clip's edges do
  11	sequences.mjs SEQUENCE=a part of a phone's video rotated with R stands up in the video preview and in its short
