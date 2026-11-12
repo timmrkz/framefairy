@@ -486,18 +486,19 @@ out, is framed like the pieces turned the way it is, `framedBack` in
 that meet become one piece again, `meet`, unless a rotation starts or ends
 between them, `partedAtTurns`. Two pieces that meet have no cut between
 them, so a join or a move there is refused. An edge of the clip dragged
-into a cut pushes it ahead like a snow shovel, `shovel`: the cut keeps its
-width and pushes the next, each with the least a piece may hold before it,
-in whole frames, `leastPiece`, the same least a moved cut's edge leaves
-beside it, so the edge stays under the hand and every edge can still be
-dragged. Only the edge dragged pushes, and only once it has moved in, so a
-press or a drag outward moves no cut. A cut the edge has gone past, beyond
-where its far side was, is not pushed: it stays behind and goes with the
-part trimmed off, so a long drag carries no cut into speech nobody cut.
-The cut's part comes back at once as the edge passes its far side. A clip
-with little more than a second besides a cut keeps its edge where the
-second runs out while the hand crosses the cut, and the edge catches up at
-the cut's far side, never ahead of the hand.
+into a cut pushes the cut's near edge ahead like a snow shovel, `shovel`,
+with the least a piece may hold between them, in whole frames,
+`leastPiece`, the same least a moved cut's edge leaves beside it, so the
+edge stays under the hand and both can still be dragged. The cut's far
+edge stays where it is, so the cut gets narrower as the edge goes in, and
+once less than that least of it is left it is gone and the edge goes on
+into what it took out. A cut the edge has gone past goes with the part
+trimmed off. Only the edge dragged pushes, and only once it has moved in,
+so a press or a drag outward moves no cut. The keyframes the edge and the
+narrower cut cover are carried as they are with no cut, see `carry` in
+`engine/cropmarks.go`. A clip with little more than a second besides a cut
+keeps its edge where the second runs out while the hand crosses the cut,
+and the edge catches up at the cut's far side, never ahead of the hand.
 Every step of a drag starts from the clip as saved, so a drag
 back out puts the cuts back where they were. A clip once also kept the
 pieces it was found with, `found_segments`, to frame what was put back by

@@ -517,69 +517,60 @@ func runOn(clip Clip, at float64) Clip {
 }
 
 // shoved is a cut an edge of the clip pushed: where it was, was and
-// wasTo, and where it goes, from and to, as wide as it was.
+// wasTo, and where it is now, from and to, its near edge pushed in and
+// its far edge where it was.
 type shoved struct {
 	was, wasTo, from, to float64
 }
 
-// shovel is where the cuts go that an edge of the clip pushes, like a snow
-// shovel: a start dragged in, toward a cut, pushes it ahead of it, and the
-// cut pushes the next, each with least of the clip kept before it, so the
-// edge and every cut stay apart and each can be dragged. An end does the
-// same the other way. The cuts keep their widths, and a drag back puts
-// them back where they were, since every step of a drag starts from the
-// clip as it was saved. The edge used to take the cut away, and its rest
-// played again, and Tim, whose finger was still at the cut's edge, saw
-// the clip's edge jump past it.
+// shovel is the cut an edge of the clip pushes into, like a snow shovel:
+// a start dragged in toward a cut pushes the cut's near edge ahead of it,
+// with least of the clip kept between them, so the edge and the cut stay
+// apart and each can be dragged. The cut's far edge stays where it is, so
+// the cut gets narrower as the edge goes in, and once less than least of
+// it is left it is gone: the edge goes on into what it took out, and a
+// cut it has gone past goes with the part trimmed off. An end does the
+// same the other way. A drag back puts the cut back as it was, since every
+// step of a drag starts from the clip as it was saved. The edge used to
+// take the cut away at once, and its rest played again, and Tim, whose
+// finger was still at the cut's edge, saw the clip's edge jump past it.
+// Then the cut kept its width and was pushed whole, its far edge too, and
+// Tim saw it carried across the video, which made no sense.
 //
 // Only the edge dragged pushes, and only once it has moved in. A press
 // that moves nothing, or a drag outward, leaves every cut where it is,
-// however little of the clip lies before it. A cut the edge has passed,
-// gone beyond where its far side was, is not pushed: it stays behind and
-// goes with the part trimmed off, the way a keyframe the edge passed
-// does, so a long drag carries no cut into speech nobody cut. Tim chose
-// that over carrying every cut along.
+// however little of the clip lies before it.
 func shovel(pieces []Segment, start, end, least float64, fromStart bool) []shoved {
-	var cuts []shoved
-	for i := 1; i < len(pieces); i++ {
-		if from, to := pieces[i-1].End, pieces[i].Start; to > from {
-			cuts = append(cuts, shoved{was: from, wasTo: to, from: from, to: to})
-		}
+	if len(pieces) == 0 {
+		return nil
 	}
-	if fromStart && len(pieces) > 0 && start > pieces[0].Start {
-		at := start + least
-		for i := range cuts {
-			c := &cuts[i]
-			if c.wasTo <= start {
-				continue
-			}
-			if c.from >= at {
-				break
-			}
-			c.from, c.to = at, at+c.wasTo-c.was
-			at = c.to + least
-		}
-	}
-	if !fromStart && len(pieces) > 0 && end < pieces[len(pieces)-1].End {
-		at := end - least
-		for i := len(cuts) - 1; i >= 0; i-- {
-			c := &cuts[i]
-			if c.was >= end {
-				continue
-			}
-			if c.to <= at {
-				break
-			}
-			c.from, c.to = at-(c.wasTo-c.was), at
-			at = c.from - least
-		}
+	in := (fromStart && start > pieces[0].Start) || (!fromStart && end < pieces[len(pieces)-1].End)
+	if !in {
+		return nil
 	}
 	var pushed []shoved
-	for _, c := range cuts {
-		if c.from != c.was {
-			c.from, c.to = num.RoundTo(c.from, 3), num.RoundTo(c.to, 3)
-			pushed = append(pushed, c)
+	for i := 1; i < len(pieces); i++ {
+		c := shoved{was: pieces[i-1].End, wasTo: pieces[i].Start}
+		if c.wasTo <= c.was {
+			continue
 		}
+		c.from, c.to = c.was, c.wasTo
+		if at := start + least; fromStart && c.wasTo > start && c.from < at {
+			c.from = at
+		}
+		if at := end - least; !fromStart && c.was < end && c.to > at {
+			c.to = at
+		}
+		if c.from == c.was && c.to == c.wasTo {
+			continue
+		}
+		if c.to-c.from < least {
+			// Too little of it is left to be a cut: the edge has all
+			// but passed it, and what it took out plays.
+			continue
+		}
+		c.from, c.to = num.RoundTo(c.from, 3), num.RoundTo(c.to, 3)
+		pushed = append(pushed, c)
 	}
 	return pushed
 }

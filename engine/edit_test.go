@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -1150,15 +1151,15 @@ const shovelPlan = `{
   ]
 }`
 
-// An edge of the clip dragged into a cut pushes the cut ahead of it, like
-// a snow shovel, and the cut pushes the next. Each keeps its width and
-// the least a piece may hold before it, so the edge stays under the hand
-// and every edge can still be dragged. The edge used to take the cut away,
-// and Tim saw it jump past the cut while his finger was still at its edge.
-// Every step starts from the clip as saved, so dragged back, the cuts are
-// where they were. A cut the edge has gone past stays behind with the
-// part trimmed off, so a long drag carries no cut into speech nobody cut,
-// which Tim chose. A press, or a drag outward, pushes nothing, even past
+// An edge of the clip dragged into a cut pushes the cut's near edge ahead
+// of it, like a snow shovel, with the least a piece may hold between
+// them, so the edge stays under the hand and both can still be dragged.
+// The cut's far edge stays where it is, so the cut gets narrower, and once
+// too little of it is left it is gone and the edge goes on. The edge used
+// to take the cut away, and Tim saw it jump past the cut while his finger
+// was still at its edge. Then the cut was pushed whole, and Tim saw it
+// carried across the video. Every step starts from the clip as saved, so
+// dragged back, the cuts are where they were. A press, or a drag outward, pushes nothing, even past
 // a piece a frame long, which moving a cut's edge made before.
 func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
 	tr := editableTranscript()
@@ -1171,16 +1172,18 @@ func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
 		want string
 	}{
 		{"the start short of the cut", "01", Gesture{Edge: "start", From: 11}, "11.000-12.000 13.000-13.200 13.520-20.000"},
-		{"the start into the first cut, which pushes the second", "01", Gesture{Edge: "start", From: 12.5},
-			"12.520-12.600 13.600-13.680 14.000-20.000"},
+		{"the start into the first cut, which gets narrower", "01", Gesture{Edge: "start", From: 12.5},
+			"12.520-12.600 13.000-13.200 13.520-20.000"},
+		{"the start near the first cut's far side, where it is gone", "01", Gesture{Edge: "start", From: 12.88},
+			"12.880-13.200 13.520-20.000"},
 		{"the start past the first cut, which stays behind", "01", Gesture{Edge: "start", From: 13.1},
 			"13.120-13.200 13.520-20.000"},
 		{"the start past both cuts, as far as the clip keeps a second", "01", Gesture{Edge: "start", From: 19.5},
 			"19.000-20.000"},
-		{"the end past the second cut into the first", "01", Gesture{Edge: "end", From: 12.5},
-			"10.000-11.440 12.440-12.520"},
-		{"the end into the second cut, which pushes the first", "01", Gesture{Edge: "end", From: 13.3},
-			"10.000-11.840 12.840-12.920 13.240-13.320"},
+		{"the end past the second cut into the first, which gets narrower", "01", Gesture{Edge: "end", From: 12.5},
+			"10.000-12.000 12.440-12.520"},
+		{"the end into the second cut, too narrow to be left a cut", "01", Gesture{Edge: "end", From: 13.3},
+			"10.000-12.000 13.000-13.320"},
 		{"the start dragged back out", "01", Gesture{Edge: "start", From: 9}, "9.000-12.000 13.000-13.200 13.520-20.000"},
 		{"a press on a start a frame from a cut", "02", Gesture{Edge: "start", From: 30},
 			"30.000-30.040 31.000-39.000 39.520-39.560"},
@@ -1491,5 +1494,51 @@ func TestStepsOfADragFromSeveralAtOnceShareThePlan(t *testing.T) {
 	}
 	if got := spans(kept); got != "10.000-12.000 13.000-13.200 13.520-20.000" {
 		t.Errorf("after the drag the plan held is %s, as saved it is 10.000-12.000 13.000-13.200 13.520-20.000", got)
+	}
+}
+
+// An edge dragged into a cut carries the keyframes the way it does with
+// no cut, by the rules of carry in cropmarks.go: the start carries
+// the last keyframe it covers onto the clip's first frame, the cut,
+// narrower now, carries the one it still covers onto the first frame after
+// it, and a keyframe in a piece stays on its own moment. While the hand
+// drags and once saved, the same.
+func TestAnEdgeDraggedIntoACutCarriesTheKeyframes(t *testing.T) {
+	const plan = `{
+  "source": "ep.mp4",
+  "plan_id": "p1",
+  "clips": [
+    {"id": "01", "slug": "eins",
+     "segments": [{"start": 10.0, "end": 12.0}, {"start": 13.0, "end": 13.2}, {"start": 13.52, "end": 20.0}],
+     "crop_marks": [{"at": 11.0, "x": 100}, {"at": 12.8, "x": 200}, {"at": 15.0, "x": 300}]}
+  ]
+}`
+	fsys := afero.NewMemMapFs()
+	path := filepath.Join("/", "ep.framefairy", "logs", "clips.json")
+	if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g := Gesture{Kind: "trim", Edge: "start", From: 12.5, To: 12.5, Frames: at25}
+	const wantPieces = "12.520-12.600 13.000-13.200 13.520-20.000"
+	want := []CropMark{{At: 12.52, X: 100}, {At: 13, X: 200}, {At: 15, X: 300}}
+	shown, err := ShapeClip(planAt(t, fsys, path), "01", g, editableTranscript(), 0.1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := spans(shown.Clip.Segments); got != wantPieces {
+		t.Fatalf("while the edge is dragged the clip is %s, want %s", got, wantPieces)
+	}
+	if !reflect.DeepEqual(shown.Clip.CropMarks, want) {
+		t.Errorf("while the edge is dragged the keyframes are %v, want %v", shown.Clip.CropMarks, want)
+	}
+	if err := Reshape(fsys, nil, path, "01", g, editableTranscript(), 0.1, nil); err != nil {
+		t.Fatal(err)
+	}
+	clip := loadedClip(t, fsys, path)
+	if got := spans(clip.Segments); got != wantPieces {
+		t.Fatalf("the clip was saved as %s, want %s", got, wantPieces)
+	}
+	if !reflect.DeepEqual(clip.CropMarks, want) {
+		t.Errorf("once saved the keyframes are %v, want %v", clip.CropMarks, want)
 	}
 }
