@@ -49,9 +49,13 @@ type sound struct {
 	spoken    int
 	// asking holds the start of the next microphone until a walk answers,
 	// the way a Mac holds it while it asks the person whether the app may
-	// use the microphone, #792, and asked is the microphone it holds.
+	// use the microphone, #792, and asked is the first microphone it
+	// holds, the one of the recording a walk ends while it waits.
 	asking chan struct{}
 	asked  *bridgeMicrophone
+	// opened counts the microphones handed out, so the one of the latest
+	// recording is known however late the ones before it start.
+	opened int
 }
 
 // ask has the next microphone wait to start until answer.
@@ -110,7 +114,10 @@ func (s *sound) open() microphone {
 	case <-s.still:
 	default:
 	}
-	return &bridgeMicrophone{s: s, samples: tone(2), stopped: make(chan struct{})}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.opened++
+	return &bridgeMicrophone{s: s, n: s.opened, samples: tone(2), stopped: make(chan struct{})}
 }
 
 // tell hears what the app tells the window of a recording. A recording
@@ -275,6 +282,8 @@ func (s *sound) read(m *bridgeMicrophone) bool {
 // tenth of a second at a time, when a step asks for it.
 type bridgeMicrophone struct {
 	s *sound
+	// n is the microphone's place among those handed out, see opened.
+	n int
 	// mu keeps a tenth being handed over and the microphone stopping
 	// apart, so nothing is heard once it has stopped.
 	mu      sync.Mutex
@@ -287,7 +296,7 @@ type bridgeMicrophone struct {
 func (m *bridgeMicrophone) start(heard func([]float32)) error {
 	m.s.mu.Lock()
 	asking := m.s.asking
-	if asking != nil {
+	if asking != nil && m.s.asked == nil {
 		m.s.asked = m
 	}
 	m.s.mu.Unlock()
@@ -297,6 +306,11 @@ func (m *bridgeMicrophone) start(heard func([]float32)) error {
 	m.heard = heard
 	m.s.mu.Lock()
 	defer m.s.mu.Unlock()
+	// Two microphones held by one question start together once it is
+	// answered, in either order. The walk goes on with the newer one.
+	if m.s.mic != nil && m.s.mic.n > m.n {
+		return nil
+	}
 	m.s.mic = m
 	// What was told belongs to the recordings before. The app opened
 	// again, as every walk opens it, numbers its recordings from 1.

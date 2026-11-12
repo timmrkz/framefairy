@@ -1552,11 +1552,15 @@ export const steps = {
   //                    Dictate while the Mac asks whether the app may use
   //                    the microphone, and Stop while it still asks, and
   //                    sees Dictate again at once, with the question left
-  //                    open for "microphone answered"
+  //                    open for "microphone answered". "asked, then
+  //                    again" then presses Dictate once more while the
+  //                    Mac still asks, answers the question, and hears the
+  //                    start sound once, for the second press only, with
+  //                    the recording left running
   async dictate(walk, arg, s) {
     const { kept, page, watch } = walk;
     const button = page.locator("button.dictate");
-    if (arg === "asked") {
+    if (arg === "asked" || arg === "asked, then again") {
       // Tim pressed Dictate, the Mac asked about the microphone, and
       // nothing he pressed did anything until the question went 45 s
       // later, #792. Stop ends a recording whose microphone has not
@@ -1573,6 +1577,35 @@ export const steps = {
       }
       await button.click();
       await pageUntil(page, () => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate");
+      if (arg === "asked") return;
+      // Dictate again while the Mac still asks: two Listens wait for the
+      // one answer. The first one's answer is held until the second's is
+      // in, the order that left the page on the recording that had ended,
+      // passing over every word of the new one. Only the latest press
+      // takes its answer.
+      await settle(page);
+      const before = await page.evaluate(() => window.__notes.length);
+      const ended = await page.evaluate(() => window.__last.dictation?.recording ?? 0);
+      await button.click();
+      const again = await button.getAttribute("aria-label");
+      if (again !== "Stop") {
+        walk.wrong = `Dictate pressed again says "${again}" the frame after, not Stop`;
+        return;
+      }
+      await control(url, "/microphone?answer=1");
+      await settle(page);
+      await letHeld(page);
+      await settle(page);
+      const up = await sounds(page, before, LOW, HIGH);
+      if (!theTwo(up, LOW, HIGH)) {
+        walk.wrong = `the second press of Dictate sounded ${JSON.stringify(up)}, not the two notes of the start sound going up once`;
+        return;
+      }
+      await control(url, "/microphone?until=hearing");
+      await pageUntil(page, (ended) => window.__last.dictation?.recording > ended && window.__last.dictation.hearing?.trim(), ended);
+      await settle(page);
+      const shown = await page.evaluate(() => document.querySelector(".telling").value.includes(window.__last.dictation.hearing.trim()));
+      if (!shown) walk.wrong = "the words heard after the second press of Dictate were passed over, as if they were the recording's that had ended";
       return;
     }
     if (arg === "hearing") {

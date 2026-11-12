@@ -30,8 +30,18 @@ export default [
     // answer, 4 ms after the microphone opens on Tim's Mac and 46 ms at
     // most, and a walk in CI that read the notes at the microphone's
     // first news found none. This one holds the answer every time.
+    // Issue #792: Dictate pressed again while the Mac asks about the
+    // microphone leaves two answers on their way, and the start sound
+    // plays once, for the latest press, whose words then show.
     name: "The start sound plays once Dictate hears back, however late that is",
-    steps: [["bugs"], ["dictate", "start, answered late"], ["microphone moves"], ["dictate", "button"]],
+    steps: [
+      ["bugs"],
+      ["dictate", "start, answered late"],
+      ["microphone moves"],
+      ["dictate", "button"],
+      ["dictate", "asked, then again"],
+      ["dictate", "button"],
+    ],
   },
   {
     // Issue #654. Each note of the start sound was started at a moment of
