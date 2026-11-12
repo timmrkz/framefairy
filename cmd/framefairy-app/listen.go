@@ -377,7 +377,7 @@ func (f *FrameFairy) Listen() (int, error) {
 		r.line(zerolog.InfoLevel).Dur("starting", time.Since(r.started).Round(time.Millisecond)).Msg("the recording ended while the microphone started")
 		return r.id, nil
 	}
-	r.line(zerolog.InfoLevel).Msg("recording for a report")
+	r.line(zerolog.InfoLevel).Dur("starting", time.Since(r.started).Round(time.Millisecond)).Msg("recording for a report")
 	return r.id, nil
 }
 
