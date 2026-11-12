@@ -197,8 +197,15 @@ class WalkSource extends WalkNode {
 // on: a play the app pauses or ends holds it itself, and a play that
 // starts starts it. A play asked for starts the sound card a moment after
 // its Pause button shows, so a hand that held it in between held a card
-// that was not running yet, issue #702: the card is held again the moment
-// it says it runs. Without it a play the hand held from before the space
+// that was not running yet, issue #702. So while the hand holds the card,
+// the app's ask to start it waits for the hand to let go, and is made
+// then. A card started and held again a moment later, as it once was, had
+// played its first few milliseconds, and Chromium moved the card's time
+// on by 512 frames over the hold while the stretch of sound it was
+// playing went on where it was, so the stretch was heard late and clicked
+// where the next one began on time: the loop walk heard it 85 ms into the
+// play. A card started some other way is held again the moment it says
+// it runs. Without it a play the hand held from before the space
 // bar ran on while the walk settled, to the clip's end. And a hold asked
 // that way lands only after the card says so, so the hand can let go in
 // between and find the card running: the card is started again the moment
@@ -212,12 +219,25 @@ class WalkSource extends WalkNode {
 // told.
 const holders = new WeakMap<Play, Set<string>>();
 const starting = new WeakMap<Play, Promise<void>>();
+// The card's own start, and the app's asks to start it that wait for the
+// hand to let go.
+const resumes = new WeakMap<Play, () => Promise<void>>();
+const asked = new WeakMap<Play, (() => void)[]>();
 export function holdSound(play: Play, who: string, held: boolean): Promise<void> {
   let by = holders.get(play);
   if (!by) {
     const holding = (by = new Set());
     holders.set(play, holding);
-    play.audio.addEventListener("statechange", () => {
+    const card = play.audio;
+    const resume = card.resume.bind(card);
+    const waiting: (() => void)[] = [];
+    resumes.set(play, resume);
+    asked.set(play, waiting);
+    card.resume = () => {
+      if (!holding.size) return resume();
+      return new Promise<void>((done, fail) => waiting.push(() => resume().then(done, fail)));
+    };
+    card.addEventListener("statechange", () => {
       const state = play.audio.state;
       if (holding.size && state === "running") void play.audio.suspend();
       else if (!holding.size && state === "suspended") void letGo(play);
@@ -232,10 +252,11 @@ export function holdSound(play: Play, who: string, held: boolean): Promise<void>
 // Starts a sound card nobody holds while a play goes on, asked once, not
 // again on every tick while the browser takes its time.
 function letGo(play: Play): Promise<void> {
+  for (const ask of asked.get(play)?.splice(0) ?? []) ask();
   if (!play.playing || play.audio.state === "running" || play.audio.state === "closed") return Promise.resolve();
   let start = starting.get(play);
   if (!start) {
-    start = play.audio.resume().finally(() => starting.delete(play));
+    start = (resumes.get(play) ?? (() => play.audio.resume()))().finally(() => starting.delete(play));
     starting.set(play, start);
   }
   return start;
