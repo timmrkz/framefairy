@@ -1309,11 +1309,7 @@
     margin: 1px 1px 0;
     padding: 0 9px;
     vertical-align: top;
-    /* The edge is drawn inside, the way the clip cards draw theirs, so
-       the beam runs on the edge itself. A border lies outside what the
-       block clips its beam to, and the beam ran a pixel inside it. */
-    border: none;
-    box-shadow: inset 0 0 0 1px var(--line);
+    border: var(--line-w) solid var(--line);
     border-radius: 6px;
     /* Darker than the card it sits in, the way a key in a README sits in
        a block of code. */
@@ -1321,12 +1317,13 @@
     color: var(--muted);
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: var(--size-m);
-    line-height: 26px;
+    /* The 26 px less the line above and below. */
+    line-height: 24px;
   }
 
   button.key-id {
     cursor: pointer;
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--line));
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   }
 
   button.key-id:hover {

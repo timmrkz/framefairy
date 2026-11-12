@@ -2967,7 +2967,12 @@ Everything that runs says so the same way, wherever it runs. There are four
 things and no others, and each one means one thing.
 
 - **The beam.** Light runs clockwise round the edge of the control the work
-  was started from, for as long as the work runs. A round is five turns and
+  was started from, for as long as the work runs. It runs on the line round
+  the control, not a pixel inside it: on a button's border, and on a row
+  of a card on the card's own lines, the line over the row, the card's
+  sides and the line under it, going round the card's corner where the row
+  meets one. The fill and the motes stay inside that line, with corners
+  that follow the inside of its corners. A round is five turns and
   no two of them alike: the comet gets away, eases right off through one
   long side, comes back hard through the next, sits down again and finishes
   quickly, so the slow part falls somewhere else on the edge each turn, and

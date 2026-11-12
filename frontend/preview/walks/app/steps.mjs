@@ -5,7 +5,7 @@
 // and the step's name. A sequence of any folder can take it. Below them the
 // helpers only these steps use. See docs/TESTING.md.
 import { ask, chosen, control, engineState, fromSidebar, nextPaint, seekTo, seenUntil, settle, sidebarStill, reload } from "../bridge.mjs";
-import { rate, url } from "../common/steps.mjs";
+import { beamsOff, rate, url } from "../common/steps.mjs";
 
 export const steps = {
   // ["asked once", name...]
@@ -80,6 +80,11 @@ export const steps = {
     else if (both.some((r) => !/B of [\d.]+ [KMG]B/.test(r.far) || !r.maker)) walk.wrong = `a download says ${JSON.stringify(both)}, with its maker gone or how far it came out of its column`;
     else if (both.some((r) => !/^\d+:\d\d left$/.test(r.left))) walk.wrong = `a download says ${JSON.stringify(both.map((r) => r.left))} where its time left goes`;
     else if (shaped) walk.wrong = `a row on its way stands out of the table: ${JSON.stringify(shaped)} beside ${JSON.stringify(first[0])}`;
+    if (walk.wrong) return;
+    // The light of a row on its way runs on the card's own lines round
+    // it, and round the card's corner at the foot, as Tim asked.
+    const off = await beamsOff(page);
+    if (off.length) walk.wrong = `while both download, ${off.join(", and ")}`;
     if (walk.wrong) return;
 
     await control(url, "/fresh?arrive=speech");

@@ -660,11 +660,14 @@ export default [
     // Issue #362. Tim saw the buttons a size of their own, mostly much
     // wider than their words, and some of them growing past it on his
     // Mac. A button is as wide as the words it shows, whatever they are.
+    // And the light of the work it does runs on its line, not a pixel
+    // inside it, which Tim saw too.
     name: "every button is as wide as its words and no wider",
     steps: [
       ["buttons fit", ["Search", "Render"]],
       ["settings"],
       ["buttons fit", ["Choose…", "Check again"]],
+      ["beam on the line", ["CheckSetup", "Check again"]],
       ["updates", { from: "main", list: "main,pr-20" }],
       ["status", "A newer build is ready"],
       ["buttons fit", ["Relaunch"]],
