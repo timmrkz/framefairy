@@ -689,6 +689,71 @@ func TestTheLogCanBeRemovedWhole(t *testing.T) {
 	}
 }
 
+// Settings shows the last five toasts the app showed, newest first, read
+// back from its log, the older files too, with when each came and the
+// video it was about. A toast closed, a line from elsewhere that starts
+// the same and a line cut off are no toasts. Removing the log takes them
+// away too. Issue #421.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestSettingsShowsTheLastToasts(t *testing.T) {
+	path, _ := testLog(t)
+	dir := filepath.Dir(path)
+	s := &FrameFairy{}
+	if st := s.AppLog(); len(st.Toasts) != 0 {
+		t.Fatalf("a log with no toast shows %v", st.Toasts)
+	}
+
+	// Two toasts in the older file, from before the log turned over.
+	var older bytes.Buffer
+	z := gzip.NewWriter(&older)
+	_, _ = z.Write([]byte(`{"level":"warn","time":"2026-11-12T09:00:00.000+01:00","run":"a","from":"window","msg":"toast: one"}` + "\n" +
+		`{"level":"warn","time":"2026-11-12T09:01:00.000+01:00","run":"a","from":"window","video":"talk.mp4","msg":"toast: two"}` + "\n"))
+	_ = z.Close()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "app-2026-11-12T09-02-00.000.log.gz"), older.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Add(-30 * time.Second).Truncate(time.Millisecond)
+	at := func(i int) float64 { return float64(start.Add(time.Duration(i) * time.Second).UnixMilli()) }
+	s.Said([]SaidLine{
+		{At: at(0), Level: "warn", Text: "toast: three"},
+		{At: at(1), Level: "info", Text: "toast closed: three"},
+		{At: at(2), Level: "warn", Video: "/videos/start.mp4", Text: "toast: The video start.mp4 is gone."},
+		{At: at(3), Level: "warn", Text: "toast: four"},
+		{At: at(4), Level: "warn", Text: "the window said toast: as a word"},
+		{At: at(5), Level: "warn", Text: "toast: five"},
+	})
+	theLog.line(zerolog.WarnLevel, "app").Msg("toast: not the window's")
+	if f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0); err != nil {
+		t.Fatal(err)
+	} else {
+		_, _ = f.WriteString(`{"level":"warn","from":"window","msg":"toast: cut of` + "\n")
+		_ = f.Close()
+	}
+
+	got := s.AppLog().Toasts
+	want := []LoggedToast{
+		{At: int64(at(5)), Text: "five"},
+		{At: int64(at(3)), Text: "four"},
+		{At: int64(at(2)), Video: "start.mp4", Text: "The video start.mp4 is gone."},
+		{At: int64(at(0)), Text: "three"},
+		{At: time.Date(2026, 11, 12, 8, 1, 0, 0, time.UTC).UnixMilli(), Video: "talk.mp4", Text: "two"},
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("Settings shows the toasts\n%v\nwant the last five, newest first\n%v", got, want)
+	}
+
+	if _, err := s.RemoveAppLog(); err != nil {
+		t.Fatal(err)
+	}
+	if st := s.AppLog(); len(st.Toasts) != 0 {
+		t.Fatalf("the log was removed, and Settings still shows %v", st.Toasts)
+	}
+}
+
 // close stops writing the log, for the tests.
 func (l *appLog) close() {
 	l.mu.Lock()

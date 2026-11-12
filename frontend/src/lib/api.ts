@@ -70,7 +70,7 @@ export interface TrainingStatus {
   decisions: number;
 }
 
-// The app's log as Settings, Advanced shows it, see LogStatus in
+// The app's log as Settings shows it, see LogStatus in
 // applog.go: the file in use, how many files there are with the older
 // ones, and what they hold together. No path while the app keeps no log.
 export interface LogStatus {
@@ -78,6 +78,16 @@ export interface LogStatus {
   files: number;
   bytes: number;
   lines: number;
+  // The last toasts the app showed, newest first, see LoggedToast.
+  toasts: LoggedToast[];
+}
+
+// A toast the app showed, read back from its log: when, in ms since
+// 1970, the video it was about and its words. Issue #421.
+export interface LoggedToast {
+  at: number;
+  video?: string;
+  text: string;
 }
 
 export interface Settings {

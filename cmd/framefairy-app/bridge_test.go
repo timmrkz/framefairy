@@ -483,6 +483,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		}
 		answer(w, map[string]any{
 			"made": b.d.reportMade.Load(), "fronted": b.d.reportFronted.Load(), "open": b.d.svc.ReportWindowOpen(),
+			"text": b.d.svc.ReportDraft().Text,
 		}, nil)
 	})
 	// A picture of w by h pixels, for the paperclip's box to hand over
@@ -646,10 +647,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, map[string]string{"name": filepath.Base(*p), "text": string(body)}, err)
 	})
 	// The app's log, which the bridge keeps none of until a walk asks:
-	// with ?open=1 it starts one in the bridge's home with a few lines and
-	// an older file beside it, the way a log that has turned over once
-	// looks. Without it, what the log holds. Settings, Advanced shows it,
-	// and the next walk starts with none again, see reset.
+	// with ?open=1 it starts one in the bridge's home with a few lines,
+	// two toasts among them, and an older file beside it, the way a log
+	// that has turned over once looks. Without it, what the log holds.
+	// Settings shows it, and the next walk starts with none again, see
+	// reset.
 	mux.HandleFunc("/app-log", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("open") == "1" {
 			answer(w, nil, b.openLog())
@@ -3554,6 +3556,10 @@ func (b *bridge) openLog() error {
 	for i := range 4 {
 		theLog.line(zerolog.InfoLevel, "app").Int("i", i).Msg("a line for the walk")
 	}
+	// Two toasts the app showed, the way the window says them, the
+	// second about a video. Settings lists them, newest first.
+	theLog.line(zerolog.WarnLevel, "window").Msg(toastSaid + "The first toast for the walk.")
+	theLog.line(zerolog.WarnLevel, "window").Str("video", "start.mp4").Msg(toastSaid + "The second toast for the walk.")
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -127,7 +129,7 @@ func (l *appLog) files() []string {
 	return append(older, path)
 }
 
-// LogStatus is the app's log as Settings, Advanced shows it: where the
+// LogStatus is the app's log as Settings shows it: where the
 // file in use is, how many files there are with the older ones, and how
 // much they hold together. Plan row 2.245.
 type LogStatus struct {
@@ -135,6 +137,55 @@ type LogStatus struct {
 	Files int    `json:"files"`
 	Bytes int64  `json:"bytes"`
 	Lines int    `json:"lines"`
+	// Toasts are the last toasts the app showed, newest first, at most
+	// toastsShown of them.
+	Toasts []LoggedToast `json:"toasts"`
+}
+
+// LoggedToast is a toast the app showed, read back from its log: when, in
+// ms since 1970, the video it was about, and its words. Settings shows
+// the last few, so a toast that ran out unread is not lost and can still
+// be reported. Issue #421.
+type LoggedToast struct {
+	At    int64  `json:"at"`
+	Video string `json:"video,omitempty"`
+	Text  string `json:"text"`
+}
+
+// toastsShown is how many toasts Settings shows, the last five Tim asked
+// for.
+const toastsShown = 5
+
+// toastSaid is how the window says a toast in the log, see
+// lib/toast.svelte.ts: a warning from the window, its words after it.
+const toastSaid = "toast: "
+
+// toastsIn adds the toasts the lines of data say to toasts, in the order
+// they were said. A line that is not whole JSON is passed over, the way a
+// line cut off by a crash is.
+func toastsIn(data []byte, toasts []LoggedToast) []LoggedToast {
+	for line := range bytes.Lines(data) {
+		if !bytes.Contains(line, []byte(`"msg":"`+toastSaid)) {
+			continue
+		}
+		var l struct {
+			Level string `json:"level"`
+			Time  string `json:"time"`
+			From  string `json:"from"`
+			Video string `json:"video"`
+			Msg   string `json:"msg"`
+		}
+		if json.Unmarshal(line, &l) != nil || l.Level != "warn" || l.From != "window" {
+			continue
+		}
+		text, ok := strings.CutPrefix(l.Msg, toastSaid)
+		if !ok || text == "" {
+			continue
+		}
+		at, _ := time.Parse(zerolog.TimeFieldFormat, l.Time)
+		toasts = append(toasts, LoggedToast{At: at.UnixMilli(), Video: l.Video, Text: text})
+	}
+	return toasts
 }
 
 // status counts the log's files, their bytes on the disk and their lines,
@@ -142,9 +193,10 @@ type LogStatus struct {
 func (l *appLog) status() LogStatus {
 	files := l.files()
 	if len(files) == 0 {
-		return LogStatus{}
+		return LogStatus{Toasts: []LoggedToast{}}
 	}
 	st := LogStatus{Path: files[len(files)-1]}
+	toasts := []LoggedToast{}
 	for _, path := range files {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -154,8 +206,12 @@ func (l *appLog) status() LogStatus {
 		st.Bytes += info.Size()
 		if data, err := readLog(path); err == nil {
 			st.Lines += bytes.Count(data, []byte("\n"))
+			toasts = toastsIn(data, toasts)
 		}
 	}
+	toasts = toasts[max(0, len(toasts)-toastsShown):]
+	slices.Reverse(toasts)
+	st.Toasts = toasts
 	return st
 }
 
@@ -183,7 +239,7 @@ func (l *appLog) remove() (LogStatus, error) {
 	return was, failed
 }
 
-// AppLog is the app's log for Settings, Advanced.
+// AppLog is the app's log for Settings.
 func (s *FrameFairy) AppLog() LogStatus { return theLog.status() }
 
 // ShowAppLog shows the file of the log in use in Finder.

@@ -3464,13 +3464,21 @@ folder. Inside the home folder from `~` and the rest in full was tried
 first, and Tim still saw two kinds of path on one page, 2026-10-28. Only
 what is shown changes, what is saved stays as it came.
 
-Between the paths and the check is **The app's log**, see
-[LOGGING.md](LOGGING.md): where the file in use is, how many files it has
-with the older ones, their size and their lines, read again whenever
-Advanced opens. The folder button shows it in Finder, the way Show in
-folder does for a video in the sidebar, and the trash can removes every file of the
-log, the older ones too and nothing else in their folder, after asking.
-The app starts a new log with its next line, which says what went.
+**The app's log** is an area of its own, between Training data and
+Advanced, closed until it is opened the way Advanced is, see
+[LOGGING.md](LOGGING.md). It says how many files the log has with the
+older ones, their size and their lines, and where the file in use is,
+read again whenever it opens. The folder button shows it in Finder, the
+way Show in folder does for a video in the sidebar, and the trash can
+removes every file of the log, the older ones too and nothing else in
+their folder, after asking. The app starts a new log with its next line,
+which says what went. Under it are the last five toasts the app showed,
+newest first, in their own words, with when each came and the video it
+was about, read back from the log. A toast runs out after ten seconds,
+and this is where one that went unread is read again. Report on a row,
+shown while the pointer is on it, opens Report a Problem with the
+toast's words written in it, the way the toast's own Report does. Issue
+#421, Tim's ask of 20 October 2026.
 
 What belongs to the episode being worked on is not here: the caption face,
 the size and the height, and how many clips a search looks for and how
