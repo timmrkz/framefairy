@@ -6,14 +6,13 @@
 //
 // See .claude/skills/interface/SKILL.md for how to write one and, more to
 // the point, for what to measure.
-import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs";
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
 import { readFile, rename, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { noDeadlines, pageUntil } from "./walks/bridge.mjs";
+import { browserFor, newBrowser, noDeadlines, pageUntil } from "./walks/bridge.mjs";
 
 export { pageUntil };
 
@@ -224,7 +223,7 @@ export async function screen({
   initArg = undefined,
   // The page to open, the app unless it says otherwise.
   page: path = "",
-  // More for the browser's command line.
+  // More for Chromium's command line. WebKit takes none.
   args = [],
 } = {}) {
   const server = createServer(async (req, res) => {
@@ -245,9 +244,11 @@ export async function screen({
   const at = port++;
   await new Promise((r) => server.listen(at, r));
 
-  // WebGPU on, which headless Chromium on Linux only gives when asked, so
-  // the video preview draws the way it does in the app, see screen.ts.
-  const browser = await chromium.launch({ args: ["--enable-unsafe-webgpu", ...args] });
+  // The browser the walks walk in, Chromium unless WALKBROWSER names
+  // WebKit, the app's engine on a Mac. WebGPU on, which headless Chromium
+  // on Linux only gives when asked, so the video preview draws the way it
+  // does in the app, see screen.ts.
+  const browser = await newBrowser(browserFor(), { gpu: true, args });
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
   noDeadlines(page);
   // A probe that reports nothing because the page threw is worse than no

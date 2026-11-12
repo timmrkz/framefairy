@@ -26,6 +26,7 @@
     type CaptionsView,
     type CaptionSwitch,
     type ClipEntry,
+    type Framing,
     type Gesture,
     type Job,
     type KeptWindow,
@@ -88,7 +89,7 @@
   import Colour from "../components/Colour.svelte";
   import { act, said } from "../lib/said";
   import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
-  import { markOn } from "../lib/glide";
+  import { markOn } from "../lib/keyframes";
   import { toasts } from "../lib/toast.svelte";
 
   let {
@@ -1507,10 +1508,12 @@
     current && source ? markOn(current.cropMarks, shownMoment, source.fps, source.videoStart ?? 0) : null,
   );
 
-  // A keyframe added, moved or removed: the diamond shows at once, and the
-  // glide it makes comes back with the clip. A from below nought adds one
-  // at to with its crop at x, a to below nought removes the one at from.
-  async function setCropMark(clip: ClipEntry, from: number, to: number, x: number) {
+  // A keyframe added, moved or removed: the diamond or the circle shows at
+  // once, and the crop it brings comes back with the clip. A from below
+  // nought adds one at to with its crop at x, a circle where glide is
+  // true, a to below nought removes the one at from, and one moved keeps
+  // its kind.
+  async function setCropMark(clip: ClipEntry, from: number, to: number, x: number, glide = false) {
     const ms = (t: number) => Math.round(t * 1000);
     const was = clip.cropMarks ?? [];
     const moving = was.find((m) => from >= 0 && ms(m.at) === ms(from));
@@ -1520,31 +1523,52 @@
         at: Math.round(to * 1000) / 1000,
         x: moving?.x ?? x,
         turn: moving?.turn ?? rotationAt(clip.rotations, to),
+        glide: moving ? !!moving.glide : glide,
       });
     next.sort((a, b) => a.at - b.at);
     try {
       await session.edit(clip.key, (c) => ({ ...c, cropMarks: next }), () =>
-        api.setCropMark(path, clip.plan, clip.id, from, to, x),
+        api.setCropMark(path, clip.plan, clip.id, from, to, x, glide),
       );
     } catch (err) {
       oops(errorText(err));
     }
   }
 
-  // The button and C: a keyframe on the frame under the playhead, with
-  // the crop where it stands there now, or the one there removed, so what
-  // one click adds one click takes away.
-  function toggleCropMark() {
+  // A diamond made a circle, or a circle a diamond: the mark changes at
+  // once, and the crop it brings comes back with the clip.
+  async function setCropGlide(clip: ClipEntry, at: number, glide: boolean) {
+    const ms = (t: number) => Math.round(t * 1000);
+    const next = (clip.cropMarks ?? []).map((m) => (ms(m.at) === ms(at) ? { ...m, glide } : m));
+    try {
+      await session.edit(clip.key, (c) => ({ ...c, cropMarks: next }), () =>
+        api.setCropGlide(path, clip.plan, clip.id, at, glide),
+      );
+    } catch (err) {
+      oops(errorText(err));
+    }
+  }
+
+  // The two keyframe buttons, S and G: a keyframe on the frame under the
+  // playhead, with the crop where it stands there now, a switch keyframe,
+  // a diamond the crop switches on, for S and a glide keyframe, a circle,
+  // for G, which the crop glides to from a
+  // circle before. On a keyframe of
+  // the button's own kind it is removed, so what one click adds one click
+  // takes away, and on one of the other kind it becomes the button's.
+  // Tim chose the two buttons from mockups on #750.
+  function toggleCropMark(glide: boolean) {
     if (!current || renderingCurrent) return;
     if (cropHere !== null) {
-      void setCropMark(current, cropHere.at, -1, -1);
+      if (!!cropHere.glide === glide) void setCropMark(current, cropHere.at, -1, -1);
+      else void setCropGlide(current, cropHere.at, glide);
       return;
     }
     const left = player?.cropLeftNow();
     if (!inShort || left === null || left === undefined) return;
     // The start of the frame, the moment a mark is kept at.
     const at = frameStart + frameAt(shownMoment, frameLen, frameStart) * frameLen;
-    void setCropMark(current, -1, at, Math.round(left));
+    void setCropMark(current, -1, at, Math.round(left), glide);
   }
 
   // The button and T: the frame under the playhead becomes a thumbnail, or
@@ -1701,14 +1725,20 @@
     void rotatePart();
   }
 
-  // C puts a keyframe on the frame under the playhead, or removes the one
-  // there, the keyframe button's key, the way T is the thumbnail's.
+  // S puts a switch keyframe, which the crop switches on, on the frame
+  // under the playhead, and G a glide keyframe, which it glides into, or
+  // each removes the one of its kind there, the keys of the two keyframe
+  // buttons, the way T is the thumbnail's. S for switch and G for glide,
+  // the words the buttons say. K was the switch keyframe's key while it
+  // was the only keyframe, and C while keyframes were called crop marks.
+  // Tim asked for S on #778: with two kinds, K says neither.
   function cropMarkKey(event: KeyboardEvent) {
-    if (event.key !== "c" && event.key !== "C") return;
+    const key = event.key.toLowerCase();
+    if (key !== "s" && key !== "g") return;
     if (!workspaceKey(event, root)) return;
     if (!current) return;
     event.preventDefault();
-    toggleCropMark();
+    toggleCropMark(key === "g");
   }
 
   // Each number key puts the playhead that many tenths into the chosen
@@ -2025,26 +2055,22 @@
     pieces: { start: number; end: number }[];
     track?: string;
     playhead?: number;
+    framing?: Framing;
   } | null>(null);
-  // Each piece keeps the framing of the piece it came from, the way the
-  // engine keeps it when the edit lands.
+  // The crop of the clip under the hand is the engine's answer, the same
+  // the clip will have once the hand lets go: the pieces with their
+  // framing, the keyframes an edge carries and how the crop runs, see
+  // Framing.
   const shownClip = $derived.by(() => {
-    if (!current || !reshaped) return current;
-    const old = current.segments;
-    const overlap = (a: { start: number; end: number }, b: { start: number; end: number }) =>
-      Math.min(a.end, b.end) - Math.max(a.start, b.start);
-    const from = reshaped.pieces.map((p) => {
-      let best = 0;
-      old.forEach((o, i) => {
-        if (overlap(p, o) > overlap(p, old[best])) best = i;
-      });
-      return best;
-    });
-    const lefts = current.cropLefts;
+    if (!current || !reshaped?.framing) return current;
+    const f = reshaped.framing;
     return {
       ...current,
-      segments: reshaped.pieces.map((p, i) => ({ ...old[from[i]], start: p.start, end: p.end })),
-      cropLefts: from.map((i) => lefts[i]),
+      segments: f.segments,
+      cropMarks: f.cropMarks,
+      cropLefts: f.cropLefts,
+      cropSteps: f.cropSteps,
+      glides: f.glides,
     };
   });
   const shownCaptions = $derived.by(() => {
@@ -3274,7 +3300,7 @@
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}
           onresetcrop={(at) => (current ? resetCrop(current, at) : Promise.resolve())}
-          oncropmark={(from, to, x) => (current ? setCropMark(current, from, to, x) : Promise.resolve())}
+          oncropmark={(from, to, x, glide) => (current ? setCropMark(current, from, to, x, glide) : Promise.resolve())}
           oncaptiony={(y) => setCaptionsHeight(y)}
           onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
           onremoveword={(start, part) => (current ? removeWord(current, start, part) : Promise.resolve())}
@@ -3551,22 +3577,48 @@
           >
             <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
           </button>
-          <!-- A keyframe on the frame under the playhead, made the way a
-               thumbnail is: a plus to put one with the crop where it stands,
-               a minus when the playhead stands on one. With two or more the
-               crop glides from each to the next. Plan row 3.26. -->
+          <!-- The two keyframes, each made the way a thumbnail is: a plus to
+               put one on the frame under the playhead with the crop where it
+               stands, a minus when the playhead stands on one of its kind.
+               A diamond, where the crop switches, and a circle: from one
+               circle the crop glides into the next, #750. -->
           <button
             class="glyph"
-            aria-label={cropHere !== null ? "Remove this keyframe" : "Put a keyframe on this frame"}
+            aria-label={cropHere === null
+              ? "Put a switch keyframe"
+              : cropHere.glide
+                ? "Make this a switch keyframe"
+                : "Remove this switch keyframe"}
             disabled={renderingCurrent || (cropHere === null && !inShort)}
-            onclick={toggleCropMark}
-            title={cropHere !== null
-              ? "Remove the keyframe at the playhead. C does the same"
-              : inShort
-                ? "Put a keyframe on the frame under the playhead, with the crop where it stands. With two or more the crop moves from each to the next. C does the same"
-                : "Put the playhead in the clip to put a keyframe on the frame there"}
+            onclick={() => toggleCropMark(false)}
+            title={cropHere === null
+              ? inShort
+                ? "Put a switch keyframe on the frame under the playhead. The crop switches there and holds until the next keyframe. S does the same"
+                : "Put the playhead in the clip to put a keyframe on the frame there"
+              : cropHere.glide
+                ? "Make the keyframe at the playhead a switch keyframe, with no glide into or out of it. S does the same"
+                : "Remove the switch keyframe at the playhead. S does the same"}
           >
-            <Icon name={cropHere !== null ? "keyframe-remove" : "keyframe-add"} />
+            <Icon name={cropHere !== null && !cropHere.glide ? "keyframe-remove" : "keyframe-add"} />
+          </button>
+          <button
+            class="glyph"
+            aria-label={cropHere === null
+              ? "Put a glide keyframe"
+              : cropHere.glide
+                ? "Remove this glide keyframe"
+                : "Make this a glide keyframe"}
+            disabled={renderingCurrent || (cropHere === null && !inShort)}
+            onclick={() => toggleCropMark(true)}
+            title={cropHere === null
+              ? inShort
+                ? "Put a glide keyframe on the frame under the playhead. From one of these the crop glides into the next. G does the same"
+                : "Put the playhead in the clip to put a keyframe on the frame there"
+              : cropHere.glide
+                ? "Remove the glide keyframe at the playhead. G does the same"
+                : "Make the keyframe at the playhead a glide keyframe, which the crop glides to from a glide keyframe before. G does the same"}
+          >
+            <Icon name={cropHere !== null && cropHere.glide ? "glide-remove" : "glide-add"} />
           </button>
           <!-- Rotate Left, the way Preview and Photos rotate: the part of
                the clip between two cuts the playhead stands in, a quarter

@@ -1436,7 +1436,7 @@ export const steps = {
     await settle(page);
     // R works on the frame the video preview shows, inShort in
     // Episode.svelte, and the turn read is that frame's, so R is
-    // pressed once it is the playhead's frame, as C is, see keyframe
+    // pressed once it is the playhead's frame, as S is, see keyframe
     // at. On a busy machine R was pressed while the video preview
     // still showed the frame from before the click, issue #320.
     await shownOnPlayhead(page);
@@ -1451,36 +1451,211 @@ export const steps = {
   //                    puts the playhead in the clip, this share of the
   //                    way along it, with a click on the clip timeline,
   //                    waits for the video preview to show that frame, and
-  //                    presses C, and the clip timeline has to show a crop
-  //                    mark lit on the playhead's frame in the first frame
-  //                    drawn after the press, or the one after it
+  //                    presses S, and the clip timeline has to show a
+  //                    diamond lit on the playhead's frame in the first
+  //                    frame drawn after the press, or the one after it
+  // ["glide at", share]
+  //                    the same with G, and a circle
   async "keyframe at"(walk, arg, s) {
+    await keyframeAt(walk, arg, s, "s");
+  },
+  async "glide at"(walk, arg, s) {
+    await keyframeAt(walk, arg, s, "g");
+  },
+  // ["keyframe key", [key, kind]]
+  //                    with the playhead on a keyframe, presses S or G,
+  //                    and the mark on the playhead's frame has to become a
+  //                    "diamond" or a "circle", or go, "none", in the
+  //                    first frame drawn after the press or the one after
+  //                    it, and the engine has to have it so
+  async "keyframe key"(walk, arg, s) {
     const { page, watch } = walk;
-    const g = await handles(page);
-    const from = g.start.x + g.start.w;
-    await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
-    await settle(page);
-    // C puts the keyframe on the frame the video preview shows, so it
-    // is pressed once that is the playhead's frame, see thumbnail at.
-    await shownOnPlayhead(page);
-    const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
-    const before = await count();
+    const [key, kind] = arg;
+    const here = () =>
+      page.evaluate(() => {
+        const e = document.querySelector(".clip-timeline .cropdot.here");
+        return e ? (e.dataset.glide ? "circle" : "diamond") : "none";
+      });
+    const on = await chosen(page);
+    const circles = async () =>
+      ((await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.cropMarks ?? []).filter((m) => m.glide).length;
+    const had = await circles();
+    const before = await here();
+    if (before === "none") {
+      walk.wrong = `the playhead is on no keyframe for ${key.toUpperCase()} to change`;
+      return;
+    }
     const frames = await keyShows(
       page,
-      "c",
-      (b) => document.querySelectorAll(".clip-timeline .cropdot").length > b && !!document.querySelector(".clip-timeline .cropdot.here"),
-      before,
+      key,
+      (want) => {
+        const e = document.querySelector(".clip-timeline .cropdot.here");
+        return (e ? (e.dataset.glide ? "circle" : "diamond") : "none") === want;
+      },
+      kind,
     );
-    if (frames < 0) walk.wrong = "C put no keyframe on the playhead's frame";
-    else if (frames > 1) walk.wrong = `the keyframe showed ${frames} frames after C, not at once`;
+    if (frames < 0) walk.wrong = `${key.toUpperCase()} on the ${before} left it a ${await here()}, not a ${kind}`;
+    else if (frames > 1) walk.wrong = `the ${kind} showed ${frames} frames after ${key.toUpperCase()}, not at once`;
     await watch.step("press", s);
     await settle(page);
+    // The engine has one circle more or fewer, as the mark became.
+    const want = had + (kind === "circle") - (before === "circle");
+    const has = await circles();
+    if (!walk.wrong && has !== want) walk.wrong = `the engine has ${has} circles after ${key.toUpperCase()} on the ${before}, not ${want}`;
+  },
+  // ["glides", n]      the clip timeline draws n glide lines along the top
+  //                    rule, each from a circle to the next circle, as
+  //                    thick as the rule, on it, brightening into the
+  //                    second circle, and under the marks. A circle no
+  //                    line reaches does nothing yet and is drawn as an
+  //                    empty ring, and one a line reaches is filled, Tim on
+  //                    #778
+  async glides(walk, arg) {
+    const { page } = walk;
+    await settle(page);
+    const got = await page.evaluate(() => {
+      const box = (e) => e.getBoundingClientRect();
+      const dots = [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => ({
+        x: box(e).left + box(e).width / 2,
+        glide: !!e.dataset.glide,
+        hollow: !!e.querySelector("svg .hollow"),
+      }));
+      const rule = document.querySelector(".clip-timeline .frames .frame");
+      return {
+        dots,
+        rule: rule ? { top: box(rule).top, line: parseFloat(getComputedStyle(rule).borderTopWidth) } : null,
+        lines: [...document.querySelectorAll(".clip-timeline .glide")].map((e) => {
+          const css = getComputedStyle(e);
+          return { left: box(e).left, right: box(e).right, top: box(e).top, height: box(e).height, image: css.backgroundImage, z: Number(css.zIndex) };
+        }),
+        markZ: Number(getComputedStyle(document.querySelector(".clip-timeline .cropdot") ?? document.body).zIndex),
+      };
+    });
+    if (got.lines.length !== arg) {
+      walk.wrong = `the clip timeline draws ${got.lines.length} glide lines, not ${arg}`;
+      return;
+    }
+    const near = (a, b) => Math.abs(a - b) <= 1.5;
+    for (const l of got.lines) {
+      const into = got.dots.find((d) => d.glide && near(d.x, l.right));
+      const from = got.dots.find((d) => d.glide && near(d.x, l.left));
+      if (!into) walk.wrong = `a glide line ends at ${l.right.toFixed(1)} px, on no circle`;
+      else if (!from) walk.wrong = `a glide line starts at ${l.left.toFixed(1)} px, on no circle`;
+      else if (got.rule && (!near(l.top, got.rule.top) || !near(l.height, got.rule.line)))
+        walk.wrong = `a glide line stands ${l.top.toFixed(1)} px down and ${l.height.toFixed(1)} px thick, not on the top rule at ${got.rule.top.toFixed(1)} px, ${got.rule.line} px thick`;
+      else if (!l.image.startsWith("linear-gradient")) walk.wrong = `a glide line is drawn with ${l.image}, not brightening into its circle`;
+      else if (!(l.z < got.markZ)) walk.wrong = `a glide line is drawn over the keyframes`;
+    }
+    if (walk.wrong) return;
+    for (const d of got.dots.filter((d) => d.glide)) {
+      const joined = got.lines.some((l) => near(d.x, l.left) || near(d.x, l.right));
+      if (joined && d.hollow) walk.wrong = `the circle at ${d.x.toFixed(1)} px is on a glide line and drawn empty`;
+      else if (!joined && !d.hollow) walk.wrong = `the circle at ${d.x.toFixed(1)} px is on its own and drawn filled, not as an empty ring`;
+    }
+  },
+  // ["glide under the hand", share]
+  //                    holds the clip's start and drags it in to this
+  //                    share of the way along the clip, past the first
+  //                    circle, and with the hand still down and every
+  //                    place answered, the first circle rides on the start
+  //                    edge and the glide line starts there, where both
+  //                    stay once let go. Then drags the start back out to
+  //                    where it was, and the circle and the line are on
+  //                    the circle's own place again, held and let go.
+  //                    The circle riding on the edge is lit as soon as the
+  //                    answer to the hand is drawn. Found by Tim on #750,
+  //                    the line stood where it was until the hand let go
+  //                    of a cut's edge, and on #778, the keyframes did, and
+  //                    the circle on the edge flickered
+  async "glide under the hand"(walk, arg, s) {
+    const { page, watch } = walk;
+    const read = () =>
+      page.evaluate(() => {
+        const left = (e) => e.getBoundingClientRect().left;
+        const frame = document.querySelector(".clip-timeline .frames .frame");
+        const middle = (e) => {
+          const r = e.getBoundingClientRect();
+          return r.left + r.width / 2;
+        };
+        return {
+          start: frame ? left(frame) : NaN,
+          lines: [...document.querySelectorAll(".clip-timeline .glide")].map(left),
+          circles: [...document.querySelectorAll(".clip-timeline .cropdot[data-glide]")].map(middle),
+        };
+      });
+    const near = (a, b) => Math.abs(a - b) <= 1.5;
+    const before = await read();
+    if (before.lines.length !== 1 || before.circles.length !== 2) {
+      walk.wrong = `the clip timeline draws ${before.lines.length} glide lines and ${before.circles.length} circles before the start is dragged, not 1 and 2`;
+      return;
+    }
+    const drag = async (to, done) => {
+      const g = await handles(page);
+      const x = middle(g.start);
+      const y = g.start.y + g.start.h / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      for (let i = 1; i <= 3; i++) {
+        await page.mouse.move(x + ((to - x) * i) / 3, y);
+        await nextPaint(page);
+      }
+      // Every place the hand went answered and drawn, which the clip
+      // timeline says by dropping data-shaping, see "drag edge twice".
+      // Whether the first circle is lit is read in the same moment, before
+      // the video preview has shown the frame the answer put the playhead
+      // on: the circle riding on the edge is lit by the answer that put it
+      // there, or it flickers, Tim on #778.
+      const litWhenAnswered = await page.evaluate(
+        () =>
+          new Promise((answered) => {
+            const timeline = document.querySelector(".clip-timeline");
+            const lit = () => !!timeline.querySelector(".cropdot[data-glide]")?.classList.contains("here");
+            if (!timeline.hasAttribute("data-shaping")) return answered(lit());
+            const seen = new MutationObserver(() => {
+              if (timeline.hasAttribute("data-shaping")) return;
+              seen.disconnect();
+              answered(lit());
+            });
+            seen.observe(timeline, { attributes: true, attributeFilter: ["data-shaping"] });
+          }),
+      );
+      await nextPaint(page);
+      const held = await read();
+      await page.mouse.up();
+      await settle(page);
+      const left = await read();
+      const wrong = (got) =>
+        got.lines.length !== 1 || got.circles.length !== 2
+          ? `${got.lines.length} glide lines and ${got.circles.length} circles`
+          : !done(got)
+            ? `the glide line starting at ${got.lines[0].toFixed(1)} px and the first circle at ${got.circles[0].toFixed(1)} px, the clip at ${got.start.toFixed(1)} px`
+            : "";
+      const whileHeld = wrong(held);
+      const once = wrong(left);
+      if (whileHeld) return `with the start ${to < x ? "dragged back out" : "dragged in"} and still held, the clip timeline draws ${whileHeld}`;
+      if (to > x && !litWhenAnswered) return "with the start dragged in and still held, the first circle riding on it is not lit when the answer to the hand is drawn";
+      if (once) return `with the start ${to < x ? "dragged back out" : "dragged in"} and let go, the clip timeline draws ${once}`;
+      if (!near(held.lines[0], left.lines[0])) return `the glide line stood at ${held.lines[0].toFixed(1)} px while the start was held and at ${left.lines[0].toFixed(1)} px once let go`;
+      return "";
+    };
+    const g = await handles(page);
+    const into = g.start.x + g.start.w;
+    walk.wrong = await drag(
+      into + arg * (g.end.x - into),
+      (got) => near(got.lines[0], got.start) && near(got.circles[0], got.start) && !near(got.lines[0], before.lines[0]),
+    );
+    if (!walk.wrong)
+      walk.wrong = await drag(
+        middle(g.start),
+        (got) => near(got.lines[0], before.lines[0]) && near(got.circles[0], before.circles[0]),
+      );
+    await watch.step("drag", s);
   },
   // ["keyframe on", "last"]
   //                    a click on the clip's end edge, which leaves the
   //                    playhead on the end with the last frame on the
-  //                    video preview, then C: a keyframe comes on the
-  //                    clip's last frame and its diamond lights, and C again
+  //                    video preview, then S: a keyframe comes on the
+  //                    clip's last frame and its diamond lights, and S again
   //                    removes it
   // ["keyframe on", "first"]
   //                    a click on the clip's start edge and three steps
@@ -1504,10 +1679,10 @@ export const steps = {
         await settle(page);
       }
     }
-    // C puts the keyframe on the frame the video preview shows, so it is
+    // S puts the keyframe on the frame the video preview shows, so it is
     // pressed once the playhead stands on the clip's frame and the video
     // preview shows that frame, both the app's own word. settle does not
-    // count the frame on its way from the decoder, and under load C once
+    // count the frame on its way from the decoder, and under load the key once
     // came while the video preview still showed the clip's start, #559.
     await pageUntil(
       page,
@@ -1522,17 +1697,17 @@ export const steps = {
     const marks = async () => (await entry()).cropMarks ?? [];
     const before = (await marks()).length;
     const lit = () => page.evaluate(() => !!document.querySelector(".clip-timeline .cropdot.here"));
-    await page.keyboard.press("c");
+    await page.keyboard.press("s");
     await settle(page);
     const got = await marks();
     const near = got.find((m) => Math.abs(m.at - want) < 0.5 / src.fps);
     if (got.length <= before) {
       const at = await page.evaluate(() => document.querySelector(".screen").dataset.playhead);
-      walk.wrong = `C put no keyframe with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
+      walk.wrong = `S put no keyframe with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
       return;
     }
     if (!near) {
-      walk.wrong = `C put a keyframe at ${got.map((m) => m.at).join(", ")}, not on the clip's ${arg} frame at ${want.toFixed(3)} s`;
+      walk.wrong = `S put a keyframe at ${got.map((m) => m.at).join(", ")}, not on the clip's ${arg} frame at ${want.toFixed(3)} s`;
       return;
     }
     await settle(page);
@@ -1540,9 +1715,9 @@ export const steps = {
       walk.wrong = `the keyframe on the clip's ${arg} frame does not light while that frame is on the video preview`;
       return;
     }
-    await page.keyboard.press("c");
+    await page.keyboard.press("s");
     await settle(page);
-    if ((await marks()).length > before) walk.wrong = `C again did not remove the keyframe on the clip's ${arg} frame`;
+    if ((await marks()).length > before) walk.wrong = `S again did not remove the keyframe on the clip's ${arg} frame`;
     await settle(page);
   },
   // ["thumbnail at", share]
@@ -1628,6 +1803,38 @@ export const steps = {
         return real(input, init);
       };
     }, arg);
+  },
+  // ["playhead at", share]
+  //                    a click on the clip timeline puts the playhead that
+  //                    share of the way from the clip's start to its end,
+  //                    and the video preview shows the frame there
+  async "playhead at"(walk, arg) {
+    await playheadAt(walk.page, arg);
+  },
+  // ["crop before", share]
+  //                    puts the playhead that share of the way into the
+  //                    clip and keeps where the crop frame stands there in
+  //                    the video preview
+  // ["crop kept", share]
+  //                    with the playhead put there again, the crop frame
+  //                    stands where it stood at ["crop before", share], so
+  //                    what came between left that part alone, or put it
+  //                    back
+  async "crop before"(walk, arg) {
+    const { page } = walk;
+    await playheadAt(page, arg);
+    walk.cropBefore = { ...walk.cropBefore, [arg]: await cropShown(page) };
+  },
+  async "crop kept"(walk, arg) {
+    const { page } = walk;
+    const was = walk.cropBefore?.[arg];
+    if (was === undefined) {
+      walk.wrong = `no crop was kept at ${arg} of the clip to compare with`;
+      return;
+    }
+    await playheadAt(page, arg);
+    const now = await cropShown(page);
+    if (now !== was) walk.wrong = `${arg} of the way into the clip the crop frame stood at ${was} and stands at ${now} now`;
   },
   // ["playhead on", edge]
   //                    the playhead is on the frame the clip's "start" or
@@ -1795,7 +2002,8 @@ export const steps = {
   },
   // ["keyframes", n]  the engine has n keyframes on the clip, at as many
   //                    left edges, and the clip timeline draws n
-  //                    diamonds, each 16 px wide
+  //                    diamonds, each 18 px wide, and every mark and the
+  //                    playhead with its middle on a whole pixel
   async keyframes(walk, arg) {
     const { page } = walk;
     const on = await chosen(page);
@@ -1805,16 +2013,31 @@ export const steps = {
     const dots = await page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
     // Drawn as a diamond, the shape editors draw a keyframe in, and
     // the keyframe button's own: Lucide's diamond, filled, as a
-    // thumbnail is Lucide's camera filled. Plan row 2.234.
+    // thumbnail is Lucide's camera filled. Plan row 2.234. One the crop
+    // glides into is a circle, #750.
     const shapes = await page.evaluate(() =>
       [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.querySelector("svg path")?.getAttribute("d") ?? "nothing"),
     );
+    const diamond = (d) => d.startsWith("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59");
     const sizes = await page.evaluate(() => [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.getBoundingClientRect().width));
-    if (got.length !== arg) walk.wrong = `the engine has ${got.length} keyframes, not ${arg}`;
+    // Each mark and the playhead with its middle on a whole pixel, so the
+    // Mac draws a mark on the playhead's own pixel: between two it drew
+    // the diamond half a pixel left of the playhead on its frame, found by
+    // Tim on #750.
+    const between = await page.evaluate(() =>
+      [...document.querySelectorAll(".clip-timeline .mark, .clip-timeline .playhead")]
+        .map((e) => {
+          const b = e.getBoundingClientRect();
+          return b.left + b.width / 2;
+        })
+        .filter((x) => Math.abs(x - Math.round(x)) > 0.01),
+    );
+    if (between.length) walk.wrong = `a mark or the playhead stands between two pixels, its middle at ${between.map((x) => x.toFixed(3)).join(", ")} px`;
+    else if (got.length !== arg) walk.wrong = `the engine has ${got.length} keyframes, not ${arg}`;
     else if (new Set(got.map((m) => m.x)).size !== arg) walk.wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
     else if (dots !== arg) walk.wrong = `the clip timeline draws ${dots} keyframes, not ${arg}`;
-    else if (shapes.some((c) => !c.startsWith("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59")))
-      walk.wrong = `a keyframe is not drawn as a diamond: ${shapes.join(", ")}`;
+    else if (shapes.some((d, i) => diamond(d) === !!got[i]?.glide))
+      walk.wrong = `a keyframe is not drawn as its kind, a diamond to switch and a circle to glide: ${shapes.join(", ")}`;
     else if (sizes.some((w) => w !== 18)) walk.wrong = `a keyframe is ${sizes.join(", ")} px wide, not 18 px like a thumbnail, found too small by Tim on #192`;
   },
   // ["scrub", from, to] reads the frame on the video preview's canvas, by
@@ -1891,13 +2114,14 @@ export const steps = {
   },
   // ["slow drag left", n]
   //                    presses the clip timeline near the clip's end and
-  //                    drags the playhead to the left a pixel every frame
-  //                    of the page, the way a slow hand does, until its
-  //                    frame is n frames back, then lets go. The frames
-  //                    under the hand come from no more new streams than
-  //                    one for every 15 frames back and one more: each
-  //                    step back was a stream of its own, a seek, and the
-  //                    picture stood for each, issue #596
+  //                    drags the playhead to the left a pixel at a time,
+  //                    the way a slow hand does, each frame back shown
+  //                    before it moves on, until its frame
+  //                    is n frames back, then lets go. The frames under
+  //                    the hand come from no more new streams than one for
+  //                    every 15 frames back and one more: each step back
+  //                    was a stream of its own, a seek, and the picture
+  //                    stood for each, issue #596
   async "slow drag left"(walk, arg, s) {
     const { page, watch } = walk;
     const fps = await rate(page);
@@ -1915,12 +2139,33 @@ export const steps = {
     const from = Math.floor((await at()) * fps + 1e-6);
     const was = await page.evaluate(() => window.__appFrames.stats.streams);
     const calls = await page.evaluate(() => window.__calls.length);
+    // A frame of the clip is some 8 pixels wide on the clip timeline, so
+    // a frame of the page after each pixel waited 333 frames of the page
+    // for 40 back. The pixels that stay on the same frame ask for no
+    // other, so the hand goes on over them by two pixels fewer than the
+    // frame before took, which stays inside the next frame, since two
+    // frames differ by a pixel at most, and on from there a pixel at a
+    // time. Once the playhead is on the next frame back, the
+    // hand waits until the video preview shows that frame, the way a
+    // slow hand sees each frame before it moves on: a hand quicker than
+    // the frames asks while a stream is still coming, which the app
+    // parks, and would open fewer streams than a slow one, issue #596.
     let back = 0;
+    let wide = 1;
+    let since = 0;
     while (back < arg && x > g.start.x + g.start.w) {
-      x -= 1;
+      const by = since ? 1 : Math.max(1, wide - 2);
+      x -= by;
+      since += by;
       await page.mouse.move(x, y);
-      await nextPaint(page);
-      back = from - Math.floor((await at()) * fps + 1e-6);
+      const now = from - Math.floor((await at()) * fps + 1e-6);
+      if (now === back) continue;
+      // A frame passed over would be a frame never asked for, so the
+      // hand goes back to a pixel at a time.
+      wide = now === back + 1 ? since : 1;
+      since = 0;
+      back = now;
+      await shownOnPlayhead(page);
     }
     await page.mouse.up();
     await settle(page);
@@ -2042,6 +2287,38 @@ export const steps = {
 // Steps that take the same body as the step they are walked by.
 steps["scrub far"] = steps["click far"];
 
+// keyframeAt puts the playhead this share of the way along the clip with
+// a click on the clip timeline, waits for the video preview to show that
+// frame, and presses key, S or G, and the clip timeline has to show a new
+// mark lit on the playhead's frame in the first frame drawn after the press
+// or the one after it, a diamond for S and a circle for G.
+async function keyframeAt(walk, share, s, key) {
+  const { page, watch } = walk;
+  const g = await handles(page);
+  const from = g.start.x + g.start.w;
+  await clickOnTrack(page, from + share * (g.end.x - from), high(g.track));
+  await settle(page);
+  // The key puts the keyframe on the frame the video preview shows, so it
+  // is pressed once that is the playhead's frame, see thumbnail at.
+  await shownOnPlayhead(page);
+  const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
+  const before = await count();
+  const frames = await keyShows(
+    page,
+    key,
+    ([b, glide]) => {
+      const here = document.querySelector(".clip-timeline .cropdot.here");
+      return document.querySelectorAll(".clip-timeline .cropdot").length > b && !!here && !!here.dataset.glide === glide;
+    },
+    [before, key === "g"],
+  );
+  const kind = key === "g" ? "circle" : "diamond";
+  if (frames < 0) walk.wrong = `${key.toUpperCase()} put no ${kind} on the playhead's frame`;
+  else if (frames > 1) walk.wrong = `the ${kind} showed ${frames} frames after ${key.toUpperCase()}, not at once`;
+  await watch.step("press", s);
+  await settle(page);
+}
+
 // How many animation frames the page drew after a key went down before
 // the first one on which shows holds: 0 when the frame after the key
 // shows it. Counted in frames, not in milliseconds: on a busy runner one
@@ -2157,4 +2434,21 @@ function inACut(played, pieces, frame) {
     if (inside) return `the playhead stood at ${inside[0].toFixed(3)} while it played, inside the cut from ${a.toFixed(3)} to ${b.toFixed(3)}`;
   }
   return null;
+}
+
+// Puts the playhead that share of the way from the clip's start to its end
+// by a click on the clip timeline, once the video preview shows the frame
+// there.
+async function playheadAt(page, share) {
+  const g = await handles(page);
+  const from = g.start.x + g.start.w;
+  await clickOnTrack(page, from + share * (g.end.x - from), high(g.track));
+  await settle(page);
+  await shownOnPlayhead(page);
+}
+
+// Where the crop frame stands in the video preview, in pixels of the
+// picture.
+function cropShown(page) {
+  return page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
 }

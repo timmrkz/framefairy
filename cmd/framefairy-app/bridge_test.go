@@ -565,7 +565,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		}
 		if n, err := strconv.Atoi(q.Get("step")); err == nil {
 			b.words.save.Store(q.Has("save"))
-			b.words.step(min(max(n, 0), 100))
+			if q.Has("heard") {
+				b.words.stepHeard(r.Context(), min(max(n, 0), 100))
+			} else {
+				b.words.step(min(max(n, 0), 100))
+			}
 			answer(w, nil, nil)
 			return
 		}
@@ -753,6 +757,10 @@ type prose struct {
 	// the walk holds ends the way a piece being heard ends as the app
 	// quits. It stays held after.
 	closing bool
+	// ended counts the hearings that have ended, done, called off or
+	// failed, each of which closes it, so a wait for the next piece
+	// ends with the hearing that would have asked for it.
+	ended int
 }
 
 func (p *prose) cond() *sync.Cond {
@@ -800,6 +808,73 @@ func (p *prose) step(n int) {
 	defer p.gate.Unlock()
 	p.steps += n
 	p.cond().Broadcast()
+}
+
+// stepHeard lets n pieces more be heard, the way step does, and returns
+// once they have all been heard and the next piece waits, so a walk can let many pieces on at once and go on when
+// they are all in. The engine hears one piece after the other and says
+// how far it came after each, before it asks for the next, so by then it
+// has said so of all of them. It is for pieces that are not the last: a
+// video heard to its end asks for no next piece, and the wait ends with
+// the hearing instead, the same as for one that fails or is called off,
+// and the walk then finds out how it ended. A walk that gives up on it,
+// or a reset, ends the wait too.
+// The pieces are let on under the same lock the count of hearings ended
+// is read under, so a hearing that ends before the wait starts is not
+// missed.
+func (p *prose) stepHeard(ctx context.Context, n int) {
+	stop := context.AfterFunc(ctx, func() {
+		p.gate.Lock()
+		defer p.gate.Unlock()
+		p.cond().Broadcast()
+	})
+	defer stop()
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	ended := p.ended
+	p.steps += n
+	p.cond().Broadcast()
+	for (p.steps > 0 || p.hearing > 0 || p.waiting == 0) && p.held && p.ended == ended && ctx.Err() == nil {
+		p.cond().Wait()
+	}
+}
+
+// The walk that lets many pieces on at once goes on once they are heard
+// and the next waits, and does not wait for good when the hearing ends
+// with no next piece, done, called off or failed.
+func TestHeardWaitsForTheNextPieceOrTheEndOfTheHearing(t *testing.T) {
+	t.Parallel()
+	p := &prose{}
+	p.hold()
+	samples := make([]float32, 16000)
+	hears := func(n int) {
+		for range n {
+			p.Recognize(samples, 16000)
+		}
+	}
+	// Two pieces let on, and a third asked for, which waits.
+	done := make(chan struct{})
+	go func() { hears(3); close(done) }()
+	p.stepHeard(t.Context(), 2)
+	p.gate.Lock()
+	waiting, steps := p.waiting, p.steps
+	p.gate.Unlock()
+	if waiting != 1 || steps != 0 {
+		t.Fatalf("heard returned with %d pieces waiting and %d steps left, not 1 and 0", waiting, steps)
+	}
+	p.release()
+	<-done
+
+	// One piece let on, and the hearing ends after it with no next.
+	p.hold()
+	go func() { hears(1); p.Close() }()
+	p.stepHeard(t.Context(), 1)
+	p.gate.Lock()
+	ended := p.ended
+	p.gate.Unlock()
+	if ended != 1 {
+		t.Fatalf("heard returned before the hearing ended, %d ended", ended)
+	}
 }
 
 // whileClosing lets every piece through for as long as close takes, and
@@ -893,7 +968,13 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	return tokens
 }
 
-func (*prose) Close() {}
+// Close is called as each hearing ends, see ended.
+func (p *prose) Close() {
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	p.ended++
+	p.cond().Broadcast()
+}
 
 // SaveHeard says whether what is heard so far is saved now, which the
 // engine asks in place of its clock: once after a step that asked for it.
@@ -1317,6 +1398,12 @@ func openBridge(t *testing.T) *bridge {
 	return b
 }
 
+// frameTimings are the timings a walk's video may have, each a fixture
+// of its own, see filmed in internal/fixtures: a phone's uneven frames, a
+// picture a quarter of a second or 4 ms after its sound, and a phone's
+// picture stored on its side.
+var frameTimings = map[string]bool{"uneven": true, "late": true, "late4ms": true, "turned": true}
+
 // startWith puts a second video in the app reset a moment ago, heard and
 // searched, the way Add and its first search leave it, for a walk that
 // only needs a video of this kind to work on: seconds long, filmed at
@@ -1339,7 +1426,7 @@ func (b *bridge) startWith(seconds, rate, timing string, mkv bool) (string, erro
 	if rate != "" && !frameRate.MatchString(rate) {
 		return "", fmt.Errorf("%q is no frame rate", rate)
 	}
-	if timing != "" && timing != "uneven" && timing != "late" && timing != "turned" {
+	if timing != "" && !frameTimings[timing] {
 		return "", fmt.Errorf("%q is no timing of frames", timing)
 	}
 	file := walkFixture(n, rate, 0, timing, false)
@@ -1598,7 +1685,7 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, box, mkv boo
 	if rate != "" && !frameRate.MatchString(rate) {
 		return "", fmt.Errorf("%q is no frame rate", rate)
 	}
-	if timing != "" && timing != "uneven" && timing != "late" && timing != "turned" {
+	if timing != "" && !frameTimings[timing] {
 		return "", fmt.Errorf("%q is no timing of frames", timing)
 	}
 	at, err := strconv.ParseFloat(switchAt, 64)

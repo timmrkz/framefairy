@@ -1,4 +1,10 @@
-# Three rules and no other. A test waits on a signal, never on the clock,
+# unused, which finds code nothing calls, not even a test, issue #613.
+# Code that is dead is code a reader works out for nothing, and a fix
+# that goes there fixes nothing the app runs. make lint runs it a second
+# time without the tests, so code only a test calls fails too: it goes in
+# the test's own file.
+#
+# And three rules of forbidigo. A test waits on a signal, never on the clock,
 # see CLAUDE.md. forbidigo refuses the clock in test files only, over the
 # whole tree: a sleep, a timer or a ticker, and a context with a deadline,
 # which is a timer by another name, and a check on how long something
@@ -20,7 +26,7 @@
 version: "2"
 linters:
   default: none
-  enable: [forbidigo]
+  enable: [forbidigo, unused]
   settings:
     forbidigo:
       analyze-types: true

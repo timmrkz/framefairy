@@ -395,15 +395,17 @@ impossible.
 ## When it only goes wrong on the Mac, try WebKit
 
 The app on a Mac is WebKit. The walks walk in Playwright's WebKit, see
-Two browsers in `docs/TESTING.md`, and the probes of
-`frontend/preview/open.mjs` still in Chromium. Where the two keep time or paint
-differently, a probe in Chromium passes and Tim still sees the bug. The fill of a removed row grew back under the pointer on
+Two browsers in `docs/TESTING.md`, and so does a probe of
+`frontend/preview/open.mjs`, with `WALKBROWSER=webkit` in front of it.
+Where the two keep time or paint differently, a probe in Chromium passes
+and Tim still sees the bug. The fill of a removed row grew back under the pointer on
 his Mac for two rounds while every Chromium probe said it held still:
 WebKit plays a paused animation on from its timeline's last frame, and
 Chromium from now.
 
 Walk one sequence in WebKit the way you walk one in Chromium, with
-`WALKBROWSER=webkit` in front of `node frontend/preview/walks/sequences.mjs`.
+`WALKBROWSER=webkit` in front of `node frontend/preview/walks/sequences.mjs`,
+and a probe the same way, in front of `node` and the probe.
 A cloud session installs Playwright's WebKit in the background as it starts,
 see `/tmp/framefairy-webkit.log`.
 
@@ -863,25 +865,14 @@ playing.
 
 The queue also has a page of its own in the harness, `preview/frames/`,
 one canvas and `window.__queue` to drive, which is the quickest way to
-look at the queue alone:
-
-```
-npx vite build --config frontend/preview/vite.config.ts
-node frontend/preview/frames/cuts.mjs                 # the clip, once
-node frontend/preview/frames/cuts.mjs loop
-node frontend/preview/frames/cuts.mjs seeks           # paused frames, a seek while playing
-node frontend/preview/frames/cuts.mjs memory          # a minute straight on
-node frontend/preview/frames/added.mjs                # an episode just added, see docs/TESTING.md
-```
-
-`frames()` in `open.mjs` opens it on its own episode, ten minutes made by
-the same recipe as the workspace's, see The episode the harness can play.
-`?read` reads the frame number back from the canvas and `?hear` records
-every sample handed to the sound card, and the probe lays it over the
-episode's own sound decoded by ffmpeg, cut and faded the way the render
-does it. A sample missing, doubled or taken from inside a cut no longer
-matches. `SHIFT=1` moves the expected sound by one sample after each cut:
-the check has to fail with it, and it does, from 2 percent off to 35.
+look at the queue alone. `frames()` in `open.mjs` opens it on its own
+episode, ten minutes made by the same recipe as the workspace's, see The
+episode the harness can play, and `queueUntil` waits for a report of the
+queue. `?read` reads the frame number back from the canvas and `?hear`
+records every sample handed to the sound card, for a probe to lay over
+the episode's own sound decoded by ffmpeg, cut and faded the way the
+render does it. A sample missing, doubled or taken from inside a cut no
+longer matches.
 
 In the workspace the same is measured on the path a person takes, see
 the proof under Playback above: the clip picked from the list, the space
@@ -1088,9 +1079,19 @@ engine on the way, one question at a time and always about where the hand
 is now, and keep the last answer until the saved state comes back, so
 nothing jumps as the hand lets go. `Shape` is the example.
 
+The list is easy to make one item short. A fix made one line between two
+marks follow a dragged edge, and the marks it ran between, drawn from the
+same state, still stood where the saved clip had them, so the line ran
+from nothing. When the engine answers the hand, let it answer with
+everything drawn from the thing, in the shape the saved state is sent,
+and draw every part from that one answer. A part read from anywhere else
+is the one left behind. `Framing` is the example: the pieces, the marks,
+the line and the crop come in one answer, for a saved clip and for one
+under the hand.
+
 How to catch it: hold the mouse down with `page.mouse.down()`, move in
-steps, and read the thing after each step, before `page.mouse.up()`. A
-number that only changes after the up is the bug. Then read every frame
+steps, and read every part of the list after each step, before
+`page.mouse.up()`. A number that only changes after the up is the bug. Then read every frame
 across the up, the way the probe above does for a click.
 
 ## Work a click starts is built in front of the person

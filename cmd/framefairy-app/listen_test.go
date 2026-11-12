@@ -54,17 +54,10 @@ func tone(seconds float64) []float32 {
 	return samples
 }
 
-// listenWith puts in the stand-in speech model and a microphone that
-// plays samples, and gives the app to talk to and what its log holds.
-func listenWith(t *testing.T, samples []float32) (*FrameFairy, func() []map[string]any) {
-	t.Helper()
-	_, read := testLog(t)
-	return listenTo(t, samples), read
-}
-
-// listenTo is listenWith with no log open, so the lines a recording writes
-// go nowhere. A test in a testing/synctest bubble opens its log outside
-// the bubble, see bubbleLog.
+// listenTo puts in the stand-in speech model and a microphone that plays
+// samples, and gives the app to talk to, with no log open, so the lines a
+// recording writes go nowhere. A test in a testing/synctest bubble opens
+// its log outside the bubble, see bubbleLog.
 func listenTo(t *testing.T, samples []float32) *FrameFairy {
 	t.Helper()
 	s := &speech{}

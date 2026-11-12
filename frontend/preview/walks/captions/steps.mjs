@@ -766,8 +766,8 @@ export const steps = {
     await watch.step("block after", s);
   },
   // ["captions like the short"]
-  //                    puts the playhead on the first frame of the clip's
-  //                    words and in their middle, and holds the lower half
+  //                    puts the playhead on the first frame of one of the
+  //                    clip's words and in its middle, and holds the lower half
   //                    of the crop in the video preview to the frame of
   //                    the short Render wrote that shows the same moment
   async "captions like the short"(walk) {
@@ -840,7 +840,14 @@ export const steps = {
     let compared = 0;
     let apart = 0;
     const report = [];
-    for (const at of moments.slice(0, 12)) {
+    // TestTheVideoPreviewDrawsTheShortsCaptions in engine/ holds every
+    // frame of a short to the decoder's layer for it, the bounce
+    // included. What is left for the window is that it lays the layer
+    // over the frame the way the render does, and asks for the moment
+    // the playhead stands on: the first frame of one word, where the
+    // highlight bounces, and the middle of it, where it has settled.
+    const word = Math.min(2, Math.floor(moments.length / 2) - 1) * 2;
+    for (const at of moments.slice(word, word + 2)) {
       if (!(await seekTo(sized, at, fps))) {
         walk.wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
         break;
@@ -940,8 +947,8 @@ export const steps = {
       }
     }
     if (process.env.VERBOSE) console.log(`        ${report.join("\n        ")}`);
-    if (!walk.wrong && apart < 4) walk.wrong = `only ${apart} frames of the short either side were told apart from the video preview, so a frame off would pass`;
-    if (!walk.wrong && compared < 6) walk.wrong = `only ${compared} frames of the short were compared`;
+    if (!walk.wrong && apart < 2) walk.wrong = `only ${apart} frames of the short either side were told apart from the video preview, so a frame off would pass`;
+    if (!walk.wrong && compared < 2) walk.wrong = `only ${compared} frames of the short were compared`;
     // A comparison that failed leaves its page open, so its trace is kept
     // with the walk's, see keepTraces. Closed, the trace of the page the
     // comparison was made on went with it, and the one kept held only the
@@ -1945,9 +1952,11 @@ export const steps = {
   },
   async "step frame by frame and see nothing pop"(walk, arg) {
     const { page, watch } = walk;
-    // arg steps of a frame from the clip's first frame, each onto the
-    // frame as the short shows it, and nothing played over it, a step
-    // onto a new word too.
+    // Steps of a frame from the clip's first frame, each onto the frame
+    // as the short shows it, and nothing played over it, a step onto a
+    // new word too: until two steps have landed on a new word, or after
+    // arg steps. Every step between two words is the same case, and was
+    // most of the walk.
     const fps = await rate(page);
     const state = await engineState(page, watch.at);
     if (!(await seekTo(page, state.segments[0].start + 0.5 / fps, fps))) {
@@ -1958,6 +1967,7 @@ export const steps = {
     await page.evaluate(() => document.body.focus());
     const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
     const words = new Set();
+    let stepped = 0;
     for (let k = 0; k < arg && !walk.wrong; k++) {
       await page.keyboard.press("ArrowRight");
       // Once the frame is drawn with its own layer, which is when a
@@ -1971,9 +1981,11 @@ export const steps = {
       }));
       if (now.word) words.add(now.word);
       if (now.popped !== count) walk.wrong = `step ${k + 1} of a frame, onto "${now.word}", played a bounce over the frame`;
+      stepped = k + 1;
+      if (words.size >= 3) break;
     }
-    console.log(`    ${arg} frames over ${words.size} words, nothing played over them`);
-    if (!walk.wrong && words.size < 2) walk.wrong = `${arg} frames lit only ${words.size} word`;
+    console.log(`    ${stepped} frames over ${words.size} words, nothing played over them`);
+    if (!walk.wrong && words.size < 3) walk.wrong = `${arg} frames lit only ${words.size} words`;
   },
   // ["frames on the pills", n]
   //                    puts the playhead in the middle of each of the first

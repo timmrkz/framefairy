@@ -127,14 +127,57 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 	if err != nil {
 		return Shaped{}, err
 	}
-	shaped := Shaped{Playhead: playhead, Clip: clip}
-	shaped.Clip.Segments = nil
-	for _, seg := range out {
-		start, end := number(seg.values[keyStart]), number(seg.values[keyEnd])
-		shaped.Clip.Segments = append(shaped.Clip.Segments, Segment{Start: start, End: end})
+	// The clip with the pieces under the hand is read the way LoadClips
+	// reads it once saved, its crop, its turns and the keyframes it shows
+	// and steers by, an edge or a cut carrying those it covers, see carry.
+	// So the crop, the keyframes and the glides follow the hand, and are
+	// what is saved. A clip read a second way here once sent each piece
+	// with no crop of its own, and the crop jumped to the middle while an
+	// edge was dragged.
+	under, err := shapedClip(c, out)
+	if err != nil {
+		return Shaped{}, err
 	}
+	shaped := Shaped{Playhead: playhead, Clip: clip}
+	shaped.Clip.Segments, shaped.Clip.CropMarks = under.Segments, under.CropMarks
 	shaped.Pieces = pieceViews(shaped.Clip.Segments)
 	return shaped, nil
+}
+
+// shapedClip is a clip of a plan being edited with these pieces in place
+// of its own, read by readClip, the one reading of a clip there is.
+func shapedClip(c *object, pieces []*object) (Clip, error) {
+	entry, _ := plainOf(c).(map[string]any)
+	list := make([]any, len(pieces))
+	for i, p := range pieces {
+		list[i] = plainOf(p)
+	}
+	entry[keySegments] = list
+	clip, ok, err := readClip(entry, 1)
+	if err == nil && !ok {
+		err = renderErr("that would leave the clip with nothing in it")
+	}
+	return clip, err
+}
+
+// plainOf is a value of a plan being edited as parseClips reads one, its
+// objects as maps.
+func plainOf(v any) any {
+	switch v := v.(type) {
+	case *object:
+		out := make(map[string]any, len(v.keys))
+		for _, k := range v.keys {
+			out[k] = plainOf(v.values[k])
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = plainOf(item)
+		}
+		return out
+	}
+	return v
 }
 
 // Reshape makes a gesture's change to a clip and saves it, the same change
@@ -393,6 +436,24 @@ func (g Gesture) onFrame(at float64) float64 {
 	return g.Frames.FrameAt(at)
 }
 
+// frameAfter and frameBefore are the first frame at or after a moment and
+// the last at or before it, the moment itself where the rate is not known.
+func (g Gesture) frameAfter(at float64) float64 {
+	f := g.onFrame(at)
+	if f < at-1e-9 {
+		f += g.frame()
+	}
+	return f
+}
+
+func (g Gesture) frameBefore(at float64) float64 {
+	f := g.onFrame(at)
+	if f > at+1e-9 {
+		f -= g.frame()
+	}
+	return f
+}
+
 // frame is one frame of the episode in seconds, or nought where its rate
 // is not known.
 func (g Gesture) frame() float64 {
@@ -638,7 +699,10 @@ func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, boo
 		if inOther(from, i) || inOther(to, i) {
 			break
 		}
-		low, high := p.Start+MinCut, p.End-MinCut
+		// The room keeps a little of the piece either side, on frames, so
+		// the pieces left end on a frame and are not grown to one, which
+		// pushed a sliver over the start of the next piece.
+		low, high := g.frameAfter(p.Start+MinCut), g.frameBefore(p.End-MinCut)
 		if high-low < MinCut {
 			return 0, 0, false
 		}

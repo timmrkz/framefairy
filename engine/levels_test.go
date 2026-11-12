@@ -546,3 +546,8 @@ func TestAFramesFileCutShortIsWrittenWholeAgain(t *testing.T) {
 		}
 	}
 }
+
+// levelsLead is how many frames before where it starts a reading decodes
+// and throws away, soundLead in frames. The conversion only compiles while
+// soundLead is a whole number of frames.
+const levelsLead = int(soundLead / (timed.FrameSeconds * 1_000_000))

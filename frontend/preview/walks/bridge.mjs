@@ -148,10 +148,11 @@ export function noDeadlines(page) {
 // every walk a twentieth of the processor time of opening its video. The
 // counts of the lines a page runs are Chromium's, so WALKCOVERAGE counts
 // in Chromium only. name is the browser, the walks' unless said, see
-// browserFor.
-export async function newBrowser(name = browserFor(), { gpu = false } = {}) {
+// browserFor. args are more for Chromium's command line, as a probe of
+// open.mjs asks, and WebKit takes none.
+export async function newBrowser(name = browserFor(), { gpu = false, args = [] } = {}) {
   if (coverage && name !== "chromium") throw new Error("WALKCOVERAGE counts lines through Chromium's own tools, so it walks in Chromium only, WALKBROWSER=chromium");
-  const browser = await launch(name, gpu ? ["--enable-unsafe-webgpu"] : []);
+  const browser = await launch(name, [...(gpu ? ["--enable-unsafe-webgpu"] : []), ...args]);
   if (traces) {
     const plain = browser.newPage.bind(browser);
     browser.newPage = async (options) => {
@@ -724,7 +725,7 @@ export async function engineState(page, at, clips = null) {
     };
     const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), read ?? ask("Clips", [path])]);
     const entry = clips.find((c) => c.plan === plan && (c.id === clip || c.basename === clip));
-    // Each piece with its crop, the keyframes that glide it and its
+    // Each piece with its crop, the keyframes that steer it and its
     // rotation, which are steps of the history as the edges are, issue
     // #248.
     const pieces = (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end, cropX: s.cropX ?? null, marks: s.marks ?? [], rotate: s.rotate ?? 0 }));
@@ -874,7 +875,7 @@ export async function nextPaint(page, n = 1) {
 // in Player.svelte. It says true then, and false when a layer of captions
 // is given up on first, data-captions-lost, counted from lost, the count
 // read before the gesture, since a layer can be given up on while the
-// walk settles after it. T and C put a mark on the frame shown, the frame
+// walk settles after it. T, S and G put a mark on the frame shown, the frame
 // a person sees, and the caption box shows what was drawn on it, and on a
 // busy machine both come a moment after the playhead. It waits on the
 // page changing, never on the clock, so a frame that never comes is ended

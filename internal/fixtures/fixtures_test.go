@@ -277,6 +277,10 @@ var recipes = map[string][]string{
 	// first timestamp.
 	"filmed-40s-29.97-late.mp4": filmed("40", "30000/1001", "late"),
 	"filmed-40s-29.97-late.mkv": {"-i", "@filmed-40s-29.97-late.mp4", "-map", "0", "-c", "copy"},
+	// A picture that starts 4 ms after the sound, the way OBS recorded
+	// Tim's episodes: a grid of whole frames at 25 a second that starts
+	// inside its first tick.
+	"filmed-30s-25-late4ms.mp4": filmed("30", "25", "late4ms"),
 	// A filmed video the way a phone that recorded it upright stores it:
 	// the picture lying on its side and a display matrix that says to
 	// turn it a quarter to the right to stand it up. Standing up, the
@@ -400,8 +404,8 @@ const filmedBits, filmedBand = 11, 4
 // The frames come at the rate, unless timing says otherwise: "uneven" is
 // a phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s, and
 // "late" is a picture that starts a quarter of a second after the sound,
-// between two of its frames, by an edit list. Either way each frame keeps
-// its number.
+// between two of its frames, by an edit list, and "late4ms" one that starts
+// 4 ms after it. Either way each frame keeps its number.
 func filmed(seconds, rate, timing string) []string {
 	bands := filmedBits * filmedBand
 	shift, keep := "", []string{}
@@ -417,6 +421,9 @@ func filmed(seconds, rate, timing string) []string {
 		// file and from the picture are the same frames and a mistake
 		// between the two could not be seen.
 		shift = ",settb=1/90000,setpts=PTS+0.25/TB"
+		keep = []string{"-fps_mode", "passthrough", "-enc_time_base", "1/90000", "-video_track_timescale", "90000"}
+	case "late4ms":
+		shift = ",settb=1/90000,setpts=PTS+0.004/TB"
 		keep = []string{"-fps_mode", "passthrough", "-enc_time_base", "1/90000", "-video_track_timescale", "90000"}
 	}
 	args := []string{

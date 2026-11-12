@@ -567,8 +567,10 @@ type SegmentView struct {
 	// Rotate is how far a person rotated the piece, in degrees to the left,
 	// and the crop is on the picture rotated, see Segment.Rotate.
 	Rotate int `json:"rotate"`
-	// Marks is the keyframes that steer the piece's crop, which glides
-	// over them, see Segment.Marks. With none, the crop stands at CropX.
+	// Marks is the keyframes that steer the piece's crop, which switches
+	// on each or glides into it, and holds until the next, see
+	// Segment.Marks. Before the first, and with none, the crop stands at
+	// CropX.
 	Marks []CropMarkView `json:"marks"`
 	// Part is the part of the clip the piece is in, see PieceView.Part.
 	Part int `json:"part"`
@@ -653,16 +655,12 @@ func (s PlanSummary) View() *PlanView {
 				v.Reason = runes.Scrub(reason, 300)
 			}
 		}
-		v.CropMarks = cropMarkViews(c.CropMarks)
+		v.CropMarks = CropMarkViews(c.CropMarks)
 		v.Rotations = []RotationView{}
 		for _, r := range c.Rotations {
 			v.Rotations = append(v.Rotations, rotationView(r))
 		}
-		parts := pieceViews(c.Segments)
-		for i, s := range c.Segments {
-			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
-				cropMarkViews(s.Marks), parts[i].Part})
-		}
+		v.Segments = SegmentViews(c.Segments)
 		v.Rendered = renderedOf(plan, c)
 		v.Short = shortOf(plan, c)
 		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); fileio.IsFile(disk, prev) {
@@ -671,6 +669,18 @@ func (s PlanSummary) View() *PlanView {
 		view.Clips = append(view.Clips, v)
 	}
 	return view
+}
+
+// SegmentViews are a clip's pieces as the window is sent them, each with
+// the keyframes that steer it and its part.
+func SegmentViews(segments []Segment) []SegmentView {
+	parts := pieceViews(segments)
+	out := make([]SegmentView, 0, len(segments))
+	for i, s := range segments {
+		out = append(out, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
+			CropMarkViews(s.Marks), parts[i].Part})
+	}
+	return out
 }
 
 // shortOf is where a clip's short is, or "" when it has none there now.

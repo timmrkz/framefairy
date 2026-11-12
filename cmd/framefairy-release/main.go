@@ -9,8 +9,8 @@
 //	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F
 //	    sign a build with the private half, read from FRAMEFAIRY_UPDATE_KEY,
 //	    and write its entry for the channel list, unless the build could
-//	    read input meant for other apps or watch the screen or the camera,
-//	    see inputs.go
+//	    read input meant for other apps, watch the screen or the camera,
+//	    or ask for administrator rights, see inputs.go
 //	framefairy-release list -out F [-newest CHANNEL=COMMIT]... [-conflict CHANNEL]... ENTRY...
 //	    write the channel list from the entries of every channel, with the
 //	    newest commit of each channel that has one still to be built, and

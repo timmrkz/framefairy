@@ -331,21 +331,6 @@ func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 	return q
 }
 
-// newIdleQueue builds the queue without setting it running, so work can be
-// asked for and nothing does it.
-//
-// It is here for the tests about what gets queued. Some of the work is a
-// real download of half a gigabyte: a test that asks for one and lets the
-// queue run is a test that needs the network, and on a build runner it is
-// half a gigabyte an hour and a part file still being written when the
-// test's own folder is taken away. That is exactly what happened, as
-// "TempDir RemoveAll cleanup: directory not empty".
-func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
-	q := newQueue(s, emit, notify)
-	q.idle = true
-	return q
-}
-
 // Which lane a kind of work runs in. Each model install shares the lane of
 // the work that needs it, so whatever is queued behind it waits for the
 // model rather than failing on it: the speech model with hearing, which
@@ -377,18 +362,6 @@ func laneFor(kind string) string {
 func (q *queue) addOnce(episode, kind, label string,
 	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
 	return q.queue(episode, kind, label, true, work)
-}
-
-func (q *queue) add(episode, kind, label string,
-	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
-	return q.queue(episode, kind, label, false, work)
-}
-
-// addFor queues work that is about some clips of a plan, and says so on
-// the job from the start.
-func (q *queue) addFor(episode, kind, label, plan string, clips []string,
-	work func(ctx context.Context, p *engine.Project) (string, error)) Job {
-	return q.queueFor(episode, kind, label, plan, clips, false, work)
 }
 
 func (q *queue) queue(episode, kind, label string, once bool,
@@ -515,11 +488,16 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 	// The turn the job holds, let go of once it has asked for its next,
 	// see engine.Turn. The engine asks for a job's turns one after another.
 	var holding func()
+	// Its kind is its record's, which heard writes whole while a turn is
+	// asked for, so it is read once, under the lock, see jobLine.
+	q.mu.Lock()
+	jobKind := job.Kind
+	q.mu.Unlock()
 	return func(ctx context.Context, step string, waits func()) (context.Context, func(), error) {
-		lane, kind := laneOfStep(job.Kind, step, onThisMachine)
+		lane, kind := laneOfStep(jobKind, step, onThisMachine)
 		// Which lane a step waits for and whether its model is on this
 		// machine, so a log says why a transcription waited on a search.
-		theLog.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).
+		q.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).
 			Bool("model_here", onThisMachine).Msg("the job waits for its turn")
 		if waits == nil {
 			waits = func() {}
@@ -673,13 +651,6 @@ func (q *queue) refuse(episode, kind, label, reason string, with ...func(*Job)) 
 	q.emit(JobUpdate{Job: snapshot})
 	q.tell(snapshot)
 	return snapshot
-}
-
-// busy says whether any job runs or waits to.
-func (q *queue) busy() bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	return q.busyLocked()
 }
 
 func (q *queue) busyLocked() bool {
@@ -855,16 +826,6 @@ func (q *queue) shutDown() bool {
 	return q.stopped(func(j *Job) bool { return j.State == JobRunning || j.alive })
 }
 
-// cancelEpisode stops every job of an episode and waits until none of them
-// is running any more. It says whether they all stopped, because what the
-// caller does next is delete the episode's files and there is no safe way
-// to do that while something is still writing them.
-func (q *queue) cancelEpisode(episode string) bool {
-	reopen := q.closeEpisode(episode)
-	defer reopen()
-	return q.waitEpisode(episode)
-}
-
 // carriedOnLocked says whether another job that waits or runs writes the
 // same record as this one: Continue clicked while this one stopped.
 func (q *queue) carriedOnLocked(job *Job) bool {
@@ -890,6 +851,51 @@ func (q *queue) stopByHand(id string) {
 	}
 	q.mu.Unlock()
 	q.cancel(id)
+}
+
+// makeWayForSearch readies the queue for a search of a video, asked for
+// by Search or Continue. A search called off a moment ago may still be on
+// its way out, and it writes the same record as it goes, so the new one
+// waits for it. The video's transcription and the work on its clips go one
+// at a time, so the whole video being transcribed stops, see
+// makeWayForTranscribe. And a search that stopped is settled, since the
+// new one writes a record of its own in its place.
+func (q *queue) makeWayForSearch(path string) {
+	for _, j := range q.list() {
+		if j.Episode == path && j.Kind == engine.JobSearch && j.State == JobRunning && j.ctx.Err() != nil {
+			q.waitJob(j.ID)
+		}
+	}
+	q.stopTranscribing(path, "search")
+	q.settle(path, engine.JobSearch, "")
+}
+
+// makeWayForTranscribe readies the queue for the whole video to be
+// transcribed, asked for by Transcribe video or Continue transcribing. It
+// says false while a search or a clip made by hand of the video runs,
+// since those go first. A transcription that stopped is settled, since
+// the new one writes the record again in its place. The one before may
+// still be on its way out, see carriedOnLocked.
+func (q *queue) makeWayForTranscribe(path string) bool {
+	for _, j := range q.list() {
+		if j.Episode == path && makesClips(j.Kind) && j.going() {
+			return false
+		}
+	}
+	q.settle(path, engine.JobTranscribe, "")
+	return true
+}
+
+// stopTranscribing stops the whole video's transcription the way Stop
+// transcribing does, for a search or a clip made by hand of the video,
+// see makeWayForTranscribe. What it heard stays.
+func (q *queue) stopTranscribing(path, why string) {
+	for _, j := range q.list() {
+		if j.Episode == path && j.Kind == engine.JobTranscribe && j.going() {
+			theLog.jobLine(zerolog.InfoLevel, &j).Str("why", why).Msg("the whole video's transcription is stopped for the work on its clips")
+			q.stopByHand(j.ID)
+		}
+	}
 }
 
 // stopClips is Cancel at the head of the clip list: it calls off all the
@@ -1017,18 +1023,6 @@ func (q *queue) waitJob(id string) {
 	q.stopped(func(j *Job) bool { return j.ID == id && (j.going() || j.alive) })
 }
 
-// find returns the newest job of a kind for an episode, if any.
-func (q *queue) find(episode, kind string) (Job, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	for i := len(q.jobs) - 1; i >= 0; i-- {
-		if j := q.jobs[i]; j.Episode == episode && j.Kind == kind {
-			return *j, true
-		}
-	}
-	return Job{}, false
-}
-
 // runSafely runs a job and keeps the lane alive whatever happens around
 // it. The work itself is guarded by run, but the lane also sets the job
 // up and reports on it, and a panic there ended the goroutine that is the
@@ -1045,7 +1039,7 @@ func (q *queue) runSafely(job *Job) {
 	}()
 	defer func() {
 		if caught := recover(); caught != nil {
-			theLog.jobLine(zerolog.ErrorLevel, job).Str("stack", string(debug.Stack())).Msgf("the job stopped unexpectedly: %v", caught)
+			q.jobLine(zerolog.ErrorLevel, job).Str("stack", string(debug.Stack())).Msgf("the job stopped unexpectedly: %v", caught)
 			q.update(job, func(j *Job) {
 				if j.State == JobRunning {
 					j.State = JobFailed
@@ -1166,13 +1160,13 @@ func (q *queue) runJob(job *Job) {
 		})
 	})
 	started := time.Now()
-	theLog.jobLine(zerolog.InfoLevel, job).Msg("the job started")
+	q.jobLine(zerolog.InfoLevel, job).Msg("the job started")
 	e := engine.NewEngine(log, q.store.machine)
 	opts := jobOptions(q.store, e)
 	project := engine.NewProject(e, job.Episode, opts)
 
 	host := engine.Host{Turn: q.turn(job, opts), Changed: func(rec engine.JobRecord) { q.heard(job, rec) }}
-	result, err := run(ctx, job, project, host)
+	result, err := q.run(ctx, job, project, host)
 	// A search called off by hand says so in its record before it says
 	// it has ended, so the note is there whenever anyone looks, the app
 	// quit a moment later included. A render called off by hand forgets
@@ -1235,11 +1229,12 @@ func (q *queue) runJob(job *Job) {
 		}
 	})
 	q.mu.Lock()
-	state, failed, written := job.State, job.Error, job.Written
+	seen := *job
 	q.mu.Unlock()
-	ended := theLog.jobLine(zerolog.InfoLevel, job)
+	state, failed, written := seen.State, seen.Error, seen.Written
+	ended := theLog.jobLine(zerolog.InfoLevel, &seen)
 	if state == JobFailed {
-		ended = theLog.jobLine(zerolog.ErrorLevel, job).Str("error", failed)
+		ended = theLog.jobLine(zerolog.ErrorLevel, &seen).Str("error", failed)
 	}
 	ended.Str("state", string(state)).Int("written", written).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
 	q.moved(job.Episode)
@@ -1275,10 +1270,10 @@ func (st *store) setUp(e *engine.Engine, o *engine.Options) {
 // The job's error is the line its toast shows, and the stack goes to the
 // app's log only: a toast that held the whole stack was a screen of Go
 // nobody could read, issue #604.
-func run(ctx context.Context, job *Job, project *engine.Project, host engine.Host) (result string, err error) {
+func (q *queue) run(ctx context.Context, job *Job, project *engine.Project, host engine.Host) (result string, err error) {
 	defer func() {
 		if caught := recover(); caught != nil {
-			theLog.jobLine(zerolog.ErrorLevel, job).Str("stack", string(debug.Stack())).Msgf("the job stopped unexpectedly: %v", caught)
+			q.jobLine(zerolog.ErrorLevel, job).Str("stack", string(debug.Stack())).Msgf("the job stopped unexpectedly: %v", caught)
 			err = fmt.Errorf("%s stopped unexpectedly: %v", job.Label, caught)
 		}
 	}()
@@ -1286,6 +1281,18 @@ func run(ctx context.Context, job *Job, project *engine.Project, host engine.Hos
 		return job.steps(ctx, project, host)
 	}
 	return job.work(ctx, project)
+}
+
+// jobLine starts a line of the app's log about a job that may be
+// running, read under the queue's lock. A job's kind is its record's, and
+// heard writes the record whole from whichever goroutine let a lane go
+// and told the job it waits, while the job's own goroutine writes a line.
+// Found by the step path's race test, issue #613.
+func (q *queue) jobLine(level zerolog.Level, job *Job) *zerolog.Event {
+	q.mu.Lock()
+	seen := *job
+	q.mu.Unlock()
+	return theLog.jobLine(level, &seen)
 }
 
 func (q *queue) update(job *Job, change func(*Job)) {

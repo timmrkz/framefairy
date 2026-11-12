@@ -364,9 +364,9 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
 
 ### What is never signed
 
-A build that could read input meant for other apps, or watch the screen
-or the camera, is refused before it is signed, so no app is ever offered
-it, issue #369. `framefairy-release sign` reads every file of the zip
+A build that could read input meant for other apps, watch the screen or
+the camera, or ask for administrator rights, is refused before it is
+signed, so no app is ever offered it, issues #369 and #751. `framefairy-release sign` reads every file of the zip
 first, see `cmd/framefairy-release/inputs.go`, with Go's `debug/macho`, so
 it needs no Mac:
 
@@ -377,6 +377,16 @@ it needs no Mac:
   `AVCaptureDevice` and the rest of the list. A name in the bytes catches
   a function looked up while the program runs, with `dlsym` or
   `NSClassFromString`.
+- **Administrator rights.** No program imports or names what asks for an
+  administrator's password or runs something as the root user:
+  `AuthorizationExecuteWithPrivileges`, `AuthorizationCreate`,
+  `AuthorizationCopyRights`, `SMJobBless`, a daemon of `SMAppService`,
+  AppleScript's `with administrator privileges` and `/usr/bin/sudo`. No
+  file of the build is marked set-user-ID or set-group-ID, which would
+  run it as its owner. What looks alike stays: `setuid` and `setgid`,
+  which Go's own `os/exec` imports and which only give rights up, and
+  `SMAppService`'s `mainAppService`, with which Wails opens the app at
+  login as the person.
 - **Linked libraries.** Every program links what is on its own list and
   nothing more. A new framework, ScreenCaptureKit or AVFoundation, or a
   program the list does not know, fails.

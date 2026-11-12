@@ -19,7 +19,6 @@ import (
 
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
-	"framefairy/engine/tool"
 )
 
 // The addresses this tool contacts are the providers' in provider.go,
@@ -125,27 +124,6 @@ func keyIsSane(key string) bool {
 		}
 	}
 	return true
-}
-
-// keychainWait is how long a keychain command is given before it is given
-// up on. macOS puts a box on screen when the keychain is locked, and a box
-// nobody answers is a window that never comes back. Two minutes is long
-// enough for somebody to read it and short enough that a machine with
-// nobody in front of it does not sit there for ever.
-//
-// A build runner is such a machine. Storing a key in a test held the macOS
-// job for the full ten minutes a test binary is given, with the security
-// command still waiting when the runner was cleaned up.
-const keychainWait = 2 * time.Minute
-
-// keychain runs one security command, bounded. It says whether the command
-// answered at all, because a keychain that was given up on is a different
-// thing from a keychain that said no.
-func keychain(ctx context.Context, args ...string) (tool.Result, bool) {
-	ctx, cancel := context.WithTimeout(ctx, keychainWait)
-	defer cancel()
-	res := tool.Runner{}.Run(ctx, "", "security", args...)
-	return res, ctx.Err() == nil
 }
 
 // writeJSONText writes a JSON string indented, so a log file can be read by

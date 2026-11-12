@@ -25,7 +25,7 @@ const Fade = 0.015
 // after a seek, in microseconds, which atrim then cuts off by its
 // timestamps. A render reads each piece's sound this early, and so does a
 // reading of the episode's audio for the loudness and the transcription,
-// see audioFrom, which counts it in frames as levelsLead.
+// see audioFrom. The tests count it in frames as levelsLead.
 //
 // After a seek, ffmpeg 8.1 kept the part of the first audio packet after
 // the seek point, and 9.0 drops that packet whole, up to 21 ms of 48 kHz
@@ -98,7 +98,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		cropY := (upright.Height - cropH) / 2
 		cropY -= cropY % 2
 		if len(seg.Marks) > 0 {
-			e.Log.Detail("clip %s, piece %d at %ss: the crop glides over the marks %s",
+			e.Log.Detail("clip %s, piece %d at %ss: the crop switches or glides at the keyframes %s",
 				clip.ID, i+1, num.Fixed(seg.Start, 3), marksText(seg.Marks))
 		}
 
