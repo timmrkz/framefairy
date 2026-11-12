@@ -19,6 +19,8 @@
   import Diamond from "@lucide/svelte/icons/diamond";
   import DiamondPlus from "@lucide/svelte/icons/diamond-plus";
   import DiamondMinus from "@lucide/svelte/icons/diamond-minus";
+  import CirclePlus from "@lucide/svelte/icons/circle-plus";
+  import CircleMinus from "@lucide/svelte/icons/circle-minus";
   import Locate from "@lucide/svelte/icons/locate";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import Undo2 from "@lucide/svelte/icons/undo-2";
@@ -81,6 +83,10 @@
     keyframe: Diamond,
     "keyframe-add": DiamondPlus,
     "keyframe-remove": DiamondMinus,
+    // A keyframe the crop glides into is round, where the diamond's points
+    // switch it, the shapes Tim chose on #750.
+    "glide-add": CirclePlus,
+    "glide-remove": CircleMinus,
     // Rotate Left: an arrow turning anticlockwise, and nothing else, so
     // it still reads at the size of a button.
     rotate: RotateCcw,

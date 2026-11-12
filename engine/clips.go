@@ -31,8 +31,8 @@ type Segment struct {
 	// Marks is the keyframes that steer the piece's crop, those of the
 	// pieces turned the way it is in the whole clip, in time order, each at the moment of
 	// the video it would be at on the piece's stretch were nothing cut
-	// out, see markedPieces. With any, the crop glides over them and CropX
-	// is not used, see CropMark.
+	// out, see markedPieces. The crop is CropX before the first and each
+	// keyframe's from its frame on, see CropMark.
 	Marks []CropMark
 }
 
@@ -75,8 +75,8 @@ type Clip struct {
 	// back when the piece does.
 	Thumbnails []float64
 	// CropMarks are the crops placed by hand on frames of the clip, in
-	// time order, see CropMark. Only marks inside a kept piece are here,
-	// the way only such thumbnails are.
+	// time order, see CropMark: those inside a kept piece, and the one
+	// each edge or cut carries, on the frame it carries it to, see carry.
 	CropMarks []CropMark
 	// Found is where the clip's outer edges were before anything changed
 	// them, start and end in seconds of the episode, so a double-click on an
@@ -282,143 +282,13 @@ func parseClips(data []byte) (Plan, []Clip, error) {
 		if !ok {
 			return Plan{}, nil, renderErr("clip %d is not an object", index)
 		}
-		rawSegmentsAny, present := entry[keySegments]
-		if !present {
-			rawSegmentsAny = []any{}
+		clip, ok, err := readClip(entry, index)
+		if err != nil {
+			return Plan{}, nil, err
 		}
-		rawSegments, ok := rawSegmentsAny.([]any)
-		if !ok {
-			return Plan{}, nil, renderErr(`clip %d: "segments" must be a list`, index)
+		if ok {
+			clips = append(clips, clip)
 		}
-		if len(rawSegments) > MaxSegments {
-			return Plan{}, nil, renderErr("clip %d has %d segments, the limit is %d",
-				index, len(rawSegments), MaxSegments)
-		}
-		spans, rerr := readRotations(entry[keyRotations])
-		if rerr != nil {
-			return Plan{}, nil, renderErr("clip %d: %s", index, rerr.Error())
-		}
-		var segments []Segment
-		var turns []int
-		var uprights []framed
-		for _, segAny := range rawSegments {
-			seg, ok := segAny.(map[string]any)
-			if !ok {
-				return Plan{}, nil, renderErr("clip %d: segment is not an object", index)
-			}
-			var cropX *int
-			if value, present := seg[keyCropX]; present && value != nil {
-				text, isText := value.(string)
-				lowered := strings.ToLower(text)
-				if !(isText && (lowered == "center" || lowered == "centre" || lowered == "auto")) {
-					n, ok := num.AsInt(value)
-					if !ok {
-						return Plan{}, nil, fmt.Errorf("invalid crop_x: %s", quoteValue(value))
-					}
-					if !(-1_000_000 < n && n < 1_000_000) {
-						return Plan{}, nil, renderErr("crop_x out of range: %d", n)
-					}
-					cropX = &n
-				}
-			}
-			startAny, okS := seg[keyStart]
-			endAny, okE := seg[keyEnd]
-			if !okS {
-				return Plan{}, nil, renderErr(`clip %d: a segment has no "start"`, index)
-			}
-			if !okE {
-				return Plan{}, nil, renderErr(`clip %d: a segment has no "end"`, index)
-			}
-			start, err := ParseTime(startAny)
-			if err != nil {
-				return Plan{}, nil, err
-			}
-			end, err := ParseTime(endAny)
-			if err != nil {
-				return Plan{}, nil, err
-			}
-			// A piece that ends where it starts, or before it, cannot be cut
-			// out of the episode. ffmpeg would be handed a negative length
-			// and fail somewhere far from the cause.
-			if end <= start {
-				return Plan{}, nil, renderErr("clip %d: a segment ends at %s and starts at %s",
-					index, num.Fixed(end, 3), num.Fixed(start, 3))
-			}
-			// A moment in an episode, not an arbitrary number. Anything
-			// outside this is a broken plan, and it would reach ffmpeg as a
-			// seek nobody can make.
-			if start < 0 || end > MaxEpisodeSeconds {
-				return Plan{}, nil, renderErr("clip %d: a segment lies outside the video, "+
-					"which cannot be longer than %d hours", index, MaxEpisodeSeconds/3600)
-			}
-			// A piece in a stretch a person rotated has its crop on the
-			// picture as it stands rotated, kept apart from the crop it
-			// has unrotated, see keyCropXTurned.
-			_, moved := seg[keyCropXAuto]
-			uprights = append(uprights, framed{cropX, moved})
-			rotate := RotationAt(spans, start)
-			if rotate != 0 {
-				cropX, moved = nil, false
-				if value, present := seg[keyCropXTurned]; present && value != nil {
-					n, ok := num.AsInt(value)
-					if !ok || !(-1_000_000 < n && n < 1_000_000) {
-						return Plan{}, nil, renderErr("clip %d: a rotated piece has its crop at %s",
-							index, runes.Scrub(quoteValue(value), 40))
-					}
-					cropX, moved = &n, true
-				}
-			}
-			segments = append(segments, Segment{Start: start, End: end, CropX: cropX, Moved: moved, Rotate: rotate})
-			turns = append(turns, rotate)
-		}
-		if len(segments) == 0 {
-			continue
-		}
-		oneCrop(segments, uprights)
-		var marks []CropMark
-		for _, m := range readCropMarks(entry[keyCropMarks], spans) {
-			if insidePieces(segments, m.At) {
-				marks = append(marks, m)
-			}
-		}
-		markedPieces(segments, turns, marks)
-		fallback := fmt.Sprintf("%02d", index)
-		idValue, present := entry[keyID]
-		idText := fallback
-		if present {
-			idText = num.FormatValue(idValue)
-		}
-		slugText := ""
-		if value, present := entry[keySlug]; present {
-			slugText = num.FormatValue(value)
-		}
-		titleText := ""
-		if value, present := entry[keyTitle]; present {
-			titleText = num.FormatValue(value)
-		}
-		rejected, _ := entry[keyRejected].(bool)
-		var captionY *float64
-		if value, present := entry[keyCaptionY]; present {
-			if y, ok := num.AsFloat(value); ok && num.IsFinite(y) {
-				snapped := SnapCaptionY(y)
-				captionY = &snapped
-			}
-		}
-		clips = append(clips, Clip{
-			Rejected:     rejected,
-			CaptionY:     captionY,
-			CaptionTimes: readCaptionTimes(entry[keyCaptionTimes]),
-			RemovedWords: readRemovedWords(entry[keyRemovedWords]),
-			Corrections:  readCorrections(entry[keyCorrections]),
-			Thumbnails:   readThumbnails(entry[keyThumbnails], segments),
-			CropMarks:    marks,
-			Found:        readFound(entry[keyFound]),
-			ID:           SanitiseName(idText, fallback),
-			Slug:         SanitiseName(slugText, ""),
-			Title:        runes.Scrub(titleText, 200),
-			Segments:     segments,
-			Rotations:    spans,
-		})
 	}
 
 	// A clip is addressed by its id: every edit the app makes names one.
@@ -600,6 +470,148 @@ func readFound(raw any) *[2]float64 {
 		return nil
 	}
 	return &[2]float64{num.RoundTo(start, 3), num.RoundTo(end, 3)}
+}
+
+// readClip reads clip number index of a plan, entry, the one reading of a
+// clip there is: its pieces, their crop and turns, and the keyframes it
+// shows and steers by. It answers false for a clip with no pieces, which
+// a plan leaves out.
+func readClip(entry map[string]any, index int) (Clip, bool, error) {
+	rawSegmentsAny, present := entry[keySegments]
+	if !present {
+		rawSegmentsAny = []any{}
+	}
+	rawSegments, ok := rawSegmentsAny.([]any)
+	if !ok {
+		return Clip{}, false, renderErr(`clip %d: "segments" must be a list`, index)
+	}
+	if len(rawSegments) > MaxSegments {
+		return Clip{}, false, renderErr("clip %d has %d segments, the limit is %d",
+			index, len(rawSegments), MaxSegments)
+	}
+	spans, rerr := readRotations(entry[keyRotations])
+	if rerr != nil {
+		return Clip{}, false, renderErr("clip %d: %s", index, rerr.Error())
+	}
+	var segments []Segment
+	var turns []int
+	var uprights []framed
+	for _, segAny := range rawSegments {
+		seg, ok := segAny.(map[string]any)
+		if !ok {
+			return Clip{}, false, renderErr("clip %d: segment is not an object", index)
+		}
+		var cropX *int
+		if value, present := seg[keyCropX]; present && value != nil {
+			text, isText := value.(string)
+			lowered := strings.ToLower(text)
+			if !(isText && (lowered == "center" || lowered == "centre" || lowered == "auto")) {
+				n, ok := num.AsInt(value)
+				if !ok {
+					return Clip{}, false, fmt.Errorf("invalid crop_x: %s", quoteValue(value))
+				}
+				if !(-1_000_000 < n && n < 1_000_000) {
+					return Clip{}, false, renderErr("crop_x out of range: %d", n)
+				}
+				cropX = &n
+			}
+		}
+		startAny, okS := seg[keyStart]
+		endAny, okE := seg[keyEnd]
+		if !okS {
+			return Clip{}, false, renderErr(`clip %d: a segment has no "start"`, index)
+		}
+		if !okE {
+			return Clip{}, false, renderErr(`clip %d: a segment has no "end"`, index)
+		}
+		start, err := ParseTime(startAny)
+		if err != nil {
+			return Clip{}, false, err
+		}
+		end, err := ParseTime(endAny)
+		if err != nil {
+			return Clip{}, false, err
+		}
+		// A piece that ends where it starts, or before it, cannot be cut
+		// out of the episode. ffmpeg would be handed a negative length
+		// and fail somewhere far from the cause.
+		if end <= start {
+			return Clip{}, false, renderErr("clip %d: a segment ends at %s and starts at %s",
+				index, num.Fixed(end, 3), num.Fixed(start, 3))
+		}
+		// A moment in an episode, not an arbitrary number. Anything
+		// outside this is a broken plan, and it would reach ffmpeg as a
+		// seek nobody can make.
+		if start < 0 || end > MaxEpisodeSeconds {
+			return Clip{}, false, renderErr("clip %d: a segment lies outside the video, "+
+				"which cannot be longer than %d hours", index, MaxEpisodeSeconds/3600)
+		}
+		// A piece in a stretch a person rotated has its crop on the
+		// picture as it stands rotated, kept apart from the crop it
+		// has unrotated, see keyCropXTurned.
+		_, moved := seg[keyCropXAuto]
+		uprights = append(uprights, framed{cropX, moved})
+		rotate := RotationAt(spans, start)
+		if rotate != 0 {
+			cropX, moved = nil, false
+			if value, present := seg[keyCropXTurned]; present && value != nil {
+				n, ok := num.AsInt(value)
+				if !ok || !(-1_000_000 < n && n < 1_000_000) {
+					return Clip{}, false, renderErr("clip %d: a rotated piece has its crop at %s",
+						index, runes.Scrub(quoteValue(value), 40))
+				}
+				cropX, moved = &n, true
+			}
+		}
+		segments = append(segments, Segment{Start: start, End: end, CropX: cropX, Moved: moved, Rotate: rotate})
+		turns = append(turns, rotate)
+	}
+	if len(segments) == 0 {
+		return Clip{}, false, nil
+	}
+	oneCrop(segments, uprights)
+	// The keyframes on screen are those inside the pieces and the ones
+	// an edge or a cut carries, and they are the ones that steer, see
+	// carry.
+	marks := carried(segments, readCropMarks(entry[keyCropMarks], spans))
+	markedPieces(segments, turns, marks)
+	fallback := fmt.Sprintf("%02d", index)
+	idValue, present := entry[keyID]
+	idText := fallback
+	if present {
+		idText = num.FormatValue(idValue)
+	}
+	slugText := ""
+	if value, present := entry[keySlug]; present {
+		slugText = num.FormatValue(value)
+	}
+	titleText := ""
+	if value, present := entry[keyTitle]; present {
+		titleText = num.FormatValue(value)
+	}
+	rejected, _ := entry[keyRejected].(bool)
+	var captionY *float64
+	if value, present := entry[keyCaptionY]; present {
+		if y, ok := num.AsFloat(value); ok && num.IsFinite(y) {
+			snapped := SnapCaptionY(y)
+			captionY = &snapped
+		}
+	}
+	return Clip{
+		Rejected:     rejected,
+		CaptionY:     captionY,
+		CaptionTimes: readCaptionTimes(entry[keyCaptionTimes]),
+		RemovedWords: readRemovedWords(entry[keyRemovedWords]),
+		Corrections:  readCorrections(entry[keyCorrections]),
+		Thumbnails:   readThumbnails(entry[keyThumbnails], segments),
+		CropMarks:    marks,
+		Found:        readFound(entry[keyFound]),
+		ID:           SanitiseName(idText, fallback),
+		Slug:         SanitiseName(slugText, ""),
+		Title:        runes.Scrub(titleText, 200),
+		Segments:     segments,
+		Rotations:    spans,
+	}, true, nil
 }
 
 // insidePieces says whether a moment of the episode is in the short.

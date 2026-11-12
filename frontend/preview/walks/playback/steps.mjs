@@ -1942,100 +1942,96 @@ export const steps = {
     else if (ran.at < to) walk.wrong = `the play went back from ${to.toFixed(3)} s to ${ran.at.toFixed(3)} s after ${key}`;
     await watch.step("press", s, page);
   },
-  // ["glides across the cut"]
-  //                    with the playhead put on a frame between the clip's
-  //                    first keyframe and its first cut, and on one between
-  //                    the cut and its last keyframe, after it, the crop
-  //                    frame stands where the glide puts it, on its way
-  //                    from the one keyframe to the other
-  async "glides across the cut"(walk) {
+  // ["crop holds across the cut"]
+  //                    the clip's first keyframe lies before its first
+  //                    cut, and with the playhead put on a frame after the
+  //                    cut, the crop frame stands where that keyframe put
+  //                    it, held across the cut by the time the short plays,
+  //                    not on the clip's own crop
+  async "crop holds across the cut"(walk) {
     const { page } = walk;
-    // The first keyframe before the clip's first cut and the last after
-    // it: on a frame between the first and the cut, and on one between
-    // the cut and the last, the crop frame stands where the glide puts
-    // it, on its way from the one to the other.
     const on = await chosen(page);
     const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
     const src = await ask(page, "Source", on.path);
     const [p, q] = entry?.segments ?? [];
-    const marks = entry?.cropMarks ?? [];
-    const a = marks.find((m) => p && m.at >= p.start && m.at < p.end);
-    const b = marks.findLast((m) => q && m.at >= q.start && m.at < q.end);
-    if (!a || !b) {
-      walk.wrong = "the clip has no keyframe either side of its cut";
+    const a = (entry?.cropMarks ?? []).find((m) => p && m.at >= p.start && m.at < p.end);
+    if (!a || !q) {
+      walk.wrong = "the clip has no keyframe before its cut";
       return;
     }
     await filmedOnScreen(page);
-    const crop = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
-    const problems = [];
-    const seen = [];
-    for (const [piece, at] of [
-      [p, a.at + 0.7 * (p.end - a.at)],
-      [q, q.start + 0.3 * (b.at - q.start)],
-    ]) {
-      // Half a frame in, so the click lands in the frame meant.
-      const t = Math.floor(at * src.fps) / src.fps + 0.5 / src.fps;
-      const g = await handles(page);
-      await clickOnTrack(page, await xOf(page, t), high(g.track));
-      await settle(page);
-      await shownOnPlayhead(page);
-      const came = await page.evaluate((fps) => window.__filmed() === Math.floor((Number(document.querySelector(".screen").dataset.playhead) + 0.001) * fps), src.fps);
-      if (!came) {
-        problems.push(`no frame came for ${t.toFixed(3)} s`);
-        continue;
-      }
-      const k = await filmedOnScreen(page);
-      const got = await crop();
-      seen.push(got);
-      const want = (piece.marks ?? []).length ? glideOf(piece.marks, src)(k) : NaN;
-      if (got !== want) problems.push(`on frame ${k} the crop frame stands at ${got}, the glide puts it at ${want}`);
+    // Half a frame in, so the click lands in the frame meant.
+    const t = Math.floor((q.start + 0.3 * (q.end - q.start)) * src.fps) / src.fps + 0.5 / src.fps;
+    const g = await handles(page);
+    await clickOnTrack(page, await xOf(page, t), high(g.track));
+    await settle(page);
+    await shownOnPlayhead(page);
+    const came = await page.evaluate((fps) => window.__filmed() === Math.floor((Number(document.querySelector(".screen").dataset.playhead) + 0.001) * fps), src.fps);
+    if (!came) {
+      walk.wrong = `no frame came for ${t.toFixed(3)} s`;
+      return;
     }
-    const [ax, bx] = [a.x - (a.x % 2), b.x - (b.x % 2)];
-    const between = (v) => (v - ax) * (v - bx) < 0;
-    if (!problems.length && !seen.every(between)) {
-      problems.push(`either side of the cut the crop frame stands at ${seen.join(" and ")}, not on its way from ${ax} to ${bx}`);
-    }
-    if (problems.length) walk.wrong = problems.join("; ");
+    const k = await filmedOnScreen(page);
+    const got = Number(await page.evaluate(() => document.querySelector(".screen").dataset.crop));
+    const want = holdOf(q, src)(k);
+    const own = holdOf({ ...q, marks: [] }, src)(k);
+    if (want === own) walk.wrong = `the keyframe before the cut stands at ${want}, where the clip's own crop is, so nothing is held`;
+    else if (got !== want) walk.wrong = `after the cut, on frame ${k}, the crop frame stands at ${got}, the keyframe before the cut holds it at ${want}`;
   },
-  // ["glides"]         with the playhead put by a click on the clip
-  //                    timeline on the first keyframe, a quarter, half
-  //                    and three quarters of the way to the next and on
-  //                    it, the crop frame in the video preview stands on
-  //                    each frame read off the canvas where smoothstep from
-  //                    the one mark to the next puts it, as the engine's
-  //                    render does
-  // ["glides while playing"]
-  //                    plays from two fifths of the way from the first
-  //                    keyframe to the next, on a clock that moves on to
+  // ["crop holds"]     with the playhead put by a click on the clip
+  //                    timeline on the frame before each keyframe of the
+  //                    first piece that has one, on the keyframe's own
+  //                    frame and half way to the next, the crop frame in
+  //                    the video preview stands on each frame read off the
+  //                    canvas where the engine's render crops it: the
+  //                    piece's own crop before its first keyframe and from
+  //                    each keyframe's frame on that keyframe's, and at
+  //                    least one keyframe switches it
+  // ["crop holds while playing"]
+  //                    plays from four frames before the first keyframe
+  //                    that switches the crop, on a clock that moves on to
   //                    the next frame only once the one before is up,
   //                    until the video preview has shown ten frames of the
-  //                    episode, or the play has come to the next keyframe,
+  //                    episode, or the play has come to the piece's end,
   //                    and reads the frame on the canvas and the crop
   //                    frame on every tick of the play: every frame is
   //                    shown, none skipped, on each the crop frame stands
-  //                    where the glide puts it for that frame, and in a
-  //                    place of its own on every frame shown, not once
-  async "glides while playing"(walk, arg, s, what) {
+  //                    where the render crops it, and the frames shown run
+  //                    across the switch, so it comes on the keyframe's own
+  //                    frame and not a frame before or after
+  async "crop holds while playing"(walk, arg, s, what) {
     const { page } = walk;
     const on = await chosen(page);
     const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
     const src = await ask(page, "Source", on.path);
-    const piece = entry?.segments.find((p) => (p.marks ?? []).length >= 2);
+    const frameOf = (at) => Math.floor(at * src.fps + 0.5);
+    const piece = entry?.segments.find((p) => (p.marks ?? []).some((m) => m.at >= p.start && m.at < p.end));
     if (!piece) {
-      walk.wrong = "no piece of the clip has two keyframes to glide between";
+      walk.wrong = "no piece of the clip has a keyframe";
       return;
     }
-    const glide = glideOf(piece.marks, src);
-    const [a, b] = piece.marks;
+    const hold = holdOf(piece, src);
+    const inside = piece.marks.filter((m) => m.at >= piece.start && m.at < piece.end).map((m) => frameOf(m.at));
+    const first = frameOf(piece.start);
+    const switches = inside.filter((k) => k > first && hold(k - 1) !== hold(k));
+    if (!switches.length) {
+      walk.wrong = `no keyframe of the piece switches the crop, it stands at ${hold(first)} throughout`;
+      return;
+    }
     const crop = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
     // The episode is a filmed one, at a camera's rate, whose frame
     // number is read off the canvas from its bands.
     await filmedOnScreen(page);
-    if (what === "glides") {
+    if (what === "crop holds") {
       const problems = [];
-      for (const share of [0, 0.25, 0.5, 0.75, 1]) {
+      const frames = [];
+      inside.forEach((k, i) => {
+        const next = inside[i + 1] ?? frameOf(piece.end);
+        frames.push(k - 1, k, Math.floor((k + next) / 2));
+      });
+      for (const want of frames.filter((k) => k >= first)) {
         // Half a frame in, so the click lands in the frame meant.
-        const at = a.at + share * (b.at - a.at) + (share < 1 ? 0.5 / src.fps : 0);
+        const at = (want + 0.5) / src.fps;
         const g = await handles(page);
         await clickOnTrack(page, await xOf(page, at), high(g.track));
         await settle(page);
@@ -2051,16 +2047,14 @@ export const steps = {
         }
         const k = await filmedOnScreen(page);
         const got = await crop();
-        if (got !== glide(k)) problems.push(`on frame ${k} the crop frame stands at ${got}, the glide puts it at ${glide(k)}`);
+        if (got !== hold(k)) problems.push(`on frame ${k} the crop frame stands at ${got}, the render crops it at ${hold(k)}`);
       }
-      const ends = [glide(Math.round(a.at * src.fps)), glide(Math.round(b.at * src.fps))];
-      if (ends[0] === ends[1]) problems.push(`the two keyframes stand at ${ends[0]} both, so nothing glides`);
       if (problems.length) walk.wrong = problems.join("; ");
       return;
     }
+    const at = switches[0];
     const g = await handles(page);
-    // Two fifths of the way, where smoothstep moves the crop fastest.
-    await clickOnTrack(page, await xOf(page, a.at + 0.4 * (b.at - a.at) + 0.5 / src.fps), high(g.track));
+    await clickOnTrack(page, await xOf(page, (Math.max(first, at - 4) + 0.5) / src.fps), high(g.track));
     await settle(page);
     // The play starts from the frame on the video preview, so it is
     // started once that is the playhead's frame.
@@ -2072,14 +2066,14 @@ export const steps = {
     // sound card's a busy one showed two in two seconds of play, issue
     // #464, and two of nine, issue #534. The play is paused by the page
     // itself once the video preview has shown ten frames of the episode
-    // or the play has come to the next keyframe, where the glide ends.
-    const end = b.at;
+    // or the play has come to the piece's end.
+    const end = piece.end;
     await page.evaluate((end) => {
       const q = window.__frameQueue;
       const clock = q.playClock;
-      window.__glide = [];
-      window.__glideStarted = false;
-      window.__glideRead = new Promise((resolve) => {
+      window.__held = [];
+      window.__heldStarted = false;
+      window.__heldRead = new Promise((resolve) => {
         const shown = new Set();
         let over = false;
         const done = () => {
@@ -2088,13 +2082,13 @@ export const steps = {
           q.playClock = clock;
           resolve();
         };
-        window.__glideDone = done;
+        window.__heldDone = done;
         q.playClock = (heard, unshown, coming) => {
-          window.__glideStarted = true;
+          window.__heldStarted = true;
           if (over) return clock(heard, unshown, coming);
           const el = document.querySelector(".screen");
           const k = window.__filmed();
-          window.__glide.push({ k, crop: Number(el.dataset.crop) });
+          window.__held.push({ k, crop: Number(el.dataset.crop) });
           if (k >= 0) shown.add(k);
           if (shown.size >= 10 || Number(el.dataset.playhead) >= end) {
             done();
@@ -2111,7 +2105,7 @@ export const steps = {
         // ends there, with what it read.
         const stopped = () => {
           if (over) return;
-          if (window.__glideStarted && document.querySelector('button[aria-label="Play"]')) done();
+          if (window.__heldStarted && document.querySelector('button[aria-label="Play"]')) done();
           else requestAnimationFrame(stopped);
         };
         requestAnimationFrame(stopped);
@@ -2123,39 +2117,34 @@ export const steps = {
     await settle(page);
     const played = await page.evaluate(() => {
       const playing = !document.querySelector('button[aria-label="Play"]');
-      if (!playing && !window.__glideStarted) {
-        window.__glideDone();
+      if (!playing && !window.__heldStarted) {
+        window.__heldDone();
         return false;
       }
       return true;
     });
-    const seen = await page.evaluate(() => window.__glideRead.then(() => window.__glide));
+    const seen = await page.evaluate(() => window.__heldRead.then(() => window.__held));
     if (!played) {
       walk.wrong = "the space bar started no play";
       return;
     }
     await settle(page);
-    const off = seen.filter((r) => r.k >= 0 && r.crop !== glide(r.k));
-    const places = new Set(seen.filter((r) => r.k >= 0).map((r) => r.crop));
-    // The frames of the episode the video preview showed, each with a
-    // place of its own on the glide: the crop frame stands in as many
-    // places as frames were shown.
+    const off = seen.filter((r) => r.k >= 0 && r.crop !== hold(r.k));
     const shown = new Set(seen.filter((r) => r.k >= 0).map((r) => r.k));
-    const apart = new Set([...shown].map((k) => glide(k)));
-    // Every frame from the first shown on, ten of them or up to the next
-    // keyframe, whichever comes first.
+    // Every frame from the first shown on, ten of them or up to the
+    // piece's end, whichever comes first.
     const ks = [...shown].sort((x, y) => x - y);
     const missed = [];
     for (let k = ks[0]; k < ks.at(-1); k++) if (!shown.has(k)) missed.push(k);
     const want = Math.min(10, Math.floor((end + 0.001) * src.fps) - (ks[0] ?? 0));
     if (off.length) {
-      walk.wrong = `while playing, ${off.length} of ${seen.length} frames had the crop frame off the glide, the first frame ${off[0].k} at ${off[0].crop} for ${glide(off[0].k)}`;
+      walk.wrong = `while playing, ${off.length} of ${seen.length} frames had the crop frame where the render does not crop, the first frame ${off[0].k} at ${off[0].crop} for ${hold(off[0].k)}`;
     } else if (missed.length) {
       walk.wrong = `while playing, the video preview showed frames ${ks[0]} to ${ks.at(-1)} without ${missed.join(", ")}`;
     } else if (shown.size < want) {
-      walk.wrong = `while playing up to the next keyframe, the video preview showed ${shown.size} frames, want ${want}`;
-    } else if (places.size < apart.size) {
-      walk.wrong = `while playing, the crop frame stood in ${places.size} places over ${shown.size} frames, where the glide has ${apart.size}`;
+      walk.wrong = `while playing up to the piece's end, the video preview showed ${shown.size} frames, want ${want}`;
+    } else if (!(ks[0] < at && ks.at(-1) >= at)) {
+      walk.wrong = `while playing, the video preview showed frames ${ks[0]} to ${ks.at(-1)}, not across the switch on frame ${at}`;
     }
   },
   // ["turned", quarters]
@@ -2306,7 +2295,7 @@ export const steps = {
 
 // Steps that take the same body as the step they are walked by.
 steps["only the video"] = steps["the clip shown"];
-steps["glides"] = steps["glides while playing"];
+steps["crop holds"] = steps["crop holds while playing"];
 
 // What is wrong with the short Render wrote, against the video preview, or
 // null. The frame of the short that stands for a moment is the frame of
@@ -2540,27 +2529,33 @@ async function edgesAsRendered(page) {
   return problems.length ? problems.join("\n") : null;
 }
 
-// The left edge of the crop on each frame of the video, gliding over a
-// piece's keyframes by smoothstep, the way the engine's glideX and
-// lib/glide.ts work it out, see glide.cases.json, for frame numbers
-// counted from the picture's first frame.
-function glideOf(marks, src) {
+// The left edge of the crop on each frame of the video, for frame numbers
+// counted from the picture's first frame, the way the engine's cropRun
+// works it out, written again here so the walk does not take the window's
+// word for it: the piece's own crop before its first keyframe, and from
+// each keyframe's frame on, that keyframe's. Into a circle after a circle
+// the crop glides from that circle by smoothstep, each step a double in
+// the order the engine takes it, so the two agree to the bit.
+function holdOf(piece, src) {
   const v0 = src.videoStart ?? 0;
   const most = src.width - src.cropWidth;
-  const on = marks.map((m) => {
-    const x = Math.max(0, Math.min(m.x, most));
-    return [Math.floor((m.at - v0) * src.fps + 0.5), x - (x % 2)];
-  });
+  const even = (x) => {
+    const c = Math.max(0, Math.min(x, most));
+    return c - (c % 2);
+  };
+  const frame = (at) => Math.floor((at - v0) * src.fps + 0.5);
+  const base = even(piece.cropX ?? Math.floor(most / 2));
+  const on = (piece.marks ?? []).map((m) => ({ k: frame(m.at), x: even(m.x), glide: !!m.glide }));
   return (k) => {
-    if (k <= on[0][0]) return on[0][1];
-    for (let i = 1; i < on.length; i++) {
-      const [kb, xb] = on[i];
-      if (k >= kb) continue;
-      const [ka, xa] = on[i - 1];
-      const u = (k - ka) / (kb - ka);
-      return xa + (xb - xa) * (u * u * (3 - 2 * u));
+    let i = on.findIndex((m) => m.k > k);
+    if (i < 0) i = on.length;
+    const a = i > 0 ? on[i - 1] : { x: base };
+    const b = on[i];
+    if (b && a.glide && b.glide && b.k > a.k && b.x !== a.x && k >= a.k) {
+      const u = (k - a.k) / (b.k - a.k);
+      return a.x + (b.x - a.x) * (u * u * (3 - 2 * u));
     }
-    return on[on.length - 1][1];
+    return a.x;
   };
 }
 

@@ -21,6 +21,13 @@ type ClipEntry struct {
 	Key       string `json:"key"`
 	Plan      string `json:"plan"`
 	CropLefts []int  `json:"cropLefts"`
+	// CropSteps is, for each piece with keyframes, how its crop switches
+	// over its frames, see engine.CropSteps, and null for a piece whose
+	// crop is CropLefts throughout.
+	CropSteps [][]engine.CropStep `json:"cropSteps"`
+	// Glides is where the crop glides, over every piece, for the clip
+	// timeline to draw, see engine.Glides.
+	Glides []engine.GlideSpan `json:"glides"`
 	// Rev is, on the answer to an edit, the number the edit took from the
 	// clock of the jobs once it was written, see VideoState.Rev. The
 	// window takes no state of the video read before it. A clip in a
@@ -83,16 +90,55 @@ func (s *FrameFairy) cropWidth(info engine.SourceInfo) int {
 // out on that, see SourceView.TurnedCropWidth.
 func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceInfo) ClipEntry {
 	entry := ClipEntry{ClipView: c, Key: filepath.Base(plan) + "/" + c.ID, Plan: plan}
-	for _, seg := range c.Segments {
+	f := s.framingOf(info, c.Segments, c.CropMarks)
+	entry.Segments, entry.CropMarks = f.Segments, f.CropMarks
+	entry.CropLefts, entry.CropSteps, entry.Glides = f.CropLefts, f.CropSteps, f.Glides
+	return entry
+}
+
+// Framing is how a clip's crop runs over its pieces, for the video preview
+// and the clip timeline: the pieces with the keyframes that steer each,
+// the keyframes on screen, the left edge of each piece's own crop, how it
+// switches or glides over its frames, and where a glide line is drawn. A
+// clip saved and a clip under the hand while an edge or a cut is dragged
+// are both sent it, worked out here, so the keyframes, the glide line and
+// the crop all follow the hand together, Tim on #778.
+type Framing struct {
+	Segments  []engine.SegmentView  `json:"segments"`
+	CropMarks []engine.CropMarkView `json:"cropMarks"`
+	CropLefts []int                 `json:"cropLefts"`
+	// CropSteps is, for each piece with keyframes, how its crop switches
+	// over its frames, see engine.CropSteps, and null for a piece whose
+	// crop is CropLefts throughout.
+	CropSteps [][]engine.CropStep `json:"cropSteps"`
+	// Glides is where the crop glides, over every piece, for the clip
+	// timeline to draw, see engine.Glides.
+	Glides []engine.GlideSpan `json:"glides"`
+}
+
+// framingOf works out a clip's Framing from its pieces and the keyframes
+// it shows, each keyframe sent on the frame it stands on, see
+// engine.MarksOnFrames.
+func (s *FrameFairy) framingOf(info engine.SourceInfo, segments []engine.SegmentView, marks []engine.CropMarkView) Framing {
+	f := Framing{Segments: make([]engine.SegmentView, len(segments)), CropMarks: info.MarksOnFrames(marks),
+		Glides: []engine.GlideSpan{}}
+	for i, seg := range segments {
+		f.Segments[i] = seg
+		f.Segments[i].Marks = info.MarksOnFrames(seg.Marks)
 		if info.Width == 0 {
-			entry.CropLefts = append(entry.CropLefts, keptCrop(seg.CropX))
+			f.CropLefts = append(f.CropLefts, keptCrop(seg.CropX))
 			continue
 		}
 		upright := info.Rotated(seg.Rotate)
 		cw := s.cropWidth(upright)
-		entry.CropLefts = append(entry.CropLefts, engine.ClampCropX(seg.CropX, cw, upright.Width))
+		f.CropLefts = append(f.CropLefts, engine.ClampCropX(seg.CropX, cw, upright.Width))
+		f.CropSteps = append(f.CropSteps, info.CropSteps(seg, cw, upright.Width))
+		f.Glides = append(f.Glides, info.Glides(seg, cw, upright.Width)...)
 	}
-	return entry
+	if f.CropSteps == nil {
+		f.CropSteps = make([][]engine.CropStep, len(f.CropLefts))
+	}
+	return f
 }
 
 // keptCrop is a crop as the plan keeps it, for a clip with no picture to

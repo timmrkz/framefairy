@@ -98,7 +98,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		cropY := (upright.Height - cropH) / 2
 		cropY -= cropY % 2
 		if len(seg.Marks) > 0 {
-			e.Log.Detail("clip %s, piece %d at %ss: the crop glides over the marks %s",
+			e.Log.Detail("clip %s, piece %d at %ss: the crop switches or glides at the keyframes %s",
 				clip.ID, i+1, num.Fixed(seg.Start, 3), marksText(seg.Marks))
 		}
 
