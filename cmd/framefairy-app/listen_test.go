@@ -419,7 +419,11 @@ func TestAPauseIsNoFullStop(t *testing.T) {
 			e.OpenRecognizer = func(string) (engine.Recognizer, error) { return sentences{}, nil }
 		}
 		f.store.standIns = fakes
+		// The recording dictating started holds the speech model every
+		// recording shares until it is over. Started before that, the new
+		// one is handed the same model, not this one, see dictatingTo.
 		f.CancelListening()
+		f.listening.running.Wait()
 		if _, err := f.Listen(); err != nil {
 			t.Fatal(err)
 		}
