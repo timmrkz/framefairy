@@ -4,7 +4,7 @@
 // the step's argument, what the caption box showed before it and the step's
 // name. A sequence of any folder can take it. Below them the helpers only
 // these steps use. See docs/TESTING.md.
-import { ask, caughtUp, control, fromSidebar, holdClock, letClockGo, letHeld, letPageTimeGo, nextPaint, noDeadlines, pageUntil, runClock, seenUntil, settle, sidebarStill, slowDown } from "../bridge.mjs";
+import { ask, caughtUp, control, fromSidebar, hold, holdClock, letClockGo, letHeld, letPageTimeGo, nextPaint, noDeadlines, pageUntil, runClock, seenUntil, settle, sidebarStill, slowDown } from "../bridge.mjs";
 import { dropOn, standsAt, stillStands, toastSays, toastsSay, url } from "../common/steps.mjs";
 
 // The two notes of dictation, E5 and B5 in Hz, going up as it starts and
@@ -924,6 +924,7 @@ export const steps = {
   //                    stopped at once, since its recording has ended
   async "microphone answered"() {
     await control(url, "/microphone?answer=1");
+    await control(url, "/hold?call=Listen&gate=open");
   },
   // ["microphone moves"]
   //                    while it listens, the microphone grows with the hum
@@ -1559,8 +1560,11 @@ export const steps = {
       // Tim pressed Dictate, the Mac asked about the microphone, and
       // nothing he pressed did anything until the question went 45 s
       // later, #792. Stop ends a recording whose microphone has not
-      // started, and Report then makes the report.
+      // started, and Report then makes the report. Listen waits on the
+      // Go side for the microphone, so the page holds its answer, and
+      // the walk settles on everything else while it waits, see hold.
       await control(url, "/microphone?ask=1");
+      await hold(page, "Listen", true);
       await button.click();
       const said = await button.getAttribute("aria-label");
       if (said !== "Stop") {
