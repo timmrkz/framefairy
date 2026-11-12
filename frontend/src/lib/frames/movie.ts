@@ -129,21 +129,24 @@ export function rankOf(s: Samples, at: number): number {
 
 // The rank of the frame that holds a moment: the last one shown at or
 // before it, or one that begins up to FRAME_HAIR after it, counted to the
-// microsecond the way frameAt in lib/flow.ts counts. The moment's ticks
-// are whole, worked out from its whole seconds and the rest apart, so no
-// product comes near 2^53 and a frame's ticks compare with them exactly.
-// Before the first frame it is the first.
+// microsecond the way frameAt in lib/flow.ts and Grid.Holding in
+// internal/framewire count it: the moment's microseconds after the first
+// sample's start, in whole samples. A tick of a grid at 25 frames a second
+// is a whole frame, so a moment rounded down to whole ticks before it was
+// compared lost up to a frame. Where the grid starts a few milliseconds
+// into the file, as it does for a picture that starts after its sound, the
+// frame shown was then the one before the playhead's for most of each
+// frame. The whole seconds and the rest are worked out apart, so no
+// product comes near 2^53 and the count is exact. Before the first frame
+// it is the first.
 export function rankAt(s: Samples, at: number): number {
-  const us = heldMicros(at);
+  if (s.count <= 0) return 0;
+  const us = heldMicros(at) - Math.round((s.start / s.timescale) * 1_000_000);
+  if (us <= 0) return 0;
   const seconds = Math.floor(us / 1_000_000);
-  const held = seconds * s.timescale + Math.floor(((us - seconds * 1_000_000) * s.timescale) / 1_000_000);
-  let lo = 0;
-  let hi = s.count - 1;
-  if (hi < 0) return 0;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (ticks(s, mid) <= held) lo = mid;
-    else hi = mid - 1;
-  }
-  return lo;
+  const whole = seconds * s.timescale;
+  const rest = us - seconds * 1_000_000;
+  const rank =
+    Math.floor(whole / s.step) + Math.floor(((whole % s.step) * 1_000_000 + rest * s.timescale) / (s.step * 1_000_000));
+  return Math.min(rank, s.count - 1);
 }

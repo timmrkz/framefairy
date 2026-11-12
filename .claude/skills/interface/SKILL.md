@@ -1079,9 +1079,19 @@ engine on the way, one question at a time and always about where the hand
 is now, and keep the last answer until the saved state comes back, so
 nothing jumps as the hand lets go. `Shape` is the example.
 
+The list is easy to make one item short. A fix made one line between two
+marks follow a dragged edge, and the marks it ran between, drawn from the
+same state, still stood where the saved clip had them, so the line ran
+from nothing. When the engine answers the hand, let it answer with
+everything drawn from the thing, in the shape the saved state is sent,
+and draw every part from that one answer. A part read from anywhere else
+is the one left behind. `Framing` is the example: the pieces, the marks,
+the line and the crop come in one answer, for a saved clip and for one
+under the hand.
+
 How to catch it: hold the mouse down with `page.mouse.down()`, move in
-steps, and read the thing after each step, before `page.mouse.up()`. A
-number that only changes after the up is the bug. Then read every frame
+steps, and read every part of the list after each step, before
+`page.mouse.up()`. A number that only changes after the up is the bug. Then read every frame
 across the up, the way the probe above does for a click.
 
 ## Work a click starts is built in front of the person

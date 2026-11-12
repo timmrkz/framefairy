@@ -37,7 +37,6 @@
  15	sequences.mjs SEQUENCE=Shift+Enter and the arrow keys keep the cursor in view in the report
  15	sequences.mjs SEQUENCE=a press on an edge or a mark puts the playhead on it at once
  15	sequences.mjs SEQUENCE=a search of what was said finds the sentences, names their clips and puts the playhead on one
- 14	sequences.mjs SEQUENCE=Put the crop back after Automatic crop brings back the keyframes and their glide
  14	sequences.mjs SEQUENCE=a search of what was said shows the parts not transcribed yet
  14	sequences.mjs SEQUENCE=a short rendered into the folder for shorts is known as rendered
  14	sequences.mjs SEQUENCE=a video whose file is moved away says so once, in a toast, and shows again once it is back
@@ -45,15 +44,16 @@
  12	sequences.mjs SEQUENCE=a playhead dragged far over HEVC shows the key frame on the way, and the frame under the hand once it rests
  12	sequences.mjs SEQUENCE=a video gone back to after its first clip came while it was away has its waveform
  12	sequences.mjs SEQUENCE=a video whose file is moved away while the app is in front says File not found at once
- 12	sequences.mjs SEQUENCE=keyframes put with C glide the crop from one to the next in the video preview, frame by frame
  12	sequences.mjs SEQUENCE=the episode played through a clip with cuts shows only the video, and the clip its frame and captions
  12	sequences.mjs SEQUENCE=the hand and the keys light a card of the transcript and a part not transcribed yet the same
  12	sequences.mjs SEQUENCE=undo takes back a crop moved, a word corrected and a font picked, in turn, and redo does them again
+ 12	sequences.mjs SEQUENCE=one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it
  11	sequences.mjs SEQUENCE=Relaunch waits while a search runs, and the search goes on
  11	sequences.mjs SEQUENCE=a cut's edges dragged take the playhead along, the way the clip's edges do
  11	sequences.mjs SEQUENCE=a part of a phone's video rotated with R stands up in the video preview and in its short
  11	sequences.mjs SEQUENCE=a thumbnail and a keyframe on the playhead's frame stand centred on its line
  11	sequences.mjs SEQUENCE=after Cancel the window moves, and Search looks where it was moved
+ 11	sequences.mjs SEQUENCE=two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back
  10	sequences.mjs SEQUENCE=I after the last word is not offered, and says why
  10	sequences.mjs SEQUENCE=Moving the cursor up while dictating keeps it in view, and the words coming in leave the field where it is
  10	sequences.mjs SEQUENCE=The settings say each thing once, in one way
@@ -69,7 +69,6 @@
   9	sequences.mjs SEQUENCE=a clip made by hand that failed says where it lies, and why in a toast
   9	sequences.mjs SEQUENCE=a clip's end dragged past the end of the video stops where the video ends
   9	sequences.mjs SEQUENCE=a frame shown before its key frame comes and plays
-  9	sequences.mjs SEQUENCE=a keyframe before a cut glides to one after it
   9	sequences.mjs SEQUENCE=a keyframe dragged past the clip's edge stops on its first or last frame and stays where it was let go
   9	sequences.mjs SEQUENCE=a rotated part keeps its rotation when the cut before it is put back and made again
   9	sequences.mjs SEQUENCE=a video gone back to from the sidebar keeps its frame until it is drawn again
@@ -96,6 +95,7 @@
   8	sequences.mjs SEQUENCE=removing the chosen clip chooses the one beside it
   8	sequences.mjs SEQUENCE=the episode played through a clip shows only the video, and the clip its frame and captions
   8	sequences.mjs SEQUENCE=the video preview leaves a faint reflection at the foot of the workspace, behind the controls
+  8	sequences.mjs SEQUENCE=a keyframe goes on a clip's first and last frame with S, and comes off with S
   7	sequences.mjs SEQUENCE=Clear asks first, empties the words and the pictures, and undo brings them back
   7	sequences.mjs SEQUENCE=Shift and the arrows turn the page of the clip list
   7	sequences.mjs SEQUENCE=Shift+Enter while dictating starts a new line for what is said next
@@ -125,7 +125,6 @@
   6	sequences.mjs SEQUENCE=a clip made with O while the episode plays is not dimmed
   6	sequences.mjs SEQUENCE=a cut undone and redone while the clip plays is played through and then jumped
   6	sequences.mjs SEQUENCE=a file that is not a video is said in a toast that moves nothing and goes by itself unless held
-  6	sequences.mjs SEQUENCE=a keyframe goes on a clip's first and last frame with C, and comes off with C
   6	sequences.mjs SEQUENCE=a paused frame grows sharp with the app
   6	sequences.mjs SEQUENCE=a play after an edge dragged while paused is heard
   6	sequences.mjs SEQUENCE=a play after the loop was switched off on the way plays the clip once

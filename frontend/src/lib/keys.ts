@@ -47,7 +47,7 @@ export function pressedAlone(
 }
 
 // A key of the workspace's own, the one key a button stands for, L for
-// loop, C for a keyframe, a number key for a share of the clip: pressed
+// loop, S for a switch keyframe, a number key for a share of the clip: pressed
 // alone, not taken already, not a field's or the box's, and the workspace
 // here is the one in front. Six keys said this each in their own four
 // lines, and one of them, L, in other words again.

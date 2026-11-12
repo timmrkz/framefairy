@@ -1228,36 +1228,57 @@ moves every piece of the clip.
 overlap or turn by anything but a quarter, and reads every piece's turn
 from them. See [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
 
-**A crop that follows.** A person can put keyframes on frames of a clip,
+**Keyframes.** A person can put keyframes on frames of a clip,
 the way thumbnails are put, each with the crop where it stands on that
 frame, `SetCropMark` in `engine/cropmarks.go`. They are kept in the clip as
-`crop_marks`, each `at`, the start of its frame, and `x`, the left edge of
-the crop there, read like thumbnails: a mark that is not a number and a
-whole left edge is left out, and so is one outside every piece, which stays
-in the plan and comes back with its piece. A mark steers the pieces of the
+`crop_marks`, each `at`, the start of its frame, `x`, the left edge of
+the crop there, and `glide`, true for a circle, read like thumbnails: a mark that is not a number and a
+whole left edge is left out. A mark outside every piece stays in the plan
+at its own moment and comes back with its piece. Of those a trim or a cut
+covers, the clip shows and steers by the one it carries, `carry`: the start
+and a cut carry the latest they cover, on the first frame after them, and
+the end the earliest, on the clip's last frame, a mark with `Last` set,
+which `MarksOnFrames` sends the window on that frame. A carried circle no
+circle beside it joins is carried all the same, `Alone`, until the edge
+reaches another keyframe, Tim's report of 12 November. Touching a carried mark, `realise`,
+writes it where it stands and sets the others it covered `aside`, which
+are carried no more until a reshape leaves them inside a piece again,
+`unsetAside`. Tim agreed the cases on #778. A mark steers the pieces of the
 clip turned the way it was placed, `markedPieces`. A piece is given each mark
 at the moment of the video it would be at on the piece's stretch were
-nothing cut out, the clip's clock read from the piece's start, so the glide,
-worked out on frames of the video, runs across a cut the way the short
-plays it, and the render and the video preview need nothing new. With
-no mark, or one, the crop stands still. With two or more it glides from
-each to the next over the whole time between them by smoothstep, `glideX`,
-on the frames of the video. The left edge is not rounded to a pixel of the
-picture: a slow glide moves less than one a frame, and rounded to even
-pixels it stood still for frames and then jumped, which read as a crop
-frame that stutters. The render gives ffmpeg the same sum as an
-expression in the frame, `glideExpr`, step by step in the same order, and
-places it to the pixel of the short, `glideCrop`: it cuts the picture two
-pixels wider than the crop on an even pixel, scales that, and crops it
-again at the pixel of the short nearest the glide, in colours with no
-chroma shared between two columns. That is within half a pixel of the
-short of the glide on every frame, and a slow glide moves on every frame.
-The video preview works the glide out in `lib/glide.ts`, and the two are
-held to one table, `frontend/src/lib/glide.cases.json`. A crop placed by hand on a mark's
-frame moves that mark, and anywhere else it moves the clip's crop and
-every mark of the clip as far as the crop shown there moved, `SetCrop`,
-on the pieces turned the way the one there is. Automatic crop removes the
-marks of that turn, and a rotation removes the marks
+nothing cut out, the clip's clock read from the piece's start, so a
+keyframe holds across a cut the way the short plays it, and the render and
+the video preview need nothing new. A keyframe is a turning point: from its
+frame on the crop is the keyframe's until the next one, and before the first
+it is the piece's own, `cropRun.at`, on the frames of the video. A diamond
+switches the crop on its frame, so one keyframe where the camera switches is
+all a switch takes, Tim's ask on #750. From a circle, `glide`, the crop
+glides into the next circle, over the whole time between them, by
+smoothstep, `cropRun.gliding`. A glide runs only between circles, Tim's
+rule. A circle that starts a glide, after a diamond or the first, has no
+crop of its own: `opened` gives it the crop of the keyframe before it, or
+the piece's own, `FromClip`, before an edge or a cut carries anything, and
+`SetCrop` refuses a crop placed on it, Tim on #778.
+`SetCropGlide` turns one kind into the
+other. A piece that only switches is cropped by one crop whose left edge
+is an expression in the frame, `holdExpr`, nested by halving so a hundred
+keyframes stay under the depth ffmpeg takes, every left edge on an even
+pixel. A piece whose crop glides is cut two pixels wider on an even pixel,
+scaled, and cropped again to the pixel of the short in 4:4:4,
+`glideCrop`, with the glide written out for ffmpeg step by step in the
+order Go takes it, `cropRun.expr`, so a slow glide moves on every frame
+and does not stutter. The video
+preview is sent the same, each piece's first frame and every frame its
+crop moves on after, `CropSteps`, a step a frame through a glide, with the
+clip, and only looks up the step for the frame it
+shows, in `lib/keyframes.ts`. The clip timeline is sent where each glide
+runs, `Glides`, and only draws it. A crop placed by hand
+on a mark's frame moves that mark, and in a piece the marks steer it is
+placed nowhere else, Tim's rule on #750, so what moves is the mark lit
+under the playhead. A piece no mark steers has the clip's own crop,
+placed anywhere in it, `SetCrop`,
+on the pieces turned the way the one there is. Automatic
+crop removes the marks of that turn, and a rotation removes the marks
 of the stretch it turns, since they were placed on a picture of another
 shape.
 
@@ -1925,7 +1946,7 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
   probed.go     what ffmpeg can do and what a file holds, asked once a
                 process and kept by the file's size and time
   rotation.go   the parts of a phone video recorded on its side
-  cropmarks.go  a crop that follows keyframes put on frames of a clip
+  cropmarks.go  keyframes put on frames of a clip, switching or gliding
   hyphenate.go  a caption word too wide for a line, broken the way TeX does
   wordframes.go where the words of a caption stand, as libass draws them
 ```

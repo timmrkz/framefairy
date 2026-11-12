@@ -61,6 +61,30 @@ describe("rankAt", () => {
     expect(rankAt(late, 0.016433 + 8 * frame - 0.0005)).toBe(8);
   });
 
+  // A grid at a whole rate counts in ticks of a whole frame, and a picture
+  // that starts 4 ms after its sound starts the grid there. Every moment of
+  // a frame is in that frame, not only its last 4 ms: a moment rounded down
+  // to whole ticks showed the frame before for the rest, so a keyframe or
+  // a clip's first frame was never the one shown, Tim's report on #752.
+  test("counts from a grid that starts inside a tick", () => {
+    const late = movieOf({ duration: 30, width: 2, height: 2, grid: { origin: 0, start: 0.004, num: 25, den: 1, count: 750 } }).video!.samples;
+    for (const k of [0, 1, 255, 256, 749]) {
+      const begins = 0.004 + k * 0.04;
+      expect(rankAt(late, begins)).toBe(k);
+      expect(rankAt(late, begins + 0.02)).toBe(k);
+      expect(rankAt(late, begins + 0.038)).toBe(k);
+      // Kept to the millisecond, a hair before it.
+      expect(rankAt(late, Math.floor(begins * 1000) / 1000)).toBe(k);
+    }
+    expect(rankAt(late, 0.002)).toBe(0);
+    expect(rankAt(late, 10.263822877763761)).toBe(256);
+    // Deep into a long video, 4.8 hours at 25 frames a second.
+    const long = movieOf({ duration: 17351, width: 2, height: 2, grid: { origin: 0, start: 0.004, num: 25, den: 1, count: 433754 } }).video!.samples;
+    expect(rankAt(long, 2609.044)).toBe(65226);
+    expect(rankAt(long, 2609.07)).toBe(65226);
+    expect(rankAt(long, 2596.564)).toBe(64914);
+  });
+
   // A frame the Go side handed over is the one whose start its moment is
   // nearest, a rounding early or late.
   // The grid goes with the track, so a stream hands back the grid the

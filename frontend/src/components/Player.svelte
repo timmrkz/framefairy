@@ -54,7 +54,7 @@
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
   import { pictureOf, pieceHolding, rotationAt, shownAt } from "../lib/rotate";
-  import { glidingLeft } from "../lib/glide";
+  import { heldLeft, markOn } from "../lib/keyframes";
 
   let {
     path,
@@ -135,7 +135,7 @@
     onresetcrop?: (at: number) => Promise<void>;
     // Puts a keyframe back at a moment with its crop, the way the clip
     // timeline puts one, for the marks a reset took away.
-    oncropmark?: (from: number, to: number, x: number) => Promise<void>;
+    oncropmark?: (from: number, to: number, x: number, glide?: boolean) => Promise<void>;
     // Puts the captions at a distance from the bottom of a 1080x1920
     // frame. There is one place for every clip of every episode, so this
     // saves a setting rather than editing the clip.
@@ -718,28 +718,40 @@
   });
 
   // The left edge of the crop on the frame on the canvas, in pixels of the
-  // picture: gliding over the piece's keyframes frame by frame while the
-  // clip plays, the way the render crops it, or standing still. Plan row
-  // 3.26.
+  // picture: that of the piece's keyframe it holds from, switching on each
+  // keyframe's frame while the clip plays, the way the render crops it, or
+  // the piece's own. Plan row 3.26 and #750.
   const cropLeft = $derived.by(() => {
     if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
     return leftOn(clip, cropped, frameAt, picture, place !== "video");
   });
 
   // The left edge of the crop of a piece on the frame that starts at a
-  // moment, in pixels of the picture, gliding or standing still.
+  // moment, in pixels of the picture, held from a keyframe or the piece's
+  // own.
   function leftOn(
     c: ClipEntry,
     at: number,
     frame: number,
     pic: { width: number; cropWidth: number },
-    glides: boolean,
+    steered: boolean,
   ): number {
-    const gliding = glides
-      ? glidingLeft(c.segments[at]?.marks, frame, source.fps, source.videoStart ?? 0, pic.cropWidth, pic.width)
-      : null;
-    return gliding ?? c.cropLefts[at] ?? (pic.width - pic.cropWidth) / 2;
+    const held = steered ? heldLeft(c.cropSteps?.[at], frame, source.fps, source.videoStart ?? 0) : null;
+    return held ?? c.cropLefts[at] ?? (pic.width - pic.cropWidth) / 2;
   }
+
+  // Whether a drag places the crop here: with the playhead on a keyframe,
+  // whose diamond or circle is lit then, so what is moved is seen, or in a
+  // piece no keyframe steers, which has one crop of its own. Anywhere else
+  // the crop frame shows the crop as the short has it, held or gliding,
+  // and takes only a click, Tim on #750. A circle that starts a glide has
+  // no crop of its own, the engine says so with opens: the glide starts
+  // from the crop before it, Tim on #778. The engine refuses a drag there
+  // too, see engine.SetCrop.
+  const markHere = $derived(clip ? markOn(clip.cropMarks, frameAt, source.fps, source.videoStart ?? 0) : null);
+  const cropMovable = $derived(
+    !!clip && (!clip.segments[cropped]?.marks?.length || (markHere !== null && !markHere.opens)),
+  );
 
   // The crop's left edge as the video preview shows it now, which a crop
   // mark put on this frame keeps.
@@ -1663,9 +1675,11 @@
     const scale = picture.width / screen.clientWidth;
     const most = picture.width - picture.cropWidth;
     let moved = false;
+    // Off a keyframe a drag moves nothing, and is still no click.
+    const movable = cropMovable;
     const move = (e: PointerEvent) => {
       if (Math.abs(e.clientX - startX) > 2) moved = true;
-      if (!moved) return;
+      if (!moved || !movable) return;
       dragLeft = Math.round(Math.max(0, Math.min(most, start + (e.clientX - startX) * scale)));
     };
     const up = async () => {
@@ -1674,7 +1688,7 @@
       target.removeEventListener("pointercancel", up);
       if (!moved || dragLeft === null) {
         dragLeft = null;
-        toggle();
+        if (!moved) toggle();
         return;
       }
       savingCrop = true;
@@ -1715,7 +1729,7 @@
     savingCrop = true;
     try {
       if (back.left !== null) await oncrop(back.at, back.left);
-      for (const m of back.marks) await oncropmark?.(-1, m.at, m.x);
+      for (const m of back.marks) await oncropmark?.(-1, m.at, m.x, !!m.glide);
       undoCrop = null;
     } finally {
       savingCrop = false;
@@ -1851,7 +1865,7 @@
         The space bar plays and pauses, and so does a click on the picture. With the playhead on
         the chosen clip it plays the clip, its cuts jumped, and anywhere else the video straight
         on, with nothing of the clip over it. Drag the crop frame
-        sideways to place it, and the black box up or down for the captions. Click a word in the
+        sideways to place it, in a clip with keyframes with the playhead on one, and the black box up or down for the captions. Click a word in the
         caption box to correct it, or walk to it with Shift and the arrows and press Enter: Enter
         saves it, Escape leaves it, and two words split it in two. Delete removes the word in the
         frame, and so does saving it empty.
@@ -1879,8 +1893,16 @@
       <div
         class="crop"
         class:held={dragLeft !== null}
+        class:fixed={!cropMovable}
         style="left: {shownCrop.left}%; width: {shownCrop.width}%"
-        title="Drag sideways to place the crop"
+        title={cropMovable
+          ? "Drag sideways to place the crop"
+          : markHere?.opens
+            ? markHere.fromClip
+              ? "The glide starts here from the clip's own crop"
+              : "The glide starts here from the crop of the keyframe before it. Move that crop there"
+            : "The crop as the short has it here. Put the playhead on a keyframe to place its crop, or press S or G to put one here"}
+        data-movable={cropMovable}
         onpointerdown={dragCrop}
       ></div>
     {/if}
@@ -2205,6 +2227,12 @@
 
   .crop.held {
     cursor: grabbing;
+  }
+
+  /* Off a keyframe, in a piece the keyframes steer, the crop is shown and
+     not moved, so it takes the hand the picture does. */
+  .crop.fixed {
+    cursor: default;
   }
 
   /* The shade over the picture beside the crop is the shadow of the

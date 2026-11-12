@@ -952,18 +952,18 @@ func TestCropByHand(t *testing.T) {
 		return out
 	}
 	// A crop placed by hand is the crop of the whole clip, cuts and all.
-	if err := SetCrop(fsys, path, "01", 2, 501, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 2, 501, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops("01"); got != "500* 500* 500* " {
 		t.Errorf("after moving %q", got)
 	}
 	// Moving it again keeps the automatic placement from the first time.
-	if err := SetCrop(fsys, path, "01", 11, 600, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 11, 600, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	// A centred clip can be moved and reset too.
-	if err := SetCrop(fsys, path, "02", 21, 100, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "02", 21, 100, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops("01") + "| " + crops("02"); got != "600* 600* 600* | 100* " {
@@ -982,7 +982,7 @@ func TestCropByHand(t *testing.T) {
 	if strings.Contains(string(body), "crop_x_auto") {
 		t.Errorf("reset left the automatic value behind\n%s", body)
 	}
-	if err := SetCrop(fsys, path, "01", 2, -4, SourceInfo{}, 0); err == nil {
+	if err := SetCrop(fsys, path, "01", 2, -4, SourceInfo{}); err == nil {
 		t.Errorf("a negative crop was accepted")
 	}
 }

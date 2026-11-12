@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"math"
-	"os"
 	"os/exec"
 	"reflect"
 	"regexp"
@@ -21,15 +20,16 @@ import (
 	"framefairy/internal/fixtures"
 )
 
-// A crop that follows, plan row 3.26: keyframes put on frames of a clip,
-// and the crop gliding from each to the next.
+// Keyframes, plan row 3.26 and #750: a keyframe put on a frame of a clip
+// switches its crop there, or, a circle after a circle, the crop glides
+// into it, and the crop holds until the next one.
 
 // cropMarks writes keyframes into the clip of rotatablePlan as a person's
 // edits would leave them.
 func cropMarks(t *testing.T, fsys afero.Fs, path string, marks ...CropMark) {
 	t.Helper()
 	for _, m := range marks {
-		if err := SetCropMark(fsys, path, "01", -1, m.At, m.X, at25); err != nil {
+		if err := SetCropMark(fsys, path, "01", -1, m.At, m.X, m.Glide, at25); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -44,48 +44,68 @@ func loadedClip(t *testing.T, fsys afero.Fs, path string) Clip {
 	return clips[0]
 }
 
-// The glide takes the whole time between two marks, starting and settling
-// gently, stands still before the first and after the last, and two marks
-// a frame apart are an instant move.
-func TestTheGlideEasesBetweenMarksAndHoldsBeyondThem(t *testing.T) {
+// The crop is the piece's own before the first keyframe, switches on each
+// keyframe's own frame, and holds until the next. Two keyframes a frame
+// apart are two switches a frame apart.
+func TestTheCropHoldsFromEachKeyframeToTheNext(t *testing.T) {
 	t.Parallel()
-	marks := []frameMark{{10, 100}, {20, 300}, {21, 40}, {31, 40}}
+	run := cropRun{marks: []frameMark{{k: 10, x: 100}, {k: 20, x: 300}, {k: 21, x: 40}, {k: 31, x: 40}}, base: 500}
+	for _, c := range []struct {
+		k    int64
+		want int
+	}{
+		{0, 500}, {9, 500},
+		{10, 100}, {11, 100}, {19, 100},
+		{20, 300}, {21, 40}, {25, 40}, {40, 40},
+	} {
+		if got := run.at(c.k); got != float64(c.want) {
+			t.Errorf("on frame %d the crop is at %v, not %d", c.k, got, c.want)
+		}
+	}
+}
+
+// From a circle the crop glides into the next circle, over the whole
+// time between them, easing out and in, and reaches it on its frame. Into
+// the first circle, and into a circle after a diamond, it switches: a
+// diamond is a switch, and nothing happens before or after it, Tim on
+// #750. After a circle it holds like after a diamond.
+func TestTheCropGlidesOnlyFromACircleIntoTheNext(t *testing.T) {
+	t.Parallel()
+	run := cropRun{marks: []frameMark{
+		{k: 10, x: 100, glide: true}, {k: 20, x: 300, glide: true}, {k: 30, x: 300}, {k: 40, x: 0, glide: true}, {k: 41, x: 50, glide: true}, {k: 50, x: 200, glide: true},
+	}, base: 500}
 	for _, c := range []struct {
 		k    int64
 		want float64
 	}{
-		{0, 100}, {10, 100},
-		// A tenth of the way, smoothstep has moved 2.8 %, to 105.6. Half
-		// way is half way, 200.
-		{11, 105.6}, {15, 200}, {19, 294.4},
-		{20, 300}, {21, 40}, {25, 40}, {40, 40},
+		{0, 500}, {9, 500},
+		{10, 100}, {15, 200}, {20, 300}, {25, 300}, {30, 300},
+		{35, 300}, {39, 300}, {40, 0}, {41, 50}, {50, 200}, {60, 200},
 	} {
-		if got := glideX(marks, c.k); math.Abs(got-c.want) > 1e-9 {
+		if got := run.at(c.k); math.Abs(got-c.want) > 1e-9 {
 			t.Errorf("on frame %d the crop is at %v, not %v", c.k, got, c.want)
 		}
 	}
-	// The glide starts more slowly than it moves in the middle.
-	if early, middle := glideX(marks, 11)-glideX(marks, 10), glideX(marks, 15)-glideX(marks, 14); early >= middle {
-		t.Errorf("the glide moves %v px on its first frame and %v in the middle", early, middle)
+	// Eased: a third of the way in it has gone less than a third.
+	if got := run.at(13); got <= 100 || got >= 100+200.0/3 {
+		t.Errorf("a third of the way into the glide the crop is at %v", got)
 	}
 }
 
-// A slow glide moves on every frame of the short. Rounded to an even
-// pixel of the picture, a glide of 300 pixels over four seconds stood
-// still for three frames at a time and then jumped 2 pixels, 3.6 in the
-// short, which Tim saw on #192 as a crop frame that stutters.
+// A slow glide moves on every frame of the short, within half a pixel of
+// the short of where the glide is, and never stands still or goes back.
+// Rounded to the picture's even pixels it stood still for frames and then
+// jumped, the stutter Tim saw on #192.
 func TestASlowGlideMovesOnEveryFrameOfTheShort(t *testing.T) {
 	t.Parallel()
 	const cropW, width, scaled = 608, 1920, 1084
-	marks := []frameMark{{0, 400}, {100, 700}}
-	cut, off := glideCrop(glideX(marks, 0), cropW, width, scaled)
+	run := cropRun{marks: []frameMark{{k: 0, x: 400, glide: true}, {k: 100, x: 700, glide: true}}}
+	cut, off := glideCrop(run.at(0), cropW, width, scaled)
 	was := float64(cut) + float64(off)*float64(cropW+glideMargin)/scaled
 	for k := int64(1); k < 100; k++ {
-		x := glideX(marks, k)
+		x := run.at(k)
 		cut, off := glideCrop(x, cropW, width, scaled)
 		at := float64(cut) + float64(off)*float64(cropW+glideMargin)/scaled
-		// The short shows the picture from at, within half a pixel of the
-		// short of where the glide is.
 		if math.Abs(at-x) > 0.5*float64(cropW+glideMargin)/scaled+1e-9 {
 			t.Errorf("on frame %d the glide is at %.3f, the short shows it from %.3f", k, x, at)
 		}
@@ -96,34 +116,105 @@ func TestASlowGlideMovesOnEveryFrameOfTheShort(t *testing.T) {
 	}
 }
 
-// The video preview works the glide out in lib/glide.ts, and the render in
-// ffmpeg. Both are held to the marks and the left edge on each frame in
-// frontend/src/lib/glide.cases.json, so the video preview shows on every
-// frame the crop the short has. glide.test.ts holds the window to it.
-//
-// On the real disk: what is read is the interface's own source.
-func TestTheGlideIsTheOneTheVideoPreviewWorksOut(t *testing.T) {
+// The video preview takes the crop of each frame from the steps the engine
+// sends, so it shows on every frame the crop the render crops by: the
+// piece's start, and each switch inside it, on the frames heldX switches on.
+func TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy(t *testing.T) {
 	t.Parallel()
-	data, err := os.ReadFile("../frontend/src/lib/glide.cases.json")
-	if err != nil {
-		t.Fatal(err)
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	view := SegmentView{Start: 0.4, End: 3.0, CropX: intPtr(50), Marks: []CropMarkView{
+		{At: 0.2, X: 10}, {At: 0.8, X: 0}, {At: 1.6, X: 328}, {At: 1.64, X: 100}, {At: 2.0, X: 100}, {At: 2.6, X: 500}, {At: 3.2, X: 30},
+	}}
+	// Before the piece the keyframe at 0.2 s holds, 500 is kept inside the
+	// picture, and the keyframes that change nothing, or come after the
+	// piece, are no steps.
+	want := []CropStep{{10, 10}, {20, 0}, {40, 328}, {41, 100}, {65, 328}}
+	if got := source.CropSteps(view, 152, 480); !reflect.DeepEqual(got, want) {
+		t.Errorf("the piece's crop steps are %v, not %v", got, want)
 	}
-	var fixture struct {
-		Marks  [][2]int64   `json:"marks"`
-		Frames [][2]float64 `json:"frames"`
+	seg := Segment{Start: view.Start, End: view.End, CropX: view.CropX}
+	for _, m := range view.Marks {
+		seg.Marks = append(seg.Marks, CropMark{At: m.At, X: m.X, Glide: m.Glide})
 	}
-	if err := json.Unmarshal(data, &fixture); err != nil {
-		t.Fatal(err)
-	}
-	var marks []frameMark
-	for _, m := range fixture.Marks {
-		marks = append(marks, frameMark{k: m[0], x: int(m[1])})
-	}
-	for _, f := range fixture.Frames {
-		if got := glideX(marks, int64(f[0])); got != f[1] {
-			t.Errorf("on frame %v the crop is at %v, the window has %v", f[0], got, f[1])
+	run := source.runOf(seg, 152, 480)
+	for k := int64(10); k < 75; k++ {
+		if x, render := sentOn(want, k), run.at(k); x != render {
+			t.Errorf("on frame %d the video preview is sent %v, the render crops at %v", k, x, render)
 		}
 	}
+
+	// A glide is a step on every frame it moves, each where the render
+	// has it.
+	for _, i := range []int{4, 5} {
+		view.Marks[i].Glide = true
+		seg.Marks[i].Glide = true
+	}
+	steps := source.CropSteps(view, 152, 480)
+	run = source.runOf(seg, 152, 480)
+	for k := int64(10); k < 75; k++ {
+		if x, render := sentOn(steps, k), run.at(k); x != render {
+			t.Errorf("gliding, on frame %d the video preview is sent %v, the render crops at %v", k, x, render)
+		}
+	}
+	if len(steps) < len(want)+8 {
+		t.Errorf("the glide over 15 frames is sent as the steps %v", steps)
+	}
+	// A piece whose crop is its own throughout is sent none, and the
+	// window shows its own crop.
+	if got := source.CropSteps(SegmentView{Start: 1, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1.5, X: 50}}}, 152, 480); got != nil {
+		t.Errorf("a piece that never switches is sent the steps %v", got)
+	}
+}
+
+// The clip timeline is sent where the crop glides, the way the render
+// glides it, so the line it draws says what the short does: from a
+// circle, hidden by a cut or not, into the next circle, cut to the piece,
+// and no line into one after a diamond. Two circles with one crop are
+// joined too, as they are the moment the second is put.
+func TestTheClipTimelineIsSentWhereTheCropGlides(t *testing.T) {
+	t.Parallel()
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	view := SegmentView{Start: 1.0, End: 3.0, CropX: intPtr(50), Marks: []CropMarkView{
+		{At: 0.6, X: 10, Glide: true}, {At: 1.4, X: 200, Glide: true}, {At: 2.0, X: 200, Glide: true}, {At: 2.4, X: 300}, {At: 2.8, X: 0, Glide: true}, {At: 3.6, X: 100, Glide: true},
+	}}
+	// The circle at 0.6 s, before the piece, starts the first glide on
+	// the piece's first frame. The circle at 2.0 s has the crop the one
+	// before has, and is joined to it all the same, and the one at 2.8 s
+	// comes after a diamond. The glide into the circle after the piece is
+	// cut at its end.
+	want := []GlideSpan{{1.0, 1.4}, {1.4, 2.0}, {2.8, 3.0}}
+	if got := source.Glides(view, 152, 480); !reflect.DeepEqual(got, want) {
+		t.Errorf("the piece's glides are %v, not %v", got, want)
+	}
+	// Every frame inside a glide is a frame the render moves the crop on.
+	run := source.runOf(segmentOf(view), 152, 480)
+	for _, g := range []GlideSpan{want[0], want[2]} {
+		for k := source.markFrame(g.From) + 1; k < source.markFrame(g.To); k++ {
+			if run.at(k) == run.at(k-1) {
+				t.Errorf("frame %d is in the glide %v, and the render holds the crop there", k, g)
+			}
+		}
+	}
+	// A first circle, and a circle after a diamond, are where the crop
+	// switches.
+	if got := source.Glides(SegmentView{Start: 1, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1.2, X: 300, Glide: true}, {At: 1.4, X: 100}, {At: 1.6, X: 300, Glide: true}}}, 152, 480); got != nil {
+		t.Errorf("a first circle and a circle after a diamond are sent the glides %v", got)
+	}
+	if got := source.Glides(SegmentView{Start: 1, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1.5, X: 100}}}, 152, 480); got != nil {
+		t.Errorf("a piece that only switches is sent the glides %v", got)
+	}
+}
+
+// sentOn is the left edge the video preview takes from steps on frame k,
+// the way lib/keyframes.ts looks it up.
+func sentOn(steps []CropStep, k int64) float64 {
+	x := steps[0].X
+	for _, step := range steps {
+		if step.Frame <= k {
+			x = step.X
+		}
+	}
+	return x
 }
 
 // renderedLefts runs the crop filters of a piece on a picture 480 wide
@@ -146,25 +237,98 @@ func renderedLefts(t *testing.T, source SourceInfo, seg Segment, frames int) []i
 	return lefts
 }
 
-// The render crops every frame where the glide is, to the pixel: the
-// crop filters of a piece with keyframes leave on each frame the column
-// glideCrop puts the left edge on, within half a pixel of glideX.
+// The render crops every frame where the crop is: the piece's own crop
+// before its first keyframe, and from each keyframe's frame on, that
+// keyframe's, switching from one frame to the next.
 //
 // On the real disk: ffmpeg renders the short.
-func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
+func TestTheRenderSwitchesTheCropAtEachKeyframe(t *testing.T) {
 	ffmpegtest.Need(t)
 	t.Parallel()
 	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
-	seg := Segment{Start: 0.4, End: 3.0, Marks: []CropMark{
-		{At: 0.8, X: 0}, {At: 1.6, X: 328}, {At: 1.64, X: 100}, {At: 2.6, X: 201},
+	seg := Segment{Start: 0.4, End: 3.0, CropX: intPtr(50), Marks: []CropMark{
+		{At: 0.8, X: 0}, {At: 1.6, X: 328}, {At: 1.64, X: 100}, {At: 2.6, X: 200},
 	}}
 	first, _ := source.pieceFrames(seg.Start, seg.End)
-	marks := source.onFrames(seg.Marks, 152, 480)
+	run := source.runOf(seg, 152, 480)
 	for n, got := range renderedLefts(t, source, seg, 65) {
-		x := glideX(marks, first+int64(n))
+		if want := run.at(first + int64(n)); float64(got) != want {
+			t.Errorf("frame %d of the piece is cropped at %d, not %v", n, got, want)
+		}
+	}
+
+	// Scaled to the short, the crop that switches is one crop filter and
+	// a scale, and the frames come out the short's size.
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	graph, _, _, err := e.BuildFilterGraph(context.Background(), Clip{Segments: []Segment{seg}},
+		source, RenderSettings{OutW: 1080, OutH: 1920, ScaleUp: true}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain := regexp.MustCompile(`crop=152:270:'if\([^']+':0,scale=1080:1920:flags=lanczos`).FindString(graph)
+	if chain == "" {
+		t.Fatalf("the piece has no crop that switches at its keyframes: %s", graph)
+	}
+	frames := readFrames(t, exec.Command("ffmpeg", "-v", "error", "-loop", "1", "-framerate", "25", "-t", "3",
+		"-i", fixtures.Path(t, "ramp.png"), "-vf", chain, "-frames:v", "65", "-f", "rawvideo", "-pix_fmt", "gray", "-"), 1080*1920)
+	if len(frames) != 65 {
+		t.Errorf("the crop scaled to the short gave %d frames of 1080 by 1920, not 65", len(frames))
+	}
+}
+
+// A keyframe that changes nothing, or one outside the piece, adds no
+// switch, so a piece whose crop never changes is one still crop.
+func TestAPieceWhoseCropNeverChangesIsCroppedStill(t *testing.T) {
+	t.Parallel()
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	seg := Segment{Start: 1, End: 2, CropX: intPtr(50), Marks: []CropMark{
+		{At: 0.5, X: 100}, {At: 1.5, X: 100}, {At: 2.5, X: 300},
+	}}
+	if got, want := source.cropFilters(seg, 152, 270, 0, 480, 152, 270, "flags=lanczos", "gray16le"), []string{"crop=152:270:100:0"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the piece is cropped by %v, not %v", got, want)
+	}
+}
+
+// A piece steered by as many keyframes as a clip may have renders, and
+// switches at all of them. One if per keyframe would nest the expression
+// past the hundred ffmpeg takes.
+func TestTheRenderSwitchesAtAsManyKeyframesAsAClipMayHave(t *testing.T) {
+	ffmpegtest.Need(t)
+	t.Parallel()
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	seg := Segment{Start: 0, End: 9}
+	for i := range MaxCropMarks {
+		x := (i * 38) % 329
+		seg.Marks = append(seg.Marks, CropMark{At: 0.2 + float64(i)*0.08, X: x - x%2})
+	}
+	run := source.runOf(seg, 152, 480)
+	for n, got := range renderedLefts(t, source, seg, 215) {
+		if want := run.at(int64(n)); float64(got) != want {
+			t.Errorf("frame %d is cropped at %d, not %v", n, got, want)
+		}
+	}
+}
+
+// The render crops every frame where the glide is, to the pixel: the
+// crop filters of a piece whose crop glides leave on each frame the column
+// glideCrop puts the left edge on, within half a pixel of the glide, and
+// a crop that switches or holds where it is.
+//
+// On the real disk: ffmpeg renders the short.
+func TestTheRenderGlidesIntoACircleToThePixel(t *testing.T) {
+	ffmpegtest.Need(t)
+	t.Parallel()
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	seg := Segment{Start: 0.4, End: 3.0, CropX: intPtr(50), Marks: []CropMark{
+		{At: 0.8, X: 0, Glide: true}, {At: 1.6, X: 328}, {At: 1.64, X: 100, Glide: true}, {At: 2.6, X: 201, Glide: true},
+	}}
+	first, _ := source.pieceFrames(seg.Start, seg.End)
+	run := source.runOf(seg, 152, 480)
+	for n, got := range renderedLefts(t, source, seg, 65) {
+		x := run.at(first + int64(n))
 		cut, off := glideCrop(x, 152, 480, 154)
 		if got != cut+off || math.Abs(float64(got)-x) > 0.5 {
-			t.Errorf("frame %d of the piece is cropped at %d, the glide is at %.3f", n, got, x)
+			t.Errorf("frame %d of the piece is cropped at %d, the crop is at %.3f", n, got, x)
 		}
 	}
 
@@ -187,32 +351,30 @@ func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 	}
 }
 
-// A piece steered by as many marks as a clip may have renders, and glides
-// over all of them. One if per mark nested the expression past the
-// hundred ffmpeg takes, and a clip of ninety marks could not be rendered.
-func TestTheRenderGlidesOverAsManyMarksAsAClipMayHave(t *testing.T) {
+// A piece steered by as many keyframes as a clip may have, every other one
+// a circle, renders, and glides into each circle.
+func TestTheRenderGlidesIntoAsManyKeyframesAsAClipMayHave(t *testing.T) {
 	ffmpegtest.Need(t)
 	t.Parallel()
 	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
 	seg := Segment{Start: 0, End: 9}
 	for i := range MaxCropMarks {
-		seg.Marks = append(seg.Marks, CropMark{At: 0.2 + float64(i)*0.08, X: (i * 37) % 329})
+		seg.Marks = append(seg.Marks, CropMark{At: 0.2 + float64(i)*0.08, X: (i * 37) % 329, Glide: i%3 != 0})
 	}
-	marks := source.onFrames(seg.Marks, 152, 480)
+	run := source.runOf(seg, 152, 480)
 	for n, got := range renderedLefts(t, source, seg, 215) {
-		x := glideX(marks, int64(n))
+		x := run.at(int64(n))
 		if cut, off := glideCrop(x, 152, 480, 154); got != cut+off {
-			t.Errorf("frame %d is cropped at %d, the glide is at %.3f", n, got, x)
+			t.Errorf("frame %d is cropped at %d, the crop is at %.3f", n, got, x)
 		}
 	}
 }
 
 // A mark steers every piece of the clip turned alike, cuts and all. Across
-// a cut the glide goes on by the clip's clock, the time the short plays, so
+// a cut the crop holds by the clip's clock, the time the short plays, so
 // a piece is steered by the marks placed where they fall on its own
 // stretch of the video as if the cuts were not there. A mark in a cut steers nothing,
-// and comes back with its piece. Found by Tim: a keyframe before a cut and
-// one after it did not glide at all, plan row 2.238.
+// and comes back with its piece.
 func TestACropMarkSteersTheWholeClip(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	cropMarks(t, fsys, path, CropMark{At: 10.2, X: 100}, CropMark{At: 10.8, X: 200}, CropMark{At: 11.6, X: 500}, CropMark{At: 13.6, X: 50})
@@ -245,18 +407,22 @@ func TestACropMarkSteersTheWholeClip(t *testing.T) {
 		t.Errorf("the clip has the keyframes %v", c.CropMarks)
 	}
 
-	// The glide is one across the cut: the first frame after it is where
-	// the glide of the first piece would be 2 s into the clip, 12.0 on its
-	// stretch, not where it would be a second later in the video, which is
-	// how long the cut is.
+	// A keyframe holds across the cut, by the clip's clock: the crop
+	// before it is the keyframe at 10.8 s, and after it the one at 11.6 s,
+	// which is 1.6 s into the clip, before the 2 s the cut ends at on the
+	// clip's clock. Before the first keyframe the crop is the clip's own.
 	first, last := c.Segments[0], c.Segments[2]
-	left := at25.CropAt(first, first.End-0.04, 152, 480)
-	after := at25.CropAt(last, last.Start, 152, 480)
-	if left == 200 || after == 50 {
-		t.Errorf("the crop stands still either side of the cut, at %.1f and %.1f", left, after)
-	}
-	if want := at25.CropAt(first, 12.0, 152, 480); math.Abs(after-want) > 1e-9 {
-		t.Errorf("after the cut the crop stands at %.3f, the glide from before it is at %.3f", after, want)
+	for _, h := range []struct {
+		seg  Segment
+		at   float64
+		want float64
+	}{
+		{first, 10.0, 120}, {first, first.End - 0.04, 200},
+		{last, last.Start, 500}, {last, 13.56, 500}, {last, 13.6, 50},
+	} {
+		if got := at25.CropAt(h.seg, h.at, 608, 1920); got != h.want {
+			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
+		}
 	}
 
 	// The cut taken out of the clip's middle: the pieces now meet across
@@ -283,24 +449,25 @@ func TestACropMarkThatDoesNotHoldIsLeftOut(t *testing.T) {
 		map[string]any{"at": 1e12, "x": 0.0},
 		map[string]any{"at": 10.5, "x": 300.0},
 		"10.0",
-		map[string]any{"at": 10.2, "x": 40.0},
+		map[string]any{"at": 10.2, "x": 40.0, "glide": "true"},
+		map[string]any{"at": 11.2, "x": 40.0, "glide": true},
 	}, nil)
-	want := []CropMark{{At: 10.2, X: 40}, {At: 10.5, X: 100}}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	want := []CropMark{{At: 10.2, X: 40}, {At: 10.5, X: 100}, {At: 11.2, X: 40, Glide: true}}
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("the plan's keyframes read as %v, not %v", got, want)
 	}
 }
 
-// C puts a mark on the start of the frame it means, a drag moves it to
+// S puts a mark on the start of the frame it means, a drag moves it to
 // another frame with its crop, and a double-click removes it. A mark has
 // to be in the clip, and one frame holds one.
 func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
-	if err := SetCropMark(fsys, path, "01", -1, 10.557, 300, at25); err != nil {
+	if err := SetCropMark(fsys, path, "01", -1, 10.557, 300, false, at25); err != nil {
 		t.Fatal(err)
 	}
 	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 1 || got[0] != (CropMark{At: 10.52, X: 300}) {
-		t.Fatalf("C at 10.557 s made %v, not a mark on the frame from 10.52 s", got)
+		t.Fatalf("S at 10.557 s made %v, not a mark on the frame from 10.52 s", got)
 	}
 	for _, c := range []struct {
 		name     string
@@ -311,17 +478,17 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 		{"on a frame that has one", -1, 10.53},
 		{"from where there is none", 11, 11.5},
 	} {
-		if err := SetCropMark(fsys, path, "01", c.from, c.to, 100, at25); err == nil {
+		if err := SetCropMark(fsys, path, "01", c.from, c.to, 100, false, at25); err == nil {
 			t.Errorf("a keyframe %s was taken", c.name)
 		}
 	}
-	if err := SetCropMark(fsys, path, "01", 10.52, 11.3, -1, at25); err != nil {
+	if err := SetCropMark(fsys, path, "01", 10.52, 11.3, -1, false, at25); err != nil {
 		t.Fatal(err)
 	}
 	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 1 || got[0] != (CropMark{At: 11.28, X: 300}) {
 		t.Fatalf("the mark dragged to 11.3 s is %v, not on the frame from 11.28 s", got)
 	}
-	if err := SetCropMark(fsys, path, "01", 11.28, -1, -1, at25); err != nil {
+	if err := SetCropMark(fsys, path, "01", 11.28, -1, -1, false, at25); err != nil {
 		t.Fatal(err)
 	}
 	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 0 {
@@ -333,74 +500,112 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 	}
 }
 
-// Dragging the crop frame on a mark moves that mark. Anywhere else it
-// moves the crop of the clip, and every mark by as far as the crop there
-// moved, so the glide keeps its shape. Automatic crop removes the marks.
-func TestDraggingTheCropMovesTheMarkUnderThePlayheadOrTheWholeGlide(t *testing.T) {
+// Tim's camera switch, #750: one keyframe where the camera switches, put
+// with S with the crop where it stands, and the crop dragged with the
+// playhead on it. The part before keeps the clip's own crop, and the crop
+// switches on the keyframe's own frame.
+func TestOneKeyframeIsACameraSwitch(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
-	cropMarks(t, fsys, path, CropMark{At: 10.2, X: 100}, CropMark{At: 10.8, X: 200}, CropMark{At: 11.6, X: 500}, CropMark{At: 13.6, X: 60})
-
-	if err := SetCrop(fsys, path, "01", 10.8, 300, at25, 152); err != nil {
+	if err := SetCrop(fsys, path, "01", 10.2, 40, at25); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadedClip(t, fsys, path).CropMarks; got[1] != (CropMark{At: 10.8, X: 300}) || got[0].X != 100 || got[3].X != 60 {
-		t.Fatalf("the crop placed on the mark at 10.8 s left the marks %v", got)
-	}
-
-	// At 10.5 s, in the frame from 10.48 s, the crop has glided 45 % of
-	// the way from 100 to 300, to 190. Placed at 230 there, it moves 40,
-	// and so does every mark, the one after the cut too.
-	if err := SetCrop(fsys, path, "01", 10.5, 230, at25, 152); err != nil {
+	cropMarks(t, fsys, path, CropMark{At: 10.6, X: 40})
+	if err := SetCrop(fsys, path, "01", 10.6, 600, at25); err != nil {
 		t.Fatal(err)
 	}
-	got := loadedClip(t, fsys, path).CropMarks
-	want := []CropMark{{At: 10.2, X: 140}, {At: 10.8, X: 340}, {At: 11.6, X: 540}, {At: 13.6, X: 100}}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("the glide moved by 40 left the marks %v, not %v", got, want)
+	c := loadedClip(t, fsys, path)
+	for _, h := range []struct {
+		piece int
+		at    float64
+		want  float64
+	}{
+		{0, 10.0, 40}, {0, 10.56, 40}, {0, 10.6, 600}, {1, 11.5, 600}, {2, 13.9, 600},
+	} {
+		if got := at25.CropAt(c.Segments[h.piece], h.at, 608, 1920); got != h.want {
+			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
 		}
 	}
-	if seg := pieceAt(t, fsys, path, 13.2); seg.CropX == nil || *seg.CropX != 230 {
-		t.Errorf("the crop of the clip is %v, not 230", seg.CropX)
+}
+
+// The crop is placed with the playhead on a keyframe, Tim on #750, and
+// moves that keyframe, a diamond or a circle a glide ends on. A circle a
+// glide starts on has no crop of its own, Tim on #778: it shows the crop
+// before it, and a drag there moves nothing. Anywhere else in a piece the
+// keyframes steer, the crop frame shows the crop as the short has it and
+// a drag moves nothing. A piece no keyframe steers has one crop, the
+// clip's, placed anywhere in it. Automatic crop removes the keyframes.
+func TestTheCropIsPlacedOnlyOnAKeyframe(t *testing.T) {
+	fsys, path := rotatablePlanPath(t)
+	if err := SetCrop(fsys, path, "01", 11.5, 80, at25); err != nil {
+		t.Fatal(err)
+	}
+	cropMarks(t, fsys, path, CropMark{At: 10.2, X: 100}, CropMark{At: 10.8, X: 200, Glide: true}, CropMark{At: 13.6, X: 60})
+	marked := func(want ...CropMark) {
+		t.Helper()
+		if got := loadedClip(t, fsys, path).CropMarks; !reflect.DeepEqual(got, want) {
+			t.Fatalf("the keyframes are %v, not %v", got, want)
+		}
+	}
+
+	// On the diamond at 10.2 s, which the circle at 10.8 s starts its
+	// glide from.
+	if err := SetCrop(fsys, path, "01", 10.2, 300, at25); err != nil {
+		t.Fatal(err)
+	}
+	marked(CropMark{At: 10.2, X: 300}, CropMark{At: 10.8, X: 300, Glide: true, Opens: true, Alone: true}, CropMark{At: 13.6, X: 60})
+
+	// On the circle, between keyframes, after one, before the first and
+	// after a cut: nothing moves.
+	for _, at := range []float64{10.8, 10.5, 11.5, 10.1, 13.2} {
+		if err := SetCrop(fsys, path, "01", at, 400, at25); err == nil {
+			t.Errorf("a crop dragged at %.2f s, on no keyframe, was taken", at)
+		}
+	}
+	marked(CropMark{At: 10.2, X: 300}, CropMark{At: 10.8, X: 300, Glide: true, Opens: true, Alone: true}, CropMark{At: 13.6, X: 60})
+	if seg := pieceAt(t, fsys, path, 13.2); seg.CropX == nil || *seg.CropX != 80 {
+		t.Errorf("the crop of the clip is %v, not 80", seg.CropX)
 	}
 
 	if err := ResetCrop(fsys, path, "01", 10.5); err != nil {
 		t.Fatal(err)
 	}
 	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 0 {
-		t.Errorf("automatic crop left the marks %v", got)
+		t.Errorf("automatic crop left the keyframes %v", got)
 	}
 }
 
-// Marks moved with the rest of the clip's stay in the picture. A mark
-// pushed past the edge would be held there by the render while the
-// others moved on, and the next drag would move it from a place nobody
-// sees: dragged back, the part would no longer stand where it was put.
-func TestACropMarkMovedWithTheRestStaysInThePicture(t *testing.T) {
-	src := SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1}
-	const cropW, most = 608, 1312
+// S puts a diamond and G a circle, a drag along the clip timeline keeps a
+// keyframe's kind, and G or S on one of the other kind turns it into its
+// own. The plan says glide only for a circle.
+func TestAKeyframeIsPutAsADiamondOrACircle(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
-	cropMarks(t, fsys, path, CropMark{At: 10.2, X: 1000}, CropMark{At: 10.8, X: 1300}, CropMark{At: 13.6, X: 100})
-	// After the last mark the crop stands where it is, at 100. Dragged to
-	// the right edge there, every mark moves 1212.
-	if err := SetCrop(fsys, path, "01", 13.8, most, src, cropW); err != nil {
+	if err := SetCropMark(fsys, path, "01", -1, 10.5, 300, true, at25); err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range loadedClip(t, fsys, path).CropMarks {
-		if m.X > most {
-			t.Errorf("the mark %v lies outside the picture, a crop %d wide starts at %d at most", m, cropW, most)
-		}
-	}
-	// The first part now stands at the right edge throughout. Dragged 100
-	// to the left there, it stands 100 to the left throughout.
-	if err := SetCrop(fsys, path, "01", 10.5, most-100, src, cropW); err != nil {
+	if err := SetCropMark(fsys, path, "01", -1, 11.0, 100, false, at25); err != nil {
 		t.Fatal(err)
 	}
-	seg := loadedClip(t, fsys, path).Segments[0]
-	for _, at := range []float64{10.0, 10.2, 10.5, 10.8, 11.0} {
-		if got := src.CropAt(seg, at, cropW, src.Width); got != most-100 {
-			t.Errorf("dragged to %d at 10.5 s, the crop at %.1f s stands at %v", most-100, at, got)
-		}
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.48, X: 120, Glide: true, Opens: true, FromClip: true, Alone: true}, {At: 11, X: 100}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("G at 10.5 s and S at 11 s made %v, not %v", got, want)
+	}
+	if err := SetCropMark(fsys, path, "01", 10.48, 10.2, -1, false, at25); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetCropGlide(fsys, path, "01", 11.0, true, at25); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetCropGlide(fsys, path, "01", 10.2, false, at25); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 10.2, X: 120}, {At: 11, X: 120, Glide: true, Opens: true, Alone: true}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("the circle dragged to 10.2 s and both turned are %v, not %v", got, want)
+	}
+	if err := SetCropGlide(fsys, path, "01", 10.6, true, at25); err == nil {
+		t.Error("a frame with no keyframe was made to glide")
+	}
+	data, _ := afero.ReadFile(fsys, path)
+	if n := bytes.Count(data, []byte(`"glide"`)); n != 1 {
+		t.Errorf("the plan says glide %d times for one circle: %s", n, data)
 	}
 }
 
@@ -413,10 +618,10 @@ func TestACropMarkIsFoundOnItsOwnFrameWhereverInItItIs(t *testing.T) {
 	  "segments": [{"start": 10.0, "end": 12.0, "crop_x": 100}],
 	  "crop_marks": [{"at": 10.55, "x": 100}, {"at": 11.01, "x": 200}, {"at": 11.015, "x": 300}, {"at": 11.6, "x": 400}]}]}`)
 	// 10.55 s is late in the frame from 10.52 s, nearer the next one.
-	if err := SetCropMark(fsys, path, "01", 10.55, 10.9, -1, at25); err != nil {
+	if err := SetCropMark(fsys, path, "01", 10.55, 10.9, -1, false, at25); err != nil {
 		t.Fatalf("the mark at 10.55 s could not be dragged: %v", err)
 	}
-	if err := SetCropMark(fsys, path, "01", 11.015, -1, -1, at25); err != nil {
+	if err := SetCropMark(fsys, path, "01", 11.015, -1, -1, false, at25); err != nil {
 		t.Fatalf("the marks at 11.01 s and 11.015 s could not be removed: %v", err)
 	}
 	want := []CropMark{{At: 10.88, X: 100}, {At: 11.6, X: 400}}
@@ -447,7 +652,7 @@ func TestAutomaticCropRemovesTheMarksATrimHides(t *testing.T) {
 // picture as it stood, so it steers the part only while the part is turned
 // that way again. A quarter or a half turn on, the picture has another
 // shape and the part's crop is its own, and the keyframe waits, the way
-// the crop the part had unrotated does. Four turns bring its glide back.
+// the crop the part had unrotated does. Four turns bring it back.
 func TestRotatingAPartKeepsItsKeyframes(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	cropMarks(t, fsys, path, CropMark{At: 10.2, X: 100}, CropMark{At: 13.5, X: 50})
@@ -459,10 +664,10 @@ func TestRotatingAPartKeepsItsKeyframes(t *testing.T) {
 		}
 		steering := pieceAt(t, fsys, path, 13.5).Marks
 		if turns < 4 && len(steering) != 0 {
-			t.Errorf("turned %d quarters the part glides over keyframes placed upright, %v", turns, steering)
+			t.Errorf("turned %d quarters the part is steered by keyframes placed upright, %v", turns, steering)
 		}
 		if turns == 4 && (len(steering) != 2 || steering[1].X != 50) {
-			t.Errorf("four turns on the part glides over %v, not the keyframes it had", steering)
+			t.Errorf("four turns on the part is steered by %v, not the keyframes it had", steering)
 		}
 	}
 }
@@ -474,7 +679,7 @@ func TestACropPlacedOnAWaitingKeyframeTakesItToThePictureAsItStands(t *testing.T
 	fsys, path := rotatablePlanPath(t)
 	cropMarks(t, fsys, path, CropMark{At: 13.52, X: 50})
 	rotate(t, fsys, path, 13.5)
-	if err := SetCrop(fsys, path, "01", 13.52, 200, at25, 400); err != nil {
+	if err := SetCrop(fsys, path, "01", 13.52, 200, at25); err != nil {
 		t.Fatal(err)
 	}
 	want := []CropMark{{At: 13.52, X: 200, Turn: 90}}
@@ -482,7 +687,7 @@ func TestACropPlacedOnAWaitingKeyframeTakesItToThePictureAsItStands(t *testing.T
 		t.Errorf("the keyframe under the crop placed is %v, not %v", got, want)
 	}
 	if got := pieceAt(t, fsys, path, 13.5).Marks; len(got) != 1 || got[0].X != 200 {
-		t.Errorf("the rotated part glides over %v", got)
+		t.Errorf("the rotated part is steered by %v", got)
 	}
 }
 
@@ -499,8 +704,357 @@ func TestAKeyframeOfAnOlderPlanBelongsToThePictureItLiesOn(t *testing.T) {
 		t.Errorf("the older plan's keyframes read as %v, not %v", got, want)
 	}
 	if got := pieceAt(t, fsys, path, 2.5).Marks; len(got) != 1 || got[0].X != 20 {
-		t.Errorf("the rotated part glides over %v", got)
+		t.Errorf("the rotated part is steered by %v", got)
 	}
+}
+
+// A keyframe a trim or a cut covers is carried on the first frame kept
+// after it, with its own crop, and is a keyframe there like any other: on
+// screen, and the crop dragged there moves it, which makes it a keyframe
+// of its own on that frame.
+func TestAKeyframeACutOrATrimCoversIsCarriedOnTheFrameAfter(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		shape Gesture
+		piece int
+		at    float64
+	}{
+		{"a trim of the start past it", Gesture{Kind: "trim", Edge: "start", From: 10.8}, 0, 10.8},
+		{"a cut over it", Gesture{Kind: "cut", From: 10.4, To: 10.8}, 1, 10.8},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fsys, path := rotatablePlanPath(t)
+			cropMarks(t, fsys, path, CropMark{At: 10.6, X: 600})
+			reshape(t, fsys, path, c.shape)
+			clip := loadedClip(t, fsys, path)
+			if want := []CropMark{{At: c.at, X: 600}}; !reflect.DeepEqual(clip.CropMarks, want) {
+				t.Errorf("the keyframes on screen are %v, not %v", clip.CropMarks, want)
+			}
+			for i, seg := range clip.Segments {
+				if i < c.piece {
+					continue
+				}
+				at := max(c.at, seg.Start)
+				if got := at25.CropAt(seg, at, 608, 1920); got != 600 {
+					t.Errorf("piece %d at %.2f s has the crop at %v, not the carried keyframe's 600", i, at, got)
+				}
+			}
+			if err := SetCrop(fsys, path, "01", c.at, 500, at25); err != nil {
+				t.Fatalf("a crop dragged on the carried keyframe was refused: %v", err)
+			}
+			if got := planMarks(t, fsys, path); !reflect.DeepEqual(got, []CropMark{{At: c.at, X: 500}}) {
+				t.Errorf("the plan keeps %v, not the keyframe made real on %.2f s", got, c.at)
+			}
+		})
+	}
+}
+
+// planMarks is the keyframes the clip of a plan keeps, each at its own
+// moment.
+func planMarks(t *testing.T, fsys afero.Fs, path string) []CropMark {
+	t.Helper()
+	plan, _, err := LoadClips(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, _ := plan.Raw[keyClips].([]any)
+	entry, _ := list[0].(map[string]any)
+	return readCropMarks(entry[keyCropMarks], nil)
+}
+
+// The cases of "Keyframes at a dragged edge", which Tim agreed on 10
+// November: an edge carries the keyframe it reached last, on the clip's
+// first or last frame, a cut on the first frame after it, and every
+// keyframe keeps its own place. A circle carried with no circle beside it
+// rides on the edge on its own, until the edge reaches another keyframe,
+// Tim's report of 12 November. Diamonds A, B and C, circles X, Y and Z, in a clip from 10 to
+// 20 s.
+func TestAnEdgeCarriesTheKeyframeItReachedLast(t *testing.T) {
+	t.Parallel()
+	a, b, c := CropMark{At: 12, X: 200}, CropMark{At: 14, X: 400}, CropMark{At: 17, X: 600}
+	x, y, z := CropMark{At: 12, X: 200, Glide: true}, CropMark{At: 14, X: 400, Glide: true}, CropMark{At: 17, X: 600, Glide: true}
+	d := CropMark{At: 11, X: 100}
+	at := func(m CropMark, t float64) CropMark { m.At = t; return m }
+	alone := func(m CropMark) CropMark { m.Alone = true; return m }
+	// A circle that starts a glide, from the crop before it, or the
+	// clip's own where there is none.
+	opens := func(m CropMark, before *CropMark) CropMark {
+		m.Opens = true
+		if before == nil {
+			m.FromClip = true
+		} else {
+			m.X = before.X
+		}
+		return m
+	}
+	last := func(m CropMark, t float64) CropMark { m.At, m.Last = t, true; return m }
+	one := func(from, to float64) []Segment { return []Segment{{Start: from, End: to}} }
+	for _, h := range []struct {
+		name   string
+		pieces []Segment
+		marks  []CropMark
+		want   []CropMark
+	}{
+		{"the start reaches A", one(12.5, 20), []CropMark{a, b, c}, []CropMark{at(a, 12.5), b, c}},
+		{"the start reaches B", one(14.5, 20), []CropMark{a, b, c}, []CropMark{at(b, 14.5), c}},
+		{"the start back out past A", one(10, 20), []CropMark{a, b, c}, []CropMark{a, b, c}},
+		{"the end reaches C", one(10, 16.5), []CropMark{a, b, c}, []CropMark{a, b, last(c, 16.5)}},
+		{"the end reaches B", one(10, 13.5), []CropMark{a, b, c}, []CropMark{a, last(b, 13.5)}},
+		{"only X and Y, the start reaches X", one(12.5, 20), []CropMark{x, y}, []CropMark{at(opens(x, nil), 12.5), y}},
+		{"only X and Y, the start reaches Y", one(14.5, 20), []CropMark{x, y}, []CropMark{alone(at(y, 14.5))}},
+		{"X, Y and Z, the start reaches Y", one(14.5, 20), []CropMark{x, y, z}, []CropMark{at(y, 14.5), z}},
+		{"only X and Y, the end reaches Y", one(10, 13.5), []CropMark{x, y}, []CropMark{opens(x, nil), last(y, 13.5)}},
+		{"only X and Y, the end reaches X", one(10, 11.5), []CropMark{x, y}, []CropMark{alone(last(opens(x, nil), 11.5))}},
+		{"a cut over X and Y rides Y on its own up to C", []Segment{{Start: 10, End: 11.5}, {Start: 14.5, End: 20}}, []CropMark{x, y, c}, []CropMark{alone(at(y, 14.5)), c}},
+		{"a cut over X, Y and C carries C", []Segment{{Start: 10, End: 11.5}, {Start: 17.5, End: 20}}, []CropMark{x, y, c}, []CropMark{at(c, 17.5)}},
+		{"D, X and Y, the start reaches X", one(12.5, 20), []CropMark{d, x, y}, []CropMark{at(opens(x, &d), 12.5), y}},
+		{"a cut over A and B", []Segment{{Start: 10, End: 11.5}, {Start: 14.5, End: 20}}, []CropMark{a, b, c}, []CropMark{at(b, 14.5), c}},
+		{"a cut over Y joined to X before it", []Segment{{Start: 10, End: 13.5}, {Start: 14.5, End: 20}}, []CropMark{x, y}, []CropMark{opens(x, nil), at(y, 14.5)}},
+		{"a keyframe of the first frame's own", one(12, 20), []CropMark{d, a, b}, []CropMark{a, b}},
+		{"a keyframe set aside", one(14.5, 20), []CropMark{a, {At: 14, X: 400, Aside: true}, c}, []CropMark{at(a, 14.5), c}},
+		{"a circle on its own does nothing", one(10, 20), []CropMark{d, x}, []CropMark{d, alone(opens(x, &d))}},
+		{"S on the second of two circles leaves the first on its own", one(10, 20), []CropMark{x, b}, []CropMark{alone(opens(x, nil)), b}},
+		{"every keyframe covered set aside", one(14.5, 20), []CropMark{{At: 12, X: 200, Aside: true}, {At: 14, X: 400, Aside: true}, c}, []CropMark{c}},
+	} {
+		if got := carried(h.pieces, h.marks); !reflect.DeepEqual(got, h.want) {
+			t.Errorf("%s: the clip shows %v, not %v", h.name, got, h.want)
+		}
+	}
+}
+
+// tenSecondClip is a clip of one piece from 10 to 20 s.
+const tenSecondClip = `{
+  "source": "ep.mp4",
+  "clips": [
+    {"id": "01", "slug": "eins",
+     "segments": [{"start": 10.0, "end": 20.0, "crop_x": 120}]}
+  ]
+}`
+
+// A carried keyframe keeps its own crop, Tim's choice on 10 November: an
+// edge dragged in over a glide makes it shorter and faster, so the crop
+// on the clip's first frame is the one the first circle starts from, not
+// one part of the way to the second. A first circle starts from the crop
+// before it, Tim on #778, here the clip's own, and still does once
+// carried. Before a diamond, it starts from the diamond's.
+func TestACarriedCircleGlidesFromItsOwnCrop(t *testing.T) {
+	fsys, path := writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 12, X: 200, Glide: true}, CropMark{At: 16, X: 600, Glide: true})
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 14})
+	seg := loadedClip(t, fsys, path).Segments[0]
+	for _, h := range []struct{ at, want float64 }{{14, 120}, {15, 360}, {16, 600}, {19, 600}} {
+		if got := at25.CropAt(seg, h.at, 608, 1920); math.Abs(got-h.want) > 1e-9 {
+			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
+		}
+	}
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 10})
+	if got := at25.CropAt(loadedClip(t, fsys, path).Segments[0], 14, 608, 1920); got != 360 {
+		t.Errorf("dragged back out, the glide stands at %v at 14 s, not half way at 360", got)
+	}
+
+	// After a diamond at 11 s, dragged in past both.
+	fsys, path = writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 11, X: 300}, CropMark{At: 12, X: 200, Glide: true}, CropMark{At: 16, X: 600, Glide: true})
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 14})
+	seg = loadedClip(t, fsys, path).Segments[0]
+	for _, h := range []struct{ at, want float64 }{{14, 300}, {15, 450}, {16, 600}} {
+		if got := at25.CropAt(seg, h.at, 608, 1920); math.Abs(got-h.want) > 1e-9 {
+			t.Errorf("after a diamond, at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
+		}
+	}
+}
+
+// The end carries a keyframe on the clip's last frame, which switches the
+// crop there, and the window is sent it on that frame's start.
+func TestTheEndCarriesAKeyframeOnTheLastFrame(t *testing.T) {
+	fsys, path := writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 12, X: 200}, CropMark{At: 17, X: 600})
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "end", From: 16.52})
+	clip := loadedClip(t, fsys, path)
+	shown := at25.MarksOnFrames(CropMarkViews(clip.CropMarks))
+	if want := []CropMarkView{{At: 12, X: 200}, {At: 16.48, X: 600}}; !reflect.DeepEqual(shown, want) {
+		t.Errorf("the window is sent %v, not %v", shown, want)
+	}
+	seg := clip.Segments[0]
+	for _, h := range []struct{ at, want float64 }{{16.44, 200}, {16.48, 600}} {
+		if got := at25.CropAt(seg, h.at, 608, 1920); got != h.want {
+			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
+		}
+	}
+	// A keyframe of the last frame's own keeps it, and a touch of it
+	// leaves the one the end covers where it was.
+	cropMarks(t, fsys, path, CropMark{At: 16.48, X: 300})
+	clip = loadedClip(t, fsys, path)
+	shown = at25.MarksOnFrames(CropMarkViews(clip.CropMarks))
+	if want := []CropMarkView{{At: 12, X: 200}, {At: 16.48, X: 300}}; !reflect.DeepEqual(shown, want) {
+		t.Errorf("with a keyframe on the last frame, the window is sent %v, not %v", shown, want)
+	}
+	if got := at25.CropAt(clip.Segments[0], 16.48, 608, 1920); got != 300 {
+		t.Errorf("the last frame has the crop at %v, not its own keyframe's 300", got)
+	}
+	if err := SetCrop(fsys, path, "01", 16.48, 400, at25); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetCropMark(fsys, path, "01", 16.48, -1, 0, false, at25); err != nil {
+		t.Fatal(err)
+	}
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "end", From: 20})
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 12, X: 200}, {At: 17, X: 600}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("after the last frame's own keyframe was moved and removed, the end dragged back out shows %v, not %v", got, want)
+	}
+}
+
+// Removing the keyframe an edge carries removes it, and no other it
+// covers comes up in its place, Tim on 10 November: "the last one is not
+// just magically popping up again because you removed one". Dragged back
+// out, the edge leaves the others where they were.
+func TestRemovingTheCarriedKeyframeBringsNoOtherUp(t *testing.T) {
+	fsys, path := writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 12, X: 200}, CropMark{At: 14, X: 400}, CropMark{At: 17, X: 600})
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 14.52})
+	if err := SetCropMark(fsys, path, "01", 14.52, -1, 0, false, at25); err != nil {
+		t.Fatal(err)
+	}
+	clip := loadedClip(t, fsys, path)
+	if want := []CropMark{{At: 17, X: 600}}; !reflect.DeepEqual(clip.CropMarks, want) {
+		t.Errorf("after the remove the clip shows %v, not %v", clip.CropMarks, want)
+	}
+	if got := at25.CropAt(clip.Segments[0], 14.52, 608, 1920); got != 120 {
+		t.Errorf("after the remove the clip starts with the crop at %v, not its own 120", got)
+	}
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 10})
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 12, X: 200}, {At: 17, X: 600}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("dragged back out, the clip shows %v, not %v", got, want)
+	}
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 12.52})
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 12.52, X: 200}, {At: 17, X: 600}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("dragged in again, the start carries %v, not %v", got, want)
+	}
+}
+
+// S or G on a carried keyframe, or dragging it, makes it a keyframe of its
+// own where it stands, and its old place is forgotten. A circle made
+// there starts its glide from the crop before it.
+func TestTouchingACarriedKeyframeMakesItReal(t *testing.T) {
+	for _, h := range []struct {
+		name  string
+		touch func(fsys afero.Fs, path string) error
+		want  CropMark
+	}{
+		{"G on it", func(fsys afero.Fs, path string) error {
+			return SetCropGlide(fsys, path, "01", 14.52, true, at25)
+		}, CropMark{At: 14.52, X: 200, Glide: true, Opens: true, Alone: true}},
+		{"dragged on", func(fsys afero.Fs, path string) error {
+			return SetCropMark(fsys, path, "01", 14.52, 15, 0, false, at25)
+		}, CropMark{At: 15, X: 400}},
+	} {
+		t.Run(h.name, func(t *testing.T) {
+			fsys, path := writePlanAt(t, tenSecondClip)
+			cropMarks(t, fsys, path, CropMark{At: 12, X: 200}, CropMark{At: 14, X: 400})
+			reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 14.52})
+			if err := h.touch(fsys, path); err != nil {
+				t.Fatal(err)
+			}
+			reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 10})
+			if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{{At: 12, X: 200}, h.want}; !reflect.DeepEqual(got, want) {
+				t.Errorf("dragged back out, the clip shows %v, not %v", got, want)
+			}
+		})
+	}
+}
+
+// A circle that starts a glide keeps no crop of its own that nobody sees:
+// turned into a diamond, or given a circle before it, it keeps the crop it
+// showed, found by the review of #778.
+func TestACircleKeepsNoHiddenCrop(t *testing.T) {
+	fsys, path := writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 11, X: 300}, CropMark{At: 12, X: 500, Glide: true})
+	if err := SetCropGlide(fsys, path, "01", 12, false, at25); err != nil {
+		t.Fatal(err)
+	}
+	if got := at25.CropAt(loadedClip(t, fsys, path).Segments[0], 12, 608, 1920); got != 300 {
+		t.Errorf("the circle made a diamond switches the crop to %v, not the 300 it showed", got)
+	}
+
+	fsys, path = writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 11, X: 300}, CropMark{At: 13, X: 500, Glide: true}, CropMark{At: 15, X: 700, Glide: true})
+	cropMarks(t, fsys, path, CropMark{At: 12, X: 300, Glide: true})
+	seg := loadedClip(t, fsys, path).Segments[0]
+	for _, h := range []struct{ at, want float64 }{{12, 300}, {13, 300}, {15, 700}} {
+		if got := at25.CropAt(seg, h.at, 608, 1920); got != h.want {
+			t.Errorf("with a circle put before the glide, at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
+		}
+	}
+}
+
+// On a circle that starts a glide with no keyframe before it, the crop
+// frame stays put too: the glide starts from the clip's own crop, and the
+// refusal says so rather than name a keyframe that is not there, Tim on
+// #778 and the review of it.
+func TestACropDraggedOnAFirstCircleWithNothingBeforeItIsRefused(t *testing.T) {
+	fsys, path := writePlanAt(t, tenSecondClip)
+	cropMarks(t, fsys, path, CropMark{At: 10, X: 120, Glide: true}, CropMark{At: 14, X: 600, Glide: true})
+	err := SetCrop(fsys, path, "01", 10, 300, at25)
+	if err == nil || !strings.Contains(err.Error(), "the clip's own crop") {
+		t.Fatalf("a crop dragged on the first circle, with nothing before it, gave %v, not a refusal that names the clip's own crop", err)
+	}
+	clip := loadedClip(t, fsys, path)
+	if got := at25.CropAt(clip.Segments[0], 10, 608, 1920); got != 120 {
+		t.Errorf("the crop on the first circle moved to %v, not stayed at 120", got)
+	}
+}
+
+// A glide between two circles in two pieces runs across the cut between
+// them, and the crop holds after the second across the next cut. A first
+// circle alone moves nothing: it starts a glide from the crop before it,
+// and no glide follows, Tim on #778.
+func TestAGlideBetweenTwoCirclesRunsAcrossACut(t *testing.T) {
+	fsys, path := rotatablePlanPath(t)
+	cropMarks(t, fsys, path, CropMark{At: 11.52, X: 600, Glide: true})
+	alone := loadedClip(t, fsys, path)
+	for _, h := range []struct {
+		piece int
+		at    float64
+	}{{0, 10.76}, {1, 11.52}, {2, 13.5}} {
+		if got := at25.CropAt(alone.Segments[h.piece], h.at, 608, 1920); got != 120 {
+			t.Errorf("with a first circle alone the crop stands at %v at %.2f s, not the clip's own 120", got, h.at)
+		}
+	}
+	fsys, path = rotatablePlanPath(t)
+	cropMarks(t, fsys, path, CropMark{At: 10.0, X: 120, Glide: true}, CropMark{At: 11.52, X: 600, Glide: true})
+	c := loadedClip(t, fsys, path)
+	for _, h := range []struct {
+		piece int
+		at    float64
+		want  float64
+	}{
+		{0, 10.0, 120}, {0, 10.76, 360}, {1, 11.52, 600}, {2, 13.5, 600},
+	} {
+		if got := at25.CropAt(c.Segments[h.piece], h.at, 608, 1920); math.Abs(got-h.want) > 1e-9 {
+			t.Errorf("at %.2f s the crop stands at %v, not %v", h.at, got, h.want)
+		}
+	}
+}
+
+// BenchmarkTheWindowIsSentAGlide is what one clip that glides over the
+// whole of its 30 s at 30 fps costs each state of the video sent to the
+// window: its crop steps and its glides worked out, and written as JSON.
+func BenchmarkTheWindowIsSentAGlide(b *testing.B) {
+	source := SourceInfo{Width: 1920, Height: 1080, FPSNum: 30, FPSDen: 1}
+	view := SegmentView{Start: 0, End: 30, CropX: intPtr(100), Marks: []CropMarkView{{At: 0, X: 100, Glide: true}, {At: 29.9, X: 1300, Glide: true}}}
+	var size int
+	for b.Loop() {
+		steps, glides := source.CropSteps(view, 608, 1920), source.Glides(view, 608, 1920)
+		out, err := json.Marshal(struct {
+			Steps  []CropStep  `json:"cropSteps"`
+			Glides []GlideSpan `json:"glides"`
+		}{steps, glides})
+		if err != nil {
+			b.Fatal(err)
+		}
+		size = len(out)
+	}
+	b.ReportMetric(float64(size), "bytes/clip")
 }
 
 // glideCrop is how the render places a gliding crop whose left edge is x
@@ -508,7 +1062,7 @@ func TestAKeyframeOfAnOlderPlanBelongsToThePictureItLiesOn(t *testing.T) {
 // the even pixel at or left of x, kept inside the picture, and then, once
 // that is scaled to wide pixels, the crop from off pixels into it. scaled
 // is how many pixels wide the cut is once scaled, and its own width where
-// it is not. glideExpr writes the same steps for ffmpeg.
+// it is not. cropFilters writes the same steps for ffmpeg.
 func glideCrop(x float64, cropW, width, scaled int) (cut, off int) {
 	most := width - cropW - glideMargin
 	most -= most % 2
