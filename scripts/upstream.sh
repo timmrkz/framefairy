@@ -36,7 +36,7 @@ harfbuzz=$(pinned HARFBUZZ_VERSION scripts/build-ffmpeg.sh)
 libass=$(pinned LIBASS_VERSION scripts/build-ffmpeg.sh)
 llama=$(pinned LLAMA_VERSION scripts/build-llama.sh)
 node=$(cat .node-version)
-sherpa=$(awk '/k2-fsa\/sherpa-onnx-go /{ print $2; exit }' go.mod | sed 's/^v//')
+sherpa=$(awk '/k2-fsa\/sherpa-onnx-go(\/v[0-9]+)? /{ print $2; exit }' go.mod | sed 's/^v//')
 
 out=""
 any=0

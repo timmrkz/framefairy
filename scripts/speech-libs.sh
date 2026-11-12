@@ -23,17 +23,17 @@
 set -e
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-VERSION=$(awk '/k2-fsa\/sherpa-onnx-go /{ print $2; exit }' "$ROOT/go.mod")
+VERSION=$(awk '/k2-fsa\/sherpa-onnx-go(\/v[0-9]+)? /{ print $2; exit }' "$ROOT/go.mod")
 
 case "$(uname -s)-$(uname -m)" in
 Darwin-arm64)
 	NAME=sherpa-onnx-$VERSION-osx-arm64-shared-no-tts-lib
-	SUM=f3e0cbd86cc3f38dad30c97921b40e9a8bcc6f2c943777eb76ad77176993e417
+	SUM=ac5594ad237db56ec4a6c4b3fc48700441b33a07bb71c235f35530a52a93f2e3
 	LIB=libsherpa-onnx-c-api.dylib
 	;;
 Linux-x86_64)
 	NAME=sherpa-onnx-$VERSION-linux-x64-shared-no-tts-lib
-	SUM=bf2d998c8b07012cd5098f3b92673bc1333fd9b927767d7cb664be8190d8bc0b
+	SUM=ce437357915491e6f2754b52bec7dcf62ff6fc6aaed9cdcd66f17807bbaef374
 	LIB=libsherpa-onnx-c-api.so
 	;;
 *)

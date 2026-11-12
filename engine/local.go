@@ -247,7 +247,7 @@ const localStall = 2 * time.Minute
 // stopped while it was well. With 512 it has to read fewer than 4.3 a
 // second for that. It is also llama.cpp's physical batch, `-ub`, so the graphics
 // chip of a Mac reads the prompt in the same pieces as before and no
-// slower. Checked against llama.cpp b11430: the server sends its progress
+// slower. Checked against llama.cpp b12332: the server sends its progress
 // in post_decode in tools/server/server-context.cpp, once for every
 // logical batch it decodes.
 const promptBatch = 512
@@ -525,7 +525,7 @@ func (m *Machine) lookAgain(d time.Duration) <-chan time.Time {
 	return time.After(d)
 }
 
-// readyMarks are the lines llama-server writes once it may be ready: b11430
+// readyMarks are the lines llama-server writes once it may be ready: b12332
 // says "model loaded" once the model is in memory and "server is listening"
 // once it takes requests. Either is followed by a look at its health, which
 // decides. An earlier line about its HTTP server listening while it still
@@ -700,7 +700,7 @@ type loadPhase struct {
 	seconds float64
 }
 
-// loadMarks are the lines llama-server b11430 writes as it begins each
+// loadMarks are the lines llama-server b12332 writes as it begins each
 // part of loading a model, at -lv 4, and what the part is called.
 var loadMarks = []struct{ mark, name string }{
 	{"loading model tensors", "reading the model"},

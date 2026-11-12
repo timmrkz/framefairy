@@ -487,8 +487,8 @@ func speech() error {
 			gh + "k2-fsa/sherpa-onnx/" + sherpa + "/LICENSE",
 			"Recognises the speech. What travels beside the app is its release built without " +
 				"speech synthesis, so nothing of espeak-ng is in it."},
-		{"kaldi-native-fbank", "1.22.3", "Apache-2.0", "https://github.com/csukuangfj/kaldi-native-fbank",
-			gh + "csukuangfj/kaldi-native-fbank/v1.22.3/LICENSE", "Built into sherpa-onnx."},
+		{"kaldi-native-fbank", "1.22.4", "Apache-2.0", "https://github.com/csukuangfj/kaldi-native-fbank",
+			gh + "csukuangfj/kaldi-native-fbank/v1.22.4/LICENSE", "Built into sherpa-onnx."},
 		{"kaldi-decoder", "0.3.0", "Apache-2.0", "https://github.com/k2-fsa/kaldi-decoder",
 			gh + "k2-fsa/kaldi-decoder/v0.3.0/LICENSE", "Built into sherpa-onnx."},
 		{"kaldifst", "1.8.0", "Apache-2.0", "https://github.com/k2-fsa/kaldifst",
@@ -526,7 +526,7 @@ func sherpaVersion() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	m := regexp.MustCompile(`k2-fsa/sherpa-onnx-go (v\S+)`).FindSubmatch(mod)
+	m := regexp.MustCompile(`k2-fsa/sherpa-onnx-go(?:/v\d+)? (v\S+)`).FindSubmatch(mod)
 	if m == nil {
 		return "", fmt.Errorf("go.mod does not pin sherpa-onnx")
 	}

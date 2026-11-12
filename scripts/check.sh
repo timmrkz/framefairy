@@ -19,7 +19,7 @@ ok() { [ "$QUIET" = 1 ] || printf '  ok       %s\n' "$1"; }
 bad() { missing=1; printf '  missing  %s\n           %s\n' "$1" "$2"; }
 
 if [ "$1" = "--copy-dlls" ]; then
-	lib="$(go env GOMODCACHE)/github.com/k2-fsa/sherpa-onnx-go-windows@v1.13.8/lib/x86_64-pc-windows-gnu"
+	lib="$(go env GOMODCACHE)/github.com/k2-fsa/sherpa-onnx-go-windows/v2@v2.0.1/lib/x86_64-pc-windows-gnu"
 	cp "$lib"/*.dll "$2"/
 	exit 0
 fi

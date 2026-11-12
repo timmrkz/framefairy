@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
+	sherpa "github.com/k2-fsa/sherpa-onnx-go/v2/sherpa_onnx"
 
 	"framefairy/engine"
 )

@@ -7,7 +7,7 @@ require (
 	github.com/asticode/go-astiav v0.43.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gen2brain/malgo v0.11.27
-	github.com/k2-fsa/sherpa-onnx-go v1.13.8
+	github.com/k2-fsa/sherpa-onnx-go/v2 v2.0.1
 	github.com/rs/zerolog v1.35.1
 	github.com/speedata/hyphenation v1.0.5
 	github.com/spf13/afero v1.15.0
@@ -22,9 +22,9 @@ require (
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.8 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.8 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.8 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-linux/v2 v2.0.1 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-macos/v2 v2.0.1 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-windows/v2 v2.0.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	golang.org/x/sys v0.46.0 // indirect
