@@ -451,6 +451,32 @@ func inPause(words []timed.Cue, at, keepPause float64) bool {
 	return i+1 == len(words) || at < words[i+1].Start
 }
 
+// cloneObject is a copy of an object of a plan being edited that shares
+// nothing with it, its objects and lists copied all the way down, so a
+// change made to the copy leaves the plan as it was read.
+func cloneObject(o *object) *object {
+	c, _ := cloneValue(o).(*object)
+	return c
+}
+
+func cloneValue(v any) any {
+	switch v := v.(type) {
+	case *object:
+		out := &object{keys: slices.Clone(v.keys), values: make(map[string]any, len(v.values))}
+		for k, x := range v.values {
+			out.values[k] = cloneValue(x)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, x := range v {
+			out[i] = cloneValue(x)
+		}
+		return out
+	}
+	return v
+}
+
 func copyObject(o *object) *object {
 	out := &object{keys: append([]string(nil), o.keys...), values: map[string]any{}}
 	for k, v := range o.values {

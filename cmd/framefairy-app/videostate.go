@@ -59,6 +59,10 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	if !s.store.Known(path) {
 		return VideoState{}, errNotInLibrary
 	}
+	// The transcript first. The status says what it heard and the window
+	// is fitted to its lines, and both take it from this one read, where
+	// each read the files for itself before, #800.
+	_, _ = s.heardIn(path)
 	jobs, rev := s.jobs.ofVideo(path)
 	st := VideoState{Video: path, Rev: rev, Jobs: jobs, Status: s.Episode(path), Coverage: CoverageView{Passes: []PassView{}}}
 	plans := st.Status.Plans

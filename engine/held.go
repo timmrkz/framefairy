@@ -239,7 +239,7 @@ func (ep *Episode) heardSoFar(modelDir string, silenceDB *float64) (heardSoFar, 
 }
 
 // heldNow is the transcript the episode holds read at stamp, nil when it
-// holds none or one still being read.
+// holds none or its read failed. One still being read is waited for.
 func (ep *Episode) heldNow(stamp string) *TranscriptRead {
 	ep.m.held.Lock()
 	r := ep.transcript
@@ -247,12 +247,10 @@ func (ep *Episode) heldNow(stamp string) *TranscriptRead {
 	if r == nil || r.stamp != stamp {
 		return nil
 	}
-	select {
-	case <-r.done:
-		return r.v
-	default:
-		return nil
-	}
+	// One being read for this stamp is waited for: reading the same files
+	// again beside it takes as long, and twice the memory, #800.
+	<-r.done
+	return r.v
 }
 
 // transcriptAt is the stamp of a transcript's files as they are now, and

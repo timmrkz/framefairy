@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,10 +84,74 @@ func keyFor(kind, tool, file string) (probeKey, bool) {
 const probedMost = 4096
 
 // probeCache is the answers a machine keeps, by the question and the
-// files it was about.
+// files it was about, and the questions being asked, see askOnce.
 type probeCache struct {
 	mu      sync.Mutex
 	answers map[probeKey]any
+	flying  map[probeKey]*flight
+}
+
+// flight is a question being asked. Its answer is there for whoever waited
+// on it once done is closed. stopped says the asking was called off, or
+// ended in a panic, so it has no answer to hand on.
+type flight struct {
+	done    chan struct{}
+	answer  any
+	err     error
+	stopped bool
+}
+
+// askOnce is the answer to the question key names, kept on the machine
+// once it is known. A question already being asked is waited for and its
+// answer taken, its error too, so a question is asked once however many
+// ask it at once. As the app opens, the window asks for the state and the
+// source of every video at once, and each asked ffprobe six times on its
+// own, #799. Only when the asking was stopped does one of those that
+// waited ask again, and the rest wait for that one. ask is given ctx, and
+// an answer while ctx is stopped is not kept, since a probe stopped
+// halfway may have read no sound without failing.
+func askOnce[T any](ctx context.Context, m *Machine, key probeKey, ask func(context.Context) (T, error)) (T, error) {
+	p := &m.probes
+	for {
+		p.mu.Lock()
+		if v, ok := p.answers[key].(T); ok {
+			p.mu.Unlock()
+			return v, nil
+		}
+		f, ok := p.flying[key]
+		if !ok {
+			break
+		}
+		p.mu.Unlock()
+		select {
+		case <-f.done:
+		case <-ctx.Done():
+			var none T
+			return none, ctx.Err()
+		}
+		if !f.stopped {
+			v, _ := f.answer.(T)
+			return v, f.err
+		}
+	}
+	f := &flight{done: make(chan struct{}), stopped: true}
+	if p.flying == nil {
+		p.flying = map[probeKey]*flight{}
+	}
+	p.flying[key] = f
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		delete(p.flying, key)
+		p.mu.Unlock()
+		close(f.done)
+	}()
+	v, err := ask(ctx)
+	f.answer, f.err, f.stopped = v, err, ctx.Err() != nil
+	if err == nil && !f.stopped {
+		remember(m, key, v)
+	}
+	return v, err
 }
 
 // recall is the answer the machine kept for key.
