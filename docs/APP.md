@@ -2748,7 +2748,11 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   pressing S or G on it or dragging it makes it a keyframe of its own
   where it stands. Removing it removes only it, and the others it
   covered stay out of sight until the edge is dragged back out past them,
-  so no keyframe comes up in its place. The keyframes, the glide line and
+  so no keyframe comes up in its place. Removing a cut with a
+  double-click moves no keyframe, Tim's report of 13 November: the one
+  it carried becomes a keyframe of its own where it stands, and the
+  others it covered come back on their own moments with the part they
+  are in. The keyframes, the glide line and
   the crop in the video preview follow the edge while the hand is still
   on it.
 - **The video preview switches and glides the crop on the keyframes'

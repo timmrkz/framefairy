@@ -27,8 +27,8 @@
 <text class="n" x="76" y="78">the app&#x27;s Go side</text>
 <text class="p" x="76" y="96">cmd/framefairy-app/</text>
 <text class="q" x="76" y="112">package main: its groups are files, not packages</text>
-<rect class="chip" x="76" y="122" width="430" height="22" rx="6"/>
-<text class="c" x="84" y="137">the app: main, menu, chrome, refresh, sight, quit, drop, probe</text>
+<rect class="chip" x="76" y="122" width="485" height="22" rx="6"/>
+<text class="c" x="84" y="137">the app: main, events, menu, chrome, refresh, sight, quit, drop, probe</text>
 <rect class="chip" x="76" y="150" width="656" height="22" rx="6"/>
 <text class="c" x="84" y="165">a video: videostate, views, edits, history, captions, frames, media, words, room, levels, export</text>
 <rect class="chip" x="76" y="178" width="383" height="22" rx="6"/>

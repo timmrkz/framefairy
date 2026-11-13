@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { landings, wordStep, type Word } from "./api";
+import { landings, wordStep, type LitWord, type Word } from "./api";
 
 const said = (list: [number, number, string][]): Word[] =>
   list.map(([start, end, text]) => ({ start, end, text }));
@@ -155,7 +155,7 @@ describe("words lit together", () => {
   const frame = 0.04;
   // "Und", then "ja" and "ja" lit together on the frame at 0.52 s, then
   // "na" lit with "gut" on the frame at 1.24 s and "gut" alone from 1.28.
-  const said: Word[] = [
+  const said: LitWord[] = [
     { start: 0, end: 0.52, text: "Und", framed: true },
     { start: 0.52, end: 0.56, text: "ja", framed: true },
     { start: 0.52, end: 0.56, text: "ja", framed: true },

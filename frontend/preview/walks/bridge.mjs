@@ -724,7 +724,10 @@ export async function engineState(page, at, clips = null) {
       });
       return answer.json();
     };
-    const [captions, clips] = await Promise.all([ask("Captions", [path, plan, clip]), read ?? ask("Clips", [path])]);
+    const [captions, clips] = await Promise.all([
+      ask("main.FrameFairy.Captions", [path, plan, clip]),
+      read ?? ask("main.FrameFairy.Clips", [path]),
+    ]);
     const entry = clips.find((c) => c.plan === plan && (c.id === clip || c.basename === clip));
     // Each piece with its crop, the keyframes that steer it and its
     // rotation, which are steps of the history as the edges are, issue
@@ -1105,7 +1108,7 @@ export async function ask(page, name, ...args) {
       const answer = await fetch("/call", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, args }),
+        body: JSON.stringify({ name: `main.FrameFairy.${name}`, args }),
       });
       return answer.json();
     },
