@@ -1,7 +1,7 @@
 // Typed calls into the Go side. The names match the methods of the FrameFairy
 // service in main.go.
 import { Call, Events } from "@wailsio/runtime";
-import { SentClips, type SentState } from "./sent";
+import { SentClips } from "./sent";
 
 // Every call into the Go side. One that fails, or takes longer than a
 // person waits without noticing, goes to the app's log, and so do the
@@ -509,6 +509,8 @@ export interface ClipEntry extends ClipView {
   // On the answer to an edit, when the edit was written, on the clock a
   // video's state is read by, see VideoState.
   rev?: number;
+  // On a clip in a state sent, what it holds, see VideoState.order.
+  hash?: string;
 }
 
 // What the workspace shows of one video, read at one moment and sent
@@ -531,6 +533,19 @@ export interface VideoState {
   // The card the clip chosen was on its way as, when the app chose it
   // because that card was written as it.
   chosenCard?: string;
+  // In a state sent, every clip by its key and its hash, while clips
+  // holds only those that changed, each with its hash, or kept when not
+  // one changed and the state holds neither. A state read by a call
+  // holds every clip and neither. lib/sent.ts makes a state sent whole,
+  // and what hears it never sees these, see onVideoState.
+  order?: ClipMark[];
+  kept?: boolean;
+}
+
+// A clip in a state sent, by its key and its hash, see VideoState.order.
+export interface ClipMark {
+  key: string;
+  hash: string;
 }
 
 export interface EngineEvent {
@@ -1294,27 +1309,16 @@ export function onDropped(fn: (d: Added) => void): () => void {
 // second, see VideoState, and made whole, see lib/sent.ts. It is made
 // whole once for everything that hears it, and the clips sent are kept
 // from the first that hears on, which is the job store as the app starts.
-const sentClips = new SentClips();
+const sentClips = new SentClips((video) => api.sendWhole(video));
 const hearers = new Set<(state: VideoState) => void>();
-// The videos asked to be sent whole, until a state of them is whole.
-const askedWhole = new Set<string>();
 let hearing = false;
 export function onVideoState(fn: (state: VideoState) => void): () => void {
   hearers.add(fn);
   if (!hearing) {
     hearing = true;
     Events.On("video", (ev) => {
-      const sent = ev.data as SentState;
-      const state = sentClips.whole(sent);
-      if (!state) {
-        if (!askedWhole.has(sent.video)) {
-          askedWhole.add(sent.video);
-          void api.sendWhole(sent.video).catch(() => askedWhole.delete(sent.video));
-        }
-        return;
-      }
-      askedWhole.delete(sent.video);
-      for (const hear of [...hearers]) hear(state);
+      const state = sentClips.whole(ev.data as VideoState);
+      if (state) for (const hear of [...hearers]) hear(state);
     });
   }
   return () => hearers.delete(fn);

@@ -403,6 +403,10 @@ func TestAJobsNewsComesOnceItsVideosStateIsDue(t *testing.T) {
 // whole is a state sent made whole with the clips of the one sent before
 // it, the way the window makes it, see frontend/src/lib/sent.ts.
 func whole(was, sent VideoState) VideoState {
+	if sent.Kept {
+		sent.Clips, sent.Kept = was.Clips, false
+		return sent
+	}
 	had := map[string]ClipEntry{}
 	for _, c := range append(was.Clips, sent.Clips...) {
 		had[c.Key] = c
@@ -641,28 +645,35 @@ func TestAStateIsSentWithOnlyTheClipsThatChanged(t *testing.T) {
 			for _, m := range last.Order {
 				order = append(order, m.Key)
 			}
+			if last.Kept {
+				order = nil
+			}
 			return holds, order
 		}
 		steps := []struct {
 			name   string
 			change func()
 			holds  []string
+			kept   bool
 		}{
-			{"the first state", nil, []string{"p.json/a", "p.json/b"}},
-			{"nothing about the clips changed", nil, nil},
-			{"one clip trimmed", func() { clips[1].End = 70 }, []string{"p.json/b"}},
+			{"the first state", nil, []string{"p.json/a", "p.json/b"}, false},
+			{"nothing about the clips changed, so neither clips nor order", nil, nil, true},
+			{"one clip trimmed", func() { clips[1].End = 70 }, []string{"p.json/b"}, false},
 			{"a clip written before them", func() {
 				clips = append([]ClipEntry{{ClipView: engine.ClipView{ID: "c", Start: 1}, Key: "p.json/c"}}, clips...)
-			}, []string{"p.json/c"}},
-			{"a clip removed", func() { clips = clips[:2] }, nil},
-			{"the window asks for every clip", func() { news.sendWhole("v.mp4") }, []string{"p.json/c", "p.json/a"}},
+			}, []string{"p.json/c"}, false},
+			{"a clip removed", func() { clips = clips[:2] }, nil, false},
+			{"the window asks for every clip", func() { news.sendWhole("v.mp4") }, []string{"p.json/c", "p.json/a"}, false},
+			{"nothing changed again", nil, nil, true},
 		}
 		for _, step := range steps {
 			holds, order := send(step.change)
 			mu.Lock()
-			want := []string{}
-			for _, c := range clips {
-				want = append(want, c.Key)
+			var want []string
+			if !step.kept {
+				for _, c := range clips {
+					want = append(want, c.Key)
+				}
 			}
 			mu.Unlock()
 			if !slices.Equal(holds, step.holds) || !slices.Equal(order, want) {

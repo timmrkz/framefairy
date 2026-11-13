@@ -10,14 +10,15 @@ The front end review of that night, finding 4, found every state of a
 video crossing to the window whole, about four times a second while
 anything runs, though its clips seldom change.
 
-Measured on the code as it is, with clips shaped the way the engine
-makes them, in a cloud session, three runs each, the same each time:
+Measured with clips shaped the way the engine makes them, whole as on
+main and as this decision sends them, in a cloud session, three runs
+each, the same each time:
 
 | clips | state sent whole, KB | state with no clip changed, KB | change |
 | ---: | ---: | ---: | --- |
-| 10 | 13.0 | 2.9 | 78 % smaller, ± 0 % |
-| 40 | 45.6 | 4.7 | 90 % smaller, ± 0 % |
-| 120 | 133.2 | 9.7 | 93 % smaller, ± 0 % |
+| 10 | 13.0 | 2.3 | 82 % smaller, ± 0 % |
+| 40 | 45.6 | 2.3 | 95 % smaller, ± 0 % |
+| 120 | 133.2 | 2.3 | 98 % smaller, ± 0 % |
 
 Wails v3 beta 23 puts any event over 8 KB aside and tells the window to
 fetch it over HTTP, `maxInlineEventPayload` in its
@@ -62,20 +63,35 @@ window behind those fetches.
    only for the clip chosen. Every field taken out is a change to every
    place that reads it, and 40 clips still do not fit in 8 KB.
 
+The review of #812 found a sixth, simpler than all of them, missing:
+**what changes least.** When not one clip changed, the state leaves out
+the clips whole and says so, and when any changed it sends all of them.
+It needs no memory of each clip, and a state stays the same size however
+many clips there are. A clip changes on an edit or a clip found, a few
+times a minute, not four times a second.
+
 ## What converges
 
-The state stays the one channel, 1, 2 and 5 keep it, 3 and 4 break it.
+The state stays the one channel, 1, 2, 5 and the sixth keep it, 3 and
+4 break it.
 That a clip is known by what it holds and not by a stamp, from 2. That
 the sender remembers and the transport undoes it, from 1, so the
 session, the job store and every part that hears a state still get a
-whole `VideoState`, the one shape it has. Dropped: 3 and 4 for the two
-channels, 5 for not being enough, though it can follow on its own.
+whole `VideoState`, the one shape it has. From the sixth, that a state where not
+one clip changed leaves out the order too: with every clip named, a
+state went over 8 KB again at about 95 clips. Dropped: 3 and 4 for the
+two channels, 5 for not being enough, though it can follow on its own,
+and of the sixth the whole list sent for one clip changed, 45.6 KB for
+40 clips where 1 sends 5.8 KB.
 
-A window that lost track, opened again while Go went on, finds a key it
-was not sent as it is now. It does not guess and does not read the
-clips with a call of its own, which would be the second channel of 3:
-it asks Go, `SendWhole`, to send the next state with every clip, and
-takes nothing until a state it can make whole comes.
+A window that lost track, opened again while Go went on or a state
+lost, finds a key it was not sent as it is now, or a state that keeps
+clips it never had. It does not guess and does not read the clips with
+a call of its own, which would be the second channel of 3: it asks Go,
+`SendWhole`, to send the next state with every clip, and takes nothing
+until a state it can make whole comes. Once Go has answered the ask, a
+state it still cannot make whole asks again, so a whole state that was
+lost never leaves the video where it was.
 
 ## The decision
 
@@ -83,7 +99,8 @@ takes nothing until a state it can make whole comes.
 interface   EpisodeSession, the job store: a whole VideoState, as before
   api.ts    onVideoState makes each state whole, lib/sent.ts,
             and asks SendWhole when it cannot
-Go          videoNews.trim: Order, and only the clips whose hash changed
+Go          videoNews.trim: Order and only the clips whose hash changed,
+            or Kept and neither when not one changed
   State     reads the video's state whole, as before
 ```
 
@@ -92,9 +109,12 @@ state sent is trimmed.
 
 ## What follows
 
-With 40 clips a state the window hears while a video is heard falls
-from 45.6 KB to 4.7 KB, under the 8 KB Wails sends inline, so no fetch
-and no queue behind one. With one clip changed it is 5.8 KB.
+A state the window hears while a video is heard, and no clip changes,
+falls to 2.3 KB at any number of clips, from 13.0 KB with 10, 45.6 KB
+with 40 and 133.2 KB with 120, under the 8 KB Wails sends inline, so no
+fetch and no queue behind one. With one clip changed it is 4.0, 5.8 and
+10.8 KB, so a video of more than about 95 clips still fetches the state
+that tells of a change.
 
 It costs Go a hash of every clip on every send. In a Go benchmark of
 40 clips in a cloud session, five runs each, marshalling the state was

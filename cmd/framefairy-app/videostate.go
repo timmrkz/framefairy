@@ -55,6 +55,11 @@ type VideoState struct {
 	// stays small. A state read by a call holds every clip and no Order.
 	// See docs/decisions/2026-11-13-a-state-sends-only-the-clips-that-changed.md.
 	Order []ClipMark `json:"order,omitempty"`
+	// Kept says, in a state sent to the window, that its clips are those
+	// of the state sent before, all of them as they were and in the same
+	// order, so it holds neither clips nor Order: a state that named
+	// every clip went over the 8 KB Wails sends inline at about 95 clips.
+	Kept bool `json:"kept,omitempty"`
 }
 
 // ClipMark is a clip in a state sent to the window, by its key and its
@@ -148,6 +153,8 @@ type telling struct {
 	// its key, see trim. Only the send that holds sending reads or
 	// changes it.
 	sent map[string]string
+	// order is the Order of the state sent last, nil until a state was.
+	order []ClipMark
 	// whole says the next state goes with every clip, because the window
 	// lost track of what it was sent, see SendWhole.
 	whole bool
@@ -218,7 +225,7 @@ func (n *videoNews) tell(path string, t *telling) {
 	t.last = time.Now()
 	if t.whole {
 		t.whole = false
-		t.sent = nil
+		t.sent, t.order = nil, nil
 	}
 	n.mu.Unlock()
 	st, err := n.read(path)
@@ -239,7 +246,9 @@ func (n *videoNews) tell(path string, t *telling) {
 }
 
 // trim leaves out of a state the clips the window was last sent as they
-// are now, and says every clip in Order, see VideoState.Order. A video's
+// are now, and says every clip in Order, see VideoState.Order, or, when
+// not one clip changed, leaves out the clips and the order both, see
+// VideoState.Kept. A video's
 // state is sent about four times a second while its work goes on, and
 // whole it was a kilobyte for every clip, though the clips seldom
 // change: the window then fetched every one of them over a request of
@@ -258,7 +267,12 @@ func (t *telling) trim(st VideoState) VideoState {
 			changed = append(changed, c)
 		}
 	}
-	t.sent = sent
+	was := t.order
+	t.sent, t.order = sent, order
+	if was != nil && len(changed) == 0 && slices.Equal(was, order) {
+		st.Clips, st.Kept = []ClipEntry{}, true
+		return st
+	}
 	st.Clips, st.Order = changed, order
 	return st
 }
