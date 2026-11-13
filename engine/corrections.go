@@ -305,8 +305,9 @@ func putBack(heard []timed.Cue, i int, text string, removed func(j int) bool) ma
 // RemoveCaption removes the caption of a clip that begins on a word, the
 // one heard at first: every word in it is removed from the clip the way
 // RemoveWord removes one, so each is still the word heard there, to put
-// back on its own or with an undo. A word that a correction made several
-// is removed only where it is in this caption. What is left is laid out
+// back on its own or with an undo. The words its edges hide go with it.
+// A word that a correction made several is removed only where it is in
+// this caption. What is left is laid out
 // as it was: the caption goes and leaves its time empty, and the one
 // before it goes when it did, see Captions.
 func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Transcript, look *Look) error {
@@ -348,6 +349,27 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 	}
 	if len(words) == 0 {
 		return renderErr("the caption at %s has no words to remove", HMS(first))
+	}
+	// The words its edges hide, dragged in over them, are its words too.
+	// Left in the clip, they came back as a caption of their own once it
+	// was gone, and the caption before stayed up until it appeared.
+	shown := map[float64]bool{}
+	for _, c := range view.Captions {
+		for _, line := range c.Lines {
+			for _, w := range line.Words {
+				if w.Said == nil {
+					continue
+				}
+				if heard, ok := t.HeardAt(*w.Said); ok {
+					shown[heard.Start] = true
+				}
+			}
+		}
+	}
+	for _, heard := range t.HeardWords {
+		if heard.Start >= cue.First-0.0015 && heard.Start <= cue.Last+0.0015 && !shown[heard.Start] {
+			words = append(words, shownWord{heard, -1})
+		}
 	}
 	return editClipWords(fsys, planPath, clipID, t, func(corrections map[string]string, removed RemovedWords) error {
 		work := *t.Of(Clip{Corrections: corrections})

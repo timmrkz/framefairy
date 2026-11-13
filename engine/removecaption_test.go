@@ -140,3 +140,53 @@ func TestRemovingAnyCaptionLeavesTheOthersAsTheyWere(t *testing.T) {
 		}
 	}
 }
+
+// A caption removed takes with it the words its edges hid, dragged in
+// over them, and leaves the caption after it as it was. They came back as
+// a caption of their own, and the caption before stayed up until it
+// appeared. Found by the Go test of random caption edits.
+func TestARemovedCaptionTakesTheWordsItsEdgesHid(t *testing.T) {
+	for _, c := range []struct {
+		edge string
+		word float64
+		to   float64
+	}{
+		// The end of "Da stand ein Typ auf Schulhof." in over "Schulhof.".
+		{"end", 62.45, 62.3},
+		// Its start in over "Da" and "stand".
+		{"start", 60, 61.02},
+	} {
+		t.Run(c.edge, func(t *testing.T) {
+			fsys, path := captionPlanPath(t)
+			tr := fromStored(captionHeard(), nil, 0, 0, nil)
+			was, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(was.Captions) != 2 || cueWords(was.Captions[1]) != "Und dann kam" {
+				t.Fatalf("the test needs two captions, the second Und dann kam: %+v", was.Captions)
+			}
+			if _, err := SetCaptionTime(fsys, path, "01", c.word, c.edge, c.to, false, tr, nil); err != nil {
+				t.Fatal(err)
+			}
+			hid, _ := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
+			if cueWords(hid.Captions[0]) == cueWords(was.Captions[0]) {
+				t.Fatalf("the %s dragged in hid no word: %q", c.edge, cueWords(hid.Captions[0]))
+			}
+			if err := RemoveCaption(fsys, path, "01", hid.Captions[0].First, tr, nil); err != nil {
+				t.Fatal(err)
+			}
+			after, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(after.Captions) != 1 {
+				t.Fatalf("after the caption was removed, %d captions are left: %+v", len(after.Captions), after.Captions)
+			}
+			if got, want := after.Captions[0], was.Captions[1]; cueWords(got) != "Und dann kam" ||
+				math.Abs(got.Start-want.Start) > 1e-9 || math.Abs(got.End-want.End) > 1e-9 {
+				t.Errorf("the caption after is %.2f-%.2f %q, was %.2f-%.2f %q", got.Start, got.End, cueWords(got), want.Start, want.End, cueWords(want))
+			}
+		})
+	}
+}
