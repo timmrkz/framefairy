@@ -29,14 +29,6 @@ func (SystemClock) AfterFunc(d time.Duration, f func()) func() bool {
 	return time.AfterFunc(d, f).Stop
 }
 
-// clock is the machine's clock, the system's when it was handed none.
-func (m *Machine) clock() Clock {
-	if m.Clock == nil {
-		return SystemClock{}
-	}
-	return m.Clock
-}
-
 // ticking ticks on its channel each time d has passed on clock, until the
 // stop it returns is called, the way a time.Ticker does: a tick that
 // comes while the one before it is still unread is left out.

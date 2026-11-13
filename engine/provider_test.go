@@ -169,26 +169,34 @@ func cloud(t *testing.T, files afero.Fs, answers ...func(w http.ResponseWriter))
 	t.Setenv("OPENAI_API_KEY", "sk-proj-test")
 	m := NewMachine(files)
 	m.network = toServer{server.Listener.Addr().String()}
+	m.Clock = &fake.retries
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), m)
-	e.retryWait = fake.retries.wait
 	return fake, e
 }
 
-// retries is the wait before a request is asked again, which a test hands
-// the engine: up at once, so no test spends the seconds, and kept, so a
-// test checks how long the engine asked to wait.
+// retries is the machine's clock a test hands the engine for the wait
+// before a request is asked again: up at once, so no test spends the
+// seconds, and kept, so a test checks how long the engine asked to wait.
 type retries struct {
 	mu    sync.Mutex
 	asked []time.Duration
+	// asking, when set, is called in place of the wait being up.
+	asking func()
 }
 
-func (r *retries) wait(d time.Duration) <-chan time.Time {
+func (r *retries) Now() time.Time { return time.Time{} }
+
+func (r *retries) AfterFunc(d time.Duration, f func()) func() bool {
 	r.mu.Lock()
 	r.asked = append(r.asked, d)
+	asking := r.asking
 	r.mu.Unlock()
-	up := make(chan time.Time, 1)
-	up <- time.Time{}
-	return up
+	if asking != nil {
+		asking()
+	} else {
+		f()
+	}
+	return func() bool { return false }
 }
 
 func (r *retries) were() []time.Duration {
@@ -265,14 +273,11 @@ func TestARetryWaitsLongerEachTime(t *testing.T) {
 // A search called off while it waits to ask again ends at once, with the
 // wait left unfinished.
 func TestARetryCalledOffEndsItsWait(t *testing.T) {
-	_, e := cloud(t, afero.NewMemMapFs())
+	fake, e := cloud(t, afero.NewMemMapFs())
 	ctx, cancel := context.WithCancel(context.Background())
 	e.network = &dropping{rest: e.network}
 	e.network.(*dropping).drops.Store(1000)
-	e.retryWait = func(time.Duration) <-chan time.Time {
-		cancel()
-		return nil
-	}
+	fake.retries.asking = cancel
 	if _, err := e.CallAPI(ctx, "p", "claude-opus-5-5", 100, "", "plan", "", nil); !errors.Is(err, context.Canceled) {
 		t.Errorf("got %v, want the call called off", err)
 	}

@@ -176,17 +176,16 @@ type replyBlock struct {
 	Text string `json:"text"`
 }
 
-// waitToRetry waits d before a request is asked again, or until ctx is
-// called off.
+// waitToRetry waits d on the machine's clock before a request is asked
+// again, or until ctx is called off.
 func (e *Engine) waitToRetry(ctx context.Context, d time.Duration) error {
-	wait := e.retryWait
-	if wait == nil {
-		wait = time.After
-	}
+	up := make(chan struct{})
+	stop := e.Clock.AfterFunc(d, func() { close(up) })
+	defer stop()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-wait(d):
+	case <-up:
 		return nil
 	}
 }

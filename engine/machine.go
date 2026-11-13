@@ -40,8 +40,9 @@ type Machine struct {
 	// nil hears nothing.
 	Said ProgramSaid
 	// Clock is the time kept for work that waits on its own, how often
-	// a search says how far it has come and how long removed work can
-	// be put back, see Clock. NewMachine hands it the system's, and the
+	// a search says how far it has come, how long removed work can be
+	// put back and the wait before a company is asked again, see Clock.
+	// NewMachine hands it the system's, the one default there is, and the
 	// walks' bridge the clock a walk runs on.
 	Clock Clock
 	// Fonts are the faces captions can be written in, the bundled ones
