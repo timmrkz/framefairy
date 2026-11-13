@@ -943,6 +943,12 @@ type ShapedView struct {
 // see ShapeClip.
 func ShapeClipView(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause float64,
 	look *Look) (*ShapedView, error) {
+	// The clip's own words are made once, here: the gesture, where the
+	// captions go and the captions themselves each made them again, a copy
+	// of every word of the video each time a clip has a correction.
+	if clip, err := s.clip(clipID); err == nil {
+		t = t.Of(clip)
+	}
 	shaped, err := ShapeClip(s, clipID, g, t, keepPause, look.fonts())
 	if err != nil {
 		return nil, err
@@ -960,6 +966,8 @@ func ShapeCaptionTime(s PlanSummary, clipID string, word float64, edge string, a
 	if err != nil {
 		return nil, err
 	}
+	// The clip's own words are made once, see ShapeClipView.
+	t = t.Of(clip)
 	moved, err := moveCaptionEdge(s.plan, clip, word, edge, at, toWords, t, look)
 	if err != nil {
 		return nil, err

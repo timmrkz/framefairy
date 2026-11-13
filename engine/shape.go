@@ -108,23 +108,10 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 	if err != nil {
 		return Shaped{}, err
 	}
-	value, err := decodeOrdered(s.data)
-	if err != nil {
-		return Shaped{}, err
-	}
-	top, _ := value.(*object)
-	if top == nil {
-		return Shaped{}, renderErr("clip plan must be a JSON object")
-	}
-	var clips []*object
-	if list, ok := top.values[keyClips].([]any); ok {
-		for _, item := range list {
-			if c, ok := item.(*object); ok {
-				clips = append(clips, c)
-			}
-		}
-	}
-	c, err := findClip(clips, clipID)
+	// Only the clip the hand is on is read in the plan's own order. The
+	// whole plan was, on every step of the hand, half the time of a step
+	// on a plan of 80 clips.
+	c, err := orderedClip(s.data, clipID)
 	if err != nil {
 		return Shaped{}, err
 	}
