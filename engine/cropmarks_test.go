@@ -751,9 +751,10 @@ func TestAKeyframeACutOrATrimCoversIsCarriedOnTheFrameAfter(t *testing.T) {
 
 // A cut removed with a double-click leaves every keyframe where it
 // stood, Tim's report of 13 November: the one the cut carried stays on
-// the frame after where the cut was, and the crop of what played before
-// is the crop that plays now. A keyframe the cut kept out of sight comes
-// back on its own moment, with the part it is in. A diamond A, a diamond
+// the frame after where the cut was, and the crop from there on is the
+// crop that played. No glide runs across the cut here, so the crop
+// before it holds too. A keyframe the cut kept out of sight comes back
+// on its own moment, with the part it is in. A diamond A, a diamond
 // B and a circle X in the cut, a circle Y after it.
 func TestRemovingACutLeavesTheKeyframesWhereTheyStand(t *testing.T) {
 	t.Parallel()
@@ -793,9 +794,10 @@ func TestRemovingACutLeavesTheKeyframesWhereTheyStand(t *testing.T) {
 	}
 }
 
-// Only a cut the pieces after hold whole, in one piece or in pieces
-// that meet, leaves its carried keyframe where it stood. A cut narrowed,
-// or one a trim takes in, carries on as it did.
+// Only a cut put back, one the clip no longer has and the pieces after
+// hold whole, in one piece or in pieces that meet, leaves its carried
+// keyframe where it stood. A cut narrowed, moved whole or taken in by a
+// trim carries on as it did.
 func TestOnlyACutPutBackLeavesItsKeyframeWhereItStood(t *testing.T) {
 	t.Parallel()
 	before := []Segment{{Start: 10, End: 12}, {Start: 14, End: 20}}
@@ -810,6 +812,7 @@ func TestOnlyACutPutBackLeavesItsKeyframeWhereItStood(t *testing.T) {
 		{"put back in two pieces that meet", []Segment{{Start: 10, End: 13}, {Start: 13, End: 20}}, []CropMark{{At: 14, X: 300}}, true},
 		{"narrowed", []Segment{{Start: 10, End: 12.5}, {Start: 14, End: 20}}, marks, false},
 		{"taken in by the start", []Segment{{Start: 14, End: 20}}, marks, false},
+		{"moved whole clear of where it was", []Segment{{Start: 10, End: 15}, {Start: 17, End: 20}}, marks, false},
 	} {
 		got, moved := keptWhereTheyStand(at25, before, h.after, append([]CropMark(nil), marks...))
 		if !reflect.DeepEqual(got, h.want) || moved != h.moved {
