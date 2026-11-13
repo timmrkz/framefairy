@@ -914,8 +914,8 @@ export const steps = {
     );
     walk.picked = { name: arg, ...read };
   },
-  // ["channel", name]  the Updates page's list says this, in ten seconds
-  //                    at most
+  // ["channel", name]  the Updates page's list comes to say this, waited
+  //                    for on the page
   async channel(walk, arg) {
     const { page } = walk;
     const now = await updatesComeTo(page, (u) => u.channel === arg);
@@ -945,8 +945,8 @@ export const steps = {
     }
   },
   // ["status", head, more]
-  //                    the line under the build comes to say this head, in
-  //                    ten seconds at most, and more somewhere after it
+  //                    the line under the build comes to say this head,
+  //                    waited for on the page, and more somewhere after it
   async status(walk, arg) {
     const { page } = walk;
     const [head, more] = [arg].flat();
@@ -1093,8 +1093,9 @@ export const steps = {
   },
   // ["relaunch", how]  the line under the build offers Relaunch, "waits"
   //                    greyed out with its title saying it waits for the
-  //                    search, and "ready" usable again, within a minute,
-  //                    and the line wears the card's own background
+  //                    search, and "ready" usable again once the page
+  //                    says so, and the line wears the card's own
+  //                    background
   async relaunch(walk, arg) {
     const { page } = walk;
     const waits = arg === "waits";

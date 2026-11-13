@@ -59,6 +59,7 @@
   import { playheadClock, type About } from "../lib/playhead";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
+  import { suggestedCount } from "../lib/count";
   import { asleep, asking, keysElsewhere, typing, workspaceKey } from "../lib/keys";
   import {
     secondThoughts,
@@ -248,7 +249,7 @@
   // Go sends at which it rises, and what Go answers when the hand lets go.
   const dragged = $derived(drag && win && Math.abs(drag.to - drag.from - (win.to - win.from)) > 0.001 ? drag.to - drag.from : null);
   const typed = $derived(dragged === null ? (win?.typed ?? 0) : 0);
-  const suggested = $derived(dragged === null ? (win?.suggested ?? 1) : 1 + (win?.steps ?? []).filter((at) => at <= dragged).length);
+  const suggested = $derived(dragged === null ? (win?.suggested ?? 1) : suggestedCount(win?.steps ?? [], dragged));
   const count = $derived(dragged === null ? (win?.count ?? 1) : suggested);
   const clipsAtMost = $derived(win?.clipsAtMost ?? 30);
   const shortestAtMost = $derived(win?.shortestAtMost ?? 180);
