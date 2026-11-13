@@ -110,7 +110,9 @@ Each event is a constant in that file whose type says what it carries,
 no name is written anywhere else on the Go side. Go tests read `api.ts`
 and hold to it the names, both ways, the type each listener reads, and
 the fields of every type an event or a call carries, both ways, with
-whether `api.ts` may find them missing.
+whether `api.ts` may find them missing. `api.ts` declares one interface
+to a name, so the licences' notices are `LicenceNotice`, and a word the
+workspace lights, which Go never sends, is `LitWord`.
 
 ```
 lib/api.ts                      the window: Events.On, call<T>
@@ -134,6 +136,11 @@ the parts                       the queue, the news, the report, the
 - `api.ts` keeps writing its types by hand. The test is what keeps them
   true. If the test grows rules of its own for every new kind of type,
   that is the sign 2 should be taken up again.
+- The bridge finds a method by the whole name Wails gives it in the app,
+  `main.FrameFairy.<Method>`, and `bindings_test.go` holds `api.ts` to
+  the same. The bridge cannot call through Wails' own dispatch, its
+  `Bindings`, which log through the app Wails makes and so cannot be
+  made without it, see 4.
 - The menu, the licence link and the title bar of a window still tell
   the window only in the app. They go through the same constants, and
   the test checks that each is sent somewhere.
