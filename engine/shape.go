@@ -222,7 +222,6 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 		case "start":
 			start = toward(first, g.From, g.landStart(words, g.From, keepPause))
 			start = math.Min(start, end-MinClip)
-			start = math.Max(start, end-MaxClipSpan)
 		case "end":
 			end = toward(last, g.From, g.landEnd(words, goes, g.From, keepPause))
 			end = math.Max(end, start+MinClip)
@@ -232,7 +231,6 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 			if over := g.Frames.End(); over > 0 {
 				end = math.Min(end, over)
 			}
-			end = math.Min(end, start+MaxClipSpan)
 		case "both":
 			start, end = g.landStart(words, g.From, keepPause), g.landEnd(words, nil, g.To, keepPause)
 			if over := g.Frames.End(); over > 0 {
@@ -240,10 +238,6 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 			}
 			if end-start < MinClip {
 				return nil, -1, renderErr("a clip needs at least one second")
-			}
-			if end-start > MaxClipSpan {
-				return nil, -1, renderErr("a clip can span at most %s minutes of the video",
-					num.Fixed(MaxClipSpan/60, 0))
 			}
 		default:
 			return nil, -1, renderErr("a clip has a start and an end, not %s", runes.Scrub(g.Edge, 20))

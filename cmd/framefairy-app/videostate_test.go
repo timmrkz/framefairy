@@ -400,6 +400,25 @@ func TestAJobsNewsComesOnceItsVideosStateIsDue(t *testing.T) {
 // news. It waits for news of every stamp, so it is not for a test that
 // stamps a job with no news, as shutDown in jobs.go does: that would
 // wait until go test's -timeout.
+// whole is a state sent made whole with the clips of the one sent before
+// it, the way the window makes it, see frontend/src/lib/sent.ts.
+func whole(was, sent VideoState) VideoState {
+	if sent.Kept {
+		sent.Clips, sent.Kept = was.Clips, false
+		return sent
+	}
+	had := map[string]ClipEntry{}
+	for _, c := range append(was.Clips, sent.Clips...) {
+		had[c.Key] = c
+	}
+	sent.Clips = []ClipEntry{}
+	for _, m := range sent.Order {
+		sent.Clips = append(sent.Clips, had[m.Key])
+	}
+	sent.Order = nil
+	return sent
+}
+
 func heardStates(d *desk) func(path string) (VideoState, uint64) {
 	var mu sync.Mutex
 	out := sync.NewCond(&mu)
@@ -411,7 +430,7 @@ func heardStates(d *desk) func(path string) (VideoState, uint64) {
 	}, func(v VideoState) {
 		mu.Lock()
 		defer mu.Unlock()
-		last[v.Video] = v
+		last[v.Video] = whole(last[v.Video], v)
 	})
 	svc.jobs.news = svc.told
 	emit := svc.jobs.emit
@@ -580,4 +599,86 @@ func TestAStateSaysHowEachSearchEnded(t *testing.T) {
 	if transcribed[0].Ended != engine.EndedFinding {
 		t.Errorf("a search stopped on a video heard to its end ended %q", transcribed[0].Ended)
 	}
+}
+
+// A state is sent with the clips the window was not sent as they are
+// now, and every clip by its key and its hash in order, so a video whose
+// work goes on without changing its clips sends a small state. A window
+// that lost track asks for every clip again.
+func TestAStateIsSentWithOnlyTheClipsThatChanged(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		clips := []ClipEntry{
+			{ClipView: engine.ClipView{ID: "a", Start: 10}, Key: "p.json/a"},
+			{ClipView: engine.ClipView{ID: "b", Start: 40}, Key: "p.json/b"},
+		}
+		var mu sync.Mutex
+		var sent []VideoState
+		news := newVideoNews(func(path string) (VideoState, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			return VideoState{Video: path, Clips: slices.Clone(clips)}, nil
+		}, func(v VideoState) {
+			mu.Lock()
+			defer mu.Unlock()
+			sent = append(sent, v)
+		})
+		t.Cleanup(news.stop)
+		// Each send, by the keys of the clips it holds and of its order.
+		send := func(change func()) (holds, order []string) {
+			mu.Lock()
+			if change != nil {
+				change()
+			}
+			mu.Unlock()
+			news.changed("v.mp4")
+			time.Sleep(time.Second) //nolint:forbidigo // synctest bubble
+			synctest.Wait()
+			mu.Lock()
+			defer mu.Unlock()
+			last := sent[len(sent)-1]
+			for _, c := range last.Clips {
+				if c.Hash == "" {
+					t.Errorf("the clip %s was sent with no hash", c.Key)
+				}
+				holds = append(holds, c.Key)
+			}
+			for _, m := range last.Order {
+				order = append(order, m.Key)
+			}
+			if last.Kept {
+				order = nil
+			}
+			return holds, order
+		}
+		steps := []struct {
+			name   string
+			change func()
+			holds  []string
+			kept   bool
+		}{
+			{"the first state", nil, []string{"p.json/a", "p.json/b"}, false},
+			{"nothing about the clips changed, so neither clips nor order", nil, nil, true},
+			{"one clip trimmed", func() { clips[1].End = 70 }, []string{"p.json/b"}, false},
+			{"a clip written before them", func() {
+				clips = append([]ClipEntry{{ClipView: engine.ClipView{ID: "c", Start: 1}, Key: "p.json/c"}}, clips...)
+			}, []string{"p.json/c"}, false},
+			{"a clip removed", func() { clips = clips[:2] }, nil, false},
+			{"the window asks for every clip", func() { news.sendWhole("v.mp4") }, []string{"p.json/c", "p.json/a"}, false},
+			{"nothing changed again", nil, nil, true},
+		}
+		for _, step := range steps {
+			holds, order := send(step.change)
+			mu.Lock()
+			var want []string
+			if !step.kept {
+				for _, c := range clips {
+					want = append(want, c.Key)
+				}
+			}
+			mu.Unlock()
+			if !slices.Equal(holds, step.holds) || !slices.Equal(order, want) {
+				t.Errorf("%s: the state holds %v in the order %v, want %v in the order %v", step.name, holds, order, step.holds, want)
+			}
+		}
+	})
 }

@@ -37,6 +37,7 @@
     intoWord,
     type Gesture,
     type ClipEntry,
+    type LitWord,
     type Word,
     type CaptionCue,
     type CropMark,
@@ -65,6 +66,7 @@
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
   import { rotationAt } from "../lib/rotate";
+  import { afterRest } from "../lib/rest";
 
   let {
     path,
@@ -143,7 +145,7 @@
     // reads as two words is two here and one there, so a word added by
     // hand is in this list and in no other, and a word a cut takes out is
     // in the transcript and never in this one.
-    lit?: Word[];
+    lit?: LitWord[];
     // Puts the playhead at a moment. A gesture about the clip itself, an
     // edge, a trim or a caption, says so, and the playhead is then on the
     // clip whatever the moment, and a step while the episode plays on the
@@ -214,7 +216,7 @@
     onshape?: (
       shape: {
         cues: CaptionCue[];
-        pieces: { start: number; end: number }[];
+        pieces: { start: number; end: number; part: number }[];
         track?: string;
         playhead?: number;
         framing?: Framing;
@@ -307,8 +309,8 @@
   // #759.
   let inPage = $state(false);
   let view = $state({ from: 0, to: 1 });
-  let words = $state<Word[]>([]);
-  let peaks = $state<number[]>([]);
+  let words = $state.raw<Word[]>([]);
+  let peaks = $state.raw<number[]>([]);
   let viewFor = "";
   // Whether a view has been read yet. It is state, because the effects
   // that read the view again as the waveform and the words grow return
@@ -931,6 +933,18 @@
     load(from, from + span);
   }
 
+  // A card on its way written as its clip is the same clip under a new
+  // key. While the hand is at work on the clip timeline, a view it moved,
+  // the playhead or an edge in its grip, the view stays where it is: laid
+  // out afresh, it moved under a hand already at work, Tim's report of 9
+  // November. Otherwise the clip is fitted as it is written, the way a
+  // clip made is: the card's view was fitted to where the clip was asked
+  // for, and the clip written stood off to one side, his report of 10
+  // November.
+  export function follow(from: string, to: string) {
+    if (viewFor === from && (held || scrubbing || gripping)) viewFor = to;
+  }
+
   // Where the timeline sits when nobody has moved it: the clip with a little
   // room around it, or the minute around the playhead.
   // A double-click fits the clip to the view, unless it lands on a cut, in
@@ -1066,7 +1080,7 @@
   function readSoon(how: "swiped" | "pinched") {
     swipedFrom ??= { ...view };
     clearTimeout(settle);
-    settle = setTimeout(() => {
+    settle = afterRest(() => {
       const was = swipedFrom;
       swipedFrom = null;
       if (was) said(`clip timeline: ${how} from ${was.from.toFixed(2)}–${was.to.toFixed(2)} s to ${view.from.toFixed(2)}–${view.to.toFixed(2)} s`, { video: path });
@@ -1118,27 +1132,49 @@
     readSoon(zooming ? "pinched" : "swiped");
   }
 
-  // A new clip gets a new view. A trimmed clip keeps it unless an edge left
-  // it. With no clip the view follows the playhead, so there is always a
-  // timeline saying where you are in the episode. A view moved by hand is
-  // left alone until the clip changes or the playhead leaves it.
+  // The edges of the clip as the view last saw them, so it can tell the
+  // edge that moved. Not state: the view reads them and nothing else.
+  let edgesSeen = { key: "", a: 0, b: 0 };
+
+  // A new clip gets a new view, fitted, and that is the only time the clip
+  // timeline zooms by itself. After that only the hand zooms it. An edge
+  // moved past the side of the view, by a drag or an undo, scrolls the view
+  // so the edge stands a tenth in, at the zoom it has, the way an editor's
+  // timeline scrolls with a trim. The view zoomed out to the whole clip
+  // instead, and a clip dragged long stood at a zoom where its caption
+  // blocks were too narrow to be drawn, and they all went, Tim's report of
+  // 10 November: "When I want to zoom, I will zoom." With no clip the view
+  // follows the playhead, so there is always a timeline saying where you
+  // are in the episode. A view moved by hand is left alone until the clip
+  // changes or the playhead leaves it.
   $effect(() => {
     if (waiting) return;
     if (clip && clip.segments.length) {
-      if (viewFor !== clip.key) {
-        fitView();
-        return;
-      }
-      if (held) return;
       // Inside the episode, the way the view is, or a clip that reached
       // past either end was never inside the view and was read again and
       // again, without end.
       const a = Math.max(0, clip.segments[0].start);
       const b = Math.min(duration, clip.segments[clip.segments.length - 1].end);
-      const pad = Math.max(8, (b - a) * 0.3);
-      if (a < view.from || b > view.to) {
-        load(Math.max(0, a - pad), Math.min(duration, b + pad));
+      const seen = untrack(() => edgesSeen);
+      const same = seen.key === clip.key;
+      edgesSeen = { key: clip.key, a, b };
+      if (viewFor !== clip.key) {
+        fitView();
+        return;
       }
+      if (!same) return;
+      const { from: lo, to: hi } = untrack(() => view);
+      const shown = hi - lo;
+      // Only the edge that moved, so a clip longer than the view is not
+      // chased from one end to the other.
+      let from: number;
+      if (a !== seen.a && a < lo) from = a - shown * 0.1;
+      else if (b !== seen.b && b > hi) from = b + shown * 0.1 - shown;
+      else return;
+      // At the end of the episode the view ends on its end, exactly.
+      const whole = Math.max(duration, shown);
+      const at = Math.max(0, Math.min(from, whole - shown));
+      load(at, at === whole - shown ? whole : at + shown);
       return;
     }
     // A view moved by hand stays where it was put, wherever the playhead
@@ -1603,20 +1639,93 @@
     return out;
   });
 
-  // A caption block is detail for working inside a clip, and it is drawn
-  // only while it can be read as a block: while the caption in the middle
-  // of the list is at least as wide as a block is tall. Narrower, its line
-  // has no room inside its padding and the blocks run into one smear, which
-  // says nothing about the captions and covers the waveform. Editors do the
-  // same with titles on a timeline: the detail comes in as there is room
-  // for it. The middle caption rather than the narrowest, so one short
-  // "Ja." does not take them all away.
+  // A caption block keeps its height and its line at every zoom, and only
+  // its width follows the zoom. One narrower than it is tall, 16 pixels,
+  // has no room for its line inside its padding and would vanish into the
+  // waveform, so instead it joins the block nearest to it, on whichever
+  // side the gap is smaller, and the two are drawn as one block. That goes
+  // on until every block is wide enough or the clip's captions are one
+  // block. Zoomed out, the lane shows phrases, and zoomed in, every caption
+  // is a block of its own again. The lane was hidden whole while the middle
+  // caption was narrower, and a clip zoomed out to stood bare, Tim's report
+  // of 10 November, and he picked joined blocks from the mockups.
   const captionLeast = 16;
-  const captionsReadable = $derived.by(() => {
-    if (!captionBlocks.length || !width) return false;
-    const wide = captionBlocks.map((b) => ((b.to - b.from) / span) * width).sort((a, b) => a - b);
-    return wide[Math.floor(wide.length / 2)] >= captionLeast;
+  type LaneBlock = {
+    key: string | number;
+    blocks: typeof shownBlocks;
+    from: number;
+    to: number;
+    parts: { from: number; to: number }[];
+  };
+  const laneBlocks = $derived.by((): LaneBlock[] => {
+    if (!shownBlocks.length || !width || !(span > 0)) return [];
+    const least = (captionLeast * span) / width;
+    // The caption whose edge is in the hand joins nothing, and nothing
+    // joins it, so the edge being dragged stays on screen under the hand.
+    const held = capDraft?.index;
+    type Group = { blocks: typeof shownBlocks; from: number; to: number };
+    const holds = (g: Group) => held !== undefined && g.blocks.some((b) => b.i === held);
+    // One pass from left to right: a block too narrow joins the one before
+    // it when that gap is the smaller, and is carried on to the next one
+    // otherwise, and what it joined is looked at again.
+    const groups: Group[] = [];
+    const join = (g: Group, b: Group) => {
+      g.blocks.push(...b.blocks);
+      g.from = Math.min(g.from, b.from);
+      g.to = Math.max(g.to, b.to);
+      return g;
+    };
+    let carried: Group | null = null;
+    shownBlocks.forEach((block, k) => {
+      const own: Group = { blocks: [block], from: block.from, to: block.to };
+      let g: Group | null = carried ? join(carried, own) : own;
+      carried = null;
+      const next = shownBlocks[k + 1];
+      while (g.to - g.from < least && !holds(g)) {
+        const before = groups.at(-1);
+        const left = before && !holds(before) ? g.from - before.to : Infinity;
+        const right = next && next.i !== held ? next.from - g.to : Infinity;
+        if (left === Infinity && right === Infinity) break;
+        if (left <= right) {
+          g = join(groups.pop()!, g);
+          continue;
+        }
+        carried = g;
+        g = null;
+        break;
+      }
+      if (g) groups.push(g);
+    });
+    return groups.map((g) => {
+      if (g.blocks.length === 1) {
+        const b = g.blocks[0];
+        return { key: b.c.first ?? `at ${b.i}`, blocks: g.blocks, from: b.from, to: b.to, parts: b.parts };
+      }
+      // Joined across a cut, the block is drawn on both sides of it and
+      // never over it, the way a single caption is.
+      const parts = cuePieces
+        .map((p) => ({ from: Math.max(g.from, p.start), to: Math.min(g.to, p.end) }))
+        .filter((part) => part.to > part.from);
+      const first = g.blocks[0];
+      return {
+        key: `${first.c.first ?? `at ${first.i}`} joined`,
+        blocks: g.blocks,
+        from: g.from,
+        to: g.to,
+        parts: parts.length ? parts : [{ from: g.from, to: g.to }],
+      };
+    });
   });
+
+  // The word of a lane block the playhead is on, see wordHere, from
+  // whichever of its captions it is on.
+  function laneWordHere(g: LaneBlock): number {
+    for (const b of g.blocks) {
+      const w = wordHere(b);
+      if (w !== -2) return w;
+    }
+    return -2;
+  }
 
   // The last word of a caption to have begun, counted through its lines,
   // or -1 before its first. The block of the caption shown is drawn afresh
@@ -1702,10 +1811,14 @@
 
   // A caption block puts the playhead on its first word and picks it, so
   // delete removes it.
+  // A joined block puts it on the first word of its first caption and
+  // picks nothing, since delete would take several captions the lane does
+  // not show apart. Zoomed in, each is a block to pick again.
   function captionGrip(i: number): Grip | null {
     const b = shownBlocks.find((x) => x.i === i);
     if (!b) return null;
-    if (onremovecaption && !locked && b.c.first !== undefined) picked = b.c.first;
+    const joined = (laneBlocks.find((g) => g.blocks[0].i === i)?.blocks.length ?? 1) > 1;
+    if (onremovecaption && !locked && b.c.first !== undefined && !joined) picked = b.c.first;
     return { at: firstWordOf(b.i, b.c) ?? b.from, about: "clip" };
   }
 
@@ -2146,9 +2259,10 @@
           data-edge="end"
         ></div>
       {/if}
-      {#if captionsReadable}
+      {#if laneBlocks.length}
         <!-- The captions across the middle of the track, each a block from
-             where it appears to where it goes. -->
+             where it appears to where it goes, and captions too narrow to
+             be seen joined into one block, see laneBlocks. -->
         <div
           class="captions"
           class:arriving
@@ -2159,11 +2273,12 @@
                which no cut moves, and not by its place in the list: a cut
                that takes a caption out before it gives it another place, and
                the block under the playhead was drawn afresh and popped. -->
-          {#each shownBlocks as b (b.c.first ?? `at ${b.i}`)}
+          {#each laneBlocks as g (g.key)}
             <!-- A press puts the playhead on the caption's first word, where
                  the video preview shows it spoken. That is where it appears,
                  except for the first caption of a clip, which is on screen
-                 from the clip's first frame, before its first word. -->
+                 from the clip's first frame, before its first word. A joined
+                 block puts it on its first caption's. -->
             <!-- A block takes no focus. The keys walk the words wherever the
                  focus is, and a block that kept it from a click wore the
                  focus ring the moment a key was pressed, round a caption the
@@ -2171,56 +2286,63 @@
             <!-- Drawn afresh on every word of the caption shown, which is what
                  starts its pop again. A key on the list would not do it: the
                  list is only looked at again when the captions change. -->
-            {#key wordHere(b)}
-              {#each b.parts as part, k (k)}
+            {#key laneWordHere(g)}
+              {#each g.parts as part, k (k)}
                 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
                 <div
                   class="caption"
-                  class:showing={wordHere(b) !== -2}
-                  class:picked={b.c.first !== undefined && picked === b.c.first}
-                  data-first={b.c.first}
-                  style="left: {x(part.from)}%; width: calc({Math.max(x(part.to) - x(part.from), 0)}% - 2px); --i: {b.i}"
+                  class:showing={laneWordHere(g) !== -2}
+                  class:picked={g.blocks.length === 1 && g.blocks[0].c.first !== undefined && picked === g.blocks[0].c.first}
+                  data-first={g.blocks[0].c.first}
+                  data-joined={g.blocks.length > 1 ? g.blocks.length : undefined}
+                  style="left: {x(part.from)}%; width: calc({Math.max(x(part.to) - x(part.from), 0)}% - 2px); --i: {g.blocks[0].i}"
                   role="button"
-                  title={onremovecaption && !locked
-                    ? "Put the playhead where this caption appears. Delete then removes it."
-                    : "Put the playhead where this caption appears"}
+                  title={g.blocks.length > 1
+                    ? `${g.blocks.length} captions, too close to show apart at this zoom. Put the playhead where the first appears.`
+                    : onremovecaption && !locked
+                      ? "Put the playhead where this caption appears. Delete then removes it."
+                      : "Put the playhead where this caption appears"}
                   data-grip="caption"
-                  data-index={b.i}
+                  data-index={g.blocks[0].i}
                 ><i></i></div>
               {/each}
             {/key}
           {/each}
         </div>
+        <!-- A joined block has the edges of its first and last caption, the
+             edges inside it are in no place a hand could tell apart. -->
         {#if !locked && oncaptiontime && !shapedShown}
-          {#each shownBlocks as b (b.i)}
+          {#each laneBlocks as g (g.key)}
+            {@const first = g.blocks[0]}
+            {@const last = g.blocks[g.blocks.length - 1]}
             <div
               class="capedge start"
-              class:active={capDraft?.index === b.i && capDraft.edge === "start"}
-              style="left: {x(b.from)}%"
+              class:active={capDraft?.index === first.i && capDraft.edge === "start"}
+              style="left: {x(first.from)}%"
               role="slider"
               tabindex="-1"
-              aria-label="When caption {b.i + 1} appears"
-              aria-valuenow={b.c.start}
-              title={b.c.startMoved
+              aria-label="When caption {first.i + 1} appears"
+              aria-valuenow={first.c.start}
+              title={first.c.startMoved
                 ? "When this caption appears, moved from where its words put it. Drag to move it, and double-click to put it back."
                 : "When this caption appears. Drag to move it."}
               data-grip="capedge"
-              data-index={b.i}
+              data-index={first.i}
               data-edge="start"
             ></div>
             <div
               class="capedge end"
-              class:active={capDraft?.index === b.i && capDraft.edge === "end"}
-              style="left: {x(b.to)}%"
+              class:active={capDraft?.index === last.i && capDraft.edge === "end"}
+              style="left: {x(last.to)}%"
               role="slider"
               tabindex="-1"
-              aria-label="When caption {b.i + 1} goes"
-              aria-valuenow={b.c.end}
-              title={b.c.endMoved
+              aria-label="When caption {last.i + 1} goes"
+              aria-valuenow={last.c.end}
+              title={last.c.endMoved
                 ? "When this caption goes, moved from where its words put it. Drag to move it, and double-click to put it back."
                 : "When this caption goes. Drag to move it."}
               data-grip="capedge"
-              data-index={b.i}
+              data-index={last.i}
               data-edge="end"
             ></div>
           {/each}

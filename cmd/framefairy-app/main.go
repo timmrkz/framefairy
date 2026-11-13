@@ -13,7 +13,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -73,16 +72,6 @@ func main() {
 	go st.machine.Fonts.Refresh()
 
 	var app *application.App
-	emit := func(u JobUpdate) {
-		if app != nil && toWindow(u) {
-			app.Event.Emit("job", u)
-		}
-	}
-	notify := func(episode string) {
-		if app != nil {
-			app.Event.Emit("episode", episode)
-		}
-	}
 	theLog.started()
 	svc := &FrameFairy{store: st, keeping: newKeeping()}
 	// The model is kept loaded while the app is open, and kept again
@@ -90,65 +79,21 @@ func main() {
 	// first loaded once a server the last run left behind is stopped,
 	// below.
 	st.changed = svc.keeping.ask
-	svc.jobs = newQueue(st, emit, notify)
+	svc.newReport()
+	// What the Go side tells the window goes through Wails' events, once
+	// the app is made, see events.go.
+	svc.tellWindow(emitterFunc(func(name string, data ...any) bool {
+		return app != nil && app.Event.Emit(name, data...)
+	}))
 	svc.jobs.searched = svc.keeping.ask
-	// A video's state is sent whole as its work goes on, see videostate.go.
-	svc.news = newVideoNews(func(path string) (VideoState, error) {
-		return svc.State(context.Background(), path)
-	}, func(v VideoState) {
-		if app != nil {
-			app.Event.Emit("video", v)
-		}
-	})
-	svc.jobs.news = svc.told
-	// A failure is said once, as it happens, see notice.go.
-	svc.jobs.notice = quietly(func(n Notice) {
-		if app != nil {
-			app.Event.Emit("notice", n)
-		}
-	})
-	svc.listening.say = quietly(func(d Dictation) {
-		if app != nil {
-			app.Event.Emit("dictation", d)
-		}
-	})
-	svc.listening.loud = quietly(func(n Loudness) {
-		if app != nil {
-			app.Event.Emit("loudness", n)
-		}
-	})
-	// The report window and its draft, see bugs.go. The draft is kept
-	// beside the settings.
-	svc.report = newReporting(st.machine, filepath.Join(st.dir, "report"))
-	svc.report.stop = svc.CancelListening
-	svc.report.told = func(open bool) {
-		if app != nil {
-			app.Event.Emit("report-window", open)
-		}
-	}
-	svc.report.said = func(d ReportDraft) {
-		if app != nil {
-			app.Event.Emit("report-draft", d)
-		}
-	}
 	// The log as Settings shows it, while Settings is open, as lines are
 	// written, about once a second at most. See watch in applog.go.
-	go theLog.watch(func(st LogStatus) {
-		if app != nil {
-			app.Event.Emit("applog", st)
-		}
-	}, func() <-chan time.Time { return time.After(time.Second) })
-	// How far the loudness is measured is in the video's state.
-	svc.levels = newMeasuring(svc.store.machine, svc.told)
+	go theLog.watch(func(st LogStatus) { appLogEvent.to(svc.tell, st) },
+		func() <-chan time.Time { return time.After(time.Second) })
 	// What changes in the folders of the videos, whoever changed it, is
 	// looked at as it happens, and every video once now, see reconcile.go.
 	// It comes once every field it can reach is set, since the watch hands
 	// a change on from a goroutine of its own from the first look on.
-	svc.setupNews = quietly(func(state SetupState) {
-		if app != nil {
-			app.Event.Emit("setup", state)
-		}
-	})
 	svc.watchTheDisk()
 	// The searches and renders that were cut off or failed the last time
 	// say so where their work was.
@@ -165,13 +110,9 @@ func main() {
 	// ends the app without asking, a signal from the terminal among them.
 	leave := &leaving{
 		asked: func() bool { return svc.updates.relaunchingNow() },
-		say: func(what string) {
-			if app != nil {
-				app.Event.Emit("quit", what)
-			}
-		},
-		stop: quit,
-		quit: func() { app.Quit() },
+		say:   func(what string) { quitEvent.to(svc.tell, what) },
+		stop:  quit,
+		quit:  func() { app.Quit() },
 	}
 
 	app = application.New(application.Options{
@@ -209,11 +150,11 @@ func main() {
 		svc.openedWith(e.Context().URL())
 	})
 	svc.updates = newUpdating(app.Updater, app.Quit, st, svc.jobs.closeIfIdle, func(u UpdateState) {
-		app.Event.Emit("updates", u)
+		updatesEvent.to(svc.tell, u)
 	})
-	app.Menu.Set(appMenu(app, func() {
+	app.Menu.Set(appMenu(app, svc.tell, func() {
 		go svc.updates.checkNow()
-		app.Event.Emit("show-updates", nil)
+		showUpdatesEvent.to(svc.tell)
 	}))
 	// The commit of the build on the Updates page is a link, so a right
 	// click on it offers what a right click on a link offers in Safari.
@@ -273,9 +214,9 @@ func main() {
 		files := e.Context().DroppedFiles()
 		// Deciding whether a picture can be decoded takes a moment for
 		// each video, which is not the window's to wait on.
-		go func() { app.Event.Emit("dropped", svc.dropFiles(files)) }()
+		go func() { droppedEvent.to(svc.tell, svc.dropFiles(files)) }()
 	})
-	svc.chrome = watchChrome(app, svc.window, "app")
+	svc.chrome = watchChrome(svc.tell, svc.window, "app")
 	freeRefresh(svc.window)
 	keepDrawing(svc.window)
 	watchSight(svc.window)
@@ -288,7 +229,7 @@ func main() {
 	})
 	svc.report.make = func(closed func()) (front, shut func()) {
 		return openReportWindow(app, svc.window, svc.report, closed, func(w *application.WebviewWindow) {
-			svc.reportChrome.Store(watchChrome(app, w, "report"))
+			svc.reportChrome.Store(watchChrome(svc.tell, w, "report"))
 		})
 	}
 
@@ -376,6 +317,8 @@ func (libraryError) Is(target error) bool { return target == fs.ErrNotExist }
 // FrameFairy is everything the interface can ask for.
 type FrameFairy struct {
 	app *application.App
+	// What the window is told through, see tellWindow.
+	tell emitter
 	// The app's only window, kept so the bar can ask macOS where it put
 	// the title bar and its buttons, and the watch that follows them.
 	window *application.WebviewWindow

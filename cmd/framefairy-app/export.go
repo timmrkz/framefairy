@@ -13,10 +13,12 @@ import (
 
 	"framefairy/engine"
 	"framefairy/engine/fileio"
+	"framefairy/engine/timed"
 )
 
 // Transcribe whole video and Export transcript, the two items about the
-// words of a video in its menu in the sidebar, issue #432.
+// words of a video in its menu in the sidebar, issue #432, and the part of
+// a clip not heard yet, heard by itself, issue #745.
 
 // Transcribe hears the whole video to its end, with no search after:
 // Transcribe video in its menu. It is a job like a search, with a record,
@@ -31,18 +33,123 @@ import (
 // carried on behind a search by itself, the two needed a menu nobody could
 // read.
 func (s *FrameFairy) Transcribe(path string) Job {
-	label := jobLabel(engine.JobTranscribe, false)
+	label := jobLabel(engine.JobRecord{Kind: engine.JobTranscribe})
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobTranscribe, label, notInLibrary)
 	}
 	if !s.jobs.makeWayForTranscribe(path) {
 		return s.jobs.refuse(path, engine.JobTranscribe, label, errClipsFirst)
 	}
-	return s.jobs.addSteps(path, engine.JobTranscribe, label, true, func(j *Job) {
-		j.JobRecord.ID = engine.TranscribeID
+	return s.transcribe(path, timed.Window{}, false)
+}
+
+// transcribe queues the video's transcription of a part, the whole video
+// to its end for a part with no end, see engine.Project.TranscribeJob.
+// around says the part is the stretch kept heard around a clip, see
+// partToHear. The whole video, a part of a clip and the stretch around a
+// clip each have their record, and run side by side: lanes.go says which
+// hears first.
+func (s *FrameFairy) transcribe(path string, part timed.Window, around bool) Job {
+	rec := engine.TranscribeRecord(part, around)
+	// One that stopped is taken up by this one, which writes the record
+	// again in its place.
+	s.jobs.settle(path, engine.JobTranscribe, rec.ID)
+	return s.jobs.addSteps(path, engine.JobTranscribe, jobLabel(rec), true, func(j *Job) {
+		j.JobRecord.ID, j.From, j.To = rec.ID, rec.From, rec.To
 	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
-		return "", p.TranscribeJob(ctx, host)
+		return "", p.TranscribeJob(ctx, part, around, host)
 	})
+}
+
+// The stretch kept heard on each side of a clip made by hand, so an edge
+// dragged out finds its words there already, and how short a side gets
+// before it is heard again, in seconds, see engine.ClipAround. Tim on
+// #745: nobody using the app should wait for the transcription. Each time
+// is 30 s of audio or more, which the speech model hears in a second or
+// two on his Mac, while an edge is dragged through the 30 s still heard.
+const (
+	aroundClip  = 60.0
+	aroundLeast = 30.0
+)
+
+// hearChosen has the clip chosen heard, by itself, the way a video is
+// heard as it is added, issue #745: whatever of the clip is not heard
+// yet, which an edge dragged out, a cut put back, an undo or a redo can
+// bring in, and, for a clip made by hand, a stretch around it. st is the
+// state of the video just read, see State, duration the video's length,
+// and partToHear says what is heard.
+func (s *FrameFairy) hearChosen(path string, st VideoState, duration float64) {
+	if s.jobs == nil {
+		return
+	}
+	for _, around := range []bool{false, true} {
+		part, ok := partToHear(st, duration, around)
+		if !ok {
+			continue
+		}
+		msg := "the part of the clip chosen not heard yet is heard"
+		if around {
+			msg = "the stretch around the clip chosen is heard"
+		}
+		theLog.line(zerolog.InfoLevel, "app").Str("video", filepath.Base(path)).Str("clip", st.Chosen).
+			Float64("from", part.Start).Float64("to", part.End).Msg(msg)
+		s.transcribe(path, part, around)
+	}
+}
+
+// partToHear is what to hear now for the clip chosen in st: what of the
+// clip is not heard yet, or with around the stretch around a clip made by
+// hand, see engine.ClipAround. Somebody waits on the first, so it goes
+// ahead of the searches and of the stretch, see lanes.go. The stretch is
+// heard once the clip is heard whole. A clip a search found lies in the
+// window the search heard. A video never heard is the first search's to
+// hear.
+//
+// While one is heard, the next of its kind waits for the state read once
+// it ends. A part that failed is not asked for again, or every state
+// would ask and fail again, and neither is one stopped by hand. One the
+// app was closed on carries on.
+func partToHear(st VideoState, duration float64, around bool) (timed.Window, bool) {
+	if st.Status.Missing || len(st.Status.Heard) == 0 || st.Chosen == "" {
+		return timed.Window{}, false
+	}
+	var part timed.Window
+	found := false
+	for _, c := range st.Clips {
+		if c.Key != st.Chosen {
+			continue
+		}
+		part, found = engine.ClipUnheard(c.ClipView, st.Status.Heard)
+		if around {
+			if found || !strings.HasPrefix(c.Key, engine.HandPlanName+"/") {
+				return timed.Window{}, false
+			}
+			part, found = engine.ClipAround(c.ClipView, st.Status.Heard, duration, aroundClip, aroundLeast)
+		}
+	}
+	if !found {
+		return timed.Window{}, false
+	}
+	want := engine.HearsPart
+	if around {
+		want = engine.HearsAround
+	}
+	var last *Job
+	for i, j := range st.Jobs {
+		hears := j.Hears()
+		// The stretch waits for the clip's own part too.
+		if j.going() && (hears == want || (around && hears == engine.HearsPart)) {
+			return timed.Window{}, false
+		}
+		if hears == want && (last == nil || j.Seq > last.Seq) {
+			last = &st.Jobs[i]
+		}
+	}
+	if last != nil && (last.State == JobFailed || last.State == JobStopped) &&
+		last.From <= part.Start && last.To >= part.End {
+		return timed.Window{}, false
+	}
+	return part, true
 }
 
 // errClipsFirst is Transcribe video asked for while the work on the

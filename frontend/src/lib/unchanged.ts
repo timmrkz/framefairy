@@ -1,3 +1,5 @@
+import { equal } from "./equal";
+
 // A list read again, with every item the read says is as it was kept as
 // the very same item. What depends on an item, the captions of the clip on
 // screen above all, is worked out again when the item is a new one, so an
@@ -9,6 +11,6 @@ export function unchanged<T extends { key: string }>(was: T[], read: T[]): T[] {
   const before = new Map(was.map((c) => [c.key, c]));
   return read.map((c) => {
     const old = before.get(c.key);
-    return old && JSON.stringify(old) === JSON.stringify(c) ? old : c;
+    return old && equal(old, c) ? old : c;
   });
 }

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -767,6 +768,122 @@ func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 	stoppedKeepsWhatItHeard(t, fakeRecognizer{&calls})
 }
 
+// A hearing stopped while its last piece is heard keeps only what it
+// heard, and says it was stopped. The last piece is heard after the audio
+// has been read, and the stretch around a clip made by hand is taken back
+// by the part of the clip a drag brings in, issue #745. Stopped there,
+// the piece's words were let go and the whole stretch was still written
+// down as heard, so a patch of the clip had no captions and was never
+// heard again, Tim's report of 11 November.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func TestAHearingStoppedOnItsLastPieceKeepsOnlyWhatItHeard(t *testing.T) {
+	t.Parallel()
+	t.Run("one copy", func(t *testing.T) {
+		t.Parallel()
+		stoppedOnLastPiece(t, func(r Recognizer) Recognizer { return r })
+	})
+	t.Run("side by side", func(t *testing.T) {
+		t.Parallel()
+		stoppedOnLastPiece(t, func(r Recognizer) Recognizer { return &sideBySide{inner: r, copies: 4} })
+	})
+}
+
+// stoppedOnLastPiece is TestAHearingStoppedOnItsLastPieceKeepsOnlyWhatItHeard
+// with the speech model as copies makes it. It hears in the order Tim ran
+// into: the stretch around a clip is stopped on its last piece, the part a
+// drag brings in is heard beside it, and then the whole video. After each
+// hearing, nothing written down as heard may be without words.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func stoppedOnLastPiece(t *testing.T, copies func(Recognizer) Recognizer) {
+	t.Helper()
+	source := testEpisode(t, "70")
+	model := t.TempDir()
+	// hear hears span, stopped while it hears the given piece, counted
+	// from 1, or not at all for 0, and says in how many pieces it heard.
+	hear := func(span timed.Window, piece int32) (int32, error) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var calls int32
+		rec := &stopsOnPiece{inner: fakeRecognizer{&calls}, piece: piece, stop: cancel}
+		e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+		e.checkpointEvery = time.Hour
+		e.OpenRecognizer = func(string) (Recognizer, error) { return copies(rec), nil }
+		base := DefaultOptions()
+		base.ASRModel = model
+		err := NewProject(e, source, base).Hear(ctx, span)
+		return rec.n.Load(), err
+	}
+
+	// 40 s and the audio on either side is two pieces, the second the
+	// last, heard after the reading ends. It is stopped while it is heard.
+	n, err := hear(timed.Window{Start: 0, End: 40}, 2)
+	if err == nil {
+		t.Error("a hearing stopped on its last piece finished")
+	}
+	if n != 2 {
+		t.Fatalf("heard in %d pieces, want 2", n)
+	}
+	heardHasWords(t, "stopped on its last piece", source, model)
+	if gaps := Unheard(disk, source, model, timed.Window{Start: 0, End: 40}); len(gaps) == 0 {
+		t.Error("nothing is left to hear after the last piece was stopped")
+	}
+
+	if _, err := hear(timed.Window{Start: 20, End: 70}, 0); err != nil {
+		t.Fatalf("hearing the part beside it: %v", err)
+	}
+	heardHasWords(t, "the part beside it heard", source, model)
+	if _, err := hear(timed.Window{Start: 0, End: 70}, 0); err != nil {
+		t.Fatalf("hearing the whole video: %v", err)
+	}
+	heardHasWords(t, "the whole video heard", source, model)
+	if gaps := Unheard(disk, source, model, timed.Window{Start: 0, End: 70}); len(gaps) > 0 {
+		t.Errorf("left unheard %v", gaps)
+	}
+}
+
+// heardHasWords fails when a part written down as heard goes more than
+// 1.5 s without a word. The fake recogniser gives one every 0.6 s.
+//
+// On the real disk: it reads the transcript that hearing with ffmpeg wrote.
+func heardHasWords(t *testing.T, after, source, model string) {
+	t.Helper()
+	_, words, _, _ := readEpisodeTranscript(disk, source, model)
+	for _, part := range HeardParts(disk, source, model) {
+		prev := part[0]
+		for _, w := range words {
+			if w.Start < part[0]-0.01 || w.Start >= part[1] {
+				continue
+			}
+			if w.Start-prev > 1.5 {
+				t.Errorf("%s: heard %.2f to %.2f s, without words from %.2f to %.2f s", after, part[0], part[1], prev, w.Start)
+			}
+			prev = w.Start
+		}
+		if part[1]-prev > 1.5 {
+			t.Errorf("%s: heard %.2f to %.2f s, without words from %.2f s to its end", after, part[0], part[1], prev)
+		}
+	}
+}
+
+// stopsOnPiece stops the hearing while it hears a given piece, counted from 1.
+type stopsOnPiece struct {
+	inner Recognizer
+	piece int32
+	stop  func()
+	n     atomic.Int32
+}
+
+func (s *stopsOnPiece) Recognize(samples []float32, rate int) []Token {
+	if s.n.Add(1) == s.piece {
+		s.stop()
+	}
+	return s.inner.Recognize(samples, rate)
+}
+
+func (s *stopsOnPiece) Close() {}
+
 // stoppedKeepsWhatItHeard transcribes a test episode with rec, stops it
 // once more than 20 s are heard, and checks all of that was written down.
 // It is shared with TestHearingSideBySideStoppedKeepsWhatItHeard.
@@ -1166,6 +1283,83 @@ func TestATranscriptIsDoneWhenNothingIsLeftToHear(t *testing.T) {
 		}
 		if unheard := len(gapsIn(file.heard(), timed.Window{Start: 0, End: 600})) == 0; unheard != c.done && len(c.parts) > 0 {
 			t.Errorf("%s: done says %v and what is left to hear disagrees", c.name, c.done)
+		}
+	}
+}
+
+// A clip says what of its pieces is not heard yet, and the part of the
+// episode to hear for all its captions, from the first such part to the
+// last. A clip dragged out over a part nothing heard showed no captions
+// there, issue #745.
+func TestAClipSaysWhatOfItIsNotHeardYet(t *testing.T) {
+	t.Parallel()
+	heard := [][2]float64{{0, 100}, {150, 200}, {260, 300}}
+	piece := func(start, end float64) SegmentView { return SegmentView{Start: start, End: end} }
+	for _, c := range []struct {
+		name   string
+		pieces []SegmentView
+		gaps   []timed.Window
+		hear   timed.Window
+	}{
+		{"heard whole", []SegmentView{piece(20, 50)}, nil, timed.Window{}},
+		{"its start dragged back past what was heard", []SegmentView{piece(120, 180)},
+			[]timed.Window{{Start: 120, End: 150}}, timed.Window{Start: 120, End: 150}},
+		{"its end dragged on past what was heard", []SegmentView{piece(170, 230)},
+			[]timed.Window{{Start: 200, End: 230}}, timed.Window{Start: 200, End: 230}},
+		{"over two parts heard and the gaps around them", []SegmentView{piece(90, 280)},
+			[]timed.Window{{Start: 100, End: 150}, {Start: 200, End: 260}}, timed.Window{Start: 100, End: 260}},
+		{"a cut over a gap needs none of it", []SegmentView{piece(80, 100), piece(150, 190)}, nil, timed.Window{}},
+		{"two pieces, each with a gap", []SegmentView{piece(90, 120), piece(190, 210)},
+			[]timed.Window{{Start: 100, End: 120}, {Start: 200, End: 210}}, timed.Window{Start: 100, End: 210}},
+		{"a sliver too short to hold a word", []SegmentView{piece(50, 100.05)}, nil, timed.Window{}},
+	} {
+		v := ClipView{Segments: c.pieces}
+		if got := v.Unheard(heard); !slices.Equal(got, c.gaps) {
+			t.Errorf("%s: not heard %v, want %v", c.name, got, c.gaps)
+		}
+		hear, ok := ClipUnheard(v, heard)
+		if hear != c.hear || ok != (c.gaps != nil) {
+			t.Errorf("%s: hears %v %v, want %v", c.name, hear, ok, c.hear)
+		}
+	}
+}
+
+// A clip keeps a stretch heard around it, topped up once a side is
+// short, both sides at once, so an edge dragged out finds its words
+// there, Tim on #745.
+func TestAClipKeepsAStretchHeardAroundIt(t *testing.T) {
+	t.Parallel()
+	clip := func(start, end float64) ClipView {
+		return ClipView{Start: start, End: end, Segments: []SegmentView{{Start: start, End: end}}}
+	}
+	for _, c := range []struct {
+		name  string
+		heard [][2]float64
+		clip  ClipView
+		hear  timed.Window
+	}{
+		{"made with O, heard back to before its start and not after", [][2]float64{{154, 200}}, clip(177, 200),
+			timed.Window{Start: 117, End: 260}},
+		{"short before it", [][2]float64{{154, 260}}, clip(177, 200), timed.Window{Start: 117, End: 154}},
+		{"short after it", [][2]float64{{100, 210}}, clip(177, 200), timed.Window{Start: 210, End: 260}},
+		{"enough on both sides", [][2]float64{{100, 270}}, clip(177, 200), timed.Window{}},
+		{"short on one side, not yet under half", [][2]float64{{140, 240}}, clip(177, 200), timed.Window{}},
+		{"under half after a drag, the other side topped up too", [][2]float64{{100, 240}}, clip(125, 200),
+			timed.Window{Start: 65, End: 260}},
+		{"at the start of the video", [][2]float64{{0, 100}}, clip(10, 40), timed.Window{}},
+		{"at its end, which caps it", [][2]float64{{200, 300}}, clip(270, 290), timed.Window{}},
+		{"a gap in it far from the clip", [][2]float64{{100, 140}, {145, 270}}, clip(177, 200), timed.Window{}},
+		{"a gap in it near the clip", [][2]float64{{100, 160}, {170, 270}}, clip(177, 200),
+			timed.Window{Start: 160, End: 170}},
+		{"the length not known", [][2]float64{{177, 200}}, clip(177, 200), timed.Window{}},
+	} {
+		duration := 300.0
+		if c.name == "the length not known" {
+			duration = 0
+		}
+		got, hear := ClipAround(c.clip, c.heard, duration, 60, 30)
+		if hear != (c.hear != timed.Window{}) || got != c.hear {
+			t.Errorf("%s: hears %v %v, want %v", c.name, hear, got, c.hear)
 		}
 	}
 }

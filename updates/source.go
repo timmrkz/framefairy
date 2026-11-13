@@ -46,9 +46,11 @@ type Source struct {
 	// a channel picked again has its build at once. Empty keeps nothing.
 	// See cache.go.
 	Cache string
-	// Retries is how long to wait before each new try when the channel
-	// list answers 404. Nil is listRetries.
-	Retries []time.Duration
+	// Wait is how a wait between two tries of a missing channel list
+	// passes, see listRetries. Empty, it is time.After. A test hands in
+	// one that is up at once and keeps what it was asked to wait, so the
+	// waits are checked and no test spends them.
+	Wait func(time.Duration) <-chan time.Time
 	// Copies are the addresses of the two copies of the list, read before
 	// URL, see ListCopies. Empty reads URL alone.
 	Copies []string
@@ -230,20 +232,20 @@ func (s *Source) fetchCopies(ctx context.Context) (List, error) {
 // 404. It is what a release written before the copies has, and what is
 // read while neither copy can be.
 func (s *Source) fetchRetrying(ctx context.Context) (List, error) {
-	waits := s.Retries
-	if waits == nil {
-		waits = listRetries
+	wait := s.Wait
+	if wait == nil {
+		wait = time.After
 	}
 	for try := 0; ; try++ {
 		list, err := s.fetch(ctx, s.URL)
 		var status *statusError
-		if !errors.As(err, &status) || status.code != http.StatusNotFound || try == len(waits) {
+		if !errors.As(err, &status) || status.code != http.StatusNotFound || try == len(listRetries) {
 			return list, err
 		}
 		select {
 		case <-ctx.Done():
 			return List{}, err
-		case <-time.After(waits[try]):
+		case <-wait(listRetries[try]):
 		}
 	}
 }

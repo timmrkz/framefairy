@@ -32,6 +32,7 @@
     type KeptWindow,
     type EpisodeStatus,
     type SourceView,
+    type LitWord,
     type Word,
     type Sentence,
     type VideoState,
@@ -93,6 +94,8 @@
   import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
   import { markOn } from "../lib/keyframes";
   import { toasts } from "../lib/toast.svelte";
+  import { afterRest } from "../lib/rest";
+  import { atOnce, onTick, type Headline } from "../lib/headline";
 
   let {
     path,
@@ -133,6 +136,7 @@
   const session = new EpisodeSession(
     untrack(() => path),
     jobs,
+    () => api.state(untrack(() => path)),
   );
   const status = $derived(session.status);
   let source = $state<SourceView | null>(null);
@@ -408,7 +412,7 @@
   let saying = $state(false);
   let sayTyped = $state("");
   let sayMatches = $state(0);
-  let sentences = $state<Sentence[] | null>(null);
+  let sentences = $state.raw<Sentence[] | null>(null);
   // Why the cards could not be read the last time they were asked for,
   // said in the list until the next read works.
   let sentencesFailed = $state<string | null>(null);
@@ -717,13 +721,9 @@
     return `${clock(heardIn(parts, start, end))} of ${clock(end - start)} transcribed`;
   }
 
-  // What the row says, held long enough to be read. The engine reports
-  // twice a second and a search goes through its steps faster than anyone
-  // reads, so a new headline waits until the one before has been there
-  // for a while: two and a half seconds, and one for the count of clips
-  // found going up. The fill and the time left follow at once, because
-  // they are the same thing moving on. It keeps its own time, in onMount,
-  // because an effect that reads the job is set up again on every report.
+  // What the row says, held long enough to be read, see lib/headline.ts.
+  // It keeps its own time, in onMount, because an effect that reads the
+  // job is set up again on every report.
   // The search's work for its own cards, once no row is left to say it,
   // see ClipList.
   const carry = $derived.by(() => {
@@ -732,9 +732,7 @@
     return { job: working.id, fraction, left, still: stopping };
   });
 
-  let shownNext = $state<{ what: string; left: string; fraction: number; still?: boolean } | null>(
-    null,
-  );
+  let shownNext = $state<Headline | null>(null);
   let shownSince = 0;
   // What a click brings about shows in the same frame as the click, not on
   // the timer's next tick: the row the Stopped note stood in was empty for
@@ -743,38 +741,15 @@
   // headline marked now, go straight in. Only the engine's own moving from
   // one step to the next waits, below.
   $effect(() => {
-    const want = next;
-    if (want && (!shownNext || (want.now && (want.what !== shownNext.what || !!want.still !== !!shownNext.still)))) {
-      shownSince = Date.now();
-      shownNext = { what: want.what, left: want.left, fraction: want.fraction, still: want.still };
-    } else if (!want && shownNext) {
-      shownNext = null;
-    }
+    const held = atOnce({ shown: shownNext, since: shownSince }, next, Date.now());
+    shownSince = held.since;
+    if (held.shown !== shownNext) shownNext = held.shown;
   });
   onMount(() => {
     const timer = window.setInterval(() => {
-      const want = next;
-      if (!want) {
-        shownNext = null;
-        return;
-      }
-      // Nothing new to say: the row stays as it is.
-      if (!want.what && shownNext) return;
-      const what = want.what;
-      if (!shownNext || what === shownNext.what) {
-        if (!shownNext) shownSince = Date.now();
-        shownNext = { ...want, what };
-        return;
-      }
-      // A step that lasted a moment, a turn that came at once, is not
-      // flashed up: a new headline waits a second.
-      const hold = 1000;
-      if (Date.now() - shownSince < hold) {
-        shownNext = { ...shownNext, left: want.left, fraction: Math.max(shownNext.fraction, want.fraction) };
-        return;
-      }
-      shownSince = Date.now();
-      shownNext = { ...want, what };
+      const held = onTick({ shown: shownNext, since: shownSince }, next, Date.now());
+      shownSince = held.since;
+      if (held.shown !== shownNext) shownNext = held.shown;
     }, 250);
     return () => window.clearInterval(timer);
   });
@@ -1677,7 +1652,13 @@
   // foot of the list. Where the playhead is not put anywhere, while the
   // video plays, it is on the clip from the moment the clip is there,
   // see claim in Player.svelte.
+  //
+  // The playhead follows the card's start only while it is where the app
+  // put it and no hand holds it. A hand that pressed the playhead while
+  // the card waited had it pulled out from under it to the clip's start
+  // as the clip's pieces came, Tim's report of 9 November, issue #767.
   let followingMade = "";
+  let followedTo = NaN;
   $effect(() => {
     const m = making;
     if (!m) return;
@@ -1687,17 +1668,27 @@
     const first = !followingMade.startsWith(`${m.key}:`);
     followingMade = mark;
     untrack(() => {
+      const ours = !handHolds && (first || Math.abs(time - followedTo) < 0.05);
       // The seek is a gesture about a clip the video preview does not have
       // yet, so the playhead is put on it after.
-      if (paused && Math.abs(time - start) > 0.05) {
+      if (paused && ours && Math.abs(time - start) > 0.05) {
         player?.seek(start);
         player?.claim();
       } else if (first) player?.claim();
+      if (ours) followedTo = start;
     });
     // After the card has slid open and the list has moved it, 200 ms and
     // 180 ms in ClipList.svelte.
-    setTimeout(showChosen, 240);
+    afterRest(showChosen, 240);
   });
+
+  // Whether a hand holds the playhead, on the clip timeline or the range
+  // picker, which the video preview is told so it shows each place alone.
+  let handHolds = false;
+  function holdPlayhead(held: boolean) {
+    handHolds = held;
+    player?.hold(held);
+  }
 
   function inOutKey(event: KeyboardEvent) {
     const out = event.key === "o" || event.key === "O";
@@ -1847,7 +1838,7 @@
 
   // The captions of the selected clip, as the render will draw them. Every
   // edit replaces the clip, so this follows along by itself.
-  let captions = $state<CaptionsView | null>(null);
+  let captions = $state.raw<CaptionsView | null>(null);
   // The clip the captions above are of. Until a clip just chosen has its
   // own, the video preview draws none rather than the last clip's at the
   // new clip's moments.
@@ -2053,7 +2044,7 @@
   // clip while the hand moves, the same one the timeline shows.
   let reshaped = $state<{
     cues: NonNullable<CaptionsView["captions"]>;
-    pieces: { start: number; end: number }[];
+    pieces: NonNullable<CaptionsView["pieces"]>;
     track?: string;
     playhead?: number;
     framing?: Framing;
@@ -2298,7 +2289,7 @@
     const pieces = current?.segments ?? [];
     if (!pieces.length || !captions?.captions?.length) return [];
     const frames = framedTrack ? (wordFrames?.frames ?? null) : null;
-    const out: Word[] = [];
+    const out: LitWord[] = [];
     for (const [i, cue] of captions.captions.entries()) {
       let k = 0;
       for (const line of cue.lines) {
@@ -2743,18 +2734,25 @@
   // its earliest, the clip beside one removed or one put back, the clip
   // an undo changed, or a clip made by hand that was written, whose card
   // was chosen. It is shown the way a hand's pick is, the playhead on it
-  // while the video is paused. Playing, a card that became its clip
-  // keeps the playhead, which is on the clip it was made on, written now
-  // under its own key, see claim in Player.svelte. Everything else the
+  // while the video is paused. A card that became its clip is the clip
+  // already on screen, written now under its own key: the playhead stays
+  // where it is, see claim in Player.svelte, and the clip timeline where
+  // the hand has it, see follow in ClipTimeline.svelte. Shown as a new
+  // pick, it put the clip in the middle of the clip timeline and the
+  // playhead on its start, under a hand already at work on its edge, Tim's
+  // report of 9 November. Everything else the
   // video's work changes, the clips a search wrote, how far the video is
   // heard, the window moved on, comes in the video's state, issue #606:
   // nothing waits for the work to end and reads the video again.
   const chose: Chose = (key, before, card) => {
     if (!opened) return;
+    if (card && card === before) {
+      player?.claim(before);
+      timeline?.follow(before, key);
+      void tick().then(() => showChosen());
+      return;
+    }
     void show(key, paused);
-    // A card written as its clip while it plays: the play goes on as a
-    // play of the clip.
-    if (card && card === before && !paused) player?.claim(before);
   };
   onMount(() => session.open(chose, onVideoState));
 
@@ -2899,7 +2897,7 @@
     onmark={select}
     playhead={time}
     onseek={seekTo}
-    onhold={(held) => player?.hold(held)}
+    onhold={holdPlayhead}
     dimmed={!onClip}
     locked={busy}
     {unheard}
@@ -3493,7 +3491,7 @@
         bind:drawn
         onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
         onahead={readAhead}
-        onhold={(held) => player?.hold(held)}
+        onhold={holdPlayhead}
         dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
         onwalkclip={walkClip}

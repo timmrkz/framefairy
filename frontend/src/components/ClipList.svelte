@@ -9,6 +9,7 @@
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
   import type { ClipNumbers } from "./ClipTimeline.svelte";
+  import { afterRest } from "../lib/rest";
 
   let {
     clips,
@@ -287,7 +288,7 @@
     // After a row has slid open or closed, 200 ms, so the block is
     // measured where it comes to rest.
     clearTimeout(showing);
-    showing = window.setTimeout(showWork, 220);
+    showing = afterRest(showWork, 220);
   });
   function showWork() {
     const scroller = list?.parentElement;

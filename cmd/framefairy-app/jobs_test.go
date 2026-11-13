@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -651,7 +651,20 @@ func (q *queue) untilNoneGoing() {
 // queue's lock is let go, so a job's queued and running could arrive the
 // other way round, and a window that kept the last one it heard showed a
 // finished job as waiting, for good.
+//
+// Each seed picks when each hand adds and calls off, on the clock of a
+// bubble, so a seed that fails comes the same way again. Hands that wake
+// at the same moment still run in the order Go's scheduler picks.
 func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
+	t.Parallel()
+	for seed := range uint64(8) {
+		t.Run(fmt.Sprint(seed), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) { newestNews(t, seed) })
+		})
+	}
+}
+
+func newestNews(t *testing.T, seed uint64) {
 	news := newJobNews()
 	q := newQueue(memoryStore(), func(u JobUpdate) {
 		if u.Job.Seq == 0 {
@@ -664,9 +677,10 @@ func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
 		p.Log().ProgressOf("working", 0.5, 1)
 		return "", nil
 	}
-	// Work that ends by itself unless it was called off by then.
+	// Work that ends by itself a moment later unless it was called off by
+	// then.
 	waiting := func(ctx context.Context, p *engine.Project) (string, error) {
-		runtime.Gosched()
+		time.Sleep(time.Millisecond) //nolint:forbidigo // synctest bubble
 		if ctx.Err() != nil {
 			return "", engine.ErrCancelled
 		}
@@ -677,7 +691,10 @@ func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			r := rand.New(rand.NewPCG(seed, uint64(g)))
 			for i := range 25 {
+				// The hand comes back in a moment its seed picks.
+				time.Sleep(time.Duration(r.IntN(3)) * time.Millisecond) //nolint:forbidigo // synctest bubble
 				episode := fmt.Sprintf("/eps/%d.mp4", (g+i)%5)
 				var j Job
 				switch i % 4 {
@@ -721,15 +738,20 @@ func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
 		return true
 	})
 	news.mu.Lock()
-	defer news.mu.Unlock()
 	for _, j := range q.list() {
 		heard := news.jobs[j.ID]
 		if heard.State != j.State {
-			t.Errorf("%s ended %s, and the newest news of it says %s", j.ID, j.State, heard.State)
+			t.Errorf("seed %d: %s ended %s, and the newest news of it says %s", seed, j.ID, j.State, heard.State)
 		}
 	}
 	if j := news.jobs[held.ID]; j.State != JobCancelled {
-		t.Errorf("the job called off while it ran ended %s, and the news says so", j.State)
+		t.Errorf("seed %d: the job called off while it ran ended %s, and the news says so", seed, j.State)
+	}
+	news.mu.Unlock()
+	// The app quits, so the timers that forget removed work end with the
+	// bubble.
+	if !q.shutDown() {
+		t.Errorf("seed %d: the jobs did not stop when the app quit", seed)
 	}
 }
 
@@ -794,9 +816,16 @@ func TestAJobKeepsItsLogInTheWorkFolder(t *testing.T) {
 // work added after with the reason. Before that, in each round, work is
 // added from several goroutines at once while Relaunch asks again and
 // again, for the race detector, and whenever Relaunch was told the queue
-// was idle, nothing may run or wait until it reopens.
+// was idle, nothing may run or wait until it reopens. The round picks when
+// each hand adds and when Relaunch asks, on the clock of a bubble, so a
+// round that fails comes the same way again, but for hands that wake at
+// the same moment, which run in the order Go's scheduler picks.
 func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 	t.Parallel()
+	synctest.Test(t, func(t *testing.T) { relaunchAfterWork(t) })
+}
+
+func relaunchAfterWork(t *testing.T) {
 	news := newJobNews()
 	q := newQueue(memoryStore(), func(u JobUpdate) { news.heard(u.Job) }, func(string) {})
 	// ended waits for the news that every job named has ended. A job's
@@ -841,8 +870,11 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 		var wg sync.WaitGroup
 		for hand := range 4 {
 			wg.Go(func() {
+				r := rand.New(rand.NewPCG(uint64(round), uint64(hand)))
 				<-start
 				for k := range n {
+					// The hand adds in a moment its round picks.
+					time.Sleep(time.Duration(r.IntN(3)) * time.Millisecond) //nolint:forbidigo // synctest bubble
 					job := q.add(fmt.Sprintf("/eps/%d.mp4", hand), kinds[(round+hand+k)%len(kinds)], "Work", brief)
 					switch {
 					case job.State != JobFailed:
@@ -870,6 +902,7 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 		// Relaunch asks again and again while the hands add, so the race
 		// detector sees the two at once. Whichever comes first, once it has
 		// found the queue idle nothing runs or waits until it reopens.
+		asks := rand.New(rand.NewPCG(uint64(round), 4))
 		start := make(chan struct{})
 		done, took := burst(round, 40, start)
 		close(start)
@@ -884,7 +917,8 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 				if idle && q.busy() {
 					t.Fatal("work ran or waited after Relaunch found the queue idle")
 				}
-				runtime.Gosched()
+				// It looks again a moment later, while the hands add.
+				time.Sleep(time.Duration(1+asks.IntN(2)) * time.Millisecond) //nolint:forbidigo // synctest bubble
 			}
 			reopen()
 		}
@@ -912,6 +946,9 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 	// Reopened, it takes work again.
 	if job := q.add("/eps/after.mp4", "render", "After", brief); job.State == JobFailed {
 		t.Errorf("work after the queue reopened was refused: %s", job.Error)
+	}
+	if !q.shutDown() {
+		t.Error("the jobs did not stop when the app quit")
 	}
 }
 
@@ -1067,7 +1104,7 @@ func TestAJobReachesTheWindowWithEverythingItsRecordSays(t *testing.T) {
 			Clips: []string{"c2"}, Step: engine.StepRendering, Asked: asked},
 		{ID: "clip-9", Kind: engine.JobClip, At: 95.5, Backward: true, Step: engine.StepFailed,
 			Error: "nobody speaks there", Asked: asked},
-		{ID: engine.TranscribeID, Kind: engine.JobTranscribe, From: 600, To: 1800,
+		{ID: engine.TranscribePartID, Kind: engine.JobTranscribe, From: 600, To: 1800,
 			Step: engine.StepStopped, Asked: asked},
 	} {
 		if err := engine.WriteJob(s.store.files, eps[0], rec); err != nil {
@@ -1083,7 +1120,7 @@ func TestAJobReachesTheWindowWithEverythingItsRecordSays(t *testing.T) {
 			"plan": "/home/tim/videos/talk.framefairy/logs/clips.json", "clips": []any{"c2"}},
 		"clip": {"label": "Make a clip", "state": "failed", "step": "failed", "at": 95.5, "backward": true,
 			"error": "nobody speaks there"},
-		"transcribe": {"label": "Transcribe whole video", "state": "stopped", "step": "stopped", "from": 600.0,
+		"transcribe": {"label": "Transcribe the clip", "state": "stopped", "step": "stopped", "from": 600.0,
 			"to": 1800.0, "lane": "hearing"},
 	}
 	ids := map[string]bool{}
@@ -1238,10 +1275,27 @@ func TestATranscriptionSaysItIsStoppingFromTheMomentItIsTold(t *testing.T) {
 	if held().Stopping {
 		t.Fatal("the transcription says it is stopping before it was told")
 	}
+	// The part of a clip, heard beside it, is not stopped: its clip
+	// would wait for words for good, issue #745.
+	partStarted, partLetGo := make(chan struct{}), make(chan struct{})
+	part := svc.jobs.addSteps(ep, engine.JobTranscribe, "Transcribe the clip", true, func(j *Job) {
+		j.JobRecord.ID, j.From, j.To = engine.TranscribePartID, 120, 150
+	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
+		close(partStarted)
+		<-partLetGo
+		return "", nil
+	})
+	<-partStarted
 	svc.jobs.stopTranscribing(ep, "a search")
 	if j := held(); j.State != JobRunning || !j.Stopping {
 		t.Errorf("told to stop, the transcription is %s, stopping %v", j.State, j.Stopping)
 	}
+	for _, j := range svc.jobs.list() {
+		if j.ID == part.ID && (j.State != JobRunning || j.Stopping || j.ctx.Err() != nil) {
+			t.Errorf("a search stopped the part of a clip too: %s, stopping %v", j.State, j.Stopping)
+		}
+	}
+	close(partLetGo)
 	close(letGo)
 	for j := range news {
 		if j.ID != job.ID || j.State == JobQueued || j.State == JobRunning {

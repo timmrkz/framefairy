@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { ask, caughtUp, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, pressPlay, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
-import { canLook, clickCard, clickedFromAhead, clock, onePiece, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
+import { canLook, clickCard, clickedFromAhead, onePiece, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
 export const steps = {
@@ -786,7 +786,7 @@ export const steps = {
     // made taller until the crop is as tall as the short.
     const tall = Number(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
       "stream=height", "-of", "csv=p=0", short]).toString().trim());
-    const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser(), still: still(seq), clock: clock(seq) })).page;
+    const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser(), still: still(seq) })).page;
     const canvasTall = () => sized.evaluate(() => document.querySelector(".screen canvas").height);
     for (let i = 0, high = 1000; i < 12 && (await canvasTall()) !== tall; i++) {
       high += Math.round((tall - (await canvasTall())) * 1.4) || Math.sign(tall - (await canvasTall()));
@@ -1555,7 +1555,7 @@ export const steps = {
       if (!it) return null;
       const style = getComputedStyle(it);
       const face = style.fontFamily.split(",")[0].replace(/["']/g, "").trim();
-      const fonts = await fetch("/call", { method: "POST", body: JSON.stringify({ name: "Fonts", args: [] }) })
+      const fonts = await fetch("/call", { method: "POST", body: JSON.stringify({ name: "main.FrameFairy.Fonts", args: [] }) })
         .then((r) => r.json())
         .catch(() => null);
       return {
@@ -1669,17 +1669,21 @@ export const steps = {
     walk.wrong = await wakeOnCaption(page);
     await watch.step("press", s);
   },
-  // ["layers late", ms]
+  // ["layers late", frames]
   //                    every caption layer the video preview asks the Go
-  //                    side for comes ms late, the way it does on a busy
-  //                    machine
+  //                    side for comes so many of the page's frames late,
+  //                    the way it does on a busy machine. Frames and not
+  //                    ms, so it is as late on any machine, in what the
+  //                    page draws meanwhile
   async "layers late"(walk, arg) {
     const { page } = walk;
-    await page.evaluate((ms) => {
+    await page.evaluate((n) => {
       const real = window.fetch;
+      const frame = window.__real?.frame ?? requestAnimationFrame.bind(window);
+      const frames = (left) => new Promise((done) => (left ? frame(() => frames(left - 1).then(done)) : done()));
       window.fetch = async (input, init) => {
         const answer = real(input, init);
-        if (String(input).startsWith("/frames/captions?")) await new Promise((r) => setTimeout(r, ms));
+        if (String(input).startsWith("/frames/captions?")) await frames(n);
         return answer;
       };
     }, arg);

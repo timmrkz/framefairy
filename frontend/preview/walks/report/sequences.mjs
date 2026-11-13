@@ -30,17 +30,18 @@ export default [
     // answer, 4 ms after the microphone opens on Tim's Mac and 46 ms at
     // most, and a walk in CI that read the notes at the microphone's
     // first news found none. This one holds the answer every time.
+    // Issue #792: Dictate pressed again while the Mac asks about the
+    // microphone leaves two answers on their way, and the start sound
+    // plays once, for the latest press, whose words then show.
     name: "The start sound plays once Dictate hears back, however late that is",
-    steps: [["bugs"], ["dictate", "start, answered late"], ["microphone moves"], ["dictate", "button"]],
-  },
-  {
-    // Issue #654. Each note of the start sound was started at a moment of
-    // its own, a hundredth of a second ahead, so a window that got to
-    // them after their end played nothing. The pair is one sound now,
-    // started once, so it plays whole and in order however late the
-    // window is.
-    name: "The start sound plays both notes in order, however late the window is to start it",
-    steps: [["bugs"], ["dictate", "start, sounded late"], ["dictate", "button"]],
+    steps: [
+      ["bugs"],
+      ["dictate", "start, answered late"],
+      ["microphone moves"],
+      ["dictate", "button"],
+      ["dictate", "asked, then again"],
+      ["dictate", "button"],
+    ],
   },
   {
     // Plan row 2.189. Tim undid what he typed while he talked, and Cmd+Y
@@ -660,11 +661,14 @@ export default [
     // Issue #362. Tim saw the buttons a size of their own, mostly much
     // wider than their words, and some of them growing past it on his
     // Mac. A button is as wide as the words it shows, whatever they are.
+    // And the light of the work it does runs on its line, not a pixel
+    // inside it, which Tim saw too.
     name: "every button is as wide as its words and no wider",
     steps: [
       ["buttons fit", ["Search", "Render"]],
       ["settings"],
       ["buttons fit", ["Choose…", "Check again"]],
+      ["beam on the line", ["CheckSetup", "Check again"]],
       ["updates", { from: "main", list: "main,pr-20" }],
       ["status", "A newer build is ready"],
       ["buttons fit", ["Relaunch"]],
@@ -782,14 +786,18 @@ export default [
   },
   {
     // Plan row 2.244. Report makes one zip with what was written and the
-    // pictures, and the next report starts empty.
+    // pictures, and the next report starts empty. Issue #792: Dictate
+    // stopped while the Mac still asks about the microphone holds up
+    // nothing, and Report makes the report.
     name: "Report makes one zip with the pictures, and the next report starts empty",
     steps: [
       ["bugs"],
       ["write", "It froze.", 0],
       ["attach", 2],
+      ["dictate", "asked"],
       ["report lines up"],
       ["report", 2],
+      ["microphone answered"],
       ["close report"],
       ["bugs"],
       ["pictures", 0],

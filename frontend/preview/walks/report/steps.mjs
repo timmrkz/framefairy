@@ -4,7 +4,7 @@
 // the step's argument, what the caption box showed before it and the step's
 // name. A sequence of any folder can take it. Below them the helpers only
 // these steps use. See docs/TESTING.md.
-import { ask, caughtUp, control, fromSidebar, holdClock, letClockGo, letHeld, letPageTimeGo, nextPaint, noDeadlines, pageUntil, runClock, seenUntil, settle, sidebarStill, slowDown } from "../bridge.mjs";
+import { ask, caughtUp, control, fromSidebar, hold, holdClock, letClockGo, letHeld, letPageTimeGo, nextPaint, noDeadlines, pageUntil, runClock, seenUntil, settle, sidebarStill, slowDown } from "../bridge.mjs";
 import { dropOn, standsAt, stillStands, toastSays, toastsSay, url } from "../common/steps.mjs";
 
 // The two notes of dictation, E5 and B5 in Hz, going up as it starts and
@@ -142,13 +142,6 @@ export const steps = {
             super(...a);
             told(`audio made, ${this.state}`);
             this.addEventListener("statechange", () => told(`audio ${this.state} at ${this.currentTime.toFixed(3)} s`));
-            // Settles once the audio's clock runs, which it does only
-            // after the click that woke it.
-            window.__running = new Promise((done) => {
-              const runs = () => this.state === "running" && done();
-              this.addEventListener("statechange", runs);
-              runs();
-            });
           }
           resume() {
             meant.set(this, "running");
@@ -210,34 +203,19 @@ export const steps = {
           for (const w of waiting.filter(has)) w.done();
           waiting = waiting.filter((w) => !has(w));
         };
-        // A window that is late to start a sound, for the dictate step's
-        // "sounded late": with window.__late set, every sound is started
-        // only once that many seconds of silence have played, past the
-        // moment it was meant to start. What it plays is read when it
-        // really starts. A sound of samples has a start of its own in
-        // WebKit, and a tone has the one every sound has, so both are
-        // taken.
-        const connect = AudioNode.prototype.connect;
+        // Every sound the window starts is read as it starts. A sound of
+        // samples has a start of its own in WebKit, and a tone has the
+        // one every sound has, so both are taken. That the pair of notes
+        // plays whole however late the window starts it is held by
+        // chime.test.ts, on a sound card of its own.
         const real = new Map();
         for (const Node of [AudioScheduledSourceNode, AudioBufferSourceNode]) if (Object.hasOwn(Node.prototype, "start")) real.set(Node, Node.prototype.start);
         const startOf = (node) => real.get(node instanceof AudioBufferSourceNode && real.has(AudioBufferSourceNode) ? AudioBufferSourceNode : AudioScheduledSourceNode);
-        const late = function (when = 0, ...a) {
-          const start = startOf(this);
-          if (!window.__late) {
-            played(this, [when, ...a]);
-            return start.call(this, when, ...a);
-          }
-          const c = this.context;
-          const rest = c.createBufferSource();
-          rest.buffer = c.createBuffer(1, Math.round(window.__late * c.sampleRate), c.sampleRate);
-          connect.call(rest, c.destination);
-          rest.onended = () => {
-            played(this, [when, ...a]);
-            start.call(this, when, ...a);
-          };
-          startOf(rest).call(rest, Math.max(when, c.currentTime));
+        const read = function (when = 0, ...a) {
+          played(this, [when, ...a]);
+          return startOf(this).call(this, when, ...a);
         };
-        for (const Node of real.keys()) Node.prototype.start = late;
+        for (const Node of real.keys()) Node.prototype.start = read;
         const stop = AudioScheduledSourceNode.prototype.stop;
         AudioScheduledSourceNode.prototype.stop = function (...a) {
           if (this.__read) {
@@ -981,6 +959,13 @@ export const steps = {
     if (!went) walk.wrong = "a removed picture still stands in its place after its time";
     await letClockGo(page);
   },
+  // ["microphone answered"] the Mac's question about the microphone is
+  //                    answered, and the microphone that starts then is
+  //                    stopped at once, since its recording has ended
+  async "microphone answered"() {
+    await control(url, "/microphone?answer=1");
+    await control(url, "/hold?call=Listen&gate=open");
+  },
   // ["microphone moves"]
   //                    while it listens, the microphone grows with the hum
   //                    on a spring, in its place: it goes a little past the
@@ -1599,15 +1584,69 @@ export const steps = {
   //                    same with the answer to Listen held until the
   //                    start sound is checked, the way a busy machine
   //                    hands it back after the microphone's first news,
-  //                    "start, sounded late" the same with the window
-  //                    starting the start sound half a second late,
   //                    "hearing" waits for more
   //                    to be said and settled, "settled" waits for words
   //                    before a pause to be settled, and a recording
-  //                    already running is only ended
+  //                    already running is only ended. "asked" presses
+  //                    Dictate while the Mac asks whether the app may use
+  //                    the microphone, and Stop while it still asks, and
+  //                    sees Dictate again at once, with the question left
+  //                    open for "microphone answered". "asked, then
+  //                    again" then presses Dictate once more while the
+  //                    Mac still asks, answers the question, and hears the
+  //                    start sound once, for the second press only, with
+  //                    the recording left running
   async dictate(walk, arg, s) {
     const { kept, page, watch } = walk;
     const button = page.locator("button.dictate");
+    if (arg === "asked" || arg === "asked, then again") {
+      // Tim pressed Dictate, the Mac asked about the microphone, and
+      // nothing he pressed did anything until the question went 45 s
+      // later, #792. Stop ends a recording whose microphone has not
+      // started, and Report then makes the report. Listen waits on the
+      // Go side for the microphone, so the page holds its answer, and
+      // the walk settles on everything else while it waits, see hold.
+      await control(url, "/microphone?ask=1");
+      await hold(page, "Listen", true);
+      await button.click();
+      const said = await button.getAttribute("aria-label");
+      if (said !== "Stop") {
+        walk.wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
+        return;
+      }
+      await button.click();
+      await pageUntil(page, () => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate");
+      if (arg === "asked") return;
+      // Dictate again while the Mac still asks: two Listens wait for the
+      // one answer. The first one's answer is held until the second's is
+      // in, the order that left the page on the recording that had ended,
+      // passing over every word of the new one. Only the latest press
+      // takes its answer.
+      await settle(page);
+      const before = await page.evaluate(() => window.__notes.length);
+      const ended = await page.evaluate(() => window.__last.dictation?.recording ?? 0);
+      await button.click();
+      const again = await button.getAttribute("aria-label");
+      if (again !== "Stop") {
+        walk.wrong = `Dictate pressed again says "${again}" the frame after, not Stop`;
+        return;
+      }
+      await control(url, "/microphone?answer=1");
+      await settle(page);
+      await letHeld(page);
+      await settle(page);
+      const up = await sounds(page, before, LOW, HIGH);
+      if (!theTwo(up, LOW, HIGH)) {
+        walk.wrong = `the second press of Dictate sounded ${JSON.stringify(up)}, not the two notes of the start sound going up once`;
+        return;
+      }
+      await control(url, "/microphone?until=hearing");
+      await pageUntil(page, (ended) => window.__last.dictation?.recording > ended && window.__last.dictation.hearing?.trim(), ended);
+      await settle(page);
+      const shown = await page.evaluate(() => document.querySelector(".telling").value.includes(window.__last.dictation.hearing.trim()));
+      if (!shown) walk.wrong = "the words heard after the second press of Dictate were passed over, as if they were the recording's that had ended";
+      return;
+    }
     if (arg === "hearing") {
       // More is said after what was there, and settled. The stand-in
       // speech model hears new words each time it is asked, so the
@@ -1655,7 +1694,6 @@ export const steps = {
     const late = arg === "start, answered late";
     // The window starts the start sound later than it means to, by more
     // than the sound is long, counted on the audio's clock once it runs.
-    const slow = arg === "start, sounded late";
     if (late) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
     const before = await page.evaluate(() => window.__notes.length);
     // Stop the moment it is pressed, see the rules on a click: read in
@@ -1671,7 +1709,6 @@ export const steps = {
       walk.wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
       return;
     }
-    if (slow) await page.evaluate(() => window.__running.then(() => (window.__late = 0.5)));
     // The words appear while they are heard, before anything stops. The
     // recording goes on until the app has told words being heard, see
     // /microphone.
@@ -1708,8 +1745,7 @@ export const steps = {
     }
     kept.notes = await page.evaluate(() => window.__notes.length);
     await watch.step("hearing", s);
-    if (slow) await page.evaluate(() => (window.__late = 0));
-    if (arg === "start" || late || slow) {
+    if (arg === "start" || late) {
       kept.dictating = await page.locator(".telling").evaluate((f) => f.value);
       return;
     }

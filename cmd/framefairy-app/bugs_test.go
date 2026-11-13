@@ -12,16 +12,18 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 	"unicode/utf8"
 
 	"github.com/spf13/afero"
@@ -565,9 +567,20 @@ func TestClearWhileTheDraftChanges(t *testing.T) {
 // The report's draft is reached from the window, a drop and the app's
 // window at once: drops arrive on their own goroutine while the person
 // types, removes and puts back. None of it races, and the draft ends with
-// every picture that was given.
+// every picture that was given. Each seed picks when each hand comes, on
+// the clock of a bubble, so a seed that fails comes the same way again,
+// but for hands that wake at the same moment, which run in the order Go's
+// scheduler picks.
 func TestTheDraftFromSeveralAtOnce(t *testing.T) {
 	t.Parallel()
+	for seed := range uint64(8) {
+		t.Run(fmt.Sprint(seed), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) { draftFromSeveral(t, seed) })
+		})
+	}
+}
+
+func draftFromSeveral(t *testing.T, seed uint64) {
 	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
 	// How many report windows are open at once, which is never more than
 	// one, however many ask at the same time.
@@ -576,8 +589,8 @@ func TestTheDraftFromSeveralAtOnce(t *testing.T) {
 		n := open.Add(1)
 		for m := most.Load(); n > m && !most.CompareAndSwap(m, n); m = most.Load() {
 		}
-		// Others get their turn while this one is made.
-		runtime.Gosched()
+		// A window takes a moment to be made.
+		time.Sleep(time.Millisecond) //nolint:forbidigo // synctest bubble
 		var once sync.Once
 		return func() {}, func() { once.Do(func() { open.Add(-1); closed() }) }
 	}
@@ -586,7 +599,10 @@ func TestTheDraftFromSeveralAtOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range 8 {
 		wg.Go(func() {
+			rnd := rand.New(rand.NewPCG(seed, uint64(i)))
 			for j := range 5 {
+				// The hand comes in a moment its seed picks.
+				time.Sleep(time.Duration(rnd.IntN(3)) * time.Millisecond) //nolint:forbidigo // synctest bubble
 				switch (i + j) % 6 {
 				case 0:
 					r.attach("drop", []handed{{name: "a.png", data: pic}})

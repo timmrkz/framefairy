@@ -794,11 +794,16 @@ func ShareTime(clip Clip, share float64) float64 {
 }
 
 // SaidWord is the word being said at a moment of a clip, on the episode's
-// clock, out of the words the clip says.
+// clock, out of the words the clip says, in the order they are said, the
+// way Said gives them. It looks only at the words either side of the
+// moment, so the captions of a clip are told their words in time that
+// grows with the clip, not with its square: an hour's clip took 240 ms
+// for each step of a drag, Tim's report of 11 November.
 func SaidWord(clip Clip, words []timed.Cue, at float64) (timed.Cue, bool) {
 	when := EpisodeTime(clip, at)
+	i := sort.Search(len(words), func(i int) bool { return words[i].End > when })
 	near, off := timed.Cue{}, math.Inf(1)
-	for _, w := range words {
+	for _, w := range words[max(i-1, 0):min(i+2, len(words))] {
 		if when >= w.Start && when < w.End {
 			return w, true
 		}

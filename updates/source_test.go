@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -32,14 +33,43 @@ func flaky(t *testing.T, list []byte, code int, misses int32) (*httptest.Server,
 	return srv, &asked
 }
 
-var quick = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
+// waits is the wait between tries a test hands a Source: up at once, so
+// no test spends the seconds, and kept, so a test checks how long the
+// Source asked to wait.
+type waits struct {
+	mu    sync.Mutex
+	asked []time.Duration
+}
+
+func (w *waits) wait(d time.Duration) <-chan time.Time {
+	w.mu.Lock()
+	w.asked = append(w.asked, d)
+	w.mu.Unlock()
+	up := make(chan time.Time, 1)
+	up <- time.Time{}
+	return up
+}
+
+func (w *waits) were() []time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.asked)
+}
+
+// upAtOnce is a wait between tries for a test that does not count them.
+func upAtOnce(d time.Duration) <-chan time.Time { return new(waits).wait(d) }
+
+// never is a wait between tries that is never up, so a check that waited
+// would never end, and go test's -timeout says so.
+func never(time.Duration) <-chan time.Time { return nil }
 
 func TestAListBeingReplacedIsWaitedOut(t *testing.T) {
 	t.Parallel()
 	key := testKey(t)
 	list := listJSON(t, build(t, key, "main", "0.3.0-main.1", "https://example.com/main.zip", appZip(t, "x")))
 	srv, asked := flaky(t, list, http.StatusNotFound, 2)
-	src := &Source{URL: srv.URL, Client: srv.Client(), Retries: quick}
+	var w waits
+	src := &Source{URL: srv.URL, Client: srv.Client(), Wait: w.wait}
 	got, err := src.Fetch(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -50,18 +80,26 @@ func TestAListBeingReplacedIsWaitedOut(t *testing.T) {
 	if n := asked.Load(); n != 3 {
 		t.Errorf("asked %d times, want 3", n)
 	}
+	if got, want := w.were(), []time.Duration{time.Second, 2 * time.Second}; !slices.Equal(got, want) {
+		t.Errorf("waited %v between the tries, want %v", got, want)
+	}
 }
 
 func TestAListThatStaysMissingGivesUp(t *testing.T) {
 	t.Parallel()
 	srv, asked := flaky(t, nil, http.StatusNotFound, 1000)
-	src := &Source{URL: srv.URL, Client: srv.Client(), Retries: quick}
+	var w waits
+	src := &Source{URL: srv.URL, Client: srv.Client(), Wait: w.wait}
 	_, err := src.Fetch(context.Background())
 	if err == nil || err.Error() != "the channel list answered 404 Not Found" {
 		t.Errorf("got %v", err)
 	}
-	if n := asked.Load(); n != int32(len(quick)+1) {
-		t.Errorf("asked %d times, want %d", n, len(quick)+1)
+	if n := asked.Load(); n != 4 {
+		t.Errorf("asked %d times, want 4", n)
+	}
+	// Seven seconds in all, for GitHub to put the new list in place.
+	if got, want := w.were(), []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}; !slices.Equal(got, want) {
+		t.Errorf("waited %v between the tries, want %v", got, want)
 	}
 }
 
@@ -70,7 +108,7 @@ func TestAListThatStaysMissingGivesUp(t *testing.T) {
 func TestOtherAnswersAreNotTriedAgain(t *testing.T) {
 	t.Parallel()
 	srv, asked := flaky(t, nil, http.StatusInternalServerError, 1000)
-	src := &Source{URL: srv.URL, Client: srv.Client(), Retries: quick}
+	src := &Source{URL: srv.URL, Client: srv.Client(), Wait: never}
 	if _, err := src.Fetch(context.Background()); err == nil {
 		t.Error("no error")
 	}
@@ -88,7 +126,7 @@ func TestACheckCalledOffStopsWaiting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	missing := &missingThenOff{cancel: cancel}
-	src := &Source{URL: "https://example.com/channels.json", Client: &http.Client{Transport: missing}, Retries: []time.Duration{time.Hour}}
+	src := &Source{URL: "https://example.com/channels.json", Client: &http.Client{Transport: missing}, Wait: never}
 	_, err := src.Fetch(ctx)
 	if err == nil || err.Error() != "the channel list answered 404 Not Found" {
 		t.Errorf("got %v, not the list's 404 from the wait", err)
@@ -123,8 +161,8 @@ func TestChecksAtOnceWhileTheListIsReplaced(t *testing.T) {
 	var seen atomic.Int32
 	src := &Source{
 		URL: srv.URL, Client: srv.Client(),
-		Retries: []time.Duration{time.Millisecond, 5 * time.Millisecond, 20 * time.Millisecond, 50 * time.Millisecond},
-		Seen:    func(List) { seen.Add(1) },
+		Wait: upAtOnce,
+		Seen: func(List) { seen.Add(1) },
 	}
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)
@@ -203,10 +241,10 @@ func writtenList(t *testing.T, key ed25519.PrivateKey, version string, written t
 
 func copiesOf(srv *httptest.Server) *Source {
 	return &Source{
-		URL:     srv.URL + "/channels.json",
-		Copies:  []string{srv.URL + "/channels-a.json", srv.URL + "/channels-b.json"},
-		Client:  srv.Client(),
-		Retries: quick,
+		URL:    srv.URL + "/channels.json",
+		Copies: []string{srv.URL + "/channels-a.json", srv.URL + "/channels-b.json"},
+		Client: srv.Client(),
+		Wait:   upAtOnce,
 	}
 }
 
@@ -246,9 +284,8 @@ func TestACopyBeingReplacedIsNoGap(t *testing.T) {
 	r, srv := serveRelease(t)
 	r.set("/channels-b.json", writtenList(t, key, "0.3.0-main.1", time.Now().UTC()))
 	src := copiesOf(srv)
-	// A wait would be an hour, so a check that waited never ends, and go
-	// test's -timeout says so.
-	src.Retries = []time.Duration{time.Hour}
+	// A check that waited never ends, and go test's -timeout says so.
+	src.Wait = never
 	got, err := src.Fetch(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -279,8 +316,8 @@ func TestWithNoCopiesTheListIsRead(t *testing.T) {
 	if _, err := copiesOf(srv).Fetch(context.Background()); err == nil || err.Error() != "the channel list answered 404 Not Found" {
 		t.Errorf("with nothing there, got %v", err)
 	}
-	if n := r.asks("/channels.json"); n != 1+len(quick)+1 {
-		t.Errorf("the list was asked for %d times, want %d", n, 1+len(quick)+1)
+	if n := r.asks("/channels.json"); n != 1+4 {
+		t.Errorf("the list was asked for %d times, want %d", n, 1+4)
 	}
 }
 
@@ -301,7 +338,7 @@ func TestChecksAtOnceWhileTheCopiesAreReplaced(t *testing.T) {
 	}
 	r.set("/channels-a.json", lists[0])
 	src := copiesOf(srv)
-	src.Retries = []time.Duration{time.Hour}
+	src.Wait = never
 	checks := func(want int) {
 		t.Helper()
 		var wg sync.WaitGroup

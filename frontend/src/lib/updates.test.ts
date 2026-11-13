@@ -1,7 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { UpdateState } from "./api";
-import { railDot, standing } from "./updates.svelte";
+import { railDot, standing, Updates } from "./updates.svelte";
 
 const at = (u: Partial<UpdateState>): UpdateState => ({
   version: "0.3.0-pr400.102dc91",
@@ -56,6 +56,52 @@ describe("the dot on Updates in the sidebar", () => {
 
   test("is no dot before anything is known", () => {
     expect(railDot(null)).toBe("");
+  });
+});
+
+// A check that finds nothing is over in a tenth of a second, so looking
+// is shown for at least 1.4 s, and the answer after it. On the page's
+// fake clock, so the test spends none of it.
+describe("a check", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("is shown looking for 1.4 s, then what it found", () => {
+    vi.useFakeTimers();
+    const u = new Updates();
+    u.heard(at({ phase: "checking" }));
+    vi.advanceTimersByTime(100);
+    u.heard(at({ phase: "current", checked: "now" }));
+    expect(u.shown?.phase).toBe("checking");
+    // What the answer brings besides is shown at once.
+    expect(u.shown?.checked).toBe("now");
+    vi.advanceTimersByTime(1299);
+    expect(u.shown?.phase).toBe("checking");
+    vi.advanceTimersByTime(1);
+    expect(u.shown?.phase).toBe("current");
+  });
+
+  test("that took longer than 1.4 s shows what it found at once", () => {
+    vi.useFakeTimers();
+    const u = new Updates();
+    u.heard(at({ phase: "checking" }));
+    vi.advanceTimersByTime(2000);
+    u.heard(at({ phase: "current" }));
+    expect(u.shown?.phase).toBe("current");
+  });
+
+  test("asked again while it looks keeps the time of the first look", () => {
+    vi.useFakeTimers();
+    const u = new Updates();
+    u.heard(at({ phase: "checking" }));
+    vi.advanceTimersByTime(1000);
+    u.heard(at({ phase: "checking" }));
+    vi.advanceTimersByTime(100);
+    u.heard(at({ phase: "current" }));
+    expect(u.shown?.phase).toBe("checking");
+    vi.advanceTimersByTime(300);
+    expect(u.shown?.phase).toBe("current");
   });
 });
 

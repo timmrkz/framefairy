@@ -451,9 +451,6 @@ func inPause(words []timed.Cue, at, keepPause float64) bool {
 	return i+1 == len(words) || at < words[i+1].Start
 }
 
-// MaxClipSpan keeps a trimmed clip to a sensible length.
-const MaxClipSpan = 600.0
-
 // cloneObject is a copy of an object of a plan being edited that shares
 // nothing with it, its objects and lists copied all the way down, so a
 // change made to the copy leaves the plan as it was read.
@@ -693,10 +690,13 @@ func editPieces(fsys afero.Fs, rec *Records, planPath, clipID string, change pie
 		for i, seg := range out {
 			kept[i] = seg
 		}
+		// A cut put back leaves the keyframe it carried where it stood,
+		// see keptWhereTheyStand, before the clip has its new pieces.
+		marks, moved := keptWhereTheyStand(frames, spansOf(before), spansOf(out), cropMarksOf(c))
 		c.set(keySegments, kept)
 		// A keyframe set aside that the clip holds again is carried again
 		// the next time an edge covers it, see carry.
-		if marks := cropMarksOf(c); unsetAside(spansOf(out), marks) {
+		if unsetAside(spansOf(out), marks) || moved {
 			setCropMarks(c, marks)
 		}
 		return nil

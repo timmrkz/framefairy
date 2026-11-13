@@ -1,6 +1,7 @@
 // Typed calls into the Go side. The names match the methods of the FrameFairy
 // service in main.go.
 import { Call, Events } from "@wailsio/runtime";
+import { SentClips } from "./sent";
 
 // Every call into the Go side. One that fails, or takes longer than a
 // person waits without noticing, goes to the app's log, and so do the
@@ -54,7 +55,7 @@ function counted(method: string) {
 
 // One piece of other people's work the app is made of or brings with it,
 // and its licence. The texts are asked for one at a time, by name.
-export interface Notice {
+export interface LicenceNotice {
   name: string;
   version: string;
   licence: string;
@@ -78,8 +79,9 @@ export interface LogStatus {
   files: number;
   bytes: number;
   lines: number;
-  // The last toasts the app showed, newest first, see LoggedToast.
-  toasts: LoggedToast[];
+  // The last toasts the app showed, newest first, see LoggedToast. Null
+  // from a log that could not be read.
+  toasts: LoggedToast[] | null;
 }
 
 // A toast the app showed, read back from its log: when, in ms since
@@ -115,6 +117,11 @@ export interface Settings {
   // Where the captions sit, as the distance from the bottom of a 1080x1920
   // frame. One place for every clip of every episode.
   captionY: number;
+  // Whether somebody has answered how clips are found, which the first
+  // run asks. Go keeps it, and never takes it from saveSettings.
+  chosen: boolean;
+  // The video target was typed on.
+  targetVideo?: string;
 }
 
 // One of the faces the captions can be written in, built into the program.
@@ -162,6 +169,8 @@ export interface PlanSummary {
   to: number;
   clips: number;
   model: string;
+  // Who proposed the clips, the language model or a person by hand.
+  by?: string;
   modified: string;
 }
 
@@ -222,6 +231,11 @@ export interface Word {
   whole?: string;
   part?: number;
   room?: number;
+}
+
+// A word the captions light, as the workspace lays them out from the
+// captions and the frames they are lit on. Go never sends one.
+export interface LitWord extends Word {
   // A word lit on frames of the short, see WordFrame: start is where the
   // first of them starts and end where the last ends, in the episode.
   framed?: boolean;
@@ -438,7 +452,7 @@ export interface CaptionsView {
   // The clip's pieces the captions were made for, whose clock they are on.
   // A clip that was changed has its new pieces before its new captions, and
   // the captions are put in the episode by these until those arrive.
-  pieces?: { start: number; end: number }[];
+  pieces?: { start: number; end: number; part: number }[];
 }
 
 // The window of a video: the part of it a search reads, and how long it
@@ -511,6 +525,11 @@ export interface ClipEntry extends ClipView {
   key: string;
   plan: string;
   cropLefts: number[];
+  // What of the clip's pieces the video's transcript has not heard yet,
+  // which has no captions until it is. The app hears it by itself, and
+  // the entry changes as the words land, so its captions are asked for
+  // again, issue #745.
+  unheard?: [number, number][];
   // For each piece with keyframes, how its crop switches over its frames,
   // worked out by the engine, and null for a piece whose crop is its
   // cropLefts throughout. See engine.CropSteps.
@@ -521,6 +540,8 @@ export interface ClipEntry extends ClipView {
   // On the answer to an edit, when the edit was written, on the clock a
   // video's state is read by, see VideoState.
   rev?: number;
+  // On a clip in a state sent, what it holds, see VideoState.order.
+  hash?: string;
 }
 
 // What the workspace shows of one video, read at one moment and sent
@@ -543,6 +564,19 @@ export interface VideoState {
   // The card the clip chosen was on its way as, when the app chose it
   // because that card was written as it.
   chosenCard?: string;
+  // In a state sent, every clip by its key and its hash, while clips
+  // holds only those that changed, each with its hash, or kept when not
+  // one changed and the state holds neither. A state read by a call
+  // holds every clip and neither. lib/sent.ts makes a state sent whole,
+  // and what hears it never sees these, see onVideoState.
+  order?: ClipMark[];
+  kept?: boolean;
+}
+
+// A clip in a state sent, by its key and its hash, see VideoState.order.
+export interface ClipMark {
+  key: string;
+  hash: string;
 }
 
 export interface EngineEvent {
@@ -558,6 +592,10 @@ export interface EngineEvent {
   from?: number;
   // How many clips a search has written to its plan so far.
   found?: number;
+  // On an "underway" event, every clip the job has on the way and whether
+  // that is all still to come. The job carries the same, see Job.
+  underway?: Underway[];
+  whole?: boolean;
   duration?: number;
   elapsed: number;
   time: string;
@@ -635,7 +673,9 @@ export interface Job {
   holds?: ("language" | "speech")[];
   // Where a search or a render is, empty for a job with no steps.
   step?: JobStep | "";
-  // The window of a search. To is 0 for the end of the episode.
+  // The window of a search, or the part a transcription hears: a part of
+  // a clip or the stretch around one, issue #745. To is 0 for the end of
+  // the episode.
   from?: number;
   to?: number;
   // A clip made by hand: the moment I or O was pressed at, and whether it
@@ -884,7 +924,7 @@ export const api = {
   // Cuts what is being said where something is typed at its end, after
   // the first pieces the window has. What came before is the next piece.
   breakListening: (recording: number, pieces: number) => call<void>("BreakListening", recording, pieces),
-  licences: () => call<Notice[]>("Licences"),
+  licences: () => call<LicenceNotice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
   // zeros where the system draws its own title bar.
@@ -958,6 +998,8 @@ export const api = {
   library: () => call<EpisodeStatus[]>("Library"),
   // The state of a video as it is now, see VideoState.
   state: (path: string) => call<VideoState>("State", path),
+  // The next state of a video sent with every clip, see lib/sent.ts.
+  sendWhole: (path: string) => call<void>("SendWhole", path),
   addEpisodes: () => call<Added>("AddEpisodes"),
   // Which files the app takes as videos, in words, from the one list there
   // is, VideoExtensions in engine/episode.go.
@@ -1188,10 +1230,11 @@ export type ChromeWindow = "app" | "report";
 // A window is told again whenever the answer changes: a resize, either
 // way through fullscreen, another display, another scale, light or dark,
 // or back from the Dock. The app's window on "chrome", the report window
-// on "chrome-report", see chromeEvent in chrome.go.
+// on "chrome-report", see chromeEvent in chrome.go. Each name is written
+// out, so the test of the events in events_test.go reads it.
 export function onChrome(window: ChromeWindow, fn: (c: Chrome) => void): () => void {
-  const event = window === "app" ? "chrome" : `chrome-${window}`;
-  return Events.On(event, (ev) => fn(ev.data as Chrome));
+  if (window === "report") return Events.On("chrome-report", (ev) => fn(ev.data as Chrome));
+  return Events.On("chrome", (ev) => fn(ev.data as Chrome));
 }
 
 export interface Undone {
@@ -1268,6 +1311,9 @@ export interface ReportPicture {
   height: number;
   recording?: string;
   seconds?: number;
+  // Removed by the person and kept to be put back. Never true in a draft
+  // the window is sent, which leaves removed pictures out.
+  removed?: boolean;
 }
 
 // A report before it is made. error says why pictures just given were
@@ -1307,10 +1353,23 @@ export function onDropped(fn: (d: Added) => void): () => void {
   return Events.On("dropped", (ev) => fn(ev.data as Added));
 }
 
-// The state of a video, sent whole whenever it changed, at most four
-// times a second, see VideoState.
+// The state of a video, sent whenever it changed, at most four times a
+// second, see VideoState, and made whole, see lib/sent.ts. It is made
+// whole once for everything that hears it, and the clips sent are kept
+// from the first that hears on, which is the job store as the app starts.
+const sentClips = new SentClips((video) => api.sendWhole(video));
+const hearers = new Set<(state: VideoState) => void>();
+let hearing = false;
 export function onVideoState(fn: (state: VideoState) => void): () => void {
-  return Events.On("video", (ev) => fn(ev.data as VideoState));
+  hearers.add(fn);
+  if (!hearing) {
+    hearing = true;
+    Events.On("video", (ev) => {
+      const state = sentClips.whole(ev.data as VideoState);
+      if (state) for (const hear of [...hearers]) hear(state);
+    });
+  }
+  return () => hearers.delete(fn);
 }
 
 // What the setup and the settings show of the models, sent whole when the

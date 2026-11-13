@@ -73,6 +73,20 @@ type bus struct {
 
 func newBus() *bus { return &bus{subs: map[chan []byte]struct{}{}} }
 
+// Emit sends what the app tells its window, carrying its data the way
+// Wails does: one piece as it is, several as a list.
+func (b *bus) Emit(name string, data ...any) bool {
+	switch len(data) {
+	case 0:
+		b.send(name, nil)
+	case 1:
+		b.send(name, data[0])
+	default:
+		b.send(name, data)
+	}
+	return false
+}
+
 func (b *bus) send(name string, data any) {
 	if b == nil {
 		return
@@ -150,7 +164,13 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		name := call.Name[strings.LastIndex(call.Name, ".")+1:]
+		// The method by the name Wails knows it by in the app, so a call
+		// named wrong in api.ts fails here as it fails there.
+		name, bound := strings.CutPrefix(call.Name, boundAs)
+		if !bound {
+			http.Error(w, fmt.Sprintf("%s is no method of the app, Wails names them %s<Method>", call.Name, boundAs), http.StatusNotFound)
+			return
+		}
 		gate, late, fails := held(name)
 		opened := func() bool {
 			select {
@@ -420,9 +440,10 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.d.bus.send("mark", n)
 		answer(w, n, nil)
 	})
-	// The clock removed work is timed by, run on by run milliseconds,
-	// with every call due by then made before it answers, the way a walk
-	// runs the page's clock on, see runClock in walks/bridge.mjs.
+	// The machine's clock, see walkTime: held, let go, run on by run
+	// milliseconds, with every call due by then made before it answers,
+	// the way a walk runs the page's clock on, see runClock in
+	// walks/bridge.mjs, or run on to the next call due.
 	mux.HandleFunc("/clock", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Has("hold") {
@@ -433,6 +454,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		if q.Has("go") {
 			b.d.time.letGo()
 			answer(w, true, nil)
+			return
+		}
+		if q.Has("next") {
+			ran, err := b.d.time.next(r.Context())
+			answer(w, ran.Milliseconds(), err)
 			return
 		}
 		ms, err := strconv.Atoi(q.Get("run"))
@@ -459,7 +485,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return
 		}
 		dropped := b.d.svc.dropFiles(files)
-		b.d.bus.send("dropped", dropped)
+		droppedEvent.to(b.d.svc.tell, dropped)
 		answer(w, dropped, nil)
 	})
 	// Files dropped on the report window, which bugs.go attaches and
@@ -532,11 +558,23 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	// step. It answers how many steps it took. Or ahead=n hands over n
 	// tenths of a second with no pass of the speech model, the person
 	// talking faster than it writes down, and answers how many it handed.
+	// Or ask=1 holds the next microphone's start the way a Mac does while
+	// it asks whether the app may use it, and answer=1 lets it start and
+	// answers once it was stopped.
 	mux.HandleFunc("/microphone", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Has("silent") {
 			b.sound.silent.Store(q.Get("silent") == "1")
 			answer(w, nil, nil)
+			return
+		}
+		if q.Has("ask") {
+			b.sound.ask()
+			answer(w, nil, nil)
+			return
+		}
+		if q.Has("answer") {
+			answer(w, nil, b.sound.answered(r.Context()))
 			return
 		}
 		if n, err := strconv.Atoi(q.Get("ahead")); err == nil {
@@ -587,7 +625,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.mu.Lock()
 		b.chrome = now
 		b.mu.Unlock()
-		b.d.bus.send(chromeEvent("app"), now)
+		chromeAppEvent.to(b.d.svc.tell, now)
 		answer(w, now, nil)
 	})
 	mux.HandleFunc("/hold", func(w http.ResponseWriter, r *http.Request) {
@@ -1201,7 +1239,7 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string, offline
 	c := &updating{
 		own:  from,
 		idle: b.d.svc.jobs.closeIfIdle,
-		emit: func(s UpdateState) { b.d.bus.send("updates", s) },
+		emit: func(s UpdateState) { updatesEvent.to(b.d.svc.tell, s) },
 		load: func() string { return stored },
 		save: func(string) error { return nil },
 	}
@@ -1950,7 +1988,10 @@ func (m *freshMachine) keyed() []string {
 	return slices.Clone(m.keys)
 }
 
-// letArrive lets the download of a kind of model arrive, see arriving.
+// letArrive lets the download of a kind of model on its way arrive, see
+// arriving. A download of that kind pressed after it waits part way
+// again, so a walk can look at it on its way in the settings, and a walk
+// lets it arrive the same way or cancels it.
 func (b *bridge) letArrive(kind string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -1958,11 +1999,8 @@ func (b *bridge) letArrive(kind string) error {
 	if !ok {
 		return fmt.Errorf("no download of a %q model to let arrive, the bridge is not on its first run", kind)
 	}
-	select {
-	case <-gate:
-	default:
-		close(gate)
-	}
+	close(gate)
+	b.arrive[kind] = make(chan struct{})
 	return nil
 }
 
@@ -2062,6 +2100,7 @@ func quit(svc *FrameFairy) bool {
 // On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
 func (b *bridge) reset() error {
 	b.sound.silent.Store(false)
+	b.sound.answer()
 	b.words.release()
 	b.words.wordless.Store(false)
 	b.words.save.Store(false)

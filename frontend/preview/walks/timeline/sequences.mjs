@@ -4,6 +4,21 @@
 // file, and in common/ for the steps of every folder. See ../sequences.mjs.
 export default [
   {
+    // Tim's report of 7 November, 14.21, issue #745: he dragged the start
+    // of a clip made with O back past what was heard, and it had no
+    // captions there. The part is heard by itself and its words come.
+    name: "a clip dragged back past what was heard gets its captions there",
+    steps: [["speech", "go"], ["add", 1500], ["wait for", "Search"], ["drag past what was heard"]],
+  },
+  {
+    // Tim made a clip with O, moved the clip timeline and held the
+    // playhead while it was made. Once it was written, the clip timeline
+    // put it back in the middle and the playhead on its start, and undid
+    // what his hand was doing, issue #767.
+    name: "a clip made with O stays where the hand moved the clip timeline once it is written",
+    steps: [["speech", "go"], ["add", 1500], ["wait for", "Search"], ["swipe while it is made"]],
+  },
+  {
     // A paused video preview is held under the hand while an edge is
     // dragged, and cues its play only where the hand lets go. The play
     // after it starts with its sound.
@@ -484,7 +499,7 @@ export default [
     // stayed on a frame the trim had cut away.
     name: "an edge let go before the engine answers leaves the playhead on the edge",
     steps: [
-      ["answers late", 500],
+      ["answers late"],
       ["trim", "start", 160],
       ["playhead on", "start"],
     ],

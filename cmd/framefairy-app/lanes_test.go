@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"framefairy/engine"
+	"framefairy/engine/timed"
 )
 
 // given takes a turn. Every test here runs in a synctest bubble, so a turn
@@ -126,7 +127,7 @@ func TestFindingTakesHearingBack(t *testing.T) {
 func TestFindingInTheCloudLeavesHearingAlone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		l := newLanes()
-		lane, kind := laneOfStep("search", "finding", false)
+		lane, kind := laneOfStep(engine.JobRecord{Kind: engine.JobSearch}, "finding", false)
 		hearing, heard := given(t, l, LaneHearing, hearingTurn)
 		_, found := given(t, l, lane, kind)
 		if hearing.Err() != nil {
@@ -136,7 +137,7 @@ func TestFindingInTheCloudLeavesHearingAlone(t *testing.T) {
 		again, _ := waiting(t, l, LaneHearing, hearingTurn)
 		comes(t, again, "hearing while a search finds in the cloud")()
 		found()
-		if _, kind := laneOfStep("search", "finding", true); kind != findingTurn {
+		if _, kind := laneOfStep(engine.JobRecord{Kind: engine.JobSearch}, "finding", true); kind != findingTurn {
 			t.Error("finding with the model on this machine no longer holds hearing up")
 		}
 	})
@@ -449,8 +450,18 @@ func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 // Every wait is on a turn coming or a turn's context ending, and which of
 // two comes first is read from the one channel that gets it.
 func TestTheWholeVideoHearsLast(t *testing.T) {
-	if lane, kind := laneOfStep(engine.JobTranscribe, "hearing", true); lane != LaneHearing || kind != wholeHearingTurn {
+	if lane, kind := laneOfStep(engine.JobRecord{Kind: engine.JobTranscribe}, "hearing", true); lane != LaneHearing || kind != wholeHearingTurn {
 		t.Fatalf("the whole video hears in %s as %d", lane, kind)
+	}
+	// The part of a clip a hand brought in is heard the way a clip made
+	// by hand is, ahead of the searches, issue #745.
+	part := engine.JobRecord{Kind: engine.JobTranscribe, ID: engine.TranscribePartID, From: 120, To: 150}
+	if lane, kind := laneOfStep(part, "hearing", true); lane != LaneHearing || kind != handHearingTurn {
+		t.Fatalf("the part of a clip hears in %s as %d", lane, kind)
+	}
+	around := engine.TranscribeRecord(timed.Window{Start: 117, End: 260}, true)
+	if lane, kind := laneOfStep(around, "hearing", true); lane != LaneHearing || kind != aroundHearingTurn {
+		t.Fatalf("the stretch around a clip hears in %s as %d", lane, kind)
 	}
 	synctest.Test(t, func(t *testing.T) {
 		l := newLanes()
@@ -527,5 +538,49 @@ func TestNothingWaitsBehindTheWholeVideo(t *testing.T) {
 			}
 			done()
 		}
+	})
+}
+
+// The stretch kept heard around a clip made by hand goes after the clip's
+// own words and before the searches, issue #745: a clip made by hand or a
+// part of a clip dragged out takes the lane back from it, it takes the
+// lane back from a search that hears, goes ahead of one asked before it,
+// and does not wait while a search finds. Nobody waits on a search behind
+// it for long, it is a minute or two of audio.
+func TestTheStretchAroundAClipHearsAfterTheClipAndBeforeTheSearches(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := newLanes()
+		// A part of a clip, dragged out while the stretch is heard, takes
+		// the lane back from it, which carries on after.
+		around, aroundDone := given(t, l, LaneHearing, aroundHearingTurn)
+		part, _ := waiting(t, l, LaneHearing, handHearingTurn)
+		<-around.Done()
+		aroundDone()
+		again, _ := waiting(t, l, LaneHearing, aroundHearingTurn)
+		comes(t, part, "the part of the clip, ahead of the stretch around it,")()
+		comes(t, again, "the stretch around the clip")()
+
+		// It takes the lane back from a search that hears.
+		search, searchDone := given(t, l, LaneHearing, hearingTurn)
+		next, _ := waiting(t, l, LaneHearing, aroundHearingTurn)
+		<-search.Done()
+		searchDone()
+		searchAgain, _ := waiting(t, l, LaneHearing, hearingTurn)
+		comes(t, next, "the stretch around the clip, ahead of the search,")()
+		comes(t, searchAgain, "the search")()
+
+		// It goes ahead of a search asked before it.
+		_, held := given(t, l, LaneHearing, plainTurn)
+		first, _ := waiting(t, l, LaneHearing, hearingTurn)
+		later, _ := waiting(t, l, LaneHearing, aroundHearingTurn)
+		held()
+		comes(t, later, "the stretch around the clip, ahead of the search asked before it,")()
+		comes(t, first, "the search")()
+
+		// It does not wait while a search finds.
+		_, found := given(t, l, LaneFinding, findingTurn)
+		meanwhile, _ := waiting(t, l, LaneHearing, aroundHearingTurn)
+		comes(t, meanwhile, "the stretch around the clip while a search finds")()
+		found()
 	})
 }
