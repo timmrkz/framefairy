@@ -1467,7 +1467,8 @@ export const steps = {
   //                    started no play over, threw no sound away and
   //                    handed none over twice, the sound did not click but
   //                    at the ends of a silence where the frame queue says
-  //                    it handed the sound card its sound late, nothing
+  //                    it handed the sound card its sound late, or where a
+  //                    stretch ends that the sound card heard late, nothing
   //                    was heard after the clip's end, the play
   //                    stopped within two animation frames of the sound
   //                    card being heard past it, and no frame drawn from
@@ -1550,13 +1551,32 @@ export const steps = {
     // where the first stretch was to end, and at the frame after, is the
     // machine's. A play here always begins with a whole stretch, since
     // 0.15 s of sound, SOUND_FIRST, is decoded before it starts.
+    //
+    // The same happens inside a stretch when the sound card's clock
+    // jumps on by render quanta it never rendered: the recorder is
+    // handed frames that skip ahead, the stretch playing goes on from
+    // where it was, now heard late by the jump, and is cut at its end.
+    // CI's Chromium on a busy runner skipped 384 frames 336 frames into
+    // the first stretch, the sound ran on without a step across the
+    // jump, and it clicked where the stretch ended, 4096 frames in.
+    // So a click where a stretch ends that was playing across a jump
+    // is the machine's too. The stretches run on from the start a
+    // whole stretch at a time, CHUNK in lib/frames/queue.ts.
     const stretch = 4096;
     const startFrame = Math.round(c0 * sr);
     const seam = startFrame + stretch;
     const begun = xs.find(([f, x]) => f >= startFrame && x !== 0)?.[0];
     const startedLate = begun !== undefined && begun > startFrame + 1 && begun < seam;
-    const lateStart = (f) => startedLate && f >= seam - 1 && f <= seam + 2;
     if (startedLate) console.log(`      the sound card began the play's sound ${begun - startFrame} frames after its clock started`);
+    const lateEnds = startedLate ? [seam] : [];
+    const endOf = (f) => startFrame + (Math.floor((f - startFrame) / stretch) + 1) * stretch;
+    for (let k = 1; k < xs.length; k++) {
+      const [a, b] = [xs[k - 1][0], xs[k][0]];
+      if (b === a + 1 || a < startFrame || b >= endFrame) continue;
+      console.log(`      the sound card's clock jumped ${b - a - 1} frames at ${a - startFrame} frames into the play`);
+      lateEnds.push(endOf(a), endOf(b));
+    }
+    const lateStart = (f) => lateEnds.some((e) => f >= e - 1 && f <= e + 2);
     const lateHere = (f) => lateStart(f) || silences.some(([a, b]) => f >= a - 1 && f <= b + 2);
     let clicks = 0;
     let firstClick = null;
