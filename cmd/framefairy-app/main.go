@@ -138,11 +138,6 @@ func main() {
 			app.Event.Emit("applog", st)
 		}
 	}, func() <-chan time.Time { return time.After(time.Second) })
-	svc.report.about = func(text string) {
-		if app != nil {
-			app.Event.Emit("report-about", text)
-		}
-	}
 	// How far the loudness is measured is in the video's state.
 	svc.levels = newMeasuring(svc.store.machine, svc.told)
 	// What changes in the folders of the videos, whoever changed it, is

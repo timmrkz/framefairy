@@ -49,6 +49,7 @@
     onAppLog,
   } from "../lib/api";
   import { live } from "../lib/flow";
+  import { reporting, reportTitle } from "../lib/reporting.svelte";
   import ApiKey from "../components/ApiKey.svelte";
   import Confirm from "../components/Confirm.svelte";
   import Busy from "../components/Busy.svelte";
@@ -1055,7 +1056,8 @@
               </div>
               <button
                 class="act report"
-                title="Opens Report a Problem with this message written in it"
+                disabled={reporting.open}
+                title={reportTitle()}
                 onclick={() => api.reportAbout(t.text).catch((err) => (problem = errorText(err)))}>Report</button
               >
             </div>
@@ -1257,7 +1259,12 @@
   .logged .report:focus-visible {
     opacity: 1;
   }
-  /* Advanced and the app's log open and close like a disclosure in Finder: a chevron that
+  /* Greyed out the way every button is, while a report is being
+     written. */
+  .logged:hover .report:disabled {
+    opacity: var(--dimmed);
+  }
+  /* Advanced opens and closes like a disclosure in Finder: a chevron that
      turns, and the head of the group beside it. */
   .disclose {
     display: flex;

@@ -1294,12 +1294,6 @@ export function onReportDraft(fn: (d: ReportDraft) => void): () => void {
   return Events.On("report-draft", (ev) => fn(ev.data as ReportDraft));
 }
 
-// Words a toast's Report button hands the report window, already open,
-// to write in its field, see ReportAbout in bugs.go.
-export function onReportAbout(fn: (text: string) => void): () => void {
-  return Events.On("report-about", (ev) => fn(String(ev.data ?? "")));
-}
-
 export function onEpisodeChanged(fn: (path: string) => void): () => void {
   return Events.On("episode", (ev) => fn(ev.data as string));
 }

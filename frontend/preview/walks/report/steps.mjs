@@ -557,6 +557,18 @@ export const steps = {
     if (!w.open) walk.wrong = "Report on a toast in the app's log opened no report window";
     else if (!w.text.includes(text)) walk.wrong = `the report window reads ${JSON.stringify(w.text)}, without the toast's words ${JSON.stringify(text)}`;
   },
+  // ["report greyed", yes]
+  //                    every Report on a toast in the app's log is greyed
+  //                    out, yes, or none is: one report at a time, so
+  //                    while Report a Problem is open none can start
+  //                    another
+  async "report greyed"(walk, arg) {
+    const { page } = walk;
+    const greyed = await (await logCard(page)).locator(".item.logged button.report").evaluateAll((bs) => bs.map((b) => b.disabled));
+    if (!greyed.length) walk.wrong = "the app's log lists no toast with Report";
+    else if (greyed.some((g) => g !== arg))
+      walk.wrong = `Report on the toasts is ${JSON.stringify(greyed)}, greyed out, with Report a Problem ${arg ? "open" : "closed"}`;
+  },
   // ["windows", made, fronted]
   //                    the app has made so many report windows and
   //                    brought one forward so many times, and Bugs is lit

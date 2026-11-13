@@ -2487,9 +2487,10 @@ waiting or running to failed, or is refused as it is asked for, a search,
 a clip made by hand, a transcription or a render, see
 `cmd/framefairy-app/notice.go`. One found failed only as the app opens
 said why the time it failed. Report opens Report a Problem with the toast's
-words written in its field, after what was there, and a report window
-already open is handed them to write in, see `ReportAbout` in
-`bugs.go`. Cut to one line in the row, the reason lost the part that
+words written in its field, after what was there. There is one report at
+a time: while Report a Problem is open, every Report button is greyed
+out, and the window is only brought forward, with nothing written into
+it, see `ReportAbout` in `bugs.go`. Cut to one line in the row, the reason lost the part that
 said what to do, and Tim read "Anthropic is busy and did not a…".
 
 A video whose file is gone says so in a toast as the workspace finds it

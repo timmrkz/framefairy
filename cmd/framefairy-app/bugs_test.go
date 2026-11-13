@@ -686,18 +686,16 @@ func chunk(kind string, data []byte) []byte {
 }
 
 // The Report button of a toast opens Report a Problem with the toast's
-// words in its field, after what was written there. An open window is
-// handed them to write in, and the draft it keeps is not written behind
-// its back, since the window's field would save over it. Issue #311.
+// words in its field, after what was written there. There is one report
+// at a time, so with the window open a click only brings it forward and
+// writes nothing into the report being written. Issues #311 and #421.
 func TestAToastsReportButtonWritesItsWordsInTheReport(t *testing.T) {
 	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
-	made := 0
+	made, fronted := 0, 0
 	r.make = func(closed func()) (func(), func()) {
 		made++
-		return func() {}, func() { closed() }
+		return func() { fronted++ }, func() { closed() }
 	}
-	var handed []string
-	r.about = func(text string) { handed = append(handed, text) }
 	s := &FrameFairy{report: r}
 
 	if err := s.SaveReportText("The search stopped.\n"); err != nil {
@@ -707,16 +705,16 @@ func TestAToastsReportButtonWritesItsWordsInTheReport(t *testing.T) {
 	if d := s.ReportDraft(); d.Text != "The search stopped.\n\nAnthropic is busy." {
 		t.Fatalf("the report says %q", d.Text)
 	}
-	if made != 1 || len(handed) != 0 {
-		t.Fatalf("%d windows made, %v handed to one", made, handed)
+	if made != 1 || fronted != 0 {
+		t.Fatalf("%d windows made, %d brought forward", made, fronted)
 	}
 
 	s.ReportAbout("Could not reach Anthropic.")
-	if made != 1 || fmt.Sprint(handed) != "[Could not reach Anthropic.]" {
-		t.Fatalf("with the window open: %d windows made, %v handed to it", made, handed)
+	if made != 1 || fronted != 1 {
+		t.Fatalf("with the window open: %d windows made, %d brought forward", made, fronted)
 	}
 	if d := s.ReportDraft(); d.Text != "The search stopped.\n\nAnthropic is busy." {
-		t.Fatalf("the draft was written behind the open window's back: %q", d.Text)
+		t.Fatalf("the report being written was written into: %q", d.Text)
 	}
 }
 

@@ -6,6 +6,7 @@
   import { secondThoughts } from "../lib/removed";
   import { toasts, type Toast } from "../lib/toast.svelte";
   import { api } from "../lib/api";
+  import { reporting, reportTitle } from "../lib/reporting.svelte";
 
   // The toasts, in the top right corner of the window they are about,
   // under its bar, the corner macOS brings its own notes in at. They lie
@@ -44,7 +45,8 @@
                it, for a failure the person cannot put right alone. -->
           <button
             class="report"
-            title="Opens Report a Problem with this message written in it"
+            disabled={reporting.open}
+            title={reportTitle()}
             onclick={() => {
               api.reportAbout(t.text).catch(() => {});
               toasts.close(t.id, "closed");
