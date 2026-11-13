@@ -53,8 +53,10 @@ type VideoState struct {
 	// then holds only the clips the window was not sent as they are now,
 	// see videoNews.trim, so a state of a video whose clips did not change
 	// stays small. A state read by a call holds every clip and no Order.
+	// A state sent of a video with no clips has an Order with nothing in
+	// it, never none, so the window keeps it and knows the next Kept.
 	// See docs/decisions/2026-11-13-a-state-sends-only-the-clips-that-changed.md.
-	Order []ClipMark `json:"order,omitempty"`
+	Order []ClipMark `json:"order,omitzero"`
 	// Kept says, in a state sent to the window, that its clips are those
 	// of the state sent before, all of them as they were and in the same
 	// order, so it holds neither clips nor Order: a state that named
