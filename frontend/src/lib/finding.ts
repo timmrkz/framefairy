@@ -5,7 +5,7 @@
 // every state somebody can click their way into: a model in the cloud
 // with and without its company's key, a model here that is chosen and
 // not downloaded, downloading, failed, or ready.
-import { clock, fitNote, memorySize, size, type CloudModel, type LanguageModel, type Provider } from "./api";
+import { clock, fitNote, memorySize, size, type CloudModel, type LanguageModel, type Provider, type SpeechModel } from "./api";
 
 // The company a model in the cloud belongs to. One the app offers is
 // known by the list. One written in by hand is what the Go side said, and
@@ -87,6 +87,24 @@ export function finderOptions(
         };
       }),
   ];
+}
+
+// The speech models, in the shape of the clip model's list: one group,
+// the biggest first by the size beside it, the size unpacked once it is
+// here and the download until then, each with the mark of whether it is
+// downloaded. Tim asked for the two lists to look and work alike,
+// 2026-10-27.
+export function speechOptions(speech: SpeechModel[]): FinderOption[] {
+  return speech
+    .map((m) => ({ m, bytes: m.installed ? m.unpacked : m.download }))
+    .sort((a, b) => b.bytes - a.bytes)
+    .map(({ m, bytes }) => ({
+      value: m.name,
+      label: m.title,
+      detail: size(bytes),
+      group: "On this machine",
+      mark: modelMark(m.installed),
+    }));
 }
 
 // How a model of this machine stands in a list to choose from, the

@@ -14,6 +14,7 @@ import {
   inEpisode,
   endInEpisode,
   inClip,
+  cutsOf,
   wordInEpisode,
   litWord,
   frameAt,
@@ -277,6 +278,35 @@ describe("inClip", () => {
     expect(inClip(two, 15)).toBe(4);
     expect(inClip(two, 5)).toBe(0);
     expect(inClip(two, 99)).toBe(8);
+  });
+});
+
+describe("cutsOf", () => {
+  test("is the gap between two pieces, counted from the first", () => {
+    const three = [
+      { start: 10, end: 14 },
+      { start: 16, end: 20 },
+      { start: 21, end: 25 },
+    ];
+    expect(cutsOf(three)).toEqual([
+      { index: 0, from: 14, to: 16 },
+      { index: 1, from: 20, to: 21 },
+    ]);
+  });
+
+  // A crop moved part way through a clip splits a piece in two that touch.
+  test("finds no cut between pieces that touch, and keeps the count of the rest", () => {
+    const touching = [
+      { start: 10, end: 12 },
+      { start: 12, end: 14 },
+      { start: 16, end: 20 },
+    ];
+    expect(cutsOf(touching)).toEqual([{ index: 1, from: 14, to: 16 }]);
+  });
+
+  test("finds none in a clip of one piece or none", () => {
+    expect(cutsOf([{ start: 1, end: 2 }])).toEqual([]);
+    expect(cutsOf([])).toEqual([]);
   });
 });
 

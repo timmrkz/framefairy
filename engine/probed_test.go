@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +11,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/spf13/afero"
@@ -421,4 +424,143 @@ func TestThePiecesOfAClipAreReadOnceUntilTheFileChanges(t *testing.T) {
 	if got := runs() - before; got != 2 {
 		t.Errorf("a file written again was read %d times for two pieces", got)
 	}
+}
+
+// The window asks the state and the source of every video as the app
+// opens, all at once, and each probed the file for itself: six ffprobe
+// runs for each, twice for every video, #799. A probe already under way
+// is waited for and its answer taken.
+//
+// On the real disk: the stand-in ffprobe is a program that is run.
+func TestProbesOfOneFileAtOnceAskFFprobeOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ffprobe, runs := countingTool(t, "ffprobe")
+	video := filepath.Join(t.TempDir(), "episode.mp4")
+	if err := os.WriteFile(video, []byte("a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// What one probe asks, learned on a machine of its own.
+	alone := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
+	if _, err := alone.Probe(ctx, video); err != nil {
+		t.Fatal(err)
+	}
+	once := runs()
+
+	machine := &Machine{}
+	const callers = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	widths := make([]int, callers)
+	for i := range callers {
+		wg.Go(func() {
+			<-start
+			e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
+			info, err := e.Probe(ctx, video)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			widths[i] = info.Width
+		})
+	}
+	close(start)
+	wg.Wait()
+	if got := runs() - once; got != once {
+		t.Errorf("%d probes of one file at once asked ffprobe %d times, not the %d of one probe", callers, got, once)
+	}
+	for i, w := range widths {
+		if w != 1920 {
+			t.Errorf("caller %d read a width of %d", i, w)
+		}
+	}
+}
+
+// A probe that was stopped has no answer to hand on. Of those that waited
+// for it, one probes again and the rest take its answer, where each once
+// probed again for itself, #799.
+func TestAProbeThatWasStoppedIsAskedAgainOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		machine := &Machine{}
+		key := probeKey{kind: "probe"}
+		var asked atomic.Int32
+		ask := func(ctx context.Context) (int, error) {
+			if asked.Add(1) == 1 {
+				<-ctx.Done()
+				return 0, ctx.Err()
+			}
+			return 1920, nil
+		}
+		first, stop := context.WithCancel(t.Context())
+		stopped := make(chan error, 1)
+		go func() {
+			_, err := askOnce(first, machine, key, ask)
+			stopped <- err
+		}()
+		synctest.Wait()
+		const waiting = 4
+		widths := make([]int, waiting)
+		var wg sync.WaitGroup
+		for i := range waiting {
+			wg.Go(func() {
+				w, err := askOnce(t.Context(), machine, key, ask)
+				if err != nil {
+					t.Error(err)
+				}
+				widths[i] = w
+			})
+		}
+		synctest.Wait()
+		stop()
+		wg.Wait()
+		if err := <-stopped; err == nil {
+			t.Error("the probe that was stopped says nothing of it")
+		}
+		if got := asked.Load(); got != 2 {
+			t.Errorf("ffprobe was asked %d times, not once and once again after the stop", got)
+		}
+		for i, w := range widths {
+			if w != 1920 {
+				t.Errorf("caller %d read a width of %d", i, w)
+			}
+		}
+		if w, err := askOnce(t.Context(), machine, key, ask); w != 1920 || err != nil || asked.Load() != 2 {
+			t.Errorf("the answer was not kept: %d, %v", w, err)
+		}
+	})
+}
+
+// A probe that failed hands its error to those that waited for it, so a
+// video whose file is gone is not probed once more for each of them, and
+// it keeps nothing, so the next one asks again.
+func TestAProbeThatFailedHandsOnItsError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		machine := &Machine{}
+		key := probeKey{kind: "probe"}
+		gone := errors.New("the video is gone")
+		var asked atomic.Int32
+		release := make(chan struct{})
+		ask := func(context.Context) (int, error) {
+			asked.Add(1)
+			<-release
+			return 0, gone
+		}
+		var wg sync.WaitGroup
+		for range 4 {
+			wg.Go(func() {
+				if _, err := askOnce(t.Context(), machine, key, ask); !errors.Is(err, gone) {
+					t.Errorf("a probe that waited was told %v", err)
+				}
+			})
+		}
+		synctest.Wait()
+		close(release)
+		wg.Wait()
+		if got := asked.Load(); got != 1 {
+			t.Errorf("ffprobe was asked %d times for one failed probe", got)
+		}
+		if _, err := askOnce(t.Context(), machine, key, ask); !errors.Is(err, gone) || asked.Load() != 2 {
+			t.Errorf("a failed probe was kept, the next was told %v", err)
+		}
+	})
 }
