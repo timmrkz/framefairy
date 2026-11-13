@@ -15,7 +15,7 @@ import (
 // These send the interface an event, and the interface decides: the text of
 // a field being typed in when there is one, the episode's last edit
 // otherwise.
-func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
+func appMenu(app *application.App, tell emitter, checkForUpdates func()) *application.Menu {
 	menu := application.NewMenu()
 	// The app menu, the stock one with Check for Updates in it, where every
 	// Mac app keeps it. The first menu is the app menu whatever it is
@@ -38,12 +38,12 @@ func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
 	menu.AddRole(application.FileMenu)
 	edit := menu.AddSubmenu("Edit")
 	edit.Add("Undo").SetAccelerator("CmdOrCtrl+z").OnClick(func(*application.Context) {
-		app.Event.Emit("undo", "undo")
+		undoEvent.to(tell, "undo")
 	})
 	// Redo is Cmd-Y, the key most people know it by, and Ctrl-Y on
 	// Windows and Linux. Shift-Cmd-Z is not bound to anything.
 	edit.Add("Redo").SetAccelerator("CmdOrCtrl+y").OnClick(func(*application.Context) {
-		app.Event.Emit("undo", "redo")
+		undoEvent.to(tell, "redo")
 	})
 	edit.AddSeparator()
 	edit.AddRole(application.Cut)
@@ -64,7 +64,7 @@ func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
 	// Report a Problem is Bugs at the foot of the sidebar, in a window
 	// of its own, see bugs.go. Tim did not want it here.
 	help.Add("Acknowledgements").OnClick(func(*application.Context) {
-		app.Event.Emit("acknowledgements", nil)
+		acknowledgementsEvent.to(tell)
 	})
 	return menu
 }

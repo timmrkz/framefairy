@@ -73,6 +73,20 @@ type bus struct {
 
 func newBus() *bus { return &bus{subs: map[chan []byte]struct{}{}} }
 
+// Emit sends what the app tells its window, carrying its data the way
+// Wails does: one piece as it is, several as a list.
+func (b *bus) Emit(name string, data ...any) bool {
+	switch len(data) {
+	case 0:
+		b.send(name, nil)
+	case 1:
+		b.send(name, data[0])
+	default:
+		b.send(name, data)
+	}
+	return false
+}
+
 func (b *bus) send(name string, data any) {
 	if b == nil {
 		return
@@ -459,7 +473,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return
 		}
 		dropped := b.d.svc.dropFiles(files)
-		b.d.bus.send("dropped", dropped)
+		droppedEvent.to(b.d.svc.tell, dropped)
 		answer(w, dropped, nil)
 	})
 	// Files dropped on the report window, which bugs.go attaches and
@@ -586,7 +600,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.mu.Lock()
 		b.chrome = now
 		b.mu.Unlock()
-		b.d.bus.send(chromeEvent("app"), now)
+		chromeAppEvent.to(b.d.svc.tell, now)
 		answer(w, now, nil)
 	})
 	mux.HandleFunc("/hold", func(w http.ResponseWriter, r *http.Request) {
@@ -1192,7 +1206,7 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string, offline
 	c := &updating{
 		own:  from,
 		idle: b.d.svc.jobs.closeIfIdle,
-		emit: func(s UpdateState) { b.d.bus.send("updates", s) },
+		emit: func(s UpdateState) { updatesEvent.to(b.d.svc.tell, s) },
 		load: func() string { return stored },
 		save: func(string) error { return nil },
 	}

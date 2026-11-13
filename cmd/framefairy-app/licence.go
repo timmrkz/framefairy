@@ -131,9 +131,7 @@ func (s *FrameFairy) openedWith(raw string) {
 	s.mu.Lock()
 	s.link = &l
 	s.mu.Unlock()
-	if s.app != nil {
-		s.app.Event.Emit("licence-link", nil)
-	}
+	licenceLinkEvent.to(s.tell)
 	if s.window != nil {
 		s.window.Show()
 		s.window.Focus()

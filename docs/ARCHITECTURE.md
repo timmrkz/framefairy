@@ -142,11 +142,12 @@ What to do today, and what changes once the issue named is built.
 | read a file of a video | through the `afero.Fs` the code was given, with `fileio.SafeChildIn` for a path in a work folder. Not `os`. A video's transcript, plans and status, through its `Episode`, and whether a path is the video's own, `Episode.Owns` and `Episode.HasPlan`. A view of a clip, a gesture or its captions, takes the plan the `Episode` holds. An edit reads the file itself, and `editPlan` again under its lock |
 | change a plan | `editPlan` in `engine/edit.go` |
 | notice a change made to a video's files, or to the models, outside the app | `reconcile` in `cmd/framefairy-app/reconcile.go`, which the watch in `watch.go` hands every change to, in a video's folders, its shorts, `Episode.Shorts`, and the models folder, and which runs once as the app starts, `watchTheDisk`, and as the library is read. Never a check of its own in a binding |
+| tell the window something it did not ask for | an event in `cmd/framefairy-app/events.go`, whose type says what it carries, sent through the `emitter` the part was handed by `tellWindow`, and heard by its name in `frontend/src/lib/api.ts`. Never `Emit` with a name written where it is sent. `events_test.go` holds the names to `api.ts` both ways, see the decision record [2026-11-13-the-channel-between-go-and-the-window.md](decisions/2026-11-13-the-channel-between-go-and-the-window.md) |
 | tell the window that the models changed | `tellSetup` in `reconcile.go`, which sends `SetupState` whole on the `setup` event. The setup and the settings take it the way they take the answer of `Setup` |
 | start a goroutine that runs code which can panic, like layout of words a person typed | a deferred recover where that work comes in, which turns a panic into that work's error and logs the stack where the work has a log, as `engine/planbuild.go` does. A goroutine that only waits, counts or hands on gets none. A parser of outside bytes has its fuzz target first |
 | say that something went wrong | an error that keeps its kind with `%w`, returned to the caller. The app turns it into a row or a toast, and a job that fails is told once by the queue, a `Notice` from `cmd/framefairy-app/notice.go`, which the interface shows in a toast and never decides. It logs through `theLog`, never `log.Printf`, which forbidigo refuses. An engine the app makes outside a job logs through `engineLog(part, video)` in `cmd/framefairy-app/applog.go`, never to `io.Discard`. An engine is made for each job and takes its log then, and what outlives the job is on the machine it is handed |
 | add a call between the interface and Go | a method on `*FrameFairy` in the file of its kind in `cmd/framefairy-app/`, and its call in `frontend/src/lib/api.ts`. `bindings_test.go` checks the name and the arguments |
-| give the interface a new type or field | the Go struct and its interface in `frontend/src/lib/api.ts` in the same change. Once #611 is built, generated from the Go struct |
+| give the interface a new type or field | the Go struct and its interface in `frontend/src/lib/api.ts` in the same change, one interface to a name |
 | add a setting | a field of `Settings` in `cmd/framefairy-app/settings.go`, changed through `UpdateSettings`. What the engine needs from it reaches it through its options |
 | add a kind of work to the queue | a kind in `engine/jobs.go`, started with `addSteps` in `cmd/framefairy-app/jobs.go`, so it gets the lanes, the recover and the record every job has |
 | copy a rule of the engine into TypeScript | don't, and no `.cases.json` makes it right. The interface asks Go, or reads the answer from the state. Where it must answer while a hand drags, Go sends what the drag needs as data, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
@@ -227,6 +228,9 @@ Where one layer meets another. A change to one of these changes what the
 other side relies on, and the pull request says so.
 
 - The bindings on `*FrameFairy` and `frontend/src/lib/api.ts`.
+- The events in `cmd/framefairy-app/events.go`, which `api.ts` hears by
+  the same names, and which the app and the walks' bridge both wire with
+  `tellWindow`.
 - The `video` event, `VideoState`, whose `rev` is on the clock of the
   jobs' `seq`, so the window can tell which of two came later. It is the
   one way a video's jobs reach the window, and it holds every job of the

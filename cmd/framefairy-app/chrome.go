@@ -50,7 +50,8 @@ type chromeRaw struct {
 // something happened that could have moved it, and tells the interface
 // only when the answer changed.
 type chromeWatch struct {
-	app    *application.App
+	// tell is what the window is told through, see events.go.
+	tell   emitter
 	window *application.WebviewWindow
 	// ask asks the system where the furniture is, askSystem when it is
 	// empty. A test hands in its own, so nothing in this file needs the
@@ -59,7 +60,7 @@ type chromeWatch struct {
 	// The event the interface of this window is told on, since each window
 	// has a title bar of its own: the app's window can be fullscreen while
 	// the report window beside it is not.
-	event string
+	event event[Chrome]
 
 	mu sync.Mutex
 	// The bar's height while there is a title bar to measure. In native
@@ -149,25 +150,22 @@ func (c *chromeWatch) publish() {
 		return
 	}
 	// What macOS answered, in points, and what the interface is told.
-	theLog.line(zerolog.DebugLevel, "window").Str("event", c.event).
+	theLog.line(zerolog.DebugLevel, "window").Str("event", string(c.event)).
 		Float64("bar", raw.bar).Float64("left", raw.left).Float64("right", raw.right).
 		Float64("close_top", raw.closeTop).Float64("close_bottom", raw.closeBottom).
 		Bool("fullscreen", raw.fullscreen).Interface("told", now).
 		Msg("the title bar was measured")
-	if c.app == nil {
-		return
-	}
-	c.app.Event.Emit(c.event, now)
+	c.event.to(c.tell, now)
 }
 
 // chromeEvent is the event a window's furniture is told on: "chrome" for
 // the app's window and "chrome-report" for the report window, see
 // lib/api.ts.
-func chromeEvent(window string) string {
-	if window == "" || window == "app" {
-		return "chrome"
+func chromeEvent(window string) event[Chrome] {
+	if window == "report" {
+		return chromeReportEvent
 	}
-	return "chrome-" + window
+	return chromeAppEvent
 }
 
 // watchChrome follows the furniture of a window for as long as it is open.
@@ -176,8 +174,8 @@ func chromeEvent(window string) string {
 // out again. Nothing is moved by any of this, so there is nothing that can
 // snap back: the app reads where the buttons went and lays itself out
 // around them.
-func watchChrome(app *application.App, window *application.WebviewWindow, name string) *chromeWatch {
-	c := &chromeWatch{app: app, window: window, event: chromeEvent(name)}
+func watchChrome(tell emitter, window *application.WebviewWindow, name string) *chromeWatch {
+	c := &chromeWatch{tell: tell, window: window, event: chromeEvent(name)}
 	if window == nil {
 		return c
 	}

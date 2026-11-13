@@ -1168,10 +1168,11 @@ export type ChromeWindow = "app" | "report";
 // A window is told again whenever the answer changes: a resize, either
 // way through fullscreen, another display, another scale, light or dark,
 // or back from the Dock. The app's window on "chrome", the report window
-// on "chrome-report", see chromeEvent in chrome.go.
+// on "chrome-report", see chromeEvent in chrome.go. Each name is written
+// out, so the test of the events in events_test.go reads it.
 export function onChrome(window: ChromeWindow, fn: (c: Chrome) => void): () => void {
-  const event = window === "app" ? "chrome" : `chrome-${window}`;
-  return Events.On(event, (ev) => fn(ev.data as Chrome));
+  if (window === "report") return Events.On("chrome-report", (ev) => fn(ev.data as Chrome));
+  return Events.On("chrome", (ev) => fn(ev.data as Chrome));
 }
 
 export interface Undone {
