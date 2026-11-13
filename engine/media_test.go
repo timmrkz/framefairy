@@ -62,9 +62,6 @@ func TestOnlyAMachineHandedTheMediaEngineReachesIt(t *testing.T) {
 	}
 }
 
-// What Apple's encoders are handed for a short, argument by argument, the
-// way they took it on Tim's Mac. No test runs them, so a change to any of
-// these is a change of what a real Mac is asked, and shows here first.
 // The face detector is the program's to hand in, the way the media engine
 // is: UseSystem hands it, a test's machine has none and frames by what is
 // in focus, and the command line takes it away when FRAMEFAIRY_NO_FACES
@@ -85,6 +82,9 @@ func TestOnlyAMachineHandedTheFaceDetectorLooksForFaces(t *testing.T) {
 	}
 }
 
+// What Apple's encoders are handed for a short, argument by argument, the
+// way they took it on Tim's Mac. No test runs them, so a change to any of
+// these is a change of what a real Mac is asked, and shows here first.
 func TestWhatApplesEncodersAreHanded(t *testing.T) {
 	ctx := context.Background()
 	rs := RenderSettings{OutW: 1080, OutH: 1920, CRF: DefaultOptions().CRF, Rate: 30}

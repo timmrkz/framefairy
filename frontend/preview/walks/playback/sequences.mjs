@@ -30,9 +30,10 @@ export default [
     // across them, which only keyframes move. The search finds the clip of
     // two cameras in one piece, a cut across the switch and an edge
     // trimmed past it and put back leave it so, the crop dragged on the
-    // first camera stands there on the second too. That the short shows
-    // every frame through that one crop is the engine's, see
-    // TestAClipFramedForTwoCamerasPlaysWithOneCrop in engine/shots_test.go.
+    // first camera stands there on the second too. That the clip keeps
+    // one crop is the engine's, TestAClipFramedForTwoCamerasPlaysWithOneCrop
+    // in engine/shots_test.go, and a short is drawn through its clip's
+    // crop the same for every clip, so no walk renders this one.
     name: "a clip filmed by two cameras has one crop, through a cut, a trim and a drag",
     steps: [
       ["add cameras", 30, 12],
@@ -69,7 +70,7 @@ export default [
     // matrix, so its frame number runs down its right side, and the part
     // after the cut, rotated a quarter to the left with R, reads across
     // its top again in the video preview.
-    // TestRotateTurnsThePartBetweenCutsAndFourTurnsBringItBack and
+    // TestRotateTurnsTheStretchOfThePartAndFourTurnsBringItBack and
     // TestARotatedPieceIsRotatedBeforeItsCrop hold the engine and the
     // short to it, this the app.
     name: "a part of a phone's video rotated with R stands up in the video preview",

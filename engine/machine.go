@@ -119,8 +119,8 @@ type Machine struct {
 }
 
 // UseSystem hands the machine the system's keychain, its network, its
-// media engine and its installed fonts. Each program calls it once, in
-// main, on the machine it hands every Engine.
+// media engine, the face detector and its installed fonts. Each program
+// calls it once, in main, on the machine it hands every Engine.
 func (m *Machine) UseSystem() {
 	m.Fonts.UseMachine()
 	m.keys, m.oldKeys = systemKeys(), legacyKeys()
