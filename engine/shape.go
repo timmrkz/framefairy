@@ -109,7 +109,7 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 	if err != nil {
 		return Shaped{}, err
 	}
-	clips, err := s.clipObjects()
+	clips, err := s.orderedClips()
 	if err != nil {
 		return Shaped{}, err
 	}
@@ -117,13 +117,8 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 	if err != nil {
 		return Shaped{}, err
 	}
-	// The clip is the summary's, shared by every step of the drag, so the
-	// gesture is made on copies of its pieces.
-	pieces := segmentObjects(c)
-	for i, p := range pieces {
-		pieces[i] = copyObject(p)
-	}
-	out, err := checkedPieces(change, pieces, rotationsOf(c), g.Frames)
+	c = cloneObject(c)
+	out, err := checkedPieces(change, segmentObjects(c), rotationsOf(c), g.Frames)
 	if err != nil {
 		return Shaped{}, err
 	}

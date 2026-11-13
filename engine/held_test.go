@@ -281,6 +281,49 @@ func TestATranscriptReadThatPanicsLetsGoOfItsWaiters(t *testing.T) {
 	})
 }
 
+// What the library and the state ask of a transcript being read waits
+// for that read and takes it, where it once found nothing and read every
+// file of the transcript again beside it, as the app opened, #800. It runs
+// in a testing/synctest bubble, so the read ends only once the ask waits
+// on it.
+func TestAskingWhileATranscriptIsReadWaitsForThatRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m := &Machine{}
+		ep := m.Episode("/v/a.mp4")
+		var reads atomic.Int32
+		want := newTranscriptRead(&Transcript{}, true)
+		started, held := make(chan struct{}), make(chan struct{})
+		go func() {
+			_, _ = transcriptOf(ep, "1", func() (*TranscriptRead, error) {
+				reads.Add(1)
+				close(started)
+				<-held
+				return want, nil
+			})
+		}()
+		<-started
+		asked := make(chan *TranscriptRead)
+		go func() { asked <- ep.heldNow("1") }()
+		synctest.Wait()
+		select {
+		case r := <-asked:
+			close(held)
+			t.Fatalf("the ask did not wait for the read under way and found %v", r)
+		default:
+		}
+		close(held)
+		if r := <-asked; r != want {
+			t.Fatalf("the ask took %v, not the read it waited for", r)
+		}
+		if n := reads.Load(); n != 1 {
+			t.Errorf("the transcript was read %d times, wanted once", n)
+		}
+		if r := ep.heldNow("2"); r != nil {
+			t.Errorf("a read of other files was taken for a stamp it was not read at: %v", r)
+		}
+	})
+}
+
 // planRead is the read the episode keeps of the plan at path, nil for none.
 func planRead(ep *Episode, path string) *keptRead[PlanSummary] {
 	ep.m.held.Lock()

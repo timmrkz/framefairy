@@ -1504,7 +1504,7 @@ func TestStepsOfADragFromSeveralAtOnceShareThePlan(t *testing.T) {
 		}
 	}
 	wg.Wait()
-	clips, err := s.clipObjects()
+	clips, err := s.orderedClips()
 	if err != nil {
 		t.Fatal(err)
 	}

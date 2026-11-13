@@ -70,42 +70,29 @@ type PlanSummary struct {
 	// plan and clips are the plan as it was read for the summary, so what
 	// asks where its clips' shorts are does not read it a second time, and
 	// data the bytes they were parsed from, for what reads the plan in its
-	// own order, a gesture, and the undo's snapshot. All are shared and
-	// only read.
-	plan  Plan
-	clips []Clip
-	data  []byte
-	// ordered is the clips of data in the plan's own order, read once, the
-	// first time a gesture asks, see clipObjects.
-	ordered *orderedClips
+	// own order, a gesture, and the undo's snapshot. ordered is the plan
+	// read in its own order, read once when it is first asked for, see
+	// orderedClips. All are shared and only read.
+	plan    Plan
+	clips   []Clip
+	data    []byte
+	ordered func() ([]*object, error)
 }
 
-// orderedClips is a plan's clips read in its own order, with every key
-// it has, once for every step of a drag, see PlanSummary.clipObjects.
-type orderedClips struct {
-	once  sync.Once
-	clips []*object
-	err   error
-}
-
-// clipObjects is the summary's clips in the plan's own order, read from
-// its bytes the first time a gesture asks and shared by every step after.
-// A drag read the whole plan again on every step of the hand, and a plan
-// of thirty clips took a quarter of the step. They are shared, so nothing
-// changes them: a gesture works on copies of a clip's pieces, see
-// ShapeClip.
-func (s PlanSummary) clipObjects() ([]*object, error) {
+// orderedClips are the clips of the plan in its own order, the way an
+// edit reads them, see editPlan. They are read once for the summary, not
+// on every step of a drag, where reading every clip of a plan of 80 was
+// half the time of a step, #801. They are shared and only read: what
+// changes a clip changes a copy, see cloneObject.
+func (s PlanSummary) orderedClips() ([]*object, error) {
 	if s.ordered == nil {
-		return orderedClipsOf(s.data)
+		return readOrderedClips(s.data)
 	}
-	s.ordered.once.Do(func() {
-		s.ordered.clips, s.ordered.err = orderedClipsOf(s.data)
-	})
-	return s.ordered.clips, s.ordered.err
+	return s.ordered()
 }
 
-// orderedClipsOf reads the clips of a plan's bytes in its own order.
-func orderedClipsOf(data []byte) ([]*object, error) {
+// readOrderedClips reads the clips of a plan in its own order.
+func readOrderedClips(data []byte) ([]*object, error) {
 	value, err := decodeOrdered(data)
 	if err != nil {
 		return nil, err
@@ -314,7 +301,8 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 		return PlanSummary{}, err
 	}
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
-		Modified: info.ModTime(), plan: plan, clips: clips, data: data, ordered: &orderedClips{}}
+		Modified: info.ModTime(), plan: plan, clips: clips, data: data,
+		ordered: sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) })}
 	made := plan.PlannedWith()
 	if v, ok := num.AsFloat(made[keyFrom]); ok {
 		s.From = v
@@ -1002,6 +990,12 @@ type ShapedView struct {
 // see ShapeClip.
 func ShapeClipView(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause float64,
 	look *Look) (*ShapedView, error) {
+	// The clip's own words are made once, here: the gesture, where the
+	// captions go and the captions themselves each made them again, a copy
+	// of every word of the video each time a clip has a correction.
+	if clip, err := s.clip(clipID); err == nil {
+		t = t.Of(clip)
+	}
 	shaped, err := ShapeClip(s, clipID, g, t, keepPause, look.fonts())
 	if err != nil {
 		return nil, err
@@ -1019,6 +1013,8 @@ func ShapeCaptionTime(s PlanSummary, clipID string, word float64, edge string, a
 	if err != nil {
 		return nil, err
 	}
+	// The clip's own words are made once, see ShapeClipView.
+	t = t.Of(clip)
 	moved, err := moveCaptionEdge(s.plan, clip, word, edge, at, toWords, t, look)
 	if err != nil {
 		return nil, err
