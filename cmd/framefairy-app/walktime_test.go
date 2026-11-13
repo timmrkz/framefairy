@@ -8,8 +8,9 @@ import (
 	"time"
 )
 
-// walkTime is the clock the bridge hands the app's removals, see
-// timeKeeper in removal.go. It is held and let go with the page's clock,
+// walkTime is the clock the bridge hands the app's machine, see
+// engine.Clock: how long removed work can be put back, and how often a
+// search says how far it has come. It is held and let go with the page's clock,
 // through /clock?hold and /clock?go, see holdClock and letClockGo in
 // walks/bridge.mjs, and a walk runs it on by as much as it runs the
 // page's clock on, through /clock?run=, see runClock. So ten seconds a
@@ -23,8 +24,10 @@ type walkTime struct {
 	// held is set while it stands still, at the moment it stands at.
 	held   bool
 	heldAt time.Time
-	// due is every call set and not yet made or stopped.
+	// due is every call set and not yet made or stopped, and set is
+	// closed and made again each time a call is set, see next.
 	due map[*walkCall]struct{}
+	set chan struct{}
 }
 
 // walkCall is one call due at a moment of the walk's clock. timer makes
@@ -45,7 +48,7 @@ func (c *walkCall) stop() {
 }
 
 func newWalkTime() *walkTime {
-	return &walkTime{due: map[*walkCall]struct{}{}}
+	return &walkTime{due: map[*walkCall]struct{}{}, set: make(chan struct{})}
 }
 
 func (w *walkTime) Now() time.Time {
@@ -100,6 +103,8 @@ func (w *walkTime) AfterFunc(d time.Duration, f func()) func() bool {
 	defer w.mu.Unlock()
 	c := &walkCall{at: w.nowLocked().Add(d), f: f}
 	w.due[c] = struct{}{}
+	close(w.set)
+	w.set = make(chan struct{})
 	if !w.held {
 		w.arm(c, d)
 	}
@@ -122,6 +127,34 @@ func (w *walkTime) make(c *walkCall) {
 	w.mu.Unlock()
 	if was {
 		c.f()
+	}
+}
+
+// next runs the clock on to the call due first and makes it, and the
+// others due at that moment, and says how far it ran. With nothing due
+// it waits until a call is set, the way a walk waits on news: a search
+// the walk started may not have begun to keep its time yet. A walk that
+// holds the clock hears the next report of a running search this way,
+// without knowing how often a search reports.
+func (w *walkTime) next() time.Duration {
+	for {
+		w.mu.Lock()
+		now := w.nowLocked()
+		var first *walkCall
+		for c := range w.due {
+			if first == nil || c.at.Before(first.at) {
+				first = c
+			}
+		}
+		set := w.set
+		w.mu.Unlock()
+		if first == nil {
+			<-set
+			continue
+		}
+		d := max(0, first.at.Sub(now))
+		w.run(d)
+		return d
 	}
 }
 
@@ -187,6 +220,38 @@ func TestTheWalksClockStandsStillWhileHeld(t *testing.T) {
 		synctest.Wait()
 		if len(seen()) != 2 {
 			t.Errorf("let go, the clock made %v once its time was up", seen())
+		}
+	})
+}
+
+// Run on to its next call, the walks' clock makes that call and the
+// others due with it, and leaves the later ones. With nothing set, it
+// waits for a call to be set, the way a search that has just started
+// sets its first report.
+func TestTheWalksClockRunsOnToItsNextCall(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := newWalkTime()
+		w.hold()
+		var made []string
+		var mu sync.Mutex
+		seen := func() []string { mu.Lock(); defer mu.Unlock(); return slices.Clone(made) }
+		note := func(s string) func() {
+			return func() { mu.Lock(); made = append(made, s); mu.Unlock() }
+		}
+		ran := make(chan time.Duration)
+		go func() { ran <- w.next() }()
+		synctest.Wait()
+		w.AfterFunc(500*time.Millisecond, note("a"))
+		w.AfterFunc(500*time.Millisecond, note("b"))
+		w.AfterFunc(time.Second, note("c"))
+		if d := <-ran; d != 500*time.Millisecond {
+			t.Errorf("the clock ran on %v to its next call, want 500ms", d)
+		}
+		if got := seen(); len(got) != 2 || !slices.Contains(got, "a") || !slices.Contains(got, "b") {
+			t.Errorf("run on to its next call, the clock made %v, want a and b", got)
+		}
+		if d := w.next(); d != 500*time.Millisecond || len(seen()) != 3 {
+			t.Errorf("the next call: ran %v and made %v", d, seen())
 		}
 	})
 }

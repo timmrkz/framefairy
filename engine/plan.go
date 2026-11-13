@@ -323,7 +323,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		if opts.Local != nil {
 			budget = opts.Local.Think
 		}
-		clock := newSearchClock(e.Log, e.Records, opts.Model, opts.Local != nil, runes.Len(prompt), opts.Count, budget)
+		clock := newSearchClock(e.Log, e.clock(), e.Records, opts.Model, opts.Local != nil, runes.Len(prompt), opts.Count, budget)
 		// Set before the clock runs, so nothing reads it while it is set.
 		clock.now.NoFit = !build.fits
 		go clock.run()

@@ -39,6 +39,11 @@ type Machine struct {
 	// see ProgramSaid. It is set once, before any program starts, and
 	// nil hears nothing.
 	Said ProgramSaid
+	// Clock is the time kept for work that waits on its own, how often
+	// a search says how far it has come and how long removed work can
+	// be put back, see Clock. NewMachine hands it the system's, and the
+	// walks' bridge the clock a walk runs on.
+	Clock Clock
 	// Fonts are the faces captions can be written in, the bundled ones
 	// and, once the program calls UseMachine, the machine's own, read
 	// from its font folders and kept with what was measured of each.
@@ -172,7 +177,7 @@ func (offline) RoundTrip(r *http.Request) (*http.Response, error) {
 // NewMachine is the machine of a program whose files are on files, with
 // the records in their default places and the tools beside the program.
 func NewMachine(files afero.Fs) *Machine {
-	return &Machine{Files: files, Records: NewRecords(files, "", ""), Tools: tool.NewFinder()}
+	return &Machine{Files: files, Records: NewRecords(files, "", ""), Tools: tool.NewFinder(), Clock: SystemClock{}}
 }
 
 // LearnFrom hands this new machine what before learned about the computer
