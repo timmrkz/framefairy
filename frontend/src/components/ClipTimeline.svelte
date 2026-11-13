@@ -308,8 +308,8 @@
   // #759.
   let inPage = $state(false);
   let view = $state({ from: 0, to: 1 });
-  let words = $state<Word[]>([]);
-  let peaks = $state<number[]>([]);
+  let words = $state.raw<Word[]>([]);
+  let peaks = $state.raw<number[]>([]);
   let viewFor = "";
   // Whether a view has been read yet. It is state, because the effects
   // that read the view again as the waveform and the words grow return

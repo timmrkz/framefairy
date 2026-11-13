@@ -1,6 +1,7 @@
 // Typed calls into the Go side. The names match the methods of the FrameFairy
 // service in main.go.
 import { Call, Events } from "@wailsio/runtime";
+import { SentClips } from "./sent";
 
 // Every call into the Go side. One that fails, or takes longer than a
 // person waits without noticing, goes to the app's log, and so do the
@@ -513,6 +514,8 @@ export interface ClipEntry extends ClipView {
   // On the answer to an edit, when the edit was written, on the clock a
   // video's state is read by, see VideoState.
   rev?: number;
+  // On a clip in a state sent, what it holds, see VideoState.order.
+  hash?: string;
 }
 
 // What the workspace shows of one video, read at one moment and sent
@@ -538,6 +541,19 @@ export interface VideoState {
   // Where I and O can make a clip, see engine.MarkingOf, or none while
   // the video's length is not known.
   marking?: Marking | null;
+  // In a state sent, every clip by its key and its hash, while clips
+  // holds only those that changed, each with its hash, or kept when not
+  // one changed and the state holds neither. A state read by a call
+  // holds every clip and neither. lib/sent.ts makes a state sent whole,
+  // and what hears it never sees these, see onVideoState.
+  order?: ClipMark[];
+  kept?: boolean;
+}
+
+// A clip in a state sent, by its key and its hash, see VideoState.order.
+export interface ClipMark {
+  key: string;
+  hash: string;
 }
 
 // Where in a video I and O can make a clip: I, which starts one, at a
@@ -959,6 +975,8 @@ export const api = {
   library: () => call<EpisodeStatus[]>("Library"),
   // The state of a video as it is now, see VideoState.
   state: (path: string) => call<VideoState>("State", path),
+  // The next state of a video sent with every clip, see lib/sent.ts.
+  sendWhole: (path: string) => call<void>("SendWhole", path),
   addEpisodes: () => call<Added>("AddEpisodes"),
   // Which files the app takes as videos, in words, from the one list there
   // is, VideoExtensions in engine/episode.go.
@@ -1308,10 +1326,23 @@ export function onDropped(fn: (d: Added) => void): () => void {
   return Events.On("dropped", (ev) => fn(ev.data as Added));
 }
 
-// The state of a video, sent whole whenever it changed, at most four
-// times a second, see VideoState.
+// The state of a video, sent whenever it changed, at most four times a
+// second, see VideoState, and made whole, see lib/sent.ts. It is made
+// whole once for everything that hears it, and the clips sent are kept
+// from the first that hears on, which is the job store as the app starts.
+const sentClips = new SentClips((video) => api.sendWhole(video));
+const hearers = new Set<(state: VideoState) => void>();
+let hearing = false;
 export function onVideoState(fn: (state: VideoState) => void): () => void {
-  return Events.On("video", (ev) => fn(ev.data as VideoState));
+  hearers.add(fn);
+  if (!hearing) {
+    hearing = true;
+    Events.On("video", (ev) => {
+      const state = sentClips.whole(ev.data as VideoState);
+      if (state) for (const hear of [...hearers]) hear(state);
+    });
+  }
+  return () => hearers.delete(fn);
 }
 
 // What the setup and the settings show of the models, sent whole when the

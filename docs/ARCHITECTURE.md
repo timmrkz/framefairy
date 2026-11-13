@@ -105,7 +105,8 @@ waiting for the day the two disagree.
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
 | how a job stands beyond its step: that it is stopping, how a search ended, how long removed work has left | the job the queue holds, `Stopping`, `Ended` and `Away` in `cmd/framefairy-app/jobs.go`, and the timer of each removal in the queue, see `removal.go` | the app's Go side |
-| what is on screen | the interface's stores, and a video's status, clips, coverage, jobs, clip chosen and window in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick or move of the window until Go answers it | from what Go sends, and nothing else. What a hand pressed is kept by the job store until Go answers, see `startJob` |
+| the clips the window was last sent, for each video | Go's `videoNews` keeps each clip's hash, `telling.sent` in `cmd/framefairy-app/videostate.go`, and the window the clips, `SentClips` in `frontend/src/lib/sent.ts`, held to each other by the hashes, see [the decision record](decisions/2026-11-13-a-state-sends-only-the-clips-that-changed.md) | Go's side as it sends a state, the window's as it makes it whole. `SendWhole` starts both over |
+| what is on screen | the interface's stores, and a video's status, clips, coverage, jobs, clip chosen and window in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick or move of the window until Go answers it, or ten seconds have passed without an answer | from what Go sends, and nothing else. What a hand pressed is kept by the job store until Go answers, see `startJob` |
 
 ## The programs that run
 
@@ -232,7 +233,10 @@ other side relies on, and the pull request says so.
 - The `video` event, `VideoState`, whose `rev` is on the clock of the
   jobs' `seq`, so the window can tell which of two came later. It is the
   one way a video's jobs reach the window, and it holds every job of the
-  video there is to say anything about. The `job` event carries only a
+  video there is to say anything about. A state sent leaves out each
+  clip the window was sent as it is now, and `onVideoState` in
+  `frontend/src/lib/api.ts` makes it whole again, see
+  [the decision record](decisions/2026-11-13-a-state-sends-only-the-clips-that-changed.md). The `job` event carries only a
   job of no video, a model being downloaded, see `toWindow`.
 - The `notice` event, `Notice`, a failure told once as it happens, which
   is no fact of a video's state.
