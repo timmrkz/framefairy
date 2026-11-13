@@ -20,6 +20,8 @@ import (
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/fixtures"
 	"framefairy/internal/framewire"
+
+	"github.com/spf13/afero"
 )
 
 // The video preview asks for the captions of the view it was given, by
@@ -583,5 +585,36 @@ func TestCaptionDraftsTakeOnlyWhatMakesACaption(t *testing.T) {
 		if !c.bad && !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: drafts %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// A step of a drag that draws what the clip as saved draws has the same
+// track, and leaves the saved drawing kept for it: a step gets no whole
+// caption file, so the clip played after a drag that changed nothing
+// would never have one.
+func TestAStepThatChangedNothingLeavesTheSavedCaptionsKept(t *testing.T) {
+	t.Parallel()
+	svc, mine := memoryLibrary(t, "ep.mp4")
+	video := mine[0]
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	plan := filepath.Join(engine.LogsDir(video), "clips.json")
+	if err := afero.WriteFile(svc.store.files, plan, []byte(`{"source": "ep.mp4", "clips": [
+	  {"id": "01", "slug": "eins", "segments": [{"start": 10.0, "end": 14.0}],
+	   "words": [[10.1, 10.5, "eins"], [11.0, 11.4, "zwei"], [12.6, 13.0, "drei"]]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := svc.Captions(video, plan, "01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shaped, err := svc.Shape(video, plan, "01", engine.Gesture{Kind: "trim", Edge: "end", From: 14, To: 14}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shaped.Captions.Track != saved.Track {
+		t.Fatalf("the step that changed nothing has the track %q, the clip saved %q", shaped.Captions.Track, saved.Track)
+	}
+	if kept, ok := svc.previews.tracks.get(saved.Track); !ok || kept.drawing.InHand() {
+		t.Errorf("the saved clip's track is kept %v, with a drawing in the hand %v, want the saved drawing", ok, ok && kept.drawing.InHand())
 	}
 }

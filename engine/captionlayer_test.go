@@ -1007,6 +1007,49 @@ func TestASizeStepDrawsTheCaptionsShowingFirstAndTheWholeFileAfter(t *testing.T)
 	}
 }
 
+// A step of a drag draws its frame from a file of the captions showing
+// and starts no whole file: the next step calls it off again, and at an
+// hour long clip each measured on for about half a second beside the
+// drag.
+//
+// On the real disk: ffmpeg measures the words, and the caption files are
+// written into the work folder.
+func TestAStepOfADragDrawsOnlyTheCaptionsShowing(t *testing.T) {
+	ffmpegtest.Need(t)
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	work := t.TempDir()
+	d := threeCaptions(t, "01", nil)
+	d.inHand = true
+	font := e.Fonts.Style(nil).Font
+	const w, h = 540, 960
+	m := int64(centiseconds((d.Laid[1].Start+d.Laid[1].End)/2)) * 10
+	shown, err := e.previewTrackAt(ctx, work, d, nil, font, SourceInfo{}, w, h, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, previewTracks := e.captions()
+	previewTracks.mu.Lock()
+	files, making, started := len(previewTracks.files), len(previewTracks.making), len(previewTracks.started)
+	previewTracks.mu.Unlock()
+	if files != 1 || making != 0 || started != 0 {
+		t.Errorf("after a step %d files are kept, %d on their way and %d started, want only the captions showing", files, making, started)
+	}
+	whole, err := e.previewTrack(ctx, work, d, nil, font, SourceInfo{}, w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines, all := dialogues(t, shown.file), dialogues(t, whole.file); lines == 0 || lines >= all {
+		t.Errorf("the step drew from a file of %d lines, and the whole file has %d", lines, all)
+	}
+	// Lifted and typed into, as the video preview asks for it, it is
+	// still in the hand.
+	if !d.Lifted(LiftWord).InHand() || !d.Typing(CaptionShowing{Caption: 0, Word: 0}).InHand() {
+		t.Error("a step lifted or typed into is no longer in the hand")
+	}
+}
+
 // dialogues is how many lines the caption file at path draws.
 //
 // On the real disk: the engine writes the caption files the decoder reads.

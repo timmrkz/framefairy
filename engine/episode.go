@@ -967,7 +967,14 @@ type CaptionDrawing struct {
 	splice *Splice
 	was    *CaptionDrawing
 	named  string
+	// inHand is a drawing of captions the hand still shapes, a step of a
+	// drag, which the video preview only ever shows still, see
+	// previewTrackAt.
+	inHand bool
 }
+
+// InHand says whether d is the drawing of a step of a drag, see inHand.
+func (d *CaptionDrawing) InHand() bool { return d.inHand }
 
 // Drawing is what the captions of a view were made from.
 func (v *CaptionsView) Drawing() *CaptionDrawing { return v.drawing }
@@ -1021,7 +1028,9 @@ func ShapeClipView(s PlanSummary, clipID string, g Gesture, t *Transcript, keepP
 	if err != nil {
 		return nil, err
 	}
-	return &ShapedView{Shaped: shaped, Captions: captionsViewFrom(was, s.plan, shaped.Clip, t, look)}, nil
+	view := captionsViewFrom(was, s.plan, shaped.Clip, t, look)
+	view.drawing.inHand = true
+	return &ShapedView{Shaped: shaped, Captions: view}, nil
 }
 
 // ShapeCaptionTime works out the captions of a clip with the edge of one
@@ -1040,7 +1049,9 @@ func ShapeCaptionTime(s PlanSummary, clipID string, word float64, edge string, a
 	if err != nil {
 		return nil, err
 	}
-	return captionsView(moved.plan, moved.clip, t, look), nil
+	view := captionsView(moved.plan, moved.clip, t, look)
+	view.drawing.inHand = true
+	return view, nil
 }
 
 // planClip finds one clip of a plan, read from its file, for an edit,

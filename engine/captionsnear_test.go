@@ -153,6 +153,10 @@ func TestADragStepSendsOnlyTheCaptionsNearTheChange(t *testing.T) {
 			if step.Captions.Drawing().was != nil {
 				t.Errorf("seed %d, %s at %.2f: the step holds the drawing it was made from", seed, g.Edge, g.From)
 			}
+			if !step.Captions.Drawing().InHand() || saved.Drawing().InHand() {
+				t.Errorf("seed %d, %s at %.2f: the step is in the hand %v and the saved clip %v, want only the step",
+					seed, g.Edge, g.From, step.Captions.Drawing().InHand(), saved.Drawing().InHand())
+			}
 			cut := step.Captions.Splice
 			if cut == nil {
 				t.Errorf("seed %d, %s at %.2f: the step sent every caption", seed, g.Edge, g.From)
