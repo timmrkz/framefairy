@@ -1941,7 +1941,10 @@ func (m *freshMachine) keyed() []string {
 	return slices.Clone(m.keys)
 }
 
-// letArrive lets the download of a kind of model arrive, see arriving.
+// letArrive lets the download of a kind of model on its way arrive, see
+// arriving. A download of that kind pressed after it waits part way
+// again, so a walk can look at it on its way in the settings, and a walk
+// lets it arrive the same way or cancels it.
 func (b *bridge) letArrive(kind string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -1949,11 +1952,8 @@ func (b *bridge) letArrive(kind string) error {
 	if !ok {
 		return fmt.Errorf("no download of a %q model to let arrive, the bridge is not on its first run", kind)
 	}
-	select {
-	case <-gate:
-	default:
-		close(gate)
-	}
+	close(gate)
+	b.arrive[kind] = make(chan struct{})
 	return nil
 }
 
