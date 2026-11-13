@@ -48,11 +48,28 @@ import (
 // drawing the same. It used to fail the name, and a clip turned to its end
 // had a new name, and its captions a new file, on every read.
 func (d *CaptionDrawing) name() string {
+	if d.named != "" {
+		return d.named
+	}
 	h := sha256.New()
 	// One caption at a time, through one buffer, so the buffer stays as
 	// big as one caption.
 	buf := binary.AppendUvarint(make([]byte, 0, 512), uint64(len(d.Laid)))
-	for _, c := range d.Laid {
+	laid := d.Laid
+	if cut := d.splice; cut != nil && d.was != nil {
+		// A step of a drag is named by the drawing it was made from and
+		// what it changed there, which say all its captions, so a step
+		// costs the same however many captions the clip has, see
+		// laidNear. The mark keeps such a name from ever being one made
+		// the other way.
+		buf = append(buf, "near\x00"...)
+		buf = append(buf, d.was.name()...)
+		buf = binary.AppendUvarint(buf, uint64(cut.Head))
+		buf = binary.AppendUvarint(buf, uint64(cut.Tail))
+		buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(cut.Shift))
+		laid = d.Laid[cut.Head : cut.Head+cut.fresh]
+	}
+	for _, c := range laid {
 		buf = c.appendName(buf)
 		h.Write(buf)
 		buf = buf[:0]
@@ -275,7 +292,7 @@ func (d *CaptionDrawing) Lifted(part string) *CaptionDrawing {
 	for i := range laid {
 		laid[i].Lift = part
 	}
-	return &CaptionDrawing{Laid: laid, Style: d.Style, Clip: d.Clip}
+	return &CaptionDrawing{Laid: laid, Style: d.Style, Clip: d.Clip, inHand: d.inHand}
 }
 
 // PreviewWordFrames is where the words of d stand in the short the render
@@ -330,7 +347,7 @@ func (d *CaptionDrawing) Typing(word CaptionShowing) *CaptionDrawing {
 	}
 	laid := slices.Clone(d.Laid)
 	laid[word.Caption].Hidden = map[int]bool{word.Word: true}
-	return &CaptionDrawing{Laid: laid, Style: d.Style, Clip: d.Clip}
+	return &CaptionDrawing{Laid: laid, Style: d.Style, Clip: d.Clip, inHand: d.inHand}
 }
 
 // drafted is the style of d with drafts on top, only those of
@@ -378,6 +395,13 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 // captions that show measured first it takes about 60 ms. Tim saw the
 // captions stutter as he stepped the size with the arrow keys, issue
 // #360.
+//
+// A drawing in the hand, a step of a drag, gets no whole file: the video
+// preview shows it still, at the moment the hand is at, and the next step
+// called its file off again. Each step started one, and at an hour long
+// clip each measured on for about half a second beside the drag, a
+// core kept busy for as long as the hand moved. The whole file is made
+// once the hand lets go and the clip as saved is drawn.
 func (e *Engine) previewTrackAt(ctx context.Context, work string, d *CaptionDrawing, style map[string]any,
 	font string, source SourceInfo, outW, outH int, m int64) (previewFile, error) {
 	part := d.showing(m)
@@ -388,7 +412,7 @@ func (e *Engine) previewTrackAt(ctx context.Context, work string, d *CaptionDraw
 		return whole, nil
 	}
 	shown, err := e.previewTrackMade(ctx, work, part, style, font, source, outW, outH, alone)
-	if err == nil {
+	if err == nil && !d.inHand {
 		_, _ = e.previewTrackMade(ctx, work, d, style, font, source, outW, outH, started)
 	}
 	return shown, err

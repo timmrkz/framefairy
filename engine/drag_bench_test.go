@@ -42,7 +42,7 @@ func benchDrag(b *testing.B, from float64) {
 	g := Gesture{Kind: "trim", Edge: "start", From: from, To: from, Frames: at25}
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := ShapeClipView(s, "01", g, tr, 0.1, nil); err != nil {
+		if _, err := ShapeClipView(s, "01", g, tr, 0.1, nil, nil); err != nil {
 			b.Fatal(err)
 		}
 	}

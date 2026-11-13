@@ -149,7 +149,7 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			fsys, path := editablePlanPath(t)
 			before, _ := afero.ReadFile(fsys, path)
-			shown, err := ShapeClipView(planAt(t, fsys, path), "01", c.g, tr, 0.1, nil)
+			shown, err := ShapeClipView(planAt(t, fsys, path), "01", c.g, tr, 0.1, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -476,8 +476,11 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 
 // Shape works out what a gesture on the clip timeline makes of a clip,
 // with its captions, while the hand moves, and writes nothing. See
-// engine/shape.go.
-func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*ShapedClip, error) {
+// engine/shape.go. track is the track of the clip's captions the
+// interface shows, from before the hand took hold, or empty: the
+// captions the gesture leaves as they were are taken from it, and only
+// those near what it changed are sent, see engine.Splice.
+func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture, track string) (*ShapedClip, error) {
 	if !s.store.PlanOf(path, plan) {
 		return nil, errNotInLibrary
 	}
@@ -490,8 +493,12 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*Shaped
 	if err != nil {
 		return nil, err
 	}
+	var was *engine.CaptionDrawing
+	if kept, ok := s.previews.tracks.get(track); ok && kept.episode == path {
+		was = kept.drawing
+	}
 	view, err := engine.ShapeClipView(summary, clipID, g, t, s.store.Settings().options().KeepPause,
-		s.lookOf(path, summary))
+		s.lookOf(path, summary), was)
 	if err != nil {
 		return nil, err
 	}

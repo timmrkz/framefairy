@@ -102,10 +102,10 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 		t.Errorf("Render used a plan outside the library: %s", job.State)
 	}
 	g := engine.Gesture{Kind: "trim", Edge: "start", From: 1}
-	if _, err := svc.Shape(other, elsewhere, "01", g); err == nil {
+	if _, err := svc.Shape(other, elsewhere, "01", g, ""); err == nil {
 		t.Error("Shape answered for a file that is not in the library")
 	}
-	if _, err := svc.Shape(mine, elsewhere, "01", g); err == nil {
+	if _, err := svc.Shape(mine, elsewhere, "01", g, ""); err == nil {
 		t.Error("Shape read a plan outside the library")
 	}
 	if _, err := svc.Reshape(ctx, mine, elsewhere, "01", g, [2]float64{}); err == nil {
@@ -380,7 +380,7 @@ func TestAPlanIsOnlyEditedWithItsOwnEpisode(t *testing.T) {
 		_, errs["ResetCrop"] = svc.ResetCrop(ctx, mine, wrong, "01", 1)
 		_, errs["RotatePart"] = svc.RotatePart(ctx, mine, wrong, "01", 1)
 		_, errs["RemoveClip"] = svc.RemoveClip(ctx, mine, wrong, "01", true)
-		_, errs["Shape"] = svc.Shape(mine, wrong, "01", g)
+		_, errs["Shape"] = svc.Shape(mine, wrong, "01", g, "")
 		_, errs["Reshape"] = svc.Reshape(ctx, mine, wrong, "01", g, [2]float64{})
 		_, errs["Captions"] = svc.Captions(mine, wrong, "01")
 		_, errs["ShareOfClip"] = svc.ShareOfClip(mine, wrong, "01", 0.5)

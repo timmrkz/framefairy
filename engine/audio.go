@@ -81,6 +81,10 @@ type Transcript struct {
 	byKey map[string]int
 	// fixes are the corrections the words were made with, see Of.
 	fixes map[string]string
+	// from is the transcript a clip's own was made from by Of, so two
+	// made from the same one are known to hold the same words, see
+	// source.
+	from *Transcript
 	// Loudness in dB every FrameSeconds, starting at Start.
 	Frames []float32
 	Start  float64

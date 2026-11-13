@@ -3509,6 +3509,7 @@
           return box && box.width > 0 ? box.left + box.width / 2 : undefined;
         }}
         captions={captions?.captions ?? []}
+        captionTrack={captions?.track}
         captionPieces={captions?.pieces}
         captionLook={shownCaptions
           ? {
