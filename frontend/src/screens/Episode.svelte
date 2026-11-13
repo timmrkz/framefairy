@@ -407,7 +407,7 @@
   let saying = $state(false);
   let sayTyped = $state("");
   let sayMatches = $state(0);
-  let sentences = $state<Sentence[] | null>(null);
+  let sentences = $state.raw<Sentence[] | null>(null);
   // Why the cards could not be read the last time they were asked for,
   // said in the list until the next read works.
   let sentencesFailed = $state<string | null>(null);
@@ -1846,7 +1846,7 @@
 
   // The captions of the selected clip, as the render will draw them. Every
   // edit replaces the clip, so this follows along by itself.
-  let captions = $state<CaptionsView | null>(null);
+  let captions = $state.raw<CaptionsView | null>(null);
   // The clip the captions above are of. Until a clip just chosen has its
   // own, the video preview draws none rather than the last clip's at the
   // new clip's moments.

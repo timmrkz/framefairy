@@ -10,6 +10,7 @@ import type { ClipEntry, CoverageView, EpisodeStatus, Job, KeptWindow, VideoStat
 import type { JobStore } from "./state.svelte";
 import { said } from "./said";
 import { unchanged } from "./unchanged";
+import { equal } from "./equal";
 
 // What the workspace does when the app chose another clip, see
 // cmd/framefairy-app/choose.go, in place of before, the clip chosen until
@@ -20,15 +21,15 @@ export type Chose = (key: string, before: string, card: string) => void;
 export class EpisodeSession {
   // The video's state, from the newest VideoState kept: null until the
   // first is in.
-  status = $state<EpisodeStatus | null>(null);
-  clips = $state<ClipEntry[]>([]);
-  coverage = $state<CoverageView>({ passes: [] });
+  status = $state.raw<EpisodeStatus | null>(null);
+  clips = $state.raw<ClipEntry[]>([]);
+  coverage = $state.raw<CoverageView>({ passes: [] });
   // The rev of the newest state kept.
   rev = $state(0);
   // The video's jobs in the newest state kept, the clips on their way
   // among them. They come with the clips, so a card on its way becomes its
   // clip in the state that holds the clip, never a frame before or after.
-  jobs = $state<Job[]>([]);
+  jobs = $state.raw<Job[]>([]);
   // The rev of the newest answer to an edit: a state read before it
   // knows nothing of the edit, and would put back what it changed.
   private floor = 0;
@@ -41,7 +42,7 @@ export class EpisodeSession {
   // the newest state kept, or what a hand did while the Go side has not
   // answered it, see Hand.
   chosen = $state("");
-  window = $state<WindowView | null>(null);
+  window = $state.raw<WindowView | null>(null);
   private picks = new Hand();
   private places = new Hand();
   private chose: Chose = () => {};
@@ -193,7 +194,7 @@ export class EpisodeSession {
 // The value kept, when the one that came says the same, so nothing that
 // reads it runs again for a state that changed elsewhere.
 function same<T>(was: T, now: T): T {
-  return was !== null && JSON.stringify(was) === JSON.stringify(now) ? was : now;
+  return was !== null && equal(was, now) ? was : now;
 }
 
 // What a hand did that the Go side has not answered yet: a pick, or a
