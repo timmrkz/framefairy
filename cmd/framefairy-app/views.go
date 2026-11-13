@@ -38,6 +38,10 @@ type ClipEntry struct {
 	// window takes no state of the video read before it. A clip in a
 	// VideoState has none.
 	Rev uint64 `json:"rev,omitempty"`
+	// Hash is, on a clip in a state sent to the window, what the clip
+	// holds, so a later state may send the clip as its key and this alone
+	// while it holds the same, see VideoState.Order.
+	Hash string `json:"hash,omitempty"`
 }
 
 // Clips lists the clips of every clip set of an episode, in time order.

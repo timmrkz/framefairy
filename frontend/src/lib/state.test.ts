@@ -202,3 +202,20 @@ describe("the jobs of a video's state", () => {
     expect(jobs.list.map((j) => j.id)).toEqual(["other"]);
   });
 });
+
+// Every state of a video reaches the store twice, from its own listener
+// and passed on by the video's session, issue #805. The second is the
+// same state and changes nothing.
+describe("a state of a video heard twice", () => {
+  test("is taken once", () => {
+    const jobs = new JobStore();
+    const state = { video: "/v.mp4", rev: 4, jobs: [job("running", 3)] } as never;
+    jobs.take(state);
+    const list = jobs.list;
+    jobs.take(state);
+    expect(jobs.list).toBe(list);
+    // A newer state of the same jobs is still taken.
+    jobs.take({ video: "/v.mp4", rev: 5, jobs: [job("done", 5)] } as never);
+    expect(jobs.list.map((j) => j.state)).toEqual(["done"]);
+  });
+});

@@ -335,13 +335,22 @@
   // letters answer a lot of words the way a font answers its name, and in
   // a video of an hour the cards that hold them were lost among cards
   // that only share their letters, found in the review of #367.
+  // A card that shows what it showed keeps the row it had, so Svelte
+  // leaves it alone: a letter that bolds the same words, or a state of
+  // the video that changed no card, touched every card of the list.
+  let rowsWere = new Map<string, Row>();
   const rows = $derived.by(() => {
     const out: Row[] = [];
+    const was = rowsWere;
     for (const fuzzy of [false, true]) {
       for (const s of sentences ?? []) {
         const bold = found(s.text, typed, fuzzy);
+        if (!bold) continue;
         // Two clips over each other each have a card of the same words.
-        if (bold) out.push({ key: `s${s.start}|${s.clip ?? ""}`, at: s.start, sentence: s, bold, clip: clipOf(s) });
+        const key = `s${s.start}|${s.clip ?? ""}`;
+        const clip = clipOf(s);
+        const old = was.get(key);
+        out.push(old && "sentence" in old && old.sentence === s && old.clip === clip && sameBold(old.bold, bold) ? old : { key, at: s.start, sentence: s, bold, clip });
       }
       if (out.length || !typed.trim()) break;
     }
@@ -350,8 +359,14 @@
     // Known by their place among them, not by where they start, which
     // moves as the work hears.
     if (sentences && !typed.trim()) for (const [i, h] of unheard.entries()) out.push({ key: `h${i}`, at: h[0], hole: h });
-    return out.sort((a, b) => a.at - b.at);
+    out.sort((a, b) => a.at - b.at);
+    rowsWere = new Map(out.map((r) => [r.key, r]));
+    return out;
   });
+
+  function sameBold(a: [number, number][], b: [number, number][]): boolean {
+    return a.length === b.length && a.every(([from, to], i) => from === b[i][0] && to === b[i][1]);
+  }
 
   // The cards picked with Shift and a click, the way files are in
   // Finder, see pick in lib/copy.ts. The playhead stays. A click without
@@ -381,7 +396,13 @@
   // a new list and keeps nothing.
   $effect.pre(() => {
     void rows;
+    const now = typed;
     anchor = untrack(() => {
+      // A letter typed is a new list, read from its top, see above. The
+      // list on screen is still the one before it, so it is measured for
+      // nothing: every card laid out once more for each letter, and the
+      // anchor taken from the new search, so it was put back too.
+      if (now !== typedWas) return null;
       const box = scroller();
       if (!box || !list) return null;
       const v = box.getBoundingClientRect();
@@ -460,8 +481,12 @@
             {clock(row.sentence.start)}
             {#if row.clip}<span class="clipname">{row.clip.title || row.clip.slug}</span>{/if}
           </span>
+          <!-- Every piece is a span, bold or not, so a letter typed changes
+               a class and a text, and makes and removes no element. A bold
+               piece of its own element was made and removed for every
+               card, on every letter. -->
           <span class="text">
-            {#each pieces(row.sentence.text, row.bold) as p, i (i)}{#if p.bold}<b>{p.text}</b>{:else}{p.text}{/if}{/each}
+            {#each pieces(row.sentence.text, row.bold) as p, i (i)}<span class:bold={p.bold}>{p.text}</span>{/each}
           </span>
         </button>
       </li>
@@ -568,7 +593,7 @@
 
   /* What answers what is typed, in the white of a clip's words and
      heavier, so it stands out of every card, a clip's too. */
-  .text b {
+  .text .bold {
     color: var(--text);
     font-weight: 600;
   }
