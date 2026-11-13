@@ -46,6 +46,7 @@
     type SetupState,
     onLicenceLink,
     onSetup,
+    onAppLog,
   } from "../lib/api";
   import { live } from "../lib/flow";
   import ApiKey from "../components/ApiKey.svelte";
@@ -66,10 +67,9 @@
   // makes the trash can beside them mean anything.
   let training = $state<TrainingStatus>({ dir: "", plans: 0, decisions: 0 });
   let clearing = $state(false);
-  // The app's log, an area of its own: read again whenever it opens, so
-  // it says what the log holds now and not what it held at the start,
-  // and the last toasts with it. Issue #421.
-  let logOpen = $state(false);
+  // The app's log, an area of its own, kept up to date while Settings is
+  // open, so it says what the log holds now and the last toasts with it.
+  // Issue #421.
   let appLog = $state<LogStatus>({ path: "", files: 0, bytes: 0, lines: 0, toasts: [] });
   let removingLog = $state(false);
   const logFolder = $derived(appLog.path.replace(/[\\/][^\\/]*$/, ""));
@@ -659,9 +659,14 @@
     nav.hold = hold;
     const noLink = onLicenceLink(takeLink);
     const noSetup = onSetup(tookModels);
+    const noLog = onAppLog((st) => (appLog = st));
+    readLog();
+    api.watchAppLog(true).catch(() => {});
     return () => {
       noLink();
       noSetup();
+      noLog();
+      api.watchAppLog(false).catch(() => {});
       clearTimeout(saveTimer);
       if (nav.hold === hold) nav.hold = null;
     };
@@ -1000,74 +1005,62 @@
       </div>
 
       <!-- The app's own log, the file a report takes along, an area of
-           its own that opens like Advanced. It is the app's and nobody
-           else's, so it can go whole, after asking. Open, it lists the
-           last toasts the app showed, so one that ran out unread can
+           its own, kept up to date as lines are written. It is the app's
+           and nobody else's, so it can go whole, after asking. It lists
+           the last toasts the app showed, so one that ran out unread can
            still be read and reported. Issue #421. -->
       <div class="group">
-        <button
-          class="quiet disclose"
-          aria-expanded={logOpen}
-          onclick={() => {
-            logOpen = !logOpen;
-            if (logOpen) readLog();
-          }}
-        >
-          <span class="chevron" class:open={logOpen}><Icon name="chevron" size={14} /></span>
-          <h2>The app's log</h2>
-        </button>
-        {#if logOpen}
-          <div class="card">
-            <div class="item">
-              <div class="words">
-                {#if appLog.path}
-                  <span class="head num">
-                    {plural(appLog.files, "file", "files")}, {size(appLog.bytes) || "empty"}, {plural(appLog.lines, "line", "lines")}
-                  </span>
-                  <span class="small muted selectable path">{shown(appLog.path)}</span>
-                {:else}
-                  <span class="head">Nothing written yet</span>
-                {/if}
-              </div>
-              <button
-                class="quiet bin"
-                disabled={!appLog.path}
-                title="Show in folder"
-                aria-label="Show the app's log in folder"
-                onclick={showLog}
-              >
-                <Icon name="folder" />
-              </button>
-              <button
-                class="quiet danger bin"
-                disabled={!appLog.path}
-                title="Remove the log, the older files too"
-                aria-label="Remove the app's log"
-                aria-haspopup="dialog"
-                onclick={() => (removingLog = true)}
-              >
-                <Icon name="trash" />
-              </button>
+        <h2>Logs</h2>
+        <div class="card">
+          <div class="item">
+            <div class="words">
+              {#if appLog.path}
+                <span class="head num">
+                  {plural(appLog.files, "file", "files")}, {size(appLog.bytes) || "empty"}, {plural(appLog.lines, "line", "lines")}
+                </span>
+                <span class="small muted selectable path">{shown(appLog.path)}</span>
+              {:else}
+                <span class="head">Nothing written yet</span>
+              {/if}
             </div>
-            {#each appLog.toasts as t, i (i)}
-              <!-- A toast the app showed, in its words, for one that ran
-                   out unread. Report opens Report a Problem with them
-                   written in it, the way the toast's own Report does. -->
-              <div class="item logged">
-                <span class="mark err" aria-hidden="true"><Icon name="warn" /></span>
-                <div class="words">
-                  <span class="selectable">{t.text}</span>
-                  <span class="small muted num">{when(t.at)}{#if t.video}, {t.video}{/if}</span>
-                </div>
-                <button
-                  class="act report"
-                  title="Opens Report a Problem with this message written in it"
-                  onclick={() => api.reportAbout(t.text).catch((err) => (problem = errorText(err)))}>Report</button
-                >
-              </div>
-            {/each}
+            <button
+              class="quiet bin"
+              disabled={!appLog.path}
+              title="Show in folder"
+              aria-label="Show the app's log in folder"
+              onclick={showLog}
+            >
+              <Icon name="folder" />
+            </button>
+            <button
+              class="quiet danger bin"
+              disabled={!appLog.path}
+              title="Remove the log, the older files too"
+              aria-label="Remove the app's log"
+              aria-haspopup="dialog"
+              onclick={() => (removingLog = true)}
+            >
+              <Icon name="trash" />
+            </button>
           </div>
-        {/if}
+          {#each appLog.toasts as t, i (i)}
+            <!-- A toast the app showed, in its words, for one that ran
+                 out unread. Report opens Report a Problem with them
+                 written in it, the way the toast's own Report does. -->
+            <div class="item logged">
+              <span class="mark err" aria-hidden="true"><Icon name="warn" /></span>
+              <div class="words">
+                <span class="selectable">{t.text}</span>
+                <span class="small muted num">{when(t.at)}{#if t.video}, {t.video}{/if}</span>
+              </div>
+              <button
+                class="act report"
+                title="Opens Report a Problem with this message written in it"
+                onclick={() => api.reportAbout(t.text).catch((err) => (problem = errorText(err)))}>Report</button
+              >
+            </div>
+          {/each}
+        </div>
       </div>
 
       <!-- The machinery: where the tools and the models are, for the day

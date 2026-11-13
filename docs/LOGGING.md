@@ -25,8 +25,11 @@ disk free is a cap, not a switch. The log is at most 10 MB of lines in
 use and three older files compressed beside it, a few MB more. That
 holds many hours of work. It is never more, whatever happens.
 
-Settings shows the log in an area of its own: where it is, how many
-files with the older ones, their size and their lines. It shows it in
+Settings shows the log in an area of its own, Logs: where it is, how
+many files with the older ones, their size and their lines, sent again
+while Settings is open as lines are written, at most once a second.
+Each file is read once, and the file in use from where it was read last,
+so keeping up costs the lines written since. It shows it in
 Finder, and its trash can removes every file of it after asking, the
 next line starting a new log that says how many files, bytes and lines
 went. Plan row 2.245. Under it are the last five toasts the app showed,

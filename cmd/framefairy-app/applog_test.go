@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -753,6 +754,75 @@ func TestSettingsShowsTheLastToasts(t *testing.T) {
 	if st := s.AppLog(); len(st.Toasts) != 0 {
 		t.Fatalf("the log was removed, and Settings still shows %v", st.Toasts)
 	}
+}
+
+// Settings, while it is open, is sent the log as lines are written,
+// without a reload: the toasts that came and the lines counted, once a
+// beat however many lines come in it, the same as read afresh. A log
+// turned over is a new file of the same name, and is counted as one.
+// Issue #421.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestSettingsSeesTheLogAsItIsWritten(t *testing.T) {
+	l := &appLog{run: "watch", grew: make(chan struct{}, 1)}
+	l.open(filepath.Join(t.TempDir(), "logs", "app.log"))
+	t.Cleanup(l.close)
+	// Turned over by hand below, and kept plain, since packing it runs
+	// on lumberjack's own goroutine.
+	l.file.Compress = false
+	told := make(chan LogStatus, 4)
+	beat := make(chan time.Time)
+	done := make(chan struct{})
+	go func() {
+		l.watch(func(st LogStatus) { told <- st }, func() <-chan time.Time { return beat })
+		close(done)
+	}()
+	toast := func(text string) { l.line(zerolog.WarnLevel, "window").Bool("toast", true).Msg(text) }
+	shows := func(st LogStatus, files, lines int, texts ...string) {
+		t.Helper()
+		got := []string{}
+		for _, t := range st.Toasts {
+			got = append(got, t.Text)
+		}
+		if st.Files != files || st.Lines != lines || !slices.Equal(got, texts) {
+			t.Fatalf("Settings shows %d files, %d lines and %v, want %d, %d and %v", st.Files, st.Lines, got, files, lines, texts)
+		}
+	}
+
+	// Nothing is sent while Settings is not open.
+	toast("before")
+	l.watching.Store(true)
+	toast("one")
+	shows(<-told, 1, 2, "one", "before")
+
+	// Two lines in one beat are one message, sent once the beat is over.
+	l.line(zerolog.InfoLevel, "app").Msg("a line")
+	toast("two")
+	beat <- time.Time{}
+	shows(<-told, 1, 4, "two", "one", "before")
+
+	// The same as the log read afresh.
+	l.counting.Lock()
+	l.counted = nil
+	l.counting.Unlock()
+	shows(l.status(), 1, 4, "two", "one", "before")
+
+	// Turned over, the old file keeps its lines under a new name, and a
+	// new one starts under the old name. It grows past where the old one
+	// was read, and is still read from its start.
+	if err := l.file.Rotate(); err != nil {
+		t.Fatal(err)
+	}
+	for range 6 {
+		l.line(zerolog.InfoLevel, "app").Msg("a line in the new file")
+	}
+	toast("three")
+	beat <- time.Time{}
+	shows(<-told, 2, 11, "three", "two", "one", "before")
+
+	close(l.grew)
+	beat <- time.Time{}
+	<-done
 }
 
 // close stops writing the log, for the tests.

@@ -3467,11 +3467,14 @@ folder. Inside the home folder from `~` and the rest in full was tried
 first, and Tim still saw two kinds of path on one page, 2026-10-28. Only
 what is shown changes, what is saved stays as it came.
 
-**The app's log** is an area of its own, between Training data and
-Advanced, closed until it is opened the way Advanced is, see
-[LOGGING.md](LOGGING.md). It says how many files the log has with the
-older ones, their size and their lines, and where the file in use is,
-read again whenever it opens. The folder button shows it in Finder, the
+**Logs** is the app's log, an area of its own between Training data and
+Advanced, always open, see [LOGGING.md](LOGGING.md). It says how many
+files the log has with the older ones, their size and their lines, and
+where the file in use is, and keeps up while Settings is open: the app
+sends it again as lines are written, about once a second at most, so a
+toast that comes while Settings is open is listed without a reload.
+Tim asked for the name, for no fold, and for it to keep up, 13 November
+2026. The folder button shows it in Finder, the
 way Show in folder does for a video in the sidebar, and the trash can
 removes every file of the log, the older ones too and nothing else in
 their folder, after asking. The app starts a new log with its next line,

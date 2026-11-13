@@ -910,6 +910,9 @@ export const api = {
   training: () => call<TrainingStatus>("Training"),
   clearTraining: () => call<void>("ClearTraining"),
   appLog: () => call<LogStatus>("AppLog"),
+  // Whether Settings is open, so the log is sent to it as it is written,
+  // see onAppLog.
+  watchAppLog: (on: boolean) => call<void>("WatchAppLog", on),
   showAppLog: () => call<void>("ShowAppLog"),
   // Every file of the log goes, and what comes back is the new one, which
   // holds the line that says so.
@@ -1273,6 +1276,12 @@ export interface ReportDraft {
   text: string;
   pictures: ReportPicture[];
   error?: string;
+}
+
+// The app's log as Settings shows it, sent while Settings watches it as
+// lines are written, see watch in applog.go.
+export function onAppLog(fn: (st: LogStatus) => void): () => void {
+  return Events.On("applog", (ev) => fn(ev.data as LogStatus));
 }
 
 // The report window opened or closed, for Bugs in the sidebar.

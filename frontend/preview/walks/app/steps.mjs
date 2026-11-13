@@ -325,7 +325,7 @@ export const steps = {
         found: [...document.querySelectorAll(".item.found .words > span:first-child")].map(text),
         fonts: text(detail),
         fontLines: detail ? Math.round(detail.getBoundingClientRect().height / parseFloat(getComputedStyle(detail).lineHeight)) : 0,
-        log: text([...document.querySelectorAll(".group")].find((g) => text(g.querySelector("button.disclose h2")) === "The app's log")?.querySelector(".path")),
+        log: text([...document.querySelectorAll(".group")].find((g) => text(g.querySelector(":scope > h2")) === "Logs")?.querySelector(".path")),
       };
     });
     const problems = [];

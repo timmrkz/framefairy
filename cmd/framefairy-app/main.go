@@ -131,6 +131,13 @@ func main() {
 			app.Event.Emit("report-draft", d)
 		}
 	}
+	// The log as Settings shows it, while Settings is open, as lines are
+	// written, about once a second at most. See watch in applog.go.
+	go theLog.watch(func(st LogStatus) {
+		if app != nil {
+			app.Event.Emit("applog", st)
+		}
+	}, func() <-chan time.Time { return time.After(time.Second) })
 	svc.report.about = func(text string) {
 		if app != nil {
 			app.Event.Emit("report-about", text)

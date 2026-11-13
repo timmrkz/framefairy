@@ -25,13 +25,10 @@ function theTwo(notes, first, second) {
   return notes.length === 2 && !notes.some((n) => n.silent) && near(notes[0], first) && near(notes[1], second) && notes[0].at < notes[1].at;
 }
 
-// logCard is the card of the app's log in Settings, its area opened
-// first if it is not, which reads the log again as it opens.
+// logCard is the card of the app's log in Settings, the area Logs.
 async function logCard(page) {
-  const disclose = page.locator("button.disclose", { hasText: "The app's log" });
-  if ((await disclose.getAttribute("aria-expanded")) !== "true") await disclose.click();
   await settle(page);
-  return page.locator(".group", { has: disclose }).locator(".card");
+  return page.locator(".group", { has: page.locator(":scope > h2", { hasText: /^Logs$/ }) }).locator(".card");
 }
 
 export const steps = {
@@ -497,8 +494,8 @@ export const steps = {
   // ["app log", "open"]
   //                    the app starts its log, with an older file beside
   //                    the one in use, see /app-log in bridge_test.go
-  // ["app log", n]     the app's log in Settings, opened if it is not,
-  //                    says it has n files, and the Go side has as many
+  // ["app log", n]     the app's log in Settings says it has n files, and
+  //                    the Go side has as many
   async "app log"(walk, arg) {
     const { page } = walk;
     if (arg === "open") {
@@ -512,8 +509,18 @@ export const steps = {
     if (!shown.startsWith(said)) walk.wrong = `Settings says the app's log is "${shown}", not ${arg} files`;
     else if (kept.files !== arg) walk.wrong = `the app's log has ${kept.files} files on the disk, not ${arg}`;
   },
+  // ["toast logged", text]
+  //                    the app logs a toast with these words while
+  //                    Settings is open, the way the window logs one, and
+  //                    Settings hears it with no reload (#421)
+  async "toast logged"(walk, arg) {
+    const { page } = walk;
+    const answer = await fetch(new URL(`/app-log?toast=${encodeURIComponent(arg)}`, url));
+    if (!answer.ok) walk.wrong = `the toast was not logged: ${await answer.text()}`;
+    await settle(page);
+  },
   // ["logged toasts", texts]
-  //                    the app's log in Settings, opened if it is not,
+  //                    the app's log in Settings
   //                    lists the toasts the app showed, these and no
   //                    other, newest first, each with Report only while
   //                    the pointer is on its row (#421)

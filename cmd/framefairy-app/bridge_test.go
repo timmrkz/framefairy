@@ -657,6 +657,13 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			answer(w, nil, b.openLog())
 			return
 		}
+		// With ?toast=words, the app logs a toast with them the way the
+		// window logs one, while Settings watches the log, and answers
+		// once Settings has been sent the log with it.
+		if text := r.URL.Query().Get("toast"); text != "" {
+			answer(w, nil, toastTold(text))
+			return
+		}
 		answer(w, theLog.status(), nil)
 	})
 	// The bridge's machine on its first run: the models gone, no video in
@@ -3523,6 +3530,25 @@ func TestEveryCommitWalksSeedsOfItsOwn(t *testing.T) {
 	took := timedTook(map[string]float64{"playback.mjs SEED=815": 30, "playback.mjs SEED=17": 20, "sequences.mjs SEQUENCE=a short": 5})
 	if !maps.Equal(took, map[string]float64{"playback.mjs": 25, "sequences.mjs SEQUENCE=a short": 5}) {
 		t.Errorf("timed %v, not a walk by its file with the mean of its seeds", took)
+	}
+}
+
+// toastTold logs a toast with text the way the window does, and returns
+// once the log with it has been sent to Settings, so a walk that waits
+// for the bridge's mark then sees what Settings has heard.
+func toastTold(text string) error {
+	if !theLog.watching.Load() {
+		return errors.New("Settings is not open, so nothing watches the log")
+	}
+	theLog.line(zerolog.WarnLevel, "window").Bool("toast", true).Msg(text)
+	for {
+		logMu.Lock()
+		last, news := logLast, logNews
+		logMu.Unlock()
+		if slices.ContainsFunc(last.Toasts, func(t LoggedToast) bool { return t.Text == text }) {
+			return nil
+		}
+		<-news
 	}
 }
 
