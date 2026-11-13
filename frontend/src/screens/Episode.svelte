@@ -92,6 +92,7 @@
   import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
   import { markOn } from "../lib/keyframes";
   import { toasts } from "../lib/toast.svelte";
+  import { afterRest } from "../lib/rest";
 
   let {
     path,
@@ -1695,7 +1696,7 @@
     });
     // After the card has slid open and the list has moved it, 200 ms and
     // 180 ms in ClipList.svelte.
-    setTimeout(showChosen, 240);
+    afterRest(showChosen, 240);
   });
 
   function inOutKey(event: KeyboardEvent) {

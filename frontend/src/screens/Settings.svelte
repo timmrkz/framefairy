@@ -55,6 +55,7 @@
   import ModelCard from "../components/ModelCard.svelte";
   import { Install } from "../lib/install.svelte";
   import Swatches from "../components/Swatches.svelte";
+  import { afterRest } from "../lib/rest";
 
   let settings = $state<Settings | null>(null);
   let checks = $state<Check[] | null>(null);
@@ -122,7 +123,7 @@
     const now = JSON.stringify($state.snapshot(settings));
     if (now === lastSaved) return;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => save(now), SAVE_AFTER);
+    saveTimer = afterRest(() => save(now), SAVE_AFTER);
   });
 
   // Only what changed goes to the Go side, key by key. The whole object
