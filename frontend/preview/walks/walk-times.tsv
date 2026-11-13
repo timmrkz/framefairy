@@ -1,7 +1,7 @@
- 50	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
  45	sequences.mjs SEQUENCE=a video added is transcribed to its end from its menu
  44	sequences.mjs SEQUENCE=a step onto a word pops it over the paused frame
  42	timeline.mjs
+ 41	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
  40	sequences.mjs SEQUENCE=the video preview shows the short's captions, frame for frame
  39	searching.mjs
  37	sequences.mjs SEQUENCE=a slow drag of the playhead to the left reads its frames in runs, not a seek a step
@@ -40,6 +40,7 @@
  14	sequences.mjs SEQUENCE=a search of what was said shows the parts not transcribed yet
  14	sequences.mjs SEQUENCE=a short rendered into the folder for shorts is known as rendered
  14	sequences.mjs SEQUENCE=a video whose file is moved away says so once, in a toast, and shows again once it is back
+ 14	sequences.mjs SEQUENCE=an edge dragged while the clip plays changes nothing that plays
  13	sequences.mjs SEQUENCE=a rotated part keeps its keyframe, and has the rotate icon drawn in its middle
  12	sequences.mjs SEQUENCE=a playhead dragged far over HEVC shows the key frame on the way, and the frame under the hand once it rests
  12	sequences.mjs SEQUENCE=a video gone back to after its first clip came while it was away has its waveform
@@ -60,10 +61,9 @@
  10	sequences.mjs SEQUENCE=While dictating, the cursor after the words is the field's own, and ArrowDown there moves nothing
  10	sequences.mjs SEQUENCE=a clip made by hand that stopped can be removed, and put back first
  10	sequences.mjs SEQUENCE=a model a search finds clips with is not changed or removed under it
- 10	sequences.mjs SEQUENCE=a step to the word beside finds its frame read while the hand rested
  10	sequences.mjs SEQUENCE=a video dropped on any page is added and opens, the way Add adds one
- 10	sequences.mjs SEQUENCE=an edge dragged while the clip plays changes nothing that plays
  10	sequences.mjs SEQUENCE=the transcript is exported with a word corrected in the caption box
+  9	sequences.mjs SEQUENCE=a step to the word beside finds its frame read while the hand rested
   9	sequences.mjs SEQUENCE=While dictating the field follows the words until scrolled away, like a terminal
   9	sequences.mjs SEQUENCE=a click on a thumbnail or a keyframe while a word is open ends the correction, and the captions follow
   9	sequences.mjs SEQUENCE=a clip made by hand that failed says where it lies, and why in a toast
@@ -75,6 +75,7 @@
   9	sequences.mjs SEQUENCE=a video shorter than a clip gets its clip again once it was removed
   9	sequences.mjs SEQUENCE=an edge taken again before the drag before it is answered goes on from its answer
   9	sequences.mjs SEQUENCE=shift and the arrows skip ahead through a clip on the video, and walk its words on the clip
+  9	sequences.mjs SEQUENCE=loop switched off as the sound crosses the clip's end ends the play ahead of the sound
   8	sequences.mjs SEQUENCE=Backspace after typing at the end of a dictation takes away no words still to be written down
   8	sequences.mjs SEQUENCE=Continue fills the transcription from nothing over what is left to hear
   8	sequences.mjs SEQUENCE=Dictate writes what is said while it is said, where the cursor was, and undo takes it back
@@ -201,7 +202,6 @@
   4	sequences.mjs SEQUENCE=a word typed in beside another is a word of its own, removed alone
   4	sequences.mjs SEQUENCE=a word typed sits on the pill libass draws, lit or not
   4	sequences.mjs SEQUENCE=an end dragged back past the playing playhead plays on into the video
-  4	sequences.mjs SEQUENCE=loop switched off as the sound crosses the clip's end ends the play ahead of the sound
   4	sequences.mjs SEQUENCE=removing a caption's first word draws it in like dragging its left edge over the word
   4	sequences.mjs SEQUENCE=removing a word in the middle of a caption leaves the caption whole
   4	sequences.mjs SEQUENCE=the GPU draws standard video with QuickTime's look, a step for every value, and HDR as BT.2100's light
