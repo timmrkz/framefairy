@@ -15,7 +15,7 @@ export default [
     // chooses the next, or the one before it at the end of the list, and
     // putting it back chooses it again. Tim found nothing chosen. Issue
     // #331.
-    name: "removing the chosen clip chooses the one beside it",
+    name: "removing the chosen clip chooses the one beside it, and put back it is chosen again where the playhead was",
     steps: [
       ["remove clip"],
       ["make here", "i"],
@@ -24,13 +24,11 @@ export default [
       ["put back"],
       ["chosen again"],
       ["remove the chosen", "last"],
+      // The clip chosen when it was removed is the one exception: putting
+      // it back takes the remove back as it was, chosen, and the playhead
+      // stays.
+      ["put back the chosen"],
     ],
-  },
-  {
-    // The clip chosen when it was removed is the one exception: putting it
-    // back takes the remove back as it was, chosen, and the playhead stays.
-    name: "the clip chosen, removed and put back, is chosen again where the playhead was",
-    steps: [["put back the chosen"]],
   },
   {
     // Found by Tim on 20 October: the edge of a clip's card in the
@@ -211,18 +209,16 @@ export default [
     // or O is made around the playhead, so the playhead is on it from the
     // frame it is there, on its way and once it is written, and the play
     // goes on as it was.
-    name: "a clip made with I while the episode plays is not dimmed",
+    // goes on as it was. Paused, the playhead is put on the clip's start
+    // while it is on its way, and it was dimmed there too until it was
+    // written.
+    name: "a clip made with I while the episode plays or is paused is not dimmed",
     steps: [
       ["trim", "start", 300],
       ["make while playing", "i"],
       ["made on the clip"],
-    ],
-  },
-  {
-    name: "a clip made with O while the episode plays is not dimmed",
-    steps: [
       ["trim", "start", 300],
-      ["make while playing", "o"],
+      ["make while paused", "i"],
       ["made on the clip"],
     ],
   },
@@ -231,20 +227,13 @@ export default [
     // pick of its card had its answer, and for a frame no card was
     // chosen and the clip timeline was dimmed. The clip is written while
     // the answer to the pick is held, so it is that order every time.
-    name: "a clip made with O is not dimmed when it is written before its card's pick has its answer",
+    name: "a clip made with O while the episode plays is not dimmed, nor when it is written before its card's pick has its answer",
     steps: [
+      ["trim", "start", 300],
+      ["make while playing", "o"],
+      ["made on the clip"],
       ["trim", "start", 300],
       ["make with its pick late", "o"],
-      ["made on the clip"],
-    ],
-  },
-  {
-    // Paused, the playhead is put on the clip's start while it is on its
-    // way, and it was dimmed there too until it was written.
-    name: "a clip made with I while the video is paused is not dimmed",
-    steps: [
-      ["trim", "start", 300],
-      ["make while paused", "i"],
       ["made on the clip"],
     ],
   },

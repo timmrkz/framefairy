@@ -94,8 +94,9 @@ func TestProjectSteps(t *testing.T) {
 	// test counts them, so it gets records of its own.
 	records := ownRecords(e)
 	// The one test that frames with the face detector, the way the app
-	// does, see TestMain.
-	e.NoFaces = false
+	// does. A machine NewMachine makes frames by what is in focus, see
+	// Machine.faces.
+	e.useFaces()
 
 	base := DefaultOptions()
 	base.LLMURL = server.URL

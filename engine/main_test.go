@@ -27,13 +27,6 @@ func TestMain(m *testing.M) {
 		return
 	}
 	toolsFromThePath()
-	// The face detector finds no face in a test episode, which is a test
-	// picture and a tone, and framing falls back to what is in focus. It
-	// looks for one all the same, about 50 milliseconds a frame and some
-	// sixty frames a clip, and that was a third of the time these tests
-	// took. TestProjectSteps turns it back on, so the whole way a clip is
-	// framed is still tested once.
-	os.Setenv("FRAMEFAIRY_NO_FACES", "1")
 	home, err := os.MkdirTemp("", "framefairy-home-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

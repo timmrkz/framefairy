@@ -21,7 +21,7 @@ export default [
     // sidebar showed the same name for all of them. A label, words and a
     // colour from the three dots of a row, tells them apart, and the video
     // keeps its name.
-    name: "a label tells a video apart and the video keeps its name",
+    name: "a label tells a video apart, the video keeps its name, and both are centred in the title bar",
     steps: [
       // A second video, so the list has the sort mark at its head.
       ["add", 12],
@@ -46,62 +46,36 @@ export default [
       // stayed open with a ring round it.
       ["label", [null, "Blue, then Return"]],
       ["two menus"],
-    ],
-  },
-  {
-    // Tim saw the label pill in the title bar a point higher than the
-    // buttons, #399, twice, and then half a point low once it was
-    // centred under the edge of the window alone. What he sees as the
-    // bar runs from that edge to the line at its foot.
-    name: "the name of a video and its label are centred in the title bar",
-    steps: [
-      // A second video, so the sidebar has the sort mark the label step
-      // starts from.
-      ["add", 12],
+      // Tim saw the label pill in the title bar a point higher than the
+      // buttons, #399, twice, and then half a point low once it was
+      // centred under the edge of the window alone. What he sees as the
+      // bar runs from that edge to the line at its foot.
       ["label", ["nicolas", "Return"]],
       ["title bar"],
     ],
   },
   {
-    name: "a new video gets its first clips with no click",
-    steps: [
-      ["add", 60],
-      ["wait for", "Search"],
-      ["cards", 1],
-    ],
-  },
-  {
     // Plan row 2.181. Tim added a video and its clip timeline stayed bare
     // until its first clip came, where the waveform used to come within
-    // seconds, measured on its own. The speech is held, so the
-    // search is still hearing it when the waveform has to be there.
-    name: "a video just added shows its waveform before its first clip",
+    // seconds, measured on its own. The speech is held, so the search is
+    // still hearing it when the waveform has to be there. Issue #759. Tim
+    // looked at another video while the search of the one he had added
+    // found its first clip, and when he went back its clip timeline had
+    // no waveform until he clicked around. The clip timeline of the video
+    // away from the screen took the clip and drew its waveform out of the
+    // page, a pixel high and black. And the first clip came with no click.
+    name: "a new video shows its waveform before its first clip, gets that clip with no click, and has the waveform after it came while the video was away",
     steps: [
       ["speech", "hold"],
       ["add", 120],
       ["waveform"],
       ["cards", 0],
-      ["speech", "go"],
-      ["wait for", "Search"],
-      ["cards", 1],
-    ],
-  },
-  {
-    // Issue #759. Tim looked at another video while the search of the
-    // one he had added found its first clip, and when he went back its
-    // clip timeline had no waveform until he clicked around. The clip
-    // timeline of the video away from the screen took the clip and drew
-    // its waveform out of the page, a pixel high and black.
-    name: "a video gone back to after its first clip came while it was away has its waveform",
-    steps: [
-      ["speech", "hold"],
-      ["add", 120],
-      ["waveform"],
       ["away", 20],
       ["speech", "go"],
       ["first clip before"],
       ["episode"],
       ["waveform"],
+      ["cards", 1],
     ],
   },
   {
@@ -178,31 +152,21 @@ export default [
     ],
   },
   {
-    // Issue #673. A video moved away in Finder said File not found only
-    // once the app came back to the front. Now the app watches the
-    // folders of its videos, so the sidebar says it while the app stays
-    // in front, and stops saying it once the file is back.
-    name: "a video whose file is moved away while the app is in front says File not found at once",
+    // Issue #311. Tim moved a video's file away in Finder and opened the
+    // video again. A red line over the workspace said the file was gone
+    // and pushed everything down, and a toast said it a second time. Put
+    // back, the sidebar saw it and the video preview went on showing
+    // nothing. Issue #673. A video moved away in Finder said File not
+    // found only once the app came back to the front. Now the app watches
+    // the folders of its videos, so the sidebar says it while the app
+    // stays in front, and stops saying it once the file is back.
+    name: "a video whose file is moved away says File not found at once while the app is in front, says so once in a toast when opened, and shows again once it is back",
     steps: [
       ["add", 20],
       ["wait for", "Search"],
       ["add", 20],
       ["wait for", "Search"],
       ["file moved in front"],
-    ],
-  },
-  {
-    // Issue #311. Tim moved a video's file away in Finder and opened the
-    // video again. A red line over the workspace said the file was gone
-    // and pushed everything down, and a toast said it a second time. Put
-    // back, the sidebar saw it and the video preview went on showing
-    // nothing.
-    name: "a video whose file is moved away says so once, in a toast, and shows again once it is back",
-    steps: [
-      ["add", 20],
-      ["wait for", "Search"],
-      ["add", 20],
-      ["wait for", "Search"],
       ["file moved away"],
     ],
   },

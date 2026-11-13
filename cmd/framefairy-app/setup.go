@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -424,19 +425,38 @@ var (
 	errHearing   = errors.New("a video is being transcribed with it. It can be removed once that is done")
 )
 
+// What a job may hold, see Job.Holds: the language model and the way of
+// finding clips with it, and the speech model.
+const (
+	holdsLanguage = "language"
+	holdsSpeech   = "speech"
+)
+
+// holdsOf is what a job of this kind holds while it waits or runs. A
+// search holds both: it hears, then finds. A clip made by hand and the
+// whole video being transcribed only hear, so they hold the speech model
+// and nothing else.
+func holdsOf(kind string) []string {
+	switch kind {
+	case engine.JobSearch:
+		return []string{holdsLanguage, holdsSpeech}
+	case engine.JobClip, engine.JobTranscribe:
+		return []string{holdsSpeech}
+	}
+	return nil
+}
+
 // languageLocked says why what finds clips may not change now, or nil.
 func (s *FrameFairy) languageLocked() error {
-	if s.busyWith(engine.JobSearch) {
+	if s.held(holdsLanguage) {
 		return errSearching
 	}
 	return nil
 }
 
 // speechLocked says why the speech model may not change now, or nil.
-// Every job that hears holds it: a search, a clip made by hand and the
-// whole video being transcribed.
 func (s *FrameFairy) speechLocked() error {
-	if s.busyWith(engine.JobSearch, engine.JobClip, engine.JobTranscribe) {
+	if s.held(holdsSpeech) {
 		return errHearing
 	}
 	return nil
@@ -445,13 +465,18 @@ func (s *FrameFairy) speechLocked() error {
 // busyWith says whether a job of one of these kinds is waiting or running.
 func (s *FrameFairy) busyWith(kinds ...string) bool {
 	for _, job := range s.jobs.list() {
-		if job.State != JobQueued && job.State != JobRunning {
-			continue
+		if (job.State == JobQueued || job.State == JobRunning) && slices.Contains(kinds, job.Kind) {
+			return true
 		}
-		for _, kind := range kinds {
-			if job.Kind == kind {
-				return true
-			}
+	}
+	return false
+}
+
+// held says whether a job that waits or runs holds this.
+func (s *FrameFairy) held(what string) bool {
+	for _, job := range s.jobs.list() {
+		if (job.State == JobQueued || job.State == JobRunning) && slices.Contains(job.Holds, what) {
+			return true
 		}
 	}
 	return false

@@ -6,6 +6,7 @@
 import { callOut } from "./settled";
 import { install } from "./clock";
 import { caretBox } from "../src/lib/caret";
+import { frameAt } from "../src/lib/flow";
 
 // A play runs on the walk's clock here, see clock.ts.
 install();
@@ -49,6 +50,9 @@ const last: Record<string, unknown> = {};
 // Where the report's field draws its cursor, measured the one way the
 // page measures it, for the walks, see walks/report/steps.mjs.
 (window as any).__caretBox = caretBox;
+// Which frame holds a moment, the app's own rule, for the walks that wait
+// on the page to show it, see shownOnPlayhead in walks/bridge.mjs.
+(window as any).__frameAt = frameAt;
 // A field's text written by the page changes no node, so a walk waiting
 // for it with a MutationObserver did not wake when the report's field
 // took in dictated words, and hung once nothing else on the page changed
