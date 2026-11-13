@@ -27,24 +27,38 @@
   const now = new Float32Array(COLS * ROWS * 4);
   const goal = new Float32Array(COLS * ROWS * 4);
   let laid: Band | null = null;
+  // Whether the cells changed since they were spread over the band.
+  let fresh = false;
   let request = 0;
   let last = 0;
 
   // The frame put on the video preview, or null for the black it shows
   // without one, which the reflection fades out on. It is read at once and
-  // not kept.
+  // not kept. It is spread over the band once a step is drawn, not here:
+  // a video plays more frames a second than the STEPS drawn, and every
+  // frame was spread, which is most of the reflection's work, for a
+  // drawing that showed only some of them.
   export function take(frame: Picture | null) {
     const d = frame?.data;
     if (frame && d) mirrored(d, frame.width, frame.height, frame.light, cells);
     else clear(cells);
+    fresh = true;
     settle();
+  }
+
+  function spreadCells() {
+    if (!laid) return;
+    spread(cells, laid, goal);
+    fresh = false;
   }
 
   // A new band shows at once, on the next step: only a change of picture
   // is settled on.
   function settle(at = false) {
-    if (laid) spread(cells, laid, goal);
-    if (at) now.set(goal);
+    if (at) {
+      spreadCells();
+      now.set(goal);
+    }
     if (!request) {
       last = performance.now();
       request = requestAnimationFrame(step);
@@ -59,6 +73,7 @@
       return;
     }
     last = t;
+    if (fresh) spreadCells();
     const left = ease(now, goal, share(dt / 1000));
     if (g && image) {
       painted(now, image.data);
