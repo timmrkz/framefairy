@@ -192,12 +192,20 @@ fetch_git() {
 # freetype once without harfbuzz, build harfbuzz against it, then build
 # freetype again so text is shaped properly. Skipping the second pass is
 # how captions come out with the wrong kerning.
+#
+# Both passes leave out HVF, Apple's hierarchical variable fonts, which
+# FreeType 2.15 builds in by itself wherever the macOS SDK has its header.
+# It links libhvf, which macOS has only from 15.4, while the app runs from
+# 13, and the frames decoder, linked from the libraries alone, did not
+# link at all. No caption font is one. Configure has no switch for it, so
+# its header is said to be missing.
 say "freetype, first pass"
 fetch "https://downloads.sourceforge.net/freetype/freetype-$FREETYPE_VERSION.tar.xz" "freetype-$FREETYPE_VERSION" \
 	"$FREETYPE_SHA256"
 (cd "$WORK/freetype-$FREETYPE_VERSION" &&
 	./configure --prefix="$PREFIX" --enable-static --disable-shared \
-		--with-harfbuzz=no --with-brotli=no --with-png=no --with-bzip2=no &&
+		--with-harfbuzz=no --with-brotli=no --with-png=no --with-bzip2=no \
+		ac_cv_header_hvf_Scaler_h=no &&
 	make -j"$JOBS" && make install) >>"$LOG" 2>&1
 
 say "fribidi"
@@ -230,7 +238,8 @@ say "freetype, second pass, this time with harfbuzz"
 (cd "$WORK/freetype-$FREETYPE_VERSION" &&
 	make distclean >/dev/null 2>&1 || true
 	./configure --prefix="$PREFIX" --enable-static --disable-shared \
-		--with-harfbuzz=yes --with-brotli=no --with-png=no --with-bzip2=no &&
+		--with-harfbuzz=yes --with-brotli=no --with-png=no --with-bzip2=no \
+		ac_cv_header_hvf_Scaler_h=no &&
 	make -j"$JOBS" && make install) >>"$LOG" 2>&1
 
 say "libass"
