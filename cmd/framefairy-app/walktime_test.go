@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"slices"
 	"sync"
 	"testing"
@@ -131,12 +132,16 @@ func (w *walkTime) make(c *walkCall) {
 }
 
 // next runs the clock on to the call due first and makes it, and the
-// others due at that moment, and says how far it ran. With nothing due
-// it waits until a call is set, the way a walk waits on news: a search
-// the walk started may not have begun to keep its time yet. A walk that
-// holds the clock hears the next report of a running search this way,
-// without knowing how often a search reports.
-func (w *walkTime) next() time.Duration {
+// others due at that moment, and says how far it ran. That is any call on
+// the clock, a removed row forgotten too, the way the time would have
+// passed. With nothing due it waits until a call is set, the way a walk
+// waits on news: a search the walk started may not have begun to keep its
+// time yet. A walk that holds the clock hears the next report of a
+// running search this way, without knowing how often a search reports.
+// A search that ended before it reported again sets no call, so the walk
+// waits until make walks' -timeout ends it and names the walk, or until
+// ctx, the walk's request, is called off.
+func (w *walkTime) next(ctx context.Context) (time.Duration, error) {
 	for {
 		w.mu.Lock()
 		now := w.nowLocked()
@@ -149,12 +154,16 @@ func (w *walkTime) next() time.Duration {
 		set := w.set
 		w.mu.Unlock()
 		if first == nil {
-			<-set
+			select {
+			case <-set:
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			}
 			continue
 		}
 		d := max(0, first.at.Sub(now))
 		w.run(d)
-		return d
+		return d, nil
 	}
 }
 
@@ -239,7 +248,10 @@ func TestTheWalksClockRunsOnToItsNextCall(t *testing.T) {
 			return func() { mu.Lock(); made = append(made, s); mu.Unlock() }
 		}
 		ran := make(chan time.Duration)
-		go func() { ran <- w.next() }()
+		go func() {
+			d, _ := w.next(context.Background())
+			ran <- d
+		}()
 		synctest.Wait()
 		w.AfterFunc(500*time.Millisecond, note("a"))
 		w.AfterFunc(500*time.Millisecond, note("b"))
@@ -250,8 +262,28 @@ func TestTheWalksClockRunsOnToItsNextCall(t *testing.T) {
 		if got := seen(); len(got) != 2 || !slices.Contains(got, "a") || !slices.Contains(got, "b") {
 			t.Errorf("run on to its next call, the clock made %v, want a and b", got)
 		}
-		if d := w.next(); d != 500*time.Millisecond || len(seen()) != 3 {
+		if d, _ := w.next(context.Background()); d != 500*time.Millisecond || len(seen()) != 3 {
 			t.Errorf("the next call: ran %v and made %v", d, seen())
+		}
+	})
+}
+
+// A walk whose search ended before it reported again gives up its ask for
+// the next call, and nothing waits on after it.
+func TestTheWalksClockStopsWaitingForANextCallWhenTheWalkDoes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := newWalkTime()
+		w.hold()
+		ctx, cancel := context.WithCancel(context.Background())
+		got := make(chan error)
+		go func() {
+			_, err := w.next(ctx)
+			got <- err
+		}()
+		synctest.Wait()
+		cancel()
+		if err := <-got; err == nil {
+			t.Error("the clock went on waiting for a call after the walk gave up")
 		}
 	})
 }

@@ -437,7 +437,8 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return
 		}
 		if q.Has("next") {
-			answer(w, b.d.time.next().Milliseconds(), nil)
+			ran, err := b.d.time.next(r.Context())
+			answer(w, ran.Milliseconds(), err)
 			return
 		}
 		ms, err := strconv.Atoi(q.Get("run"))
