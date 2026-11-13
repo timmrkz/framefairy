@@ -691,9 +691,9 @@ func TestTheLogCanBeRemovedWhole(t *testing.T) {
 
 // Settings shows the last five toasts the app showed, newest first, read
 // back from its log, the older files too, with when each came and the
-// video it was about. A toast closed, a line from elsewhere that starts
-// the same and a line cut off are no toasts. Removing the log takes them
-// away too. Issue #421.
+// video it was about. A toast said again stands once, where it was said
+// last. A line that only names a toast, one from elsewhere and one cut off
+// are no toasts. Removing the log takes them away too. Issue #421.
 //
 // On the real disk: lumberjack writes the log and knows only the disk.
 func TestSettingsShowsTheLastToasts(t *testing.T) {
@@ -707,8 +707,8 @@ func TestSettingsShowsTheLastToasts(t *testing.T) {
 	// Two toasts in the older file, from before the log turned over.
 	var older bytes.Buffer
 	z := gzip.NewWriter(&older)
-	_, _ = z.Write([]byte(`{"level":"warn","time":"2026-11-12T09:00:00.000+01:00","run":"a","from":"window","msg":"toast: one"}` + "\n" +
-		`{"level":"warn","time":"2026-11-12T09:01:00.000+01:00","run":"a","from":"window","video":"talk.mp4","msg":"toast: two"}` + "\n"))
+	_, _ = z.Write([]byte(`{"level":"warn","time":"2026-11-12T09:00:00.000+01:00","run":"a","from":"window","toast":true,"msg":"one"}` + "\n" +
+		`{"level":"warn","time":"2026-11-12T09:01:00.000+01:00","run":"a","from":"window","video":"talk.mp4","toast":true,"msg":"two"}` + "\n"))
 	_ = z.Close()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -719,25 +719,26 @@ func TestSettingsShowsTheLastToasts(t *testing.T) {
 	start := time.Now().Add(-30 * time.Second).Truncate(time.Millisecond)
 	at := func(i int) float64 { return float64(start.Add(time.Duration(i) * time.Second).UnixMilli()) }
 	s.Said([]SaidLine{
-		{At: at(0), Level: "warn", Text: "toast: three"},
+		{At: at(0), Level: "warn", Toast: true, Text: "three"},
 		{At: at(1), Level: "info", Text: "toast closed: three"},
-		{At: at(2), Level: "warn", Video: "/videos/start.mp4", Text: "toast: The video start.mp4 is gone."},
-		{At: at(3), Level: "warn", Text: "toast: four"},
-		{At: at(4), Level: "warn", Text: "the window said toast: as a word"},
-		{At: at(5), Level: "warn", Text: "toast: five"},
+		{At: at(2), Level: "warn", Video: "/videos/start.mp4", Toast: true, Text: "The video start.mp4 is gone."},
+		{At: at(3), Level: "warn", Toast: true, Text: "four"},
+		{At: at(4), Level: "warn", Text: "the window said \"toast\":true as words"},
+		{At: at(5), Level: "warn", Toast: true, Text: "five"},
+		{At: at(6), Level: "warn", Toast: true, Text: "four"},
 	})
-	theLog.line(zerolog.WarnLevel, "app").Msg("toast: not the window's")
+	theLog.line(zerolog.WarnLevel, "app").Bool("toast", true).Msg("not the window's")
 	if f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0); err != nil {
 		t.Fatal(err)
 	} else {
-		_, _ = f.WriteString(`{"level":"warn","from":"window","msg":"toast: cut of` + "\n")
+		_, _ = f.WriteString(`{"level":"warn","from":"window","toast":true,"msg":"cut of` + "\n")
 		_ = f.Close()
 	}
 
 	got := s.AppLog().Toasts
 	want := []LoggedToast{
+		{At: int64(at(6)), Text: "four"},
 		{At: int64(at(5)), Text: "five"},
-		{At: int64(at(3)), Text: "four"},
 		{At: int64(at(2)), Video: "start.mp4", Text: "The video start.mp4 is gone."},
 		{At: int64(at(0)), Text: "three"},
 		{At: time.Date(2026, 11, 12, 8, 1, 0, 0, time.UTC).UnixMilli(), Video: "talk.mp4", Text: "two"},

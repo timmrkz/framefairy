@@ -30,8 +30,9 @@ files with the older ones, their size and their lines. It shows it in
 Finder, and its trash can removes every file of it after asking, the
 next line starting a new log that says how many files, bytes and lines
 went. Plan row 2.245. Under it are the last five toasts the app showed,
-read back from the log's warnings from the window that start `toast: `,
-with Report on each. Issue #421.
+read back from the lines the window marked `"toast":true`, newest
+first, a toast said again once, where it was said last, with Report on
+each. Issue #421.
 
 The report window has one field, for what happened, screenshots
 attached under it, and **Report**. The report is one zip file on the

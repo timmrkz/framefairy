@@ -156,34 +156,30 @@ type LoggedToast struct {
 // for.
 const toastsShown = 5
 
-// toastSaid is how the window says a toast in the log, see
-// lib/toast.svelte.ts: a warning from the window, its words after it.
-const toastSaid = "toast: "
-
 // toastsIn adds the toasts the lines of data say to toasts, in the order
-// they were said. A line that is not whole JSON is passed over, the way a
-// line cut off by a crash is.
+// they were said: the lines the window marked as a toast, see Said. A
+// toast said again takes the place of the one before, so one failure
+// that keeps coming back does not push every other toast out of the last
+// five. A line that is not whole JSON is passed over, the way a line cut
+// off by a crash is.
 func toastsIn(data []byte, toasts []LoggedToast) []LoggedToast {
 	for line := range bytes.Lines(data) {
-		if !bytes.Contains(line, []byte(`"msg":"`+toastSaid)) {
+		if !bytes.Contains(line, []byte(`"toast":true`)) {
 			continue
 		}
 		var l struct {
-			Level string `json:"level"`
 			Time  string `json:"time"`
 			From  string `json:"from"`
 			Video string `json:"video"`
+			Toast bool   `json:"toast"`
 			Msg   string `json:"msg"`
 		}
-		if json.Unmarshal(line, &l) != nil || l.Level != "warn" || l.From != "window" {
-			continue
-		}
-		text, ok := strings.CutPrefix(l.Msg, toastSaid)
-		if !ok || text == "" {
+		if json.Unmarshal(line, &l) != nil || !l.Toast || l.From != "window" || l.Msg == "" {
 			continue
 		}
 		at, _ := time.Parse(zerolog.TimeFieldFormat, l.Time)
-		toasts = append(toasts, LoggedToast{At: at.UnixMilli(), Video: l.Video, Text: text})
+		toasts = slices.DeleteFunc(toasts, func(t LoggedToast) bool { return t.Video == l.Video && t.Text == l.Msg })
+		toasts = append(toasts, LoggedToast{At: at.UnixMilli(), Video: l.Video, Text: l.Msg})
 	}
 	return toasts
 }
@@ -481,11 +477,14 @@ const (
 // they happened, though the window sends its own a moment later. Its
 // level is error, warn, info, debug or trace, debug when it says none,
 // and Video is the file name of the video it is about, where there is one.
+// Toast marks a toast the app showed, which Settings reads back, see
+// toastsIn.
 type SaidLine struct {
 	At    float64 `json:"at"`
 	Level string  `json:"level,omitempty"`
 	Video string  `json:"video,omitempty"`
 	Act   string  `json:"act,omitempty"`
+	Toast bool    `json:"toast,omitempty"`
 	Text  string  `json:"text"`
 }
 
@@ -528,6 +527,9 @@ func (f *FrameFairy) Said(lines []SaidLine) {
 		ev := theLog.lineAt(levelOf(line.Level), "window", at)
 		if line.Video != "" {
 			ev = ev.Str("video", filepath.Base(line.Video))
+		}
+		if line.Toast {
+			ev = ev.Bool("toast", true)
 		}
 		withAct(ev, clipped(line.Act, actMax)).Msg(text)
 	}

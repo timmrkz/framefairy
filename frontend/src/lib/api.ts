@@ -843,7 +843,7 @@ export const api = {
   platform: () => call<string>("Platform"),
   // Lines for the app's own log, each with the moment it was said, in ms
   // since 1970, its level and the video it is about, see lib/said.ts.
-  said: (lines: { at: number; text: string; level?: string; video?: string; act?: string }[]) => call<void>("Said", lines),
+  said: (lines: { at: number; text: string; level?: string; video?: string; act?: string; toast?: boolean }[]) => call<void>("Said", lines),
   // What the person did, said at once so the Go side's lines for it carry
   // its id, see lib/said.ts.
   acted: (act: { id: string; at: number; what: string; video?: string }) => call<void>("Acted", act),

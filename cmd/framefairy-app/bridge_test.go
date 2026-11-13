@@ -3558,8 +3558,8 @@ func (b *bridge) openLog() error {
 	}
 	// Two toasts the app showed, the way the window says them, the
 	// second about a video. Settings lists them, newest first.
-	theLog.line(zerolog.WarnLevel, "window").Msg(toastSaid + "The first toast for the walk.")
-	theLog.line(zerolog.WarnLevel, "window").Str("video", "start.mp4").Msg(toastSaid + "The second toast for the walk.")
+	theLog.line(zerolog.WarnLevel, "window").Bool("toast", true).Msg("The first toast for the walk.")
+	theLog.line(zerolog.WarnLevel, "window").Str("video", "start.mp4").Bool("toast", true).Msg("The second toast for the walk.")
 	return nil
 }
 
