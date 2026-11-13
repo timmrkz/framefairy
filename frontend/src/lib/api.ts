@@ -616,6 +616,10 @@ export interface Job {
   progress?: EngineEvent;
   queued: string;
   lane: Lane;
+  // What the job keeps from changing while it waits or runs, the language
+  // model and the speech model, as the Go side decides, see holdsOf in
+  // setup.go.
+  holds?: ("language" | "speech")[];
   // Where a search or a render is, empty for a job with no steps.
   step?: JobStep | "";
   // The window of a search. To is 0 for the end of the episode.

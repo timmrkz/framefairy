@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -220,6 +221,32 @@ func TestNothingASearchUsesChangesUnderIt(t *testing.T) {
 			svc.jobs.untilNoneGoing()
 		}
 	}
+	// The settings say a model is held before they are asked, from what
+	// the job's news says it holds, so the window keeps no rule of its own
+	// about which job holds what.
+	says := func(kind string, want ...string) {
+		t.Helper()
+		for _, j := range svc.jobs.list() {
+			if j.Kind != kind || (j.State != JobQueued && j.State != JobRunning) {
+				continue
+			}
+			b, err := json.Marshal(j)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var news struct {
+				Holds []string `json:"holds"`
+			}
+			if err := json.Unmarshal(b, &news); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(news.Holds, want) {
+				t.Errorf("the news of a %s job says it holds %v, not %v", kind, news.Holds, want)
+			}
+			return
+		}
+		t.Errorf("no %s job waits or runs", kind)
+	}
 	type change struct {
 		what string
 		do   func() error
@@ -243,6 +270,7 @@ func TestNothingASearchUsesChangesUnderIt(t *testing.T) {
 	}
 
 	done := hold(engine.JobSearch)
+	says(engine.JobSearch, "language", "speech")
 	for _, c := range append(language, hearing...) {
 		if err := c.do(); err == nil {
 			t.Errorf("while a search runs, %s was not refused", c.what)
@@ -266,6 +294,7 @@ func TestNothingASearchUsesChangesUnderIt(t *testing.T) {
 	done()
 
 	done = hold(engine.JobClip)
+	says(engine.JobClip, "speech")
 	for _, c := range hearing {
 		if err := c.do(); err == nil {
 			t.Errorf("while a clip made by hand hears, %s was not refused", c.what)
@@ -280,6 +309,7 @@ func TestNothingASearchUsesChangesUnderIt(t *testing.T) {
 	// found on #458: another speech model would have written over the
 	// same transcript.
 	done = hold(engine.JobTranscribe)
+	says(engine.JobTranscribe, "speech")
 	for _, c := range hearing {
 		if err := c.do(); err == nil {
 			t.Errorf("while the whole video is transcribed, %s was not refused", c.what)
