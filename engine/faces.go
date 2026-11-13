@@ -67,22 +67,30 @@ func loadFaceDetector(packet []byte) (*faceDetector, bool) {
 	return d, true
 }
 
+// faceFinder is the detector a machine was handed, read from the cascade
+// the first time a job needs it.
+type faceFinder struct {
+	once     sync.Once
+	detector *faceDetector
+}
+
 // faceDetector returns the machine's detector, loading it the first time
-// any job needs it. Nil means face detection is off.
+// any job needs it. Nil means the machine frames by what is in focus.
 func (e *Engine) faceDetector() *faceDetector {
-	if e.NoFaces {
+	f := e.faces
+	if f == nil {
 		return nil
 	}
-	e.facesOnce.Do(func() {
+	f.once.Do(func() {
 		detector, ok := loadFaceDetector(facefinderCascade)
 		if ok {
-			e.faces = detector
+			f.detector = detector
 		} else {
 			e.Log.Warn("the face detection data could not be read, so framing " +
 				"falls back to finding the in-focus subject")
 		}
 	})
-	return e.faces
+	return f.detector
 }
 
 // classify is left out of the race detector. It only reads: the
