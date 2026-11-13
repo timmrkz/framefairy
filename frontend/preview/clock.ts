@@ -23,7 +23,11 @@ export function walkClock(play: Play): PlayClock {
   return (heard, unshown, ready) => {
     const card = play.audio;
     if (!(card instanceof WalkCard)) throw new Error("the walk's clock moves only the walk's sound card, see install");
-    if (card.state !== "running") return Math.min(heard, unshown);
+    // A card the hand holds stands from the tick the hand asks, not from
+    // the task later the card says it is held: in between the play ran on
+    // a frame or two as fast as they were decoded, so a walk that held
+    // the play at each press of a key found it ran past the clip's end.
+    if (card.state !== "running" || holders.get(play)?.size) return Math.min(heard, unshown);
     // A frame ready, decoded and waiting with its captions, goes up on
     // this tick, so the card goes on to its moment. A frame the queue says
     // is nowhere, see unshown in queue.ts, never comes, so the card goes by

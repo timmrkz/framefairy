@@ -342,7 +342,12 @@ export const steps = {
       });
     const before = await counts();
     await page.keyboard.press("l");
-    await playUntil(page, { past: end - arg });
+    // The play is held at each press of L, see holdSound, and let go once
+    // the app has settled on it. On the walk's clock a play runs on as
+    // fast as its frames are decoded, so a play not held ran on into the
+    // clip's end and round to its start between two presses, and the loop
+    // went off at the clip's start.
+    await playUntil(page, { past: end - arg, hold: true });
     await page.evaluate(() => {
       window.__played = [];
       window.__playWatch = true;
@@ -365,7 +370,9 @@ export const steps = {
     // the last.
     for (let i = 0; i < 5; i++) {
       await page.keyboard.press("l");
-      await playUntil(page, { most: 0.12 });
+      await settle(page);
+      await holdSound(page, false);
+      await playUntil(page, { most: 0.12, hold: i < 4 });
     }
     const pressed = await counts();
     // Until the play stops at the end, or has gone on by what was left

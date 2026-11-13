@@ -97,6 +97,17 @@ describe("the walk's clock", () => {
     expect(clock(0, 0.2, ready)).toBe(0.2);
   });
 
+  // The card says it is held a task after the hand asks. A play that ran
+  // on meanwhile, as fast as its frames came, ran a walk that held it at
+  // each press of L past the clip's end.
+  test("stands from the tick the hand asks, before the card says it is held", async () => {
+    const { play, card, clock } = await played();
+    void holdSound(play, "hand", true);
+    expect(card.state).toBe("running");
+    expect(clock(0, 0.2, ready)).toBe(0);
+    expect(card.currentTime).toBe(0);
+  });
+
   // The queue makes its clock before it opens its sound card.
   test("moves the sound card the play has when it ticks", async () => {
     const play = { playing: true, audio: undefined as unknown as AudioContext };
