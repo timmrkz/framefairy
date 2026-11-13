@@ -41,8 +41,10 @@ export function expectedTimeline(segments) {
   return { start: segments[0].start, end: segments[segments.length - 1].end, cuts };
 }
 
-// How long by the clock a caption may wait for its late layer, in ms.
-const LATE_FOR = 1000;
+// How many of the page's frames a caption may wait for its late layer, a
+// second of them at 60 a second. Frames and not ms: a busy machine draws
+// fewer, and gives the layer as many of them.
+const LATE_FRAMES = 60;
 
 // What the video preview lays over the picture, held to where the
 // playhead is, for samples as recordFrames and overlay read them, against
@@ -61,8 +63,8 @@ const LATE_FOR = 1000;
 // to the playhead. A frame whose own captions are still on their way is
 // drawn with the last ones, and the caption box shows what those show, so
 // a caption may be missing while the layer is late, for two frames of the
-// playhead at most, and for a second of the clock at most, since a paused
-// playhead does not move and would excuse it for good. Says what broke,
+// playhead at most, and for LATE_FRAMES of the page's at most, since a
+// paused playhead does not move and would excuse it for good. Says what broke,
 // or null.
 export function overlaid(samples, state, frame) {
   const pieces = state?.segments ?? [];
@@ -92,7 +94,7 @@ export function overlaid(samples, state, frame) {
       const shownAt = Number.isFinite(o.pictured) && o.pictured >= 0 ? o.pictured * frame : o.at;
       const none = captioned(shownAt) && !o.captions;
       missing = none ? (missing ?? o) : null;
-      const long = none && (o.at - missing.at > 2 * frame || o.t - missing.t > LATE_FOR);
+      const long = none && (o.at - missing.at > 2 * frame || o.drawn - missing.drawn > LATE_FRAMES);
       if (none && (!o.late || long)) return `on the clip at ${at}, ${how}, on frame ${o.pictured}${o.late ? " with its captions late" : ""}, the engine has a caption and the video preview shows none`;
     }
   }

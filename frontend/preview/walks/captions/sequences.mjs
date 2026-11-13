@@ -612,7 +612,7 @@ export default [
     // captions were on their way.
     name: "the keyboard's frame goes from word to word with the pill",
     steps: [
-      ["layers late", 120],
+      ["layers late", 7],
       ["walk the words with the frame on the pill", 8],
     ],
   },

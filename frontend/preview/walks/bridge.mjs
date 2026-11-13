@@ -1202,6 +1202,17 @@ export async function recordFrames(page, frame) {
 async function overlayReader(page) {
   await page.evaluate(() => {
     if (window.__overlay) return;
+    // The page's frames drawn since the reader came, its own clock: how
+    // late a caption's layer is, is counted in frames, so a busy machine
+    // that draws fewer of them gives the layer as many, see overlaid in
+    // rules.mjs. The browser's own frames, kept before a fake clock comes.
+    window.__drawn = 0;
+    const frame = window.__real?.frame ?? requestAnimationFrame.bind(window);
+    const count = () => {
+      window.__drawn++;
+      frame(count);
+    };
+    frame(count);
     window.__overlay = () => {
       const screen = document.querySelector(".screen");
       const chosen = document.querySelector(".clip-timeline .chosen");
@@ -1216,7 +1227,7 @@ async function overlayReader(page) {
         shade: !!screen?.querySelector(".crop"),
         captions: !!screen?.querySelector(".captions"),
         late: !!window.__captionLayers?.late,
-        t: performance.now(),
+        drawn: window.__drawn,
       };
     };
   });

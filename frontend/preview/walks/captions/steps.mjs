@@ -1669,17 +1669,21 @@ export const steps = {
     walk.wrong = await wakeOnCaption(page);
     await watch.step("press", s);
   },
-  // ["layers late", ms]
+  // ["layers late", frames]
   //                    every caption layer the video preview asks the Go
-  //                    side for comes ms late, the way it does on a busy
-  //                    machine
+  //                    side for comes so many of the page's frames late,
+  //                    the way it does on a busy machine. Frames and not
+  //                    ms, so it is as late on any machine, in what the
+  //                    page draws meanwhile
   async "layers late"(walk, arg) {
     const { page } = walk;
-    await page.evaluate((ms) => {
+    await page.evaluate((n) => {
       const real = window.fetch;
+      const frame = window.__real?.frame ?? requestAnimationFrame.bind(window);
+      const frames = (left) => new Promise((done) => (left ? frame(() => frames(left - 1).then(done)) : done()));
       window.fetch = async (input, init) => {
         const answer = real(input, init);
-        if (String(input).startsWith("/frames/captions?")) await new Promise((r) => setTimeout(r, ms));
+        if (String(input).startsWith("/frames/captions?")) await frames(n);
         return answer;
       };
     }, arg);
