@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sort"
 
 	"github.com/spf13/afero"
 
@@ -211,12 +212,18 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 	switch g.Kind {
 	case "trim":
 		start, end := first, last
-		var words []timed.Cue
+		// The words and the captions an edge lands on are read only near
+		// the hand, see wordsAround and fromPause, so a step of the drag
+		// costs the same for a clip of a minute and of an hour.
+		var words, toWords []timed.Cue
 		var goes []float64
 		if g.ToWords {
-			words = stops(math.Min(g.From, first), math.Max(g.To, last))
+			words = wordsNear(t, s, g.From)
+			if g.Edge == "both" {
+				toWords = wordsNear(t, s, g.To)
+			}
 			if g.Edge == "end" {
-				goes = captionsGo(runOn(clip, g.From), t, s)
+				goes = goesNear(clip, t, words, g.From, s)
 			}
 		}
 		// A cut the edge has not passed stays in the clip as the edge
@@ -250,7 +257,7 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 				end = math.Min(end, over)
 			}
 		case "both":
-			start, end = g.landStart(words, g.From, keepPause), g.landEnd(words, nil, g.To, keepPause)
+			start, end = g.landStart(words, g.From, keepPause), g.landEnd(toWords, nil, g.To, keepPause)
 			if over := g.Frames.End(); over > 0 {
 				end = math.Min(end, over)
 			}
@@ -490,6 +497,82 @@ func captionsGo(clip Clip, t *Transcript, s Style) []float64 {
 		}
 	}
 	return ends
+}
+
+// landingReach is how far from the hand, in seconds of the episode, the
+// words and the captions an edge lands on are read. An edge lands on the
+// word nearest the hand, see SnapStart and SnapEnd, and on where a caption
+// goes when that is nearer still, so once a word is this near, nothing
+// further away can be where it lands. A step of a drag read every word of
+// the clip and laid out all of its captions, so it took longer the longer
+// the clip was, and Tim found dragging the end of a long clip slow.
+const landingReach = 30.0
+
+// wordsNear are the words, as the captions show them in the style s, that
+// an edge the hand has at can land on, see wordsAround.
+func wordsNear(t *Transcript, s Style, at float64) []timed.Cue {
+	return ShowWords(wordsAround(t.Words, at), s, t.Language)
+}
+
+// goesNear are where the captions of clip go near an end the hand has
+// at, see captionsGo and fromPause. An end lands where a caption goes
+// only when that is nearer the hand than the end of the nearest of words,
+// the words it can land on, see SnapEnd, so the captions are laid out
+// from the pause before that far back.
+func goesNear(clip Clip, t *Transcript, words []timed.Cue, at float64, s Style) []float64 {
+	near := math.Inf(1)
+	for _, w := range words {
+		near = math.Min(near, math.Abs(w.End-at))
+	}
+	clip = runOn(clip, at)
+	if !math.IsInf(near, 1) {
+		clip = fromPause(clip, t.Words, at-near-1)
+	}
+	return captionsGo(clip, t, s)
+}
+
+// wordsAround are the words within landingReach of at, and the one more
+// on either side that SnapStart and SnapEnd look at beside the nearest.
+// With no word that near, the nearest may be anywhere, so they are all
+// the words there are. words are in the order they are said.
+func wordsAround(words []timed.Cue, at float64) []timed.Cue {
+	lo := sort.Search(len(words), func(i int) bool { return words[i].End > at-landingReach })
+	hi := sort.Search(len(words), func(i int) bool { return words[i].Start >= at+landingReach })
+	if lo >= hi {
+		return words
+	}
+	return words[max(lo-1, 0):min(hi+1, len(words))]
+}
+
+// fromPause is clip from the middle of the last pause before at that is
+// long enough to part two captions, captionPause, where the captions
+// start afresh: a caption never runs on over such a pause, so the
+// captions after it are laid out the same whatever comes before it, see
+// Captions. A clip with no such pause in it before at is the whole clip.
+// words are the clip's words in the order they are said.
+func fromPause(clip Clip, words []timed.Cue, at float64) Clip {
+	k := sort.Search(len(words), func(i int) bool { return words[i].End > at }) - 1
+	for ; k >= 0 && k+1 < len(words); k-- {
+		if words[k+1].Start-words[k].End >= captionPause {
+			break
+		}
+	}
+	if k < 0 || k+1 >= len(words) {
+		return clip
+	}
+	from := (words[k].End + words[k+1].Start) / 2
+	var out []Segment
+	for _, p := range clip.Segments {
+		if p.End > from {
+			p.Start = math.Max(p.Start, from)
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 || from <= clip.Segments[0].Start {
+		return clip
+	}
+	clip.Segments = out
+	return clip
 }
 
 // runOn is a clip as it would be with its end dragged out past at, a
