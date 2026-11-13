@@ -83,10 +83,11 @@ func keyFor(kind, tool, file string) (probeKey, bool) {
 const probedMost = 4096
 
 // probeCache is the answers a machine keeps, by the question and the
-// files it was about.
+// files it was about, and the probes under way, each closed when it ends.
 type probeCache struct {
 	mu      sync.Mutex
 	answers map[probeKey]any
+	flying  map[probeKey]chan struct{}
 }
 
 // recall is the answer the machine kept for key.

@@ -422,3 +422,53 @@ func TestThePiecesOfAClipAreReadOnceUntilTheFileChanges(t *testing.T) {
 		t.Errorf("a file written again was read %d times for two pieces", got)
 	}
 }
+
+// The window asks the state and the source of every video as the app
+// opens, all at once, and each probed the file for itself: six ffprobe
+// runs for each, twice for every video, #799. A probe already under way
+// is waited for and its answer taken.
+//
+// On the real disk: the stand-in ffprobe is a program that is run.
+func TestProbesOfOneFileAtOnceAskFFprobeOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ffprobe, runs := countingTool(t, "ffprobe")
+	video := filepath.Join(t.TempDir(), "episode.mp4")
+	if err := os.WriteFile(video, []byte("a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// What one probe asks, learned on a machine of its own.
+	alone := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
+	if _, err := alone.Probe(ctx, video); err != nil {
+		t.Fatal(err)
+	}
+	once := runs()
+
+	machine := &Machine{}
+	const callers = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	widths := make([]int, callers)
+	for i := range callers {
+		wg.Go(func() {
+			<-start
+			e := &Engine{Machine: machine, Log: runlog.New(io.Discard, false, false), FFprobe: ffprobe}
+			info, err := e.Probe(ctx, video)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			widths[i] = info.Width
+		})
+	}
+	close(start)
+	wg.Wait()
+	if got := runs() - once; got != once {
+		t.Errorf("%d probes of one file at once asked ffprobe %d times, not the %d of one probe", callers, got, once)
+	}
+	for i, w := range widths {
+		if w != 1920 {
+			t.Errorf("caller %d read a width of %d", i, w)
+		}
+	}
+}
