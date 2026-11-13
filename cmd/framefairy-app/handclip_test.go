@@ -439,50 +439,83 @@ func TestAClipsPartIsHeardBesideTheWholeVideo(t *testing.T) {
 	}
 }
 
-// A clip made by hand that fails is told to the window failed in the
-// same news as its card says so, never as a job still running with its
-// clip in the step failed. The window draws a running job's clip by its
-// step, and knows no step called failed, so its card said the job's name,
-// Make a clip, until the next news came, issue #829.
-func TestAClipMadeByHandThatFailsIsToldFailedInOneNews(t *testing.T) {
+// A clip made by hand that fails, or is stopped with Cancel, is told to
+// the window failed or stopped in the same news as its card says so, never
+// as a job still running with its clip in the step failed or stopped. The
+// window draws a running job's clip by its step, and knows no such step,
+// so its card said the job's name, Make a clip, until the next news came,
+// issue #829.
+//
+// On the real disk: ffprobe is asked for the video that fails, which is
+// not there.
+func TestAClipMadeByHandThatEndsIsToldSoInOneNews(t *testing.T) {
 	t.Parallel()
-	s, eps := memoryLibrary(t, "talk.mp4")
-	var mu sync.Mutex
-	var heard []Job
-	ended := make(chan string, 4)
-	s.jobs = newQueue(s.store, func(u JobUpdate) {
-		mu.Lock()
-		heard = append(heard, u.Job)
-		mu.Unlock()
-		if !u.Job.going() {
-			ended <- u.Job.ID
-		}
-	}, func(string) {})
-	logJobsOnFailure(t, s.jobs)
-	// Not really a video, so the clip fails before anything is heard.
-	job := s.MakeClip(eps[0], 0, false)
-	for id := range ended {
-		if id == job.ID {
-			break
-		}
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	var last Job
-	for _, j := range heard {
-		if j.ID != job.ID {
-			continue
-		}
-		for _, u := range j.Underway {
-			if j.going() && (u.Step == engine.StepFailed || u.Step == engine.StepStopped) {
-				t.Errorf("the window was told the job is %s with its clip %s: %+v", j.State, u.Step, j.Underway)
+	for _, c := range []struct {
+		name  string
+		stops bool
+		state string
+		step  string
+	}{
+		{"failed", false, JobFailed, engine.StepFailed},
+		{"stopped with Cancel", true, JobStopped, engine.StepStopped},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			s, eps := memoryLibrary(t, "talk.mp4")
+			var mu sync.Mutex
+			var heard []Job
+			ended := make(chan string, 4)
+			s.jobs = newQueue(s.store, func(u JobUpdate) {
+				mu.Lock()
+				heard = append(heard, u.Job)
+				mu.Unlock()
+				if !u.Job.going() {
+					ended <- u.Job.ID
+				}
+			}, func(string) {})
+			logJobsOnFailure(t, s.jobs)
+			id, req := engine.NewClipID(), engine.ClipRequest{At: 0}
+			running := make(chan struct{})
+			job := s.jobs.addSteps(eps[0], engine.JobClip, "Make a clip", false, func(j *Job) {
+				j.JobRecord.ID, j.At = id, req.At
+			}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
+				// The one stopped makes its clip once Cancel has reached it,
+				// so it is called off on its way, the way the engine is
+				// called off anywhere.
+				if c.stops {
+					close(running)
+					<-ctx.Done()
+				}
+				return p.MakeClip(ctx, id, req, host)
+			})
+			if c.stops {
+				<-running
+				s.StopClipWork(eps[0], "")
 			}
-		}
-		if j.Seq > last.Seq {
-			last = j
-		}
-	}
-	if last.State != JobFailed || len(last.Underway) != 1 || last.Underway[0].Step != engine.StepFailed {
-		t.Errorf("the clip ended %s with %+v, not failed where it lies", last.State, last.Underway)
+			for got := range ended {
+				if got == job.ID {
+					break
+				}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			var last Job
+			for _, j := range heard {
+				if j.ID != job.ID {
+					continue
+				}
+				for _, u := range j.Underway {
+					if j.going() && (u.Step == engine.StepFailed || u.Step == engine.StepStopped) {
+						t.Errorf("the window was told the job is %s with its clip %s: %+v", j.State, u.Step, j.Underway)
+					}
+				}
+				if j.Seq > last.Seq {
+					last = j
+				}
+			}
+			if last.State != c.state || len(last.Underway) != 1 || last.Underway[0].Step != c.step {
+				t.Errorf("the clip ended %s with %+v, not %s where it lies", last.State, last.Underway, c.state)
+			}
+		})
 	}
 }
