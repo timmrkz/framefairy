@@ -4,6 +4,7 @@
 // of what a correction should do, so they cannot drift into a third
 // engine. See docs/TESTING.md.
 import { letHeld, engineState, settle, settledScreen } from "./bridge.mjs";
+import { cutsOf, inClip } from "../../src/lib/flow.ts";
 
 // The engine's captions as a list of words, and the engine's clip as one
 // comparable value: its captions, how they look, and its pieces with their
@@ -30,15 +31,10 @@ export function describe(a, b) {
 }
 
 // What the clip timeline should show for the engine's pieces: the first
-// start, the last end, and a cut wherever two pieces have time between
-// them. Pieces that touch, which a crop moved part way makes, are no cut.
+// start, the last end, and the cuts the app's own cutsOf finds in them.
 export function expectedTimeline(segments) {
   if (!segments.length) return null;
-  const cuts = [];
-  for (let i = 1; i < segments.length; i++) {
-    if (segments[i].start > segments[i - 1].end) cuts.push({ from: segments[i - 1].end, to: segments[i].start });
-  }
-  return { start: segments[0].start, end: segments[segments.length - 1].end, cuts };
+  return { start: segments[0].start, end: segments[segments.length - 1].end, cuts: cutsOf(segments) };
 }
 
 // How long by the clock a caption may wait for its late layer, in ms.
@@ -66,15 +62,8 @@ const LATE_FOR = 1000;
 // or null.
 export function overlaid(samples, state, frame) {
   const pieces = state?.segments ?? [];
-  const clipTime = (t) => {
-    let sum = 0;
-    for (const p of pieces) {
-      if (t < p.start) return sum;
-      if (t < p.end) return sum + (t - p.start);
-      sum += p.end - p.start;
-    }
-    return sum;
-  };
+  // A moment of the episode on the clip's clock, by the app's own inClip.
+  const clipTime = (t) => inClip(pieces, t);
   const inPiece = (t) => pieces.some((p) => t >= p.start + frame && t < p.end - frame);
   const captioned = (t) => {
     const c = clipTime(t);

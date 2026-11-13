@@ -53,6 +53,7 @@
     frameMiddle,
     frameBegins,
     insideClip,
+    cutsOf,
     litWord,
     wordInEpisode,
     type CaptionDraft,
@@ -660,15 +661,8 @@
   // so by running the whole way.
   const wholeClip = $derived(drawnPieces.length ? { start, end } : null);
 
-  // A cut is a part the clip leaves out, which is the gap between two
-  // pieces. The engine counts them from the first, and so does the timeline,
-  // because that is what a move names.
-  const cuts = $derived(
-    drawnPieces
-      .slice(1)
-      .map((p, i) => ({ index: i, from: drawnPieces[i].end, to: p.start }))
-      .filter((c) => c.to > c.from),
-  );
+  // A cut is a part the clip leaves out, see cutsOf.
+  const cuts = $derived(cutsOf(drawnPieces));
   // A cut the saved clip does not have yet is one being drawn.
   const savedCuts = $derived(
     segments.slice(1).map((p, i) => ({ from: segments[i].end, to: p.start })),

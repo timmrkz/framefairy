@@ -268,6 +268,17 @@ export function inClip(pieces: Piece[], at: number): number {
 }
 
 
+// The cuts of a clip, the parts it leaves out: the gap between two pieces.
+// Two pieces that touch, which a crop moved part way through makes, have
+// no cut between them. The engine counts cuts from the first piece, and so
+// does this, because that is what a move names.
+export function cutsOf(pieces: Piece[]): { index: number; from: number; to: number }[] {
+  return pieces
+    .slice(1)
+    .map((p, i) => ({ index: i, from: pieces[i].end, to: p.start }))
+    .filter((c) => c.to > c.from);
+}
+
 // Whether the playhead is inside a clip, and so whether the crop frame is
 // drawn at all.
 //

@@ -6,7 +6,8 @@
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
 import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
-import { clockOf, nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
+import { clock } from "../../../src/lib/clock.ts";
+import { nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
   // ["model", how]     the language model "holds" its answers, "fails" or
@@ -896,8 +897,7 @@ export const steps = {
       });
       const mark = page.locator(".track .clipmark:not(.selected)").last();
       const label = await mark.getAttribute("aria-label");
-      const clockOf = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
-      const target = others.find((c) => `Clip at ${clockOf(c.start)}` === label);
+      const target = others.find((c) => `Clip at ${clock(c.start)}` === label);
       const parts = target ? (target.segments.length ? target.segments : [target]) : [];
       const firstAt = sentences.find((x) => x.clip === target?.key)?.start;
       // Where the card stands once the list stops moving, against where
@@ -1688,7 +1688,7 @@ export const steps = {
     // before Continue, the way the row of the stopped search did, or
     // how long it has left once it can say.
     const said = await page.evaluate(() => window.__said);
-    const span = clockOf(to - from);
+    const span = clock(to - from);
     const secondsOf = (c) => c.split(":").reduce((t, n) => t * 60 + Number(n), 0);
     const counts = (line) => new RegExp(`^\\d+:\\d\\d of ${span} transcribed$`).test(line ?? "");
     const off = said.find((line) => !counts(line) && !/^About \d+:\d\d left$/.test(line ?? ""));
@@ -1798,7 +1798,7 @@ export const steps = {
     }, job.id);
     const toast = await toastSays(page);
     const report = await page.locator(".toast:not([inert]) button.report").count();
-    const where = clockOf(job.underway?.[0]?.start ?? at);
+    const where = clock(job.underway?.[0]?.start ?? at);
     if (!said.failed) walk.wrong = `the clip that failed has no card that says so: ${JSON.stringify(said)}`;
     else if (said.title !== "Failed. Click Continue") walk.wrong = `the card says "${said.title}", not Failed. Click Continue`;
     else if (said.meta !== where) walk.wrong = `the card's second line says "${said.meta}", not where the clip lies, ${where}`;

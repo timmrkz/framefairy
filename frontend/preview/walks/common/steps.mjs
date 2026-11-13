@@ -207,13 +207,6 @@ export function nextCall(page, name, after) {
 
 export const pieceCount = (n) => `${n} piece${n === 1 ? "" : "s"}`;
 
-// A moment the way the clip list says it, clock in lib/api.ts.
-export const clockOf = (t) => {
-  const h = Math.floor(t / 3600);
-  const m = Math.floor((t % 3600) / 60);
-  const ss = String(Math.floor(t % 60)).padStart(2, "0");
-  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
-};
 
 // Frames a second of the episode on screen.
 export const rate = async (page) => (await ask(page, "Source", await episodeOn(page))).fps;

@@ -1300,15 +1300,7 @@ export function onSetup(fn: (state: SetupState) => void): () => void {
   return Events.On("setup", (ev) => fn(ev.data as SetupState));
 }
 
-export function clock(seconds: number): string {
-  if (!isFinite(seconds) || seconds < 0) seconds = 0;
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const mm = String(m).padStart(h ? 2 : 1, "0");
-  const ss = String(s).padStart(2, "0");
-  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
+export { clock } from "./clock";
 
 // What a machine can do with a model, in words, and whether that is a
 // warning. One place, because the setup and the settings say the same
