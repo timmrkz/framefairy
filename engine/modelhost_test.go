@@ -295,6 +295,9 @@ func holdFromEverywhere(t *testing.T, seed uint64) {
 		// for once every other hand is done, below.
 		if i%8 == 5 {
 			reads.Go(func() {
+				// Comes in a moment of the bubble's clock its seed picks,
+				// while a search may hold the model.
+				time.Sleep(time.Duration(r.IntN(4)) * time.Millisecond) //nolint:forbidigo // synctest bubble
 				ctx, giveWay := context.WithCancelCause(context.Background())
 				if _, release, ok := host.holdIdle(m.Model, size, giveWay); ok {
 					<-ctx.Done()
@@ -328,8 +331,11 @@ func holdFromEverywhere(t *testing.T, seed uint64) {
 		})
 	}
 	hands.Wait()
-	// Every hand is done and every read ahead holds or has gone, and a
-	// read that no search called off is let go of before the app closes.
+	// Every read ahead has come in by the latest moment its seed can
+	// pick, and once everything waits, every hand is done and every read
+	// ahead holds or has gone. A read that no search called off is let go
+	// of before the app closes.
+	time.Sleep(4 * time.Millisecond) //nolint:forbidigo // synctest bubble
 	synctest.Wait()
 	host.mu.Lock()
 	if h := host.model; h != nil && h.giveWay != nil {
