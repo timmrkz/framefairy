@@ -8,21 +8,23 @@
  32	sequences.mjs SEQUENCE=a rotated part turns with its own frames under a dragged playhead, and stays rotated as its end moves
  31	playback.mjs
  31	sequences.mjs SEQUENCE=Dictating in the middle of a long report keeps the cursor in view
+ 30	sequences.mjs SEQUENCE=a label tells a video apart, the video keeps its name, and both are centred in the title bar
  29	sequences.mjs SEQUENCE=a cut's left edge dragged shows the frames before the cut, never one after it
  29	sequences.mjs SEQUENCE=a search that found its clips moves the window on in the frame they show
  28	sequences.mjs SEQUENCE=a short of a picture that starts after its sound shows what the video preview shows
  26	sequences.mjs SEQUENCE=The arrow keys scroll the report a line at a time, while dictating and after
  26	sequences.mjs SEQUENCE=a clip filmed by two cameras has one crop, through a cut, a trim and a drag
- 26	sequences.mjs SEQUENCE=a label tells a video apart and the video keeps its name
  26	words.mjs
  26	sequences.mjs SEQUENCE=a cut's edges dragged with shift keep the playhead in line with them and go the way of the hand
  24	sequences.mjs SEQUENCE=a restart brings back a clip trimmed, its short and a search stopped, as they were
  24	sequences.mjs SEQUENCE=the dots after a search's window begin at the window it moves on to, with a dashed edge
+ 24	sequences.mjs SEQUENCE=a video whose file is moved away says File not found at once while the app is in front, says so once in a toast when opened, and shows again once it is back
  23	sequences.mjs SEQUENCE=a clip card clicked changes the picture, the crop frame and the captions in one frame
  23	sequences.mjs SEQUENCE=the app dragged a pixel at a time moves every part one way, the sides equal and set by the width
  22	sequences.mjs SEQUENCE=Transcribe video waits until the search is done
  21	sequences.mjs SEQUENCE=a search at the end of a video ends in one frame
  21	sequences.mjs SEQUENCE=an edge taken again at once after a drag is the edge's, before the drag before it is answered and while it saves
+ 21	sequences.mjs SEQUENCE=a new video shows its waveform before its first clip, gets that clip with no click, and has the waveform after it came while the video was away
  20	sequences.mjs SEQUENCE=a clip stays rendered after its short is removed from its folder
  20	sequences.mjs SEQUENCE=a render cut off by the app closing says so at its Render button, and Continue carries it on
  18	sequences.mjs SEQUENCE=a clip card clicked puts up its clip from what was read while the hand rested
@@ -38,10 +40,7 @@
  15	sequences.mjs SEQUENCE=a search of what was said finds the sentences, names their clips and puts the playhead on one
  14	sequences.mjs SEQUENCE=a search of what was said shows the parts not transcribed yet
  14	sequences.mjs SEQUENCE=a short rendered into the folder for shorts is known as rendered
- 14	sequences.mjs SEQUENCE=a video whose file is moved away says so once, in a toast, and shows again once it is back
  13	sequences.mjs SEQUENCE=a rotated part keeps its keyframe, and has the rotate icon drawn in its middle
- 12	sequences.mjs SEQUENCE=a video gone back to after its first clip came while it was away has its waveform
- 12	sequences.mjs SEQUENCE=a video whose file is moved away while the app is in front says File not found at once
  12	sequences.mjs SEQUENCE=the episode played through a clip with cuts shows only the video, and the clip its frame and captions
  12	sequences.mjs SEQUENCE=the hand and the keys light a card of the transcript and a part not transcribed yet the same
  12	sequences.mjs SEQUENCE=undo takes back a crop moved, a word corrected and a font picked, in turn, and redo does them again
@@ -69,6 +68,8 @@
   9	sequences.mjs SEQUENCE=a video gone back to from the sidebar keeps its frame until it is drawn again
   9	sequences.mjs SEQUENCE=a video shorter than a clip gets its clip again once it was removed
   9	sequences.mjs SEQUENCE=shift and the arrows skip ahead through a clip on the video, and walk its words on the clip
+  9	sequences.mjs SEQUENCE=removing the chosen clip chooses the one beside it, and put back it is chosen again where the playhead was
+  9	sequences.mjs SEQUENCE=a clip made with O while the episode plays is not dimmed, nor when it is written before its card's pick has its answer
   8	sequences.mjs SEQUENCE=Backspace after typing at the end of a dictation takes away no words still to be written down
   8	sequences.mjs SEQUENCE=Continue fills the transcription from nothing over what is left to hear
   8	sequences.mjs SEQUENCE=Dictate writes what is said while it is said, where the cursor was, and undo takes it back
@@ -82,7 +83,6 @@
   8	sequences.mjs SEQUENCE=a word typed in a face libass thickens is as heavy as libass draws it
   8	sequences.mjs SEQUENCE=an end pulled in and undone while the clip plays just before a cut plays on to the old end
   8	sequences.mjs SEQUENCE=an end pulled in and undone while the clip plays plays on to the old end
-  8	sequences.mjs SEQUENCE=removing the chosen clip chooses the one beside it
   8	sequences.mjs SEQUENCE=the episode played through a clip shows only the video, and the clip its frame and captions
   8	sequences.mjs SEQUENCE=a keyframe goes on a clip's first and last frame with S, and comes off with S
   7	sequences.mjs SEQUENCE=Clear asks first, empties the words and the pictures, and undo brings them back
@@ -92,7 +92,6 @@
   7	sequences.mjs SEQUENCE=a caption's right edge dragged in and double-clicked, twice, is back where it was with its words
   7	sequences.mjs SEQUENCE=a caption's right edge dragged in over its last word leaves the word out, and back out puts it back
   7	sequences.mjs SEQUENCE=a clip looped from early on goes round its end, the picture with the sound
-  7	sequences.mjs SEQUENCE=a new video gets its first clips with no click
   7	sequences.mjs SEQUENCE=a running search leaves the clip on screen alone
   7	sequences.mjs SEQUENCE=a search that failed is red everywhere, and its row can be removed, put back first
   7	sequences.mjs SEQUENCE=every caption block clicked lights a word of its caption
@@ -101,6 +100,7 @@
   7	sequences.mjs SEQUENCE=the number keys put the playhead that many tenths into the clip, past its cut, playing or paused
   7	sequences.mjs SEQUENCE=the picture comes back after the playhead reached the end of the episode
   7	sequences.mjs SEQUENCE=the playhead's time is in a field beside the buttons, and the clip's numbers on its card
+  7	sequences.mjs SEQUENCE=a clip made with I while the episode plays or is paused is not dimmed
   6	sequences.mjs SEQUENCE=Cancel pressed at once after Search stops the search before it starts
   6	sequences.mjs SEQUENCE=Enter and Escape keep what was dictated, and undo takes it back
   6	sequences.mjs SEQUENCE=Shift and the arrows walk past two cards that begin at the same moment
@@ -110,7 +110,6 @@
   6	sequences.mjs SEQUENCE=Typing elsewhere while dictating keeps every word, in order
   6	sequences.mjs SEQUENCE=a caption's edges dragged with shift land on words
   6	sequences.mjs SEQUENCE=a caption's first word removed stays removed when its left edge is dragged out over it
-  6	sequences.mjs SEQUENCE=a clip made with O while the episode plays is not dimmed
   6	sequences.mjs SEQUENCE=a cut undone and redone while the clip plays is played through and then jumped
   6	sequences.mjs SEQUENCE=a file that is not a video is said in a toast that moves nothing and goes by itself unless held
   6	sequences.mjs SEQUENCE=a paused frame grows sharp with the app
@@ -118,7 +117,6 @@
   6	sequences.mjs SEQUENCE=a play after the loop was switched off on the way plays the clip once
   6	sequences.mjs SEQUENCE=a row to put back runs down once the hand is elsewhere, though it moved from under a still hand
   6	sequences.mjs SEQUENCE=a thumbnail mark lights under the hand and a double-click removes it
-  6	sequences.mjs SEQUENCE=a video just added shows its waveform before its first clip
   6	sequences.mjs SEQUENCE=a video shorter than a clip is its own clip, with rulers that fit it
   6	sequences.mjs SEQUENCE=a video whose folder is deleted outside the app leaves the list
   6	sequences.mjs SEQUENCE=a word removed, then its clip removed and made again with I, has the word again
@@ -127,7 +125,6 @@
   6	sequences.mjs SEQUENCE=an end pulled in while the clip plays, undone and redone, stops at the new end
   6	sequences.mjs SEQUENCE=an episode opens on its clip, with no frame of its start on the way
   6	sequences.mjs SEQUENCE=the crop frame at either side of the picture is drawn whole, with the shade into its corners
-  6	sequences.mjs SEQUENCE=the name of a video and its label are centred in the title bar
   6	sequences.mjs SEQUENCE=a double-click in the clip cuts a part out, one on the cut puts it back, and one on a trimmed edge puts it back where the clip was found
   5	sequences.mjs SEQUENCE=A click in the words being heard puts the cursor there while dictating
   5	sequences.mjs SEQUENCE=After Attach while dictating, the field has the focus again and Tab goes to Report
@@ -146,8 +143,6 @@
   5	sequences.mjs SEQUENCE=a caption block pops for neither edge dragged in, with the playhead on it
   5	sequences.mjs SEQUENCE=a caption removed, then its clip removed and made again with I, has the caption again
   5	sequences.mjs SEQUENCE=a clip made with I is chosen when the answer to the press comes after the clip
-  5	sequences.mjs SEQUENCE=a clip made with I while the episode plays is not dimmed
-  5	sequences.mjs SEQUENCE=a clip made with O is not dimmed when it is written before its card's pick has its answer
   5	sequences.mjs SEQUENCE=a clip put back while another plays leaves the play alone
   5	sequences.mjs SEQUENCE=a removed row closes with the space after it, in one movement
   5	sequences.mjs SEQUENCE=a search the app was closed on says Interrupted, after it opens again
@@ -177,7 +172,6 @@
   4	sequences.mjs SEQUENCE=a caption removed, then its clip removed and put back, is still removed
   4	sequences.mjs SEQUENCE=a caption's edges moved by hand leave the captions beside them alone
   4	sequences.mjs SEQUENCE=a caption's left edge dragged in over its first word leaves the word out and the caption before it alone
-  4	sequences.mjs SEQUENCE=a clip made with I while the video is paused is not dimmed
   4	sequences.mjs SEQUENCE=a family picked keeps the look of the face it replaces
   4	sequences.mjs SEQUENCE=a model deleted outside the app is gone from the settings at once
   4	sequences.mjs SEQUENCE=a press on the clip timeline while it plays holds the playhead under the hand
@@ -220,7 +214,6 @@
   3	sequences.mjs SEQUENCE=a word opened in the caption box stays where libass draws it
   3	sequences.mjs SEQUENCE=a word saved empty is removed
   3	sequences.mjs SEQUENCE=an edge let go before the engine answers leaves the playhead on the edge
-  3	sequences.mjs SEQUENCE=the clip chosen, removed and put back, is chosen again where the playhead was
   3	sequences.mjs SEQUENCE=the clip count follows the window as its length is dragged
   3	sequences.mjs SEQUENCE=the font list hangs on the field's edge with rows as tall as it, each in its own face
   3	sequences.mjs SEQUENCE=the transcript button pressed with the font list open closes the list and takes the keyboard
