@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -107,11 +108,11 @@ func TestCaptionsLaidOutNearAChangeAreTheWholeClipsCaptions(t *testing.T) {
 }
 
 // A step of a drag sends only the captions near what the hand changed,
-// and those put together with the captions of the clip as saved, the way
+// and those put together with the captions of the step before, the way
 // the interface puts them together, are the captions the step would have
 // sent whole, the words said in them and all: for an end and a start
-// dragged a few seconds in and out of a clip of ten minutes, over 10
-// seeds.
+// dragged a few seconds in and out of a clip of ten minutes, each step
+// made from the one before as the app makes it, over 10 seeds.
 func TestADragStepSendsOnlyTheCaptionsNearTheChange(t *testing.T) {
 	t.Parallel()
 	for seed := range uint64(10) {
@@ -135,9 +136,14 @@ func TestADragStepSendsOnlyTheCaptionsNearTheChange(t *testing.T) {
 		// A step's track names what it draws: one name is never two
 		// drawings.
 		named := map[string]string{}
+		held, before := saved.Captions, saved.Drawing()
+		edge := "end"
+		again := 620 + r.Float64()*5
 		for _, g := range []Gesture{
 			{Kind: "trim", Edge: "end", From: 615 + r.Float64()*5},
-			{Kind: "trim", Edge: "end", From: 620 + r.Float64()*5},
+			{Kind: "trim", Edge: "end", From: again},
+			// The hand where it was: nothing is laid out again.
+			{Kind: "trim", Edge: "end", From: again},
 			{Kind: "trim", Edge: "start", From: 20 + r.Float64()*5},
 			{Kind: "trim", Edge: "start", From: 15 + r.Float64()*5},
 		} {
@@ -146,7 +152,12 @@ func TestADragStepSendsOnlyTheCaptionsNearTheChange(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			step, err := ShapeClipView(s, "01", g, tr, 0.1, nil, saved.Drawing())
+			// A drag of the other edge starts again from the clip as
+			// saved, as the app's does.
+			if g.Edge != edge {
+				held, before, edge = saved.Captions, saved.Drawing(), g.Edge
+			}
+			step, err := ShapeClipView(s, "01", g, tr, 0.1, nil, before)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -165,8 +176,8 @@ func TestADragStepSendsOnlyTheCaptionsNearTheChange(t *testing.T) {
 			if n := len(step.Captions.Captions); n > 40 {
 				t.Errorf("seed %d, %s at %.2f: the step sent %d of %d captions", seed, g.Edge, g.From, n, len(whole.Captions.Captions))
 			}
-			got := append(append([]CaptionView{}, saved.Captions[:cut.Head]...), step.Captions.Captions...)
-			for _, c := range saved.Captions[cut.Tail:] {
+			got := append(append([]CaptionView{}, held[:cut.Head]...), step.Captions.Captions...)
+			for _, c := range held[cut.Tail:] {
 				c.Start, c.End = c.Start+cut.Shift, c.End+cut.Shift
 				lines := make([]CaptionLineView, len(c.Lines))
 				for i, l := range c.Lines {
@@ -189,6 +200,7 @@ func TestADragStepSendsOnlyTheCaptionsNearTheChange(t *testing.T) {
 			if a, b := roundedJSON(t, got), roundedJSON(t, whole.Captions.Captions); a != b {
 				t.Errorf("seed %d, %s at %.2f: put together\n%s\nwhole\n%s", seed, g.Edge, g.From, a, b)
 			}
+			held, before = got, step.Captions.Drawing()
 		}
 	}
 }
@@ -226,4 +238,31 @@ func roundedJSON(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(out)
+}
+
+// A drawing of a clip's captions does not keep the transcript it was laid
+// out from: the app keeps hundreds of drawings, and while a video is
+// being heard its transcript is read again as a new one every few seconds.
+func TestADrawingLetsItsTranscriptGo(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	path := filepath.Join("/", "ep.framefairy", "logs", "clips.json")
+	if err := afero.WriteFile(fsys, path, []byte(`{"source": "ep.mp4", "plan_id": "p1", "revision": 1, "clips": [
+	  {"id": "01", "slug": "kurz", "title": "Kurz", "keep": true, "segments": [{"start": 0, "end": 30}]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr := fromStored(talked(40), nil, 0, 0, nil)
+	view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	heard := view.Drawing().heard
+	if heard.Value() != tr {
+		t.Fatal("the drawing does not know the transcript it was laid out from")
+	}
+	tr = nil
+	runtime.GC()
+	if heard.Value() != nil {
+		t.Error("the drawing keeps the transcript it was laid out from")
+	}
+	runtime.KeepAlive(view)
 }

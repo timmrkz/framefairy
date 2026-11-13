@@ -503,11 +503,14 @@ as far as the clip keeps a second, counting each cut ahead of it as
 narrow as the edge has pushed it, `cutsAhead`. Every step of a drag starts from the clip as saved, so a drag
 back out puts the cuts back where they were.
 
-A step of a drag costs the same however long the clip is. Where an edge
+A step of a drag costs about the same however long the clip is. Where an edge
 lands reads only the words within `landingReach` of the hand, and the
 captions from the pause before them, `wordsNear` and `goesNear` in
-`engine/shape.go`. A caption's place depends only on the captions beside
-it, so that is the same landing as one read from every word, which
+`engine/shape.go`. Captions start afresh after a pause long enough to
+part them, and a caption too short to stand alone that rides on over it
+still ends where its words end, so where the captions after the pause
+end is the same however they are laid out before it. That makes it the
+same landing as one read from every word, which
 `TestAnEdgeLandsTheSameReadOnlyNearTheHand` holds. The captions of the
 step are laid out again only near what the step changed, and the rest
 are taken from the drawing of the step before, `laidNear` in
@@ -518,7 +521,10 @@ says where they go. Where the captions laid out again do not meet the
 ones before as they should, the clip is laid out whole.
 `TestCaptionsLaidOutNearAChangeAreTheWholeClipsCaptions` holds that the
 two are the same. Every caption of the clip laid out and sent on every
-step took 46 ms at a clip an hour long, and Tim found the drag slow. A clip once also kept the
+step took 46 ms at a clip an hour long, and Tim found the drag slow. What
+still grows with the clip is moving the captions after the change on its
+clock, every caption of it on a drag of the start: about 0.6 ms more at
+a clip an hour long than at one a minute long, in a cloud session. A clip once also kept the
 pieces it was found with, `found_segments`, to frame what was put back by
 the camera it showed. A clip used to be parted at every camera switch with
 a crop for each camera, which Tim never saw at work in his own two-camera

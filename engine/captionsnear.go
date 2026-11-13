@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"weak"
 
 	"framefairy/engine/timed"
 )
@@ -33,7 +34,7 @@ const layoutReach = 10.0
 // or the captions laid out again do not meet was's where they should, and
 // the captions are then laid out whole.
 func laidNear(was *CaptionDrawing, clip Clip, t *Transcript, s Style) (laid []LaidCaption, cut Splice, ok bool) {
-	if was == nil || was.heard == nil || was.heard != t.source() || !reflect.DeepEqual(was.laidIn, s) {
+	if was == nil || was.heard != weak.Make(t.source()) || !reflect.DeepEqual(was.laidIn, s) {
 		return nil, cut, false
 	}
 	same := clip

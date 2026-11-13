@@ -27,9 +27,11 @@ func talked(seconds float64) []timed.Cue {
 	return words
 }
 
-// benchLongDrag times one step of a drag of the end of a clip as long as
-// span seconds, the call the app makes for every step of the hand.
-func benchLongDrag(b *testing.B, span float64) {
+// benchLongDrag times one step of a drag of an edge of a clip as long as
+// span seconds, the call the app makes for every step of the hand. still
+// is a step with the hand where the step before left it, which lays out
+// no caption again.
+func benchLongDrag(b *testing.B, span float64, edge string, still bool) {
 	fsys := afero.NewMemMapFs()
 	path := filepath.Join("/", "ep.framefairy", "logs", "clips.json")
 	plan := fmt.Sprintf(`{"source": "ep.mp4", "plan_id": "p1", "revision": 1, "clips": [
@@ -40,17 +42,29 @@ func benchLongDrag(b *testing.B, span float64) {
 	}
 	s := planAt(b, fsys, path)
 	tr := fromStored(talked(span+120), nil, 0, 0, nil)
-	g := Gesture{Kind: "trim", Edge: "end", From: 10 + span - 5, To: 10 + span - 5, ToWords: true, Frames: at25}
+	at := 10 + span - 5
+	if edge == "start" {
+		at = 15
+	}
+	g := Gesture{Kind: "trim", Edge: edge, From: at, To: at, ToWords: true, Frames: at25}
 	// The drawing of the clip's captions as the interface shows them
 	// before the hand took hold, the way the app hands it on.
 	saved, err := ClipCaptionsView(s, "01", tr, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
+	was := saved.Drawing()
+	if still {
+		step, err := ShapeClipView(s, "01", g, tr, 0.1, nil, was)
+		if err != nil {
+			b.Fatal(err)
+		}
+		was = step.Captions.Drawing()
+	}
 	b.ReportAllocs()
 	var sent int
 	for b.Loop() {
-		view, err := ShapeClipView(s, "01", g, tr, 0.1, nil, saved.Drawing())
+		view, err := ShapeClipView(s, "01", g, tr, 0.1, nil, was)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -64,11 +78,19 @@ func benchLongDrag(b *testing.B, span float64) {
 	b.ReportMetric(float64(sent), "B/answer")
 }
 
-func BenchmarkAnEdgeOfAClipOf1Minute(b *testing.B) { benchLongDrag(b, 60) }
+func BenchmarkAnEdgeOfAClipOf1Minute(b *testing.B) { benchLongDrag(b, 60, "end", false) }
 
-func BenchmarkAnEdgeOfAClipOf10Minutes(b *testing.B) { benchLongDrag(b, 600) }
+func BenchmarkAnEdgeOfAClipOf10Minutes(b *testing.B) { benchLongDrag(b, 600, "end", false) }
 
-func BenchmarkAnEdgeOfAClipOf60Minutes(b *testing.B) { benchLongDrag(b, 3600) }
+func BenchmarkAnEdgeOfAClipOf60Minutes(b *testing.B) { benchLongDrag(b, 3600, "end", false) }
+
+func BenchmarkTheStartOfAClipOf1Minute(b *testing.B) { benchLongDrag(b, 60, "start", false) }
+
+func BenchmarkTheStartOfAClipOf60Minutes(b *testing.B) { benchLongDrag(b, 3600, "start", false) }
+
+func BenchmarkAnEdgeHeldStillOnAClipOf1Minute(b *testing.B) { benchLongDrag(b, 60, "end", true) }
+
+func BenchmarkAnEdgeHeldStillOnAClipOf60Minutes(b *testing.B) { benchLongDrag(b, 3600, "end", true) }
 
 // benchLanding times where the end of a clip as long as span seconds
 // lands for one step of a drag, without its captions.

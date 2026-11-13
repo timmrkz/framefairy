@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"weak"
 
 	"github.com/spf13/afero"
 
@@ -961,8 +962,10 @@ type CaptionDrawing struct {
 	// a step of a drag knows the captions it can take from this drawing,
 	// see laidNear. splice is how such a step made Laid from that
 	// drawing's, was, and named is the drawing's name once worked out,
-	// see name.
-	heard  *Transcript
+	// see name. heard does not keep the transcript alive: the app keeps
+	// hundreds of drawings, and while a video is being heard its
+	// transcript is read again as a new one every few seconds.
+	heard  weak.Pointer[Transcript]
 	laidIn Style
 	splice *Splice
 	was    *CaptionDrawing
@@ -1142,7 +1145,7 @@ func clipDrawingFrom(was *CaptionDrawing, style map[string]any, clip Clip, t *Tr
 	clip = source.OnFrames(clip)
 	style = clipStyle(style, clip)
 	s := fonts.Style(style)
-	d := &CaptionDrawing{Style: style, Clip: clip, heard: t.source(), laidIn: s}
+	d := &CaptionDrawing{Style: style, Clip: clip, heard: weak.Make(t.source()), laidIn: s}
 	if laid, cut, ok := laidNear(was, clip, t, s); ok {
 		d.Laid, d.splice, d.was = laid, &cut, was
 		return d
@@ -1214,6 +1217,9 @@ func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, 
 	if cut := drawing.splice; cut != nil {
 		view.Splice = cut
 		laid = laid[cut.Head : cut.Head+cut.fresh]
+		// A step that laid nothing out again, an edge snapped back to the
+		// word it was on, says no word.
+		words = nil
 		if len(laid) > 0 {
 			words = t.WordsBetween(EpisodeTime(clip, laid[0].Start)-1, EpisodeTime(clip, laid[len(laid)-1].End)+1)
 		}

@@ -546,9 +546,11 @@ func wordsAround(words []timed.Cue, at float64) []timed.Cue {
 
 // fromPause is clip from the middle of the last pause before at that is
 // long enough to part two captions, captionPause, where the captions
-// start afresh: a caption never runs on over such a pause, so the
-// captions after it are laid out the same whatever comes before it, see
-// Captions. A clip with no such pause in it before at is the whole clip.
+// start afresh, see Captions. Only a caption too short to stand alone,
+// minCaption, rides on over such a pause with the caption before it, and
+// it ends where its words end either way, so where the captions after the
+// pause go is the same whatever comes before it. A clip with no such
+// pause in it before at is the whole clip.
 // words are the clip's words in the order they are said.
 func fromPause(clip Clip, words []timed.Cue, at float64) Clip {
 	from := pauseBefore(words, at)
