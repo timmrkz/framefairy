@@ -1595,9 +1595,15 @@ export const steps = {
     const slow = arg === "start, sounded late";
     if (late) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
     const before = await page.evaluate(() => window.__notes.length);
+    // Stop the moment it is pressed, see the rules on a click: read in
+    // the first frame after the click, not after a trip back to the walk.
+    if (!running)
+      await page.evaluate(() => {
+        const label = () => document.querySelector("button.dictate")?.getAttribute("aria-label");
+        window.__dictateSaid = new Promise((done) => addEventListener("click", () => requestAnimationFrame(() => done(label())), { capture: true, once: true }));
+      });
     if (!running) await button.click();
-    // Stop the moment it is pressed, see the rules on a click.
-    const said = await button.getAttribute("aria-label");
+    const said = running ? "Stop" : await page.evaluate(() => window.__dictateSaid);
     if (!running && said !== "Stop") {
       walk.wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
       return;

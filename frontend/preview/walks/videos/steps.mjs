@@ -17,20 +17,16 @@ export const steps = {
   //                    29.97 fps, whose frames keep their numbers in a
   //                    short
   // ["add", seconds, rate, timing]
-  //                    the same with its frames at a phone's uneven times,
-  //                    "uneven", or its picture starting after its sound,
-  //                    "late"
-  // ["add", seconds, rate, timing, "mkv"]
-  //                    the same in Matroska, the way OBS records, with ""
-  //                    for frames at the rate
+  //                    the same with its picture starting after its sound,
+  //                    "late" or "late4ms", or stored on its side, "turned"
   async add(walk, arg, s) {
     const { page, watch } = walk;
-    const [seconds, rate, timing, inside] = [arg].flat();
-    await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}${inside ? `&in=${inside}` : ""}`);
+    const [seconds, rate, timing] = [arg].flat();
+    await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}`);
     await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
     await watch.step("add", s);
   },
-  // ["added", seconds, rate, timing, inside]
+  // ["added", seconds, rate, timing]
   //                    as the first step of a sequence: the sequence
   //                    starts with a video like the one ["add", ...] adds,
   //                    heard and searched, and the app open on its clip.

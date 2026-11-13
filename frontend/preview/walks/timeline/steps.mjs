@@ -690,7 +690,7 @@ export const steps = {
     else if (!same(walk.held.at, want)) {
       walk.wrong = `the playhead stood at ${walk.held.at.toFixed(3)} with the button down on the ${arg}, not on its frame at ${want.toFixed(3)}`;
     } else if (walk.held.trackFrames < 0) walk.wrong = "a press on the track did not move the playhead";
-    else if (on < 0) walk.wrong = `the playhead came onto the ${arg} only after 150 ms`;
+    else if (on < 0) walk.wrong = `the playhead came onto the ${arg} only once the frame under the hand was shown, not in a frame painted while the button was down before it`;
     else if (on > walk.held.trackFrames) {
       walk.wrong = `the playhead came onto the ${arg} ${on} frames after the press, a press on the track takes ${walk.held.trackFrames}`;
     }

@@ -8,7 +8,8 @@
 import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { ask, caughtUp, chosen, clickOnTrack, clipList, control, engineState, episodeOn, foldsDone, fromSidebar, handles, high, hold, holdClock, letClockGo, letHeld, middle, news, nextNews, nextPaint, overlay, pageUntil, playUntil, holdSound, pressHead, pressPlay, realFrames, recordFrames, runClock, seenUntil, settle, reload } from "../bridge.mjs";
-import { canLook, changesOf, clickCard, clickedFromAhead, clockOf, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
+import { clock } from "../../../src/lib/clock.ts";
+import { canLook, changesOf, clickCard, clickedFromAhead, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
 
 export const steps = {
   // ["clips with", [word, n]]
@@ -276,7 +277,7 @@ export const steps = {
     const { segments } = await engineState(page, watch.at);
     const seconds = Math.round(segments.reduce((sum, p) => sum + p.end - p.start, 0));
     const n = await page.locator(".clip-timeline .piece").count();
-    const want = `${clockOf(segments[0].start)}, ${seconds} s, ${n} ${n === 1 ? "piece" : "pieces"}`;
+    const want = `${clock(segments[0].start)}, ${seconds} s, ${n} ${n === 1 ? "piece" : "pieces"}`;
     await settle(page);
     const ok = await page.evaluate((want) => document.querySelector(".pick.current .meta")?.textContent.replace(/\s+/g, " ").trim() === want, want);
     if (!ok) {
