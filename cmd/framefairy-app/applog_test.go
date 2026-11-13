@@ -825,8 +825,11 @@ func TestSettingsSeesTheLogAsItIsWritten(t *testing.T) {
 	<-done
 }
 
-// close stops writing the log, for the tests.
+// close stops writing the log, for the tests, the way the app's process
+// ending does. Nothing watches the log then either, so a walk that ends
+// with Settings open leaves no watch to the walk after it.
 func (l *appLog) close() {
+	l.watching.Store(false)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.root.Store(nil)
