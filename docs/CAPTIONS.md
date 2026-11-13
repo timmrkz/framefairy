@@ -310,7 +310,8 @@ nothing. The rest of the line stays put while a word is typed, and the
 grown pill lies over the words beside it, as the pop does. Enter saves
 the word, and libass lays the line out again with it, which moves the
 words beside it apart and can break the line in another place. The walk
-"a word typed longer grows its pill round its middle".
+"a word typed in a face libass thickens is as heavy as libass draws it"
+types a word longer and holds it to its pill, its `grow` step.
 
 The letters typed are drawn in the face as libass draws it. Each face is
 declared to the browser with its own weight, `CaptionFont.Weight`, read
@@ -342,9 +343,10 @@ selection is the Mac's own, `Highlight`, kept just short of opaque so
 WebKit does not thin it with white into the colour of the pill. Nothing
 of the word is drawn outside its pill, `overflow: clip`, since a
 selection is as tall as the face's line and stood over the pill, the
-walk "the letters selected in a word typed stay in its pill". The walk
-"a word typed longer grows its pill round its middle" holds the letters'
-size and colour and the pill's colour to libass's.
+walk "a word typed sits on the pill libass draws, its selection in it, and
+lets go of its caret for a button". The `grow` step of the walks of a word
+typed holds the letters' size and colour and the pill's colour to
+libass's.
 
 Its words stand where libass put them. `/frames/captions/words` in
 `cmd/framefairy-app/captions.go` answers with where each word of a view
