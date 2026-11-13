@@ -218,16 +218,24 @@ export class Watch {
     // larger than the file's own. A frame asked for again after a resize
     // may still be on its way, and is waited for. Tim saw the
     // first frame of every workspace blurred, decoded at the 300 by 150 of
-    // a canvas not laid out yet, plan row 2.187. Looked at once for each
-    // clip on screen and each size of the canvas, the first time the
-    // picture stands still: the size a frame is decoded at is the frame
-    // queue's rule, held in lib/frames/queue.test.ts, and waiting for the
-    // picture to stand after every step was most of what this rule cost.
-    const canvas = await page.evaluate(() => {
+    // a canvas not laid out yet, plan row 2.187. Looked at again only
+    // when the picture can have changed: another video, another clip,
+    // another playhead or frame shown, or another size of the canvas. A step that
+    // leaves all of them as they were, an edit of a word, a press on a
+    // control, would wait for the picture to stand only to read the frame
+    // it already read, which was most of what this rule cost.
+    const picture = await page.evaluate(() => {
       const c = document.querySelector(".screen canvas");
-      return c ? `${c.width}x${c.height}` : "";
+      return [
+        document.querySelector("aside button.episode.current .name")?.textContent ?? "",
+        // The playhead, which a gesture moves at once, and the frame,
+        // which may come a moment after it.
+        document.querySelector(".screen")?.dataset.playhead ?? "",
+        document.querySelector(".screen")?.dataset.shown ?? "",
+        c ? `${c.width}x${c.height}` : "",
+      ];
     });
-    const look = `${JSON.stringify(at)} ${canvas}`;
+    const look = JSON.stringify([at, ...picture]);
     if (look !== this.sharpSeen) {
       const got = await stillFrame(page);
       if (got && (got.state === "paused" || got.state === "cued")) {
