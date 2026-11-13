@@ -793,11 +793,12 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 
 func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	// Warnings too, for the one that says the length was guessed, see
-	// guessedLength.
+	// guessedLength. The picture and the sound in one question: each run
+	// of ffprobe costs its start, 60 to 100 ms on a Mac, and a video
+	// dropped on the app waits for this answer before its picture shows.
 	res := e.Runner.Run(ctx, "", e.FFprobe, "-v", "warning",
-		"-select_streams", "v:0",
 		"-show_entries",
-		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space,duration",
+		"stream=codec_type,width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space,duration,sample_rate,channels",
 		"-show_entries", "stream_tags=DURATION",
 		"-show_entries", "stream_side_data=rotation",
 		"-show_entries", "format=duration,start_time,format_name",
@@ -817,10 +818,12 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	if err := decoder.Decode(&data); err != nil {
 		return SourceInfo{}, fmt.Errorf("ffprobe output is not JSON: %w", err)
 	}
-	if len(data.Streams) == 0 {
+	// The first of each kind, the streams ffmpeg calls v:0 and a:0.
+	picture := slices.IndexFunc(data.Streams, func(s map[string]any) bool { return s["codec_type"] == "video" })
+	if picture < 0 {
 		return SourceInfo{}, renderErr("no video stream found in %s", path)
 	}
-	stream := data.Streams[0]
+	stream := data.Streams[picture]
 
 	// Some containers report 0/0 here, which is no frame rate at all.
 	rate, _ := stream["r_frame_rate"].(string)
@@ -877,7 +880,9 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	info := SourceInfo{Width: width, Height: height, Turned: turned, FPSNum: numer, FPSDen: den,
 		Duration: duration, VideoStart: videoStart, Colour: colour,
 		origin: first - videoStart, hasClock: hasFirst, unindexed: unindexed(format)}
-	info.SoundRate, info.SoundChannels = e.soundOf(ctx, path)
+	if sound := slices.IndexFunc(data.Streams, func(s map[string]any) bool { return s["codec_type"] == "audio" }); sound >= 0 {
+		info.SoundRate, info.SoundChannels = soundOf(data.Streams[sound])
+	}
 	info.Variable = hasFirst && e.uneven(ctx, path, info)
 	if info.Variable {
 		// The rate ffmpeg reports for uneven frames is the finest step
@@ -897,24 +902,11 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	return info, nil
 }
 
-// soundOf is the rate and the channels of a file's first sound, or
-// nought for a file with no sound or one ffprobe cannot read.
-func (e *Engine) soundOf(ctx context.Context, path string) (rate, channels int) {
-	res := e.Runner.Run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "a:0",
-		"-show_entries", "stream=sample_rate,channels", "-of", "json", path)
-	if res.Code != 0 {
-		return 0, 0
-	}
-	var data struct {
-		Streams []map[string]any `json:"streams"`
-	}
-	decoder := json.NewDecoder(strings.NewReader(res.Stdout))
-	decoder.UseNumber()
-	if decoder.Decode(&data) != nil || len(data.Streams) == 0 {
-		return 0, 0
-	}
-	rate, ok1 := num.AsInt(data.Streams[0]["sample_rate"])
-	channels, ok2 := num.AsInt(data.Streams[0]["channels"])
+// soundOf is the rate and the channels of a file's first sound, from
+// what ffprobe said of its stream, or nought where it says none.
+func soundOf(stream map[string]any) (rate, channels int) {
+	rate, ok1 := num.AsInt(stream["sample_rate"])
+	channels, ok2 := num.AsInt(stream["channels"])
 	if !ok1 || !ok2 || rate <= 0 || channels <= 0 {
 		return 0, 0
 	}
@@ -961,13 +953,22 @@ const frameHair = framewire.Hair
 // read the whole file, gigabytes for an episode of a few hours, every time
 // a file is probed. Frames that are uneven only elsewhere are found where
 // they are cut, see unevenPieces.
+//
+// The four are read at the same time, each by an ffprobe of its own. One
+// after another, they were four starts of ffprobe that a dropped video
+// waited for. One ffprobe given all four stretches cannot say where one
+// ends and the next begins, since each is read from the key frame before
+// it, so a stretch that begins inside the one before would read as a
+// frame that came twice.
 func (e *Engine) uneven(ctx context.Context, path string, info SourceInfo) bool {
-	for _, at := range []float64{0, 0.25, 0.5, 0.75} {
-		if e.unevenIn(ctx, path, info, at*info.Duration, 2) {
-			return true
-		}
+	places := []float64{0, 0.25, 0.5, 0.75}
+	found := make([]bool, len(places))
+	var reads sync.WaitGroup
+	for i, at := range places {
+		reads.Go(func() { found[i] = e.unevenIn(ctx, path, info, at*info.Duration, 2) })
 	}
-	return false
+	reads.Wait()
+	return slices.Contains(found, true)
 }
 
 // unevenIn tells whether the frames from a moment on, for span seconds,
