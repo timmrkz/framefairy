@@ -230,7 +230,10 @@ other side relies on, and the pull request says so.
 - The `video` event, `VideoState`, whose `rev` is on the clock of the
   jobs' `seq`, so the window can tell which of two came later. It is the
   one way a video's jobs reach the window, and it holds every job of the
-  video there is to say anything about. The `job` event carries only a
+  video there is to say anything about. A state sent leaves out each
+  clip the window was sent as it is now, and `onVideoState` in
+  `frontend/src/lib/api.ts` makes it whole again, see
+  [the decision record](decisions/2026-11-13-a-state-sends-only-the-clips-that-changed.md). The `job` event carries only a
   job of no video, a model being downloaded, see `toWindow`.
 - The `notice` event, `Notice`, a failure told once as it happens, which
   is no fact of a video's state.

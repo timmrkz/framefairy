@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"hash/fnv"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -45,6 +48,20 @@ type VideoState struct {
 	// when the app chose the clip because that card was written as it,
 	// rule 7, so a play of the card goes on as a play of the clip.
 	ChosenCard string `json:"chosenCard,omitempty"`
+	// Order is, in a state sent to the window, every clip of the video in
+	// the order of Clips in a state read, by its key and its hash. Clips
+	// then holds only the clips the window was not sent as they are now,
+	// see videoNews.trim, so a state of a video whose clips did not change
+	// stays small. A state read by a call holds every clip and no Order.
+	// See docs/decisions/2026-11-13-a-state-sends-only-the-clips-that-changed.md.
+	Order []ClipMark `json:"order,omitempty"`
+}
+
+// ClipMark is a clip in a state sent to the window, by its key and its
+// hash, see VideoState.Order.
+type ClipMark struct {
+	Key  string `json:"key"`
+	Hash string `json:"hash"`
 }
 
 // State reads the state of a video as it is now, see VideoState. It is
@@ -127,6 +144,13 @@ type telling struct {
 	// each closed once it has ended, so what waits on the news can tell
 	// that it is all out, see sendDue in bridge_test.go.
 	sends []chan struct{}
+	// sent is the hash of each clip as the window was last sent it, by
+	// its key, see trim. Only the send that holds sending reads or
+	// changes it.
+	sent map[string]string
+	// whole says the next state goes with every clip, because the window
+	// lost track of what it was sent, see SendWhole.
+	whole bool
 	// sending is held while the state is read and sent, so the states of
 	// a video go out one at a time, in the order they were read. Two
 	// sends of one video at once, one begun while the other still read,
@@ -192,6 +216,10 @@ func (n *videoNews) tell(path string, t *telling) {
 	}
 	t.timer = nil
 	t.last = time.Now()
+	if t.whole {
+		t.whole = false
+		t.sent = nil
+	}
 	n.mu.Unlock()
 	st, err := n.read(path)
 	if errors.Is(err, errNotInLibrary) {
@@ -207,7 +235,69 @@ func (n *videoNews) tell(path string, t *telling) {
 		theLog.line(zerolog.WarnLevel, "app").Str("video", filepath.Base(path)).Err(err).Msg("the state of the video could not be read")
 		return
 	}
-	n.send(st)
+	n.send(t.trim(st))
+}
+
+// trim leaves out of a state the clips the window was last sent as they
+// are now, and says every clip in Order, see VideoState.Order. A video's
+// state is sent about four times a second while its work goes on, and
+// whole it was a kilobyte for every clip, though the clips seldom
+// change: the window then fetched every one of them over a request of
+// its own, which Wails makes for an event over 8 KB.
+func (t *telling) trim(st VideoState) VideoState {
+	sent := make(map[string]string, len(st.Clips))
+	order := make([]ClipMark, 0, len(st.Clips))
+	changed := []ClipEntry{}
+	for _, c := range st.Clips {
+		c.Hash = ""
+		h := clipHash(c)
+		sent[c.Key] = h
+		order = append(order, ClipMark{Key: c.Key, Hash: h})
+		if t.sent[c.Key] != h {
+			c.Hash = h
+			changed = append(changed, c)
+		}
+	}
+	t.sent = sent
+	st.Clips, st.Order = changed, order
+	return st
+}
+
+// clipHash is what a clip holds, as a short text.
+func clipHash(c ClipEntry) string {
+	h := fnv.New64a()
+	if err := json.NewEncoder(h).Encode(c); err != nil {
+		// Nothing in a clip fails to marshal. Should it, the clip is
+		// sent every time.
+		return ""
+	}
+	return strconv.FormatUint(h.Sum64(), 36)
+}
+
+// sendWhole says the next state of the video goes with every clip, and
+// that it is due.
+func (n *videoNews) sendWhole(path string) {
+	if n == nil {
+		return
+	}
+	n.mu.Lock()
+	if t := n.due[path]; t != nil {
+		t.whole = true
+	}
+	n.mu.Unlock()
+	n.changed(path)
+}
+
+// SendWhole sends the state of a video with every clip, for a window
+// that was sent a clip by its key alone and does not have it, after it
+// was opened again, see VideoState.Order.
+func (s *FrameFairy) SendWhole(path string) error {
+	if !s.store.Known(path) {
+		return errNotInLibrary
+	}
+	theLog.line(zerolog.InfoLevel, "app").Str("video", filepath.Base(path)).Msg("the window asked for the state of the video with every clip")
+	s.news.sendWhole(path)
+	return nil
 }
 
 // stop sends nothing more, as the app quits, and returns once a send
