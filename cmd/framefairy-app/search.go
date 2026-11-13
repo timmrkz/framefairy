@@ -30,13 +30,13 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 // search is Search, carrying on a search that had written carried clips.
 func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, carried int) Job {
 	if !s.store.Known(path) {
-		return s.jobs.refuse(path, engine.JobSearch, jobLabel(engine.JobSearch, false), notInLibrary, func(j *Job) {
+		return s.jobs.refuse(path, engine.JobSearch, jobLabel(engine.JobRecord{Kind: engine.JobSearch}), notInLibrary, func(j *Job) {
 			j.From, j.To, j.Count, j.Min = req.From, req.To, req.Count, req.Min
 		})
 	}
 	s.jobs.makeWayForSearch(path)
 	first := s.firstLane(path, req)
-	job := s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
+	job := s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobRecord{Kind: engine.JobSearch}), true, func(j *Job) {
 		j.JobRecord.ID, j.From, j.To, j.Count, j.Min, j.click = engine.SearchID, req.From, req.To, req.Count, req.Min, click
 		j.Carried, j.Lane = carried, first
 	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
@@ -129,8 +129,11 @@ func (s *FrameFairy) Continue(id, click string) Job {
 	if carry.Kind == engine.JobClip {
 		return s.makeClip(path, carry.Clip(), carry.ID, click, false)
 	}
-	if carry.Kind == engine.JobTranscribe {
+	switch carry.Hears() {
+	case engine.HearsWhole:
 		return s.Transcribe(path)
+	case engine.HearsPart, engine.HearsAround:
+		return s.transcribe(path, carry.Part(), carry.Hears() == engine.HearsAround)
 	}
 	return s.render(path, carry.Render(), carry)
 }
@@ -151,7 +154,7 @@ func (s *FrameFairy) planned(path string, rec engine.JobRecord) int {
 
 // render queues a render, carrying on the one the record is of, if any.
 func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine.JobRecord) Job {
-	label := jobLabel(engine.JobRender, req.Preview)
+	label := jobLabel(engine.JobRecord{Kind: engine.JobRender, Preview: req.Preview})
 	// The plan is a path of its own, read and written to, so it is checked
 	// the same way the episode is, and has to be one of this episode's.
 	if !s.store.Known(path) || (req.Plan != "" && !s.store.PlanOf(path, req.Plan)) {
@@ -209,7 +212,7 @@ func (s *FrameFairy) MakeClip(path string, at float64, backward bool) Job {
 // machine wrote the clip before that pick reached the Go side, so a state
 // came with the card gone and its clip not chosen, issue #697.
 func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click string, choose bool) Job {
-	label := jobLabel(engine.JobClip, false)
+	label := jobLabel(engine.JobRecord{Kind: engine.JobClip})
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobClip, label, notInLibrary)
 	}

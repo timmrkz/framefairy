@@ -143,6 +143,9 @@ func TestTheWindowIsHiddenWhileTheWholeVideoIsTranscribed(t *testing.T) {
 		{"cancelled", []Job{{State: JobCancelled, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
 		{"interrupted", []Job{{State: JobInterrupted, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
 		{"a search", []Job{{State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobSearch}}}, false},
+		// The part of a clip the app hears by itself is about that clip.
+		{"a clip's part", []Job{{State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe,
+			ID: engine.TranscribePartID, From: 120, To: 150}}}, false},
 		{"a search that stops it", []Job{
 			{State: JobRunning, Stopping: true, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}},
 			{State: JobQueued, JobRecord: engine.JobRecord{Kind: engine.JobSearch}},

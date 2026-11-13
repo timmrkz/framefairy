@@ -21,6 +21,11 @@ type ClipEntry struct {
 	Key       string `json:"key"`
 	Plan      string `json:"plan"`
 	CropLefts []int  `json:"cropLefts"`
+	// Unheard is what of the clip's pieces the video's transcript has not
+	// heard yet, which has no captions until it is, see
+	// engine.ClipView.Unheard. It changes as the words land, so the
+	// captions of the clip are asked for again, issue #745.
+	Unheard [][2]float64 `json:"unheard,omitempty"`
 	// CropSteps is, for each piece with keyframes, how its crop switches
 	// over its frames, see engine.CropSteps, and null for a piece whose
 	// crop is CropLefts throughout.
@@ -52,16 +57,24 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 			return nil, err
 		}
 	}
-	return s.clipsOf(s.plansOf(path), info), nil
+	return s.clipsOf(s.plansOf(path), info, s.heard(path)), nil
+}
+
+// heard is every part of a video its transcript has heard, see
+// engine.Episode.Heard.
+func (s *FrameFairy) heard(path string) [][2]float64 {
+	opts := s.store.Settings().options()
+	return s.store.machine.Episode(path).Heard(opts.ASRModel, opts.SilenceDB)
 }
 
 // clipsOf is the clips of these plans, in time order, their crops fitted
-// to the picture info says, see entryOf.
-func (s *FrameFairy) clipsOf(plans []engine.PlanSummary, info engine.SourceInfo) []ClipEntry {
+// to the picture info says and what of them is not heard yet by what
+// heard says, see entryOf.
+func (s *FrameFairy) clipsOf(plans []engine.PlanSummary, info engine.SourceInfo, heard [][2]float64) []ClipEntry {
 	out := []ClipEntry{}
 	for _, summary := range plans {
 		for _, c := range summary.View().Clips {
-			out = append(out, s.entryOf(summary.Path, c, info))
+			out = append(out, s.entryOf(summary.Path, c, info, heard))
 		}
 	}
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Start < out[b].Start })
@@ -88,8 +101,15 @@ func (s *FrameFairy) cropWidth(info engine.SourceInfo) int {
 // entryOf is a clip of the plan at plan as the clip list holds it. A
 // rotated piece has its crop on the picture rotated, so its crop is worked
 // out on that, see SourceView.TurnedCropWidth.
-func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceInfo) ClipEntry {
+func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceInfo, heard [][2]float64) ClipEntry {
 	entry := ClipEntry{ClipView: c, Key: filepath.Base(plan) + "/" + c.ID, Plan: plan}
+	// A video never heard has nothing heard of any clip, which says
+	// nothing new: its first search hears it.
+	if len(heard) > 0 {
+		for _, gap := range c.Unheard(heard) {
+			entry.Unheard = append(entry.Unheard, [2]float64{gap.Start, gap.End})
+		}
+	}
 	f := s.framingOf(info, c.Segments, c.CropMarks)
 	entry.Segments, entry.CropMarks = f.Segments, f.CropMarks
 	entry.CropLefts, entry.CropSteps, entry.Glides = f.CropLefts, f.CropSteps, f.Glides
@@ -392,7 +412,7 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 	}
 	for _, c := range view.Clips {
 		if c.ID == clipID {
-			entry := s.entryOf(plan, c, info)
+			entry := s.entryOf(plan, c, info, s.heard(path))
 			entry.Rev = rev
 			return entry, nil
 		}

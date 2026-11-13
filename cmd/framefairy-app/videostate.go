@@ -52,7 +52,9 @@ type VideoState struct {
 // changes, and what is sent to it as the video's work goes on, see
 // videoNews. Reading it is also where the app chooses a clip from what
 // it read, so a read can change the clip chosen and write it to
-// chosen.json, see chosenFor.
+// chosen.json, see chosenFor, and where it starts hearing what of that
+// clip is not heard yet, so a read can queue a transcription, see
+// hearChosen.
 func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error) {
 	if !s.store.Known(path) {
 		return VideoState{}, errNotInLibrary
@@ -80,12 +82,13 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 			st.Coverage = coverageOf(plans, info.Duration)
 		}
 	}
-	st.Clips = s.clipsOf(plans, info)
+	st.Clips = s.clipsOf(plans, info, st.Status.Heard)
 	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {
 		st.Window = s.windowFor(ctx, path, st, info.Duration)
 	}
 	st.Chosen, st.ChosenCard = s.chosenFor(path, st)
+	s.hearChosen(path, st, info.Duration)
 	return st, nil
 }
 

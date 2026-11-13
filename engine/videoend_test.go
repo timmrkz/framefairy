@@ -69,6 +69,45 @@ func TestAClipEndsWhereTheVideoDoes(t *testing.T) {
 	}
 }
 
+// A clip is as long as the hand makes it. Its end dragged out stopped at
+// ten minutes from its start, and its start dragged back at ten minutes
+// from its end, so a clip could not be made longer, Tim's report of 11
+// November. Only the video's own end stops it.
+func TestAClipIsAsLongAsTheHandMakesIt(t *testing.T) {
+	long := SourceInfo{FPSNum: 25, FPSDen: 1, Duration: 7200}
+	cases := []struct {
+		name       string
+		g          Gesture
+		start, end float64
+	}{
+		{"the end dragged out", Gesture{Kind: "trim", Edge: "end", From: 7000}, 6000, 7000},
+		{"the start dragged back", Gesture{Kind: "trim", Edge: "start", From: 100}, 100, 6020},
+		{"both edges set", Gesture{Kind: "trim", Edge: "both", From: 5, To: 7200}, 5, 7200},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fsys := afero.NewMemMapFs()
+			path := filepath.Join(memDir(t, fsys), "clips.json")
+			plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x", "segments": [{"start": 6000.0, "end": 6020.0, "crop_x": 120}]}]}`
+			if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			c.g.Frames = long
+			if err := Reshape(fsys, nil, path, "01", c.g, nearTheEndWords, 0.1, nil); err != nil {
+				t.Fatal(err)
+			}
+			_, clips, err := LoadClips(fsys, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			segs := clips[0].Segments
+			if start, end := segs[0].Start, segs[len(segs)-1].End; start != c.start || end != c.end {
+				t.Errorf("the clip runs from %v to %v s, want %v to %v", start, end, c.start, c.end)
+			}
+		})
+	}
+}
+
 // Every piece ends where the video does at the latest, whatever made it,
 // and a single edge lands inside the video too. The end is the frame after
 // the last one, so a video whose length falls inside a frame keeps that

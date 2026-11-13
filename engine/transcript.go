@@ -202,6 +202,53 @@ func Unheard(fsys afero.Fs, source, asrModelDir string, span timed.Window) []tim
 	return gapsIn(HeardParts(fsys, source, asrModelDir), span)
 }
 
+// Unheard is what of a clip's pieces its transcript has not heard yet, in
+// order, given every part it has heard, see HeardParts. A clip shows the
+// words said in its pieces, so a part of them not heard is a part of it
+// with no captions, issue #745.
+func (v ClipView) Unheard(heard [][2]float64) []timed.Window {
+	var out []timed.Window
+	for _, s := range v.Segments {
+		out = append(out, gapsIn(heard, timed.Window{Start: s.Start, End: s.End})...)
+	}
+	return out
+}
+
+// ClipUnheard is the part of the episode to hear for a clip to show all
+// its captions: from where the first part of it not heard yet starts to
+// where the last ends, see ClipView.Unheard. It is false when the clip is
+// heard whole.
+func ClipUnheard(v ClipView, heard [][2]float64) (timed.Window, bool) {
+	gaps := v.Unheard(heard)
+	if len(gaps) == 0 {
+		return timed.Window{}, false
+	}
+	return timed.Window{Start: gaps[0].Start, End: gaps[len(gaps)-1].End}, true
+}
+
+// ClipAround is the part of the episode to hear next so that a clip
+// keeps a stretch heard around it, around seconds on each side up to the
+// ends of the episode, and an edge dragged out finds its words there
+// already. It is heard once what is heard next to the clip on either side
+// is shorter than least, so it is heard in steps of at least around minus
+// least seconds, not a sliver at every drag, and both sides at once, which
+// the transcript hears gap by gap. It is false when both sides have
+// enough, or the episode's length is not known. Tim, on #745.
+func ClipAround(v ClipView, heard [][2]float64, duration, around, least float64) (timed.Window, bool) {
+	if duration <= 0 || v.End <= v.Start {
+		return timed.Window{}, false
+	}
+	before := gapsIn(heard, timed.Window{Start: max(0, v.Start-around), End: v.Start})
+	after := gapsIn(heard, timed.Window{Start: v.End, End: min(duration, v.End+around)})
+	short := (len(before) > 0 && v.Start-before[len(before)-1].End < least) ||
+		(len(after) > 0 && after[0].Start-v.End < least)
+	if !short {
+		return timed.Window{}, false
+	}
+	gaps := append(before, after...)
+	return timed.Window{Start: gaps[0].Start, End: gaps[len(gaps)-1].End}, true
+}
+
 // shortestGap is the shortest stretch not heard that is worth hearing, in
 // seconds. Anything shorter holds no word.
 const shortestGap = 0.1
@@ -451,13 +498,15 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 	}
 
 	err = e.Log.Step("transcribing the audio", func() error {
-		e.Log.Progress("loading the speech model")
-		rec, err := e.OpenRecognizer(modelDir)
-		e.Log.ClearProgress()
+		// The model kept loaded, see speechhost.go, or loaded now.
+		rec, release, err := e.speech(ctx, modelDir)
 		if err != nil {
+			if ctx.Err() != nil {
+				return err
+			}
 			return noSpeechModel(modelDir, err)
 		}
-		defer rec.Close()
+		defer release()
 		started := time.Now()
 		// A job that hears in turns counts over all it set out to hear,
 		// so what it heard in the turns before this one is done already.

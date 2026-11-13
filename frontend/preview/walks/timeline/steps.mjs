@@ -5,7 +5,7 @@
 // showed before it and the step's name. A sequence of any folder can take
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { BITS, ask, caughtUp, chosen, clickOnTrack, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, reader, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
+import { BITS, ask, caughtUp, chosen, clickOnTrack, control, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, reader, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -62,6 +62,251 @@ export const steps = {
     const g = await handles(page);
     await page.mouse.dblclick(middle(g.cuts[arg - 1]), high(g.track));
     await watch.step("join", s);
+  },
+  // ["drag past what was heard"]
+  //                    on a video heard as far as its first search's
+  //                    window, makes a clip with O two hundred seconds past
+  //                    it, drags its start past the clip timeline's left
+  //                    side, which goes along at the zoom it had with the
+  //                    caption blocks still drawn, then pinches the clip
+  //                    timeline out, drags the clip's
+  //                    start back a hundred and twenty seconds, past the
+  //                    minute the app keeps heard around a clip made by
+  //                    hand, lets go and pinches back in on it. The app
+  //                    hears that part by itself, ahead of the stretch
+  //                    around the clip, and the clip timeline then has
+  //                    caption blocks of words said in it, issue #745
+  async "drag past what was heard"(walk, arg, s) {
+    const { page, watch } = walk;
+    const path = await episodeOn(page);
+    const heardTo = Math.max(...((await ask(page, "Episode", path)).heard ?? [[0, 0]]).map(([, b]) => b));
+    // O hears back a clip's longest and two sentences' reach, 46 s, see
+    // engine.ClipRequest, so the clip's words began after this.
+    const at = heardTo + 200;
+    const reach = at - 46;
+    const have = (await ask(page, "Clips", path)).length;
+    await ask(page, "MakeClip", path, at, true);
+    await pageUntil(page, (n) => document.querySelectorAll("aside ol li[data-key]:not(.next)").length >= n, have + 1);
+    await settle(page);
+    const made = await chosen(page);
+    const before = (await ask(page, "Clips", path)).find((c) => c.plan === made.plan && c.id === made.clip);
+    if (!before || before.start < reach || before.unheard?.length) {
+      walk.wrong = `the clip made with O at ${at.toFixed(1)} s is ${JSON.stringify(before)}, not heard whole after ${reach.toFixed(1)} s`;
+      return;
+    }
+    // Written, the clip made with O is fitted on the clip timeline the way
+    // a clip picked from the list is, since no hand was at work on it. The
+    // view stayed where its card had been fitted, and the clip written
+    // stood off to one side, Tim's report of 10 November.
+    const frame = () =>
+      page.evaluate(() => {
+        const f = document.querySelector(".clip-timeline .span.frame").getBoundingClientRect();
+        return { left: f.left, right: f.right };
+      });
+    const written = await frame();
+    await page.locator("aside ol li[data-key] button.pick.current").click();
+    await settle(page);
+    const picked = await frame();
+    if (Math.abs(written.left - picked.left) > 2 || Math.abs(written.right - picked.right) > 2) {
+      walk.wrong =
+        `the clip made with O stood from ${written.left.toFixed(0)} to ${written.right.toFixed(0)} px on the clip timeline, ` +
+        `and picked from the list from ${picked.left.toFixed(0)} to ${picked.right.toFixed(0)} px`;
+      return;
+    }
+    // Dragged past the clip timeline's left side first, the way Tim did:
+    // the view goes along with the start at the zoom it had, and the
+    // caption blocks stay drawn. Zoomed out to the whole clip, they were
+    // too narrow to draw and all went, his report of 10 November.
+    const perSecond = async () => {
+      const t = await timeline(page);
+      const w = await page.evaluate(() => document.querySelector(".clip-timeline .span.frame").getBoundingClientRect().width);
+      return w / (t.end - t.start);
+    };
+    const blocks = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .caption[data-first]").length);
+    let g = await handles(page);
+    const near = await perSecond();
+    await drag(page, middle(g.start), high(g.track), g.track.x - 30 - middle(g.start), false);
+    await settle(page);
+    const past = (await ask(page, "Clips", path)).find((c) => c.plan === made.plan && c.id === made.clip);
+    const far = await perSecond();
+    g = await handles(page);
+    if (!(past.start < before.start - 1) || Math.abs(far / near - 1) > 0.01 || !g.start || !inside(g.track, middle(g.start)) || !(await blocks())) {
+      walk.wrong =
+        `the start dragged past the clip timeline went from ${before.start.toFixed(1)} s to ${past.start.toFixed(1)} s, ` +
+        `the clip timeline from ${near.toFixed(2)} to ${far.toFixed(2)} px a second, with ${await blocks()} caption blocks`;
+      return;
+    }
+    // Pinched out, so the start can go far back on the track.
+    g = await handles(page);
+    await page.mouse.move(g.track.x + g.track.w / 2, high(g.track));
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, 330);
+    await page.keyboard.up("Control");
+    await settle(page);
+    // Pinched out, every caption is still in a block as tall as before,
+    // and captions too narrow to see join the nearest into one: no block
+    // is narrower than it is tall, and the lane never goes bare. It went
+    // whole, Tim's report of 10 November, and he picked joined blocks.
+    const lane = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll(".clip-timeline .caption[data-first]")].map((b) => {
+          const r = b.getBoundingClientRect();
+          return { left: r.left, w: r.width, h: r.height, joined: Number(b.dataset.joined ?? 1) };
+        }),
+      );
+    const out = await lane();
+    const joined = out.filter((b) => b.joined > 1);
+    if (!joined.length || out.some((b) => b.h !== 16 || (out.length > 1 && b.w < 14 - 0.5))) {
+      walk.wrong = `pinched out, the caption lane is ${JSON.stringify(out.map((b) => [Math.round(b.w), b.h, b.joined]))}, as [width, height, captions]`;
+      return;
+    }
+    // A joined block clicked in its middle, between the edges of its
+    // first and last caption, puts the playhead where its first caption
+    // appears.
+    const one = joined.reduce((a, b) => (b.w > a.w ? b : a));
+    const band = await page.evaluate(() => {
+      const c = document.querySelector(".clip-timeline .captions").getBoundingClientRect();
+      return c.top + c.height / 2;
+    });
+    await page.mouse.click(one.left + one.w / 2, band);
+    await settle(page);
+    // The playhead is a line centred on its moment, see .playhead, and it
+    // stands on a whole pixel since #752, so its left edge is up to a
+    // pixel and a half before the moment. Its middle is the moment.
+    const head = await page.evaluate(() => {
+      const r = document.querySelector(".clip-timeline .playhead").getBoundingClientRect();
+      return r.left + r.width / 2;
+    });
+    if (head < one.left - 2 || head > one.left + 4) {
+      walk.wrong = `a joined block from ${one.left.toFixed(0)} px clicked in its middle put the playhead at ${head.toFixed(0)} px`;
+      return;
+    }
+    g = await handles(page);
+    const to = before.start - 120;
+    const x = await xOf(page, to);
+    if (!inside(g.track, x)) {
+      walk.wrong = `${to.toFixed(1)} s is not on the clip timeline pinched out`;
+      return;
+    }
+    await drag(page, middle(g.start), high(g.track), x - middle(g.start), false);
+    await watch.step("trim", s);
+    const after = (await ask(page, "Clips", path)).find((c) => c.plan === made.plan && c.id === made.clip);
+    if (!(after.start < reach - 20)) {
+      walk.wrong = `the start dragged to ${to.toFixed(1)} s stands at ${after.start.toFixed(1)} s`;
+      return;
+    }
+    // Pinched back in on the new start, where the blocks have room.
+    g = await handles(page);
+    await page.mouse.move(middle(g.start), high(g.track));
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -330);
+    await page.keyboard.up("Control");
+    await settle(page);
+    // The words of the part nobody had heard come once it is heard, by
+    // themselves: a block whose first word is said within ten seconds of
+    // the clip's new start, past the stretch heard around it.
+    const first = after.start + 10;
+    await pageUntil(
+      page,
+      (first) => [...document.querySelectorAll(".clip-timeline .caption[data-first]")].some((b) => Number(b.dataset.first) < first),
+      first,
+    );
+    await settle(page);
+    // Heard as a part of the clip, not as the stretch around it, and only
+    // so far as nothing had heard it.
+    const hearing = (await ask(page, "Jobs")).findLast(
+      (j) => j.episode === path && j.kind === "transcribe" && j.label === "Transcribe the clip",
+    );
+    if (!hearing || hearing.state !== "done" || Math.abs(hearing.from - after.start) > 0.5 || hearing.to > reach + 1) {
+      walk.wrong = `the part from ${after.start.toFixed(1)} s was heard by ${JSON.stringify(hearing)}`;
+    }
+  },
+  // ["swipe while it is made"]
+  //                    on a video heard as far as its first search's
+  //                    window, holds the speech model and makes a clip
+  //                    with O two hundred seconds past it, so its card
+  //                    stays on its way while it waits to be heard. The
+  //                    clip timeline is swiped by hand and the playhead
+  //                    pressed and held, the way Tim's log of 9 November
+  //                    has it, and the speech let go. Once the card is
+  //                    written as its clip, the clip timeline is where the
+  //                    hand put it and the playhead under the hand, and it
+  //                    follows the hand as it moves on. Laid out afresh,
+  //                    the clip jumped back to the middle and the playhead
+  //                    to its start, under a hand at work, issue #767
+  async "swipe while it is made"(walk, arg, s) {
+    const { page, watch } = walk;
+    const path = await episodeOn(page);
+    const heardTo = Math.max(...((await ask(page, "Episode", path)).heard ?? [[0, 0]]).map(([, b]) => b));
+    // The row chosen: a card on its way is the row itself, a clip the
+    // button in it.
+    const chosenRow = "aside ol li[data-key].next.current, aside ol li[data-key] button.pick.current";
+    const current = () => page.evaluate((r) => document.querySelector(r)?.closest("li")?.dataset.key ?? "", chosenRow);
+    const before = await current();
+    await control(url, "/speech?hold");
+    await ask(page, "MakeClip", path, heardTo + 200, true);
+    await pageUntil(
+      page,
+      ([r, was]) => {
+        const li = document.querySelector(r)?.closest("li");
+        return !!li && li.dataset.key !== was && li.classList.contains("next");
+      },
+      [chosenRow, before],
+    );
+    await settle(page);
+    const card = await current();
+    const where = () =>
+      page.evaluate(() => ({
+        x: document.querySelector(".clip-timeline .playhead")?.getBoundingClientRect().left ?? NaN,
+        at: Number(document.querySelector(".screen")?.dataset.playhead),
+      }));
+    const fitted = await where();
+    const box = await page.evaluate(() => {
+      const b = document.querySelector(".clip-timeline .track").getBoundingClientRect();
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+    });
+    await page.mouse.move(box.x, box.y);
+    await page.mouse.wheel(120, 0);
+    await settle(page);
+    const swiped = await where();
+    if (!(Math.abs(swiped.x - fitted.x) > 20)) {
+      walk.wrong = `the swipe moved the clip timeline ${(swiped.x - fitted.x).toFixed(1)} px`;
+      await control(url, "/speech?go");
+      return;
+    }
+    // The playhead pressed where it stands, and held across the write.
+    const hand = swiped.x + 1;
+    await page.mouse.move(hand, box.y);
+    await page.mouse.down();
+    await settle(page);
+    const held = await where();
+    await control(url, "/speech?go");
+    const written = await seenUntil(page, url, current, (key) => key !== card && key !== before);
+    await settle(page);
+    const after = await where();
+    if (Math.abs(after.x - held.x) > 1 || Math.abs(after.at - held.at) > 0.001) {
+      walk.wrong =
+        `the card ${card} written as ${written} moved the playhead held on the clip timeline from ${held.x.toFixed(1)} px ` +
+        `to ${after.x.toFixed(1)} px, and from ${held.at.toFixed(3)} s to ${after.at.toFixed(3)} s`;
+      await page.mouse.up();
+      return;
+    }
+    // And the hand goes on: the playhead follows it.
+    await page.mouse.move(hand + 60, box.y);
+    await settle(page);
+    const moved = await where();
+    await page.mouse.up();
+    await settle(page);
+    // The playhead is drawn on the start of its frame, so it stands up to
+    // a frame short of the hand. A frame is as wide as the time the hand's
+    // 60 px moved it, over the frames a second.
+    const frameWide = 60 / Math.max(moved.at - after.at, 1e-6) / (await rate(page));
+    if (Math.abs(moved.x - (after.x + 60)) > frameWide + 1 || !(moved.at > after.at)) {
+      walk.wrong =
+        `the hand moved 60 px on from ${after.x.toFixed(1)} px once ${written} was written, ` +
+        `and the playhead went to ${moved.x.toFixed(1)} px, ${moved.at.toFixed(3)} s, more than a frame of ${frameWide.toFixed(1)} px off`;
+    }
+    await watch.step("swipe", s);
   },
   // ["trim", edge, px] drags the clip's "start" or "end" edge by px
   async trim(walk, arg, s) {
@@ -1956,7 +2201,7 @@ export const steps = {
     });
     await page.mouse.move(Number.isFinite(line) ? line : g.track.x + g.track.w / 2, high(g.track));
     await page.keyboard.down("Control");
-    await page.mouse.wheel(0, -230);
+    await page.mouse.wheel(0, -330);
     await page.keyboard.up("Control");
     await settle(page);
     await page.mouse.move(g.track.x + g.track.w / 2, g.track.y + g.track.h + 80);

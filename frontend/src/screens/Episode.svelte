@@ -1650,7 +1650,13 @@
   // foot of the list. Where the playhead is not put anywhere, while the
   // video plays, it is on the clip from the moment the clip is there,
   // see claim in Player.svelte.
+  //
+  // The playhead follows the card's start only while it is where the app
+  // put it and no hand holds it. A hand that pressed the playhead while
+  // the card waited had it pulled out from under it to the clip's start
+  // as the clip's pieces came, Tim's report of 9 November, issue #767.
   let followingMade = "";
+  let followedTo = NaN;
   $effect(() => {
     const m = making;
     if (!m) return;
@@ -1660,17 +1666,27 @@
     const first = !followingMade.startsWith(`${m.key}:`);
     followingMade = mark;
     untrack(() => {
+      const ours = !handHolds && (first || Math.abs(time - followedTo) < 0.05);
       // The seek is a gesture about a clip the video preview does not have
       // yet, so the playhead is put on it after.
-      if (paused && Math.abs(time - start) > 0.05) {
+      if (paused && ours && Math.abs(time - start) > 0.05) {
         player?.seek(start);
         player?.claim();
       } else if (first) player?.claim();
+      if (ours) followedTo = start;
     });
     // After the card has slid open and the list has moved it, 200 ms and
     // 180 ms in ClipList.svelte.
     afterRest(showChosen, 240);
   });
+
+  // Whether a hand holds the playhead, on the clip timeline or the range
+  // picker, which the video preview is told so it shows each place alone.
+  let handHolds = false;
+  function holdPlayhead(held: boolean) {
+    handHolds = held;
+    player?.hold(held);
+  }
 
   function inOutKey(event: KeyboardEvent) {
     const out = event.key === "o" || event.key === "O";
@@ -2716,18 +2732,25 @@
   // its earliest, the clip beside one removed or one put back, the clip
   // an undo changed, or a clip made by hand that was written, whose card
   // was chosen. It is shown the way a hand's pick is, the playhead on it
-  // while the video is paused. Playing, a card that became its clip
-  // keeps the playhead, which is on the clip it was made on, written now
-  // under its own key, see claim in Player.svelte. Everything else the
+  // while the video is paused. A card that became its clip is the clip
+  // already on screen, written now under its own key: the playhead stays
+  // where it is, see claim in Player.svelte, and the clip timeline where
+  // the hand has it, see follow in ClipTimeline.svelte. Shown as a new
+  // pick, it put the clip in the middle of the clip timeline and the
+  // playhead on its start, under a hand already at work on its edge, Tim's
+  // report of 9 November. Everything else the
   // video's work changes, the clips a search wrote, how far the video is
   // heard, the window moved on, comes in the video's state, issue #606:
   // nothing waits for the work to end and reads the video again.
   const chose: Chose = (key, before, card) => {
     if (!opened) return;
+    if (card && card === before) {
+      player?.claim(before);
+      timeline?.follow(before, key);
+      void tick().then(() => showChosen());
+      return;
+    }
     void show(key, paused);
-    // A card written as its clip while it plays: the play goes on as a
-    // play of the clip.
-    if (card && card === before && !paused) player?.claim(before);
   };
   onMount(() => session.open(chose, onVideoState));
 
@@ -2872,7 +2895,7 @@
     onmark={select}
     playhead={time}
     onseek={seekTo}
-    onhold={(held) => player?.hold(held)}
+    onhold={holdPlayhead}
     dimmed={!onClip}
     locked={busy}
     {unheard}
@@ -3466,7 +3489,7 @@
         bind:drawn
         onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
         onahead={readAhead}
-        onhold={(held) => player?.hold(held)}
+        onhold={holdPlayhead}
         dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
         onwalkclip={walkClip}
