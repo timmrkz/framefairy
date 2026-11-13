@@ -369,7 +369,7 @@ export const steps = {
       cards: [...document.querySelectorAll("ol.said li:not(.hole):not(.none)")].map((li) => ({
         at: Number(li.dataset.at),
         text: li.querySelector(".text").textContent.trim(),
-        bold: [...li.querySelectorAll(".text b")].map((b) => b.textContent),
+        bold: [...li.querySelectorAll(".text .bold")].map((b) => b.textContent),
         clip: li.querySelector(".clipname")?.textContent.trim() ?? "",
       })),
       holes: document.querySelectorAll("ol.said li.hole").length,
@@ -397,7 +397,7 @@ export const steps = {
         return {
           out: of("ol.said li:not([data-clip]):not(.hole):not(.none) .text"),
           clip: of("ol.said li[data-clip] .text"),
-          bold: of("ol.said li .text b"),
+          bold: of("ol.said li .text .bold"),
           placeholder: of('input[aria-label="Search transcript"]', "::placeholder"),
           muted,
           white,
