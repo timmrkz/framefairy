@@ -195,7 +195,15 @@ whole file of the new size is there already. A file called off says
 nothing in the log. A step of the caption size measured every word of
 the clip again before it showed, about 320 ms for a clip of 25 s in a
 cloud session, and Tim saw the captions stutter as he stepped the size
-with the arrow keys. The captions that show take about 60 ms. The folder keeps the
+with the arrow keys. The captions that show take about 60 ms. A step of
+a drag, a drawing in the hand, `CaptionDrawing.inHand`, starts no whole
+file: the video preview shows it still, and the next step called its file
+off again. Each step started one, and at a clip an hour long each
+measured for about half a second beside the drag, a core kept busy for
+as long as the hand moved. The whole file comes once the clip as saved is
+drawn. A step that draws what the saved clip draws has its track, and the
+app keeps the saved drawing for it, so the clip still gets its whole
+file. The folder keeps the
 256 used last and removes the rest, those of earlier runs first, and what
 an earlier run left half written. A file half written a moment ago is
 another ask's, made beside it, and stays. The caption file is never what makes the work folder: a folder without its mark gets no caption file, and one gone by the moment the file is written gets none either, `ErrNoWorkFolder`. The folders the file and its face go in are made one at a time inside the work folder, `foldersIn`, and never with everything above them, so a deletion that crosses the write leaves the folder gone, which CI's run of that walk caught. The video preview went on asking for captions after Tim's folder was deleted in Finder, and wrote the folder back before the app let the video go, which main's walk for 2.247 found on #201.
