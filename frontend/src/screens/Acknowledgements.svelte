@@ -1,20 +1,20 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type Notice } from "../lib/api";
+  import { api, type LicenceNotice } from "../lib/api";
   import Icon from "../components/Icon.svelte";
 
   // Acknowledgements, from the Help menu: every piece of other people's
   // work Frame Fairy is made of or brings with it, grouped by where it is,
   // each opening to its licence. The list is built into the app from
   // notices/, see docs/THIRD_PARTY.md.
-  let notices = $state<Notice[]>([]);
+  let notices = $state<LicenceNotice[]>([]);
   let problem = $state("");
   let open = $state<string | null>(null);
   // The texts, by file name, once read. Several notices share one.
   let texts = $state<Record<string, string>>({});
 
   const parts = $derived.by(() => {
-    const groups: { part: string; notices: Notice[] }[] = [];
+    const groups: { part: string; notices: LicenceNotice[] }[] = [];
     for (const n of notices) {
       const last = groups.at(-1);
       if (last?.part === n.part) last.notices.push(n);
@@ -23,11 +23,11 @@
     return groups;
   });
 
-  function key(n: Notice): string {
+  function key(n: LicenceNotice): string {
     return `${n.part}/${n.name}`;
   }
 
-  async function toggle(n: Notice) {
+  async function toggle(n: LicenceNotice) {
     if (open === key(n)) {
       open = null;
       return;

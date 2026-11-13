@@ -124,9 +124,9 @@ func TestEachWindowHasATitleBarOfItsOwn(t *testing.T) {
 	ask := func(*application.WebviewWindow) chromeRaw {
 		return chromeRaw{bar: 52, left: 20, right: 92}
 	}
-	s := &FrameFairy{chrome: &chromeWatch{event: chromeEvent("app"), ask: ask}}
+	s := &FrameFairy{chrome: &chromeWatch{name: "app", ask: ask}}
 	s.chrome.set(true)
-	s.reportChrome.Store(&chromeWatch{event: chromeEvent("report"), ask: ask})
+	s.reportChrome.Store(&chromeWatch{name: "report", ask: ask})
 	if got := s.Chrome("app"); got.Right != 0 {
 		t.Fatalf("the app's window in fullscreen gave %+v, want no buttons", got)
 	}
@@ -145,7 +145,7 @@ func TestEachWindowHasATitleBarOfItsOwn(t *testing.T) {
 func TestTheLogSaysWhatMacOSAnswered(t *testing.T) {
 	_, read := testLog(t)
 	answer := chromeRaw{bar: 29.5, left: 12, right: 72, closeTop: 6, closeBottom: 22}
-	c := &chromeWatch{event: chromeEvent("app"), ask: func(*application.WebviewWindow) chromeRaw { return answer }}
+	c := &chromeWatch{name: "app", ask: func(*application.WebviewWindow) chromeRaw { return answer }}
 	c.publish()
 	c.publish()
 	lines := read()
