@@ -65,8 +65,8 @@ type desk struct {
 	fakes func(*engine.Engine, *engine.Options)
 	fit   func(*FrameFairy)
 	told  func(Dictation)
-	// time, when set, is the clock removed work is timed by in every
-	// opening of the app, see timeKeeper in removal.go.
+	// time, when set, is the machine's clock in every opening of the
+	// app, see engine.Clock.
 	time *walkTime
 	// The report windows Bugs made and brought forward, the window the
 	// app would have made, and the pictures its open box hands over
@@ -126,10 +126,10 @@ func (d *desk) start(st *store) {
 			d.bus.send("job", u)
 		}
 	}
-	d.svc.jobs = newQueue(st, toJob, func(episode string) { d.bus.send("episode", episode) })
 	if d.time != nil {
-		d.svc.jobs.time = d.time
+		st.machine.Clock = d.time
 	}
+	d.svc.jobs = newQueue(st, toJob, func(episode string) { d.bus.send("episode", episode) })
 	svc := d.svc
 	// A video's state is sent only to a window, which a path test has
 	// none of.

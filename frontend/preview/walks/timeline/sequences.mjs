@@ -484,7 +484,7 @@ export default [
     // stayed on a frame the trim had cut away.
     name: "an edge let go before the engine answers leaves the playhead on the edge",
     steps: [
-      ["answers late", 500],
+      ["answers late"],
       ["trim", "start", 160],
       ["playhead on", "start"],
     ],
