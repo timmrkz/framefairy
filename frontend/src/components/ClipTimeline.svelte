@@ -59,6 +59,7 @@
   } from "../lib/flow";
   import { Presses } from "../lib/twice";
   import { scrub as scrubPlayhead } from "../lib/scrub";
+  import { spliced } from "../lib/splice";
   import { hoverClip } from "../lib/hover";
   import { arrowStep, type About } from "../lib/playhead";
   import { asleep, keysElsewhere } from "../lib/keys";
@@ -89,6 +90,7 @@
     looping = false,
     playing = false,
     captions = [],
+    captionTrack = "",
     captionPieces,
     arriving = false,
     captionLook = null,
@@ -184,6 +186,9 @@
     // The clip's pieces the captions were made for, whose clock they are
     // on, see CaptionsView in lib/api.ts. Without them, the clip's own.
     captionPieces?: { start: number; end: number }[];
+    // The track of those captions, see CaptionsView: a step of a drag sends
+    // only the captions near what the hand changed, to go with these.
+    captionTrack?: string;
     // The clip is on its way, being made: its caption blocks come in one
     // after another as they arrive, so the clip is built in front of the
     // person rather than appearing whole.
@@ -513,10 +518,15 @@
     const mine = shapeFor;
     const following = owner;
     const held = captions;
+    // The captions a step's answer goes with: the last step's, so a step
+    // sends only what changed since it, however far the hand has gone, or
+    // the clip's own before the first. The Go side checks they are of
+    // this clip from these words, and sends all of them when not.
+    const base = shaped?.track ? { cues: shaped.cues, track: shaped.track } : { cues: captions, track: captionTrack };
     nextGesture = null;
     asking = true;
     try {
-      const answer = await api.shape(path, asked.plan, asked.id, g);
+      const answer = await api.shape(path, asked.plan, asked.id, g, base.track);
       // The playhead goes with the edge being dragged, so it is on the
       // clip, even a hair outside the pieces drawn so far. Not while the
       // episode plays: only the space bar and a click on the clip
@@ -526,7 +536,7 @@
         shaped = {
           pieces: answer.pieces,
           framing: answer.framing,
-          cues: answer.captions?.captions ?? [],
+          cues: spliced(base.cues, answer.captions?.captions ?? [], answer.captions?.splice),
           track: answer.captions?.track,
           held,
           playhead: follows ? answer.playhead : undefined,

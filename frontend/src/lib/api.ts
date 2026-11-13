@@ -426,6 +426,20 @@ export interface CaptionsView {
   // A clip that was changed has its new pieces before its new captions, and
   // the captions are put in the episode by these until those arrive.
   pieces?: { start: number; end: number }[];
+  // On a step of a drag, captions are only the ones laid out again near
+  // what the hand changed, and this says how they go with the captions
+  // the clip timeline holds, see spliced in lib/splice.ts.
+  splice?: Splice;
+}
+
+// How the captions of a step of a drag go with the captions held from
+// before: the first head of those, then the captions sent, then those from
+// tail on, later on the clip's clock by shift seconds. See Splice in
+// engine/captionsnear.go.
+export interface Splice {
+  head: number;
+  tail: number;
+  shift: number;
 }
 
 // The window of a video: the part of it a search reads, and how long it
@@ -990,8 +1004,10 @@ export const api = {
   // What a gesture on the clip timeline makes of a clip, worked out by
   // the engine while the hand moves and saved by reshape when it lets go,
   // so what is drawn is what is saved. See engine/shape.go.
-  shape: (path: string, plan: string, clip: string, g: Gesture) =>
-    call<Shaped>("Shape", path, plan, clip, g),
+  // track is the track of the captions held, which the answer's captions
+  // are put together with, see Splice.
+  shape: (path: string, plan: string, clip: string, g: Gesture, track = "") =>
+    call<Shaped>("Shape", path, plan, clip, g, track),
   // The playhead where the hand took hold and where the gesture left it,
   // so an undo takes the playhead back with the clip.
   reshape: (path: string, plan: string, clip: string, g: Gesture, playhead: [number, number]) =>

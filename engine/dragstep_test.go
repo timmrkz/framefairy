@@ -34,11 +34,11 @@ func TestADragStepLeavesThePlanItReadAsItWas(t *testing.T) {
 		{Kind: "join", Index: 1, From: 4108.5, Frames: frames},
 	}
 	for _, g := range steps {
-		first, err := ShapeClipView(s, "41", g, tr, 0.1, look)
+		first, err := ShapeClipView(s, "41", g, tr, 0.1, look, nil)
 		if err != nil {
 			t.Fatalf("%s %s: %v", g.Kind, g.Edge, err)
 		}
-		again, err := ShapeClipView(s, "41", g, tr, 0.1, look)
+		again, err := ShapeClipView(s, "41", g, tr, 0.1, look, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -100,7 +100,7 @@ func BenchmarkADragStep(b *testing.B) {
 			s, tr := longPlan(b, c.corrected)
 			look := &Look{Source: frames}
 			for b.Loop() {
-				if _, err := ShapeClipView(s, "41", c.g, tr, 0.1, look); err != nil {
+				if _, err := ShapeClipView(s, "41", c.g, tr, 0.1, look, nil); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -113,7 +113,7 @@ func BenchmarkADragStep(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		word := look.drawing(s.plan, clip, tr).Laid[2].Opens
+		word := look.drawing(nil, s.plan, clip, tr).Laid[2].Opens
 		for b.Loop() {
 			if _, err := ShapeCaptionTime(s, "41", word, "start", word-0.2, true, tr, look); err != nil {
 				b.Fatal(err)

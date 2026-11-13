@@ -41,18 +41,27 @@ func benchLongDrag(b *testing.B, span float64) {
 	s := planAt(b, fsys, path)
 	tr := fromStored(talked(span+120), nil, 0, 0, nil)
 	g := Gesture{Kind: "trim", Edge: "end", From: 10 + span - 5, To: 10 + span - 5, ToWords: true, Frames: at25}
-	view, err := ShapeClipView(s, "01", g, tr, 0.1, nil)
+	// The drawing of the clip's captions as the interface shows them
+	// before the hand took hold, the way the app hands it on.
+	saved, err := ClipCaptionsView(s, "01", tr, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
-	sent, _ := json.Marshal(view)
-	b.ReportMetric(float64(len(sent)), "B/answer")
 	b.ReportAllocs()
+	var sent int
 	for b.Loop() {
-		if _, err := ShapeClipView(s, "01", g, tr, 0.1, nil); err != nil {
+		view, err := ShapeClipView(s, "01", g, tr, 0.1, nil, saved.Drawing())
+		if err != nil {
 			b.Fatal(err)
 		}
+		// What is sent to the interface is part of the step.
+		answer, err := json.Marshal(view)
+		if err != nil {
+			b.Fatal(err)
+		}
+		sent = len(answer)
 	}
+	b.ReportMetric(float64(sent), "B/answer")
 }
 
 func BenchmarkAnEdgeOfAClipOf1Minute(b *testing.B) { benchLongDrag(b, 60) }

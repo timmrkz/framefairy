@@ -48,11 +48,28 @@ import (
 // drawing the same. It used to fail the name, and a clip turned to its end
 // had a new name, and its captions a new file, on every read.
 func (d *CaptionDrawing) name() string {
+	if d.named != "" {
+		return d.named
+	}
 	h := sha256.New()
 	// One caption at a time, through one buffer, so the buffer stays as
 	// big as one caption.
 	buf := binary.AppendUvarint(make([]byte, 0, 512), uint64(len(d.Laid)))
-	for _, c := range d.Laid {
+	laid := d.Laid
+	if cut := d.splice; cut != nil && d.was != nil {
+		// A step of a drag is named by the drawing it was made from and
+		// what it changed there, which say all its captions, so a step
+		// costs the same however many captions the clip has, see
+		// laidNear. The mark keeps such a name from ever being one made
+		// the other way.
+		buf = append(buf, "near\x00"...)
+		buf = append(buf, d.was.name()...)
+		buf = binary.AppendUvarint(buf, uint64(cut.Head))
+		buf = binary.AppendUvarint(buf, uint64(cut.Tail))
+		buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(cut.Shift))
+		laid = d.Laid[cut.Head : cut.Head+cut.fresh]
+	}
+	for _, c := range laid {
 		buf = c.appendName(buf)
 		h.Write(buf)
 		buf = buf[:0]

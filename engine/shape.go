@@ -551,16 +551,7 @@ func wordsAround(words []timed.Cue, at float64) []timed.Cue {
 // Captions. A clip with no such pause in it before at is the whole clip.
 // words are the clip's words in the order they are said.
 func fromPause(clip Clip, words []timed.Cue, at float64) Clip {
-	k := sort.Search(len(words), func(i int) bool { return words[i].End > at }) - 1
-	for ; k >= 0 && k+1 < len(words); k-- {
-		if words[k+1].Start-words[k].End >= captionPause {
-			break
-		}
-	}
-	if k < 0 || k+1 >= len(words) {
-		return clip
-	}
-	from := (words[k].End + words[k+1].Start) / 2
+	from := pauseBefore(words, at)
 	var out []Segment
 	for _, p := range clip.Segments {
 		if p.End > from {
@@ -573,6 +564,20 @@ func fromPause(clip Clip, words []timed.Cue, at float64) Clip {
 	}
 	clip.Segments = out
 	return clip
+}
+
+// pauseBefore is the middle of the last pause before at long enough to
+// part two captions, see fromPause, or no time at all when there is none.
+// The pause is wholly before at: the word after it begins by at. words are
+// in the order they are said.
+func pauseBefore(words []timed.Cue, at float64) float64 {
+	k := sort.Search(len(words), func(i int) bool { return words[i].Start > at }) - 2
+	for ; k >= 0 && k+1 < len(words); k-- {
+		if words[k+1].Start-words[k].End >= captionPause {
+			return (words[k].End + words[k+1].Start) / 2
+		}
+	}
+	return math.Inf(-1)
 }
 
 // runOn is a clip as it would be with its end dragged out past at, a

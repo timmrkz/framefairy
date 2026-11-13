@@ -645,7 +645,7 @@ func TestPlansHeldFromEverywhereAtOnce(t *testing.T) {
 					_ = p.View()
 					_, _ = ClipShareTime(p, "01", 0.5)
 					_, _ = ClipCaptionsView(p, "01", &Transcript{}, nil)
-					_, _ = ShapeClipView(p, "01", Gesture{Kind: "trim", Edge: "start", From: 1}, &Transcript{}, 0, nil)
+					_, _ = ShapeClipView(p, "01", Gesture{Kind: "trim", Edge: "start", From: 1}, &Transcript{}, 0, nil, nil)
 				}
 			case 2:
 				_ = ep.Status("", nil)
