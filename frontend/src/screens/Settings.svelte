@@ -20,6 +20,7 @@
     finderStanding,
     holdsTheApp,
     modelMark,
+    speechOptions,
     type Standing,
     type Tone,
     providerOf,
@@ -465,12 +466,10 @@
   let choosing = $state("");
   const inUse = $derived(language.find((m) => (choosing ? m.name === choosing : m.inUse)));
   const notHere = $derived(!!inUse && !inUse.installed);
-  // What a search, a clip made by hand or the whole video being
-  // transcribed is using, see refuseFinding and speechLocked.
-  const searching = $derived(jobs.list.some((j) => j.kind === "search" && live(j)));
-  const hearing = $derived(
-    searching || jobs.list.some((j) => (j.kind === "clip" || j.kind === "transcribe") && live(j)),
-  );
+  // What a job that waits or runs holds, as the Go side says, see holdsOf
+  // in setup.go, refuseFinding and speechLocked.
+  const searching = $derived(jobs.list.some((j) => live(j) && !!j.holds?.includes("language")));
+  const hearing = $derived(jobs.list.some((j) => live(j) && !!j.holds?.includes("speech")));
   // The clip model's download, and the speech model's below: one Install
   // each, see install.svelte.ts. When one ends the models are read again:
   // the model it fetched is already the one chosen, so being there is all
@@ -521,19 +520,8 @@
   // today, so the list holds one, and Tim asked for the two to look and
   // work alike all the same, 2026-10-27.
   const speechInUse = $derived(speech.find((m) => m.installed) ?? speech[0]);
-  // The biggest first, by the size beside it, as the clip model's list.
-  const speechOptions = $derived(
-    speech
-      .map((m) => ({ m, bytes: m.installed ? m.unpacked : m.download }))
-      .sort((a, b) => b.bytes - a.bytes)
-      .map(({ m, bytes }) => ({
-        value: m.name,
-        label: m.title,
-        detail: size(bytes),
-        group: "On this machine",
-        mark: modelMark(m.installed),
-      })),
-  );
+  // The biggest first, by the size beside it, see speechOptions.
+  const speechList = $derived(speechOptions(speech));
   const speechInstall = new Install("model", () => modelsChanged());
   function downloadSpeech() {
     const m = speechInUse;
@@ -811,7 +799,7 @@
           oncancel={() => speechInstall.cancel((why) => (problem = why))}
           pick={{
             value: speechInUse?.name ?? "",
-            options: speechOptions,
+            options: speechList,
             onpick: pickSpeech,
             label: "Transcribe with",
             title: "What hears the video and writes down every word",

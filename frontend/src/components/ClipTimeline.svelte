@@ -35,7 +35,6 @@
     api,
     clock,
     intoWord,
-    wordStep,
     type Gesture,
     type ClipEntry,
     type Word,
@@ -52,15 +51,16 @@
     frameAt,
     frameMiddle,
     frameBegins,
-    insideClip,
+    cutsOf,
     litWord,
     wordInEpisode,
     type CaptionDraft,
     type Parts,
   } from "../lib/flow";
+  import { Presses } from "../lib/twice";
   import { scrub as scrubPlayhead } from "../lib/scrub";
   import { hoverClip } from "../lib/hover";
-  import type { About } from "../lib/playhead";
+  import { arrowStep, type About } from "../lib/playhead";
   import { asleep, keysElsewhere } from "../lib/keys";
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
@@ -333,9 +333,6 @@
   const nearest = 2;
   // How much of the episode is asked for in words at a time.
   const spoken = 600;
-  // How far Shift and an arrow skip outside a clip, in seconds, the jump
-  // Tim chose for #377. YouTube's arrows jump 5 seconds too.
-  const SKIP = 5;
 
   const segments = $derived(clip?.segments ?? []);
   const first = $derived(segments.length ? segments[0].start : 0);
@@ -400,19 +397,11 @@
   // edge, and a dblclick goes to whatever the second landed on. Over the
   // line it went nowhere, so a double-click in the clip did nothing at all
   // while one on a cut's edge did something. Told here, it is the same
-  // gesture wherever the second press lands. The time and the distance are
-  // the Mac's own for a double-click, and the distance is measured both
-  // ways, as the Mac measures it. Measured along the track only, a press
-  // on a caption block and then on a keyframe over it at the same x was a
-  // double-click, which removed the keyframe, #535.
-  let lastPress = { at: 0, x: 0, y: 0 };
+  // gesture wherever the second press lands, see lib/twice.ts.
+  const presses = new Presses();
 
   function twice(event: PointerEvent): boolean {
-    const now = event.timeStamp;
-    const again =
-      now - lastPress.at < 500 && Math.abs(event.clientX - lastPress.x) < 6 && Math.abs(event.clientY - lastPress.y) < 6;
-    lastPress = again ? { at: 0, x: 0, y: 0 } : { at: now, x: event.clientX, y: event.clientY };
-    return again;
+    return presses.twice({ at: event.timeStamp, x: event.clientX, y: event.clientY });
   }
 
   // What a double-click does: on a cut it removes the cut, so the part
@@ -661,15 +650,8 @@
   // so by running the whole way.
   const wholeClip = $derived(drawnPieces.length ? { start, end } : null);
 
-  // A cut is a part the clip leaves out, which is the gap between two
-  // pieces. The engine counts them from the first, and so does the timeline,
-  // because that is what a move names.
-  const cuts = $derived(
-    drawnPieces
-      .slice(1)
-      .map((p, i) => ({ index: i, from: drawnPieces[i].end, to: p.start }))
-      .filter((c) => c.to > c.from),
-  );
+  // A cut is a part the clip leaves out, see cutsOf.
+  const cuts = $derived(cutsOf(drawnPieces));
   // A cut the saved clip does not have yet is one being drawn.
   const savedCuts = $derived(
     segments.slice(1).map((p, i) => ({ from: segments[i].end, to: p.start })),
@@ -997,10 +979,6 @@
   // before its first piece to a frame after its last, its cuts included. A
   // clip playing on the clip crosses its cuts, and a step in a cut walks
   // the words heard there and stays on the clip.
-  function onClip(t: number, step: number): boolean {
-    return insideClip(wholeClip ? [wholeClip] : [], t, step);
-  }
-
   // The arrow keys step the playhead a frame at a time, as in every video
   // tool, unless a field or an edge of the clip has the keyboard. On a
   // clip, Shift steps by words, which is the thing the picture is showing:
@@ -1037,48 +1015,25 @@
     const back = event.key === "ArrowLeft";
     event.preventDefault();
     const through = playing && dimmed;
-    const put = (t: number, wordStep = false) => {
-      const at = Math.max(0, Math.min(t, duration));
-      onseek(at, through ? "video" : undefined, wordStep);
+    // Where the key goes is lib/playhead.ts, arrowStep.
+    const to = arrowStep({
+      time,
+      frame,
+      back,
+      shift: event.shiftKey,
+      through,
+      clip: wholeClip,
+      pieces: drawnPieces,
+      lit,
+      words,
+      looping,
+    });
+    if (to === "clip") onwalkclip?.(back);
+    else if (to) {
+      const at = Math.max(0, Math.min(to.to, duration));
+      onseek(at, through ? "video" : undefined, to.word);
       keepInSight(at, back);
-    };
-    if (!event.shiftKey) {
-      put(time + Math.max(frame, 1 / 240) * (back ? -1 : 1));
-      return;
     }
-    // Inside the clip, the words the caption lights up, and outside it a
-    // skip.
-    //
-    // Inside by a whole frame either side, because the playhead is not
-    // where it was put: picking a clip sends it to the clip's first second
-    // and the picture answers with the frame it is showing, which begins a
-    // little before that. Read exactly, the playhead was then outside the
-    // clip it had just been put at the start of, so shift and an arrow
-    // walked the transcript instead and the first press landed wherever
-    // the word before the clip happened to be. That is the jump out of the
-    // clip that could not be made to happen twice: it only happens on the
-    // first press after picking one.
-    const step = Math.max(frame, 1 / 240);
-    if (through || !onClip(time, step)) {
-      put(time + (back ? -SKIP : SKIP));
-      return;
-    }
-    // In a cut the caption lights nothing, so the words heard there are
-    // walked, and the caption's words arrive a moment after the clip is
-    // chosen, until when the words heard are the ones it will light.
-    const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
-    const to = wordStep(walk, time, back, step);
-    if (to !== null) {
-      put(to, true);
-      return;
-    }
-    // Out of words. With loop on, the clip comes round the way a play of
-    // it does: past its last word is its first word, and before its first
-    // its last. Without, at its ends is the clip beside it, because the
-    // words go on even where this clip does not.
-    if (walk === lit && looping) put(intoWord(back ? lit[lit.length - 1] : lit[0], step), true);
-    else if (walk === lit) onwalkclip?.(back);
-    else if (!walk.length) put(time + (back ? -1 : 1));
   }
 
   // Paused, with nothing under the hand, the words Shift and an arrow go to
@@ -1092,15 +1047,14 @@
   // further than a stream reads on, so the frames there would cost a seek
   // each, back and on, at every move of the playhead, a click too, and
   // the decoder would be busy with them when the hand goes somewhere else.
+  // Where the keys go is arrowStep's, the one onKey asks, and only a step
+  // onto a word is read ahead.
   $effect(() => {
     if (playing || scrubbing || gripping || !onahead) return;
-    const step = Math.max(frame, 1 / 240);
-    if (!onClip(time, step)) return;
-    const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
     const times: number[] = [];
     for (const back of [false, true]) {
-      const to = wordStep(walk, time, back, step);
-      if (to !== null) times.push(Math.max(0, Math.min(to, duration)));
+      const to = arrowStep({ time, frame, back, shift: true, through: false, clip: wholeClip, pieces: drawnPieces, lit, words, looping });
+      if (to && to !== "clip" && to.word) times.push(Math.max(0, Math.min(to.to, duration)));
     }
     if (times.length) onahead(times);
   });

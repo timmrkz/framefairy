@@ -86,6 +86,11 @@ type Job struct {
 	// clips, and a render never holds up a search. A search moves from one
 	// lane to the other as it goes from hearing to finding.
 	Lane string `json:"lane"`
+	// Holds is what the job keeps from changing while it waits or runs,
+	// "language" and "speech", see holdsOf. The settings read it to say
+	// so before they are asked, and keep no rule of their own about which
+	// job holds what.
+	Holds []string `json:"holds,omitempty"`
 	// Underway is every clip the job has on the way, proposed and not
 	// written yet, whoever proposed it, see runlog.Underway. The clip list
 	// shows each in its place until it is written.
@@ -391,7 +396,7 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 	q.next++
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
-		State: JobQueued, Queued: time.Now(), Lane: lane, work: work, cancel: cancel, ctx: ctx,
+		State: JobQueued, Queued: time.Now(), Lane: lane, Holds: holdsOf(kind), work: work, cancel: cancel, ctx: ctx,
 		Plan: plan, Clips: append([]string(nil), clips...)}
 	// Its turn is asked for now, under the lock, so jobs of one lane run
 	// in the order they were queued.
@@ -444,7 +449,7 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	// It waits, which is what the engine's record says until the job has
 	// a turn, from the moment the engine writes it, see heard.
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
-		State: JobRunning, Step: engine.StepWaiting, Queued: time.Now(), Lane: laneFor(kind),
+		State: JobRunning, Step: engine.StepWaiting, Queued: time.Now(), Lane: laneFor(kind), Holds: holdsOf(kind),
 		steps: steps, cancel: cancel, ctx: ctx, act: theLog.acting()}
 	if prepare != nil {
 		prepare(job)
@@ -609,7 +614,7 @@ func (q *queue) restore(episodes []string) {
 			q.next++
 			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, JobRecord: rec,
 				Label: jobLabel(rec.Kind, rec.Preview), State: state, Queued: rec.Asked,
-				Lane: laneFor(rec.Kind), Underway: rec.Underway(), cancel: func() {}, ctx: context.Background()}
+				Lane: laneFor(rec.Kind), Holds: holdsOf(rec.Kind), Underway: rec.Underway(), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
 			q.jobs = append(q.jobs, job)
 			snapshot := *job
@@ -627,7 +632,7 @@ func (q *queue) refuse(episode, kind, label, reason string, with ...func(*Job)) 
 	q.mu.Lock()
 	q.next++
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
-		State: JobFailed, Error: reason, Queued: time.Now(), Lane: lane,
+		State: JobFailed, Error: reason, Queued: time.Now(), Lane: lane, Holds: holdsOf(kind),
 		cancel: func() {}, ctx: context.Background()}
 	for _, fill := range with {
 		if fill != nil {

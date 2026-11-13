@@ -233,10 +233,6 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	toolsFromThePath()
-	// The face detector finds no face in a grey test video and framing
-	// falls back to what is in focus, after some 50 milliseconds a frame of
-	// looking. The engine's TestProjectSteps frames with it.
-	os.Setenv("FRAMEFAIRY_NO_FACES", "1")
 	// A test that hangs on the programs it started, the decoder or
 	// ffmpeg, leaves what each of them was doing in the log.
 	flag.Parse()

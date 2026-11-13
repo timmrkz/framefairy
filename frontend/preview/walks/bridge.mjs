@@ -905,11 +905,15 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
         const up = () => {
           const at = Number(screen.dataset.playhead);
           const shown = Number(screen.dataset.shown);
-          // The frame that holds the playhead, one that begins a
-          // millisecond or less after it included, see frameAt in
-          // lib/flow.ts. On the clip's end itself it is the clip's last
-          // frame, the one that holds the moment a frame before the end,
-          // where a play of the clip stops, see settle in
+          // Where the frame slot that holds the playhead begins, a slot
+          // that begins a millisecond or less after it included. The
+          // slots are laid on the picture's grid both ways from where it
+          // starts, and before that the video preview names a slot of its
+          // own while it draws the picture's first frame. So this is not
+          // frameAt in lib/flow.ts, which counts every moment before the
+          // picture as its frame 0. On the clip's end itself it is the
+          // clip's last frame, the one that holds the moment a frame
+          // before the end, where a play of the clip stops, see settle in
           // lib/frames/queue.ts. A step that lands on the end shows it.
           const held = edgeOfClip(at, fps);
           const begins = start + Math.floor((held - start + 0.001) * fps) / fps;
@@ -1505,12 +1509,16 @@ export async function seekTo(page, at, fps) {
   await settle(page);
   await reader(page);
   await shownOnPlayhead(page);
-  return page.evaluate((fps) => {
-    const at = Number(document.querySelector(".screen").dataset.playhead);
-    // The frame that holds the playhead, a frame that begins a
-    // millisecond or less after it included, see frameAt in lib/flow.ts.
-    return window.__pictured() === Math.floor((at + 0.001) * fps);
-  }, fps);
+  const { videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
+  return page.evaluate(
+    ([fps, start]) => {
+      const at = Number(document.querySelector(".screen").dataset.playhead);
+      // The frame that holds the playhead, by the app's own frameAt in
+      // lib/flow.ts, counted from where the picture starts.
+      return window.__pictured() === window.__frameAt(at, 1 / fps, start);
+    },
+    [fps, videoStart],
+  );
 }
 
 // The crop frame in the video preview, where the playhead is: where it
@@ -1541,31 +1549,6 @@ export async function cropFrame(page) {
   });
   if (!got) return null;
   return { left: got.left, width: got.width, look: lookOf(bytes(got.pixels), got.w, got.h) };
-}
-
-// A short read back from disk with ffmpeg: every frame, small, as what it
-// looks like, and the sound, one channel at 48 kHz.
-export function readShort(path) {
-  const w = 90, h = 160;
-  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", `scale=${w}:${h}`,
-    "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
-  const frames = [];
-  for (let at = 0; at + w * h * 3 <= raw.length; at += w * h * 3) {
-    frames.push(lookOf(raw.subarray(at, at + w * h * 3), w, h, 3));
-  }
-  const sound = shortSound(path);
-  const rate = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
-    "stream=r_frame_rate", "-of", "csv=p=0", path]).toString().trim().split("/");
-  return { frames, fps: Number(rate[0]) / Number(rate[1] ?? 1), sound, rate: 48000 };
-}
-
-// How loud the sound is over 10 ms from a moment, as its root mean square.
-export function loudness(short, at) {
-  const from = Math.round(at * short.rate);
-  const n = Math.round(0.01 * short.rate);
-  let sum = 0;
-  for (let i = from; i < from + n; i++) sum += (short.sound[i] ?? 0) ** 2;
-  return Math.sqrt(sum / n);
 }
 
 // A filmed episode, made by /pick with a rate, carries its frame number
@@ -1633,13 +1616,6 @@ export async function filmedOnScreen(page) {
     };
   }, [FILMED_BITS, BAND]);
   return page.evaluate(() => window.__filmed());
-}
-
-// The sound of a rendered short, one channel at 48 kHz, sample by sample.
-export function shortSound(path) {
-  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-ac", "1", "-ar", "48000",
-    "-f", "f32le", "-"], { maxBuffer: 1 << 30 });
-  return new Float32Array(Uint8Array.from(raw).buffer);
 }
 
 // The crop in the video preview as the canvas has it, at the canvas's own

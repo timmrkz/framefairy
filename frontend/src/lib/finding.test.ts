@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import type { CloudModel, LanguageModel, Provider } from "./api";
-import { cloudModelIn, cloudValue, finderOptions, finderStanding, holdsTheApp, providerOf } from "./finding";
+import type { CloudModel, LanguageModel, Provider, SpeechModel } from "./api";
+import { cloudModelIn, cloudValue, finderOptions, finderStanding, holdsTheApp, providerOf, speechOptions } from "./finding";
 
 const anthropic: Provider = { name: "anthropic", title: "Anthropic", env: "ANTHROPIC_API_KEY", keysAt: "platform.claude.com" };
 const openai: Provider = { name: "openai", title: "OpenAI", env: "OPENAI_API_KEY", keysAt: "platform.openai.com" };
@@ -209,5 +209,36 @@ describe("when the settings keep the app where it is", () => {
 
   test("a page still reading never holds anybody", () => {
     expect(holdsTheApp(notHere.state, false)).toBe(false);
+  });
+});
+
+// The speech model's list looks and works like the clip model's, Tim
+// 2026-10-27: one group, the biggest first by the size it shows, the size
+// unpacked once a model is here and the download until then.
+describe("the speech models to choose from", () => {
+  const speech = (name: string, download: number, unpacked: number, installed: boolean): SpeechModel => ({
+    name,
+    title: name,
+    about: "",
+    maker: "",
+    languages: "",
+    download,
+    unpacked,
+    url: "",
+    recommended: false,
+    installed,
+  });
+
+  test("every one in one group, the biggest first by the size it shows, with its mark", () => {
+    const list = speechOptions([
+      speech("here-small", 9_000_000_000, 700_000_000, true),
+      speech("to-fetch", 640_000_000, 2_000_000_000, false),
+      speech("here-big", 100_000_000, 1_200_000_000, true),
+    ]);
+    expect(list.map((o) => [o.group, o.label, o.detail, o.mark?.icon])).toEqual([
+      ["On this machine", "here-big", "1.2 GB", "check"],
+      ["On this machine", "here-small", "700 MB", "check"],
+      ["On this machine", "to-fetch", "640 MB", "download"],
+    ]);
   });
 });

@@ -4,6 +4,7 @@
 // of what a correction should do, so they cannot drift into a third
 // engine. See docs/TESTING.md.
 import { letHeld, engineState, settle, settledScreen } from "./bridge.mjs";
+import { cutsOf, inClip } from "../../src/lib/flow.ts";
 
 // The engine's captions as a list of words, and the engine's clip as one
 // comparable value: its captions, how they look, and its pieces with their
@@ -30,15 +31,10 @@ export function describe(a, b) {
 }
 
 // What the clip timeline should show for the engine's pieces: the first
-// start, the last end, and a cut wherever two pieces have time between
-// them. Pieces that touch, which a crop moved part way makes, are no cut.
+// start, the last end, and the cuts the app's own cutsOf finds in them.
 export function expectedTimeline(segments) {
   if (!segments.length) return null;
-  const cuts = [];
-  for (let i = 1; i < segments.length; i++) {
-    if (segments[i].start > segments[i - 1].end) cuts.push({ from: segments[i - 1].end, to: segments[i].start });
-  }
-  return { start: segments[0].start, end: segments[segments.length - 1].end, cuts };
+  return { start: segments[0].start, end: segments[segments.length - 1].end, cuts: cutsOf(segments) };
 }
 
 // How many of the page's frames a caption may wait for its late layer, a
@@ -68,15 +64,8 @@ const LATE_FRAMES = 60;
 // or null.
 export function overlaid(samples, state, frame) {
   const pieces = state?.segments ?? [];
-  const clipTime = (t) => {
-    let sum = 0;
-    for (const p of pieces) {
-      if (t < p.start) return sum;
-      if (t < p.end) return sum + (t - p.start);
-      sum += p.end - p.start;
-    }
-    return sum;
-  };
+  // A moment of the episode on the clip's clock, by the app's own inClip.
+  const clipTime = (t) => inClip(pieces, t);
   const inPiece = (t) => pieces.some((p) => t >= p.start + frame && t < p.end - frame);
   const captioned = (t) => {
     const c = clipTime(t);
@@ -102,19 +91,18 @@ export function overlaid(samples, state, frame) {
 }
 
 // What is wrong with the size of the frame standing on the video preview,
-// or null: nothing stands still, or it was decoded at the size the canvas
-// asks for. A frame asked for again after a resize may still be on its
-// way, so the size is read once the frame queue says the picture stands,
-// see standing in lib/frames/queue.ts, in the same moment. The page hears
-// that from the queue and from the page changing, the canvas's size among
-// it, never on the clock, and follows a new queue when a step opens
-// another video, see __standing in preview/standing.ts. A frame that
-// never comes is a walk that hangs, ended by the -timeout of make walks. The queue needs the app's own timers to stand, so under a
+// as stillFrame read it, or null when it was decoded at the size the
+// canvas asks for. A frame asked for again after a resize may still be on
+// its way, so stillFrame reads the size once the frame queue says the
+// picture stands, see standing in lib/frames/queue.ts, in the same moment.
+// The page hears that from the queue and from the page changing, the
+// canvas's size among it, never on the clock, and follows a new queue when
+// a step opens another video, see __standing in preview/standing.ts. A
+// frame that never comes is a walk that hangs, ended by the -timeout of
+// make walks. The queue needs the app's own timers to stand, so under a
 // held clock a picture that does not stand yet is a walk that reads it at
 // the wrong time, and fails at once.
-export async function stillBlurred(page) {
-  const got = await stillFrame(page);
-  if (!got || (got.state !== "paused" && got.state !== "cued")) return null;
+function blurOf(got) {
   if (got.frame[0] === got.want[0] && got.frame[1] === got.want[1]) return null;
   return `the frame on the video preview is ${got.frame.join(" by ")}, the canvas is ${got.canvas.join(" by ")} and the file ${got.file.join(" by ")}, so it should be ${got.want.join(" by ")}`;
 }
@@ -232,9 +220,32 @@ export class Watch {
     // larger than the file's own. A frame asked for again after a resize
     // may still be on its way, and is waited for. Tim saw the
     // first frame of every workspace blurred, decoded at the 300 by 150 of
-    // a canvas not laid out yet, plan row 2.187.
-    const blurred = await stillBlurred(page);
-    if (blurred) this.broke("a still frame is at the canvas's size", blurred);
+    // a canvas not laid out yet, plan row 2.187. Looked at again only
+    // when the picture can have changed: another video, another clip,
+    // another playhead or frame shown, or another size of the canvas. A step that
+    // leaves all of them as they were, an edit of a word, a press on a
+    // control, would wait for the picture to stand only to read the frame
+    // it already read, which was most of what this rule cost.
+    const picture = await page.evaluate(() => {
+      const c = document.querySelector(".screen canvas");
+      return [
+        document.querySelector("aside button.episode.current .name")?.textContent ?? "",
+        // The playhead, which a gesture moves at once, and the frame,
+        // which may come a moment after it.
+        document.querySelector(".screen")?.dataset.playhead ?? "",
+        document.querySelector(".screen")?.dataset.shown ?? "",
+        c ? `${c.width}x${c.height}` : "",
+      ];
+    });
+    const look = JSON.stringify([at, ...picture]);
+    if (look !== this.sharpSeen) {
+      const got = await stillFrame(page);
+      if (got && (got.state === "paused" || got.state === "cued")) {
+        this.sharpSeen = look;
+        const blurred = blurOf(got);
+        if (blurred) this.broke("a still frame is at the canvas's size", blurred);
+      }
+    }
 
     // Enter opens the word in the keyboard's frame, and no other: the
     // frame is there to say which word Enter opens.
