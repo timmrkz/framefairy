@@ -183,7 +183,6 @@
   4	sequences.mjs SEQUENCE=Tab while dictating does nothing
   4	sequences.mjs SEQUENCE=The app's log is removed whole from Settings, after asking
   4	sequences.mjs SEQUENCE=The cursor stays after the words while the last of them are written down
-  4	sequences.mjs SEQUENCE=The start sound plays both notes in order, however late the window is to start it
   4	sequences.mjs SEQUENCE=Undo and redo in a settings field undo and redo the typing
   4	sequences.mjs SEQUENCE=What is written and attached stays when the report window closes
   4	sequences.mjs SEQUENCE=a caption removed, then its clip removed and put back, is still removed
