@@ -57,10 +57,11 @@ type chromeWatch struct {
 	// empty. A test hands in its own, so nothing in this file needs the
 	// app on screen or a main thread to be tested.
 	ask func(window *application.WebviewWindow) chromeRaw
-	// The event the interface of this window is told on, since each window
-	// has a title bar of its own: the app's window can be fullscreen while
-	// the report window beside it is not.
-	event event[Chrome]
+	// Which window this is, "app" or "report", whose interface is told
+	// on its own event, see chromeEvent, since each window has a title bar
+	// of its own: the app's window can be fullscreen while the report
+	// window beside it is not.
+	name string
 
 	mu sync.Mutex
 	// The bar's height while there is a title bar to measure. In native
@@ -150,12 +151,12 @@ func (c *chromeWatch) publish() {
 		return
 	}
 	// What macOS answered, in points, and what the interface is told.
-	theLog.line(zerolog.DebugLevel, "window").Str("event", string(c.event)).
+	theLog.line(zerolog.DebugLevel, "window").Str("event", string(chromeEvent(c.name))).
 		Float64("bar", raw.bar).Float64("left", raw.left).Float64("right", raw.right).
 		Float64("close_top", raw.closeTop).Float64("close_bottom", raw.closeBottom).
 		Bool("fullscreen", raw.fullscreen).Interface("told", now).
 		Msg("the title bar was measured")
-	c.event.to(c.tell, now)
+	chromeEvent(c.name).to(c.tell, now)
 }
 
 // chromeEvent is the event a window's furniture is told on: "chrome" for
@@ -175,7 +176,7 @@ func chromeEvent(window string) event[Chrome] {
 // snap back: the app reads where the buttons went and lays itself out
 // around them.
 func watchChrome(tell emitter, window *application.WebviewWindow, name string) *chromeWatch {
-	c := &chromeWatch{tell: tell, window: window, event: chromeEvent(name)}
+	c := &chromeWatch{tell: tell, window: window, name: name}
 	if window == nil {
 		return c
 	}

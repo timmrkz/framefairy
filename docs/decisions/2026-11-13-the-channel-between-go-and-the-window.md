@@ -136,6 +136,11 @@ the parts                       the queue, the news, the report, the
 - `api.ts` keeps writing its types by hand. The test is what keeps them
   true. If the test grows rules of its own for every new kind of type,
   that is the sign 2 should be taken up again.
+- A list or a map Go can send as `null`, a nil slice, where `api.ts`
+  reads one always there, fails the test too. 24 such fields were there
+  when it came, each kept a list by hand where it is made. They are
+  listed in `nullToday` in `channel_test.go`, no field joins them, and
+  #819 takes them away.
 - The bridge finds a method by the whole name Wails gives it in the app,
   `main.FrameFairy.<Method>`, and `bindings_test.go` holds `api.ts` to
   the same. The bridge cannot call through Wails' own dispatch, its

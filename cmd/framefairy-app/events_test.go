@@ -2,6 +2,7 @@ package main
 
 import (
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"maps"
@@ -71,9 +72,9 @@ func TestEveryEventIsHeardAndEveryHeardEventIsSent(t *testing.T) {
 			t.Errorf("api.ts:%d listens for %q, which Go never tells the window", h.line, name)
 		}
 	}
-	used := uses(t)
+	sent := sends(t)
 	for constant, name := range named {
-		if used[constant] < 2 {
+		if !sent[constant] {
 			t.Errorf("%s, the event %q, is never sent by the app", constant, name)
 		}
 	}
@@ -217,20 +218,56 @@ func dataAs(handler string) string {
 	return strings.TrimSpace(inside)
 }
 
-// uses counts how often each name is written in the app's own files,
-// its tests aside. A constant written once is only declared.
+// sends are the events the app sends: each constant that is told to
+// the window, chromeAppEvent.to(...), and each a function returns whose
+// answer is told, chromeEvent(name).to(...). Only the files a program of
+// the app is built from count, on any system, not the build only the
+// checks from outside the app use.
 //
 // On the real disk: what is read is the app's own source.
-func uses(t *testing.T) map[string]int {
+func sends(t *testing.T) map[string]bool {
 	t.Helper()
-	out := map[string]int{}
-	for _, file := range appFiles(t) {
+	files := appFiles(t)
+	out := map[string]bool{}
+	told := map[string]bool{}
+	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
-			if id, ok := n.(*ast.Ident); ok {
-				out[id.Name]++
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "to" {
+				return true
+			}
+			switch x := sel.X.(type) {
+			case *ast.Ident:
+				out[x.Name] = true
+			case *ast.CallExpr:
+				if f, ok := x.Fun.(*ast.Ident); ok {
+					told[f.Name] = true
+				}
 			}
 			return true
 		})
+	}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || !told[fn.Name.Name] {
+				continue
+			}
+			ast.Inspect(fn, func(n ast.Node) bool {
+				if ret, ok := n.(*ast.ReturnStmt); ok {
+					for _, r := range ret.Results {
+						if id, ok := r.(*ast.Ident); ok {
+							out[id.Name] = true
+						}
+					}
+				}
+				return true
+			})
+		}
 	}
 	return out
 }
@@ -281,7 +318,7 @@ func appFilesIn(t *testing.T, set *token.FileSet) map[string]*ast.File {
 	out := map[string]*ast.File{}
 	for _, pkg := range pkgs {
 		for path, file := range pkg.Files {
-			if !strings.HasSuffix(path, "_test.go") {
+			if !strings.HasSuffix(path, "_test.go") && builtIntoTheApp(t, path) {
 				out[path] = file
 			}
 		}
@@ -300,4 +337,26 @@ func apiText(t *testing.T) string {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	return string(body)
+}
+
+// builtIntoTheApp says whether a file is in the app as it is built for a
+// Mac, Linux or Windows, so not in the build only the checks from outside
+// the app use.
+//
+// On the real disk: what is read is the app's own source.
+func builtIntoTheApp(t *testing.T, path string) bool {
+	t.Helper()
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		ctx := build.Default
+		ctx.GOOS = goos
+		ctx.CgoEnabled = true
+		ok, err := ctx.MatchFile(".", path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
 }

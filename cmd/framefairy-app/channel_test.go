@@ -22,13 +22,14 @@ import (
 //
 // Every type an event carries, every answer of a call and every argument
 // of one is held to its interface in api.ts, field by field and both
-// ways, all the way down: the name, whether it may be missing, and its
-// kind, a string, a number, a boolean, a list, a map or an object.
+// ways, all the way down: the name, whether it may be missing or null,
+// and its kind, a string, a number, a boolean, a list, a map or an
+// object.
 //
 // On the real disk: what is read is the interface's own source.
 func TestTheInterfaceReadsTheFieldsGoSends(t *testing.T) {
 	text := apiText(t)
-	c := &channel{ts: readTS(text), seen: map[string]bool{}}
+	c := &channel{ts: readTS(text), seen: map[string]bool{}, nullSeen: map[string]bool{}}
 	for _, name := range c.ts.twice {
 		c.errorf("api.ts declares %s twice, and TypeScript merges the two into one type with the fields of both", name)
 	}
@@ -68,6 +69,11 @@ func TestTheInterfaceReadsTheFieldsGoSends(t *testing.T) {
 			}
 		}
 	}
+	for key := range nullToday {
+		if !c.nullSeen[key] {
+			c.errorf("%s can no longer be null where api.ts reads it, take it out of nullToday", key)
+		}
+	}
 	for _, e := range c.errs {
 		t.Error(e)
 	}
@@ -78,6 +84,8 @@ type channel struct {
 	ts   *tsDecls
 	seen map[string]bool
 	errs []string
+	// nullSeen are the fields of nullToday found as they were.
+	nullSeen map[string]bool
 }
 
 func (c *channel) errorf(format string, args ...any) {
@@ -269,6 +277,12 @@ func (c *channel) object(g reflect.Type, m tsMember, where string, goSends bool)
 		optional := tf.optional || m.partial
 		if goSends && f.left && !optional {
 			c.errorf("Go leaves %s.%s out when it is empty, api.ts reads it as always there", where, name)
+		}
+		if key := g.String() + "." + name; goSends && !f.left && !optional && canBeNull(f.of) && !takesNull(tf.of) {
+			c.nullSeen[key] = true
+			if !nullToday[key] {
+				c.errorf("Go can send %s.%s as null, api.ts reads it as always a %s. Send an empty one, or say | null in api.ts", where, name, tsKindOf(f.of))
+			}
 		}
 		c.compare(f.of, tf.of, where+"."+name, goSends)
 	}
@@ -482,4 +496,56 @@ func splitTop(s string) []string {
 		out = append(out, rest)
 	}
 	return out
+}
+
+// nullToday are the fields Go can send as null that api.ts reads as a
+// list or a map always there, by Go type and json name, as they were when
+// this test came. Each is kept a list by hand where it is made, which
+// nothing checks. #819 takes them away one by one, and no field joins
+// them.
+var nullToday = map[string]bool{
+	"engine.CaptionLineView.words": true,
+	"engine.CaptionStart.heights":  true,
+	"engine.CaptionView.lines":     true,
+	"engine.EpisodeStatus.heard":   true,
+	"main.Added.added":             true,
+	"main.ClipEntry.cropLefts":     true,
+	"main.ClipEntry.segments":      true,
+	"main.ClipEntry.thumbnails":    true,
+	"main.CoverageView.passes":     true,
+	"main.Dictation.said":          true,
+	"main.Framing.cropLefts":       true,
+	"main.Framing.cropMarks":       true,
+	"main.Framing.segments":        true,
+	"main.ReportDraft.pictures":    true,
+	"main.SetupState.cloud":        true,
+	"main.SetupState.keys":         true,
+	"main.SetupState.language":     true,
+	"main.SetupState.providers":    true,
+	"main.SetupState.speech":       true,
+	"main.ShapedClip.captions":     true,
+	"main.ShapedClip.pieces":       true,
+	"main.VideoState.clips":        true,
+	"main.VideoState.jobs":         true,
+	"notices.Notice.texts":         true,
+}
+
+// canBeNull says whether encoding/json can write a value of g as null: a
+// nil list, map or pointer.
+func canBeNull(g reflect.Type) bool {
+	switch g.Kind() {
+	case reflect.Slice, reflect.Map, reflect.Pointer, reflect.Interface:
+		return tsKindOf(g) != "string" || g.Kind() == reflect.Pointer
+	}
+	return false
+}
+
+// takesNull says whether a TypeScript type takes null, or anything.
+func takesNull(t *tsType) bool {
+	for _, m := range t.members {
+		if m.kind == "null" || m.kind == "any" {
+			return true
+		}
+	}
+	return false
 }
