@@ -133,6 +133,11 @@ type Engine struct {
 	// encoder is given up then as well as after encoderStall of the
 	// clock. A test sets it, so it waits for no stall of the clock.
 	stuck <-chan struct{}
+	// retryWait is how the wait passes before a request to a company is
+	// asked again, see post. Empty, it is time.After. A test hands in
+	// one that is up at once and keeps what it was asked to wait, so the
+	// waits, seconds each, are checked and never spent.
+	retryWait func(time.Duration) <-chan time.Time
 
 	// ahead lets the transcript be read into the local model ahead of
 	// the search this engine runs, until the search asks, see

@@ -10,9 +10,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/spf13/afero"
 
@@ -115,6 +118,7 @@ func TestReadOpenAIStream(t *testing.T) {
 // fakeCloud stands in for both providers at once. It records what each
 // request carried and answers from a queue, one answer per request.
 type fakeCloud struct {
+	retries  retries
 	mu       sync.Mutex
 	requests []seenRequest
 	answers  []func(w http.ResponseWriter)
@@ -165,7 +169,113 @@ func cloud(t *testing.T, files afero.Fs, answers ...func(w http.ResponseWriter))
 	t.Setenv("OPENAI_API_KEY", "sk-proj-test")
 	m := NewMachine(files)
 	m.network = toServer{server.Listener.Addr().String()}
-	return fake, NewEngine(runlog.New(&bytes.Buffer{}, false, false), m)
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), m)
+	e.retryWait = fake.retries.wait
+	return fake, e
+}
+
+// retries is the wait before a request is asked again, which a test hands
+// the engine: up at once, so no test spends the seconds, and kept, so a
+// test checks how long the engine asked to wait.
+type retries struct {
+	mu    sync.Mutex
+	asked []time.Duration
+}
+
+func (r *retries) wait(d time.Duration) <-chan time.Time {
+	r.mu.Lock()
+	r.asked = append(r.asked, d)
+	r.mu.Unlock()
+	up := make(chan time.Time, 1)
+	up <- time.Time{}
+	return up
+}
+
+func (r *retries) were() []time.Duration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.asked)
+}
+
+// dropping is a network that drops its first requests, the way a
+// connection that went away does, and takes the rest on.
+type dropping struct {
+	drops atomic.Int32
+	rest  http.RoundTripper
+}
+
+func (d *dropping) RoundTrip(r *http.Request) (*http.Response, error) {
+	if d.drops.Add(-1) >= 0 {
+		if r.Body != nil {
+			r.Body.Close()
+		}
+		return nil, errors.New("connection reset by peer")
+	}
+	return d.rest.RoundTrip(r)
+}
+
+// A request asked again waits before it is, twice as long each time from
+// 2 s, and as long as a company asks when it says how long, never over a
+// minute. A company that is busy is not asked again at once, which only
+// makes it busier, and a person is not kept waiting longer than a minute
+// between two tries.
+func TestARetryWaitsLongerEachTime(t *testing.T) {
+	busyFor := func(after string) func(w http.ResponseWriter) {
+		return func(w http.ResponseWriter) {
+			if after != "" {
+				w.Header().Set("retry-after", after)
+			}
+			w.WriteHeader(529)
+			fmt.Fprint(w, `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`)
+		}
+	}
+	for _, c := range []struct {
+		name    string
+		drops   int32
+		answers []func(w http.ResponseWriter)
+		want    []time.Duration
+	}{
+		{"the network goes away", 3, []func(w http.ResponseWriter){claudeStream("{}")},
+			[]time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second}},
+		{"busy, saying nothing of when", 0,
+			[]func(w http.ResponseWriter){busyFor(""), busyFor(""), claudeStream("{}")},
+			[]time.Duration{2 * time.Second, 4 * time.Second}},
+		{"busy, saying when", 0,
+			[]func(w http.ResponseWriter){busyFor("30"), busyFor("0"), busyFor("600"), claudeStream("{}")},
+			[]time.Duration{30 * time.Second, 0, time.Minute}},
+		{"a dropped request, then busy", 1,
+			[]func(w http.ResponseWriter){busyFor(""), claudeStream("{}")},
+			[]time.Duration{2 * time.Second, 4 * time.Second}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fake, e := cloud(t, afero.NewMemMapFs(), c.answers...)
+			network := &dropping{rest: e.network}
+			network.drops.Store(c.drops)
+			e.network = network
+			if _, err := e.CallAPI(context.Background(), "p", "claude-opus-5-5", 100, "", "plan", "", nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := fake.retries.were(); !slices.Equal(got, c.want) {
+				t.Errorf("waited %v before the tries, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// A search called off while it waits to ask again ends at once, with the
+// wait left unfinished.
+func TestARetryCalledOffEndsItsWait(t *testing.T) {
+	_, e := cloud(t, afero.NewMemMapFs())
+	ctx, cancel := context.WithCancel(context.Background())
+	e.network = &dropping{rest: e.network}
+	e.network.(*dropping).drops.Store(1000)
+	e.retryWait = func(time.Duration) <-chan time.Time {
+		cancel()
+		return nil
+	}
+	if _, err := e.CallAPI(ctx, "p", "claude-opus-5-5", 100, "", "plan", "", nil); !errors.Is(err, context.Canceled) {
+		t.Errorf("got %v, want the call called off", err)
+	}
 }
 
 // toServer is a network that takes every request to one server, whatever
