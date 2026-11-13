@@ -1274,8 +1274,14 @@
     fixing = null;
     if (!was) return;
     // A word is one word on a line, whatever was typed into it: the
-    // newlines a paste brings are spaces, and a run of spaces is one.
-    const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+    // newlines a paste brings are spaces, and a run of spaces is one. It
+    // keeps to its room as well: an accent typed with a dead key, or text
+    // an input method puts together, comes in as one piece the browser
+    // lets no page refuse, see wordRoom.
+    const text = [...(node.textContent ?? "").replace(/\s+/g, " ").trim()]
+      .slice(0, said?.room ?? Infinity)
+      .join("")
+      .trim();
     // A word emptied is a word removed. The text goes back in first, so
     // the word is never drawn empty while it leaves.
     if (!text) {
