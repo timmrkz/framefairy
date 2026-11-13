@@ -1764,15 +1764,15 @@ export const steps = {
       const dots = [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => {
         const hollow = e.querySelector("svg .hollow");
         // The ring's width and outer edge on screen, in pixels: its
-        // drawing's units times the pixels one of the 24 is. A filled
-        // circle reaches 8.5 of them out, CIRCLE in ClipTimeline.svelte.
+        // drawing's units times the pixels one of the 24 is. The dark
+        // circle under it is drawn as far out as a filled circle reaches.
         const unit = hollow ? box(hollow.ownerSVGElement).width / 24 : 0;
         const line = hollow ? Number(hollow.getAttribute("stroke-width")) * unit : 0;
         return {
           x: box(e).left + box(e).width / 2,
           glide: !!e.dataset.glide,
           hollow: !!hollow,
-          ring: hollow ? { line, outer: hollow.r.baseVal.value * unit + line / 2, solid: 8.5 * unit } : null,
+          ring: hollow ? { line, outer: hollow.r.baseVal.value * unit + line / 2, solid: hollow.previousElementSibling.r.baseVal.value * unit } : null,
         };
       });
       const rule = document.querySelector(".clip-timeline .frames .frame");
