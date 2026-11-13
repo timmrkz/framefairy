@@ -93,6 +93,13 @@ func (t *tracks) keep(episode string, v *engine.CaptionsView) {
 		t.drawings = map[string]trackOf{}
 	}
 	t.used(v.Track)
+	// A step of a drag that draws what a saved clip draws, under the same
+	// track, leaves the saved drawing kept: a drawing in the hand gets no
+	// whole caption file, see engine.Engine.previewTrackAt, and the clip
+	// played after a drag that changed nothing would never get one.
+	if was, ok := t.drawings[v.Track]; ok && was.episode == episode && !was.drawing.InHand() && v.Drawing().InHand() {
+		return
+	}
 	t.drawings[v.Track] = trackOf{episode: episode, drawing: v.Drawing()}
 	for len(t.order) > tracksKept {
 		delete(t.drawings, t.order[0])

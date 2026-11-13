@@ -602,6 +602,43 @@ func TestAStateSaysHowEachSearchEnded(t *testing.T) {
 	}
 }
 
+// A video's state says where I and O can make a clip, from what of it is
+// heard and said and how long it is, engine.MarkingOf, so the workspace
+// keeps no rule of its own for its keys. A video whose length is not
+// known says nothing, and the keys are offered. A video transcribed to
+// its end counts as heard to its end, though its transcript's last part
+// ends with the last word, a second short of it here: I is offered up to
+// the last word, not up to the half second before that last second.
+func TestAStateSaysWhereIAndOMakeAClip(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	unknown, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unknown.Marking != nil {
+		t.Errorf("a video that cannot be read says I and O make a clip only in %+v", *unknown.Marking)
+	}
+	svc.probeVideo = func(context.Context, string) (engine.SourceInfo, error) {
+		return engine.SourceInfo{Duration: 31}, nil
+	}
+	heardEpisode(t, svc, mine, 30, [][3]any{{10.1, 10.4, "eins"}, {10.5, 10.9, "zwei"}, {11.0, 11.4, "drei."}})
+	st, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Status.Transcribed || st.Status.Said == nil {
+		t.Fatalf("the video is not transcribed with words: %+v", st.Status)
+	}
+	said := *st.Status.Said
+	if said[0] < 10 || said[0] > 10.2 || said[1] < 11.3 || said[1] > 11.5 {
+		t.Fatalf("the words are said from %v", said)
+	}
+	if st.Marking == nil || st.Marking.InBefore != said[1] || st.Marking.OutFrom != said[0] {
+		t.Errorf("the state says I and O make a clip in %+v, not before %v and from %v", st.Marking, said[1], said[0])
+	}
+}
+
 // A state is sent with the clips the window was not sent as they are
 // now, and every clip by its key and its hash in order, so a video whose
 // work goes on without changing its clips sends a small state. A window

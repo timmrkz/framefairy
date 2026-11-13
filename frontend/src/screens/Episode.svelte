@@ -45,7 +45,6 @@
     Heard,
     covers,
     heardIn,
-    nothingToMark,
     type Parts,
     inEpisode,
     endInEpisode,
@@ -1640,9 +1639,10 @@
   });
   // Where I or O would make no clip, because nothing is said after the
   // playhead or before it, they are not offered, so a card that can only
-  // fail is never made, found by Tim on #456.
-  const noIn = $derived(nothingToMark(time, false, saved, status?.said, duration));
-  const noOut = $derived(nothingToMark(time, true, saved, status?.said, duration));
+  // fail is never made, found by Tim on #456. Where that is, the Go side
+  // says in the video's state, see engine.MarkingOf.
+  const noIn = $derived(!!session.marking && !(time < session.marking.inBefore));
+  const noOut = $derived(!!session.marking && !(time >= session.marking.outFrom));
   // The clip on its way that was just asked for is followed until it is
   // written: brought into view once its card has slid open, and again
   // whenever it moves in the list, and with the video paused the playhead
@@ -3510,6 +3510,7 @@
           return box && box.width > 0 ? box.left + box.width / 2 : undefined;
         }}
         captions={captions?.captions ?? []}
+        captionTrack={captions?.track}
         captionPieces={captions?.pieces}
         captionLook={shownCaptions
           ? {

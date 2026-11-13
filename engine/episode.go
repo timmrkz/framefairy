@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+	"weak"
 
 	"github.com/spf13/afero"
 
@@ -141,7 +142,7 @@ type EpisodeStatus struct {
 	// words as they are placed on the sound, not as the recogniser timed
 	// them. I after the last line and O before the first make no clip, so
 	// where the parts around the playhead are heard the app offers
-	// neither there.
+	// neither there, see MarkingOf.
 	Said *[2]float64 `json:"said,omitempty"`
 	// Measured is how many seconds of the loudness are measured, which is
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
@@ -165,6 +166,16 @@ type EpisodeStatus struct {
 	// Label is the words and the colour a person gave the video in the
 	// sidebar, nil when it has none, see Label.
 	Label *Label `json:"label,omitempty"`
+}
+
+// HeardIn is every part of a video of duration seconds that is heard, from
+// and to: Heard, or all of it once the video is transcribed, whose last
+// part ends where the words do and not always where the video does.
+func (s EpisodeStatus) HeardIn(duration float64) [][2]float64 {
+	if s.Transcribed {
+		return [][2]float64{{0, duration}}
+	}
+	return s.Heard
 }
 
 // Status is the episode's state as its files say it now. silenceDB is the
@@ -950,6 +961,11 @@ type CaptionsView struct {
 	// changed has new pieces before it has new captions, and its captions
 	// read by the new pieces jumped to another place and back.
 	Pieces []PieceView `json:"pieces"`
+	// Splice, on the captions of a step of a drag, says that Captions are
+	// only the captions laid out again near what the hand changed, and
+	// how the rest are taken from the captions of the clip as it was, see
+	// laidNear. Without it, Captions are all of them.
+	Splice *Splice `json:"splice,omitempty"`
 }
 
 // CaptionDrawing is what a clip's captions are drawn from, by libass, in
@@ -960,7 +976,27 @@ type CaptionDrawing struct {
 	Laid  []LaidCaption
 	Style map[string]any
 	Clip  Clip
+	// heard and laidIn are the transcript the words came from, see
+	// Transcript.source, and the style the captions were laid out in, so
+	// a step of a drag knows the captions it can take from this drawing,
+	// see laidNear. splice is how such a step made Laid from that
+	// drawing's, was, and named is the drawing's name once worked out,
+	// see name. heard does not keep the transcript alive: the app keeps
+	// hundreds of drawings, and while a video is being heard its
+	// transcript is read again as a new one every few seconds.
+	heard  weak.Pointer[Transcript]
+	laidIn Style
+	splice *Splice
+	was    *CaptionDrawing
+	named  string
+	// inHand is a drawing of captions the hand still shapes, a step of a
+	// drag, which the video preview only ever shows still, see
+	// previewTrackAt.
+	inHand bool
 }
+
+// InHand says whether d is the drawing of a step of a drag, see inHand.
+func (d *CaptionDrawing) InHand() bool { return d.inHand }
 
 // Drawing is what the captions of a view were made from.
 func (v *CaptionsView) Drawing() *CaptionDrawing { return v.drawing }
@@ -997,8 +1033,13 @@ type ShapedView struct {
 
 // ShapeClipView works out what a gesture makes of a clip and its captions,
 // see ShapeClip.
+//
+// was is the drawing of the clip's captions as the interface shows them,
+// before the hand took hold, or nil. The captions the gesture leaves as
+// they were are taken from it, and only those near what it changed are
+// laid out again and sent, see laidNear.
 func ShapeClipView(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause float64,
-	look *Look) (*ShapedView, error) {
+	look *Look, was *CaptionDrawing) (*ShapedView, error) {
 	// The clip's own words are made once, here: the gesture, where the
 	// captions go and the captions themselves each made them again, a copy
 	// of every word of the video each time a clip has a correction.
@@ -1009,7 +1050,9 @@ func ShapeClipView(s PlanSummary, clipID string, g Gesture, t *Transcript, keepP
 	if err != nil {
 		return nil, err
 	}
-	return &ShapedView{Shaped: shaped, Captions: captionsView(s.plan, shaped.Clip, t, look)}, nil
+	view := captionsViewFrom(was, s.plan, shaped.Clip, t, look)
+	view.drawing.inHand = true
+	return &ShapedView{Shaped: shaped, Captions: view}, nil
 }
 
 // ShapeCaptionTime works out the captions of a clip with the edge of one
@@ -1028,7 +1071,9 @@ func ShapeCaptionTime(s PlanSummary, clipID string, word float64, edge string, a
 	if err != nil {
 		return nil, err
 	}
-	return captionsView(moved.plan, moved.clip, t, look), nil
+	view := captionsView(moved.plan, moved.clip, t, look)
+	view.drawing.inHand = true
+	return view, nil
 }
 
 // planClip finds one clip of a plan, read from its file, for an edit,
@@ -1080,16 +1125,17 @@ func (l *Look) fonts() *Fonts {
 	return l.Fonts
 }
 
-// drawing is what the captions of clip of plan are drawn from in l.
-func (l *Look) drawing(plan Plan, clip Clip, t *Transcript) *CaptionDrawing {
+// drawing is what the captions of clip of plan are drawn from in l, made
+// from was where a gesture changed the clip, see clipDrawingFrom.
+func (l *Look) drawing(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript) *CaptionDrawing {
 	if l == nil || l.Style == nil {
 		var source SourceInfo
 		if l != nil {
 			source = l.Source
 		}
-		return ClipDrawing(plan.CaptionStyle(), clip, t, source, l.fonts())
+		return clipDrawingFrom(was, plan.CaptionStyle(), clip, t, source, l.fonts())
 	}
-	return ClipDrawing(l.Style, clip, t, l.Source, l.Fonts)
+	return clipDrawingFrom(was, l.Style, clip, t, l.Source, l.Fonts)
 }
 
 // captionStyle is the plan's own look for the captions of clip, which is
@@ -1107,9 +1153,24 @@ func captionStyle(plan Plan, clip Clip) map[string]any {
 // 29.97 frames a second, and lit a word a frame earlier or later than the
 // short on about a third of the clips of several pieces.
 func ClipDrawing(style map[string]any, clip Clip, t *Transcript, source SourceInfo, fonts *Fonts) *CaptionDrawing {
+	return clipDrawingFrom(nil, style, clip, t, source, fonts)
+}
+
+// clipDrawingFrom is ClipDrawing for a clip a gesture changed, which takes
+// the captions the change left as they were from was, the drawing of the
+// clip before it, see laidNear. was may be nil.
+func clipDrawingFrom(was *CaptionDrawing, style map[string]any, clip Clip, t *Transcript, source SourceInfo,
+	fonts *Fonts) *CaptionDrawing {
 	clip = source.OnFrames(clip)
 	style = clipStyle(style, clip)
-	return &CaptionDrawing{Laid: ClipCaptions(clip, t, fonts.Style(style)), Style: style, Clip: clip}
+	s := fonts.Style(style)
+	d := &CaptionDrawing{Style: style, Clip: clip, heard: weak.Make(t.source()), laidIn: s}
+	if laid, cut, ok := laidNear(was, clip, t, s); ok {
+		d.Laid, d.splice, d.was = laid, &cut, was
+		return d
+	}
+	d.Laid = ClipCaptions(clip, t, s)
+	return d
 }
 
 // ArrivingCaptionsView is the captions of a clip on its way, from the
@@ -1132,8 +1193,14 @@ func ArrivingCaptionsView(s PlanSummary, u runlog.Underway, t *Transcript,
 }
 
 func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView {
+	return captionsViewFrom(nil, plan, clip, t, look)
+}
+
+// captionsViewFrom is captionsView for a clip a gesture changed, from was,
+// the drawing of its captions before, see ShapeClipView. was may be nil.
+func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView {
 	t = t.Of(clip)
-	drawing := look.drawing(plan, clip, t)
+	drawing := look.drawing(was, plan, clip, t)
 	clip, laid := drawing.Clip, drawing.Laid
 	s := look.fonts().Style(drawing.Style)
 
@@ -1154,10 +1221,29 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 	}}
 	view.drawing = drawing
 	view.Track = view.drawing.name()
+	// Kept, so a step of a drag made from this drawing is named without
+	// going over all of its captions again, see name. Set before the
+	// drawing is handed on, so nothing reads it while it is written. The
+	// drawing it was made from is let go then: each step of a drag held
+	// the one before, and a long drag held every one of them.
+	drawing.named, drawing.was = view.Track, nil
 	if s.BorderStyle != 3 && s.BorderStyle != 4 {
 		view.Style.Box = "rgba(0, 0, 0, 0)"
 	}
-	said := Said(clip, t.Words)
+	// Only the captions laid out again, on a step of a drag, with the
+	// words said in them.
+	words := t.Words
+	if cut := drawing.splice; cut != nil {
+		view.Splice = cut
+		laid = laid[cut.Head : cut.Head+cut.fresh]
+		// A step that laid nothing out again, an edge snapped back to the
+		// word it was on, says no word.
+		words = nil
+		if len(laid) > 0 {
+			words = t.WordsBetween(EpisodeTime(clip, laid[0].Start)-1, EpisodeTime(clip, laid[len(laid)-1].End)+1)
+		}
+	}
+	said := Said(clip, words)
 	for _, c := range laid {
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {

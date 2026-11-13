@@ -99,6 +99,11 @@ type Job struct {
 	// as Underway, so a clip is never counted both as written and as on
 	// the way, or as neither.
 	Written int `json:"written,omitempty"`
+	// Landed is every clip the job has written and the key it was
+	// written as, from the same event, kept once the job is over. A card
+	// leaves Underway in the event that writes it, so this is what says
+	// what the card became while the job still runs, see landedClip.
+	Landed []runlog.Landed `json:"landed,omitempty"`
 	// Carried is, for a search that carries on one that stopped, how many
 	// clips the search it carries on had written to its plan, so a
 	// Continue with nothing left to write ends as the search that found
@@ -1162,7 +1167,7 @@ func (q *queue) runJob(job *Job) {
 		}
 		if copied.Kind == runlog.EventUnderway {
 			q.update(job, func(j *Job) {
-				j.Underway, j.Written, j.Whole = copied.Underway, copied.Found, copied.Whole
+				j.Underway, j.Written, j.Landed, j.Whole = copied.Underway, copied.Found, copied.Landed, copied.Whole
 			})
 			return
 		}

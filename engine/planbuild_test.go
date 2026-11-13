@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -328,7 +329,9 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 // it, and before the search says it found one more. The clip list adds the
 // two up to know how many rows are left, and when the count came first the
 // list read the clip while its card was still on the way, a row more than
-// the search was asked for.
+// the search was asked for. The same event says which clip each card
+// written became, so the app chooses the clip in the state that leaves
+// the card out, issue #782.
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
@@ -340,6 +343,8 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 	written, most := 0, 0
 	var problems []string
 	named := map[string]bool{}
+	cards := map[int]string{}
+	var landed []runlog.Landed
 	p.engine.Log.SetSink(func(ev runlog.Event) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -352,7 +357,17 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 			most = max(most, ev.Found+len(ev.Underway))
 			for _, u := range ev.Underway {
 				named[u.Clip] = true
+				cards[u.N] = u.Clip
 			}
+			if len(ev.Landed) != ev.Found {
+				problems = append(problems, fmt.Sprintf("%d written, and %v said as landed", ev.Found, ev.Landed))
+			}
+			for _, l := range ev.Landed {
+				if cards[l.N] != l.Clip {
+					problems = append(problems, fmt.Sprintf("card %d landed as %s, on its way it was %s", l.N, l.Clip, cards[l.N]))
+				}
+			}
+			landed = ev.Landed
 		case ev.Kind == runlog.EventProgress && ev.Found > written:
 			problems = append(problems, fmt.Sprintf("found %d while the clips on the way had counted %d",
 				ev.Found, written))
@@ -371,8 +386,12 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range clips {
-		if key := filepath.Base(plan) + "/" + c.ID; !named[key] {
+		key := filepath.Base(plan) + "/" + c.ID
+		if !named[key] {
 			t.Errorf("no card on the way said it would be %s: %v", key, named)
+		}
+		if !slices.ContainsFunc(landed, func(l runlog.Landed) bool { return l.Clip == key }) {
+			t.Errorf("%s was never said to have landed: %v", key, landed)
 		}
 	}
 	for _, problem := range problems {
