@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"framefairy/engine/fileio"
@@ -959,16 +960,27 @@ const frameHair = framewire.Hair
 // waited for. One ffprobe given all four stretches cannot say where one
 // ends and the next begins, since each is read from the key frame before
 // it, so a stretch that begins inside the one before would read as a
-// frame that came twice.
+// frame that came twice. The first stretch found uneven answers for the
+// file, so the reads still running are called off there rather than read
+// to their end, the way one after another they were never started. A
+// read called off is not kept, see unevenIn, and is asked again the next
+// time.
 func (e *Engine) uneven(ctx context.Context, path string, info SourceInfo) bool {
+	ctx, enough := context.WithCancel(ctx)
+	defer enough()
 	places := []float64{0, 0.25, 0.5, 0.75}
-	found := make([]bool, len(places))
+	var found atomic.Bool
 	var reads sync.WaitGroup
-	for i, at := range places {
-		reads.Go(func() { found[i] = e.unevenIn(ctx, path, info, at*info.Duration, 2) })
+	for _, at := range places {
+		reads.Go(func() {
+			if e.unevenIn(ctx, path, info, at*info.Duration, 2) {
+				found.Store(true)
+				enough()
+			}
+		})
 	}
 	reads.Wait()
-	return slices.Contains(found, true)
+	return found.Load()
 }
 
 // unevenIn tells whether the frames from a moment on, for span seconds,
