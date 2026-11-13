@@ -445,7 +445,7 @@ export const steps = {
     else if (!same(walk.held.at, want)) {
       walk.wrong = `the playhead stood at ${walk.held.at.toFixed(3)} with the button down on the ${arg}, not on its frame at ${want.toFixed(3)}`;
     } else if (walk.held.trackFrames < 0) walk.wrong = "a press on the track did not move the playhead";
-    else if (on < 0) walk.wrong = `the playhead came onto the ${arg} only after 150 ms`;
+    else if (on < 0) walk.wrong = `the playhead came onto the ${arg} only once the frame under the hand was shown, not in a frame painted while the button was down before it`;
     else if (on > walk.held.trackFrames) {
       walk.wrong = `the playhead came onto the ${arg} ${on} frames after the press, a press on the track takes ${walk.held.trackFrames}`;
     }
@@ -1788,21 +1788,26 @@ export const steps = {
     else if (!got.hover) walk.wrong = `the ${arg} mark does not take the hover`;
     else if (lit === away) walk.wrong = `the ${arg} mark looks the same under the hand as away from it, ${away}`;
   },
-  // ["answers late", ms]
-  //                    every answer of the engine to a gesture on the clip
-  //                    timeline, while the hand moves, comes ms late, the
-  //                    way it does on a busy machine
-  async "answers late"(walk, arg) {
+  // ["answers late"]   every answer of the engine to a gesture on the
+  //                    clip timeline, while the hand moves, comes only
+  //                    once the hand has let go, the way it does on a busy
+  //                    machine. Held to the hand and not to the clock, so
+  //                    it is late on any machine
+  async "answers late"(walk) {
     const { page } = walk;
-    await page.evaluate((ms) => {
+    await page.evaluate(() => {
       const real = window.fetch;
+      let up = Promise.resolve();
+      let letGo = () => {};
+      window.addEventListener("pointerdown", () => (up = new Promise((done) => (letGo = done))), true);
+      window.addEventListener("pointerup", () => letGo(), true);
       window.fetch = async (input, init) => {
         if (String(input).endsWith("/call") && init?.body && String(JSON.parse(init.body).name).split(".").pop() === "Shape") {
-          await new Promise((r) => setTimeout(r, ms));
+          await up;
         }
         return real(input, init);
       };
-    }, arg);
+    });
   },
   // ["playhead at", share]
   //                    a click on the clip timeline puts the playhead that

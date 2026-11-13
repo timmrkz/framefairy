@@ -65,8 +65,8 @@ type desk struct {
 	fakes func(*engine.Engine, *engine.Options)
 	fit   func(*FrameFairy)
 	told  func(Dictation)
-	// time, when set, is the clock removed work is timed by in every
-	// opening of the app, see timeKeeper in removal.go.
+	// time, when set, is the machine's clock in every opening of the
+	// app, see engine.Clock.
 	time *walkTime
 	// The report windows Bugs made and brought forward, the window the
 	// app would have made, and the pictures its open box hands over
@@ -121,6 +121,9 @@ func open(t *testing.T) *desk {
 // start runs the app over a store.
 func (d *desk) start(st *store) {
 	d.svc = &FrameFairy{store: st}
+	if d.time != nil {
+		st.machine.Clock = d.time
+	}
 	svc := d.svc
 	svc.newReport()
 	if d.bus != nil {
@@ -130,9 +133,6 @@ func (d *desk) start(st *store) {
 	} else {
 		// A path test has no window to tell.
 		svc.jobs = newQueue(st, func(JobUpdate) {}, func(string) {})
-	}
-	if d.time != nil {
-		d.svc.jobs.time = d.time
 	}
 	d.svc.listening.still = d.still
 	d.svc.listening.beats = d.beats
@@ -228,10 +228,6 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	toolsFromThePath()
-	// The face detector finds no face in a grey test video and framing
-	// falls back to what is in focus, after some 50 milliseconds a frame of
-	// looking. The engine's TestProjectSteps frames with it.
-	os.Setenv("FRAMEFAIRY_NO_FACES", "1")
 	// A test that hangs on the programs it started, the decoder or
 	// ffmpeg, leaves what each of them was doing in the log.
 	flag.Parse()

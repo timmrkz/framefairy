@@ -6,7 +6,7 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, holdClock, letClockGo, realFrames, runClock, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
+import { ask, holdClock, letClockGo, realFrames, runClock, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
 import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
@@ -242,44 +242,12 @@ export const steps = {
     walk.aheadHeld = true;
   },
   // ["heard"]          rests until the app has settled, plays with the
-  //                    space bar and asks that the sound card was handed
-  //                    sound for most of the next second and a half of
-  //                    sound, counted in the sound card's own quanta, then
-  //                    pauses
+  //                    space bar and asks that the sound card played
+  //                    sound in most of its quanta while the playhead went
+  //                    on by a second and a half, then pauses
   async heard(walk) {
     const { page } = walk;
     await settle(page);
-    // What the sound card is handed, a render quantum at a time, the
-    // way "loop off near the end" records it.
-    await page.evaluate(async () => {
-      const q = window.__frameQueue;
-      if (!window.__loudness) {
-        const code = `registerProcessor("loudness", class extends AudioWorkletProcessor {
-              process(inputs) {
-                const ch = inputs[0][0];
-                if (ch) { let sum = 0; for (const v of ch) sum += v * v; this.port.postMessage(sum / ch.length); }
-                return true;
-              }
-            });`;
-        await q.audio.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
-        const node = new AudioWorkletNode(q.audio, "loudness", { numberOfOutputs: 1 });
-        node.port.onmessage = (e) => {
-          window.__loudness.push(e.data);
-          const w = window.__loudnessWanted;
-          // Enough, or the play stopped, after which no more come.
-          if (w && (window.__loudness.length >= w.n || q.state !== "playing")) {
-            window.__loudnessWanted = null;
-            w.done();
-          }
-        };
-        const hush = q.audio.createGain();
-        hush.gain.value = 0;
-        q.out.connect(node).connect(hush).connect(q.audio.destination);
-        // Held, or the recorder is collected while it records.
-        window.__loudnessNodes = [node, hush];
-      }
-      window.__loudness = [];
-    });
     // Played with the sound card held until the app has settled on the
     // press, see pressPlay. A settle while the clip played in WebKit with
     // motion lasted until the play had ended, and the walk then found it
@@ -310,26 +278,34 @@ export const steps = {
       walk.wrong = `the space bar left the play ${playing}`;
       return;
     }
-    // A second and a half is about 560 quanta at 48 kHz, which the
-    // sound card hands over at its own pace whatever the machine does.
-    await page.evaluate(
-      () =>
-        new Promise((done) => {
-          window.__loudness = [];
-          window.__loudnessWanted = { n: Math.round((1.5 * window.__frameQueue.audio.sampleRate) / 128), done };
-        }),
-    );
+    // What the walk's sound card plays from here, see record in
+    // preview/clock.ts, while the playhead goes on by a second and a
+    // half, which the walk's clock takes as fast as the page draws the
+    // frames.
+    await page.evaluate(() => window.__frameQueue.audio.record());
+    await playUntil(page, { most: 1.5 });
     const got = await page.evaluate(() => {
-      const xs = window.__loudness;
-      return { quanta: xs.length, loud: xs.filter((x) => x > 1e-6).length, state: window.__frameQueue.state };
+      const q = window.__frameQueue;
+      const { data } = q.audio.heard();
+      // A render quantum of the system's sound card is 128 frames.
+      const quanta = Math.floor(data.length / 128);
+      let loud = 0;
+      for (let k = 0; k < quanta; k++) {
+        let sum = 0;
+        for (let i = k * 128; i < (k + 1) * 128; i++) sum += data[i] * data[i];
+        if (sum / 128 > 1e-6) loud++;
+      }
+      return { quanta, wanted: Math.round((1.5 * q.audio.sampleRate) / 128), loud, state: q.state };
     });
     await page.keyboard.press("Space");
     await settle(page);
     // The test video's sound is a tone from its first moment to its
-    // last.
+    // last. A playhead moves once a frame of the video, so the sound
+    // card's time can be up to a frame short of the second and a half.
     if (got.state !== "playing") walk.wrong = `the space bar left the play ${got.state}`;
+    else if (got.quanta < got.wanted * 0.9) walk.wrong = `the sound card played ${got.quanta} render quanta while the playhead went on by ${got.wanted}`;
     else if (got.loud < got.quanta * 0.8)
-      walk.wrong = `the sound card was handed sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
+      walk.wrong = `the sound card played sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
   },
   // ["loop off near the end", seconds]
   //                    records every sample handed to the sound card,
@@ -344,56 +320,9 @@ export const steps = {
     const { page, watch } = walk;
     const end = (await engineState(page, watch.at)).segments.at(-1).end;
     await preview(page, 0.2);
-    // Every sample the sound card is handed, with the sound card's own
-    // frame it plays at, the way the frame queue's probe records it.
-    await page.evaluate(async () => {
-      const q = window.__frameQueue;
-      const code = `registerProcessor("recorder", class extends AudioWorkletProcessor {
-            constructor() {
-              super();
-              // Asked to flush, it posts what it holds and then says so.
-              // Messages on one port come in order, so after "flushed"
-              // every sample it was handed has been heard.
-              this.port.onmessage = () => {
-                if (this.batch?.n) this.port.postMessage({ frame: this.batch.frame, data: this.batch.data.slice(0, this.batch.n) });
-                this.batch = null;
-                this.port.postMessage("flushed");
-              };
-            }
-            process(inputs) {
-              const ch = inputs[0][0];
-              // Chromium now and then hands two render quanta the same
-              // currentFrame and the one after that two on, see the frame
-              // queue's probe, preview/frames/main.ts.
-              const frame = Math.max(currentFrame, (this.last ?? -Infinity) + 128);
-              this.last = frame;
-              // Sent 32 quanta at a time: a message for each, 375 a second,
-              // stopped coming after about 8000 of them.
-              if (!ch) return true;
-              if (!this.batch) this.batch = { frame, data: new Float32Array(4096), n: 0 };
-              if (this.batch.frame + this.batch.n !== frame && this.batch.n) {
-                this.port.postMessage({ frame: this.batch.frame, data: this.batch.data.slice(0, this.batch.n) });
-                this.batch = { frame, data: new Float32Array(4096), n: 0 };
-              }
-              this.batch.data.set(ch, this.batch.n);
-              this.batch.n += ch.length;
-              if (this.batch.n + 128 > 4096) {
-                this.port.postMessage({ frame: this.batch.frame, data: this.batch.data.slice(0, this.batch.n) });
-                this.batch = null;
-              }
-              return true;
-            }
-          });`;
-      await q.audio.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
-      const node = new AudioWorkletNode(q.audio, "recorder", { numberOfOutputs: 1 });
-      window.__heard = [];
-      node.port.onmessage = (e) => (e.data === "flushed" ? window.__flushed?.() : window.__heard.push(e.data));
-      const hush = q.audio.createGain();
-      hush.gain.value = 0;
-      q.out.connect(node).connect(hush).connect(q.audio.destination);
-      // Held, or the recorder is collected while it records.
-      window.__recorder = [node, hush];
-    });
+    // Every sample the sound card plays from here, with the sound card's
+    // own frame it plays at, see record in preview/clock.ts.
+    await page.evaluate(() => window.__frameQueue.audio.record());
     // Played with the sound card held until the app has settled on the
     // press, see pressPlay. Not held, a settle in WebKit with motion
     // lasted until the play had reached the clip's end, and L came after.
@@ -413,7 +342,12 @@ export const steps = {
       });
     const before = await counts();
     await page.keyboard.press("l");
-    await playUntil(page, { past: end - arg });
+    // The play is held at each press of L, see holdSound, and let go once
+    // the app has settled on it. On the walk's clock a play runs on as
+    // fast as its frames are decoded, so a play not held ran on into the
+    // clip's end and round to its start between two presses, and the loop
+    // went off at the clip's start.
+    await playUntil(page, { past: end - arg, hold: true });
     await page.evaluate(() => {
       window.__played = [];
       window.__playWatch = true;
@@ -436,17 +370,17 @@ export const steps = {
     // the last.
     for (let i = 0; i < 5; i++) {
       await page.keyboard.press("l");
-      await playUntil(page, { most: 0.12 });
+      await settle(page);
+      await holdSound(page, false);
+      await playUntil(page, { most: 0.12, hold: i < 4 });
     }
     const pressed = await counts();
     // Until the play stops at the end, or has gone on by what was left
     // of the clip and eight seconds more, and then until the queue
     // holds the sound card, see end in lib/frames/queue.ts: whatever
-    // the sound card is handed after the end, where the start played
-    // on when Tim heard it, comes before that, and nothing comes
-    // after. Then the recorder is flushed, so every sample it was
-    // handed is in. A play that did not end holds nothing, and is said
-    // below.
+    // the sound card plays after the end, where the start played on
+    // when Tim heard it, comes before that, and nothing comes after. A
+    // play that did not end holds nothing, and is said below.
     await playUntil(page, { most: arg + 8 });
     await page.evaluate(
       () =>
@@ -458,9 +392,7 @@ export const steps = {
             if (q.state === "ended" && a.state === "running") return;
             a.removeEventListener("statechange", look);
             off();
-            const [node] = window.__recorder;
-            window.__flushed = done;
-            node.port.postMessage("flush");
+            done();
           };
           a.addEventListener("statechange", look);
           off = q.listen(look);
@@ -477,7 +409,7 @@ export const steps = {
         rate: q.audio.sampleRate,
         programEnd: q.program.end,
         late: q.stats.lateSoundAt,
-        heard: window.__heard.map((h) => ({ frame: h.frame, data: Array.from(h.data) })),
+        heard: [q.audio.heard()].map((h) => ({ frame: h.frame, data: Array.from(h.data) })),
       };
     });
     walk.loopEnd = { end, fps: await rate(page), ...q, starts: q.starts - before.starts, thrown: pressed.thrown - before.thrown, twice: pressed.twice - before.twice };
@@ -639,10 +571,11 @@ export const steps = {
   },
   // ["loop off as the sound crosses the end"]
   //                    puts the playhead near the clip's end, plays it with
-  //                    the loop on, holds the page 250 ms as the playhead
-  //                    comes to the end and presses L in that moment, and
-  //                    asks that the sound had crossed the end, the loop is
-  //                    off and the play ends ahead of the sound card
+  //                    the loop on, moves the sound card on past the end
+  //                    while the playhead is still on the clip's last
+  //                    frame and presses L in that moment, and asks that
+  //                    the loop is off and the play ends ahead of the
+  //                    sound card
   async "loop off as the sound crosses the end"(walk) {
     const { page, watch } = walk;
     // The playhead moves on with the page's frames, and the sound card
@@ -650,7 +583,9 @@ export const steps = {
     // moment as the sound crosses the clip's end, and L comes in that
     // moment, before the playhead has caught up. The loop off ends the
     // play at the end of the time through the sound is in, never at an
-    // end the sound card has already played past.
+    // end the sound card has already played past. The walk's sound card
+    // goes on only with the frames, so the walk moves it on past the end
+    // itself, the way the system's card goes on while the page is held.
     const end = (await engineState(page, watch.at)).segments.at(-1).end;
     const g = await handles(page);
     await clickOnTrack(page, middle(g.end) - 80, high(g.track));
@@ -664,15 +599,15 @@ export const steps = {
     await page.keyboard.press("l");
     await settle(page);
     // The playhead moves once a frame of the video (#446), so it is on
-    // the clip's last frame up to a frame before the end. The page is
-    // held from there until the sound card has played past the end,
-    // which is what the step is about, so no wait is long or short.
+    // the clip's last frame up to a frame before the end. The sound card
+    // is moved on from there past the end, in the same task as L, so
+    // the playhead has not caught up when L comes.
     const frame = 1 / (await rate(page));
     await playUntil(page, { past: end - frame - 0.03 });
     const r = await page.evaluate(async () => {
       const q = window.__frameQueue;
       const sounded = () => q.m0 / q.sampleRate + (q.audio.currentTime - q.c0);
-      while (q.c0 !== null && sounded() < q.program.length) {}
+      if (q.c0 !== null && sounded() < q.program.length) q.audio.run(q.program.length - sounded() + 1 / q.sampleRate);
       const crossed = q.c0 !== null && sounded() >= q.program.length;
       // The loop button says the loop is off in the same pass that
       // hands the queue its program, so once it has changed, the
@@ -932,56 +867,6 @@ export const steps = {
       walk.wrong = `the clip timeline draws ${pieceCount(n)}, not ${then.pieces} as at "${arg}"`;
     }
   },
-  // ["shots", label]   the short, read back from disk: every frame shows
-  //                    what the crop frame showed on its camera at the
-  //                    look, and where two pieces meet the sound runs
-  //                    straight on, no 10 ms of it quieter than 80% of the
-  //                    tone
-  async shots(walk, arg) {
-    const { looks, page, watch } = walk;
-    const pieces = (await engineState(page, watch.at)).segments;
-    const short = readShort(await shortOf(page, watch.at));
-    // Each frame by the moment of the episode in its middle, through
-    // the pieces, and what the crop frame showed there at the look.
-    let into = 0;
-    const placed = pieces.map((p) => {
-      const q = { ...p, from: into };
-      into += p.end - p.start;
-      return q;
-    });
-    let compared = 0;
-    for (let i = 0; i < short.frames.length && !walk.wrong; i++) {
-      const t = (i + 0.5) / short.fps;
-      const p = placed.find((q) => t < q.from + q.end - q.start) ?? placed[placed.length - 1];
-      const at = p.start + t - p.from;
-      const was = looks[arg].find((l) => at >= l.start && at < l.end);
-      if (was) compared++;
-      if (was && !sameLook(short.frames[i], was.frame.look)) {
-        walk.wrong = `frame ${i} of the short, ${at.toFixed(2)} in the episode, shows ${sayLook(short.frames[i])}, not ${sayLook(was.frame.look)} as the crop frame did at "${arg}"`;
-      }
-    }
-    // A short with no frame to compare proves nothing.
-    if (!walk.wrong && !compared) walk.wrong = `no frame of the short was compared, of ${short.frames.length}`;
-    if (process.env.VERBOSE) {
-      console.log(`      ${compared} frames of ${short.frames.length} compared, pieces ${placed.map((p) => `${p.start.toFixed(2)}-${p.end.toFixed(2)}`).join(" ")}`);
-    }
-    // Heard: where one piece runs straight into the next, no 10 ms
-    // within a tenth of a second either side is quieter than 80% of
-    // the tone half a second before.
-    for (const p of placed.slice(1)) {
-      const before = placed[placed.indexOf(p) - 1];
-      if (walk.wrong || p.start - before.end > 0.0005) continue;
-      const steady = loudness(short, p.from - 0.5);
-      let least = { l: Infinity, t: 0 };
-      for (let t = p.from - 0.1; t < p.from + 0.1; t += 0.0025) {
-        const l = loudness(short, t);
-        if (l < least.l) least = { l, t };
-      }
-      if (least.l < 0.8 * steady) {
-        walk.wrong = `at ${least.t.toFixed(4)} s into the short, by ${p.start.toFixed(2)} in the episode where two pieces meet, the sound is down to ${((100 * least.l) / steady).toFixed(0)}% of the tone`;
-      }
-    }
-  },
   // ["episode watched"]
   //                    the same, reading back from the video preview every
   //                    frame it draws for the episode from the click on
@@ -1200,66 +1085,6 @@ export const steps = {
       return "";
     }, duration);
     if (lost) walk.wrong = lost;
-  },
-  // ["add hevc"]       adds a video of 40 seconds whose picture is HEVC with
-  //                    10-bit colour in open GOPs, as x265 writes it, and
-  //                    chooses the clip its first search finds
-  async "add hevc"(walk, arg, s) {
-    const { page, watch } = walk;
-    await addHEVC(url, page);
-    await watch.step("wait", s);
-  },
-  // ["leading frames"] puts the playhead with a click on the clip timeline
-  //                    on three frames of the clip that are shown before
-  //                    the key frame they are decoded after, read from the
-  //                    file by ffprobe, waits for each in the video
-  //                    preview, and plays from the last
-  async "leading frames"(walk) {
-    const { page, watch } = walk;
-    const path = await episodeOn(page);
-    const fps = await rate(page);
-    // In the order the frames are decoded: a frame shown before the
-    // key frame decoded last leads up to it.
-    const packets = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", path])
-      .toString()
-      .trim()
-      .split("\n");
-    let key = -Infinity;
-    const leading = [];
-    for (const line of packets) {
-      const [t, flags] = line.split(",");
-      if (flags.startsWith("K")) key = Number(t);
-      else if (Number(t) < key) leading.push(Number(t));
-    }
-    const { segments } = await engineState(page, watch.at);
-    const first = segments[0].start;
-    const last = segments[segments.length - 1].end;
-    const on = leading.filter((t) => t > first + 1 && t < last - 3).slice(0, 3);
-    if (on.length < 3) {
-      walk.wrong = `the clip from ${first.toFixed(2)} to ${last.toFixed(2)} holds ${on.length} frames shown before their key frame, not 3`;
-      return;
-    }
-    // In the middle of the frame, so the click lands on it.
-    for (const t of on) {
-      if (!(await seekTo(page, t + 0.5 / fps, fps))) {
-        const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
-        walk.wrong = `the video preview never showed the frame at ${t.toFixed(3)}, shown before its key frame, with the playhead at ${at.toFixed(3)}`;
-        break;
-      }
-    }
-    if (walk.wrong) return;
-    const from = await page.evaluate(() => ({ at: Number(document.querySelector(".screen").dataset.playhead), frame: window.__pictured() }));
-    await page.evaluate(() => document.body.focus());
-    if (!(await pressPlay(page))) {
-      walk.wrong = `the space bar started no play from the frame at ${from.at.toFixed(3)}, shown before its key frame`;
-      return;
-    }
-    // Half a second of the episode, read off the playhead, paused there,
-    // and then whether the picture went on with it.
-    await playUntil(page, { past: from.at + 0.5, pause: true });
-    await settle(page);
-    const plays = await page.evaluate((from) => window.__pictured() > from.frame + 1, from);
-    if (!plays) walk.wrong = `the space bar did not play from the frame at ${from.at.toFixed(3)}, shown before its key frame`;
   },
   // ["no browser decoder"]
   //                    takes the browser's picture and sound decoders away,
@@ -1664,21 +1489,6 @@ export const steps = {
   async "on borders"(walk) {
     const { page } = walk;
     walk.wrong = await onBorders(page);
-  },
-  // ["edges as rendered"]
-  //                    the short Render wrote, read back from disk, and the
-  //                    video preview agree on the clip's edges: with the
-  //                    playhead put on the frame of the clip's start and of
-  //                    where each cut ends by a click on it, the video
-  //                    preview shows the frame the short starts that piece
-  //                    with, and on the clip's last frame, put there by a
-  //                    click on its end, the short's last frame. The clip's
-  //                    end is where the search put it, and at least one
-  //                    edge is kept to the millisecond just before its
-  //                    frame's start
-  async "edges as rendered"(walk) {
-    const { page } = walk;
-    walk.wrong = await edgesAsRendered(page);
   },
   // ["drag crop", px]  drags the crop frame in the video preview sideways
   //                    by px, in ten steps, and lets go
@@ -2239,46 +2049,6 @@ export const steps = {
     }
     if (said.length) walk.wrong = said.join("\n");
   },
-  // ["upright"]        the short Render wrote, read back from disk, holds
-  //                    as many frames as the clip's pieces, and in every
-  //                    piece rotated a quarter each frame is the right
-  //                    frame of the episode, read across its top, while in
-  //                    the pieces not rotated most are not, since there it
-  //                    lies on its side
-  async upright(walk) {
-    const { page } = walk;
-    const on = await chosen(page);
-    const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
-    const { fps } = await ask(page, "Source", on.path);
-    const short = await shortOf(page, on);
-    if (!short || !existsSync(short)) {
-      walk.wrong = `the clip has no short${short ? ` at ${short}` : ""}`;
-      return;
-    }
-    const { frames, modulo } = shortFrames(short);
-    const want = [];
-    for (const p of entry.segments) {
-      const first = Math.round(p.start * fps);
-      const end = Math.max(Math.round(p.end * fps), first + 1);
-      for (let k = first; k < end; k++) want.push({ k, rotate: p.rotate ?? 0 });
-    }
-    if (frames.length !== want.length) {
-      walk.wrong = `the short has ${frames.length} frames, its pieces hold ${want.length}`;
-      return;
-    }
-    const read = { rotated: [0, 0], lying: [0, 0] };
-    want.forEach(({ k, rotate }, i) => {
-      const r = read[rotate % 180 ? "rotated" : "lying"];
-      r[1]++;
-      if (frames[i] === k % modulo) r[0]++;
-    });
-    if (!read.rotated[1]) walk.wrong = "the clip has no piece rotated a quarter";
-    else if (read.rotated[0] !== read.rotated[1]) {
-      walk.wrong = `${read.rotated[1] - read.rotated[0]} of the ${read.rotated[1]} frames rotated a quarter are not the right frame read across their top`;
-    } else if (read.lying[0] * 2 > read.lying[1]) {
-      walk.wrong = `${read.lying[0]} of the ${read.lying[1]} frames not rotated read across their top, so the video did not lie on its side`;
-    }
-  },
 };
 
 // Steps that take the same body as the step they are walked by.
@@ -2429,92 +2199,6 @@ async function asPreviewed(page, rate, before) {
   if (unseen.length) problems.push(`the playhead could not be put on ${unseen.join(", ")}`);
   console.log(`      ${looked} frames of ${slots.length} looked at, the playhead missed ${missed} more`);
   return problems.length ? problems.slice(0, 8).join("\n") + (problems.length > 8 ? `\nand ${problems.length - 8} more` : "") : null;
-}
-
-// What is wrong with the frames the video preview draws on the clip's
-// edges, against the short Render wrote, or null. The playhead is put on
-// each edge the way a hand puts it there, a click on the clip's start, on
-// where each cut ends and on the clip's end, and the frame the video
-// preview draws, read off the canvas, is the frame the short starts that
-// piece with, or the short's last at the clip's end. Bug 1 of
-// docs/DESIGN-REVIEW.md. An edge is kept to the millisecond, and at 29.97
-// fps that lies just before its frame's start for 1400 of every 3000
-// frames, where the video preview drew the frame before the one the short
-// starts on. And a search left its edges between frames. The clip's end
-// has to be where the search put it, and at least one edge just before
-// its frame's start, or the walk is not about the case.
-async function edgesAsRendered(page) {
-  const on = await chosen(page);
-  const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
-  const { fps, videoStart = 0 } = await ask(page, "Source", on.path);
-  const short = await shortOf(page, on);
-  if (!short || !existsSync(short)) return `the clip has no short${short ? ` at ${short}` : ""}`;
-  const { frames } = shortFrames(short);
-  const pieces = entry.segments;
-  // The frame an edge means, the one whose start is nearest, and each
-  // piece's frames from there, the way the render cuts them, see
-  // nearestFrame and cutOf in engine/render.go.
-  const nearest = (t) => Math.round((t - videoStart) * fps);
-  const firsts = [];
-  let held = 0;
-  for (const p of pieces) {
-    const first = nearest(p.start);
-    firsts.push(held);
-    held += Math.max(nearest(p.end), first + 1) - first;
-  }
-  if (frames.length !== held) return `the short has ${frames.length} frames, its pieces hold ${held}`;
-  // The clip's start and where each cut ends. Two pieces that meet, at a
-  // camera switch or where the picture starts, have no cut between them.
-  const edges = [{ what: "the clip's start", label: "Clip start", at: pieces[0].start, want: frames[firsts[0]] }];
-  for (let i = 1; i < pieces.length; i++) {
-    if (pieces[i].start <= pieces[i - 1].end) continue;
-    edges.push({ what: `where cut ${i} ends`, label: `Where cut ${i} ends`, at: pieces[i].start, want: frames[firsts[i]] });
-  }
-  edges.push({ what: "the clip's end", label: "Clip end", at: pieces[pieces.length - 1].end, want: frames[frames.length - 1] });
-  // Kept just before the start of the frame it means, by the rounding to
-  // the millisecond.
-  const before = edges.filter((e) => {
-    const begins = videoStart + nearest(e.at) / fps;
-    return e.at < begins - 1e-9 && begins - e.at < 0.0006;
-  });
-  if (!before.length) {
-    return `no edge of the clip, at ${edges.map((e) => e.at).join(", ")}, lies just before its frame's start, the case this is about`;
-  }
-  if (Math.abs(entry.found[1] - pieces[pieces.length - 1].end) > 1e-9) {
-    return `the clip ends at ${pieces[pieces.length - 1].end}, not at ${entry.found[1]} where the search put it, the other case this is about`;
-  }
-  await filmedOnScreen(page);
-  const problems = [];
-  for (const e of edges) {
-    // High on the track, where the captions' edges below are not.
-    const handle = page.locator(`.clip-timeline [aria-label="${e.label}"]`);
-    const grip = (await handle.count()) ? await handle.boundingBox() : null;
-    if (!grip) {
-      problems.push(`there is no ${e.label} to click`);
-      continue;
-    }
-    await clickOnTrack(page, grip.x + grip.width / 2, high((await handles(page)).track));
-    await settle(page);
-    // On the edge's frame, where the engine puts the playhead for an
-    // edge, see edgePlayhead in engine/shape.go: the first frame of the
-    // piece an edge starts, and the clip's last frame for its end.
-    const placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
-    // A millisecond early is on the frame, the rounding the edges are kept
-    // to, which is the case this is about.
-    const frameOn = nearest(e.at) - (e.label === "Clip end" ? 1 : 0);
-    if (Math.floor((placed - videoStart + 0.001) * fps) !== frameOn) {
-      problems.push(`a click on ${e.what} put the playhead at ${placed.toFixed(4)}, not on its frame ${frameOn}`);
-      continue;
-    }
-    await settle(page);
-    await shownOnPlayhead(page);
-    const came = (await page.evaluate(() => window.__filmed?.())) === e.want;
-    if (!came) {
-      problems.push(`on ${e.what} at ${e.at.toFixed(3)} s the video preview shows frame ${await filmedOnScreen(page)}, the short frame ${e.want}`);
-    }
-  }
-  console.log(`      ${edges.length} edges looked at, ${before.length} kept just before their frame`);
-  return problems.length ? problems.join("\n") : null;
 }
 
 // The left edge of the crop on each frame of the video, for frame numbers

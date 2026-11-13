@@ -85,7 +85,7 @@ export type Shown = {
 // Where a play is on the program, see tick: from where the sound card says
 // it is, heard, and where the first frame of the play not on screen yet
 // starts, unshown, and whether that frame is ready, decoded and waiting
-// with what lies over it here, see unshown. Ready is asked only by a clock
+// with what lies over it here and its sound handed over, see unshown. Ready is asked only by a clock
 // that wants it, so the app's, which goes by the sound card alone, costs
 // nothing for it.
 export type PlayClock = (heard: number, unshown: number, ready: () => boolean) => number;
@@ -858,7 +858,7 @@ export class FrameQueue {
   // time it comes true the listeners are told, or the canvas has changed
   // its size, or the queue has closed, which tells no one: the video
   // preview it belonged to has gone or has a queue of its own by then. For the walks and the
-  // benchmark, which read the picture once it stands, see stillBlurred in
+  // benchmark, which read the picture once it stands, see stillFrame in
   // walks/rules.mjs. It needs the app's own timers to run, the one after
   // a frame is put up that asks for it again among them, see put.
   get standing(): boolean {
@@ -2096,7 +2096,9 @@ export class FrameQueue {
   // the first after the frame on screen. Ready is decoded and waiting with
   // what lies over it here, so a clock that goes on to it at once shows it
   // with its captions, the way the app does, which has the frame's time to
-  // fetch them. A layer still on its way is asked for first. A run's
+  // fetch them, and with the sound up to its moment on the sound card, so
+  // a clock that goes on as fast as the frames are decoded never plays
+  // past the sound, which the app's sound card plays as it comes. A layer still on its way is asked for first. A run's
   // frames only go on, so in a play a frame of the run before the one on
   // screen is up too. A pause puts up the frame that holds the playhead,
   // see hold, which can be the one after the frame due, and the frame due
@@ -2117,7 +2119,8 @@ export class FrameQueue {
     const decoded = !!slot && slot.ready.some((h) => h.rank === need.rank);
     const at = plan.at(k);
     const onItsWay = decoded || (slot?.decoder.decodeQueueSize ?? 0) > 0;
-    const ready = () => decoded && !(this.video && this.over?.ready?.(this.shownAt(need!.rank)));
+    const sounded = () => this.soundDone || !this.aplan || (this.c0 !== null && this.m0 / this.sampleRate + (this.handedTo - this.c0) >= at);
+    const ready = () => decoded && !(this.video && this.over?.ready?.(this.shownAt(need!.rank))) && sounded();
     return { at: Number.isNaN(at) || !onItsWay ? Infinity : at, ready };
   }
 

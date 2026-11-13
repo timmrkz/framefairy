@@ -20,6 +20,7 @@
     finderStanding,
     holdsTheApp,
     modelMark,
+    speechOptions,
     type Standing,
     type Tone,
     providerOf,
@@ -55,6 +56,7 @@
   import ModelCard from "../components/ModelCard.svelte";
   import { Install } from "../lib/install.svelte";
   import Swatches from "../components/Swatches.svelte";
+  import { afterRest } from "../lib/rest";
 
   let settings = $state<Settings | null>(null);
   let checks = $state<Check[] | null>(null);
@@ -122,7 +124,7 @@
     const now = JSON.stringify($state.snapshot(settings));
     if (now === lastSaved) return;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => save(now), SAVE_AFTER);
+    saveTimer = afterRest(() => save(now), SAVE_AFTER);
   });
 
   // Only what changed goes to the Go side, key by key. The whole object
@@ -464,12 +466,10 @@
   let choosing = $state("");
   const inUse = $derived(language.find((m) => (choosing ? m.name === choosing : m.inUse)));
   const notHere = $derived(!!inUse && !inUse.installed);
-  // What a search, a clip made by hand or the whole video being
-  // transcribed is using, see refuseFinding and speechLocked.
-  const searching = $derived(jobs.list.some((j) => j.kind === "search" && live(j)));
-  const hearing = $derived(
-    searching || jobs.list.some((j) => (j.kind === "clip" || j.kind === "transcribe") && live(j)),
-  );
+  // What a job that waits or runs holds, as the Go side says, see holdsOf
+  // in setup.go, refuseFinding and speechLocked.
+  const searching = $derived(jobs.list.some((j) => live(j) && !!j.holds?.includes("language")));
+  const hearing = $derived(jobs.list.some((j) => live(j) && !!j.holds?.includes("speech")));
   // The clip model's download, and the speech model's below: one Install
   // each, see install.svelte.ts. When one ends the models are read again:
   // the model it fetched is already the one chosen, so being there is all
@@ -520,19 +520,8 @@
   // today, so the list holds one, and Tim asked for the two to look and
   // work alike all the same, 2026-10-27.
   const speechInUse = $derived(speech.find((m) => m.installed) ?? speech[0]);
-  // The biggest first, by the size beside it, as the clip model's list.
-  const speechOptions = $derived(
-    speech
-      .map((m) => ({ m, bytes: m.installed ? m.unpacked : m.download }))
-      .sort((a, b) => b.bytes - a.bytes)
-      .map(({ m, bytes }) => ({
-        value: m.name,
-        label: m.title,
-        detail: size(bytes),
-        group: "On this machine",
-        mark: modelMark(m.installed),
-      })),
-  );
+  // The biggest first, by the size beside it, see speechOptions.
+  const speechList = $derived(speechOptions(speech));
   const speechInstall = new Install("model", () => modelsChanged());
   function downloadSpeech() {
     const m = speechInUse;
@@ -810,7 +799,7 @@
           oncancel={() => speechInstall.cancel((why) => (problem = why))}
           pick={{
             value: speechInUse?.name ?? "",
-            options: speechOptions,
+            options: speechList,
             onpick: pickSpeech,
             label: "Transcribe with",
             title: "What hears the video and writes down every word",
@@ -1309,11 +1298,7 @@
     margin: 1px 1px 0;
     padding: 0 9px;
     vertical-align: top;
-    /* The edge is drawn inside, the way the clip cards draw theirs, so
-       the beam runs on the edge itself. A border lies outside what the
-       block clips its beam to, and the beam ran a pixel inside it. */
-    border: none;
-    box-shadow: inset 0 0 0 1px var(--line);
+    border: var(--line-w) solid var(--line);
     border-radius: 6px;
     /* Darker than the card it sits in, the way a key in a README sits in
        a block of code. */
@@ -1321,12 +1306,13 @@
     color: var(--muted);
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: var(--size-m);
-    line-height: 26px;
+    /* The 26 px less the line above and below. */
+    line-height: 24px;
   }
 
   button.key-id {
     cursor: pointer;
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--line));
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   }
 
   button.key-id:hover {

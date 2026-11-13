@@ -15,7 +15,8 @@
 // gesture knows what it is about, so it says, and nothing after it can
 // change that. See Playback in .claude/skills/interface/SKILL.md.
 
-import { frameAt, type Piece } from "./flow";
+import { intoWord, wordStep, type Word } from "./api";
+import { frameAt, insideClip, type Piece } from "./flow";
 
 // On the clip, on the clip at its end, or on the video. The end is a place
 // of its own because the space bar starts the clip over from there, and
@@ -158,4 +159,59 @@ export function playheadClock(at: number, frame: number, start: number, long: bo
   const two = (n: number) => String(n).padStart(2, "0");
   const rest = `${two(s)}.${String(ms % 1000).padStart(3, "0")}`;
   return long ? `${h}:${two(m)}:${rest}` : `${two(m + h * 60)}:${rest}`;
+}
+
+// How far Shift and an arrow skip outside a clip, in seconds, the jump
+// Tim chose for #377. YouTube's arrows jump 5 seconds too.
+export const SKIP = 5;
+
+// Where an arrow key puts the playhead on the clip timeline, the way every
+// video tool steps: a frame at a time, and with Shift by words on a clip,
+// which is the thing the picture shows, and SKIP seconds anywhere else,
+// transcribed or not. "clip" is out of the clip's words without loop,
+// where the clip beside it takes over, and null is nowhere to go. The
+// component puts the place in the episode.
+export type ArrowKey = {
+  time: number;
+  frame: number;
+  back: boolean;
+  shift: boolean;
+  // Playing through the clip from the video, where Shift skips.
+  through: boolean;
+  // The whole clip, from its first piece's start to its last piece's end,
+  // and its pieces, cuts left out.
+  clip: Piece | null;
+  pieces: Piece[];
+  // The words the caption lights, and every word heard.
+  lit: Word[];
+  words: Word[];
+  looping: boolean;
+};
+
+export function arrowStep(k: ArrowKey): { to: number; word: boolean } | "clip" | null {
+  const sign = k.back ? -1 : 1;
+  // A step is never shorter than a frame at 240 a second, so a video that
+  // says no rate still moves.
+  const step = Math.max(k.frame, 1 / 240);
+  if (!k.shift) return { to: k.time + sign * step, word: false };
+  // Inside the clip by a whole frame either side, because the playhead is
+  // not where it was put: picking a clip sends it to the clip's first
+  // second and the picture answers with the frame it is showing, which
+  // begins a little before that. Read exactly, the first press after
+  // picking a clip walked the transcript and jumped out of the clip.
+  if (k.through || !insideClip(k.clip ? [k.clip] : [], k.time, step)) return { to: k.time + sign * SKIP, word: false };
+  // In a cut the caption lights nothing, so the words heard there are
+  // walked, and the caption's words arrive a moment after the clip is
+  // chosen, until when the words heard are the ones it will light.
+  const walk = k.lit.length && insideClip(k.pieces, k.time, step) ? k.lit : k.words;
+  const to = wordStep(walk, k.time, k.back, step);
+  if (to !== null) return { to, word: true };
+  // Out of words. With loop on, the clip comes round the way a play of it
+  // does: past its last word is its first word, and before its first its
+  // last. Without, at its ends is the clip beside it, because the words
+  // go on even where this clip does not.
+  if (walk === k.lit && k.looping) return { to: intoWord(k.back ? k.lit[k.lit.length - 1] : k.lit[0], step), word: true };
+  if (walk === k.lit) return "clip";
+  if (!walk.length) return { to: k.time + sign, word: false };
+  return null;
 }

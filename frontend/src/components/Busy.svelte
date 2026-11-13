@@ -36,8 +36,11 @@
   //              light passing over what is done
   //
   // The control it sits in needs nothing of its own: app.css gives any
-  // button holding a beam its rounded clip and a stacking context, so the
-  // beam lies over the control's background and under its words.
+  // control holding a beam a stacking context, so the beam lies over the
+  // control's background and its line and under its words, and says in
+  // --beam-edge how far outside the control the line round it lies. The
+  // beam runs on that line, not a pixel inside it, and the fill and the
+  // motes stay inside it, with corners that are the inside of its corners.
   //
   // It is the one way work in hand is drawn, so it is used, never copied.
   // Where there is no edge to run round, the range picker, rim is off and
@@ -287,12 +290,14 @@
   {/if}
   {#if rim && !still && drain <= 0}<span class="ring" class:seldom class:once></span>{/if}
   {#if motes && !still && drain <= 0}
-    {#each specks as m (m.at)}
-      <i
-        class="mote"
-        style="left: {m.at}%; animation-delay: {m.wait}ms; animation-duration: {m.over}s; --sway: {m.sway}px"
-      ></i>
-    {/each}
+    <span class="motes">
+      {#each specks as m (m.at)}
+        <i
+          class="mote"
+          style="left: {m.at}%; animation-delay: {m.wait}ms; animation-duration: {m.over}s; --sway: {m.sway}px"
+        ></i>
+      {/each}
+    </span>
   {/if}
   {#if fraction >= 0}
     <!-- The fill is as wide as the control and slides in from the left,
@@ -308,12 +313,22 @@
 </span>
 
 <style>
-  /* Behind the words of the control and over its background. The control
-     makes the stacking context this is negative in, so nothing else on the
-     page is disturbed by it. */
+  /* Behind the words of the control and over its background and its
+     line. The control makes the stacking context this is negative in, so
+     nothing else on the page is disturbed by it, and the browser paints
+     a context's own border before anything inside it, so the beam lies on
+     the line.
+
+     It covers the control and the line round it, which lies --beam-edge
+     outside what the control holds: the control's border, or the lines
+     round a row of a card. Its corners are the control's own, which are
+     the corners of the outside of that line, so the light follows the
+     line round the corners too. A box inside a control is only ever as
+     big as the inside of its border, and a beam that size ran a pixel
+     inside the line, which Tim saw. */
   .beam {
     position: absolute;
-    inset: 0;
+    inset: calc(-1 * var(--beam-edge, 0px));
     z-index: -1;
     border-radius: inherit;
     overflow: hidden;
@@ -332,9 +347,9 @@
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    /* How thick the light is. The mask below keeps this rim and throws
-       the middle away. */
-    padding: 1px;
+    /* How thick the light is: as thick as the line it runs on. The mask
+       below keeps this rim and throws the middle away. */
+    padding: max(1px, var(--beam-edge, 0px));
     -webkit-mask:
       linear-gradient(#000 0 0) content-box,
       linear-gradient(#000 0 0);
@@ -485,6 +500,20 @@
     }
   }
 
+  /* Inside the line, cut to the inside of its corners: a border as wide
+     as the line, which nothing is drawn in, makes the inside of the box
+     exactly what the line leaves, and the browser rounds the inside of a
+     border by the corner less the line, so no corner of the fill or a
+     mote is a hair rounder than the line round it. The same for the fill
+     below. */
+  .motes {
+    position: absolute;
+    inset: 0;
+    border: var(--beam-edge, 0px) solid transparent;
+    border-radius: inherit;
+    overflow: hidden;
+  }
+
   /* The motes the beam sheds. A speck of light with no edge to it, so a
      fraction of a pixel has nothing to step, and it is gone before it
      reaches the top. */
@@ -522,6 +551,7 @@
   .fill {
     position: absolute;
     inset: 0;
+    border: var(--beam-edge, 0px) solid transparent;
     border-radius: inherit;
     overflow: hidden;
   }

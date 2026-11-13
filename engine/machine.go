@@ -39,6 +39,12 @@ type Machine struct {
 	// see ProgramSaid. It is set once, before any program starts, and
 	// nil hears nothing.
 	Said ProgramSaid
+	// Clock is the time kept for work that waits on its own, how often
+	// a search says how far it has come, how long removed work can be
+	// put back and the wait before a company is asked again, see Clock.
+	// NewMachine hands it the system's, the one default there is, and the
+	// walks' bridge the clock a walk runs on.
+	Clock Clock
 	// Fonts are the faces captions can be written in, the bundled ones
 	// and, once the program calls UseMachine, the machine's own, read
 	// from its font folders and kept with what was measured of each.
@@ -54,8 +60,11 @@ type Machine struct {
 	episodes map[string]*Episode
 	uses     uint64
 
-	facesOnce sync.Once
-	faces     *faceDetector
+	// faces finds the faces a clip is framed on, the detector the
+	// program carries, handed in by UseSystem. Nil in a machine
+	// NewMachine makes, which frames by what is in focus: a test's
+	// picture has no face, and looking for one costs some 50 ms a frame.
+	faces *faceFinder
 
 	// probes is what ffmpeg and ffprobe said, kept while they and the
 	// file asked about stay as they are, see probed.go.
@@ -116,14 +125,24 @@ type Machine struct {
 }
 
 // UseSystem hands the machine the system's keychain, its network, its
-// media engine and its installed fonts. Each program calls it once, in
-// main, on the machine it hands every Engine.
+// media engine, the face detector and its installed fonts. Each program
+// calls it once, in main, on the machine it hands every Engine.
 func (m *Machine) UseSystem() {
 	m.Fonts.UseMachine()
 	m.keys, m.oldKeys = systemKeys(), legacyKeys()
 	m.network = http.DefaultTransport
 	m.useMedia(SystemMedia(runtime.GOOS))
+	m.useFaces()
 }
+
+// useFaces hands the machine the face detector the program carries, in
+// UseSystem and in the test that frames the way the app does.
+func (m *Machine) useFaces() { m.faces = &faceFinder{} }
+
+// FrameByFocus takes the face detector away from a machine UseSystem
+// handed it, so every clip is framed by what is in focus. The command
+// line calls it when FRAMEFAIRY_NO_FACES is set, see docs/CLI.md.
+func (m *Machine) FrameByFocus() { m.faces = nil }
 
 // useMedia hands the machine a media engine, the system's in UseSystem
 // and another system's in a test, which checks what that one is handed
@@ -172,7 +191,7 @@ func (offline) RoundTrip(r *http.Request) (*http.Response, error) {
 // NewMachine is the machine of a program whose files are on files, with
 // the records in their default places and the tools beside the program.
 func NewMachine(files afero.Fs) *Machine {
-	return &Machine{Files: files, Records: NewRecords(files, "", ""), Tools: tool.NewFinder()}
+	return &Machine{Files: files, Records: NewRecords(files, "", ""), Tools: tool.NewFinder(), Clock: SystemClock{}}
 }
 
 // LearnFrom hands this new machine what before learned about the computer

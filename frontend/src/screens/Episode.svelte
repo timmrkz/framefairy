@@ -60,6 +60,7 @@
   import { playheadClock, type About } from "../lib/playhead";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
+  import { suggestedCount } from "../lib/count";
   import { asleep, asking, keysElsewhere, typing, workspaceKey } from "../lib/keys";
   import {
     secondThoughts,
@@ -93,6 +94,8 @@
   import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
   import { markOn } from "../lib/keyframes";
   import { toasts } from "../lib/toast.svelte";
+  import { afterRest } from "../lib/rest";
+  import { atOnce, onTick, type Headline } from "../lib/headline";
 
   let {
     path,
@@ -249,7 +252,7 @@
   // Go sends at which it rises, and what Go answers when the hand lets go.
   const dragged = $derived(drag && win && Math.abs(drag.to - drag.from - (win.to - win.from)) > 0.001 ? drag.to - drag.from : null);
   const typed = $derived(dragged === null ? (win?.typed ?? 0) : 0);
-  const suggested = $derived(dragged === null ? (win?.suggested ?? 1) : 1 + (win?.steps ?? []).filter((at) => at <= dragged).length);
+  const suggested = $derived(dragged === null ? (win?.suggested ?? 1) : suggestedCount(win?.steps ?? [], dragged));
   const count = $derived(dragged === null ? (win?.count ?? 1) : suggested);
   const clipsAtMost = $derived(win?.clipsAtMost ?? 30);
   const shortestAtMost = $derived(win?.shortestAtMost ?? 180);
@@ -717,13 +720,9 @@
     return `${clock(heardIn(parts, start, end))} of ${clock(end - start)} transcribed`;
   }
 
-  // What the row says, held long enough to be read. The engine reports
-  // twice a second and a search goes through its steps faster than anyone
-  // reads, so a new headline waits until the one before has been there
-  // for a while: two and a half seconds, and one for the count of clips
-  // found going up. The fill and the time left follow at once, because
-  // they are the same thing moving on. It keeps its own time, in onMount,
-  // because an effect that reads the job is set up again on every report.
+  // What the row says, held long enough to be read, see lib/headline.ts.
+  // It keeps its own time, in onMount, because an effect that reads the
+  // job is set up again on every report.
   // The search's work for its own cards, once no row is left to say it,
   // see ClipList.
   const carry = $derived.by(() => {
@@ -732,9 +731,7 @@
     return { job: working.id, fraction, left, still: stopping };
   });
 
-  let shownNext = $state<{ what: string; left: string; fraction: number; still?: boolean } | null>(
-    null,
-  );
+  let shownNext = $state<Headline | null>(null);
   let shownSince = 0;
   // What a click brings about shows in the same frame as the click, not on
   // the timer's next tick: the row the Stopped note stood in was empty for
@@ -743,38 +740,15 @@
   // headline marked now, go straight in. Only the engine's own moving from
   // one step to the next waits, below.
   $effect(() => {
-    const want = next;
-    if (want && (!shownNext || (want.now && (want.what !== shownNext.what || !!want.still !== !!shownNext.still)))) {
-      shownSince = Date.now();
-      shownNext = { what: want.what, left: want.left, fraction: want.fraction, still: want.still };
-    } else if (!want && shownNext) {
-      shownNext = null;
-    }
+    const held = atOnce({ shown: shownNext, since: shownSince }, next, Date.now());
+    shownSince = held.since;
+    if (held.shown !== shownNext) shownNext = held.shown;
   });
   onMount(() => {
     const timer = window.setInterval(() => {
-      const want = next;
-      if (!want) {
-        shownNext = null;
-        return;
-      }
-      // Nothing new to say: the row stays as it is.
-      if (!want.what && shownNext) return;
-      const what = want.what;
-      if (!shownNext || what === shownNext.what) {
-        if (!shownNext) shownSince = Date.now();
-        shownNext = { ...want, what };
-        return;
-      }
-      // A step that lasted a moment, a turn that came at once, is not
-      // flashed up: a new headline waits a second.
-      const hold = 1000;
-      if (Date.now() - shownSince < hold) {
-        shownNext = { ...shownNext, left: want.left, fraction: Math.max(shownNext.fraction, want.fraction) };
-        return;
-      }
-      shownSince = Date.now();
-      shownNext = { ...want, what };
+      const held = onTick({ shown: shownNext, since: shownSince }, next, Date.now());
+      shownSince = held.since;
+      if (held.shown !== shownNext) shownNext = held.shown;
     }, 250);
     return () => window.clearInterval(timer);
   });
@@ -1696,7 +1670,7 @@
     });
     // After the card has slid open and the list has moved it, 200 ms and
     // 180 ms in ClipList.svelte.
-    setTimeout(showChosen, 240);
+    afterRest(showChosen, 240);
   });
 
   function inOutKey(event: KeyboardEvent) {

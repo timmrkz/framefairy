@@ -706,14 +706,18 @@
   $effect(() => {
     const now = turn;
     if (now === saidTurn) return;
-    const settled = setTimeout(() => {
+    const sayTurn = () => {
       const was = saidTurn;
       saidTurn = now;
       said(
         `video preview: the picture turned from ${was} to ${now} for the frame at ${frameStart.toFixed(3)} s, piece ${framed} of clip ${clip?.id ?? "none"}, playhead ${time.toFixed(3)} s, ${paused ? "paused" : "playing"}`,
         { video: path },
       );
-    }, 300);
+    };
+    // It only writes the log, so a walk does not wait for it, see
+    // preview/settled.ts.
+    (sayTurn as unknown as { logOnly: boolean }).logOnly = true;
+    const settled = setTimeout(sayTurn, 300);
     return () => clearTimeout(settled);
   });
 

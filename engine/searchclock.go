@@ -479,6 +479,8 @@ func searchLabel(now searchNow) string {
 // moments anything happens.
 type searchClock struct {
 	log *runlog.Log
+	// clock is the time the search is timed by, the machine's.
+	clock Clock
 	// records is where the timings it measures against are kept, and
 	// where it keeps what it measured.
 	records *Records
@@ -510,25 +512,28 @@ type searchClock struct {
 // newSearchClock starts watching a search of chars characters of
 // transcript for count clips. budget is the most a local model may think,
 // negative for no limit.
-func newSearchClock(log *runlog.Log, records *Records, model string, local bool, chars, count, budget int) *searchClock {
+func newSearchClock(log *runlog.Log, clock Clock, records *Records, model string, local bool, chars, count, budget int) *searchClock {
 	past, known := records.pastSpeed(model, local)
-	c := &searchClock{log: log, records: records, model: model, past: past, known: known,
+	c := &searchClock{log: log, clock: clock, records: records, model: model, past: past, known: known,
 		took: map[string]float64{}, stopped: make(chan struct{})}
 	c.now = searchNow{Local: local, Chars: chars, Count: count, Budget: budget, Framers: framers()}
 	return c
 }
 
+// searchEvery is how often a search says how far it has come.
+const searchEvery = 500 * time.Millisecond
+
 // run reports until stop, and holds the progress line meanwhile.
 func (c *searchClock) run() {
 	c.log.HoldProgress(true)
 	defer c.log.HoldProgress(false)
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
+	ticks, stop := ticking(c.clock, searchEvery)
+	defer stop()
 	for {
 		select {
 		case <-c.stopped:
 			return
-		case <-ticker.C:
+		case <-ticks:
 			if !c.reportSafely() {
 				return
 			}
@@ -559,7 +564,7 @@ func (c *searchClock) report() {
 	c.mu.Lock()
 	now := c.now
 	if !c.partAt.IsZero() {
-		now.InPart = time.Since(c.partAt).Seconds()
+		now.InPart = c.clock.Now().Sub(c.partAt).Seconds()
 	}
 	c.mu.Unlock()
 	if now.Part == "" {
@@ -579,7 +584,7 @@ func (c *searchClock) measure(now searchNow) (float64, float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.shown = max(c.shown, fraction)
-	return c.shown, c.steadyLeft(remaining, time.Now())
+	return c.shown, c.steadyLeft(remaining, c.clock.Now())
 }
 
 // riseAfter is how long an estimate has to stay above the time left by
@@ -624,7 +629,7 @@ func (c *searchClock) enter(part string) {
 	if partIndex(part) <= partIndex(c.now.Part) {
 		return
 	}
-	at := time.Now()
+	at := c.clock.Now()
 	if c.now.Part != "" {
 		c.took[c.now.Part] = at.Sub(c.partAt).Seconds()
 	}
@@ -687,7 +692,7 @@ func (c *searchClock) taken() {
 func (c *searchClock) framed() {
 	c.mu.Lock()
 	c.now.Framed++
-	c.lastFramed = time.Now()
+	c.lastFramed = c.clock.Now()
 	c.mu.Unlock()
 }
 

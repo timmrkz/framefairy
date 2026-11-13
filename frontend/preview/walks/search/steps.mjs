@@ -6,7 +6,9 @@
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
 import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
-import { clockOf, nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
+import { clock } from "../../../src/lib/clock.ts";
+import { suggestedCount } from "../../../src/lib/count.ts";
+import { nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
   // ["model", how]     the language model "holds" its answers, "fails" or
@@ -158,7 +160,7 @@ export const steps = {
       await page.mouse.move(x + (share * track.width * i) / 6, y);
       await nextPaint(page);
       const w = await seen();
-      const want = 1 + steps.filter((at) => at <= w.to - w.from).length;
+      const want = suggestedCount(steps, w.to - w.from);
       const says = Number(await field.inputValue());
       counts.add(says);
       if (says !== want) walk.wrong = `dragged to ${w.from.toFixed(0)}–${w.to.toFixed(0)} s, the Target field says ${says}, not the ${want} that length suggests`;
@@ -896,8 +898,7 @@ export const steps = {
       });
       const mark = page.locator(".track .clipmark:not(.selected)").last();
       const label = await mark.getAttribute("aria-label");
-      const clockOf = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
-      const target = others.find((c) => `Clip at ${clockOf(c.start)}` === label);
+      const target = others.find((c) => `Clip at ${clock(c.start)}` === label);
       const parts = target ? (target.segments.length ? target.segments : [target]) : [];
       const firstAt = sentences.find((x) => x.clip === target?.key)?.start;
       // Where the card stands once the list stops moving, against where
@@ -1501,22 +1502,31 @@ export const steps = {
           : `after Escape the range picker shows ${back.edges} parts not transcribed yet, not the ${gaps} there are`;
     if (!walk.wrong && (await headHigh()) !== was) walk.wrong = "the head changed height after the search";
   },
-  // ["asks none", name, seconds]
+  // ["asks none", name, reports]
   //                    the interface asks the Go side nothing of this name
-  //                    while the Go side sends so many pieces of job news
+  //                    while a running search sends so many reports of
+  //                    how far it has come
   async "asks none"(walk, arg) {
     const { page } = walk;
-    const [name, seconds] = arg;
+    const [name, reports] = arg;
     const before = await page.evaluate(() => window.__calls.length);
-    // The Go side tells the interface of a running job about once a
-    // second, and each time the interface read the clip list again. So
-    // as many of its news as seconds, then the app settled on them.
+    // A running search reports on the Go side's clock, and each report
+    // once had the interface read the clip list again. The walk holds
+    // that clock and runs it on to each report in turn, so the reports
+    // cost as many steps, not as many half seconds of the machine. A
+    // walk that holds the clock already keeps it held.
+    const held = page.__held;
+    if (!held) await control(url, "/clock?hold");
     let heard = await news(page);
-    for (let i = 0; i < seconds; i++) heard = await nextNews(page, heard);
+    for (let i = 0; i < reports; i++) {
+      await control(url, "/clock?next");
+      heard = await nextNews(page, heard);
+    }
+    if (!held) await control(url, "/clock?go");
     await settle(page);
     const asked = await page.evaluate((n) => window.__calls.slice(n).map((c) => c.name), before);
     const these = asked.filter((c) => c === name).length;
-    if (these) walk.wrong = `${name} was asked ${these} times in ${seconds} news of the job, with nothing changed: ${asked.join(", ")}`;
+    if (these) walk.wrong = `${name} was asked ${these} times in ${reports} reports of the search, with nothing changed: ${asked.join(", ")}`;
   },
   // ["hand stopped"]   I is pressed on a part not heard yet and Cancel at
   //                    the head of the clip list, so the clip made by hand
@@ -1688,7 +1698,7 @@ export const steps = {
     // before Continue, the way the row of the stopped search did, or
     // how long it has left once it can say.
     const said = await page.evaluate(() => window.__said);
-    const span = clockOf(to - from);
+    const span = clock(to - from);
     const secondsOf = (c) => c.split(":").reduce((t, n) => t * 60 + Number(n), 0);
     const counts = (line) => new RegExp(`^\\d+:\\d\\d of ${span} transcribed$`).test(line ?? "");
     const off = said.find((line) => !counts(line) && !/^About \d+:\d\d left$/.test(line ?? ""));
@@ -1798,7 +1808,7 @@ export const steps = {
     }, job.id);
     const toast = await toastSays(page);
     const report = await page.locator(".toast:not([inert]) button.report").count();
-    const where = clockOf(job.underway?.[0]?.start ?? at);
+    const where = clock(job.underway?.[0]?.start ?? at);
     if (!said.failed) walk.wrong = `the clip that failed has no card that says so: ${JSON.stringify(said)}`;
     else if (said.title !== "Failed. Click Continue") walk.wrong = `the card says "${said.title}", not Failed. Click Continue`;
     else if (said.meta !== where) walk.wrong = `the card's second line says "${said.meta}", not where the clip lies, ${where}`;

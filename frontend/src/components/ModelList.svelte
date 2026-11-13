@@ -245,7 +245,7 @@
   /* Rows in a card that is already there: the line above the first one
      parts it from the row before, as between any two rows of a card. */
   ul.bare > li:first-child {
-    border-top: 1px solid var(--line);
+    border-top: var(--line-w) solid var(--line);
   }
 
   /* One grid for the whole list, and every row lays its cells on it, so

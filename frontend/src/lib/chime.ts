@@ -56,7 +56,7 @@ export function wake() {
 // the second note follows the first however late the window gets to it.
 // Two notes each started at a moment of their own, a hundredth of a
 // second ahead, played nothing in a window that got to them after their
-// end, which a walk shows by starting every sound late, #654.
+// end, #654, which chime.test.ts holds.
 export function chime(how: "on" | "off") {
   if (!context || (how === "on") === on) return;
   on = how === "on";
