@@ -52,10 +52,14 @@ export default [
     steps: [["once a frame", 3]],
   },
   {
-    // The same on HEVC with frames stored after their key frame, where the
-    // decoder's way to a key frame differs most.
-    name: "a playhead dragged far over HEVC shows the key frame on the way, and the frame under the hand once it rests",
-    steps: [["add hevc"], ["scrub far"], ["keyed on the way"]],
+    // A drag far along the clip timeline puts up the key frame on the way
+    // and the frame under the hand once it rests. How the frame queue asks
+    // for them is src/lib/frames/app.test.ts, and the decoder's way to a
+    // key frame in every codec, HEVC with open GOPs too, is
+    // TestTheEpisodesDecoderHandsOverTheKeyFrameFirst. The window never
+    // sees the codec, so this walks the walks' own video.
+    name: "a playhead dragged far shows the key frame on the way, and the frame under the hand once it rests",
+    steps: [["scrub far"], ["keyed on the way"]],
   },
   {
     // A click outruns nothing, so it shows the frame clicked and no key
