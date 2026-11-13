@@ -148,9 +148,12 @@ func TestAddTakesAVideoWhoseFirstFrameIsLate(t *testing.T) {
 // the video being removed, which failed.
 //
 // The decoder is a stand-in that takes every request and answers none,
-// so the check is held where a slow first frame holds it.
+// so the check is held where a slow first frame holds it. A check called
+// off writes no warning that the first frame came late: Tim's report
+// logs are what a problem is traced from.
 //
-// On the real disk: the stand-in decoder is a program that is run. And
+// On the real disk: the stand-in decoder is a program that is run, and
+// lumberjack writes the log and knows only the disk. And
 // FRAMEFAIRY_FRAMES names it for the whole process, which open does
 // already with HOME, so the test does not run beside others.
 func TestAVideoRemovedWhileItsPictureIsCheckedStartsNothing(t *testing.T) {
@@ -158,6 +161,7 @@ func TestAVideoRemovedWhileItsPictureIsCheckedStartsNothing(t *testing.T) {
 		t.Skip("the stand-in is a shell script")
 	}
 	d := open(t)
+	_, read := testLog(t)
 	video := d.episode("weg", "6")
 	pipe, hangs := standin.Hangs(t)
 	hung := filepath.Join(t.TempDir(), "framefairy-frames")
@@ -193,6 +197,11 @@ func TestAVideoRemovedWhileItsPictureIsCheckedStartsNothing(t *testing.T) {
 	for _, j := range d.svc.Jobs() {
 		if j.Episode == abs {
 			t.Errorf("the video removed has a %s, %s", j.Kind, j.State)
+		}
+	}
+	for _, line := range read() {
+		if msg, _ := line["msg"].(string); strings.Contains(msg, "first frame") {
+			t.Errorf("the log says of a check called off: %v", line)
 		}
 	}
 }

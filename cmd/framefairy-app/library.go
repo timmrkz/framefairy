@@ -219,6 +219,7 @@ func (s *FrameFairy) undecodable(ctx context.Context, video string, late <-chan 
 		return strings.TrimSuffix(err.Error(), ".")
 	}
 	asked := time.Now()
+	called := ctx
 	ctx, cancel := context.WithTimeout(ctx, firstFrameWait)
 	defer cancel()
 	if late != nil {
@@ -245,6 +246,9 @@ func (s *FrameFairy) undecodable(ctx context.Context, video string, late <-chan 
 	})
 	switch {
 	case frames > 0:
+		return ""
+	case called.Err() != nil:
+		// The video is being removed, and nothing came late.
 		return ""
 	case ctx.Err() != nil:
 		theLog.line(zerolog.WarnLevel, "files").Str("video", filepath.Base(abs)).Dur("waited", time.Since(asked)).
