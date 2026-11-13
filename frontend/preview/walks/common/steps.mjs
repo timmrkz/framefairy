@@ -5,7 +5,7 @@
 // the step's argument, what the caption box showed before it and the step's
 // name. Below them the helpers the steps of more than one folder use. See
 // docs/TESTING.md.
-import { ask, control, engineState, episodeOn, fakeClock, handles, high, hold, holdClock, middle, news, nextNews, pageUntil, settle } from "../bridge.mjs";
+import { ask, control, engineState, episodeOn, fakeClock, handles, high, hold, holdClock, letHeld, middle, news, nextNews, pageUntil, settle } from "../bridge.mjs";
 import { describe, same } from "../rules.mjs";
 
 export const steps = {
@@ -128,6 +128,21 @@ export const steps = {
     const { page } = walk;
     await hold(page, arg);
   },
+  // ["beam on the line", [call, label]]
+  //                    holds the call, presses the button that says label
+  //                    and, while the button works, sees its beam run on
+  //                    the line round it and its fill inside that line,
+  //                    see beamsOff, then lets the call go
+  async "beam on the line"(walk, [call, label]) {
+    const { page } = walk;
+    await hold(page, call);
+    await page.getByRole("button", { name: label, exact: true }).click();
+    await pageUntil(page, () => !!document.querySelector("button > .beam > .ring"));
+    const off = await beamsOff(page);
+    await letHeld(page);
+    await pageUntil(page, (label) => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === label && !b.disabled), label);
+    if (off.length) walk.wrong = `while ${label} works, ${off.join(", and ")}`;
+  },
   // ["fake clock"]     gives the app Playwright's clock, running as the real
   //                    one does, so a timer the app starts from now on can
   //                    be held and run on by hand later, see fakeClock
@@ -203,6 +218,91 @@ steps["tab"] = steps["shift tab"];
 // after, counted from 0, seen as the call is made, before it is answered.
 export function nextCall(page, name, after) {
   return page.evaluate(([name, after]) => window.__nextCall(after, (c) => c.name === name), [name, after]);
+}
+
+// What is wrong with where the beam of work in hand lies, for every beam
+// on screen, said in words, or nothing when every beam is right. The light
+// runs on the line round the control, not a pixel inside it, which Tim
+// saw: on a button's border, and on a row of a card on the card's lines,
+// the line over the row, the card's sides and the line under it, going
+// round a corner of the card where the row meets one. A fill and the
+// motes lie inside that line, with corners that are the inside of its
+// corners. And nothing round the beam cuts its light off: a control or a
+// card that clips at the inside of its line would hide the light on it,
+// which a box in the right place says nothing about. A clip card draws
+// its line inside itself, so its inside is all of it, and its fill lies
+// over that line, as it always has.
+export function beamsOff(page) {
+  return page.evaluate(() => {
+    const off = [];
+    const px = (v) => parseFloat(v) || 0;
+    const near = (a, b) => Math.abs(a - b) < 0.05;
+    for (const beam of document.querySelectorAll(".beam")) {
+      const ring = beam.querySelector(":scope > .ring");
+      if (!ring) continue;
+      const host = beam.parentElement;
+      const h = host.getBoundingClientRect();
+      const hs = getComputedStyle(host);
+      const name = `${host.tagName.toLowerCase()} "${host.textContent.trim().slice(0, 40)}"`;
+      let line, corners, width;
+      const card = host.matches(".card .item") ? host.closest(".card") : null;
+      if (card) {
+        const c = card.getBoundingClientRect();
+        const cs = getComputedStyle(card);
+        const next = host.nextElementSibling?.matches(".item") ? host.nextElementSibling : null;
+        const own = px(hs.borderTopWidth);
+        line = {
+          left: c.left,
+          right: c.right,
+          top: h.top - (own ? 0 : px(cs.borderTopWidth)),
+          bottom: h.bottom + (next ? px(getComputedStyle(next).borderTopWidth) : px(cs.borderBottomWidth)),
+        };
+        const r = px(cs.borderTopLeftRadius);
+        corners = [near(line.top, c.top) ? r : 0, near(line.bottom, c.bottom) ? r : 0];
+        width = px(cs.borderLeftWidth);
+      } else {
+        line = { left: h.left, right: h.right, top: h.top, bottom: h.bottom };
+        corners = [px(hs.borderTopLeftRadius), px(hs.borderBottomLeftRadius)];
+        width = px(hs.borderLeftWidth);
+      }
+      const g = ring.getBoundingClientRect();
+      const rs = getComputedStyle(ring);
+      // Whatever clips what is in it, the control itself and everything
+      // round it, clips at the inside of its border, and the line must
+      // lie inside that.
+      for (let el = host; el && el !== document.documentElement; el = el.parentElement) {
+        const es = getComputedStyle(el);
+        if (es.overflowX === "visible" && es.overflowY === "visible") continue;
+        const e = el.getBoundingClientRect();
+        const clip = { left: e.left + px(es.borderLeftWidth), right: e.right - px(es.borderRightWidth), top: e.top + px(es.borderTopWidth), bottom: e.bottom - px(es.borderBottomWidth) };
+        if (line.left < clip.left - 0.05 || line.right > clip.right + 0.05 || line.top < clip.top - 0.05 || line.bottom > clip.bottom + 0.05) {
+          off.push(`the beam of ${name} is cut off by ${el === host ? "the control itself" : `${el.tagName.toLowerCase()}.${[...el.classList].join(".")}`}, which clips at the inside of its line`);
+          break;
+        }
+      }
+      if (!["left", "right", "top", "bottom"].every((k) => near(g[k], line[k]))) {
+        off.push(`the beam of ${name} runs at ${["left", "top", "right", "bottom"].map((k) => g[k].toFixed(2)).join(" ")}, where its line is ${["left", "top", "right", "bottom"].map((k) => line[k].toFixed(2)).join(" ")}`);
+      } else if (!near(px(rs.borderTopLeftRadius), corners[0]) || !near(px(rs.borderBottomLeftRadius), corners[1])) {
+        off.push(`the beam of ${name} turns its corners at ${rs.borderTopLeftRadius} and ${rs.borderBottomLeftRadius}, where its line turns at ${corners[0]}px and ${corners[1]}px`);
+      } else if (!near(px(rs.paddingTop), Math.max(1, width))) {
+        off.push(`the beam of ${name} is ${rs.paddingTop} thick on a line of ${width}px`);
+      }
+      // The inside of the line, and its corners, which the browser rounds
+      // by the corner less the line.
+      const within = { left: line.left + width, right: line.right - width, top: line.top + width, bottom: line.bottom - width };
+      const corner = Math.max(0, corners[0] - width);
+      for (const inside of beam.querySelectorAll(":scope > .fill, :scope > .motes")) {
+        const f = inside.getBoundingClientRect();
+        const fs = getComputedStyle(inside);
+        const room = { left: f.left + px(fs.borderLeftWidth), right: f.right - px(fs.borderRightWidth), top: f.top + px(fs.borderTopWidth), bottom: f.bottom - px(fs.borderBottomWidth) };
+        const turn = Math.max(0, px(fs.borderTopLeftRadius) - px(fs.borderLeftWidth));
+        if (!["left", "right", "top", "bottom"].every((k) => near(room[k], within[k])) || !near(turn, corner)) {
+          off.push(`the ${inside.classList[0]} of ${name} fills ${["left", "top", "right", "bottom"].map((k) => room[k].toFixed(2)).join(" ")} with corners of ${turn}px, where the inside of its line is ${["left", "top", "right", "bottom"].map((k) => within[k].toFixed(2)).join(" ")} with corners of ${corner}px`);
+        }
+      }
+    }
+    return off;
+  });
 }
 
 export const pieceCount = (n) => `${n} piece${n === 1 ? "" : "s"}`;

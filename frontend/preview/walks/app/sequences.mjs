@@ -128,8 +128,10 @@ export default [
     // app on 29 October, in Tim's report logs, and the settings went on
     // showing it until they were opened again, #673. The first run
     // lays the models on the disk, where Finder can delete one.
+    // A model downloaded from the settings wears the fill in its Cancel,
+    // whose corners Tim saw rounder than the button's line.
     name: "a model deleted outside the app is gone from the settings at once",
-    steps: [["first run"], ["settings"], ["model gone", "language"]],
+    steps: [["first run"], ["settings"], ["model gone", "language"], ["download in settings"]],
   },
   {
     // Tim chose another model in the settings while a search ran, and
