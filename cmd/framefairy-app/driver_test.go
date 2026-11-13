@@ -413,6 +413,9 @@ func (d *desk) outcome(path string) outcome {
 // test until go test's own -timeout, which shows every goroutine.
 func (d *desk) idle(path string) {
 	d.t.Helper()
+	// A video just added has its picture checked behind the answer, and
+	// its first search starts once it is.
+	<-d.svc.checked(path)
 	d.svc.jobs.until(func(jobs []*Job) bool {
 		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == path && j.going() })
 	}, nil)

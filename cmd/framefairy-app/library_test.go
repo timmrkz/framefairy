@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,15 +15,18 @@ import (
 	"framefairy/internal/standin"
 )
 
-// Add takes a file only where the episode's decoder hands over its first
-// frame: a file with no picture, and one that is no video at all, are
-// left out with the reason, and a video beside them is added. The video
-// preview would have nothing to show of them and the render nothing to
-// cut. Step 3 of docs/VIDEO-PREVIEW.md.
+// Add keeps a file only where the episode's decoder hands over its first
+// frame. Every video given is added and answered at once, so the window
+// opens it as it lands, and checked behind that: a file with no picture,
+// and one that is no video at all, go out of the library again with the
+// reason, and a video beside them stays. The video preview would have
+// nothing to show of them and the render nothing to cut. Step 3 of
+// docs/VIDEO-PREVIEW.md, and issue #832 for the order.
 //
 // On the real disk: the episode's decoder reads what is added.
 func TestAddLeavesOutWhatItsDecoderCannotDecode(t *testing.T) {
 	d := open(t)
+	told := hearDrops(d.svc)
 	good := d.episode("gut", "12")
 	sound := fixtures.Copy(t, "tone-then-silence.m4a", filepath.Join(d.home, "nur-ton.mp4"))
 	broken := filepath.Join(d.home, "kaputt.mp4")
@@ -30,21 +34,59 @@ func TestAddLeavesOutWhatItsDecoderCannotDecode(t *testing.T) {
 		t.Fatal(err)
 	}
 	added, err := d.svc.addEpisodes([]string{sound, good, broken})
-	if len(added) != 1 || added[0] != good {
-		t.Fatalf("added %v, want only %s", added, filepath.Base(good))
+	if err != nil || len(added) != 3 {
+		t.Fatalf("added %v and said %v, want all three at once and nothing said yet", added, err)
+	}
+	for _, v := range added {
+		<-d.svc.checked(v)
+	}
+	said := ""
+	for _, a := range told() {
+		said += a.Error + "\n"
 	}
 	for _, name := range []string{"nur-ton.mp4", "kaputt.mp4"} {
-		if err == nil || !strings.Contains(err.Error(), "the picture of "+name+" cannot be decoded") {
-			t.Errorf("Add said %v, want it to say why %s was left out", err, name)
+		if !strings.Contains(said, "the picture of "+name+" cannot be decoded") {
+			t.Errorf("the window was told %q, want it to say why %s was left out", said, name)
 		}
 	}
-	if err != nil && !strings.Contains(err.Error(), "has no picture") {
-		t.Errorf("Add said %v, want ffmpeg's reason for the file of sound, that it has no picture", err)
+	if !strings.Contains(said, "has no picture") {
+		t.Errorf("the window was told %q, want ffmpeg's reason for the file of sound, that it has no picture", said)
 	}
-	for _, p := range d.svc.store.Episodes() {
-		if p != good {
-			t.Errorf("%s is in the library", filepath.Base(p))
-		}
+	if got := d.svc.store.Episodes(); len(got) != 1 || got[0] != good {
+		t.Errorf("the library holds %v, want only %s", got, filepath.Base(good))
+	}
+	if !slices.ContainsFunc(d.svc.Jobs(), func(j Job) bool { return j.Episode == good }) {
+		t.Errorf("no first search started for %s", filepath.Base(good))
+	}
+}
+
+// A video taken out again because its picture cannot be decoded takes
+// only the folder its own add made. A folder that was there before, kept
+// when the video was removed with its work, stays with all that is in it.
+//
+// On the real disk: the episode's decoder reads what is added.
+func TestAVideoTakenOutAgainKeepsAFolderItHadBefore(t *testing.T) {
+	d := open(t)
+	broken := filepath.Join(d.home, "kaputt.mp4")
+	if err := os.WriteFile(broken, []byte("no video at all"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	kept := filepath.Join(engine.WorkDir(broken), "notes.txt")
+	if err := os.MkdirAll(filepath.Dir(kept), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(kept, []byte("from before"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.svc.addEpisodes([]string{broken}); err != nil {
+		t.Fatal(err)
+	}
+	<-d.svc.checked(broken)
+	if eps := d.svc.store.Episodes(); len(eps) != 0 {
+		t.Errorf("the library holds %v", eps)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Errorf("what was in the folder before is gone, %v", err)
 	}
 }
 
@@ -91,6 +133,10 @@ func TestAddTakesAVideoWhoseFirstFrameIsLate(t *testing.T) {
 	}
 	if len(added) != 1 || added[0] != good {
 		t.Fatalf("added %v, want %s", added, filepath.Base(good))
+	}
+	<-d.svc.checked(good)
+	if got := d.svc.store.Episodes(); len(got) != 1 || got[0] != good {
+		t.Errorf("the library holds %v once its first frame was late, want %s", got, filepath.Base(good))
 	}
 }
 
