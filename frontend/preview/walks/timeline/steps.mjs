@@ -1754,17 +1754,27 @@ export const steps = {
   //                    second circle, and under the marks. A circle no
   //                    line reaches does nothing yet and is drawn as an
   //                    empty ring, and one a line reaches is filled, Tim on
-  //                    #778
+  //                    #778. The empty ring is as wide as the rule and its
+  //                    outer edge is the filled circle's, Tim on #835
   async glides(walk, arg) {
     const { page } = walk;
     await settle(page);
     const got = await page.evaluate(() => {
       const box = (e) => e.getBoundingClientRect();
-      const dots = [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => ({
-        x: box(e).left + box(e).width / 2,
-        glide: !!e.dataset.glide,
-        hollow: !!e.querySelector("svg .hollow"),
-      }));
+      const dots = [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => {
+        const hollow = e.querySelector("svg .hollow");
+        // The ring's width and outer edge on screen, in pixels: its
+        // drawing's units times the pixels one of the 24 is. A filled
+        // circle reaches 8.5 of them out, CIRCLE in ClipTimeline.svelte.
+        const unit = hollow ? box(hollow.ownerSVGElement).width / 24 : 0;
+        const line = hollow ? Number(hollow.getAttribute("stroke-width")) * unit : 0;
+        return {
+          x: box(e).left + box(e).width / 2,
+          glide: !!e.dataset.glide,
+          hollow: !!hollow,
+          ring: hollow ? { line, outer: hollow.r.baseVal.value * unit + line / 2, solid: 8.5 * unit } : null,
+        };
+      });
       const rule = document.querySelector(".clip-timeline .frames .frame");
       return {
         dots,
@@ -1796,6 +1806,10 @@ export const steps = {
       const joined = got.lines.some((l) => near(d.x, l.left) || near(d.x, l.right));
       if (joined && d.hollow) walk.wrong = `the circle at ${d.x.toFixed(1)} px is on a glide line and drawn empty`;
       else if (!joined && !d.hollow) walk.wrong = `the circle at ${d.x.toFixed(1)} px is on its own and drawn filled, not as an empty ring`;
+      else if (d.ring && got.rule && Math.abs(d.ring.line - got.rule.line) > 0.01)
+        walk.wrong = `the empty ring at ${d.x.toFixed(1)} px is ${d.ring.line.toFixed(2)} px wide, not ${got.rule.line} px like the top rule`;
+      else if (d.ring && Math.abs(d.ring.outer - d.ring.solid) > 0.01)
+        walk.wrong = `the empty ring at ${d.x.toFixed(1)} px reaches ${d.ring.outer.toFixed(2)} px out, not ${d.ring.solid.toFixed(2)} px like a filled circle`;
     }
   },
   // ["glide under the hand", share]
