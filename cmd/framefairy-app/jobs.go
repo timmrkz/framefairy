@@ -148,6 +148,10 @@ type Job struct {
 	// ending is the record the engine wrote as the job ended, done or
 	// failed, which the window is told with how the job ended, see heard.
 	ending *engine.JobRecord
+	// endingWay is the clips on the way the engine said as the job ended,
+	// failed or stopped where each would have appeared, told with how the
+	// job ended the same way, see endsUnderway.
+	endingWay *runlog.Event
 	// click is the press of Search or Continue that asked for the job, named
 	// by the window, see stopClips.
 	click string
@@ -571,6 +575,25 @@ func (q *queue) heard(job *Job, rec engine.JobRecord) {
 			j.Lane = j.asking
 		}
 		j.JobRecord = rec
+	})
+}
+
+// onTheWay keeps what the engine said of the clips a job has on the way
+// and the clips it has written.
+func (j *Job) onTheWay(ev runlog.Event) {
+	j.Underway, j.Written, j.Whole = ev.Underway, ev.Found, ev.Whole
+}
+
+// endsUnderway says whether clips on the way are said as their job ends:
+// one that failed or stopped stays where it would have appeared, see
+// engine.MakeClip. The job runs until runJob tells how it ended, so these
+// wait for that news, the way the record it ended with does, see heard.
+// Told at once, the window had a running job with a clip in a step no
+// running work is in, and its card said the job's name, Make a clip,
+// issue #829.
+func endsUnderway(list []runlog.Underway) bool {
+	return slices.ContainsFunc(list, func(u runlog.Underway) bool {
+		return u.Step == engine.StepFailed || u.Step == engine.StepStopped
 	})
 }
 
@@ -1161,9 +1184,13 @@ func (q *queue) runJob(job *Job) {
 			}
 		}
 		if copied.Kind == runlog.EventUnderway {
-			q.update(job, func(j *Job) {
-				j.Underway, j.Written, j.Whole = copied.Underway, copied.Found, copied.Whole
-			})
+			if endsUnderway(copied.Underway) {
+				q.mu.Lock()
+				job.endingWay = &copied
+				q.mu.Unlock()
+				return
+			}
+			q.update(job, func(j *Job) { j.onTheWay(copied) })
 			return
 		}
 		q.update(job, func(j *Job) {
@@ -1228,6 +1255,10 @@ func (q *queue) runJob(job *Job) {
 		j.Result = result
 		if j.ending != nil {
 			j.JobRecord, j.ending = *j.ending, nil
+		}
+		if j.endingWay != nil {
+			j.onTheWay(*j.endingWay)
+			j.endingWay = nil
 		}
 		switch {
 		case err == nil:

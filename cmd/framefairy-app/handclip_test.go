@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"framefairy/engine"
@@ -435,5 +436,53 @@ func TestAClipsPartIsHeardBesideTheWholeVideo(t *testing.T) {
 	}
 	if again := svc.Transcribe(eps[0]); again.ID != whole.ID {
 		t.Errorf("the whole video asked for again is %s, not the one that runs, %s", again.ID, whole.ID)
+	}
+}
+
+// A clip made by hand that fails is told to the window failed in the
+// same news as its card says so, never as a job still running with its
+// clip in the step failed. The window draws a running job's clip by its
+// step, and knows no step called failed, so its card said the job's name,
+// Make a clip, until the next news came, issue #829.
+func TestAClipMadeByHandThatFailsIsToldFailedInOneNews(t *testing.T) {
+	t.Parallel()
+	s, eps := memoryLibrary(t, "talk.mp4")
+	var mu sync.Mutex
+	var heard []Job
+	ended := make(chan string, 4)
+	s.jobs = newQueue(s.store, func(u JobUpdate) {
+		mu.Lock()
+		heard = append(heard, u.Job)
+		mu.Unlock()
+		if !u.Job.going() {
+			ended <- u.Job.ID
+		}
+	}, func(string) {})
+	logJobsOnFailure(t, s.jobs)
+	// Not really a video, so the clip fails before anything is heard.
+	job := s.MakeClip(eps[0], 0, false)
+	for id := range ended {
+		if id == job.ID {
+			break
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	var last Job
+	for _, j := range heard {
+		if j.ID != job.ID {
+			continue
+		}
+		for _, u := range j.Underway {
+			if j.going() && (u.Step == engine.StepFailed || u.Step == engine.StepStopped) {
+				t.Errorf("the window was told the job is %s with its clip %s: %+v", j.State, u.Step, j.Underway)
+			}
+		}
+		if j.Seq > last.Seq {
+			last = j
+		}
+	}
+	if last.State != JobFailed || len(last.Underway) != 1 || last.Underway[0].Step != engine.StepFailed {
+		t.Errorf("the clip ended %s with %+v, not failed where it lies", last.State, last.Underway)
 	}
 }
