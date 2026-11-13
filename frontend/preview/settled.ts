@@ -65,9 +65,7 @@ export function callOut(name: string): () => void {
 (window as any).__hold = async (name: string, answer = false) => {
   holdNext.set(name, (holdNext.get(name) ?? 0) + 1);
   const late = answer ? "&answer=1" : "";
-  await fetch(
-    `/hold?call=${encodeURIComponent(name)}&gate=shut&times=${holdNext.get(name)}${late}`,
-  );
+  await fetch(`/hold?call=${encodeURIComponent(name)}&gate=shut&times=${holdNext.get(name)}${late}`);
 };
 
 // Lets every call held go on to the Go side, and counts them as out again,
@@ -83,8 +81,7 @@ export function callOut(name: string): () => void {
       out++;
     }
   }
-  for (const name of names)
-    await fetch(`/hold?call=${encodeURIComponent(name)}&gate=open`);
+  for (const name of names) await fetch(`/hold?call=${encodeURIComponent(name)}&gate=open`);
   return empty;
 };
 const soon = new Set<unknown>();
@@ -102,8 +99,7 @@ function wake() {
 const arm = window.setTimeout.bind(window);
 const disarm = window.clearTimeout.bind(window);
 window.setTimeout = ((fn: TimerHandler, ms = 0, ...args: unknown[]) => {
-  if (faked || typeof fn !== "function" || ms > SOON || (fn as any).logOnly)
-    return arm(fn, ms, ...args);
+  if (faked || typeof fn !== "function" || ms > SOON || (fn as any).logOnly) return arm(fn, ms, ...args);
   const id = arm(
     (...given: unknown[]) => {
       soon.delete(id);
@@ -182,8 +178,7 @@ const after = (() => {
 // see afterRest. With timersAside it is left for the next settle too.
 (window as any).__settled = (timersAside: boolean) =>
   new Promise<void>((done) => {
-    const frame: (fn: () => void) => void =
-      (window as any).__real?.frame ?? requestAnimationFrame;
+    const frame: (fn: () => void) => void = (window as any).__real?.frame ?? requestAnimationFrame;
     const busy = () => out > 0 || (!timersAside && soon.size > resting.size);
     const look = () => {
       if (busy()) {
@@ -206,16 +201,7 @@ const after = (() => {
         return;
       }
       const seen = back;
-      frame(() =>
-        after(() =>
-          back === seen &&
-          !busy() &&
-          (timersAside || !resting.size) &&
-          !moving().length
-            ? done()
-            : look(),
-        ),
-      );
+      frame(() => after(() => (back === seen && !busy() && (timersAside || !resting.size) && !moving().length ? done() : look())));
     };
     look();
   });
