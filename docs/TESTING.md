@@ -1245,7 +1245,11 @@ a step that reads a play reads it where the play draws, in the frame or
 the change it waits for, and a step that starts one starts it with
 `pressPlay`, or holds the sound card with `holdSound` around a key it
 presses while the clip plays, so the settle ends before the play
-begins. The same
+begins. A play started while the hand holds the card waits for the hand
+to let go before its sound card starts, so not a millisecond of its
+sound plays first. A card started and held at once moved its time on in
+Chromium while the sound it was playing stood, and the sound clicked
+where the next stretch began. The same
 walk now takes about 15 seconds, and a busy machine makes it slower
 without making it check a step sooner. Steps that come sooner meet the
 app's own sense of time where a person's hand has one: the clip

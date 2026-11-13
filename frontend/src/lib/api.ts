@@ -427,6 +427,20 @@ export interface CaptionsView {
   // A clip that was changed has its new pieces before its new captions, and
   // the captions are put in the episode by these until those arrive.
   pieces?: { start: number; end: number }[];
+  // On a step of a drag, captions are only the ones laid out again near
+  // what the hand changed, and this says how they go with the captions
+  // the clip timeline holds, see spliced in lib/splice.ts.
+  splice?: Splice;
+}
+
+// How the captions of a step of a drag go with the captions held from
+// before: the first head of those, then the captions sent, then those from
+// tail on, later on the clip's clock by shift seconds. See Splice in
+// engine/captionsnear.go.
+export interface Splice {
+  head: number;
+  tail: number;
+  shift: number;
 }
 
 // The window of a video: the part of it a search reads, and how long it
@@ -538,6 +552,9 @@ export interface VideoState {
   // The card the clip chosen was on its way as, when the app chose it
   // because that card was written as it.
   chosenCard?: string;
+  // Where I and O can make a clip, see engine.MarkingOf, or none while
+  // the video's length is not known.
+  marking?: Marking | null;
   // In a state sent, every clip by its key and its hash, while clips
   // holds only those that changed, each with its hash, or kept when not
   // one changed and the state holds neither. A state read by a call
@@ -551,6 +568,13 @@ export interface VideoState {
 export interface ClipMark {
   key: string;
   hash: string;
+}
+
+// Where in a video I and O can make a clip: I, which starts one, at a
+// moment before inBefore, and O, which ends one, from outFrom on.
+export interface Marking {
+  inBefore: number;
+  outFrom: number;
 }
 
 export interface EngineEvent {
@@ -998,8 +1022,10 @@ export const api = {
   // What a gesture on the clip timeline makes of a clip, worked out by
   // the engine while the hand moves and saved by reshape when it lets go,
   // so what is drawn is what is saved. See engine/shape.go.
-  shape: (path: string, plan: string, clip: string, g: Gesture) =>
-    call<Shaped>("Shape", path, plan, clip, g),
+  // track is the track of the captions held, which the answer's captions
+  // are put together with, see Splice.
+  shape: (path: string, plan: string, clip: string, g: Gesture, track = "") =>
+    call<Shaped>("Shape", path, plan, clip, g, track),
   // The playhead where the hand took hold and where the gesture left it,
   // so an undo takes the playhead back with the clip.
   reshape: (path: string, plan: string, clip: string, g: Gesture, playhead: [number, number]) =>

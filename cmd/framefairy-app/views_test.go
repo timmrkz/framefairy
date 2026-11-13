@@ -90,7 +90,7 @@ func TestTheAppReadsAPlanOnceUntilItChanges(t *testing.T) {
 		}
 		for i := range 3 {
 			g := engine.Gesture{Kind: "trim", Edge: "start", From: 10.2 + 0.1*float64(i)}
-			if _, err := svc.Shape(video, plan, "01", g); err != nil {
+			if _, err := svc.Shape(video, plan, "01", g, ""); err != nil {
 				t.Fatalf("a step of the drag: %v", err)
 			}
 		}
@@ -215,7 +215,7 @@ func TestTheKeyframesAndTheCropFollowAnEdgeTheHandDrags(t *testing.T) {
 		{Kind: "trim", Edge: "start", From: 11.2},
 		{Kind: "trim", Edge: "end", From: 12.92},
 	} {
-		shaped, err := svc.Shape(video, plan, "01", g)
+		shaped, err := svc.Shape(video, plan, "01", g, "")
 		if err != nil {
 			t.Fatalf("%s %s: %v", g.Kind, g.Edge, err)
 		}
@@ -263,7 +263,7 @@ func benchShape(b *testing.B, glide string) {
 	g := engine.Gesture{Kind: "trim", Edge: "start", From: 12}
 	size := 0
 	for b.Loop() {
-		shaped, err := svc.Shape(video, plan, "01", g)
+		shaped, err := svc.Shape(video, plan, "01", g, "")
 		if err != nil {
 			b.Fatal(err)
 		}

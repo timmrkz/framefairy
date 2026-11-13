@@ -616,7 +616,9 @@ func segmentObjects(c *object) []*object {
 	return pieces
 }
 
-// MinCut is the shortest part worth taking out of a clip.
+// MinCut is the shortest part taken out of a clip, or left in it, when
+// the video's frames are not known. Where they are, it is one frame, see
+// Gesture.leastPiece.
 const MinCut = 0.05
 
 // MinClip is the least a clip may be left holding.
@@ -1163,7 +1165,7 @@ func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge s
 	if err != nil {
 		return CaptionEdit{}, err
 	}
-	return captionEdit(moved.was, look.drawing(moved.plan, moved.clip, t).Laid), nil
+	return captionEdit(moved.was, look.drawing(nil, moved.plan, moved.clip, t).Laid), nil
 }
 
 // captionEdit is what became of the words caption was showing, among the
@@ -1267,7 +1269,7 @@ func moveCaptionEdge(plan Plan, clip Clip, word float64, edge string,
 	// The captions as they are drawn, the ones the hand took hold of, and
 	// the clip they are drawn on, put on the video's frames. Its clock is
 	// the one an edge is moved on, see TestAnEdgeIsMovedOnTheClockItIsDrawnOn.
-	drawing := look.drawing(plan, clip, t)
+	drawing := look.drawing(nil, plan, clip, t)
 	laid, framed := drawing.Laid, drawing.Clip
 	i := slices.IndexFunc(laid, func(c LaidCaption) bool {
 		anchor := c.Opens

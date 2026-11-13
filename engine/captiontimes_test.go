@@ -467,6 +467,10 @@ func TestAnEdgeShowsWhatItSaves(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if !view.Drawing().InHand() || saved.Drawing().InHand() {
+			t.Errorf("the edge shown is in the hand %v and the one saved %v, want only the one shown",
+				view.Drawing().InHand(), saved.Drawing().InHand())
+		}
 		if !reflect.DeepEqual(view.Captions, saved.Captions) {
 			t.Errorf("%s moved to %.2f showed %+v and saved %+v", step.edge, step.at, view.Captions, saved.Captions)
 		}

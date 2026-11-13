@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -601,6 +602,43 @@ func TestAStateSaysHowEachSearchEnded(t *testing.T) {
 	}
 }
 
+// A video's state says where I and O can make a clip, from what of it is
+// heard and said and how long it is, engine.MarkingOf, so the workspace
+// keeps no rule of its own for its keys. A video whose length is not
+// known says nothing, and the keys are offered. A video transcribed to
+// its end counts as heard to its end, though its transcript's last part
+// ends with the last word, a second short of it here: I is offered up to
+// the last word, not up to the half second before that last second.
+func TestAStateSaysWhereIAndOMakeAClip(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	unknown, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unknown.Marking != nil {
+		t.Errorf("a video that cannot be read says I and O make a clip only in %+v", *unknown.Marking)
+	}
+	svc.probeVideo = func(context.Context, string) (engine.SourceInfo, error) {
+		return engine.SourceInfo{Duration: 31}, nil
+	}
+	heardEpisode(t, svc, mine, 30, [][3]any{{10.1, 10.4, "eins"}, {10.5, 10.9, "zwei"}, {11.0, 11.4, "drei."}})
+	st, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Status.Transcribed || st.Status.Said == nil {
+		t.Fatalf("the video is not transcribed with words: %+v", st.Status)
+	}
+	said := *st.Status.Said
+	if said[0] < 10 || said[0] > 10.2 || said[1] < 11.3 || said[1] > 11.5 {
+		t.Fatalf("the words are said from %v", said)
+	}
+	if st.Marking == nil || st.Marking.InBefore != said[1] || st.Marking.OutFrom != said[0] {
+		t.Errorf("the state says I and O make a clip in %+v, not before %v and from %v", st.Marking, said[1], said[0])
+	}
+}
+
 // A state is sent with the clips the window was not sent as they are
 // now, and every clip by its key and its hash in order, so a video whose
 // work goes on without changing its clips sends a small state. A window
@@ -681,4 +719,35 @@ func TestAStateIsSentWithOnlyTheClipsThatChanged(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A video with no clips is sent an order with nothing in it, never no
+// order, because a state with no order is one the window takes as read
+// whole and does not keep: the state after it said its clips were kept,
+// the window had none kept, asked for every clip and was sent no order
+// again, and so every state of the video was dropped while it had no
+// clip, a search removed among them.
+func TestAVideoWithNoClipsIsSentAnEmptyOrder(t *testing.T) {
+	keys := func(st VideoState) map[string]json.RawMessage {
+		b, err := json.Marshal(st)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	var tl telling
+	first := keys(tl.trim(VideoState{Video: "v.mp4", Clips: []ClipEntry{}}))
+	if string(first["order"]) != "[]" || first["kept"] != nil {
+		t.Errorf("the first state of a video with no clips has the order %s and kept %s, want [] and none", first["order"], first["kept"])
+	}
+	if next := keys(tl.trim(VideoState{Video: "v.mp4", Clips: []ClipEntry{}})); string(next["kept"]) != "true" {
+		t.Errorf("the next state of a video with no clips has kept %s, want true", next["kept"])
+	}
+	if read := keys(VideoState{Video: "v.mp4", Clips: []ClipEntry{}}); read["order"] != nil {
+		t.Errorf("a state read has the order %s, want none", read["order"])
+	}
 }

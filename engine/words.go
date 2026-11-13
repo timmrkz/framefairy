@@ -98,10 +98,19 @@ func (t *Transcript) Of(clip Clip) *Transcript {
 		return t
 	}
 	own := *t
+	own.from = t.source()
 	if len(t.fixes) > 0 || !own.correctFew(clip.Corrections) {
 		own.Correct(clip.Corrections)
 	}
 	return &own
+}
+
+// source is the transcript t was made from by Of, or t itself.
+func (t *Transcript) source() *Transcript {
+	if t.from != nil {
+		return t.from
+	}
+	return t
 }
 
 // correctFew is Correct for a transcript that has no corrections yet: the
