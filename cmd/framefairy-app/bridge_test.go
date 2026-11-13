@@ -164,7 +164,13 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		name := call.Name[strings.LastIndex(call.Name, ".")+1:]
+		// The method by the name Wails knows it by in the app, so a call
+		// named wrong in api.ts fails here as it fails there.
+		name, bound := strings.CutPrefix(call.Name, boundAs)
+		if !bound {
+			http.Error(w, fmt.Sprintf("%s is no method of the app, Wails names them %s<Method>", call.Name, boundAs), http.StatusNotFound)
+			return
+		}
 		gate, late, fails := held(name)
 		opened := func() bool {
 			select {

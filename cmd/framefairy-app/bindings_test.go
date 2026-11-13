@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -22,6 +23,13 @@ import (
 // api.ts has to name a method that exists and hand it the arguments it
 // takes.
 
+// boundAs is how Wails names a method of the service in the app: the path
+// of the service's package, its type and the method, see getMethods in
+// Wails' bindings.go. The path of a program's package main is "main" in
+// the program, and in a test it is the package's import path, so it is
+// written here.
+var boundAs = "main." + reflect.TypeFor[FrameFairy]().Name() + "."
+
 // aCall is one call in api.ts: which method, with how many arguments, and
 // where to point when it is wrong.
 type aCall struct {
@@ -31,6 +39,9 @@ type aCall struct {
 }
 
 func TestEveryCallReachesItsMethod(t *testing.T) {
+	if !strings.Contains(apiText(t), "Call.ByName(`"+boundAs+"${method}`") {
+		t.Errorf("api.ts does not call the service by the name Wails gives its methods in the app, %s<Method>", boundAs)
+	}
 	methods := serviceMethods(t)
 	for _, c := range apiCalls(t) {
 		takes, ok := methods[c.method]

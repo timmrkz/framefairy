@@ -32,6 +32,7 @@
     type KeptWindow,
     type EpisodeStatus,
     type SourceView,
+    type LitWord,
     type Word,
     type Sentence,
     type VideoState,
@@ -2052,7 +2053,7 @@
   // clip while the hand moves, the same one the timeline shows.
   let reshaped = $state<{
     cues: NonNullable<CaptionsView["captions"]>;
-    pieces: { start: number; end: number }[];
+    pieces: NonNullable<CaptionsView["pieces"]>;
     track?: string;
     playhead?: number;
     framing?: Framing;
@@ -2297,7 +2298,7 @@
     const pieces = current?.segments ?? [];
     if (!pieces.length || !captions?.captions?.length) return [];
     const frames = framedTrack ? (wordFrames?.frames ?? null) : null;
-    const out: Word[] = [];
+    const out: LitWord[] = [];
     for (const [i, cue] of captions.captions.entries()) {
       let k = 0;
       for (const line of cue.lines) {

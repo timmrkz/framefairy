@@ -54,7 +54,7 @@ function counted(method: string) {
 
 // One piece of other people's work the app is made of or brings with it,
 // and its licence. The texts are asked for one at a time, by name.
-export interface Notice {
+export interface LicenceNotice {
   name: string;
   version: string;
   licence: string;
@@ -105,6 +105,11 @@ export interface Settings {
   // Where the captions sit, as the distance from the bottom of a 1080x1920
   // frame. One place for every clip of every episode.
   captionY: number;
+  // Whether somebody has answered how clips are found, which the first
+  // run asks. Go keeps it, and never takes it from saveSettings.
+  chosen: boolean;
+  // The video target was typed on.
+  targetVideo?: string;
 }
 
 // One of the faces the captions can be written in, built into the program.
@@ -152,6 +157,8 @@ export interface PlanSummary {
   to: number;
   clips: number;
   model: string;
+  // Who proposed the clips, the language model or a person by hand.
+  by?: string;
   modified: string;
 }
 
@@ -209,6 +216,11 @@ export interface Word {
   said?: number;
   whole?: string;
   part?: number;
+}
+
+// A word the captions light, as the workspace lays them out from the
+// captions and the frames they are lit on. Go never sends one.
+export interface LitWord extends Word {
   // A word lit on frames of the short, see WordFrame: start is where the
   // first of them starts and end where the last ends, in the episode.
   framed?: boolean;
@@ -425,7 +437,7 @@ export interface CaptionsView {
   // The clip's pieces the captions were made for, whose clock they are on.
   // A clip that was changed has its new pieces before its new captions, and
   // the captions are put in the episode by these until those arrive.
-  pieces?: { start: number; end: number }[];
+  pieces?: { start: number; end: number; part: number }[];
 }
 
 // The window of a video: the part of it a search reads, and how long it
@@ -545,6 +557,10 @@ export interface EngineEvent {
   from?: number;
   // How many clips a search has written to its plan so far.
   found?: number;
+  // On an "underway" event, every clip the job has on the way and whether
+  // that is all still to come. The job carries the same, see Job.
+  underway?: Underway[];
+  whole?: boolean;
   duration?: number;
   elapsed: number;
   time: string;
@@ -867,7 +883,7 @@ export const api = {
   // Cuts what is being said where something is typed at its end, after
   // the first pieces the window has. What came before is the next piece.
   breakListening: (recording: number, pieces: number) => call<void>("BreakListening", recording, pieces),
-  licences: () => call<Notice[]>("Licences"),
+  licences: () => call<LicenceNotice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
   // zeros where the system draws its own title bar.
@@ -1249,6 +1265,9 @@ export interface ReportPicture {
   height: number;
   recording?: string;
   seconds?: number;
+  // Removed by the person and kept to be put back. Never true in a draft
+  // the window is sent, which leaves removed pictures out.
+  removed?: boolean;
 }
 
 // A report before it is made. error says why pictures just given were

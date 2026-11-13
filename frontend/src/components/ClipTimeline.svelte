@@ -38,6 +38,7 @@
     wordStep,
     type Gesture,
     type ClipEntry,
+    type LitWord,
     type Word,
     type CaptionCue,
     type CropMark,
@@ -143,7 +144,7 @@
     // reads as two words is two here and one there, so a word added by
     // hand is in this list and in no other, and a word a cut takes out is
     // in the transcript and never in this one.
-    lit?: Word[];
+    lit?: LitWord[];
     // Puts the playhead at a moment. A gesture about the clip itself, an
     // edge, a trim or a caption, says so, and the playhead is then on the
     // clip whatever the moment, and a step while the episode plays on the
@@ -214,7 +215,7 @@
     onshape?: (
       shape: {
         cues: CaptionCue[];
-        pieces: { start: number; end: number }[];
+        pieces: { start: number; end: number; part: number }[];
         track?: string;
         playhead?: number;
         framing?: Framing;
