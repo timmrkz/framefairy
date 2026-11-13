@@ -1228,10 +1228,15 @@ seconds, and 23 of them went on waiting after each step until no call
 had been on its way for a quarter of a second. That quarter stood in for
 the app's own short delays, the 150 ms before the clip timeline reads
 its waveform and the 240 ms before a newly chosen clip is shown. Now
-`settle` waits for those delays themselves, and for nothing else.
-`__settled` in `preview/settled.ts` answers once no call is out, no
-timer of the app's is set to fire within a second, and nothing on the
-page moves for a second or less, a row sliding open or the clip
+`settle` waits for no clock at all where the app only waits for
+something to come to rest. Such a timer is made with `afterRest` in
+`src/lib/rest.ts`: a save a moment after the last key, the clip
+timeline read once a swipe has stopped, a row measured once it has
+slid, a chosen clip shown once the hand stops. Once nothing else is on
+its way and nothing moves, the walk's hand has rested, so `settle` runs
+them at once. `__settled` in `preview/settled.ts` answers once no call
+is out, no other timer of the app's is set to fire within a second, and
+nothing on the page moves for a second or less, a row sliding open or the clip
 timeline gliding to its view. It is woken by the call coming back and
 the timer firing or being cleared, never by looking again on every
 frame. A movement of a second or less it ends at once, where it would
