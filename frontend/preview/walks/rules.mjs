@@ -1,16 +1,14 @@
 // The rules that hold whatever was done, checked after every step of a walk
-// and of a sequence. They compare the screen with the engine's own answer
-// and the engine's answer with itself before and after, and know nothing
-// of what a correction should do, so they cannot drift into a third
-// engine. See docs/TESTING.md.
+// and of a sequence. They compare the screen with the engine's own answer,
+// and know nothing of what a correction should do, so they cannot drift
+// into a third engine. What an edit does to the engine's captions, and
+// what Undo puts back, are the Go side's rules, tested in Go, see
+// cmd/framefairy-app/captionedits_test.go. See docs/TESTING.md.
 import { letHeld, engineState, settle, settledScreen } from "./bridge.mjs";
 
-// The engine's captions as a list of words, and the engine's clip as one
-// comparable value: its captions, how they look, and its pieces with their
-// crops, everything of it the history takes back, see docs/APP.md, Undo
-// and redo.
-export const words = (caps) =>
-  caps.captions.flatMap((c) => c.lines.flatMap((l) => l.words.map((w) => ({ ...w }))));
+// The engine's clip as one comparable value: its captions, how they look,
+// and its pieces with their crops, everything of it the history takes
+// back, see docs/APP.md, Undo and redo.
 export const same = (a, b) =>
   JSON.stringify(a.captions) === JSON.stringify(b.captions) &&
   JSON.stringify(a.style) === JSON.stringify(b.style) &&
@@ -153,15 +151,10 @@ export class Watch {
     this.page = page;
     this.at = at;
     this.errors = errors;
-    // The engine's captions before each step that changed them, for Undo,
-    // and after each step taken back, for Redo.
-    this.undone = [];
-    this.redone = [];
     this.failed = null;
   }
 
   async start() {
-    this.before = this.at ? await engineState(this.page, this.at) : null;
     this.callsSeen = await this.page.evaluate(() => {
       window.__watched = true;
       return window.__calls.length;
@@ -172,8 +165,8 @@ export class Watch {
     this.failed ??= { rule, detail };
   }
 
-  // After a step: kind is "undo", "redo" or "open" for those three, and s
-  // is the caption box as it was before the step. Waits for the app to
+  // After a step: kind is "open" for Enter on the framed word, and s is
+  // the caption box as it was before the step. Waits for the app to
   // settle, checks every rule, and hands back what is now on screen and
   // what the engine now says. acted is the page the step acted on, the
   // report window when it is not the app's window.
@@ -203,13 +196,7 @@ export class Watch {
     // screen to, and the clip on screen before is not it.
     const { at, clips, now, drawn } = await settledScreen(page);
     const after = at ? await engineState(page, at, clips) : null;
-    const moved = JSON.stringify(at) !== JSON.stringify(this.at);
-    if (moved) {
-      this.at = at;
-      this.undone = [];
-      this.redone = [];
-    }
-    const before = moved ? after : this.before;
+    this.at = at;
 
     // No call failed and the page threw nothing. A page loaded again, as
     // after a restart, starts its list of calls from nought and has lost
@@ -282,119 +269,6 @@ export class Watch {
       }
     }
 
-    // Undo puts back what was there before the step it takes back, and
-    // Redo what was there after it.
-    if (!after) {
-      // No clip of the engine's on screen, so nothing to take back.
-    } else if (kind === "undo" || kind === "redo") {
-      const [from, to] = kind === "undo" ? [this.undone, this.redone] : [this.redone, this.undone];
-      if (from.length) {
-        const want = from.pop();
-        to.push(before);
-        if (!same(after, want)) this.broke(`${kind} puts it back`, describe(want, after));
-      } else if (!same(after, before)) {
-        // A step from before the watch began, which it does not know.
-        this.undone.length = this.redone.length = 0;
-      }
-    } else if (!same(after, before)) {
-      this.undone.push(before);
-      this.redone.length = 0;
-      // An edit stays where it was made: every word more than three
-      // seconds of the episode away from the word corrected keeps its text
-      // and its time.
-      // A caption removed whole is its words removed, from its first to
-      // its last, so the same holds around all of them.
-      const last = [...calls]
-        .reverse()
-        .find((c) => c.name === "SetWord" || c.name === "RemoveCaption" || c.name === "SetCaptionTime");
-      const near = (a, b) => Math.abs(a - b) < 1e-3;
-      const spans = (caps) => caps.captions.map((c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`).join(" ");
-      // The words a caption shows, first and last, on the episode's clock.
-      const shown = (c) => {
-        const said = (c.lines ?? []).flatMap((l) => l.words.map((w) => w.said)).filter((at) => at !== undefined);
-        return [said[0], said[said.length - 1]];
-      };
-      if (last?.name === "SetCaptionTime") {
-        // Moving an edge of a caption moves that edge and nothing else: the
-        // other edge of the caption stays, every other caption appears and
-        // goes when it did, and the words outside the caption are as they
-        // were. The caption before used to grow into the place a start was
-        // dragged in from, found by Tim.
-        const [, , , word, edge] = last.args;
-        const cue = before.captions.find((c) => near(edge === "start" ? c.first : c.last, word));
-        if (!cue) this.broke("an edge moved was there", `no caption ${edge === "start" ? "began" : "ended"} on ${word}`);
-        else {
-          const far = (caps) =>
-            words(caps)
-              .filter((w) => w.said === undefined || w.said < cue.first - 1e-3 || w.said > cue.last + 1e-3)
-              .map((w) => `${w.text}@${w.start.toFixed(3)}-${w.end.toFixed(3)}`)
-              .join(" ");
-          // A start moved out into the time the caption before held for a
-          // word removed between them takes that time: the caption before
-          // went where this one appeared, and goes where it appears now,
-          // #598.
-          const at = before.captions.indexOf(cue);
-          const moved = after.captions[at];
-          const gives = (c, k) =>
-            edge === "start" && k === at - 1 && moved && moved.start < cue.start - 1e-3 && near(before.captions[k].end, cue.start) && near(c.end, moved.start);
-          const kept =
-            far(before) === far(after) &&
-            after.captions.length === before.captions.length &&
-            after.captions.every((c, k) => {
-              const b = before.captions[k];
-              if (b !== cue) return near(c.start, b.start) && (near(c.end, b.end) || gives(c, k));
-              return edge === "start" ? near(c.end, b.end) : near(c.start, b.start);
-            });
-          if (!kept) {
-            this.broke("an edge moves its own caption only", `${describe(before, after)}\nthen ${spans(before)}\nnow  ${spans(after)}`);
-          }
-        }
-      } else if (last) {
-        const whole = last.name === "RemoveCaption";
-        const where = last.args[3];
-        const cue = whole ? before.captions.find((c) => Math.abs((c.first ?? NaN) - where) < 1e-6) : null;
-        if (whole && !cue) this.broke("a caption removed was there", `no caption began on ${where}`);
-        const till = cue?.last ?? where;
-        const far = (caps) =>
-          words(caps)
-            .filter((w) => w.said === undefined || w.said < where - 3 || w.said > till + 3)
-            .map((w) => `${w.text}@${w.start.toFixed(3)}-${w.end.toFixed(3)}`)
-            .join(" ");
-        if (far(before) !== far(after)) this.broke("an edit stays where it was made", describe(before, after));
-        // Taking a word out takes out the word and changes no other
-        // caption: every caption still there appears when it did and goes
-        // when it did, and the one the word was in only draws in to the
-        // words it still shows, the way dragging its edge over the word
-        // does, and only at the edge the word was at. A caption whose words
-        // were all removed goes and leaves its time empty. The one before
-        // it used to stay up through that time, and its block on the clip
-        // timeline grew across the place, which Tim read as two captions
-        // merging. The one exception: where the speech runs on, the caption
-        // before one whose first word was taken out stays up until it
-        // appears, so nothing goes blank while someone talks, #597.
-        if (whole && cue && after.captions.some((c) => Math.abs((c.first ?? NaN) - where) < 1e-6)) {
-          this.broke("a caption removed is gone", describe(before, after));
-        }
-        if (whole || last.args[4] === "") {
-          const kept = after.captions.every((c, k) => {
-            const b = before.captions.find((b) => near(b.first, c.first));
-            if (!b) return false;
-            const [first, final] = whole ? [NaN, NaN] : shown(b);
-            const starts = near(where, first);
-            const ends = near(where, final);
-            const next = after.captions[k + 1];
-            const held = !whole && next && near(b.end, before.captions.find((n) => near(n.first, next.first))?.start ?? NaN) && near(c.end, next.start);
-            const startOk = starts ? c.start >= b.start - 1e-3 : near(c.start, b.start);
-            const endOk = ends ? c.end <= b.end + 1e-3 || held : near(c.end, b.end) || held;
-            return startOk && endOk;
-          });
-          if (!kept) {
-            this.broke("a removal changes no other caption", `${describe(before, after)}\nthen ${spans(before)}\nnow  ${spans(after)}`);
-          }
-        }
-      }
-    }
-    this.before = after;
     return { now, after };
   }
 }
