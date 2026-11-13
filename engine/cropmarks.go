@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,9 +37,11 @@ import (
 // rotated part is turned another way, so its crop still starts at its cut. A
 // keyframe a trim or a cut left outside the clip stays in the plan, still
 // switches the crop from the next frame kept, and its diamond comes back
-// with its piece. A part rotated again keeps its keyframes,
-// which wait while the picture is turned another way and steer again once
-// it is turned back, issue #348: the diamonds used to go with the turn.
+// with its piece, unless the cut is removed: then the keyframe it
+// carried stays where it stood, see keptWhereTheyStand. A part rotated
+// again keeps its keyframes, which wait while the picture is turned
+// another way and steer again once it is turned back, issue #348: the
+// diamonds used to go with the turn.
 
 // CropMark is a keyframe, a crop placed by hand on one frame: the moment
 // the frame starts, in seconds of the video, and the left edge of the crop
@@ -497,6 +500,44 @@ func realise(frames SourceInfo, pieces []Segment, marks []CropMark, k int64) []C
 		return out
 	}
 	return marks
+}
+
+// keptWhereTheyStand is a clip's keyframes once the cuts that were
+// between the pieces before are put back by the pieces after, and whether
+// any moved.
+// The keyframe a cut put back carried becomes one of its own on the frame
+// it stood on, the first frame after where the cut was, so removing a cut
+// moves no keyframe on the clip timeline and changes no crop the clip
+// played with, Tim's report of 13 November: "Working on a cut should not
+// have any effects on other elements like that." The others the cut
+// covered come back on their own moments, with the part they are in, the
+// way they do when the cut's edges are dragged out past them. A cut that
+// is moved, or that a trim takes in, carries on as it did, see carry.
+func keptWhereTheyStand(frames SourceInfo, before, after []Segment, marks []CropMark) ([]CropMark, bool) {
+	moved := false
+	for i := 1; i < len(before); i++ {
+		from, to := before[i-1].End, before[i].Start
+		if to-from <= PiecesMeet || !heldWhole(after, from, to) {
+			continue
+		}
+		out := realise(frames, before, marks, frames.markFrame(to))
+		moved = moved || !slices.Equal(out, marks)
+		marks = out
+	}
+	return marks, moved
+}
+
+// heldWhole is whether pieces, in time order, hold all of from to to,
+// one piece or several that meet, as a part put back that is turned
+// another way in its middle is.
+func heldWhole(pieces []Segment, from, to float64) bool {
+	at := from
+	for _, p := range pieces {
+		if p.Start <= at+PiecesMeet && p.End > at {
+			at = p.End
+		}
+	}
+	return at >= to-PiecesMeet
 }
 
 // unsetAside lets the keyframes set aside that a clip's pieces hold again

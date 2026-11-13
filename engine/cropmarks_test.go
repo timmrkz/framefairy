@@ -749,6 +749,85 @@ func TestAKeyframeACutOrATrimCoversIsCarriedOnTheFrameAfter(t *testing.T) {
 	}
 }
 
+// A cut removed with a double-click leaves every keyframe where it
+// stood, Tim's report of 13 November: the one the cut carried stays on
+// the frame after where the cut was, and the crop of what played before
+// is the crop that plays now. A keyframe the cut kept out of sight comes
+// back on its own moment, with the part it is in. A diamond A, a diamond
+// B and a circle X in the cut, a circle Y after it.
+func TestRemovingACutLeavesTheKeyframesWhereTheyStand(t *testing.T) {
+	t.Parallel()
+	fsys, path := writePlanAt(t, tenSecondClip)
+	a, b := CropMark{At: 11, X: 100}, CropMark{At: 12.6, X: 300}
+	x, y := CropMark{At: 13.4, X: 200, Glide: true}, CropMark{At: 16.04, X: 600, Glide: true}
+	cropMarks(t, fsys, path, a, b, x, y)
+	reshape(t, fsys, path, Gesture{Kind: "cut", From: 12.2, To: 14.52})
+	carriedX := CropMark{At: 14.52, X: 300, Glide: true, Opens: true}
+	if got, want := loadedClip(t, fsys, path).CropMarks, []CropMark{a, carriedX, y}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("with the cut, the clip shows %v, not %v", got, want)
+	}
+	crops := []struct{ at, want float64 }{{10.5, 120}, {11.5, 100}, {14.52, 300}, {15.28, 450}, {17, 600}}
+	steers := func(when string) {
+		t.Helper()
+		clip := loadedClip(t, fsys, path)
+		for _, h := range crops {
+			seg := clip.Segments[pieceHoldingIn(clip.Segments, h.at)]
+			if got := at25.CropAt(seg, h.at, 608, 1920); math.Abs(got-h.want) > 1e-9 {
+				t.Errorf("%s, at %.2f s the crop stands at %v, not %v", when, h.at, got, h.want)
+			}
+		}
+	}
+	steers("with the cut")
+
+	reshape(t, fsys, path, Gesture{Kind: "join", From: 13})
+	clip := loadedClip(t, fsys, path)
+	if len(clip.Segments) != 1 {
+		t.Fatalf("the cut was not removed, the clip has the pieces %v", clip.Segments)
+	}
+	if got, want := clip.CropMarks, []CropMark{a, b, carriedX, y}; !reflect.DeepEqual(got, want) {
+		t.Errorf("with the cut removed, the clip shows %v, not %v", got, want)
+	}
+	steers("with the cut removed")
+	if got := at25.CropAt(clip.Segments[0], 13.4, 608, 1920); got != 300 {
+		t.Errorf("in the part put back, at 13.40 s the crop stands at %v, not B's 300", got)
+	}
+}
+
+// Only a cut the pieces after hold whole, in one piece or in pieces
+// that meet, leaves its carried keyframe where it stood. A cut narrowed,
+// or one a trim takes in, carries on as it did.
+func TestOnlyACutPutBackLeavesItsKeyframeWhereItStood(t *testing.T) {
+	t.Parallel()
+	before := []Segment{{Start: 10, End: 12}, {Start: 14, End: 20}}
+	marks := []CropMark{{At: 13, X: 300}}
+	for _, h := range []struct {
+		name  string
+		after []Segment
+		want  []CropMark
+		moved bool
+	}{
+		{"put back in one piece", []Segment{{Start: 10, End: 20}}, []CropMark{{At: 14, X: 300}}, true},
+		{"put back in two pieces that meet", []Segment{{Start: 10, End: 13}, {Start: 13, End: 20}}, []CropMark{{At: 14, X: 300}}, true},
+		{"narrowed", []Segment{{Start: 10, End: 12.5}, {Start: 14, End: 20}}, marks, false},
+		{"taken in by the start", []Segment{{Start: 14, End: 20}}, marks, false},
+	} {
+		got, moved := keptWhereTheyStand(at25, before, h.after, append([]CropMark(nil), marks...))
+		if !reflect.DeepEqual(got, h.want) || moved != h.moved {
+			t.Errorf("%s: the keyframes are %v, moved %v, not %v, moved %v", h.name, got, moved, h.want, h.moved)
+		}
+	}
+}
+
+// pieceHoldingIn is the piece of pieces that holds a moment.
+func pieceHoldingIn(pieces []Segment, at float64) int {
+	for i, p := range pieces {
+		if at >= p.Start && at < p.End {
+			return i
+		}
+	}
+	return len(pieces) - 1
+}
+
 // planMarks is the keyframes the clip of a plan keeps, each at its own
 // moment.
 func planMarks(t *testing.T, fsys afero.Fs, path string) []CropMark {

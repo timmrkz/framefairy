@@ -693,10 +693,13 @@ func editPieces(fsys afero.Fs, rec *Records, planPath, clipID string, change pie
 		for i, seg := range out {
 			kept[i] = seg
 		}
+		// A cut put back leaves the keyframe it carried where it stood,
+		// see keptWhereTheyStand, before the clip has its new pieces.
+		marks, moved := keptWhereTheyStand(frames, spansOf(before), spansOf(out), cropMarksOf(c))
 		c.set(keySegments, kept)
 		// A keyframe set aside that the clip holds again is carried again
 		// the next time an edge covers it, see carry.
-		if marks := cropMarksOf(c); unsetAside(spansOf(out), marks) {
+		if unsetAside(spansOf(out), marks) || moved {
 			setCropMarks(c, marks)
 		}
 		return nil
