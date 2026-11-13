@@ -383,6 +383,7 @@ export const steps = {
       await settle(page);
     }
     if (what === "drop not a video") walk.standing = await standsAt(page);
+    if (what === "drop") await watchFront(page, file);
     walk.wrong = await dropOn(page, [file]);
     if (what === "drop not a video") rmSync(file, { force: true });
     await watch.step("add", s);
@@ -425,6 +426,23 @@ export const steps = {
     else if (times !== 1) walk.wrong = `${name} is in the library ${times} times`;
     else if (!(await page.locator(".workspace.front").count())) walk.wrong = `${name} is in the sidebar, and its workspace is not open`;
     await settle(page);
+  },
+  // ["in front before its picture"]
+  //                    the workspace of the video dropped last came to the
+  //                    front before its first frame was drawn, built in
+  //                    front of the person rather than behind the video
+  //                    on screen before, and its video preview breathed
+  //                    while it waited for that frame, issue #832
+  async "in front before its picture"(walk) {
+    const { page } = walk;
+    const name = basename(walk.droppedVideo);
+    const shown = await page.evaluate(() => window.walkFrontShown);
+    if (shown === undefined) walk.wrong = `the workspace of ${name} never came to the front`;
+    else if (Number.isFinite(Number(shown))) walk.wrong = `the workspace of ${name} came to the front only once its frame at ${shown} s was drawn`;
+    if (walk.wrong) return;
+    await page.locator(".workspace.front .screen").waitFor();
+    if (!(await page.evaluate(() => window.walkScreenWaiting)))
+      walk.wrong = `the video preview of ${name} came black, not waiting for its picture`;
   },
   // ["not a video"]    the PDF dropped last is not in the library, and a
   //                    toast says by its name that it cannot be added
@@ -1400,3 +1418,24 @@ steps["drop again"] = steps["drop not a video"];
 
 // The video's work folder, see WorkDir in engine/run.go.
 const workDir = (source) => join(dirname(source), basename(source, extname(source)) + ".framefairy");
+
+// watchFront notes, in the page, what the video preview of the workspace
+// of path had drawn the moment that workspace came to the front, the
+// frame it showed, NaN before its first, see data-shown in Player.svelte,
+// and whether that video preview wore the breath of a place waiting as
+// it first appeared. Read by ["in front before its picture"].
+async function watchFront(page, path) {
+  await page.evaluate((path) => {
+    window.walkFrontShown = undefined;
+    window.walkScreenWaiting = undefined;
+    const seen = new MutationObserver(() => {
+      const mine = [...document.querySelectorAll(".workspace")].find((w) => w.dataset.path === path);
+      if (!mine) return;
+      const screen = mine.querySelector(".screen");
+      if (window.walkFrontShown === undefined && mine.classList.contains("front")) window.walkFrontShown = screen?.dataset.shown ?? "NaN";
+      if (window.walkScreenWaiting === undefined && screen) window.walkScreenWaiting = screen.classList.contains("waiting");
+      if (window.walkFrontShown !== undefined && window.walkScreenWaiting !== undefined) seen.disconnect();
+    });
+    seen.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
+  }, path);
+}

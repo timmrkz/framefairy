@@ -344,6 +344,9 @@
   let kept = $state<string[]>([]);
   // The kept ones that have had their episode on them once.
   let readied = $state<Record<string, true>>({});
+  // A video just added, which comes to the front as it is asked for, see
+  // took.
+  let arriving = "";
   $effect(() => {
     const coming = asked;
     if (!coming) return;
@@ -353,7 +356,8 @@
       kept = [coming, ...kept.filter((p) => p !== coming)].slice(0, KEPT);
       for (const p of Object.keys(readied)) if (!kept.includes(p)) delete readied[p];
       if (warming && !kept.includes(warming)) warming = "";
-      if (readied[coming]) onScreen = coming;
+      if (readied[coming] || coming === arriving) onScreen = coming;
+      arriving = "";
     });
   });
   // As the app starts, it opens on the episode that was open when it was
@@ -497,9 +501,24 @@
   // to the front as Add's box closes among them, and one that answers
   // after a later one holds an older library: a video just added, missing
   // from it, would have closed again as it opened.
+  //
+  // Whoever waits on a read waits for the newest one, so what it finds in
+  // episodes is the library as last read. A video taken out again as its
+  // picture was checked asks for a read of its own, and the read of its
+  // drop, thrown away for it, would otherwise have opened a video the
+  // list no longer had.
   let reads = 0;
+  let newest: Promise<void> = Promise.resolve();
   async function refresh() {
-    const mine = ++reads;
+    let read = readLibrary(++reads);
+    newest = read;
+    await read;
+    while (newest !== read) {
+      read = newest;
+      await read;
+    }
+  }
+  async function readLibrary(mine: number) {
     try {
       const now = await api.library();
       if (mine !== reads) return;
@@ -547,8 +566,12 @@
   async function took(a: Added) {
     if (a.error) oops(a.error);
     await refresh();
-    if (!a.open) return;
+    if (!a.open || !episodes.some((e) => e.source === a.open)) return;
     said("app: a video added opens", { level: "info", video: a.open });
+    // A video just added comes to the front at once and is built there,
+    // its picture following when the decoder has it: nothing of it was
+    // on screen before for it to flicker against. Issue #832.
+    if (a.added.includes(a.open)) arriving = a.open;
     nav.go({ name: "episode", path: a.open });
     // Added last, it is at the foot of a list that may be longer than
     // the sidebar, so it is brought into view to be seen arriving.

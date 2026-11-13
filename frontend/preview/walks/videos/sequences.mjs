@@ -93,6 +93,7 @@ export default [
     steps: [
       ["drop", 30, "settings"],
       ["dropped in front"],
+      ["in front before its picture"],
       ["wait for", "Search"],
       ["cards", 1],
       ["drop not a video", "workspace"],
