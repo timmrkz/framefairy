@@ -128,8 +128,10 @@ type planBuilder struct {
 	err     error
 	closed  bool
 	// underway is every clip queued and not yet written or let go, as the
-	// log is told it, see Underway.
+	// log is told it, see Underway, and landed every one written, with
+	// its key.
 	underway []runlog.Underway
+	landed   []runlog.Landed
 
 	// writing is held while a clip goes to disk, so two framers finishing
 	// at once write one after the other.
@@ -525,7 +527,7 @@ func (b *planBuilder) takeOffLocked(card int) {
 // sayUnderwayLocked tells the app the clips on the way, how many are
 // written, and whether the answer is whole.
 func (b *planBuilder) sayUnderwayLocked() {
-	b.e.Log.Underway(b.underway, len(b.clips), b.whole)
+	b.e.Log.Underway(b.underway, b.landed, b.whole)
 }
 
 // answerWhole is the answer read to its end, the rest of it taken: every
@@ -906,6 +908,7 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 	// before the clock says it found one more.
 	b.mu.Lock()
 	b.clips = append(b.clips, clip)
+	b.landed = append(b.landed, runlog.Landed{N: card, Clip: b.clipKey(clip.ID)})
 	b.takeOffLocked(card)
 	b.mu.Unlock()
 	if b.clock != nil {

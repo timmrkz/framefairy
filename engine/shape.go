@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"math"
+	"slices"
+	"sort"
 
 	"github.com/spf13/afero"
 
@@ -210,21 +212,44 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 	switch g.Kind {
 	case "trim":
 		start, end := first, last
-		var words []timed.Cue
+		// The words and the captions an edge lands on are read only near
+		// the hand, see wordsAround and fromPause, so a step of the drag
+		// costs the same for a clip of a minute and of an hour.
+		var words, toWords []timed.Cue
 		var goes []float64
 		if g.ToWords {
-			words = stops(math.Min(g.From, first), math.Max(g.To, last))
+			words = wordsNear(t, s, g.From)
+			if g.Edge == "both" {
+				toWords = wordsNear(t, s, g.To)
+			}
 			if g.Edge == "end" {
-				goes = captionsGo(runOn(clip, g.From), t, s)
+				goes = goesNear(clip, t, words, g.From, s)
 			}
 		}
+		// A cut the edge has not passed stays in the clip as the edge
+		// pushes it, see shovel, so the clip keeps a second besides the
+		// cuts ahead of the edge. Holding the edge back can put a cut it
+		// had passed ahead of it again, so it is held back until that
+		// settles, once for each cut at most.
 		switch g.Edge {
 		case "start":
 			start = toward(first, g.From, g.landStart(words, g.From, keepPause))
-			start = math.Min(start, end-MinClip)
+			for range len(clip.Segments) {
+				held := math.Min(start, end-MinClip-cutsAhead(clip.Segments, start, end, g.leastPiece(), true, g.frame()))
+				if held == start {
+					break
+				}
+				start = held
+			}
 		case "end":
 			end = toward(last, g.From, g.landEnd(words, goes, g.From, keepPause))
-			end = math.Max(end, start+MinClip)
+			for range len(clip.Segments) {
+				held := math.Max(end, start+MinClip+cutsAhead(clip.Segments, start, end, g.leastPiece(), false, g.frame()))
+				if held == end {
+					break
+				}
+				end = held
+			}
 			// Not past the end of the video, which is where the hand
 			// goes when it pulls the last clip of a video out to the end.
 			// A word or a second more than the clip has left there.
@@ -232,7 +257,7 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 				end = math.Min(end, over)
 			}
 		case "both":
-			start, end = g.landStart(words, g.From, keepPause), g.landEnd(words, nil, g.To, keepPause)
+			start, end = g.landStart(words, g.From, keepPause), g.landEnd(toWords, nil, g.To, keepPause)
 			if over := g.Frames.End(); over > 0 {
 				end = math.Min(end, over)
 			}
@@ -244,11 +269,19 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 		}
 		start, end = num.RoundTo(math.Max(0, start), 3), num.RoundTo(end, 3)
 		playhead := -1.0
+		var pushed []shoved
 		if g.Edge != "both" {
 			playhead = g.edgePlayhead(start, end, g.Edge == "start")
+			pushed = shovel(clip.Segments, start, end, g.leastPiece(), g.Edge == "start")
 		}
 		return func(pieces []*object) ([]*object, error) {
-			return trimPieces(pieces, clip.Rotations, start, end)
+			out, err := trimPieces(joinAt(pieces, clip.Rotations, pushed), clip.Rotations, start, end)
+			for _, p := range pushed {
+				if !p.gone {
+					out = applyCut(out, p.from, p.to)
+				}
+			}
+			return out, err
 		}, playhead, nil
 
 	case "cut", "restore":
@@ -264,7 +297,7 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 				return nil, -1, renderErr("there is no room for a cut there")
 			}
 		}
-		if to-from < MinCut-1e-6 {
+		if to-from < g.leastPiece()-1e-6 {
 			return nil, -1, renderErr("a cut has to take out more than that")
 		}
 		return func(pieces []*object) ([]*object, error) {
@@ -303,7 +336,7 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 		// frames a cut and a piece are a frame at least, or putting their
 		// edges on frames closes them, at five frames a second where a frame
 		// is longer than the least a cut may be.
-		least := math.Max(MinCut, g.frame())
+		least := g.leastPiece()
 		low := clip.Segments[i].Start + least
 		high := clip.Segments[i+1].End - least
 		// Moving one edge never moves the other. The other edge is where
@@ -383,6 +416,20 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 	return nil, -1, renderErr("there is no gesture called %s", runes.Scrub(g.Kind, 20))
 }
 
+// leastPiece is the least a piece of a clip or a cut holds: one frame,
+// the smallest step there is, so a single frame can be taken out or
+// left in, and MinCut when the frames are not known. It holds beside a
+// cut whose edge is moved, between a cut and the edge of the clip that
+// pushes it, and for a cut made. It was MinCut in whole frames, two at
+// 25 frames a second, and Tim saw a cut pushed by the clip's edge go
+// while several frames of it were left.
+func (g Gesture) leastPiece() float64 {
+	if frame := g.frame(); frame > 0 {
+		return frame
+	}
+	return MinCut
+}
+
 // onFrame puts a moment on the start of the frame it means, the only place
 // a video is cut, see PieceOnFrames.
 func (g Gesture) onFrame(at float64) float64 {
@@ -454,6 +501,89 @@ func captionsGo(clip Clip, t *Transcript, s Style) []float64 {
 	return ends
 }
 
+// landingReach is how far from the hand, in seconds of the episode, the
+// words and the captions an edge lands on are read. An edge lands on the
+// word nearest the hand, see SnapStart and SnapEnd, and on where a caption
+// goes when that is nearer still, so once a word is this near, nothing
+// further away can be where it lands. A step of a drag read every word of
+// the clip and laid out all of its captions, so it took longer the longer
+// the clip was, and Tim found dragging the end of a long clip slow.
+const landingReach = 30.0
+
+// wordsNear are the words, as the captions show them in the style s, that
+// an edge the hand has at can land on, see wordsAround.
+func wordsNear(t *Transcript, s Style, at float64) []timed.Cue {
+	return ShowWords(wordsAround(t.Words, at), s, t.Language)
+}
+
+// goesNear are where the captions of clip go near an end the hand has
+// at, see captionsGo and fromPause. An end lands where a caption goes
+// only when that is nearer the hand than the end of the nearest of words,
+// the words it can land on, see SnapEnd, so the captions are laid out
+// from the pause before that far back.
+func goesNear(clip Clip, t *Transcript, words []timed.Cue, at float64, s Style) []float64 {
+	near := math.Inf(1)
+	for _, w := range words {
+		near = math.Min(near, math.Abs(w.End-at))
+	}
+	clip = runOn(clip, at)
+	if !math.IsInf(near, 1) {
+		clip = fromPause(clip, t.Words, at-near-1)
+	}
+	return captionsGo(clip, t, s)
+}
+
+// wordsAround are the words within landingReach of at, and the one more
+// on either side that SnapStart and SnapEnd look at beside the nearest.
+// With no word that near, the nearest may be anywhere, so they are all
+// the words there are. words are in the order they are said.
+func wordsAround(words []timed.Cue, at float64) []timed.Cue {
+	lo := sort.Search(len(words), func(i int) bool { return words[i].End > at-landingReach })
+	hi := sort.Search(len(words), func(i int) bool { return words[i].Start >= at+landingReach })
+	if lo >= hi {
+		return words
+	}
+	return words[max(lo-1, 0):min(hi+1, len(words))]
+}
+
+// fromPause is clip from the middle of the last pause before at that is
+// long enough to part two captions, captionPause, where the captions
+// start afresh, see Captions. Only a caption too short to stand alone,
+// minCaption, rides on over such a pause with the caption before it, and
+// it ends where its words end either way, so where the captions after the
+// pause go is the same whatever comes before it. A clip with no such
+// pause in it before at is the whole clip.
+// words are the clip's words in the order they are said.
+func fromPause(clip Clip, words []timed.Cue, at float64) Clip {
+	from := pauseBefore(words, at)
+	var out []Segment
+	for _, p := range clip.Segments {
+		if p.End > from {
+			p.Start = math.Max(p.Start, from)
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 || from <= clip.Segments[0].Start {
+		return clip
+	}
+	clip.Segments = out
+	return clip
+}
+
+// pauseBefore is the middle of the last pause before at long enough to
+// part two captions, see fromPause, or no time at all when there is none.
+// The pause is wholly before at: the word after it begins by at. words are
+// in the order they are said.
+func pauseBefore(words []timed.Cue, at float64) float64 {
+	k := sort.Search(len(words), func(i int) bool { return words[i].Start > at }) - 2
+	for ; k >= 0 && k+1 < len(words); k-- {
+		if words[k+1].Start-words[k].End >= captionPause {
+			return (words[k].End + words[k+1].Start) / 2
+		}
+	}
+	return math.Inf(-1)
+}
+
 // runOn is a clip as it would be with its end dragged out past at, a
 // minute on, so the captions around at go where they would with nothing
 // after them cut.
@@ -467,6 +597,115 @@ func runOn(clip Clip, at float64) Clip {
 	out[len(out)-1].End = math.Max(out[len(out)-1].End, at) + 60
 	clip.Segments = out
 	return clip
+}
+
+// shoved is a cut an edge of the clip pushed: where it was, was and
+// wasTo, and where it is now, from and to, its near edge pushed in and
+// its far edge where it was. A cut pushed until too little of it is left
+// is gone, and what it took out plays.
+type shoved struct {
+	was, wasTo, from, to float64
+	gone                 bool
+}
+
+// shovel is the cut an edge of the clip pushes into, like a snow shovel:
+// a start dragged in toward a cut pushes the cut's near edge ahead of it,
+// with least of the clip kept between them, so the edge and the cut stay
+// apart and each can be dragged. The cut's far edge stays where it is, so
+// the cut gets narrower as the edge goes in, and once less than least of
+// it is left it is gone: the edge goes on into what it took out, and a
+// cut it has gone past goes with the part trimmed off. An end does the
+// same the other way. A drag back puts the cut back as it was, since every
+// step of a drag starts from the clip as it was saved. The edge used to
+// take the cut away at once, and its rest played again, and Tim, whose
+// finger was still at the cut's edge, saw the clip's edge jump past it.
+// Then the cut kept its width and was pushed whole, its far edge too, and
+// Tim saw it carried across the video, which made no sense.
+//
+// Only the edge dragged pushes, and only once it has moved in. A press
+// that moves nothing, or a drag outward, leaves every cut where it is,
+// however little of the clip lies before it.
+func shovel(pieces []Segment, start, end, least float64, fromStart bool) []shoved {
+	if len(pieces) == 0 {
+		return nil
+	}
+	in := (fromStart && start > pieces[0].Start) || (!fromStart && end < pieces[len(pieces)-1].End)
+	if !in {
+		return nil
+	}
+	var pushed []shoved
+	for i := 1; i < len(pieces); i++ {
+		c := shoved{was: pieces[i-1].End, wasTo: pieces[i].Start}
+		if c.wasTo <= c.was {
+			continue
+		}
+		c.from, c.to = c.was, c.wasTo
+		if at := start + least; fromStart && c.wasTo > start && c.from < at {
+			c.from = at
+		}
+		if at := end - least; !fromStart && c.was < end && c.to > at {
+			c.to = at
+		}
+		if c.from == c.was && c.to == c.wasTo {
+			continue
+		}
+		// Too little of it is left to be a cut: the edge has passed all
+		// but least of it, and what it took out plays. A frame is the
+		// least, so a cut a frame wide stays a cut.
+		c.gone = c.to-c.from < least-1e-9
+		c.from, c.to = num.RoundTo(c.from, 3), num.RoundTo(c.to, 3)
+		pushed = append(pushed, c)
+	}
+	return pushed
+}
+
+// cutsAhead is how much of the clip the cuts ahead of the edge dragged
+// take out, start for a start and end for an end, as narrow as the edge
+// has pushed them, see shovel, with a frame for each, since the pieces
+// beside them are put on frames as they are saved. A cut the edge has
+// passed, or pushed until it is gone, takes nothing out. Counted at its
+// full width, a cut the edge pushes held a start back before it while
+// the hand went on, where the part after the cut was short, until the
+// hand had passed the cut and the edge jumped.
+func cutsAhead(pieces []Segment, start, end, least float64, fromStart bool, frame float64) float64 {
+	pushed := shovel(pieces, start, end, least, fromStart)
+	var w float64
+	for i := 1; i < len(pieces); i++ {
+		from, to := pieces[i-1].End, pieces[i].Start
+		if to <= from || (fromStart && to <= start) || (!fromStart && from >= end) {
+			continue
+		}
+		if k := slices.IndexFunc(pushed, func(c shoved) bool { return c.was == from && c.wasTo == to }); k >= 0 {
+			if pushed[k].gone {
+				continue
+			}
+			from, to = pushed[k].from, pushed[k].to
+		}
+		w += to - from + frame
+	}
+	return w
+}
+
+// joinAt puts back what the cuts an edge pushes took out where they were,
+// framed the way the clip is, the way a join does, so they can be cut
+// again where the edge pushed them.
+func joinAt(pieces []*object, spans []Rotation, pushed []shoved) []*object {
+	if len(pushed) == 0 {
+		return pieces
+	}
+	out := make([]*object, 0, len(pieces))
+	for _, seg := range pieces {
+		if len(out) > 0 {
+			end, next := number(out[len(out)-1].values[keyEnd]), number(seg.values[keyStart])
+			if slices.ContainsFunc(pushed, func(c shoved) bool { return c.was == end && c.wasTo == next }) {
+				back := meet(meet(out[len(out)-1:], framedBack(end, next, pieces, spans)), []*object{seg})
+				out = append(out[:len(out)-1], back...)
+				continue
+			}
+		}
+		out = append(out, seg)
+	}
+	return out
 }
 
 // toward is where an edge that stood at was lands, when the hand is at hand
@@ -512,15 +751,16 @@ func (g Gesture) edgePlayhead(start, end float64, opens bool) float64 {
 
 // cutOnFrames is where a cut put on frames goes. It is centred where it
 // was put, both edges land on frames and it is a whole number of frames
-// wide, rounded up, never narrower than the least a cut may be. Rounding
-// the two ends on their own brings them closer than they were asked to be:
-// at 25 frames a second a frame is 40 milliseconds against a least of 50.
+// wide, rounded up, never narrower than the least a cut may be, a frame,
+// see leastPiece. Rounding the two ends on their own brings them closer
+// than they were asked to be.
 // A cut in one piece stays inside it, with room left on both sides,
 // because a piece squeezed to nothing is a clip that cannot be rendered,
 // and it says so when there is no room for it. A cut drawn across into
 // another piece takes from both.
 func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, bool) {
-	width := math.Max(to-from, MinCut)
+	least := g.leastPiece()
+	width := math.Max(to-from, least)
 	if frame := g.frame(); frame > 0 {
 		width = math.Ceil(width/frame-1e-9) * frame
 	}
@@ -548,8 +788,8 @@ func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, boo
 		// The room keeps a little of the piece either side, on frames, so
 		// the pieces left end on a frame and are not grown to one, which
 		// pushed a sliver over the start of the next piece.
-		low, high := g.frameAfter(p.Start+MinCut), g.frameBefore(p.End-MinCut)
-		if high-low < MinCut {
+		low, high := g.frameAfter(p.Start+least), g.frameBefore(p.End-least)
+		if high-low < least-1e-9 {
 			return 0, 0, false
 		}
 		width = math.Min(width, high-low)
@@ -563,7 +803,7 @@ func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, boo
 		}
 		break
 	}
-	if b-a < MinCut-1e-9 {
+	if b-a < least-1e-9 {
 		return 0, 0, false
 	}
 	return num.RoundTo(a, 3), num.RoundTo(b, 3), true

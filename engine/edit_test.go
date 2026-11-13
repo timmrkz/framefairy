@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -148,7 +149,7 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			fsys, path := editablePlanPath(t)
 			before, _ := afero.ReadFile(fsys, path)
-			shown, err := ShapeClipView(planAt(t, fsys, path), "01", c.g, tr, 0.1, nil)
+			shown, err := ShapeClipView(planAt(t, fsys, path), "01", c.g, tr, 0.1, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1138,6 +1139,137 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 	}
 }
 
+// A clip from 10 to 20 with cuts from 12 to 13 and from 13.2 to 13.52, on frames,
+// one with pieces a frame long beside its cuts, two with a second and a
+// little on one side of a cut, and one with a cut two frames wide.
+const shovelPlan = `{
+  "source": "ep.mp4",
+  "plan_id": "p1",
+  "clips": [
+    {"id": "01", "slug": "eins",
+     "segments": [{"start": 10.0, "end": 12.0}, {"start": 13.0, "end": 13.2}, {"start": 13.52, "end": 20.0}]},
+    {"id": "02", "slug": "zwei",
+     "segments": [{"start": 30.0, "end": 30.04}, {"start": 31.0, "end": 39.0}, {"start": 39.52, "end": 39.56}]},
+    {"id": "03", "slug": "drei",
+     "segments": [{"start": 50.0, "end": 52.0}, {"start": 53.0, "end": 54.2}]},
+    {"id": "04", "slug": "vier",
+     "segments": [{"start": 60.0, "end": 61.2}, {"start": 62.0, "end": 64.0}]},
+    {"id": "05", "slug": "fuenf",
+     "segments": [{"start": 70.0, "end": 72.0}, {"start": 72.08, "end": 80.0}]}
+  ]
+}`
+
+// An edge of the clip dragged into a cut pushes the cut's near edge ahead
+// of it, like a snow shovel, with the least a piece may hold between
+// them, so the edge stays under the hand and both can still be dragged.
+// The cut's far edge stays where it is, so the cut gets narrower, and once
+// too little of it is left it is gone and the edge goes on. The edge used
+// to take the cut away, and Tim saw it jump past the cut while his finger
+// was still at its edge. Then the cut was pushed whole, and Tim saw it
+// carried across the video. Every step starts from the clip as saved, so
+// dragged back, the cuts are where they were. A press, or a drag outward, pushes nothing, even past
+// a piece a frame long, which moving a cut's edge made before.
+func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
+	tr := editableTranscript()
+	// At 25 frames a second, the least a piece or a cut may hold is a
+	// frame, 0.04, and the pieces are put on frames as they are saved.
+	cases := []struct {
+		name string
+		clip string
+		g    Gesture
+		want string
+	}{
+		{"the start short of the cut", "01", Gesture{Edge: "start", From: 11}, "11.000-12.000 13.000-13.200 13.520-20.000"},
+		{"the start into the first cut, which gets narrower", "01", Gesture{Edge: "start", From: 12.5},
+			"12.520-12.560 13.000-13.200 13.520-20.000"},
+		// Tim saw the cut go while several frames of it were left, when
+		// the least was two frames: the cut is now a frame at the last,
+		// and goes only once the edge is a frame from its far side.
+		{"the start near the first cut's far side, which is two frames", "01", Gesture{Edge: "start", From: 12.88},
+			"12.880-12.920 13.000-13.200 13.520-20.000"},
+		{"the start nearer the first cut's far side, which is a frame", "01", Gesture{Edge: "start", From: 12.92},
+			"12.920-12.960 13.000-13.200 13.520-20.000"},
+		{"the start a frame from the first cut's far side, where it is gone", "01", Gesture{Edge: "start", From: 12.96},
+			"12.960-13.200 13.520-20.000"},
+		{"the start past the first cut, which stays behind", "01", Gesture{Edge: "start", From: 13.1},
+			"13.120-13.200 13.520-20.000"},
+		{"the start past both cuts, as far as the clip keeps a second", "01", Gesture{Edge: "start", From: 19.5},
+			"19.000-20.000"},
+		{"the end past the second cut into the first, which gets narrower", "01", Gesture{Edge: "end", From: 12.5},
+			"10.000-12.000 12.480-12.520"},
+		{"the end into the second cut, which gets narrower", "01", Gesture{Edge: "end", From: 13.3},
+			"10.000-12.000 13.000-13.200 13.280-13.320"},
+		{"the end a frame from the second cut's far side, where it is gone", "01", Gesture{Edge: "end", From: 13.24},
+			"10.000-12.000 13.000-13.240"},
+		{"the start dragged back out", "01", Gesture{Edge: "start", From: 9}, "9.000-12.000 13.000-13.200 13.520-20.000"},
+		{"a press on a start a frame from a cut", "02", Gesture{Edge: "start", From: 30},
+			"30.000-30.040 31.000-39.000 39.520-39.560"},
+		{"a press on an end a frame from a cut", "02", Gesture{Edge: "end", From: 39.56},
+			"30.000-30.040 31.000-39.000 39.520-39.560"},
+		{"a start a frame from a cut dragged out", "02", Gesture{Edge: "start", From: 29},
+			"29.000-30.040 31.000-39.000 39.520-39.560"},
+		// With a second and a little after the cut, the start went no
+		// further than the cut's near side while the hand went on into
+		// it, as if all of the cut were still ahead, and jumped once the
+		// hand had passed it.
+		{"the start into a cut with a short part after it", "03", Gesture{Edge: "start", From: 52.5},
+			"52.520-52.560 53.000-54.200"},
+		{"the start near the far side of a cut with a short part after it", "03", Gesture{Edge: "start", From: 52.8},
+			"52.800-52.840 53.000-54.200"},
+		{"the end into a cut with a short part before it", "04", Gesture{Edge: "end", From: 61.5},
+			"60.000-61.200 61.480-61.520"},
+		// A cut two frames wide is pushed to a single frame, which can be
+		// taken out of a video on its own, and is gone a frame later.
+		{"the start a frame from a cut two frames wide", "05", Gesture{Edge: "start", From: 71.96},
+			"71.960-72.000 72.080-80.000"},
+		{"the start at a cut two frames wide, which is a frame", "05", Gesture{Edge: "start", From: 72},
+			"72.000-72.040 72.080-80.000"},
+		{"the start a frame into a cut two frames wide, where it is gone", "05", Gesture{Edge: "start", From: 72.04},
+			"72.040-80.000"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fsys := afero.NewMemMapFs()
+			path := filepath.Join("/", "ep.framefairy", "logs", "clips.json")
+			if err := afero.WriteFile(fsys, path, []byte(shovelPlan), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			g := c.g
+			g.Kind, g.Frames, g.To = "trim", at25, g.From
+			shown, err := ShapeClip(planAt(t, fsys, path), c.clip, g, tr, 0.1, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := spans(shown.Clip.Segments); got != c.want {
+				t.Errorf("while the edge is dragged the clip is %s, want %s", got, c.want)
+			}
+			if err := Reshape(fsys, nil, path, c.clip, g, tr, 0.1, nil); err != nil {
+				t.Fatal(err)
+			}
+			_, clips, err := LoadClips(fsys, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			saved, err := findIn(clips, c.clip, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := spans(saved.Segments); got != c.want {
+				t.Errorf("the clip was saved as %s, want %s", got, c.want)
+			}
+		})
+	}
+}
+
+// spans is where each piece starts and ends, to compare.
+func spans(pieces []Segment) string {
+	var out []string
+	for _, p := range pieces {
+		out = append(out, fmt.Sprintf("%.3f-%.3f", p.Start, p.End))
+	}
+	return strings.Join(out, " ")
+}
+
 // A caption stays up a little after its last word, and the clip timeline
 // draws its block that long. An edge put on words stops where that block
 // ends before it goes on to the word. It went straight to the word, past
@@ -1146,41 +1278,52 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 	tr := editableTranscript()
 	// zwei ends at 11.0 and drei begins at 12.0, so "eins zwei" stays up
 	// until 11.4. The clip's cut takes 11.1 to 11.9 and with it that hold.
-	segments := func(fsys afero.Fs, path string, g Gesture) []Segment {
+	// In clip 02, sechs ends at 21.5 and "fünf sechs" stays up until 21.9.
+	segments := func(fsys afero.Fs, path, clip string, g Gesture) []Segment {
 		t.Helper()
 		g.Frames, g.ToWords = at25, true
-		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1, nil); err != nil {
+		if err := Reshape(fsys, nil, path, clip, g, tr, 0.1, nil); err != nil {
 			t.Fatal(err)
 		}
 		_, clips, err := LoadClips(fsys, path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return clips[0].Segments
+		for _, c := range clips {
+			if c.ID == clip {
+				return c.Segments
+			}
+		}
+		t.Fatalf("no clip %s", clip)
+		return nil
 	}
 	// Each edge then lands on the start of its frame, at 25 frames a
 	// second, see PieceOnFrames: 11.1 is half way between two and goes to
 	// the later, 11.12, and so does the cut's right edge at 11.9.
+	// An end dragged into the cut pushes the cut, see
+	// TestAnEdgeDraggedIntoACutPushesIt, so the end of the clip is
+	// dragged in clip 02, which has none.
 	cases := []struct {
 		name string
+		clip string
 		g    Gesture
 		end  float64
 	}{
-		{"the left edge of a cut past where the caption goes",
+		{"the left edge of a cut past where the caption goes", "01",
 			Gesture{Kind: "move", Edge: "from", From: 11.6, To: 11.9}, 11.4},
-		{"the left edge of a cut inside the time the caption stays",
+		{"the left edge of a cut inside the time the caption stays", "01",
 			Gesture{Kind: "move", Edge: "from", From: 11.3, To: 11.9}, 11.12},
-		{"the left edge of a cut into the word",
+		{"the left edge of a cut into the word", "01",
 			Gesture{Kind: "move", Edge: "from", From: 10.9, To: 11.9}, 10.6},
-		{"the end of the clip near where the caption goes",
-			Gesture{Kind: "trim", Edge: "end", From: 11.45}, 11.4},
-		{"the end of the clip near the word",
-			Gesture{Kind: "trim", Edge: "end", From: 11.15}, 11.12},
+		{"the end of the clip near where the caption goes", "02",
+			Gesture{Kind: "trim", Edge: "end", From: 21.85}, 21.92},
+		{"the end of the clip inside the time the caption stays", "02",
+			Gesture{Kind: "trim", Edge: "end", From: 21.6}, 21.6},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			fsys, path := editablePlanPath(t)
-			got := segments(fsys, path, c.g)
+			got := segments(fsys, path, c.clip, c.g)
 			if got[0].End != c.end {
 				t.Errorf("the edge landed at %v, want %v: %+v", got[0].End, c.end, got)
 			}
@@ -1322,6 +1465,149 @@ func TestAnEdgeOnWordsGoesTheWayOfTheHand(t *testing.T) {
 			landed := c.edge(shaped.Pieces)
 			if (landed-c.was)*(hand-c.was) < 0 || (hand == c.was && math.Abs(landed-c.was) > 0.0005) {
 				t.Errorf("the hand went from %v to %v and the edge to %v, the pieces %+v", c.was, hand, landed, shaped.Pieces)
+			}
+		})
+	}
+}
+
+// Every step of a drag shapes the clip from the plan its video holds, read
+// once and shared, so steps asked from several goroutines at once each get
+// what one asked alone gets, and none changes the plan the next one reads.
+func TestStepsOfADragFromSeveralAtOnceShareThePlan(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	path := filepath.Join("/", "ep.framefairy", "logs", "clips.json")
+	if err := afero.WriteFile(fsys, path, []byte(shovelPlan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := planAt(t, fsys, path)
+	tr := editableTranscript()
+	gestures := []Gesture{
+		{Kind: "trim", Edge: "start", From: 12.5}, {Kind: "trim", Edge: "end", From: 13.3},
+		{Kind: "trim", Edge: "start", From: 9}, {Kind: "cut", From: 15, To: 16},
+		{Kind: "move", Index: 0, Edge: "to", To: 12.6}, {Kind: "trim", Edge: "start", From: 13.1},
+	}
+	alone := make([]string, len(gestures))
+	for i, g := range gestures {
+		if g.To == 0 {
+			g.To = g.From
+		}
+		g.Frames = at25
+		gestures[i] = g
+		shown, err := ShapeClip(s, "01", g, tr, 0.1, nil)
+		if err != nil {
+			t.Fatalf("%s %s: %v", g.Kind, g.Edge, err)
+		}
+		alone[i] = spans(shown.Clip.Segments)
+	}
+	var wg sync.WaitGroup
+	for range 8 {
+		for i, g := range gestures {
+			wg.Go(func() {
+				shown, err := ShapeClip(s, "01", g, tr, 0.1, nil)
+				if err != nil {
+					t.Errorf("%s %s: %v", g.Kind, g.Edge, err)
+					return
+				}
+				if got := spans(shown.Clip.Segments); got != alone[i] {
+					t.Errorf("%s %s from several at once made %s, alone %s", g.Kind, g.Edge, got, alone[i])
+				}
+			})
+		}
+	}
+	wg.Wait()
+	clips, err := s.orderedClips()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := findClip(clips, "01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []Segment
+	for _, p := range segmentObjects(c) {
+		kept = append(kept, Segment{Start: number(p.values[keyStart]), End: number(p.values[keyEnd])})
+	}
+	if got := spans(kept); got != "10.000-12.000 13.000-13.200 13.520-20.000" {
+		t.Errorf("after the drag the plan held is %s, as saved it is 10.000-12.000 13.000-13.200 13.520-20.000", got)
+	}
+}
+
+// An edge dragged into a cut carries the keyframes the way it does with
+// no cut, by the rules of carry in cropmarks.go: the start carries
+// the last keyframe it covers onto the clip's first frame, the cut,
+// narrower now, carries the one it still covers onto the first frame after
+// it, and a keyframe in a piece stays on its own moment. While the hand
+// drags and once saved, the same.
+func TestAnEdgeDraggedIntoACutCarriesTheKeyframes(t *testing.T) {
+	const plan = `{
+  "source": "ep.mp4",
+  "plan_id": "p1",
+  "clips": [
+    {"id": "01", "slug": "eins",
+     "segments": [{"start": 10.0, "end": 12.0}, {"start": 13.0, "end": 13.2}, {"start": 13.52, "end": 20.0}],
+     "crop_marks": [{"at": 11.0, "x": 100}, {"at": 12.8, "x": 200}, {"at": 15.0, "x": 300}]},
+    {"id": "02", "slug": "zwei",
+     "segments": [{"start": 30.0, "end": 32.0}, {"start": 33.0, "end": 33.2}, {"start": 33.52, "end": 40.0}],
+     "crop_marks": [{"at": 31.0, "x": 100, "glide": true}, {"at": 32.8, "x": 200, "glide": true}, {"at": 35.0, "x": 300, "glide": true}]},
+    {"id": "03", "slug": "drei",
+     "segments": [{"start": 50.0, "end": 56.48}, {"start": 56.8, "end": 57.0}, {"start": 58.0, "end": 60.0}],
+     "crop_marks": [{"at": 55.0, "x": 100}, {"at": 57.2, "x": 200}, {"at": 59.0, "x": 300}]}
+  ]
+}`
+	cases := []struct {
+		name   string
+		clip   string
+		g      Gesture
+		pieces string
+		marks  []CropMark
+	}{
+		{"diamonds, the start into a cut", "01", Gesture{Edge: "start", From: 12.5}, "12.520-12.560 13.000-13.200 13.520-20.000",
+			[]CropMark{{At: 12.52, X: 100}, {At: 13, X: 200}, {At: 15, X: 300}}},
+		// The first circle starts its glide from the clip's own crop
+		// wherever it is carried, see opened.
+		{"circles, the start into a cut", "02", Gesture{Edge: "start", From: 32.5}, "32.520-32.560 33.000-33.200 33.520-40.000",
+			[]CropMark{{At: 32.52, X: 100, Glide: true, Opens: true, FromClip: true}, {At: 33, X: 200, Glide: true}, {At: 35, X: 300, Glide: true}}},
+		// The end carries the first keyframe it covers onto the clip's
+		// end, and the narrower cut the one it still covers onto the
+		// first frame after it.
+		{"diamonds, the end into a cut", "03", Gesture{Edge: "end", From: 57.5}, "50.000-56.480 56.800-57.000 57.480-57.520",
+			[]CropMark{{At: 55, X: 100}, {At: 57.48, X: 200}, {At: 57.52, X: 300, Last: true}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fsys := afero.NewMemMapFs()
+			path := filepath.Join("/", "ep.framefairy", "logs", "clips.json")
+			if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			g := c.g
+			g.Kind, g.Frames, g.To = "trim", at25, g.From
+			shown, err := ShapeClip(planAt(t, fsys, path), c.clip, g, editableTranscript(), 0.1, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := spans(shown.Clip.Segments); got != c.pieces {
+				t.Fatalf("while the edge is dragged the clip is %s, want %s", got, c.pieces)
+			}
+			if !reflect.DeepEqual(shown.Clip.CropMarks, c.marks) {
+				t.Errorf("while the edge is dragged the keyframes are %#v, want %#v", shown.Clip.CropMarks, c.marks)
+			}
+			if err := Reshape(fsys, nil, path, c.clip, g, editableTranscript(), 0.1, nil); err != nil {
+				t.Fatal(err)
+			}
+			_, clips, err := LoadClips(fsys, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			clip, err := findIn(clips, c.clip, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := spans(clip.Segments); got != c.pieces {
+				t.Fatalf("the clip was saved as %s, want %s", got, c.pieces)
+			}
+			if !reflect.DeepEqual(clip.CropMarks, c.marks) {
+				t.Errorf("once saved the keyframes are %#v, want %#v", clip.CropMarks, c.marks)
 			}
 		})
 	}

@@ -648,6 +648,26 @@ export const steps = {
     await fromSidebar(page, () => buttons.nth(mine === 0 ? 1 : 0).click());
     await settle(page);
     renameSync(source, `${source}.away`);
+    // Every toast that comes from here on is noted as it comes. Its ten
+    // seconds run from then, and on a busy machine the Go side can take
+    // longer than that to answer the calls the workspace makes on
+    // waking, so a toast read only at the end may have run out.
+    await page.evaluate(() => {
+      const seen = new WeakSet();
+      window.__toastsCame = [];
+      const note = () => {
+        for (const t of document.querySelectorAll(".toast")) {
+          const text = t.querySelector(".text")?.textContent.trim();
+          if (!text || seen.has(t)) continue;
+          seen.add(t);
+          window.__toastsCame.push(text);
+        }
+      };
+      // A toast already there is of the video on screen now.
+      for (const t of document.querySelectorAll(".toast")) seen.add(t);
+      window.__toastsWatch = new MutationObserver(note);
+      window.__toastsWatch.observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
     await fromSidebar(page, () => buttons.nth(mine).click());
     // The video preview lets go of the picture it showed. Then every
     // call the workspace made on waking has been answered, so any
@@ -655,7 +675,10 @@ export const steps = {
     await page.locator(`${front} .stack.missing`).waitFor();
     await settle(page);
     const want = `The video file is no longer at ${source}. Put it back there, or remove the video from the list.`;
-    const toasts = await page.evaluate(() => [...document.querySelectorAll(".toast .text")].map((t) => t.textContent.trim()));
+    const toasts = await page.evaluate(() => {
+      window.__toastsWatch.disconnect();
+      return window.__toastsCame;
+    });
     const inside = await page.evaluate((f) => {
       const at = (q) => document.querySelector(`${f} ${q}`)?.textContent.trim() ?? "";
       return at(".screen .failed") || at(".error");
