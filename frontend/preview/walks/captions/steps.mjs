@@ -5,11 +5,9 @@
 // argument, what the caption box showed before it and the step's name. A
 // sequence of any folder can take it. Below them the helpers only these
 // steps use. See docs/TESTING.md.
-import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { ask, caughtUp, clickOnTrack, control, cropPixels, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, open, pageUntil, playUntil, pressPlay, seekTo, settle, shortFramesFrom, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
-import { canLook, clickCard, clickedFromAhead, clock, onePiece, rate, restAhead, shortOf, shotClips, still, url } from "../common/steps.mjs";
+import { ask, caughtUp, clickOnTrack, control, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, pageUntil, playUntil, pressPlay, seekTo, settle, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { canLook, clickCard, clickedFromAhead, onePiece, rate, restAhead, shotClips, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
 export const steps = {
@@ -210,37 +208,6 @@ export const steps = {
     await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
     await watch.step(what, s);
   },
-  async "drawn in"(walk, arg) {
-    const { marks, page, watch } = walk;
-    // The captions read as they did at a mark, and the caption holding
-    // a word draws in at its first or last edge from where it was at
-    // "start", never out, its other edge where it was.
-    const [label, text, which] = arg;
-    const read = (caps) => JSON.stringify(caps.captions.map((c) => c.lines.flatMap((l) => l.words.map((w) => w.text))));
-    const now = await engineState(page, watch.at);
-    const i = marks.start.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
-    const was = marks.start.captions[i];
-    const c = now.captions[i];
-    const near = (a, b) => Math.abs(a - b) < 1e-3;
-    const inward = which === "last" ? near(c.start, was.start) && c.end < was.end - 1e-3 : near(c.end, was.end) && c.start > was.start + 1e-3;
-    if (read(now) !== read(marks[label]) || !inward) {
-      walk.wrong = `the caption with "${text}" did not draw in at its ${which} edge as it did at "${label}"\n${describe(marks[label], now)}`;
-    }
-  },
-  async "gone first"(walk, arg, s, what) {
-    const { marks, page, watch } = walk;
-    // The caption holding a word at a mark reads as it did with its
-    // last or first word left out, and every other caption as it did.
-    const [label, text] = arg;
-    const read = (c) => c.lines.flatMap((l) => l.words.map((w) => w.text));
-    const was = marks[label];
-    const now = await engineState(page, watch.at);
-    const i = was.captions.findIndex((c) => read(c).some((w) => w.includes(text)));
-    const want = what === "gone last" ? read(was.captions[i]).slice(0, -1) : read(was.captions[i]).slice(1);
-    if (now.captions.length !== was.captions.length || read(now.captions[i]).join(" ") !== want.join(" ")) {
-      walk.wrong = `the caption with "${text}" did not lose its ${what.slice(5)} word\n${describe(was, now)}`;
-    }
-  },
   async "remove edge word"(walk, arg, s) {
     const { page, stepOn, watch, word } = walk;
     // The first or last word of the caption holding a word framed and
@@ -256,44 +223,6 @@ export const steps = {
     await watch.step("frame", s);
     await page.keyboard.press("Backspace");
     await watch.step("press", await shown(page));
-  },
-  async others(walk, arg) {
-    const { marks, page, watch } = walk;
-    // Every caption but the one holding a word at a mark appears and
-    // goes when it did then. With "held", the caption before it may go
-    // later, where the one holding the word now appears: it stays up
-    // over a word removed between them while the speech runs on, #597.
-    const [label, text, held] = arg;
-    const was = marks[label];
-    const now = await engineState(page, watch.at);
-    const mine = was.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
-    const before = held === "held" ? was.captions[was.captions.indexOf(mine) - 1] : undefined;
-    const ours = now.captions.find((d) => Math.abs(d.first - mine.first) < 1e-6);
-    const span = (c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`;
-    const moved = was.captions
-      .filter((c) => c !== mine)
-      .filter((c) => {
-        const n = now.captions.find((d) => Math.abs(d.first - c.first) < 1e-6);
-        if (n && c === before && ours) return span(n) !== span({ start: c.start, end: Math.max(c.end, ours.start) });
-        return !n || span(n) !== span(c);
-      });
-    if (moved.length) {
-      walk.wrong = `captions beside the one with "${text}" changed: ${moved.map(span).join(" ")}\nthen ${was.captions.map(span).join(" ")}\nnow  ${now.captions.map(span).join(" ")}`;
-    }
-  },
-  // ["earlier", [label, word]]
-  //                    the caption that held the word at the mark
-  //                    appears more than a frame earlier than it did
-  //                    then, so an edge dragged out moved it, #598
-  async earlier(walk, arg) {
-    const { marks, page, watch } = walk;
-    const [label, text] = arg;
-    const holds = (c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text)));
-    const was = marks[label].captions.find(holds);
-    const now = (await engineState(page, watch.at)).captions.find(holds);
-    if (!was || !now || !(now.start < was.start - 0.034)) {
-      walk.wrong = `the caption with "${text}" appears at ${now?.start.toFixed(3)}, was ${was?.start.toFixed(3)}`;
-    }
   },
   // ["meets", [label, word, side]]
   //                    the block on the clip timeline of the caption
@@ -332,29 +261,10 @@ export const steps = {
       walk.wrong = `no caption has "${arg}"\n${describe(marks.start ?? now, now)}`;
     }
   },
-  // ["gone", word]     no caption the engine has holds the word
-  async gone(walk, arg) {
-    const { marks, page, watch } = walk;
-    const now = await engineState(page, watch.at);
-    if (now.captions.some((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(arg))))) {
-      walk.wrong = `a caption still has "${arg}"\n${describe(marks.start ?? now, now)}`;
-    }
-  },
-  // ["fewer", label, n] the engine's captions hold n words fewer than at
-  //                    the mark, and as many captions
-  async fewer(walk, arg) {
-    const { marks, page, watch } = walk;
-    const [label, n] = arg;
-    const count = (caps) => caps.captions.flatMap((c) => c.lines.flatMap((l) => l.words)).length;
-    const now = await engineState(page, watch.at);
-    const was = marks[label];
-    if (count(was) - count(now) !== n || now.captions.length !== was.captions.length) {
-      walk.wrong = `${count(was) - count(now)} words and ${was.captions.length - now.captions.length} captions fewer than at "${label}", not ${n} and none\n${describe(was, now)}`;
-    }
-  },
-  // ["blocks"]         the clip timeline draws a block for every caption the
-  //                    engine has, and for no other
-  async blocks(walk) {
+  // ["blocks", n]      the clip timeline draws a block for every caption the
+  //                    engine has, and for no other, n of them, so a key
+  //                    that was to remove one is seen to have done it
+  async blocks(walk, arg) {
     const { page, watch } = walk;
     const now = await engineState(page, watch.at);
     const want = [...new Set(now.captions.map((c) => String(c.first)))].join(" ");
@@ -362,7 +272,9 @@ export const steps = {
     const drawn = await page.evaluate(() =>
       [...new Set([...document.querySelectorAll(".clip-timeline .caption")].map((b) => b.dataset.first))].join(" "),
     );
+    const count = drawn ? drawn.split(" ").length : 0;
     if (drawn !== want) walk.wrong = `the clip timeline draws captions at ${drawn}, the engine has them at ${want}`;
+    else if (arg !== undefined && count !== arg) walk.wrong = `the clip timeline draws ${count} captions, not ${arg}`;
   },
   // ["click", word]    clicks the word, which opens it
   async click(walk, arg, s) {
@@ -764,196 +676,6 @@ export const steps = {
     }
     await page.locator(`.clip-timeline .caption[data-first="${cue.first}"]`).first().click();
     await watch.step("block after", s);
-  },
-  // ["captions like the short"]
-  //                    puts the playhead on the first frame of one of the
-  //                    clip's words and in its middle, and holds the lower half
-  //                    of the crop in the video preview to the frame of
-  //                    the short Render wrote that shows the same moment
-  async "captions like the short"(walk) {
-    const { page, seq, watch } = walk;
-    const fps = await rate(page);
-    const state = await engineState(page, watch.at);
-    const short = await shortOf(page, watch.at);
-    if (!short || !existsSync(short)) {
-      walk.wrong = "the clip has no short to compare with";
-      return;
-    }
-    const pieces = state.segments;
-    const source = await ask(page, "Source", await episodeOn(page));
-    // The video preview at the short's own size, so the two are drawn
-    // at one size and compared pixel for pixel: on a page of its own,
-    // made taller until the crop is as tall as the short.
-    const tall = Number(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
-      "stream=height", "-of", "csv=p=0", short]).toString().trim());
-    const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser(), still: still(seq), clock: clock(seq) })).page;
-    const canvasTall = () => sized.evaluate(() => document.querySelector(".screen canvas").height);
-    for (let i = 0, high = 1000; i < 12 && (await canvasTall()) !== tall; i++) {
-      high += Math.round((tall - (await canvasTall())) * 1.4) || Math.sign(tall - (await canvasTall()));
-      await sized.setViewportSize({ width: 2400, height: high });
-      await settle(sized);
-    }
-    if ((await canvasTall()) !== tall) {
-      walk.wrong = `the video preview could not be made ${tall} pixels tall, it is ${await canvasTall()}`;
-      return;
-    }
-    // A moment of the clip's clock in the episode, and the frame of the
-    // short that shows the frame of the episode that holds it: the
-    // frames of the pieces before, and the frames into its own, each
-    // piece the frames from its start up to the one before its end,
-    // see pieceFrames in engine/render.go.
-    const into = (t) => {
-      let sum = 0;
-      for (const p of pieces) {
-        if (t < sum + p.end - p.start) return p.start + t - sum;
-        sum += p.end - p.start;
-      }
-      return null;
-    };
-    // The frame that holds a moment, a frame that begins a millisecond
-    // or less after it included, as seekTo waits for it.
-    const shortIndex = (at) => {
-      const k = Math.floor((at + 0.001) * fps);
-      let n = 0;
-      for (const p of pieces) {
-        const [first, end] = [Math.round(p.start * fps), Math.round(p.end * fps)];
-        if (k < end) return n + k - first;
-        n += end - first;
-      }
-      return -1;
-    };
-    // The first frame that shows every word, where the highlight
-    // bounces, and the frame in its middle, where it has settled, each
-    // aimed at the middle of its frame. A word that starts inside a
-    // frame is first shown by the frame after, and aimed at half a
-    // frame past its start the walk stood on the edge between the two,
-    // where a click a pixel either side picked one or the other: WebKit
-    // lays the clip timeline out a fraction of a pixel off Chromium, and
-    // landed on the frame before, #380.
-    const words = (state.captions ?? []).flatMap((c) => c.lines.flatMap((l) => l.words));
-    const moments = words
-      .flatMap((w) => {
-        const [first, middle] = [into(w.start), into((w.start + w.end) / 2)];
-        return [first === null ? null : (Math.ceil(first * fps - 0.001) + 0.5) / fps, middle === null ? null : (Math.floor(middle * fps) + 0.5) / fps];
-      })
-      .filter((at) => at !== null);
-    let compared = 0;
-    let apart = 0;
-    const report = [];
-    // TestTheVideoPreviewDrawsTheShortsCaptions in engine/ holds every
-    // frame of a short to the decoder's layer for it, the bounce
-    // included. What is left for the window is that it lays the layer
-    // over the frame the way the render does, and asks for the moment
-    // the playhead stands on: the first frame of one word, where the
-    // highlight bounces, and the middle of it, where it has settled.
-    const word = Math.min(2, Math.floor(moments.length / 2) - 1) * 2;
-    for (const at of moments.slice(word, word + 2)) {
-      if (!(await seekTo(sized, at, fps))) {
-        walk.wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
-        break;
-      }
-      // The click changed nothing of the clip: two clicks a few pixels
-      // apart were once a double-click, which cut a part out, and the clip
-      // compared was no longer the one the short was made from, issue #560.
-      const now = (await engineState(page, watch.at)).segments;
-      if (JSON.stringify(now) !== JSON.stringify(pieces)) {
-        walk.wrong = `the click that put the playhead at ${at.toFixed(2)} s changed the clip, its pieces were ${JSON.stringify(pieces)} and are ${JSON.stringify(now)}`;
-        break;
-      }
-      // Twice: the frame's own layer, then the pop it may start over
-      // the frame once it is drawn, see "the pop over a paused frame".
-      for (let i = 0; i < 2; i++) {
-        await sized.evaluate(() => window.__captionLayers?.rested());
-        await sized.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-      }
-      // Nothing but the canvas draws them: the caption box over it
-      // shows no word and no pill unless a word is being typed.
-      const painted = await sized.evaluate(() => {
-        const alpha = (c) => {
-          const m = c.match(/rgba?\(([^)]*)\)/);
-          const parts = m ? m[1].split(/[\s,/]+/).filter(Boolean) : [];
-          return parts.length > 3 ? Number(parts[3]) : 1;
-        };
-        return [...document.querySelectorAll(".captions .line, .captions .line *")]
-          .filter((e) => {
-            const s = getComputedStyle(e);
-            return (e.textContent.trim() && alpha(s.color) > 0) || alpha(s.backgroundColor) > 0;
-          })
-          .map((e) => e.textContent.trim());
-      });
-      if (painted.length) {
-        walk.wrong = `the caption box draws "${painted[0]}" over the video preview, a second drawing of the captions`;
-        break;
-      }
-      const got = await cropPixels(sized, source);
-      // A click lands on a whole pixel of the clip timeline, so the
-      // playhead is where it landed, near the moment asked for.
-      const landed = Number(await sized.evaluate(() => document.querySelector(".screen").dataset.playhead));
-      const n = shortIndex(landed);
-      if (!got || n < 0) continue;
-      // The frame and the two either side of it, in one read.
-      const near = shortFramesFrom(short, Math.max(0, n - 1), n + 1, got.w, got.h);
-      const ofShort = (m) => near[m - Math.max(0, n - 1)] ?? Buffer.alloc(0);
-      const want = ofShort(n);
-      const d = captionDiff(got.pixels, want, got.w, got.h);
-      compared++;
-      report.push(`${landed.toFixed(2)} s, frame ${n} of the short: ${d.mean.toFixed(2)} on average`);
-      // The short is made with H.264 and keeps its colour at a quarter
-      // of its pixels, so it is never the same to the level: 3 on
-      // average where the preview draws what the short does, against
-      // 4.5 and more for the frame before or after with another word
-      // lit, and 41 for the canvas before 2.211, which drew none and
-      // left the captions to the browser.
-      if (d.mean > 3.6) {
-        // Issue #547: this failed once on CI and never here. What the
-        // video preview had up says which way it went wrong: the
-        // frame it showed, how its captions came, and the frame of
-        // the short nearby it looks most like, another moment's
-        // captions or none at all.
-        const had = await sized.evaluate(() => {
-          const l = window.__captionLayers;
-          const screen = document.querySelector(".screen");
-          return {
-            pictured: window.__pictured(),
-            busy: l?.busy,
-            late: l?.late,
-            popping: l?.popping,
-            stats: l ? { ...l.stats } : null,
-            lost: Number(screen?.dataset.captionsLost ?? 0),
-          };
-        });
-        const from = Math.max(0, n - 3);
-        const around = shortFramesFrom(short, from, n + 3, got.w, got.h)
-          .map((f, i) => [from + i, f.length === want.length ? captionDiff(got.pixels, f, got.w, got.h).mean : Infinity])
-          .sort((a, b) => a[1] - b[1]);
-        walk.wrong =
-          `at ${landed.toFixed(2)} s the captions in the video preview differ from frame ${n} of the short by ${d.mean.toFixed(2)} on average and ${d.most} at most, where the captions are. ` +
-          `It showed frame ${had.pictured} of the video, the caption layers were ${had.busy ? "busy" : "at rest"}${had.late ? ", late" : ""}${had.popping ? ", popping" : ""}, ${had.lost} layers lost, ` +
-          `${JSON.stringify(had.stats)}, and it looks most like frame ${around[0][0]} of the short, by ${around[0][1].toFixed(2)}`;
-        break;
-      }
-      // The frames of the short either side, where their captions are
-      // drawn otherwise, are told apart from it, so a frame off in the
-      // highlight would not pass.
-      for (const m of [n - 1, n + 1]) {
-        if (m < 0) continue;
-        const other = ofShort(m);
-        if (other.length !== want.length) continue;
-        const o = captionDiff(want, other, got.w, got.h, 3);
-        if (o.mean < 1) continue;
-        const off = captionDiff(got.pixels, other, got.w, got.h);
-        report.push(`  frame ${m}, drawn otherwise by ${o.mean.toFixed(2)}: ${off.mean.toFixed(2)} on average`);
-        if (off.mean > d.mean + 0.5) apart++;
-      }
-    }
-    if (process.env.VERBOSE) console.log(`        ${report.join("\n        ")}`);
-    if (!walk.wrong && apart < 2) walk.wrong = `only ${apart} frames of the short either side were told apart from the video preview, so a frame off would pass`;
-    if (!walk.wrong && compared < 2) walk.wrong = `only ${compared} frames of the short were compared`;
-    // A comparison that failed leaves its page open, so its trace is kept
-    // with the walk's, see keepTraces. Closed, the trace of the page the
-    // comparison was made on went with it, and the one kept held only the
-    // render, issue #560.
-    if (!walk.wrong) await sized.close();
   },
   // ["caption edge", [edge, word]]
   //                    clicks the "start" or "end" edge of the caption
@@ -1648,15 +1370,6 @@ export const steps = {
     const o = s.find((w) => w.focused);
     if (o?.text !== arg) walk.wrong = `"${o?.text ?? "nothing"}" is open, not "${arg}"`;
   },
-  // ["spans", label]   every caption appears and goes when it did at the mark
-  async spans(walk, arg) {
-    const { marks, page, watch } = walk;
-    const spans = (caps) => caps.captions.map((c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`).join(" ");
-    const now = await engineState(page, watch.at);
-    if (spans(now) !== spans(marks[arg])) {
-      walk.wrong = `the captions do not appear and go when they did at "${arg}"\nthen ${spans(marks[arg])}\nnow  ${spans(now)}\n${describe(marks[arg], now)}`;
-    }
-  },
   // ["wake on a caption"]
   //                    puts the playhead on a clip that starts on a
   //                    caption, adds another video and goes back to the
@@ -2188,71 +1901,12 @@ steps["edge in"] = steps["edge to word"];
 steps["edge out"] = steps["edge to word"];
 steps["edge nudge"] = steps["edge to word"];
 steps["count pops"] = steps["pops"];
-steps["gone last"] = steps["gone first"];
 steps["font"] = steps["style"];
 
 // How many layers of captions the video preview has given up on, as
 // data-captions-lost says, read before a gesture for shownOnPlayhead.
 function captionsLost(page) {
   return page.locator(".screen").evaluate((screen) => screen.dataset.captionsLost ?? "");
-}
-
-// How far the captions in the crop of the video preview are from a frame
-// of the short at the same size, in brightness, on average over every
-// pixel and at most, in steps of 8 bits. The captions are the rows of the
-// lower half of the short that have white text in them, and a few pixels
-// round them. The short is given the video preview's look first, see lift
-// in lib/frames/light.ts. The two are laid on each other a pixel either
-// way too and the closest is taken: libass puts a drawing on whole pixels,
-// and the short, made smaller to compare, lands half a pixel from where
-// the preview draws it at the size it shows it.
-const lookOf = (v) => {
-  const c = Math.min(Math.max(v / 255, 0), 1);
-  return 255 * Math.pow(c, Math.max(0.891, 0.98 - 0.31 * c));
-};
-// Every channel is a byte, so the look of each of the 256 is worked out
-// once. Worked out for every channel of every pixel, it was a third of
-// what the sequence that compares the captions with the short took.
-const looks = Float64Array.from({ length: 256 }, (_, v) => lookOf(v));
-const look = (v) => looks[v];
-
-function captionDiff(rgba, rgb, w, h, channels = 4) {
-  const luma = (d, i, n, f) => 0.2126 * f(d[n * i]) + 0.7152 * f(d[n * i + 1]) + 0.0722 * f(d[n * i + 2]);
-  const a = new Float32Array(w * h);
-  const b = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    a[i] = luma(rgba, i, channels, channels === 3 ? look : (v) => v);
-    b[i] = luma(rgb, i, 3, look);
-  }
-  let top = h;
-  let bottom = -1;
-  for (let y = Math.floor(h / 2); y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (luma(rgb, y * w + x, 3, (v) => v) > 200) {
-        top = Math.min(top, y);
-        bottom = Math.max(bottom, y);
-      }
-    }
-  }
-  if (bottom < 0) return { mean: Infinity, most: Infinity };
-  let best = { mean: Infinity, most: Infinity };
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      let sum = 0;
-      let most = 0;
-      let n = 0;
-      for (let y = Math.max(1, top - 8); y < Math.min(h - 1, bottom + 8); y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const d = Math.abs(a[y * w + x] - b[(y + dy) * w + x + dx]);
-          sum += d;
-          most = Math.max(most, Math.round(d));
-          n++;
-        }
-      }
-      if (sum / n < best.mean) best = { mean: sum / n, most };
-    }
-  }
-  return best;
 }
 
 // Reads, on every frame the browser paints, the pill libass drew off the

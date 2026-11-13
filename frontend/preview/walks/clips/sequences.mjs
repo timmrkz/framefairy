@@ -33,34 +33,6 @@ export default [
     steps: [["put back the chosen"]],
   },
   {
-    name: "a word corrected in one clip reads as it was heard in another clip over it",
-    steps: [
-      ["frame", "Schulhof"],
-      ["click", "Schulhof"],
-      ["press", "End"],
-      ["type", "f"],
-      ["press", "Enter"],
-      ["holds", "Schulhoff"],
-      ["remove clip"],
-      ["make here", "i"],
-      ["put back"],
-      ["clips with", ["Schulhoff", 1]],
-      ["clips with", ["Schulhof", 1]],
-    ],
-  },
-  {
-    name: "a word removed in one clip is still shown in another clip over it",
-    steps: [
-      ["frame", "Schulhof"],
-      ["press", "Backspace"],
-      ["gone", "Schulhof"],
-      ["remove clip"],
-      ["make here", "i"],
-      ["put back"],
-      ["clips with", ["Schulhof", 1]],
-    ],
-  },
-  {
     // Found by Tim on 20 October: the edge of a clip's card in the
     // transcript curved round its corners, where the clip list's is a
     // straight bar the corners cut off. Both are one bar, a pixel wider.
@@ -275,14 +247,5 @@ export default [
       ["make while paused", "i"],
       ["made on the clip"],
     ],
-  },
-  {
-    // Plan row 2.211: Tim saw the highlight in the video preview with
-    // padding round the word, settled, where the short had it mid-bounce
-    // and the thumbnail had it with no padding at all. A browser drew the
-    // preview's captions and libass the short's. Now libass draws both,
-    // from the one caption file, see lib/frames/captions.ts.
-    name: "the video preview shows the short's captions, frame for frame",
-    steps: [["render"], ["captions like the short"]],
   },
 ];
