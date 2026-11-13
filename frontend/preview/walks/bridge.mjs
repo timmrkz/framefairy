@@ -904,13 +904,18 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
         const up = () => {
           const at = Number(screen.dataset.playhead);
           const shown = Number(screen.dataset.shown);
-          // The frame that holds the playhead, by the app's own frameAt in
-          // lib/flow.ts. On the clip's end itself it is the clip's last
-          // frame, the one that holds the moment a frame before the end,
-          // where a play of the clip stops, see settle in
+          // Where the frame slot that holds the playhead begins, a slot
+          // that begins a millisecond or less after it included. The
+          // slots are laid on the picture's grid both ways from where it
+          // starts, and before that the video preview names a slot of its
+          // own while it draws the picture's first frame. So this is not
+          // frameAt in lib/flow.ts, which counts every moment before the
+          // picture as its frame 0. On the clip's end itself it is the
+          // clip's last frame, the one that holds the moment a frame
+          // before the end, where a play of the clip stops, see settle in
           // lib/frames/queue.ts. A step that lands on the end shows it.
           const held = edgeOfClip(at, fps);
-          const begins = start + window.__frameAt(held, 1 / fps, start) / fps;
+          const begins = start + Math.floor((held - start + 0.001) * fps) / fps;
           if (!Number.isFinite(shown) || Math.abs(shown - begins) >= 0.5 / fps) return false;
           return !captions || (screen.dataset.captioned !== undefined && Number(screen.dataset.captioned) === shown);
         };

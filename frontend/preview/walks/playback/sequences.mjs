@@ -37,6 +37,13 @@ export default [
     steps: [
       ["add cameras", 30, 12],
       ["wait for", "Search"],
+      // #717, Tim's idea: the video preview leaves a faint reflection at
+      // the foot of the workspace, as if the video shone towards him, and
+      // it lies behind every control, so nothing that is read or worked
+      // with changes. The two cameras' backdrops and subjects make the
+      // quarters of the picture differ, so the reflection has to hold the
+      // picture the search leaves, before the crop moves.
+      ["reflection"],
       ["pieces", 1],
       ["mark", "found"],
       ["look", "found"],
@@ -54,13 +61,6 @@ export default [
       ["crop to", "left"],
       ["look", "moved"],
       ["one crop", "moved"],
-      // #717, Tim's idea: the video preview leaves a faint reflection at
-      // the foot of the workspace, as if the video shone towards him, and
-      // it lies behind every control, so nothing that is read or worked
-      // with changes. The two cameras' backdrops and subjects make the
-      // quarters of the picture differ, so the reflection has to hold this
-      // picture. Last, because it holds the page's clock.
-      ["reflection"],
     ],
   },
   {
