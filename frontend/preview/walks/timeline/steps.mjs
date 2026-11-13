@@ -1788,21 +1788,26 @@ export const steps = {
     else if (!got.hover) walk.wrong = `the ${arg} mark does not take the hover`;
     else if (lit === away) walk.wrong = `the ${arg} mark looks the same under the hand as away from it, ${away}`;
   },
-  // ["answers late", ms]
-  //                    every answer of the engine to a gesture on the clip
-  //                    timeline, while the hand moves, comes ms late, the
-  //                    way it does on a busy machine
-  async "answers late"(walk, arg) {
+  // ["answers late"]   every answer of the engine to a gesture on the
+  //                    clip timeline, while the hand moves, comes only
+  //                    once the hand has let go, the way it does on a busy
+  //                    machine. Held to the hand and not to the clock, so
+  //                    it is late on any machine
+  async "answers late"(walk) {
     const { page } = walk;
-    await page.evaluate((ms) => {
+    await page.evaluate(() => {
       const real = window.fetch;
+      let up = Promise.resolve();
+      let letGo = () => {};
+      window.addEventListener("pointerdown", () => (up = new Promise((done) => (letGo = done))), true);
+      window.addEventListener("pointerup", () => letGo(), true);
       window.fetch = async (input, init) => {
         if (String(input).endsWith("/call") && init?.body && String(JSON.parse(init.body).name).split(".").pop() === "Shape") {
-          await new Promise((r) => setTimeout(r, ms));
+          await up;
         }
         return real(input, init);
       };
-    }, arg);
+    });
   },
   // ["playhead at", share]
   //                    a click on the clip timeline puts the playhead that

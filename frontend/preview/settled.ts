@@ -19,7 +19,12 @@
 // screen, a toast or a Copied, which a walk turns on itself with
 // holdClock. A movement counts the same way: a row sliding open or a clip
 // timeline gliding to its view, not the shimmer over a place waiting to
-// be filled, which moves for good.
+// be filled, which moves for good. A timer that only waits for
+// something to come to rest, a save a moment after the last key, a
+// clip timeline read once a swipe has stopped, a row measured once it
+// has slid, see afterRest in src/lib/rest.ts, is not waited for on the
+// clock: once nothing else is on its way and nothing moves, the walk's
+// hand has rested and the rows with it, so it runs at once.
 import "./standing";
 
 const SOON = 1000;
@@ -80,6 +85,9 @@ export function callOut(name: string): () => void {
   return empty;
 };
 const soon = new Set<unknown>();
+// The timers among soon that wait for something to come to rest, with
+// what each runs, see afterRest.
+const resting = new Map<unknown, () => void>();
 let faked = false;
 let woken: (() => void)[] = [];
 function wake() {
@@ -95,6 +103,7 @@ window.setTimeout = ((fn: TimerHandler, ms = 0, ...args: unknown[]) => {
   const id = arm(
     (...given: unknown[]) => {
       soon.delete(id);
+      resting.delete(id);
       fn(...given);
       wake();
     },
@@ -102,9 +111,17 @@ window.setTimeout = ((fn: TimerHandler, ms = 0, ...args: unknown[]) => {
     ...args,
   );
   soon.add(id);
+  if ((fn as any).rest)
+    resting.set(id, () => {
+      soon.delete(id);
+      resting.delete(id);
+      disarm(id);
+      (fn as () => void)();
+    });
   return id;
 }) as typeof window.setTimeout;
 window.clearTimeout = ((id?: number) => {
+  resting.delete(id);
   if (soon.delete(id)) queueMicrotask(wake);
   disarm(id);
 }) as typeof window.clearTimeout;
@@ -119,6 +136,7 @@ window.clearTimeout = ((id?: number) => {
 (window as any).__forgetSoon = () => {
   faked = true;
   soon.clear();
+  resting.clear();
   wake();
 };
 
@@ -155,17 +173,24 @@ const after = (() => {
 // walk would only see it end, so it ends now, where it would have ended,
 // and what the app does when it ends, a row taken out once it has folded,
 // happens as it would. A walk that looks at a movement looks before it
-// settles.
+// settles. A timer that waits for something to come to rest runs at
+// once, the same way, once nothing else is on its way and nothing moves,
+// see afterRest. With timersAside it is left for the next settle too.
 (window as any).__settled = (timersAside: boolean) =>
   new Promise<void>((done) => {
     const frame: (fn: () => void) => void = (window as any).__real?.frame ?? requestAnimationFrame;
-    const busy = () => out > 0 || (!timersAside && soon.size > 0);
+    const busy = () => out > 0 || (!timersAside && soon.size > resting.size);
     const look = () => {
       if (busy()) {
         woken.push(look);
         return;
       }
       const going = moving();
+      if (!going.length && !timersAside && resting.size) {
+        for (const run of [...resting.values()]) run();
+        queueMicrotask(look);
+        return;
+      }
       if (going.length) {
         for (const a of going) {
           try {
@@ -176,7 +201,7 @@ const after = (() => {
         return;
       }
       const seen = back;
-      frame(() => after(() => (back === seen && !busy() && !moving().length ? done() : look())));
+      frame(() => after(() => (back === seen && !busy() && (timersAside || !resting.size) && !moving().length ? done() : look())));
     };
     look();
   });

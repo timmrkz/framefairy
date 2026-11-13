@@ -15,7 +15,7 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { browserFor, chosen, keepTraces, letGo, newBrowser, open, settle, shown, shownOnPlayhead, traceAs, traceStep } from "./bridge.mjs";
-import { clock, moving, soundCard, started, still, url } from "./common/steps.mjs";
+import { moving, started, still, url } from "./common/steps.mjs";
 import { filmed } from "./filmed.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -86,14 +86,11 @@ if (only === "--names") {
     process.exit(1);
   }
   // A step renamed and left in moving by its old name would be walked
-  // still, and check motion it never sees. Left in soundCard, it would
-  // check the sound's time on the walk's clock.
-  for (const [set, names] of [["moving", moving], ["soundCard", soundCard]]) {
-    const noStep = [...names].filter((n) => !everyStep[n]);
-    if (noStep.length) {
-      console.log(`${set} names ${JSON.stringify(noStep[0])}, which is no step`);
-      process.exit(1);
-    }
+  // still, and check motion it never sees.
+  const noStep = [...moving].filter((n) => !everyStep[n]);
+  if (noStep.length) {
+    console.log(`moving names ${JSON.stringify(noStep[0])}, which is no step`);
+    process.exit(1);
   }
   // A walk renamed or removed and left in filmed.mjs by its old name
   // would quietly go unfilmed when it fails next, and so would a name
@@ -202,7 +199,7 @@ async function walkingSequence(seq, shared) {
   // The page the sequence before passed in, see openAgain in bridge.mjs.
   const before = gpu ? null : spare;
   if (!gpu) spare = null;
-  const opened = await open(url, { browser: gpu ? null : shared, named: browserFor(), still: still(seq), clock: clock(seq), gpu, start: started(seq), kept: before });
+  const opened = await open(url, { browser: gpu ? null : shared, named: browserFor(), still: still(seq), gpu, start: started(seq), kept: before });
   const { browser, errors } = opened;
   // The page the steps act on: the app's window, or the report window
   // once Bugs opened it. The watch keeps to the app's window.

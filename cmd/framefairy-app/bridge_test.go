@@ -420,9 +420,10 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.d.bus.send("mark", n)
 		answer(w, n, nil)
 	})
-	// The clock removed work is timed by, run on by run milliseconds,
-	// with every call due by then made before it answers, the way a walk
-	// runs the page's clock on, see runClock in walks/bridge.mjs.
+	// The machine's clock, see walkTime: held, let go, run on by run
+	// milliseconds, with every call due by then made before it answers,
+	// the way a walk runs the page's clock on, see runClock in
+	// walks/bridge.mjs, or run on to the next call due.
 	mux.HandleFunc("/clock", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Has("hold") {
@@ -433,6 +434,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		if q.Has("go") {
 			b.d.time.letGo()
 			answer(w, true, nil)
+			return
+		}
+		if q.Has("next") {
+			ran, err := b.d.time.next(r.Context())
+			answer(w, ran.Milliseconds(), err)
 			return
 		}
 		ms, err := strconv.Atoi(q.Get("run"))
