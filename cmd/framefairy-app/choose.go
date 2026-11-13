@@ -269,7 +269,11 @@ func card(jobs []Job, key string) *Job {
 
 // landedClip is the clip a chosen card was written as, once it is in the
 // clips, rule 7, or nothing. Its job says the key from the moment the
-// clip has one, and its result once it is done.
+// clip has one, in Underway, and from the moment it is written, in
+// Landed, which the card leaves Underway for. Its result says it once
+// the job is done. Between the write and the end of the job only Landed
+// said it, and a state read then held the clip, no card and the card
+// still chosen, so for a frame nothing was chosen, issue #781.
 func landedClip(st VideoState, key string) string {
 	j := card(st.Jobs, key)
 	if j == nil {
@@ -279,6 +283,11 @@ func landedClip(st VideoState, key string) string {
 	for _, u := range j.Underway {
 		if strconv.Itoa(u.N) == n && u.Clip != "" && holdsClip(st.Clips, u.Clip) {
 			return u.Clip
+		}
+	}
+	for _, l := range j.Landed {
+		if strconv.Itoa(l.N) == n && holdsClip(st.Clips, l.Clip) {
+			return l.Clip
 		}
 	}
 	if j.Kind == engine.JobClip && j.State == JobDone && holdsClip(st.Clips, j.Result) {

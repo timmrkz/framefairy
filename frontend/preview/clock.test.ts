@@ -319,16 +319,41 @@ describe("the hand on the sound card", () => {
 
   // Issue #702: the hand held the sound card while the play it had just
   // asked for was still starting it, so there was nothing to hold yet,
-  // and the play ran on to the clip's end. The card is held again the
-  // moment it says it runs.
-  test("holds the sound card for the hand once the app has started it", async () => {
+  // and the play ran on to the clip's end. Then the card was held again
+  // the moment it said it ran, a few milliseconds of sound later, and
+  // Chromium moved the card's time on over the hold while the sound it
+  // was playing went on where it was, so the sound clicked 85 ms into a
+  // play. The app's start waits for the hand, and the card never runs
+  // while it is held.
+  test("starts a held sound card only once the hand lets go", async () => {
+    const card = new WalkCard({ sampleRate: 1000 });
+    const play = { playing: true, audio: card as unknown as AudioContext } satisfies Play;
+    await holdSound(play, "hand", true);
+    const states: AudioContextState[] = [];
+    card.addEventListener("statechange", () => states.push(card.state));
+    let started = false;
+    const start = card.resume().then(() => (started = true));
+    // The card does what it is asked in order, so once a hold asked after
+    // the app's start has landed, the card has done what it would with
+    // the start.
+    await card.suspend();
+    expect(states).toEqual([]);
+    expect(started).toBe(false);
+    await holdSound(play, "hand", false);
+    await start;
+    // The play that asked for it sees it run.
+    expect(card.state).toBe("running");
+    expect(states).toEqual(["running"]);
+  });
+
+  // A card started while the hand holds it, by anything but the app's
+  // ask, is held again the moment it says it runs.
+  test("holds again a sound card started some other way while the hand holds it", async () => {
     const card = new WalkCard({ sampleRate: 1000 });
     const play = { playing: true, audio: card as unknown as AudioContext } satisfies Play;
     await holdSound(play, "hand", true);
     const heldAgain = new Promise((done) => card.addEventListener("statechange", () => card.state === "suspended" && done(null)));
-    await card.resume();
-    // The play that asked for it sees it run.
-    expect(card.state).toBe("running");
+    await WalkCard.prototype.resume.call(card);
     await heldAgain;
     await holdSound(play, "hand", false);
     expect(card.state).toBe("running");
@@ -344,7 +369,7 @@ describe("the hand on the sound card", () => {
     const states: AudioContextState[] = [];
     card.addEventListener("statechange", () => states.push(card.state));
     const back = new Promise((done) => card.addEventListener("statechange", () => states.length === 3 && done(null)));
-    await card.resume();
+    await WalkCard.prototype.resume.call(card);
     await holdSound(play, "hand", false);
     await back;
     expect(states).toEqual(["running", "suspended", "running"]);

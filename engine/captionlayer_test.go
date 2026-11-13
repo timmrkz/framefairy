@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -1006,6 +1007,49 @@ func TestASizeStepDrawsTheCaptionsShowingFirstAndTheWholeFileAfter(t *testing.T)
 	}
 }
 
+// A step of a drag draws its frame from a file of the captions showing
+// and starts no whole file: the next step calls it off again, and at an
+// hour long clip each measured on for about half a second beside the
+// drag.
+//
+// On the real disk: ffmpeg measures the words, and the caption files are
+// written into the work folder.
+func TestAStepOfADragDrawsOnlyTheCaptionsShowing(t *testing.T) {
+	ffmpegtest.Need(t)
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	work := t.TempDir()
+	d := threeCaptions(t, "01", nil)
+	d.inHand = true
+	font := e.Fonts.Style(nil).Font
+	const w, h = 540, 960
+	m := int64(centiseconds((d.Laid[1].Start+d.Laid[1].End)/2)) * 10
+	shown, err := e.previewTrackAt(ctx, work, d, nil, font, SourceInfo{}, w, h, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, previewTracks := e.captions()
+	previewTracks.mu.Lock()
+	files, making, started := len(previewTracks.files), len(previewTracks.making), len(previewTracks.started)
+	previewTracks.mu.Unlock()
+	if files != 1 || making != 0 || started != 0 {
+		t.Errorf("after a step %d files are kept, %d on their way and %d started, want only the captions showing", files, making, started)
+	}
+	whole, err := e.previewTrack(ctx, work, d, nil, font, SourceInfo{}, w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines, all := dialogues(t, shown.file), dialogues(t, whole.file); lines == 0 || lines >= all {
+		t.Errorf("the step drew from a file of %d lines, and the whole file has %d", lines, all)
+	}
+	// Lifted and typed into, as the video preview asks for it, it is
+	// still in the hand.
+	if !d.Lifted(LiftWord).InHand() || !d.Typing(CaptionShowing{Caption: 0, Word: 0}).InHand() {
+		t.Error("a step lifted or typed into is no longer in the hand")
+	}
+}
+
 // dialogues is how many lines the caption file at path draws.
 //
 // On the real disk: the engine writes the caption files the decoder reads.
@@ -1230,4 +1274,101 @@ func TestAWholeFileThereCallsOffTheOneStartedBeforeIt(t *testing.T) {
 			t.Error("the file of 98 was not called off")
 		}
 	})
+}
+
+// A drawing's name changes with every field of its captions, so two
+// drawings that differ never share a name, and two that are the same
+// always do, whatever order the words hidden are kept in. The captions are
+// written out by hand for the name, see LaidCaption.appendName, so a field
+// added to a caption has to be added there too, and this test says so.
+func TestADrawingsNameHasEveryFieldOfItsCaptions(t *testing.T) {
+	drawing := func() *CaptionDrawing {
+		return &CaptionDrawing{
+			Laid: []LaidCaption{{
+				Caption: Caption{Start: 1, End: 2, Text: "eins zwei", Opens: 11, Closes: 12,
+					Words: []timed.Cue{{Start: 1, End: 1.4, Text: "eins"}, {Start: 1.5, End: 2, Text: "zwei"}}},
+				Lines:  [][]timed.Cue{{{Start: 1, End: 1.4, Text: "eins"}}, {{Start: 1.5, End: 2, Text: "zwei"}}},
+				Hidden: map[int]bool{0: true, 1: true, 3: true},
+				Lift:   LiftWord,
+			}},
+			Style: map[string]any{"size": 80.0, "primary": "&H00FFFFFF", "box": 1.0},
+			Clip:  Clip{ID: "01", Segments: []Segment{{Start: 10, End: 20}}},
+		}
+	}
+	name := drawing().name()
+	for range 20 {
+		if again := drawing().name(); again != name {
+			t.Fatalf("the same drawing was named %s and %s", name, again)
+		}
+	}
+	// A clip turned from a moment to its end holds a number JSON cannot
+	// write, and keeps its name too.
+	turned := func() *CaptionDrawing {
+		d := drawing()
+		d.Clip.Rotations = []Rotation{{From: 12, To: math.Inf(1), Deg: 90}}
+		return d
+	}
+	if a, b := turned().name(), turned().name(); a != b {
+		t.Errorf("a clip turned to its end was named %s and then %s", a, b)
+	}
+	changes := map[string]func(d *CaptionDrawing){
+		"Start":  func(d *CaptionDrawing) { d.Laid[0].Start = 1.04 },
+		"End":    func(d *CaptionDrawing) { d.Laid[0].End = 2.04 },
+		"Text":   func(d *CaptionDrawing) { d.Laid[0].Text = "eins drei" },
+		"Words":  func(d *CaptionDrawing) { d.Laid[0].Words = d.Laid[0].Words[:1] },
+		"Opens":  func(d *CaptionDrawing) { d.Laid[0].Opens = 11.5 },
+		"Closes": func(d *CaptionDrawing) { d.Laid[0].Closes = 12.5 },
+		"Lines": func(d *CaptionDrawing) {
+			d.Laid[0].Lines = [][]timed.Cue{{d.Laid[0].Lines[0][0], d.Laid[0].Lines[1][0]}}
+		},
+		"Hidden": func(d *CaptionDrawing) { d.Laid[0].Hidden = map[int]bool{0: true} },
+		"Lift":   func(d *CaptionDrawing) { d.Laid[0].Lift = LiftRest },
+		"a size": func(d *CaptionDrawing) { d.Style["size"] = 81.0 },
+		"a piece": func(d *CaptionDrawing) {
+			d.Clip.Segments = []Segment{{Start: 10, End: 19.96}}
+		},
+		"a second caption": func(d *CaptionDrawing) { d.Laid = append(d.Laid, d.Laid[0]) },
+		"a turn to the end": func(d *CaptionDrawing) {
+			d.Clip.Rotations = []Rotation{{From: 12, To: math.Inf(1), Deg: 90}}
+		},
+	}
+	// Every exported field of a laid caption, the caption in it too.
+	var fields func(ty reflect.Type)
+	fields = func(ty reflect.Type) {
+		for f := range ty.Fields() {
+			if f.Anonymous {
+				fields(f.Type)
+			} else if f.IsExported() && changes[f.Name] == nil {
+				t.Errorf("a caption's %s is not in its drawing's name, see LaidCaption.appendName", f.Name)
+			}
+		}
+	}
+	fields(reflect.TypeFor[LaidCaption]())
+	// Every field of a word, in the words and in the lines.
+	for f := range reflect.TypeFor[timed.Cue]().Fields() {
+		for _, where := range []string{"words", "lines"} {
+			changes[fmt.Sprintf("a word's %s in the %s", f.Name, where)] = func(d *CaptionDrawing) {
+				word := &d.Laid[0].Words[0]
+				if where == "lines" {
+					word = &d.Laid[0].Lines[0][0]
+				}
+				v := reflect.ValueOf(word).Elem().FieldByIndex(f.Index)
+				switch v.Kind() {
+				case reflect.Float64:
+					v.SetFloat(v.Float() + 0.04)
+				case reflect.String:
+					v.SetString(v.String() + "s")
+				default:
+					t.Fatalf("a word's %s is a %s, which this test cannot change", f.Name, v.Kind())
+				}
+			}
+		}
+	}
+	for what, change := range changes {
+		d := drawing()
+		change(d)
+		if d.name() == name {
+			t.Errorf("with %s changed the drawing keeps its name", what)
+		}
+	}
 }

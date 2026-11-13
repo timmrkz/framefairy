@@ -794,10 +794,10 @@ func TestACutOnFramesFitsThePieceItIsIn(t *testing.T) {
 	if !ok || math.Abs((a+b)/2-15) > 0.05 || math.Abs(b-a-0.28) > 1e-6 || !onFrame(a) || !onFrame(b) {
 		t.Errorf("a quarter second at 15 is %v to %v", a, b)
 	}
-	// Room on both sides of the piece, wherever it is clicked.
+	// A frame of room on both sides of the piece, wherever it is clicked.
 	for _, where := range []float64{10.001, 10.1, 15, 19.9, 19.999} {
 		a, b, ok := at(two, where, 0.25)
-		if !ok || a < 10.05-1e-6 || b > 19.95+1e-6 || b-a < MinCut-1e-6 {
+		if !ok || a < 10+frame-1e-6 || b > 20-frame+1e-6 || b-a < frame-1e-6 {
 			t.Errorf("at %v the cut is %v to %v", where, a, b)
 		}
 	}
@@ -807,7 +807,7 @@ func TestACutOnFramesFitsThePieceItIsIn(t *testing.T) {
 	}
 	// What room there is, in a short piece.
 	if a, b, ok := at(Clip{Segments: []Segment{{Start: 10, End: 10.4}}}, 10.2, 0.25); !ok ||
-		a < 10.05-1e-6 || b > 10.35+1e-6 || b-a < MinCut-1e-6 {
+		a < 10+frame-1e-6 || b > 10.4-frame+1e-6 || b-a < frame-1e-6 {
 		t.Errorf("a short piece gives %v to %v", a, b)
 	}
 	one := Clip{Segments: []Segment{{Start: 10, End: 30}}}
@@ -815,12 +815,13 @@ func TestACutOnFramesFitsThePieceItIsIn(t *testing.T) {
 	if a, b, ok := at(one, 20, 8); !ok || math.Abs(b-a-8) > 1e-6 {
 		t.Errorf("eight seconds asked gives %v to %v", a, b)
 	}
-	// Zoomed right in, held open at the least rather than refused.
-	if a, b, ok := at(one, 20, 0.001); !ok || b-a < MinCut-1e-6 {
+	// Zoomed right in, held open at the least, a single frame, rather
+	// than refused.
+	if a, b, ok := at(one, 20, 0.001); !ok || math.Abs(b-a-frame) > 1e-6 {
 		t.Errorf("a hair asked gives %v to %v", a, b)
 	}
 	// Never more than the piece has room for.
-	if a, b, ok := at(one, 20, 999); !ok || a < 10.05-1e-6 || b > 29.95+1e-6 {
+	if a, b, ok := at(one, 20, 999); !ok || a < 10+frame-1e-6 || b > 30-frame+1e-6 {
 		t.Errorf("more than the piece asked gives %v to %v", a, b)
 	}
 }

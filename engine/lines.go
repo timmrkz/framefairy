@@ -440,14 +440,24 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 	// block before it across the place it had been, which Tim read as the
 	// two merging.
 	var current []int
-	line := func(ks []int) string {
-		parts := make([]string, 0, len(ks))
-		for _, k := range ks {
-			if laid[k] != "" {
-				parts = append(parts, laid[k])
-			}
+	// chars is how many characters the words of current take on a line,
+	// the words shown with a space between each two, and shown how many
+	// of them are shown. They are counted as each word comes, where the
+	// line used to be joined and counted again for every word.
+	chars, shown := 0, 0
+	laidLen := make([]int, len(laid))
+	for k, text := range laid {
+		laidLen[k] = runes.Len(text)
+	}
+	// with is how many characters current takes with the word k added.
+	with := func(k int) int {
+		switch {
+		case laid[k] == "":
+			return chars
+		case shown == 0:
+			return laidLen[k]
 		}
-		return strings.Join(parts, " ")
+		return chars + 1 + laidLen[k]
 	}
 	closeGroup := func(isAlone bool) {
 		g := group{alone: isAlone, first: -1, from: all[current[0]].Start,
@@ -464,7 +474,7 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 		if len(g.words) > 0 || len(groups) > 0 {
 			groups = append(groups, g)
 		}
-		current = nil
+		current, chars, shown = nil, 0, 0
 	}
 	for k := range all {
 		if alone != nil && laid[k] != "" && alone(laid[k]) {
@@ -475,14 +485,18 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 			closeGroup(true)
 			continue
 		}
-		if len(current) > 0 && runes.Len(line(append(current[:len(current):len(current)], k))) > maxChars {
+		if len(current) > 0 && with(k) > maxChars {
 			closeGroup(false)
+		}
+		chars = with(k)
+		if laid[k] != "" {
+			shown++
 		}
 		current = append(current, k)
 		last := k == len(all)-1
 		pauseNext := !last && allWas[k+1].Start-allWas[k].End >= captionPause
 		sentence := endsWithBreak(laid[k]) &&
-			float64(runes.Len(line(current))) >= float64(maxChars)*0.55
+			float64(chars) >= float64(maxChars)*0.55
 		if last || pauseNext || sentence {
 			closeGroup(false)
 		}
@@ -795,22 +809,29 @@ func ShareTime(clip Clip, share float64) float64 {
 
 // SaidWord is the word being said at a moment of a clip, on the episode's
 // clock, out of the words the clip says, in the order they are said, the
-// way Said gives them. It looks only at the words either side of the
-// moment, so the captions of a clip are told their words in time that
-// grows with the clip, not with its square: an hour's clip took 240 ms
-// for each step of a drag, Tim's report of 11 November.
+// way Said gives them: the word the moment is in, or the nearest within
+// 20 milliseconds, the first of two as near. It halves the words rather
+// than look at every one, so the captions of a clip are told their words
+// in time that grows with the clip, not with its square: an hour's clip
+// took 240 ms for each step of a drag, Tim's report of 11 November.
 func SaidWord(clip Clip, words []timed.Cue, at float64) (timed.Cue, bool) {
 	when := EpisodeTime(clip, at)
+	// The first word that ends after the moment. Every word before it
+	// ends before, and every word after it starts later.
 	i := sort.Search(len(words), func(i int) bool { return words[i].End > when })
+	if i < len(words) && words[i].Start <= when {
+		return words[i], true
+	}
 	near, off := timed.Cue{}, math.Inf(1)
-	for _, w := range words[max(i-1, 0):min(i+2, len(words))] {
-		if when >= w.Start && when < w.End {
-			return w, true
-		}
-		away := math.Max(w.Start-when, when-w.End)
-		if away < off {
-			near, off = w, away
-		}
+	if i > 0 {
+		// The first of the words before that end the latest, as near as
+		// any of them, which a word of no length ending with the one
+		// before it can be.
+		j := sort.Search(i, func(j int) bool { return words[j].End >= words[i-1].End })
+		near, off = words[j], when-words[j].End
+	}
+	if i < len(words) && words[i].Start-when < off {
+		near, off = words[i], words[i].Start-when
 	}
 	return near, off <= 0.02
 }

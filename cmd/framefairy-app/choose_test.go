@@ -321,6 +321,55 @@ func TestACardPickedAgainAfterItLandedStaysItsClip(t *testing.T) {
 	}
 }
 
+// A card on its way is chosen, and its clip is written while its job
+// still runs. The card leaves the job's clips on the way in the news
+// that writes it, and the job is done only a moment later. A state read
+// in between holds the clip and no card, and chooses the clip, written
+// as the card. It said the card was still chosen, which the list no
+// longer showed, so for a frame nothing was chosen and the clip timeline
+// dimmed, the nightly walks of 10 November, issue #782. A search's card
+// a hand picked is written the same way while the search runs on, and
+// becomes its clip the same way.
+func TestACardWrittenWhileItsJobRunsIsItsClipAtOnce(t *testing.T) {
+	for _, kind := range []string{engine.JobClip, engine.JobSearch} {
+		t.Run(kind, func(t *testing.T) {
+			svc, mine, _ := anEpisodeWithAPlan(t)
+			ctx := context.Background()
+			if _, err := svc.State(ctx, mine); err != nil {
+				t.Fatal(err)
+			}
+			job := &Job{ID: "c1", Episode: mine, State: JobRunning, JobRecord: engine.JobRecord{Kind: kind},
+				Underway: []runlog.Underway{{N: 1, Start: 3, End: 3, Step: engine.StepFraming, Clip: "clips.json/09"}}}
+			svc.jobs.mu.Lock()
+			svc.jobs.jobs = append(svc.jobs.jobs, job)
+			svc.jobs.mu.Unlock()
+			if err := svc.pick(mine, "c1/1"); err != nil {
+				t.Fatal(err)
+			}
+			on, err := svc.State(ctx, mine)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if on.Chosen != "c1/1" {
+				t.Fatalf("the card on its way was not chosen, %q was", on.Chosen)
+			}
+			// Written as clips.json/02, which the plan holds: off the list of
+			// clips on the way and landed, in one news, the job still running.
+			svc.jobs.update(job, func(j *Job) {
+				j.Underway, j.Written, j.Landed = nil, 1, []runlog.Landed{{N: 1, Clip: "clips.json/02"}}
+			})
+			written, err := svc.State(ctx, mine)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if written.Chosen != "clips.json/02" || written.ChosenCard != "c1/1" {
+				t.Errorf("the state read once the card was written, its job running, says %q is chosen, written as %q",
+					written.Chosen, written.ChosenCard)
+			}
+		})
+	}
+}
+
 // A hand picks a card its window still shows after its clip was written,
 // while another clip was chosen, so the card never landed. A state read
 // before the pick and answered after it says the card's clip is chosen,

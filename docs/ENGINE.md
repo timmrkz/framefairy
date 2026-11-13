@@ -485,7 +485,46 @@ out, is framed like the pieces turned the way it is, `framedBack` in
 `engine/shape.go`, so a crop placed by hand comes back with it. Pieces
 that meet become one piece again, `meet`, unless a rotation starts or ends
 between them, `partedAtTurns`. Two pieces that meet have no cut between
-them, so a join or a move there is refused. A clip once also kept the
+them, so a join or a move there is refused. An edge of the clip dragged
+into a cut pushes the cut's near edge ahead like a snow shovel, `shovel`,
+with a frame of the clip between them, `leastPiece`, the least a piece
+or a cut may hold and the same least a moved cut's edge leaves beside
+it, so the edge stays under the hand and both can still be dragged. The
+cut's far edge stays where it is, so the cut gets narrower as the edge
+goes in, down to a single frame, and once the edge is a frame from its
+far side it is gone and the edge goes on into what it took out. A cut
+made by hand can be a single frame too, so one frame can be taken out of
+a video. Where the frames are not known, the least is `MinCut`. A cut the
+edge has gone past goes with the part trimmed off. Only the edge dragged
+pushes, and only once it has moved in, so a press or a drag outward moves
+no cut. The keyframes the edge and the narrower cut cover are carried as
+they are with no cut, see `carry` in `engine/cropmarks.go`. The edge goes
+as far as the clip keeps a second, counting each cut ahead of it as
+narrow as the edge has pushed it, `cutsAhead`. Every step of a drag starts from the clip as saved, so a drag
+back out puts the cuts back where they were.
+
+A step of a drag costs about the same however long the clip is. Where an edge
+lands reads only the words within `landingReach` of the hand, and the
+captions from the pause before them, `wordsNear` and `goesNear` in
+`engine/shape.go`. Captions start afresh after a pause long enough to
+part them, and a caption too short to stand alone that rides on over it
+still ends where its words end, so where the captions after the pause
+end is the same however they are laid out before it. That makes it the
+same landing as one read from every word, which
+`TestAnEdgeLandsTheSameReadOnlyNearTheHand` holds. The captions of the
+step are laid out again only near what the step changed, and the rest
+are taken from the drawing of the step before, `laidNear` in
+`engine/captionsnear.go`, moved on the clip's clock by as much as the
+clip grew or shrank. The interface says which drawing it has, by its
+track, and gets only the captions laid out again, with a `Splice` that
+says where they go. Where the captions laid out again do not meet the
+ones before as they should, the clip is laid out whole.
+`TestCaptionsLaidOutNearAChangeAreTheWholeClipsCaptions` holds that the
+two are the same. Every caption of the clip laid out and sent on every
+step took 46 ms at a clip an hour long, and Tim found the drag slow. What
+still grows with the clip is moving the captions after the change on its
+clock, every caption of it on a drag of the start: about 0.6 ms more at
+a clip an hour long than at one a minute long, in a cloud session. A clip once also kept the
 pieces it was found with, `found_segments`, to frame what was put back by
 the camera it showed. A clip used to be parted at every camera switch with
 a crop for each camera, which Tim never saw at work in his own two-camera
@@ -1844,13 +1883,20 @@ model's scanner uses too. The builder shapes, frames and writes it into
 take the next number under the set's lock as they are written. The set
 says it was made by hand, `planned_with.by`, and `madeOver` reads that as
 made over no part of the episode, so it counts as no search of any part.
+Where I and O make a clip at all is `MarkingOf`, from what is heard and
+said and how long the video is: I before the last line and O after the
+first, wherever that side of the playhead is heard, and neither in the
+last or first moments of the video. The app sends it in the video's state.
 
 Every job that makes clips says which it has on the way, `Log.Underway`,
 the whole list each time it changes: the builder from the moment a clip is
 queued to be framed until it is written or let go, and a clip made by hand
-from the moment it is asked for, at the playhead. Each list carries how
-many clips the job has written, and a clip that is written leaves the list
-in the event that counts it, before the search says it found one more. The app puts the list on
+from the moment it is asked for, at the playhead. Each list carries the
+clips the job has written, each with the card it was and the key it was
+written as, `runlog.Landed`, and a clip that is written leaves the list
+in the event that counts it, before the search says it found one more. So
+whatever chose a card knows its clip in the same event that takes the card
+away, see `landedClip` in the app's `choose.go`. The app puts the list on
 the job, and a record gives it back after a restart.
 
 ## The code
