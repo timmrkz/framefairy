@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playheadClock, playMoves, type Playhead } from "./playhead";
+import { arrowStep, inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playheadClock, playMoves, SKIP, type ArrowKey, type Playhead } from "./playhead";
 
 // A clip of two pieces with a cut between them, at twenty-five frames a
 // second, the way the episodes are. Its start falls three quarters of a
@@ -294,5 +294,85 @@ describe("a play moves the playhead once a frame", () => {
 
   test("on every animation frame while the frame's length is not known", () => {
     expect(playMoves(10.0, 10.001, 0)).toBe(true);
+  });
+});
+
+describe("an arrow key on the clip timeline", () => {
+  // A clip of two pieces at 25 frames a second, with a cut from 14 to 16.
+  const frame = 0.04;
+  const pieces = [
+    { start: 10, end: 14 },
+    { start: 16, end: 20 },
+  ];
+  const clip = { start: 10, end: 20 };
+  const lit = [
+    { start: 10.5, end: 11, text: "Und" },
+    { start: 18, end: 18.6, text: "da" },
+  ];
+  const words = [
+    { start: 3, end: 3.4, text: "Vorher" },
+    ...lit,
+    { start: 15, end: 15.5, text: "geschnitten" },
+  ].sort((a, b) => a.start - b.start);
+  const key = (o: Partial<ArrowKey>): ArrowKey => ({
+    time: 12,
+    frame,
+    back: false,
+    shift: false,
+    through: false,
+    clip,
+    pieces,
+    lit,
+    words,
+    looping: false,
+    ...o,
+  });
+
+  test("steps a frame each way without Shift, and a 240th of a second when the video says no rate", () => {
+    expect(arrowStep(key({}))).toEqual({ to: 12.04, word: false });
+    expect(arrowStep(key({ back: true }))).toEqual({ to: 11.96, word: false });
+    expect(arrowStep(key({ frame: 0 }))).toEqual({ to: 12 + 1 / 240, word: false });
+  });
+
+  // #377: outside a clip Shift skips, transcribed or not.
+  test("with Shift skips SKIP seconds outside the clip, and while playing through it from the video", () => {
+    expect(arrowStep(key({ shift: true, time: 30 }))).toEqual({ to: 30 + SKIP, word: false });
+    expect(arrowStep(key({ shift: true, time: 30, back: true }))).toEqual({ to: 30 - SKIP, word: false });
+    expect(arrowStep(key({ shift: true, time: 12, through: true }))).toEqual({ to: 12 + SKIP, word: false });
+    expect(arrowStep(key({ shift: true, time: 12, clip: null }))).toEqual({ to: 12 + SKIP, word: false });
+  });
+
+  // The picture answers a playhead put on a clip's first second with the
+  // frame it shows, which begins a little before. That is still the clip.
+  test("with Shift walks the words a frame before the clip's start, as it does inside it", () => {
+    expect(arrowStep(key({ shift: true, time: 10 - frame / 2 }))).toEqual({ to: 10.54, word: true });
+  });
+
+  test("with Shift walks the words the caption lights inside a piece", () => {
+    expect(arrowStep(key({ shift: true, time: 12 }))).toEqual({ to: 18.04, word: true });
+    // Back out of a word is the word before it, and back out of the
+    // silence after a word is that word, the one just spoken.
+    expect(arrowStep(key({ shift: true, time: 18.3, back: true }))).toEqual({ to: 10.54, word: true });
+    expect(arrowStep(key({ shift: true, time: 19, back: true }))).toEqual({ to: 18.04, word: true });
+  });
+
+  // The caption lights nothing in a cut, so the words heard there count.
+  test("with Shift walks the words heard in a cut", () => {
+    expect(arrowStep(key({ shift: true, time: 14.5 }))).toEqual({ to: 15.04, word: true });
+  });
+
+  test("with Shift walks the words heard until the caption's words arrive", () => {
+    expect(arrowStep(key({ shift: true, time: 12, lit: [] }))).toEqual({ to: 15.04, word: true });
+  });
+
+  test("out of the caption's words goes round with loop on, and hands over to the clip beside without", () => {
+    expect(arrowStep(key({ shift: true, time: 19, looping: true }))).toEqual({ to: 10.54, word: true });
+    expect(arrowStep(key({ shift: true, time: 10.2, back: true, looping: true }))).toEqual({ to: 18.04, word: true });
+    expect(arrowStep(key({ shift: true, time: 19 }))).toBe("clip");
+  });
+
+  test("with Shift and no words heard yet steps a second, and past the last word heard goes nowhere", () => {
+    expect(arrowStep(key({ shift: true, time: 12, lit: [], words: [] }))).toEqual({ to: 13, word: false });
+    expect(arrowStep(key({ shift: true, time: 14.5, words: [words[0]] }))).toBeNull();
   });
 });

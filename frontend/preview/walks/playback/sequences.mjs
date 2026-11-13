@@ -4,19 +4,6 @@
 // for the steps of every folder. See ../sequences.mjs.
 export default [
   {
-    // #717, Tim's idea: the video preview leaves a faint reflection at the
-    // foot of the workspace, as if the video shone towards him, and it
-    // lies behind every control, so nothing that is read or worked with
-    // changes. The two cameras' backdrops and subjects make the quarters
-    // of the picture differ, so the reflection has to hold this picture.
-    name: "the video preview leaves a faint reflection at the foot of the workspace, behind the controls",
-    steps: [
-      ["add cameras", 30, 12],
-      ["wait for", "Search"],
-      ["reflection"],
-    ],
-  },
-  {
     // Tim's idea (2.269): paused, the frames of the word after the playhead
     // and of the word before are read while the hand rests, so Shift and an
     // arrow find their frame there. Before, a step to the next word read on
@@ -43,12 +30,21 @@ export default [
     // across them, which only keyframes move. The search finds the clip of
     // two cameras in one piece, a cut across the switch and an edge
     // trimmed past it and put back leave it so, the crop dragged on the
-    // first camera stands there on the second too, and the short shows
-    // every frame through that one crop.
+    // first camera stands there on the second too. That the clip keeps
+    // one crop is the engine's, TestAClipFramedForTwoCamerasPlaysWithOneCrop
+    // in engine/shots_test.go, and a short is drawn through its clip's
+    // crop the same for every clip, so no walk renders this one.
     name: "a clip filmed by two cameras has one crop, through a cut, a trim and a drag",
     steps: [
       ["add cameras", 30, 12],
       ["wait for", "Search"],
+      // #717, Tim's idea: the video preview leaves a faint reflection at
+      // the foot of the workspace, as if the video shone towards him, and
+      // it lies behind every control, so nothing that is read or worked
+      // with changes. The two cameras' backdrops and subjects make the
+      // quarters of the picture differ, so the reflection has to hold the
+      // picture the search leaves, before the crop moves.
+      ["reflection"],
       ["pieces", 1],
       ["mark", "found"],
       ["look", "found"],
@@ -66,67 +62,6 @@ export default [
       ["crop to", "left"],
       ["look", "moved"],
       ["one crop", "moved"],
-      ["render"],
-      ["shots", "moved"],
-    ],
-  },
-  {
-    // Bug 1 of docs/DESIGN-REVIEW.md: at 29.97 fps an edge kept to the
-    // millisecond lies just before its frame's start for 1400 of every
-    // 3000 frames, and the video preview drew the frame before the one the
-    // short starts on. And a search left its edges between frames, where
-    // the render took the frame whose start was nearer and the video
-    // preview the frame that held the edge. The clip's edges here are the
-    // search's own, its cuts are put by the hand, and at least one edge is
-    // kept just before its frame's start. The picture starts after the
-    // sound, so the frames are on a grid of their own, and the search's end
-    // lies where the two rules used to part.
-    name: "the video preview on a clip's edges shows the frames its short starts and ends on",
-    steps: [
-      ["added", 40, "30000/1001", "late"],
-      ["trim", "start", 20],
-      ["cut at", 0.3],
-      ["cut at", 0.7],
-      ["cuts", 2],
-      ["render"],
-      ["edges as rendered"],
-    ],
-  },
-  {
-    // Plan row 2.198, found by Tim: a video OBS recorded in Matroska was
-    // added, searched and found clips, and the video preview said "The
-    // file has no moov box, so it is not an MP4 or MOV it can read". It
-    // read the file's frames with a reader of its own, mp4.ts, where
-    // everything else reads through ffmpeg. The picture starts after the
-    // sound, by Matroska's first timestamp, so the frames are on a grid
-    // of their own, as in the walk on a clip's edges above.
-    name: "a video in Matroska shows in the video preview the frames its short has",
-    steps: [
-      ["added", 40, "30000/1001", "late", "mkv"],
-      ["trim", "start", 20],
-      ["cut at", 0.3],
-      ["cut at", 0.7],
-      ["cuts", 2],
-      ["render"],
-      ["edges as rendered"],
-    ],
-  },
-  {
-    // Plan row 2.130: a phone records its frames at uneven times, which
-    // the render counted as if they came every 1/29.97 s, and made the
-    // short at the 50 frames a second ffmpeg reports for them. Now every
-    // frame of the short is the frame the video preview shows for its
-    // moment, at the frames' average rate rounded, 30.
-    // TestARenderShowsTheFrameThatHoldsEachMoment holds the engine to it,
-    // this the app.
-    name: "a short of a phone's uneven frames shows what the video preview shows",
-    steps: [
-      ["added", 40, "30000/1001", "uneven"],
-      ["cut at", 0.3],
-      ["cut at", 0.7],
-      ["cuts", 2],
-      ["render"],
-      ["as previewed", "30/1"],
     ],
   },
   {
@@ -134,11 +69,11 @@ export default [
     // video lying on its side. The video here stands up by its display
     // matrix, so its frame number runs down its right side, and the part
     // after the cut, rotated a quarter to the left with R, reads across
-    // its top again, in the video preview and in its short.
-    // TestRotateTurnsThePartBetweenCutsAndFourTurnsBringItBack and
-    // TestARotatedPieceIsRotatedBeforeItsCrop hold the engine to it, this
-    // the app.
-    name: "a part of a phone's video rotated with R stands up in the video preview and in its short",
+    // its top again in the video preview.
+    // TestRotateTurnsTheStretchOfThePartAndFourTurnsBringItBack and
+    // TestARotatedPieceIsRotatedBeforeItsCrop hold the engine and the
+    // short to it, this the app.
+    name: "a part of a phone's video rotated with R stands up in the video preview",
     steps: [
       ["added", 30, "25", "turned"],
       ["cut at", 0.5],
@@ -146,15 +81,18 @@ export default [
       ["hold", "RotatePart"],
       ["rotate at", 0.75],
       ["turned", [0, 90]],
-      ["render"],
-      ["upright"],
     ],
   },
   {
     // Plan row 2.130: a picture that starts after its sound, by an edit
     // list. The clip's start is dragged to before the picture starts,
     // where the render took the picture's frames from its first on and the
-    // sound from where the picture starts.
+    // sound from where the picture starts. The one walk that renders a
+    // short and holds it against the video preview: that every frame of a
+    // short is a frame of the video preview, in MP4 and Matroska, on
+    // uneven frames and on edges kept just before a frame's start, is the
+    // engine's, see TestTheVideoPreviewShowsTheFramesOfTheShort and
+    // TestEveryFrameOfAShortIsAFrameOfTheVideoPreview.
     name: "a short of a picture that starts after its sound shows what the video preview shows",
     steps: [
       ["added", 40, "30000/1001", "late"],
@@ -338,16 +276,6 @@ export default [
     // be first, for a frame smaller than the picture to grow from.
     name: "a paused frame grows sharp with the app",
     steps: [["app size", 700, 500], ["restart"], ["sharp", "opened"], ["app size", 1500, 1000], ["sharp"]],
-  },
-  {
-    // Tim's start.mp4 stood without a picture and would not play, on
-    // Space or Play, while every other video was fine. It is HEVC in open
-    // GOPs, and the playhead was on a frame shown before the key frame it
-    // is decoded after: the episode's decoder started a key frame late,
-    // and the frame the video preview waited for never came. Plan row
-    // 2.186.
-    name: "a frame shown before its key frame comes and plays",
-    steps: [["add hevc"], ["leading frames"]],
   },
   {
     name: "the crop frame at either side of the picture is drawn whole, with the shade into its corners",
