@@ -314,6 +314,8 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		{ID: SearchID, Kind: JobSearch, To: 60, Count: 12, Min: 20, Max: 30, Step: StepHearing},
 		{ID: "render-1", Kind: JobRender, Plan: filepath.Join(logs, "clips-0-60.json"), Step: StepRendering},
 		{ID: TranscribeID, Kind: JobTranscribe, Step: StepHearing},
+		{ID: TranscribePartID, Kind: JobTranscribe, From: 120, To: 154, Step: StepHearing},
+		{ID: TranscribeAroundID, Kind: JobTranscribe, From: 117, To: 260, Step: StepHearing},
 	}
 	for _, r := range good {
 		if err := WriteJob(fsys, source, r); err != nil {
@@ -342,14 +344,30 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		}
 	}
 	got := ReadJobs(fsys, source)
-	if len(got) != 3 || got[0].ID != SearchID || got[1].ID != "render-1" || got[2].ID != TranscribeID {
+	if len(got) != 5 || got[0].ID != SearchID || got[1].ID != "render-1" || got[2].ID != TranscribeAroundID ||
+		got[3].ID != TranscribePartID || got[4].ID != TranscribeID {
 		t.Errorf("read %+v", got)
 	}
 	if err := WriteJob(fsys, source, JobRecord{ID: "../out", Kind: JobRender}); err == nil {
 		t.Error("a record written outside the jobs folder")
 	}
-	if err := RemoveJob(fsys, source, "render-1"); err != nil || len(ReadJobs(fsys, source)) != 2 {
+	if err := RemoveJob(fsys, source, "render-1"); err != nil || len(ReadJobs(fsys, source)) != 4 {
 		t.Errorf("removed: %v, %d left", err, len(ReadJobs(fsys, source)))
+	}
+	// The whole video with a part, a part with no end and the stretch
+	// around a clip with none, in a video of their own, since their names are the good records' names.
+	other := "/home/tim/other.mp4"
+	for name, body := range map[string]string{
+		"transcribe.json":        `{"id": "transcribe", "kind": "transcribe", "from": 10, "to": 20, "step": "hearing"}`,
+		"transcribe-part.json":   `{"id": "transcribe-part", "kind": "transcribe", "from": 10, "step": "hearing"}`,
+		"transcribe-around.json": `{"id": "transcribe-around", "kind": "transcribe", "step": "hearing"}`,
+	} {
+		if err := afero.WriteFile(fsys, filepath.Join(JobsDir(other), name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := ReadJobs(fsys, other); len(got) != 0 {
+		t.Errorf("a transcription's part that is not one is read as %+v", got)
 	}
 }
 
@@ -676,7 +694,7 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 		}
 		return ctx, func() {}, nil
 	}
-	if err := p.TranscribeJob(context.Background(), Host{Turn: turn}); err != nil {
+	if err := p.TranscribeJob(context.Background(), timed.Window{}, false, Host{Turn: turn}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
 	if _, done := Coverage(disk, p.Source, p.Base.ASRModel); !done {
@@ -690,8 +708,44 @@ func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
 	}
 	// Heard to the end, there is nothing left to wait for.
 	turns = nil
-	if err := p.TranscribeJob(context.Background(), Host{Turn: turn}); err != nil || len(turns) != 0 {
+	if err := p.TranscribeJob(context.Background(), timed.Window{}, false, Host{Turn: turn}); err != nil || len(turns) != 0 {
 		t.Errorf("again: %v, turns %v", err, turns)
+	}
+}
+
+// A transcription of a part hears that part and no more, and keeps the
+// part in its record, so one carried on hears the same part. It is how a
+// clip dragged out over a part nobody heard gets its words, issue #745.
+//
+// On the real disk: ffmpeg reads the episode the transcription hears.
+func TestATranscriptionOfAPartHearsThatPart(t *testing.T) {
+	t.Parallel()
+	p, asked := searchProject(t, nil)
+	part := timed.Window{Start: 10, End: 20}
+	var turns []string
+	turn := func(ctx context.Context, step string, _ func()) (context.Context, func(), error) {
+		turns = append(turns, step)
+		if rec := ReadJobs(disk, p.Source); len(rec) != 1 || rec[0].Hears() != HearsPart ||
+			rec[0].Part() != part {
+			t.Errorf("waiting for %s, the records say %+v", step, rec)
+		}
+		return ctx, func() {}, nil
+	}
+	if err := p.TranscribeJob(context.Background(), part, false, Host{Turn: turn}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if gaps := Unheard(disk, p.Source, p.Base.ASRModel, part); len(gaps) != 0 {
+		t.Errorf("the part left %v unheard", gaps)
+	}
+	heard := HeardParts(disk, p.Source, p.Base.ASRModel)
+	if len(heard) == 0 || heard[0][0] > 10 || heard[0][0] < 5 || heard[len(heard)-1][1] > 25 {
+		t.Errorf("hearing 10 to 20 s heard %v", heard)
+	}
+	if strings.Join(turns, " ") != "hearing" || *asked != 0 {
+		t.Errorf("turns %v, the model asked %d times", turns, *asked)
+	}
+	if rec := ReadJobs(disk, p.Source); len(rec) != 0 {
+		t.Errorf("a finished transcription keeps %+v", rec)
 	}
 }
 

@@ -164,7 +164,7 @@ each with a POST:
 | `/speech?hold`, `/speech?step=N`, `/speech?go` | `hold` stops the speech model hearing, once the pieces it is hearing are heard, so a transcript stays where it is while a walk looks at it, cancels it or presses something during it. `step=N` lets N pieces more be heard while it is held, and a walk waits on the news of the work, not for the step. With `&heard` it answers once every piece it let on is heard and the next one waits, so a walk can let many on at once. It is never for the last pieces, which ask for no next one: then it answers when the hearing ends, and the walk sees how it ended. With `&save` what is heard so far is saved once the next piece is heard: the app saves a long transcription every 8 s of real time, and the bridge saves it part way only then, through `SaveHeard`, which the engine asks the speech model in place of its clock, so a walk sees a transcript saved part way on any machine. `go` lets it hear on by itself. Closing the app with `/reopen` lets every piece through while the app closes, the way a piece being heard ends as it quits, and the speech stays held after. |
 | `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
 | `/hold?call=Search&gate=shut&times=K&answer=1&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `answer=1` the call reaches the Go side at once and only its answer waits for `gate=open`, so the news of what it set going comes before it, `hold(page, name, true)`. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
-| `/clock?run=MS` | runs the clock removed work is timed by on by MS milliseconds, and makes every call due by then before it answers. The Go side keeps that time and forgets the work once it is up, see `removal.go`, and `runClock` in `walks/bridge.mjs` runs it on with the page's clock, so the ten seconds a walk runs on are the same ten seconds on both sides, on any machine. `/clock?hold` holds it with the page's clock and `/clock?go` lets it go again, see `holdClock` and `letClockGo`, so while a walk holds the page's time a busy machine spends none of Go's either. Let go, it goes as the system's clock does |
+| `/clock?run=MS` | runs the machine's clock, `engine.Clock`, on by MS milliseconds, and makes every call due by then before it answers. The Go side keeps that time and forgets the work once it is up, see `removal.go`, and `runClock` in `walks/bridge.mjs` runs it on with the page's clock, so the ten seconds a walk runs on are the same ten seconds on both sides, on any machine. `/clock?hold` holds it with the page's clock and `/clock?go` lets it go again, see `holdClock` and `letClockGo`, so while a walk holds the page's time a busy machine spends none of Go's either. Let go, it goes as the system's clock does. A running search reports how far it has come on the same clock, and `/clock?next` runs it on to the next call due, waiting for one to be set, so a walk hears a search's next report in a step, see `asks none` in `walks/search/steps.mjs` |
 | `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
 | `/fresh`, `/fresh?memory=8`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like Tim's, or of the gigabytes `memory` gives, so the setup offers the same models on every machine. A key saved there is kept by the bridge, never the keychain, and counted as there. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
@@ -697,7 +697,7 @@ and keep its crop frame and its captions in the piece after it. Against
 main it fails the same way, at 6.8 s.
 
 `loop switched off near the end stops the play at the clip's end` is
-Tim's test of 2.183. It records every sample the sound card is handed,
+Tim's test of 2.183. It records every sample the walk's sound card plays,
 plays the clip, presses L to loop it, and two seconds before the clip's
 end presses L five times quickly, the loop off after the last, once the
 play has worked out the next time through. No press may start the play
@@ -822,8 +822,8 @@ Every walk plays on the walk's clock and the walk's sound card,
 queue it makes, see `FrameQueue.clock` and `FrameQueue.soundCard` in
 `lib/frames/queue.ts`, whose own are the system's sound card and its
 clock. The app never builds `preview/`, so it holds no walk's clock, no
-walk's card and no switch for either. The walk's card plays nothing, and
-its time moves only when the walk's clock moves it: on to the next frame
+walk's card and no switch for either. The walk's card plays nothing out
+loud, and its time moves only when the walk's clock moves it: on to the next frame
 the moment that frame is decoded and its captions are here, never while
 either is on its way, and with no time made up for once it stood. So
 every frame of a play is shown with its captions on any machine, which
@@ -834,14 +834,18 @@ second. By the system's sound card a busy machine showed two frames of a
 glide's nine, issue #534, a play of the captions showed fewer frames,
 each longer, issue #338, and every play took as long as it lasts. Each of
 those walks had a clock of its own, until a new walk that played was the
-next to fail, issue #588. A sequence that checks what a play does on the
-sound's own time, or listens to the sound, plays on the system's sound
-card and its clock instead, the way the app does: how much sound the
-sound card is handed, the loop switched off as the sound comes to the
-clip's end, and a playhead that never stands still while a hand drags.
-It asks for it by one of those steps, `soundCard` in `common/steps.mjs`,
-the way a sequence asks for motion, see Where they run below, and a new
-step of that kind goes in there. `smooth.mjs` asks `open` for it by name,
+next to fail, issue #588. A walk that listens to a play asks the card
+to record, and reads what it played sample by sample, `record` and
+`heard`: the sum of the stretches the frame queue handed it, each from
+its frame and through the gain as it was set and ramped at that frame,
+worked out as the card's time moves, the way the system's card does. So
+how much sound a play had, a click as the loop is switched off and sound
+heard past the clip's end are read on the walk's clock too, and take the
+frames a play draws, not the seconds it lasts. A moment the system's card
+would have gone on while the page was held, the sound crossing the
+clip's end before the playhead, is made on purpose by moving the card on
+by hand, `run`. Only `smooth.mjs`, which measures how evenly a play goes,
+plays on the system's sound card and its clock, asked of `open` by name,
 `clock: "sound"`, which the page reads from `window.__playClock` before
 the app starts. A walk can also hold the sound
 card a moment by hand, `holdSound`, as the end dragged back past the
@@ -1149,7 +1153,7 @@ among it, so the settle waits for none of it. On main those two were
 those steps and every random walk keep the motion, so the app is still
 walked the way it moves on Tim's Mac. A new step that looks at motion
 goes into `moving`, or it passes without ever seeing what it checks, and
-`--names` fails on a name in `moving` or `soundCard` that is no step. `make walks
+`--names` fails on a name in `moving` that is no step. `make walks
 STILL=none` walks every sequence with the motion, and
 `walks-nightly.yml` does so on main every night, so a step that looks at
 motion and was left out of `moving` fails there.
@@ -1223,10 +1227,15 @@ seconds, and 23 of them went on waiting after each step until no call
 had been on its way for a quarter of a second. That quarter stood in for
 the app's own short delays, the 150 ms before the clip timeline reads
 its waveform and the 240 ms before a newly chosen clip is shown. Now
-`settle` waits for those delays themselves, and for nothing else.
-`__settled` in `preview/settled.ts` answers once no call is out, no
-timer of the app's is set to fire within a second, and nothing on the
-page moves for a second or less, a row sliding open or the clip
+`settle` waits for no clock at all where the app only waits for
+something to come to rest. Such a timer is made with `afterRest` in
+`src/lib/rest.ts`: a save a moment after the last key, the clip
+timeline read once a swipe has stopped, a row measured once it has
+slid, a chosen clip shown once the hand stops. Once nothing else is on
+its way and nothing moves, the walk's hand has rested, so `settle` runs
+them at once. `__settled` in `preview/settled.ts` answers once no call
+is out, no other timer of the app's is set to fire within a second, and
+nothing on the page moves for a second or less, a row sliding open or the clip
 timeline gliding to its view. It is woken by the call coming back and
 the timer firing or being cleared, never by looking again on every
 frame. A movement of a second or less it ends at once, where it would

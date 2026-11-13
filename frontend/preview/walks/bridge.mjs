@@ -366,9 +366,10 @@ if (traces) {
 // clock is the clock a play runs on, see
 // preview/clock.ts: "frames", the walk's clock, stands on each frame
 // until it is up and holds the sound card meanwhile, so every frame of a
-// play is shown and read on any machine, issues #534 and #588. "sound"
-// is the sound card's, as the app runs without a walk, for what a walk
-// checks on the sound's own time, see soundCard in common/steps.mjs.
+// play is shown and read on any machine, issues #534 and #588, and the
+// sound it plays is kept on the walk's sound card for a walk to listen
+// to. "sound" is the system's sound card's, as the app runs without a
+// walk, for smooth.mjs, which measures how evenly a play goes.
 // kept is the page the sequence before passed in, opened on again when it
 // can be, see letGo and openAgain, and closed when it cannot.
 export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames", gpu = false, start = null, kept = null } = {}) {
@@ -1206,6 +1207,17 @@ export async function recordFrames(page, frame) {
 async function overlayReader(page) {
   await page.evaluate(() => {
     if (window.__overlay) return;
+    // The page's frames drawn since the reader came, its own clock: how
+    // late a caption's layer is, is counted in frames, so a busy machine
+    // that draws fewer of them gives the layer as many, see overlaid in
+    // rules.mjs. The browser's own frames, kept before a fake clock comes.
+    window.__drawn = 0;
+    const frame = window.__real?.frame ?? requestAnimationFrame.bind(window);
+    const count = () => {
+      window.__drawn++;
+      frame(count);
+    };
+    frame(count);
     window.__overlay = () => {
       const screen = document.querySelector(".screen");
       const chosen = document.querySelector(".clip-timeline .chosen");
@@ -1220,7 +1232,7 @@ async function overlayReader(page) {
         shade: !!screen?.querySelector(".crop"),
         captions: !!screen?.querySelector(".captions"),
         late: !!window.__captionLayers?.late,
-        t: performance.now(),
+        drawn: window.__drawn,
       };
     };
   });

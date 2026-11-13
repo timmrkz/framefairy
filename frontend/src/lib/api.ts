@@ -498,6 +498,11 @@ export interface ClipEntry extends ClipView {
   key: string;
   plan: string;
   cropLefts: number[];
+  // What of the clip's pieces the video's transcript has not heard yet,
+  // which has no captions until it is. The app hears it by itself, and
+  // the entry changes as the words land, so its captions are asked for
+  // again, issue #745.
+  unheard?: [number, number][];
   // For each piece with keyframes, how its crop switches over its frames,
   // worked out by the engine, and null for a piece whose crop is its
   // cropLefts throughout. See engine.CropSteps.
@@ -632,7 +637,9 @@ export interface Job {
   holds?: ("language" | "speech")[];
   // Where a search or a render is, empty for a job with no steps.
   step?: JobStep | "";
-  // The window of a search. To is 0 for the end of the episode.
+  // The window of a search, or the part a transcription hears: a part of
+  // a clip or the stretch around one, issue #745. To is 0 for the end of
+  // the episode.
   from?: number;
   to?: number;
   // A clip made by hand: the moment I or O was pressed at, and whether it

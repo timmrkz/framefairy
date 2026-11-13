@@ -204,6 +204,17 @@ type heardSoFar struct {
 	said  *[2]float64
 }
 
+// Heard is every part of the episode its transcript has heard, in order
+// and apart, as the episode holds it, see heardSoFar. Nothing heard yet is
+// none.
+func (ep *Episode) Heard(modelDir string, silenceDB *float64) [][2]float64 {
+	t, err := ep.heardSoFar(modelDir, silenceDB)
+	if err != nil {
+		return nil
+	}
+	return slices.Clone(t.heard)
+}
+
 // heardSoFar is what the episode's transcript has heard, kept by the same
 // stamp as the transcript, for every video asked about and with no cap:
 // it is a few numbers. So the library, which asks it of every video, lets

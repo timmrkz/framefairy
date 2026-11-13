@@ -1081,12 +1081,16 @@ export const steps = {
       return;
     }
     if (arg === "stop at the end") {
-      // Stopped while its last piece is being heard, the work still
-      // hears to the end, and once it has ended nothing on the range
-      // picker says a part is left: the dots stayed for good while the
-      // menu offered Export, found by the second review of #458. The
-      // speech is held and let on a piece at a time until what is left
-      // is shorter than a piece, so the piece waiting is the last.
+      // Stopped while its last piece is being heard, the work keeps
+      // what it heard before that piece, the way a stop anywhere else
+      // does: the range picker shows the piece left in dots and the menu
+      // offers Transcribe video, never Export. Written down as heard to
+      // the end, the piece's words were let go and never heard again,
+      // Tim's report of 11 November. Carried on, it hears to the end and
+      // no dots are left: the dots stayed for good while the menu
+      // offered Export, found by the second review of #458. The speech
+      // is held and let on a piece at a time until what is left is
+      // shorter than a piece, so the piece waiting is the last.
       await page.keyboard.press("Escape");
       await menu.waitFor({ state: "detached" });
       // The share of the video the dots still cover, every part of it
@@ -1158,7 +1162,30 @@ export const steps = {
       const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
       for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
       await caughtUp(page, url);
-      if (!(await whole())) walk.wrong = "stopped on its last piece, the video was not heard to its end";
+      if (await whole()) {
+        walk.wrong = "stopped on its last piece, the video was written down as heard to its end without that piece's words";
+        return;
+      }
+      if (!(await page.locator(".unheard").count())) {
+        walk.wrong = "stopped on its last piece, the range picker shows no part left";
+        return;
+      }
+      const stopped = await transcription();
+      await reopen();
+      const again = await pick("Transcribe video");
+      if (again.said !== "Transcribe video") {
+        walk.wrong = `the menu of a video stopped on its last piece says ${JSON.stringify(again.said)}, not Transcribe video`;
+        await page.keyboard.press("Escape");
+        return;
+      }
+      // Until the transcription carried on has ended, whichever way.
+      const ended = async () => {
+        const j = await transcription();
+        return !!j && j.id !== stopped?.id && j.state !== "running" && j.state !== "queued";
+      };
+      for (let seen = await news(page); !(await ended()); ) seen = await nextNews(page, seen);
+      await caughtUp(page, url);
+      if (!(await whole())) walk.wrong = "carried on after a stop on its last piece, the video was not heard to its end";
       else if (await page.locator(".unheard").count()) walk.wrong = "the video is transcribed to its end, and the range picker still shows dots on a part";
       return;
     }

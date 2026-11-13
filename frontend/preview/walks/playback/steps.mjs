@@ -242,44 +242,12 @@ export const steps = {
     walk.aheadHeld = true;
   },
   // ["heard"]          rests until the app has settled, plays with the
-  //                    space bar and asks that the sound card was handed
-  //                    sound for most of the next second and a half of
-  //                    sound, counted in the sound card's own quanta, then
-  //                    pauses
+  //                    space bar and asks that the sound card played
+  //                    sound in most of its quanta while the playhead went
+  //                    on by a second and a half, then pauses
   async heard(walk) {
     const { page } = walk;
     await settle(page);
-    // What the sound card is handed, a render quantum at a time, the
-    // way "loop off near the end" records it.
-    await page.evaluate(async () => {
-      const q = window.__frameQueue;
-      if (!window.__loudness) {
-        const code = `registerProcessor("loudness", class extends AudioWorkletProcessor {
-              process(inputs) {
-                const ch = inputs[0][0];
-                if (ch) { let sum = 0; for (const v of ch) sum += v * v; this.port.postMessage(sum / ch.length); }
-                return true;
-              }
-            });`;
-        await q.audio.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
-        const node = new AudioWorkletNode(q.audio, "loudness", { numberOfOutputs: 1 });
-        node.port.onmessage = (e) => {
-          window.__loudness.push(e.data);
-          const w = window.__loudnessWanted;
-          // Enough, or the play stopped, after which no more come.
-          if (w && (window.__loudness.length >= w.n || q.state !== "playing")) {
-            window.__loudnessWanted = null;
-            w.done();
-          }
-        };
-        const hush = q.audio.createGain();
-        hush.gain.value = 0;
-        q.out.connect(node).connect(hush).connect(q.audio.destination);
-        // Held, or the recorder is collected while it records.
-        window.__loudnessNodes = [node, hush];
-      }
-      window.__loudness = [];
-    });
     // Played with the sound card held until the app has settled on the
     // press, see pressPlay. A settle while the clip played in WebKit with
     // motion lasted until the play had ended, and the walk then found it
@@ -310,26 +278,34 @@ export const steps = {
       walk.wrong = `the space bar left the play ${playing}`;
       return;
     }
-    // A second and a half is about 560 quanta at 48 kHz, which the
-    // sound card hands over at its own pace whatever the machine does.
-    await page.evaluate(
-      () =>
-        new Promise((done) => {
-          window.__loudness = [];
-          window.__loudnessWanted = { n: Math.round((1.5 * window.__frameQueue.audio.sampleRate) / 128), done };
-        }),
-    );
+    // What the walk's sound card plays from here, see record in
+    // preview/clock.ts, while the playhead goes on by a second and a
+    // half, which the walk's clock takes as fast as the page draws the
+    // frames.
+    await page.evaluate(() => window.__frameQueue.audio.record());
+    await playUntil(page, { most: 1.5 });
     const got = await page.evaluate(() => {
-      const xs = window.__loudness;
-      return { quanta: xs.length, loud: xs.filter((x) => x > 1e-6).length, state: window.__frameQueue.state };
+      const q = window.__frameQueue;
+      const { data } = q.audio.heard();
+      // A render quantum of the system's sound card is 128 frames.
+      const quanta = Math.floor(data.length / 128);
+      let loud = 0;
+      for (let k = 0; k < quanta; k++) {
+        let sum = 0;
+        for (let i = k * 128; i < (k + 1) * 128; i++) sum += data[i] * data[i];
+        if (sum / 128 > 1e-6) loud++;
+      }
+      return { quanta, wanted: Math.round((1.5 * q.audio.sampleRate) / 128), loud, state: q.state };
     });
     await page.keyboard.press("Space");
     await settle(page);
     // The test video's sound is a tone from its first moment to its
-    // last.
+    // last. A playhead moves once a frame of the video, so the sound
+    // card's time can be up to a frame short of the second and a half.
     if (got.state !== "playing") walk.wrong = `the space bar left the play ${got.state}`;
+    else if (got.quanta < got.wanted * 0.9) walk.wrong = `the sound card played ${got.quanta} render quanta while the playhead went on by ${got.wanted}`;
     else if (got.loud < got.quanta * 0.8)
-      walk.wrong = `the sound card was handed sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
+      walk.wrong = `the sound card played sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
   },
   // ["loop off near the end", seconds]
   //                    records every sample handed to the sound card,
@@ -344,56 +320,9 @@ export const steps = {
     const { page, watch } = walk;
     const end = (await engineState(page, watch.at)).segments.at(-1).end;
     await preview(page, 0.2);
-    // Every sample the sound card is handed, with the sound card's own
-    // frame it plays at, the way the frame queue's probe records it.
-    await page.evaluate(async () => {
-      const q = window.__frameQueue;
-      const code = `registerProcessor("recorder", class extends AudioWorkletProcessor {
-            constructor() {
-              super();
-              // Asked to flush, it posts what it holds and then says so.
-              // Messages on one port come in order, so after "flushed"
-              // every sample it was handed has been heard.
-              this.port.onmessage = () => {
-                if (this.batch?.n) this.port.postMessage({ frame: this.batch.frame, data: this.batch.data.slice(0, this.batch.n) });
-                this.batch = null;
-                this.port.postMessage("flushed");
-              };
-            }
-            process(inputs) {
-              const ch = inputs[0][0];
-              // Chromium now and then hands two render quanta the same
-              // currentFrame and the one after that two on, see the frame
-              // queue's probe, preview/frames/main.ts.
-              const frame = Math.max(currentFrame, (this.last ?? -Infinity) + 128);
-              this.last = frame;
-              // Sent 32 quanta at a time: a message for each, 375 a second,
-              // stopped coming after about 8000 of them.
-              if (!ch) return true;
-              if (!this.batch) this.batch = { frame, data: new Float32Array(4096), n: 0 };
-              if (this.batch.frame + this.batch.n !== frame && this.batch.n) {
-                this.port.postMessage({ frame: this.batch.frame, data: this.batch.data.slice(0, this.batch.n) });
-                this.batch = { frame, data: new Float32Array(4096), n: 0 };
-              }
-              this.batch.data.set(ch, this.batch.n);
-              this.batch.n += ch.length;
-              if (this.batch.n + 128 > 4096) {
-                this.port.postMessage({ frame: this.batch.frame, data: this.batch.data.slice(0, this.batch.n) });
-                this.batch = null;
-              }
-              return true;
-            }
-          });`;
-      await q.audio.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
-      const node = new AudioWorkletNode(q.audio, "recorder", { numberOfOutputs: 1 });
-      window.__heard = [];
-      node.port.onmessage = (e) => (e.data === "flushed" ? window.__flushed?.() : window.__heard.push(e.data));
-      const hush = q.audio.createGain();
-      hush.gain.value = 0;
-      q.out.connect(node).connect(hush).connect(q.audio.destination);
-      // Held, or the recorder is collected while it records.
-      window.__recorder = [node, hush];
-    });
+    // Every sample the sound card plays from here, with the sound card's
+    // own frame it plays at, see record in preview/clock.ts.
+    await page.evaluate(() => window.__frameQueue.audio.record());
     // Played with the sound card held until the app has settled on the
     // press, see pressPlay. Not held, a settle in WebKit with motion
     // lasted until the play had reached the clip's end, and L came after.
@@ -413,7 +342,12 @@ export const steps = {
       });
     const before = await counts();
     await page.keyboard.press("l");
-    await playUntil(page, { past: end - arg });
+    // The play is held at each press of L, see holdSound, and let go once
+    // the app has settled on it. On the walk's clock a play runs on as
+    // fast as its frames are decoded, so a play not held ran on into the
+    // clip's end and round to its start between two presses, and the loop
+    // went off at the clip's start.
+    await playUntil(page, { past: end - arg, hold: true });
     await page.evaluate(() => {
       window.__played = [];
       window.__playWatch = true;
@@ -436,17 +370,17 @@ export const steps = {
     // the last.
     for (let i = 0; i < 5; i++) {
       await page.keyboard.press("l");
-      await playUntil(page, { most: 0.12 });
+      await settle(page);
+      await holdSound(page, false);
+      await playUntil(page, { most: 0.12, hold: i < 4 });
     }
     const pressed = await counts();
     // Until the play stops at the end, or has gone on by what was left
     // of the clip and eight seconds more, and then until the queue
     // holds the sound card, see end in lib/frames/queue.ts: whatever
-    // the sound card is handed after the end, where the start played
-    // on when Tim heard it, comes before that, and nothing comes
-    // after. Then the recorder is flushed, so every sample it was
-    // handed is in. A play that did not end holds nothing, and is said
-    // below.
+    // the sound card plays after the end, where the start played on
+    // when Tim heard it, comes before that, and nothing comes after. A
+    // play that did not end holds nothing, and is said below.
     await playUntil(page, { most: arg + 8 });
     await page.evaluate(
       () =>
@@ -458,9 +392,7 @@ export const steps = {
             if (q.state === "ended" && a.state === "running") return;
             a.removeEventListener("statechange", look);
             off();
-            const [node] = window.__recorder;
-            window.__flushed = done;
-            node.port.postMessage("flush");
+            done();
           };
           a.addEventListener("statechange", look);
           off = q.listen(look);
@@ -477,7 +409,7 @@ export const steps = {
         rate: q.audio.sampleRate,
         programEnd: q.program.end,
         late: q.stats.lateSoundAt,
-        heard: window.__heard.map((h) => ({ frame: h.frame, data: Array.from(h.data) })),
+        heard: [q.audio.heard()].map((h) => ({ frame: h.frame, data: Array.from(h.data) })),
       };
     });
     walk.loopEnd = { end, fps: await rate(page), ...q, starts: q.starts - before.starts, thrown: pressed.thrown - before.thrown, twice: pressed.twice - before.twice };
@@ -639,10 +571,11 @@ export const steps = {
   },
   // ["loop off as the sound crosses the end"]
   //                    puts the playhead near the clip's end, plays it with
-  //                    the loop on, holds the page 250 ms as the playhead
-  //                    comes to the end and presses L in that moment, and
-  //                    asks that the sound had crossed the end, the loop is
-  //                    off and the play ends ahead of the sound card
+  //                    the loop on, moves the sound card on past the end
+  //                    while the playhead is still on the clip's last
+  //                    frame and presses L in that moment, and asks that
+  //                    the loop is off and the play ends ahead of the
+  //                    sound card
   async "loop off as the sound crosses the end"(walk) {
     const { page, watch } = walk;
     // The playhead moves on with the page's frames, and the sound card
@@ -650,7 +583,9 @@ export const steps = {
     // moment as the sound crosses the clip's end, and L comes in that
     // moment, before the playhead has caught up. The loop off ends the
     // play at the end of the time through the sound is in, never at an
-    // end the sound card has already played past.
+    // end the sound card has already played past. The walk's sound card
+    // goes on only with the frames, so the walk moves it on past the end
+    // itself, the way the system's card goes on while the page is held.
     const end = (await engineState(page, watch.at)).segments.at(-1).end;
     const g = await handles(page);
     await clickOnTrack(page, middle(g.end) - 80, high(g.track));
@@ -664,15 +599,15 @@ export const steps = {
     await page.keyboard.press("l");
     await settle(page);
     // The playhead moves once a frame of the video (#446), so it is on
-    // the clip's last frame up to a frame before the end. The page is
-    // held from there until the sound card has played past the end,
-    // which is what the step is about, so no wait is long or short.
+    // the clip's last frame up to a frame before the end. The sound card
+    // is moved on from there past the end, in the same task as L, so
+    // the playhead has not caught up when L comes.
     const frame = 1 / (await rate(page));
     await playUntil(page, { past: end - frame - 0.03 });
     const r = await page.evaluate(async () => {
       const q = window.__frameQueue;
       const sounded = () => q.m0 / q.sampleRate + (q.audio.currentTime - q.c0);
-      while (q.c0 !== null && sounded() < q.program.length) {}
+      if (q.c0 !== null && sounded() < q.program.length) q.audio.run(q.program.length - sounded() + 1 / q.sampleRate);
       const crossed = q.c0 !== null && sounded() >= q.program.length;
       // The loop button says the loop is off in the same pass that
       // hands the queue its program, so once it has changed, the
@@ -1357,7 +1292,8 @@ export const steps = {
   //                    started no play over, threw no sound away and
   //                    handed none over twice, the sound did not click but
   //                    at the ends of a silence where the frame queue says
-  //                    it handed the sound card its sound late, nothing
+  //                    it handed the sound card its sound late, or where a
+  //                    stretch ends that the sound card heard late, nothing
   //                    was heard after the clip's end, the play
   //                    stopped within two animation frames of the sound
   //                    card being heard past it, and no frame drawn from
@@ -1445,8 +1381,8 @@ export const steps = {
     const seam = startFrame + stretch;
     const begun = xs.find(([f, x]) => f >= startFrame && x !== 0)?.[0];
     const startedLate = begun !== undefined && begun > startFrame + 1 && begun < seam;
-    const lateStart = (f) => startedLate && f >= seam - 1 && f <= seam + 2;
     if (startedLate) console.log(`      the sound card began the play's sound ${begun - startFrame} frames after its clock started`);
+    const lateStart = (f) => startedLate && f >= seam - 1 && f <= seam + 2;
     const lateHere = (f) => lateStart(f) || silences.some(([a, b]) => f >= a - 1 && f <= b + 2);
     let clicks = 0;
     let firstClick = null;

@@ -445,7 +445,8 @@ func (host *modelHost) keepOnly(model string) {
 // with more, and that is kept. With the API, or a server that runs
 // already, nothing is kept, and a model kept before goes. A model that
 // does not fit in the memory free now is not loaded, the error says why,
-// and the first search loads it when it fits.
+// and the first search loads it when it fits. The speech model is kept
+// the same way, by KeepSpeech.
 func (e *Engine) KeepModel(ctx context.Context, opts Options) (bool, error) {
 	if opts.Planner != "local" || opts.LLMURL != "" {
 		e.host.keepOnly("")
@@ -459,9 +460,10 @@ func (e *Engine) KeepModel(ctx context.Context, opts Options) (bool, error) {
 	return e.keep(ctx, *local, opts.MaxTokens)
 }
 
-// KeepNone gives up the model kept loaded, and stops it now when nobody
-// holds it. The app calls it before it removes the model's file, which a
-// server that maps it could otherwise keep from being removed.
+// KeepNone gives up the local model kept loaded, and stops it now when
+// nobody holds it. The app calls it before it removes the model's file,
+// which a server that maps it could otherwise keep from being removed.
+// The speech model is given up the same way by KeepNoSpeech.
 func (m *Machine) KeepNone() {
 	m.host.keepOnly("")
 }
@@ -531,5 +533,6 @@ func (m *Machine) CloseModels() {
 	m.host.mu.Lock()
 	m.host.closed = true
 	m.host.mu.Unlock()
+	m.speechHost.keepNoSpeech(true)
 	m.StopModels()
 }

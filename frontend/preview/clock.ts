@@ -23,7 +23,11 @@ export function walkClock(play: Play): PlayClock {
   return (heard, unshown, ready) => {
     const card = play.audio;
     if (!(card instanceof WalkCard)) throw new Error("the walk's clock moves only the walk's sound card, see install");
-    if (card.state !== "running") return Math.min(heard, unshown);
+    // A card the hand holds stands from the tick the hand asks, not from
+    // the task later the card says it is held: in between the play ran on
+    // a frame or two as fast as they were decoded, so a walk that held
+    // the play at each press of a key found it ran past the clip's end.
+    if (card.state !== "running" || holders.get(play)?.size) return Math.min(heard, unshown);
     // A frame ready, decoded and waiting with its captions, goes up on
     // this tick, so the card goes on to its moment. A frame the queue says
     // is nowhere, see unshown in queue.ts, never comes, so the card goes by
@@ -41,8 +45,9 @@ export function walkClock(play: Play): PlayClock {
 // what the frame queue asks of the system's: it runs, is held and closed,
 // and takes stretches of sound and a gain, which it plays nowhere. A
 // stretch ends once the card's time has passed it, the way the system's
-// says so. What listens to the sound plays on the system's card instead,
-// see soundCard in walks/common/steps.mjs.
+// says so. Asked to, it keeps what it plays of them from then on, sample
+// by sample, see record and heard, so a walk listens to a play on the
+// walk's clock rather than for as long as the play lasts.
 export class WalkCard extends EventTarget {
   readonly sampleRate: number;
   readonly baseLatency = 0;
@@ -54,6 +59,10 @@ export class WalkCard extends EventTarget {
   // When the time last moved or stood, on the page's clock, for follow.
   private moved = 0;
   private playing = new Set<WalkSource>();
+  // Every gain of the card, told what it was at each time the card moved.
+  readonly params = new Set<WalkParam>();
+  // What the card played since record, from the frame it began at.
+  private recording: { since: number; parts: Float32Array[] } | null = null;
 
   constructor(options: AudioContextOptions = {}) {
     super();
@@ -64,14 +73,65 @@ export class WalkCard extends EventTarget {
     return this.time;
   }
 
+  // The card's frame at its time now, the way the system's counts it.
+  get frame(): number {
+    return Math.round(this.time * this.sampleRate);
+  }
+
+  // Keeps what the card plays from now on, for heard.
+  record() {
+    this.recording = { since: this.frame, parts: [] };
+  }
+
+  // What the card played since record, a frame at a time from the frame
+  // it began at: channel 0, as a recorder on the system's card reads it.
+  heard(): { frame: number; data: Float32Array } {
+    const parts = this.recording?.parts ?? [];
+    const data = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      data.set(p, at);
+      at += p.length;
+    }
+    return { frame: this.recording?.since ?? this.frame, data };
+  }
+
   // Moves the time on by seconds while the card runs, and says by how
-  // much it moved.
+  // much it moved. What it plays on the way is the sum of the stretches
+  // playing, each through the gains it is connected to as they are now,
+  // the way the system's card works out each moment as it comes to it: a
+  // stretch starts and stops no earlier than the card's time, so nothing
+  // after can change what it played.
   run(seconds: number): number {
     if (this.state !== "running" || !(seconds > 0)) return 0;
+    const from = this.frame;
     this.time += seconds;
     this.moved = performance.now();
+    if (this.recording && this.frame > from) this.recording.parts.push(this.play(from, this.frame));
+    for (const p of this.params) p.reached(this.time);
     for (const s of this.playing) s.reached(this.time);
     return seconds;
+  }
+
+  private play(from: number, to: number): Float32Array {
+    const data = new Float32Array(to - from);
+    for (const s of this.playing) {
+      const samples = s.samples;
+      const lo = Math.max(from, s.from);
+      const hi = Math.min(to, s.to);
+      if (!samples || hi <= lo) continue;
+      // Only what reaches the card's output is heard.
+      const gains: WalkGain[] = [];
+      let n: WalkNode | null = s.next;
+      for (; n && n !== this.destination; n = n.next) if (n instanceof WalkGain) gains.push(n);
+      if (!n) continue;
+      for (let f = lo; f < hi; f++) {
+        let x = samples[s.offset + f - s.from] ?? 0;
+        for (const g of gains) x *= g.gain.at(f / this.sampleRate);
+        data[f - from] += x;
+      }
+    }
+    return data;
   }
 
   // Moves the time on by the time that passed on the page's clock since it
@@ -126,17 +186,22 @@ export class WalkCard extends EventTarget {
   }
 
   createGain(): GainNode {
-    const gain = {
-      value: 1,
-      cancelScheduledValues: () => gain,
-      setValueAtTime: (v: number) => ((gain.value = v), gain),
-      linearRampToValueAtTime: (v: number) => ((gain.value = v), gain),
-    };
-    return Object.assign(new WalkNode(), { gain }) as unknown as GainNode;
+    return new WalkGain(this) as unknown as GainNode;
   }
 
+  // A buffer that keeps its first channel, which is all heard reads.
   createBuffer(channels: number, length: number, rate: number): AudioBuffer {
-    return { numberOfChannels: channels, length, sampleRate: rate, duration: length / rate, copyToChannel() {} } as unknown as AudioBuffer;
+    const buffer = {
+      numberOfChannels: channels,
+      length,
+      sampleRate: rate,
+      duration: length / rate,
+      samples: null as Float32Array | null,
+      copyToChannel(from: Float32Array, channel: number) {
+        if (channel === 0) buffer.samples = Float32Array.from(from.subarray(0, length));
+      },
+    };
+    return buffer as unknown as AudioBuffer;
   }
 
   createBufferSource(): AudioBufferSourceNode {
@@ -144,18 +209,101 @@ export class WalkCard extends EventTarget {
   }
 }
 
+// A node of the walk's sound card, which knows the one it is connected to,
+// so heard can tell which gains a stretch passed through. A node let go of
+// keeps it: the frame queue lets go of a stretch only once it has ended,
+// and what was heard before stays as it was heard.
 class WalkNode {
+  next: WalkNode | null = null;
   connect<T>(to: T): T {
+    if (to instanceof WalkNode) this.next = to;
     return to;
   }
   disconnect() {}
 }
 
+class WalkGain extends WalkNode {
+  readonly gain: WalkParam;
+  constructor(card: WalkCard) {
+    super();
+    this.gain = new WalkParam(card, 1);
+  }
+}
+
+// A gain's value over the card's time, set at a moment or ramped to one in
+// a straight line, the way the system's card has it. Read, it says what it
+// was when the card last moved, as the system's does, so a change taken
+// away goes on from the value heard and not from the one it would have
+// had without the change.
+class WalkParam {
+  private events: { t: number; v: number; ramp: boolean }[] = [];
+  private last: number;
+  constructor(
+    private card: WalkCard,
+    private first: number,
+  ) {
+    this.last = first;
+    card.params.add(this);
+  }
+
+  get value(): number {
+    return this.last;
+  }
+
+  set value(v: number) {
+    this.setValueAtTime(v, this.card.currentTime);
+    this.last = v;
+  }
+
+  reached(t: number) {
+    this.last = this.at(t);
+  }
+
+  setValueAtTime(v: number, t: number) {
+    return this.add({ t, v, ramp: false });
+  }
+
+  linearRampToValueAtTime(v: number, t: number) {
+    return this.add({ t, v, ramp: true });
+  }
+
+  cancelScheduledValues(t: number) {
+    this.events = this.events.filter((e) => e.t < t);
+    return this;
+  }
+
+  private add(e: { t: number; v: number; ramp: boolean }) {
+    const i = this.events.findIndex((x) => x.t > e.t);
+    this.events.splice(i < 0 ? this.events.length : i, 0, e);
+    return this;
+  }
+
+  at(t: number): number {
+    let v = this.first;
+    let from = 0;
+    for (const e of this.events) {
+      if (e.t <= t) {
+        v = e.v;
+        from = e.t;
+      } else return e.ramp ? v + ((e.v - v) * (t - from)) / (e.t - from) : v;
+    }
+    return v;
+  }
+
+}
+
 // A stretch of sound on the walk's sound card. It ends at its own end or
-// where it was stopped, once the card's time has passed that.
+// where it was stopped, once the card's time has passed that. from and to
+// are the card's frames it plays between, and offset the first of its
+// samples played. The frame queue asks for a card at the rate of its
+// sound, which the walk's card always has, so a frame of the card is a
+// sample of a stretch.
 class WalkSource extends WalkNode {
   buffer: AudioBuffer | null = null;
   onended: (() => void) | null = null;
+  from = 0;
+  to = 0;
+  offset = 0;
   private ends = Infinity;
   private stops = Infinity;
   private started = false;
@@ -168,18 +316,30 @@ class WalkSource extends WalkNode {
     super();
   }
 
+  get samples(): Float32Array | null {
+    return (this.buffer as unknown as { samples?: Float32Array | null } | null)?.samples ?? null;
+  }
+
   start(when = 0, offset = 0) {
     if (this.started) throw new DOMException("a stretch of sound starts once", "InvalidStateError");
     this.started = true;
     const from = Math.max(when, this.card.currentTime);
     this.ends = from + Math.max(0, (this.buffer?.duration ?? 0) - offset);
+    const rate = this.card.sampleRate;
+    this.from = Math.round(from * rate);
+    this.offset = Math.round(offset * (this.buffer?.sampleRate ?? rate));
+    this.to = this.from + Math.max(0, (this.buffer?.length ?? 0) - this.offset);
     this.playing.add(this);
     this.reached(this.card.currentTime);
   }
 
+  // Moves the stop, as the system's card allows until the stretch has
+  // ended. A stop asked for a moment already past stops it now.
   stop(when = 0) {
     if (!this.started) throw new DOMException("a stretch of sound stops only once it started", "InvalidStateError");
-    this.stops = when;
+    if (this.done) return;
+    this.stops = Math.max(when, this.card.currentTime);
+    this.to = Math.min(this.from + Math.max(0, (this.buffer?.length ?? 0) - this.offset), Math.max(this.from, Math.round(this.stops * this.card.sampleRate)));
     this.reached(this.card.currentTime);
   }
 

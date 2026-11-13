@@ -1148,7 +1148,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 	if s.BorderStyle != 3 && s.BorderStyle != 4 {
 		view.Style.Box = "rgba(0, 0, 0, 0)"
 	}
-	said := saidWordsOf(Said(clip, t.Words))
+	said := Said(clip, t.Words)
 	for _, c := range laid {
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {
@@ -1161,7 +1161,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 				word := WordView{Start: w.Start, End: w.End, Text: runes.Scrub(w.Text, 200)}
 				// The word of the episode it stands for, the one a correction
 				// in the caption box is kept against, and all of it.
-				if at, ok := said.at(clip, (w.Start+w.End)/2); ok {
+				if at, ok := SaidWord(clip, said, (w.Start+w.End)/2); ok {
 					if heard, ok := t.HeardAt(at.Start); ok {
 						start := heard.Start
 						word.Said, word.Whole = &start, runes.Scrub(heard.Text, 200)

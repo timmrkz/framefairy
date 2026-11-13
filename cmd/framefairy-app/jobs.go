@@ -246,9 +246,11 @@ type queue struct {
 	// calledOff is, per episode, the press of Search or Continue the last
 	// Cancel at the head of the clip list was about, see stopClips.
 	calledOff map[string]string
-	// searched is told when a job that makes clips has ended, so the app
-	// keeps its model loaded again, see keep.go: such a job may have put
-	// the kept model aside for another one, or for a bigger copy of it.
+	// searched is told when a job that makes clips or hears has ended, so
+	// the app keeps its models loaded again, see keep.go: such a job may
+	// have put the kept local model aside for another one, or for a bigger
+	// copy of it, and the speech model kept gives way to a hearing with
+	// another.
 	searched func()
 	// changed tells whoever waits on the jobs of every change to one, so
 	// a wait for jobs to stop goes on the moment they have, see until.
@@ -260,10 +262,8 @@ type queue struct {
 	// notice is told each failure to say, once, see notice.go.
 	notice func(Notice)
 	// removals stops the timer of each removed job, which forgets it
-	// when its time is up, and time is the clock they run on, see
-	// removal.go.
+	// when its time is up, on the machine's clock, see removal.go.
 	removals map[string]func() bool
-	time     timeKeeper
 }
 
 // moved says a job changed the state of its video.
@@ -322,7 +322,7 @@ func (q *queue) stampLocked(j *Job) {
 // newQueue builds the queue.
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 	q := &queue{store: s, notify: quietly(notify), closed: map[string]int{},
-		lanes: newLanes(), calledOff: map[string]string{}, removals: map[string]func() bool{}, time: systemTime{}}
+		lanes: newLanes(), calledOff: map[string]string{}, removals: map[string]func() bool{}}
 	tell := quietly(emit)
 	q.emit = func(u JobUpdate) {
 		// The video's state is due before the job's news goes out, so
@@ -423,8 +423,10 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 
 // addSteps queues a search or a render: work that takes a turn in a lane
 // for each of its steps. It runs from the start, waiting for its first
-// turn. With once, it hands back the job of the kind that already runs for
-// the episode instead, looked for under the same lock, see addOnce.
+// turn. With once, it hands back the job of the kind and the record that
+// already runs for the episode instead, looked for under the same lock,
+// see addOnce. The record tells a clip's part from the whole video, which
+// run side by side, see transcribe.
 func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*Job),
 	steps func(ctx context.Context, p *engine.Project, host engine.Host) (string, error)) Job {
 	q.mu.Lock()
@@ -441,10 +443,15 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 		return q.refuse(episode, kind, label, "the app is relaunching into a new build", prepare)
 	}
 	if once {
+		var record Job
+		if prepare != nil {
+			prepare(&record)
+		}
 		for _, j := range q.jobs {
 			// One that was called off and is still stopping is not it: Search
 			// pressed right after Cancel is a new search.
-			if j.Episode == episode && j.Kind == kind && j.going() && j.ctx.Err() == nil {
+			if j.Episode == episode && j.Kind == kind && j.JobRecord.ID == record.JobRecord.ID && j.going() &&
+				j.ctx.Err() == nil {
 				already := *j
 				q.mu.Unlock()
 				return already
@@ -493,13 +500,14 @@ func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
 	// The turn the job holds, let go of once it has asked for its next,
 	// see engine.Turn. The engine asks for a job's turns one after another.
 	var holding func()
-	// Its kind is its record's, which heard writes whole while a turn is
-	// asked for, so it is read once, under the lock, see jobLine.
+	// Its record says which lane it hears in, and heard writes the record
+	// whole while a turn is asked for, so it is read once, under the lock,
+	// see jobLine.
 	q.mu.Lock()
-	jobKind := job.Kind
+	rec := job.JobRecord
 	q.mu.Unlock()
 	return func(ctx context.Context, step string, waits func()) (context.Context, func(), error) {
-		lane, kind := laneOfStep(jobKind, step, onThisMachine)
+		lane, kind := laneOfStep(rec, step, onThisMachine)
 		// Which lane a step waits for and whether its model is on this
 		// machine, so a log says why a transcription waited on a search.
 		q.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).
@@ -589,16 +597,23 @@ func stopsAsStopped(kind string) bool {
 	return makesClips(kind) || kind == engine.JobTranscribe
 }
 
-// jobLabel is what a job is called, by what it does.
-func jobLabel(kind string, preview bool) string {
+// jobLabel is what a job is called, by what it does, the record it keeps
+// or would keep.
+func jobLabel(rec engine.JobRecord) string {
 	switch {
-	case kind == engine.JobRender && preview:
+	case rec.Kind == engine.JobRender && rec.Preview:
 		return "Preview"
-	case kind == engine.JobRender:
+	case rec.Kind == engine.JobRender:
 		return "Render"
-	case kind == engine.JobClip:
+	case rec.Kind == engine.JobClip:
 		return "Make a clip"
-	case kind == engine.JobTranscribe:
+	case rec.Hears() == engine.HearsAround:
+		// The stretch around the clip chosen, see hearChosen.
+		return "Transcribe around the clip"
+	case rec.Hears() == engine.HearsPart:
+		// The part of the clip chosen not heard yet, see hearChosen.
+		return "Transcribe the clip"
+	case rec.Hears() == engine.HearsWhole:
 		return "Transcribe whole video"
 	}
 	return "Find clips"
@@ -620,7 +635,7 @@ func (q *queue) restore(episodes []string) {
 			q.mu.Lock()
 			q.next++
 			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, JobRecord: rec,
-				Label: jobLabel(rec.Kind, rec.Preview), State: state, Queued: rec.Asked,
+				Label: jobLabel(rec), State: state, Queued: rec.Asked,
 				Lane: laneFor(rec.Kind), Holds: holdsOf(rec.Kind), Underway: rec.Underway(), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
 			q.jobs = append(q.jobs, job)
@@ -878,8 +893,9 @@ func (q *queue) makeWayForSearch(path string) {
 // makeWayForTranscribe readies the queue for the whole video to be
 // transcribed, asked for by Transcribe video or Continue transcribing. It
 // says false while a search or a clip made by hand of the video runs,
-// since those go first. A transcription that stopped is settled, since
-// the new one writes the record again in its place. The one before may
+// since those go first. The whole video's transcription that stopped is
+// settled, since the new one writes the record again in its place. A part
+// of a clip and the stretch around one keep theirs. The one before may
 // still be on its way out, see carriedOnLocked.
 func (q *queue) makeWayForTranscribe(path string) bool {
 	for _, j := range q.list() {
@@ -887,16 +903,18 @@ func (q *queue) makeWayForTranscribe(path string) bool {
 			return false
 		}
 	}
-	q.settle(path, engine.JobTranscribe, "")
+	q.settle(path, engine.JobTranscribe, engine.TranscribeID)
 	return true
 }
 
 // stopTranscribing stops the whole video's transcription the way Stop
 // transcribing does, for a search or a clip made by hand of the video,
-// see makeWayForTranscribe. What it heard stays.
+// see makeWayForTranscribe. What it heard stays. A part of a clip and the
+// stretch around one are heard in turn with the search's window, not
+// stopped by it, or the clip would wait for words for good.
 func (q *queue) stopTranscribing(path, why string) {
 	for _, j := range q.list() {
-		if j.Episode == path && j.Kind == engine.JobTranscribe && j.going() {
+		if j.Episode == path && j.Hears() == engine.HearsWhole && j.going() {
 			theLog.jobLine(zerolog.InfoLevel, &j).Str("why", why).Msg("the whole video's transcription is stopped for the work on its clips")
 			q.stopByHand(j.ID)
 		}
@@ -1070,7 +1088,7 @@ func quietly[T any](f func(T)) func(T) {
 }
 
 func (q *queue) runJob(job *Job) {
-	if makesClips(job.Kind) && q.searched != nil {
+	if (makesClips(job.Kind) || job.Kind == engine.JobTranscribe) && q.searched != nil {
 		defer q.searched()
 	}
 	ctx := job.ctx

@@ -1502,22 +1502,31 @@ export const steps = {
           : `after Escape the range picker shows ${back.edges} parts not transcribed yet, not the ${gaps} there are`;
     if (!walk.wrong && (await headHigh()) !== was) walk.wrong = "the head changed height after the search";
   },
-  // ["asks none", name, seconds]
+  // ["asks none", name, reports]
   //                    the interface asks the Go side nothing of this name
-  //                    while the Go side sends so many pieces of job news
+  //                    while a running search sends so many reports of
+  //                    how far it has come
   async "asks none"(walk, arg) {
     const { page } = walk;
-    const [name, seconds] = arg;
+    const [name, reports] = arg;
     const before = await page.evaluate(() => window.__calls.length);
-    // The Go side tells the interface of a running job about once a
-    // second, and each time the interface read the clip list again. So
-    // as many of its news as seconds, then the app settled on them.
+    // A running search reports on the Go side's clock, and each report
+    // once had the interface read the clip list again. The walk holds
+    // that clock and runs it on to each report in turn, so the reports
+    // cost as many steps, not as many half seconds of the machine. A
+    // walk that holds the clock already keeps it held.
+    const held = page.__held;
+    if (!held) await control(url, "/clock?hold");
     let heard = await news(page);
-    for (let i = 0; i < seconds; i++) heard = await nextNews(page, heard);
+    for (let i = 0; i < reports; i++) {
+      await control(url, "/clock?next");
+      heard = await nextNews(page, heard);
+    }
+    if (!held) await control(url, "/clock?go");
     await settle(page);
     const asked = await page.evaluate((n) => window.__calls.slice(n).map((c) => c.name), before);
     const these = asked.filter((c) => c === name).length;
-    if (these) walk.wrong = `${name} was asked ${these} times in ${seconds} news of the job, with nothing changed: ${asked.join(", ")}`;
+    if (these) walk.wrong = `${name} was asked ${these} times in ${reports} reports of the search, with nothing changed: ${asked.join(", ")}`;
   },
   // ["hand stopped"]   I is pressed on a part not heard yet and Cancel at
   //                    the head of the clip list, so the clip made by hand

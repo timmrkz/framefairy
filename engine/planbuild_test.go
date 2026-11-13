@@ -238,7 +238,7 @@ func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
 func TestAClockThatPanicsStopsQuietly(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		log := runlog.New(&bytes.Buffer{}, false, false)
-		c := newSearchClock(log, nil, "gemma", true, 1000, 12, 2048)
+		c := newSearchClock(log, SystemClock{}, nil, "gemma", true, 1000, 12, 2048)
 		c.mu.Lock()
 		c.now.Part = "reading"
 		c.mu.Unlock()

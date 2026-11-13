@@ -70,7 +70,34 @@ does: its record says stopped, what it heard stays, and the menu offers
 Transcribe video again, after a restart too. A search or a clip made by
 hand of the same video stops it the same way, and it is refused while
 they run, `stopTranscribing` and `makeWayForTranscribe` in `jobs.go`,
-Tim's report of 26 October, 12.27. A clip made
+Tim's report of 26 October, 12.27.
+
+A transcription also hears a part of the video by itself, for the clip
+chosen, issue #745, `hearChosen` in `export.go`, from the state the app
+reads of the video. What it hears is said by its record, `Hears` in
+`engine/jobs.go`, the one place that tells them apart:
+
+- **A part of the clip not heard yet**, `transcribe-part`, which an edge
+  dragged out, a cut put back, an undo or a redo can bring in. Somebody
+  waits on its words, so it hears the way a clip made by hand does,
+  ahead of everything else.
+- **The stretch around a clip made by hand**, `transcribe-around`, so an
+  edge dragged out finds its words there already and nobody waits. A
+  minute on each side of the clip is kept heard. Once less than 30 s of
+  it is heard on either side, both sides are heard to a minute again in
+  one go, `engine.ClipAround`. It hears once the clip itself is heard,
+  after every clip made by hand and part of a clip, and ahead of the
+  searches: it takes the lane back from a search that hears, and does
+  not wait while a search finds.
+
+Each keeps a record of its own with the part in `from` and `to`, beside
+the whole video's, so they run side by side: the whole video gives them
+the lane and carries on once they are heard. A search does not stop
+them. One of each is heard at a time, the next once the state is read
+after it. A part is not asked for again after the same part failed or
+was stopped, and one the app was closed on carries on by itself.
+
+A clip made
 by hand goes **waiting**, **hearing** where the transcript does not reach
 far enough yet, **framing**, **done**. A render goes **waiting**,
 **rendering**, **done**. Waiting is its turn behind
