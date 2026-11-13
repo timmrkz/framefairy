@@ -66,8 +66,9 @@ const (
 	JobRender = "render"
 	// JobClip is a clip made by hand, see MakeClip.
 	JobClip = "clip"
-	// JobTranscribe is the whole episode heard to its end, with no search
-	// after, see TranscribeJob.
+	// JobTranscribe is the episode heard with no search after: the whole
+	// of it to its end, a part of a clip not heard yet, or the stretch
+	// kept heard around a clip, see TranscribeJob and Hears.
 	JobTranscribe = "transcribe"
 )
 
@@ -75,9 +76,57 @@ const (
 // a time, and a new one takes the place of the last.
 const SearchID = "search"
 
-// TranscribeID is the id of an episode's transcription to its end. An
-// episode has one at a time.
-const TranscribeID = "transcribe"
+// The ids of an episode's transcriptions, one of each at a time, see
+// Hears. TranscribeID hears the whole episode to its end.
+// TranscribePartID hears a part of a clip not heard yet, which an edit
+// brought in, and somebody waits on it. TranscribeAroundID hears the
+// stretch kept heard around a clip, ahead of an edge dragged out, see
+// ClipAround. Each has a record of its own, so they run side by side, and
+// the app's lanes say which hears first.
+const (
+	TranscribeID       = "transcribe"
+	TranscribePartID   = "transcribe-part"
+	TranscribeAroundID = "transcribe-around"
+)
+
+// What a transcription hears, by its record, see Hears.
+type Hearing int
+
+const (
+	// HearsNothing is a record of a job that is no transcription.
+	HearsNothing Hearing = iota
+	HearsWhole
+	HearsPart
+	HearsAround
+)
+
+// Hears says what the transcription of this record hears. It is the one
+// place that tells them apart.
+func (r JobRecord) Hears() Hearing {
+	switch {
+	case r.Kind != JobTranscribe:
+		return HearsNothing
+	case r.ID == TranscribeAroundID:
+		return HearsAround
+	case r.To > 0:
+		return HearsPart
+	}
+	return HearsWhole
+}
+
+// TranscribeRecord is the record a transcription of part starts with: the
+// whole episode for a part with no end, otherwise a part of a clip, or
+// with around the stretch around a clip.
+func TranscribeRecord(part timed.Window, around bool) JobRecord {
+	r := JobRecord{ID: TranscribeID, Kind: JobTranscribe}
+	if part.End > 0 {
+		r.ID, r.From, r.To = TranscribePartID, part.Start, part.End
+		if around {
+			r.ID = TranscribeAroundID
+		}
+	}
+	return r
+}
 
 // JobRecord is what the work folder keeps about a job.
 type JobRecord struct {
@@ -85,7 +134,7 @@ type JobRecord struct {
 	Kind string `json:"kind"`
 
 	// A search: the window, To 0 for the end of the episode, and the
-	// numbers it asks for.
+	// numbers it asks for. A transcription: the part it hears, the same.
 	From   float64 `json:"from,omitempty"`
 	To     float64 `json:"to,omitempty"`
 	Count  int     `json:"count,omitempty"`
@@ -144,6 +193,12 @@ func (r JobRecord) PlanPath(source string, duration float64) string {
 // Clip is what a clip made by hand asks for.
 func (r JobRecord) Clip() ClipRequest {
 	return ClipRequest{At: r.At, Backward: r.Backward}
+}
+
+// Part is the part of the episode a transcription hears, with no end for
+// the whole episode to its end, see TranscribeJob.
+func (r JobRecord) Part() timed.Window {
+	return timed.Window{Start: r.From, End: r.To}
 }
 
 // Underway is the clip a job kept in this record had on the way, so a job
@@ -317,13 +372,18 @@ func saneJob(source string, r *JobRecord) bool {
 		}
 	case JobRender:
 		// The plan is one of this episode's, by name and by where it is.
-		if r.ID == SearchID || r.ID == TranscribeID || filepath.Dir(r.Plan) != filepath.Join(WorkDir(source), "logs") ||
+		if r.ID == SearchID || r.ID == TranscribeID || r.ID == TranscribePartID || r.ID == TranscribeAroundID ||
+			filepath.Dir(r.Plan) != filepath.Join(WorkDir(source), "logs") ||
 			!IsPlanFile(r.Plan) || len(r.Clips) > 1000 || len(r.Done) > 1000 ||
 			r.Step == StepHearing || r.Step == StepFinding || r.Step == StepFraming {
 			return false
 		}
 	case JobTranscribe:
-		if r.ID != TranscribeID || r.Step == StepFinding || r.Step == StepFraming || r.Step == StepRendering {
+		// The whole episode has no part, a part has an end after its start,
+		// and the record is the one TranscribeRecord makes.
+		if r.ID != TranscribeRecord(r.Part(), r.ID == TranscribeAroundID).ID || !finite(r.From) || !finite(r.To) ||
+			r.From < 0 || r.To < 0 || (r.To > 0 && r.To <= r.From) || (r.To == 0 && r.From != 0) ||
+			r.Step == StepFinding || r.Step == StepFraming || r.Step == StepRendering {
 			return false
 		}
 	case JobClip:
@@ -609,25 +669,29 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan 
 	return p.Plan(stepCtx, req)
 }
 
-// TranscribeJob hears the whole episode, from wherever the transcript has
-// not heard it yet to its end, and nothing after: Transcribe whole video in
-// a video's menu. It keeps a record like a search, so an app closed while
-// it hears says so, and carries on from what was heard. Its hearing gives
-// way to every search and clip made by hand, which the app's lanes decide.
-func (p *Project) TranscribeJob(ctx context.Context, host Host) (err error) {
-	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe}, host)
+// TranscribeJob hears a part of the episode, wherever the transcript has
+// not heard it yet, and nothing after. A part with no end is the whole
+// episode to its end: Transcribe whole video in a video's menu. A part
+// with an end is a part of a clip not heard yet, see ClipUnheard, or with
+// around the stretch kept heard around a clip, see ClipAround. Each has a
+// record of its own, see TranscribeRecord. It keeps a record like a
+// search, so an app closed while it hears says so, and carries on from
+// what was heard. When it hears, before or after searches and clips made
+// by hand, is the app's lanes to decide.
+func (p *Project) TranscribeJob(ctx context.Context, part timed.Window, around bool, host Host) (err error) {
+	j := p.startJob(TranscribeRecord(part, around), host)
 	defer j.end(&err)
 	if ctx.Err() != nil {
 		return ErrCancelled
 	}
-	end, err := p.windowEnd(ctx, PlanRequest{})
+	end, err := p.windowEnd(ctx, PlanRequest{To: part.End})
 	if err != nil {
 		return err
 	}
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
 		return j.turn(ctx, step)
 	}
-	letGo, err := p.hear(ctx, stepOf, timed.Window{Start: 0, End: end})
+	letGo, err := p.hear(ctx, stepOf, timed.Window{Start: part.Start, End: end})
 	letGo()
 	return err
 }

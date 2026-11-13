@@ -793,7 +793,7 @@ export const steps = {
         const at = Number(document.querySelector(".screen")?.dataset.playhead);
         const on = document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? "";
         const playing = !!document.querySelector('button[aria-label="Pause"]');
-        window.__heads.push([at, on, playing]);
+        window.__heads.push([at, on, playing, window.__phase ?? 0]);
         requestAnimationFrame(read);
       };
       requestAnimationFrame(read);
@@ -809,10 +809,22 @@ export const steps = {
       walk.wrong = "the play stopped before the hand came";
       return;
     }
+    // Which part of the step the watch reads in, marked on the page and
+    // read by it on two animation frames, so at least one frame reads it.
+    const phase = (n) =>
+      page.evaluate(
+        (n) =>
+          new Promise((done) => {
+            window.__phase = n;
+            requestAnimationFrame(() => requestAnimationFrame(done));
+          }),
+        n,
+      );
     await holdSound(page, true);
     await page.hover(`aside ol li[data-key="${other}"]`);
     await page.locator(`aside ol li[data-key="${other}"] button.drop`).click();
     await settle(page);
+    await phase(1);
     const gone = (await ask(page, "Clips", path)).some((c) => c.key === other && c.rejected);
     if (!gone) {
       walk.wrong = "the bin left the other clip in the list";
@@ -822,11 +834,13 @@ export const steps = {
     await settle(page);
     const kept = (await ask(page, "Clips", path)).some((c) => c.key === other && !c.rejected);
     if (!kept) walk.wrong = "Put it back left the other clip removed";
+    await phase(2);
     await holdSound(page, false);
     await playUntil(page, { most: 1 });
     const heads = await page.evaluate(() => {
       const h = window.__heads;
       delete window.__heads;
+      delete window.__phase;
       return h;
     });
     await page.evaluate(() => {
@@ -842,7 +856,12 @@ export const steps = {
       else if (!playing) walk.wrong = `the play stopped at ${at.toFixed(3)} when the other clip was removed or put back`;
       else if (at < at0 - 1e-6) walk.wrong = `the playhead went back from ${at0.toFixed(3)} to ${at.toFixed(3)} when the other clip was removed or put back`;
     }
-    if (!walk.wrong && heads.length < 30) walk.wrong = `only ${heads.length} animation frames were read`;
+    // The watch read the playhead before the hand came, with the clip
+    // removed and once it was put back. Counted against a floor of 30
+    // frames instead, a runner busy with six walks drew 27 in the time
+    // the step took, and the walk failed with nothing wrong.
+    const seen = [0, 1, 2].filter((n) => !heads.some((h) => h[3] === n));
+    if (!walk.wrong && seen.length) walk.wrong = `no animation frame was read in phase ${seen.join(" and ")} of 0 before the hand, 1 removed, 2 put back`;
     await watch.step("put back", s);
   },
   // ["remove the chosen", end]

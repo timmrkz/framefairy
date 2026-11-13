@@ -451,9 +451,6 @@ func inPause(words []timed.Cue, at, keepPause float64) bool {
 	return i+1 == len(words) || at < words[i+1].Start
 }
 
-// MaxClipSpan keeps a trimmed clip to a sensible length.
-const MaxClipSpan = 600.0
-
 // cloneObject is a copy of an object of a plan being edited that shares
 // nothing with it, its objects and lists copied all the way down, so a
 // change made to the copy leaves the plan as it was read.

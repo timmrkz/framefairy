@@ -355,6 +355,110 @@ func TestDroppingARecording(t *testing.T) {
 	})
 }
 
+// askingMicrophone starts once the person has answered whether the app
+// may use it, the way a Mac's microphone starts the first time, or fails
+// to start when the answer is an error.
+type askingMicrophone struct {
+	playingMicrophone
+	asked    chan struct{}
+	answered chan error
+}
+
+func (m *askingMicrophone) start(heard func([]float32)) error {
+	close(m.asked)
+	if err := <-m.answered; err != nil {
+		return err
+	}
+	return m.playingMicrophone.start(heard)
+}
+
+// on says whether the microphone was started and not stopped.
+func (m *askingMicrophone) on() bool {
+	if m.done == nil {
+		return false
+	}
+	select {
+	case <-m.done:
+		return false
+	default:
+		return true
+	}
+}
+
+// Stop, Escape, Report and closing the window end a recording while its
+// microphone is still starting, without waiting for it, and the
+// microphone is stopped as soon as it has started. Tim pressed Dictate,
+// the Mac asked whether the app may use the microphone, and Report
+// waited 45 s for the answer while nothing he clicked did anything,
+// #792. A test that waits here for good is ended by go test's -timeout.
+func TestEndingARecordingWhileTheMicrophoneStarts(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		end  func(f *FrameFairy) []string
+	}{
+		{"stop", func(f *FrameFairy) []string {
+			d, err := f.StopListening()
+			if err != nil {
+				t.Errorf("stopping gave %v", err)
+			}
+			return d.Said
+		}},
+		{"cancel", func(f *FrameFairy) []string {
+			f.CancelListening()
+			return nil
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				f := listenTo(t, tone(3))
+				mic := &askingMicrophone{playingMicrophone: playingMicrophone{samples: tone(3)}, asked: make(chan struct{}), answered: make(chan error)}
+				f.listening.mic = func() microphone { return mic }
+				listened := make(chan error, 1)
+				go func() {
+					_, err := f.Listen()
+					listened <- err
+				}()
+				<-mic.asked
+				if said := c.end(f); len(said) != 0 {
+					t.Errorf("a recording ended before its microphone started said %q", said)
+				}
+				mic.answered <- nil
+				if err := <-listened; err != nil {
+					t.Errorf("the microphone started after the recording ended, and Listen gave %v", err)
+				}
+				if mic.on() {
+					t.Error("the microphone was left on after the recording ended while it started")
+				}
+				if d, err := f.StopListening(); len(d.Said) != 0 || err != nil {
+					t.Errorf("stopping once it had started gave %q, %v", d.Said, err)
+				}
+			})
+		})
+	}
+}
+
+// A microphone that cannot start says why, and leaves no recording in
+// hand, so the next Dictate starts a new one.
+func TestAMicrophoneThatCannotStart(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f := listenTo(t, tone(3))
+		f.listening.mic = func() microphone { return brokenMicrophone{} }
+		if _, err := f.Listen(); err == nil || !strings.Contains(err.Error(), "no input device") {
+			t.Fatalf("a microphone that cannot start gave %v", err)
+		}
+		if d, err := f.StopListening(); len(d.Said) != 0 || err != nil || d.Recording != 0 {
+			t.Errorf("stopping after the microphone failed gave recording %d %q, %v", d.Recording, d.Said, err)
+		}
+		f.listening.mic = func() microphone { return &playingMicrophone{samples: tone(1)} }
+		if id, err := f.Listen(); err != nil || id != 2 {
+			t.Errorf("Dictate after the microphone failed gave recording %d, %v, want a new one, 2", id, err)
+		}
+	})
+}
+
 // A speech model that cannot load ends the recording while the person is
 // still talking, and says why, rather than letting them talk on for
 // nothing. Plan row 2.189.
@@ -419,7 +523,11 @@ func TestAPauseIsNoFullStop(t *testing.T) {
 			e.OpenRecognizer = func(string) (engine.Recognizer, error) { return sentences{}, nil }
 		}
 		f.store.standIns = fakes
+		// The recording dictating started holds the speech model every
+		// recording shares until it is over. Started before that, the new
+		// one is handed the same model, not this one, see dictatingTo.
 		f.CancelListening()
+		f.listening.running.Wait()
 		if _, err := f.Listen(); err != nil {
 			t.Fatal(err)
 		}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -166,7 +167,15 @@ type recording struct {
 	samples []float32
 	most    int
 	// hushed stops the microphone once, whoever ends the recording.
-	hushed sync.Once
+	// opened says the microphone has started and stopping that the
+	// recording asked it to stop, both behind mu, so whichever comes
+	// second stops it. A recording can end while its microphone still
+	// starts: on a Mac the first start waits for the person to answer
+	// whether the app may use it, #792.
+	// live is closed once the microphone is open and stays so.
+	hushed           sync.Once
+	opened, stopping bool
+	live             chan struct{}
 	// What the window asked to be settled, see SettleListening, behind
 	// mu, taken by the goroutine that writes it down.
 	settles []settle
@@ -268,8 +277,34 @@ func (r *recording) line(level zerolog.Level) *zerolog.Event {
 	return withAct(theLog.lineAt(level, "listen", time.Now()), r.act).Int("recording", r.id)
 }
 
-// hush stops the microphone, the first time it is asked.
-func (r *recording) hush() { r.hushed.Do(r.mic.stop) }
+// hush stops the microphone, the first time it is asked, or as soon as
+// it has started when it is still starting.
+func (r *recording) hush() {
+	r.hushed.Do(func() {
+		r.mu.Lock()
+		r.stopping = true
+		opened := r.opened
+		r.mu.Unlock()
+		if opened {
+			r.mic.stop()
+		}
+	})
+}
+
+// open says the microphone has started, and stops it at once when the
+// recording ended while it started. It says whether it stays open.
+func (r *recording) open() bool {
+	r.mu.Lock()
+	r.opened = true
+	stopping := r.stopping
+	r.mu.Unlock()
+	if stopping {
+		r.mic.stop()
+		return false
+	}
+	close(r.live)
+	return true
+}
 
 // spoken is how much had been recorded when the microphone was last as
 // loud as a voice.
@@ -285,20 +320,38 @@ func (r *recording) recorded() []float32 {
 	return r.samples
 }
 
-// speechOpener is how a recording loads the speech model, the way a job
-// gets it, but one copy of it rather than the pool a transcription hears
-// with, see asr.OpenOne. It is decided as the recording starts.
+// speechOpener is how a recording gets the speech model: the one the app
+// keeps loaded, which every hearing shares, see engine/speechhost.go, so
+// the first words come with no load and no second copy is held beside
+// it. The stand-ins a test handed the store are decided as the recording
+// starts.
 func (st *store) speechOpener() func(dir string) (engine.Recognizer, error) {
-	if !st.standingIn() {
+	if st == nil || st.machine == nil {
 		return asr.OpenOne
 	}
 	fakes := st.standIns
 	return func(dir string) (engine.Recognizer, error) {
-		var e engine.Engine
-		fakes(&e, &engine.Options{})
-		return e.OpenRecognizer(dir)
+		e := engine.NewEngine(engineLog("listen", ""), st.machine)
+		e.OpenRecognizer = asr.Open
+		if fakes != nil {
+			fakes(e, &engine.Options{})
+		}
+		rec, release, err := e.Speech(context.Background(), dir)
+		if err != nil {
+			return nil, err
+		}
+		return heldSpeech{rec, release}, nil
 	}
 }
+
+// heldSpeech is the speech model kept, held by a recording, which lets go
+// of it when it is closed.
+type heldSpeech struct {
+	engine.Recognizer
+	release func()
+}
+
+func (h heldSpeech) Close() { h.release() }
 
 // standingIn says whether a test handed the store stand-ins for the
 // models, see standIns.
@@ -309,27 +362,64 @@ func (st *store) standingIn() bool { return st != nil && st.standIns != nil }
 var errNoSpeechModel = errors.New(engine.NoSpeechModelSaid)
 
 // Listen starts recording what the person says for a report, and gives
-// the recording's number, which every Dictation about it carries. The
-// speech model loads while they talk and writes down what they say as
-// they say it. A second call while one records gives the same number.
+// the recording's number, which every Dictation about it carries, once
+// the microphone is open. The speech model loads while they talk and
+// writes down what they say as they say it. A second call while one
+// records gives the same number.
+//
+// The recording is in hand before its microphone starts, and the
+// microphone starts outside the lock. On a Mac the first start waits
+// until the person answers whether the app may use the microphone, and
+// Tim's Mac asked for 45 s. Stop, Escape and Report waited on that lock
+// all the while, and the window took no clicks, #792. Now they end the
+// recording while it starts, and the microphone stops as soon as it has
+// started.
 func (f *FrameFairy) Listen() (int, error) {
 	l := &f.listening
+	r, dir, err := l.begin(f.store)
+	if err != nil {
+		return 0, err
+	}
+	if dir == "" {
+		return r.id, nil
+	}
+	every := cmp.Or(l.every, listenEvery)
+	quiet := cmp.Or(l.quiet, listenQuiet)
+	l.running.Go(func() { l.write(r, dir, every, quiet) })
+	l.running.Go(func() { l.measure(r) })
+	if err := r.mic.start(r.heard); err != nil {
+		theLog.line(zerolog.WarnLevel, "listen").Err(err).Msg("the microphone could not start")
+		l.drop(r)
+		return 0, fmt.Errorf("the microphone could not start: %s", err)
+	}
+	if !r.open() {
+		r.line(zerolog.InfoLevel).Dur("starting", time.Since(r.started).Round(time.Millisecond)).Msg("the recording ended while the microphone started")
+		return r.id, nil
+	}
+	r.line(zerolog.InfoLevel).Dur("starting", time.Since(r.started).Round(time.Millisecond)).Msg("recording for a report")
+	return r.id, nil
+}
+
+// begin puts a new recording in hand and gives it with the folder of the
+// speech model that writes it down, or gives the one in hand already,
+// with no folder.
+func (l *listening) begin(st *store) (*recording, string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.now != nil {
-		return l.now.id, nil
+		return l.now, "", nil
 	}
 	// The folder the settings name, or the installed model's usual place
 	// when they name none, the way a search finds it.
 	dir := ""
-	if f.store != nil {
-		dir = f.store.Settings().ASRModel
+	if st != nil {
+		dir = st.Settings().ASRModel
 	}
 	if dir == "" {
 		dir = engine.DefaultModelDir()
 	}
-	if !f.store.standingIn() && asr.Check(dir) != nil {
-		return 0, errNoSpeechModel
+	if !st.standingIn() && asr.Check(dir) != nil {
+		return nil, "", errNoSpeechModel
 	}
 	mic := l.mic
 	if mic == nil {
@@ -337,19 +427,26 @@ func (f *FrameFairy) Listen() (int, error) {
 	}
 	l.count++
 	l.last = nil
-	r := &recording{id: l.count, mic: mic(), speech: f.store.speechOpener(), started: time.Now(), act: theLog.acting(), most: cmp.Or(l.most, listenMost),
-		peak: -200, over: make(chan struct{}), ended: make(chan struct{}), written: make(chan writtenDown, 1)}
-	if err := r.mic.start(r.heard); err != nil {
-		theLog.line(zerolog.WarnLevel, "listen").Err(err).Msg("the microphone could not start")
-		return 0, fmt.Errorf("the microphone could not start: %s", err)
-	}
+	r := &recording{id: l.count, mic: mic(), speech: st.speechOpener(), started: time.Now(), act: theLog.acting(), most: cmp.Or(l.most, listenMost),
+		peak: -200, live: make(chan struct{}), over: make(chan struct{}), ended: make(chan struct{}), written: make(chan writtenDown, 1)}
 	l.now = r
-	every := cmp.Or(l.every, listenEvery)
-	quiet := cmp.Or(l.quiet, listenQuiet)
-	l.running.Go(func() { l.write(r, dir, every, quiet) })
-	l.running.Go(func() { l.measure(r) })
-	r.line(zerolog.InfoLevel).Msg("recording for a report")
-	return r.id, nil
+	return r, dir, nil
+}
+
+// drop ends a recording whose microphone could not start, if it is still
+// in hand, and nothing it heard is written down.
+// One that was stopped meanwhile was ended by whoever stopped it.
+func (l *listening) drop(r *recording) {
+	l.mu.Lock()
+	took := l.now == r
+	if took {
+		l.now = nil
+	}
+	l.mu.Unlock()
+	if took {
+		r.dropped.Store(true)
+		close(r.ended)
+	}
 }
 
 // take ends whichever recording is in hand and gives it, with how the
@@ -405,6 +502,19 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			l.endItself(r, Dictation{Said: []string{}, Error: out.err.Error()})
 		}
 	}()
+	// The speech model loads once the microphone is open. A recording
+	// that ended before has nothing to write down. One that ended once it
+	// was open has, though both are ready by the time this looks, and a
+	// select picks either.
+	select {
+	case <-r.live:
+	case <-r.ended:
+		select {
+		case <-r.live:
+		default:
+			return
+		}
+	}
 	rec, err := r.speech(dir)
 	if err != nil {
 		r.line(zerolog.ErrorLevel).Err(err).Msg("the speech model could not load")

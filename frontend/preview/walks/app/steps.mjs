@@ -4,7 +4,7 @@
 // walk so far, the step's argument, what the caption box showed before it
 // and the step's name. A sequence of any folder can take it. Below them the
 // helpers only these steps use. See docs/TESTING.md.
-import { ask, chosen, control, engineState, fromSidebar, nextPaint, pageUntil, seekTo, seenUntil, settle, sidebarStill, reload } from "../bridge.mjs";
+import { ask, chosen, control, engineState, fromSidebar, handles, high, nextPaint, pageUntil, seekTo, seenUntil, settle, sidebarStill, reload, xOf } from "../bridge.mjs";
 import { beamsOff, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -794,6 +794,18 @@ export const steps = {
     const { segments } = await engineState(page, watch.at);
     const first = segments[0].start;
     const last = segments[segments.length - 1].end;
+    // The whole clip on the clip timeline first, pinched out by hand the
+    // way a person would: an edge dragged far keeps the zoom it had and
+    // scrolls, so the clip can reach past either side.
+    for (let k = 0; k < 20; k++) {
+      const g = await handles(page);
+      if ((await xOf(page, first)) >= g.track.x && (await xOf(page, last)) <= g.track.x + g.track.w) break;
+      await page.mouse.move(g.track.x + g.track.w / 2, high(g.track));
+      await page.keyboard.down("Control");
+      await page.mouse.wheel(0, 100);
+      await page.keyboard.up("Control");
+      await settle(page);
+    }
     for (let i = 1; i <= arg && !walk.wrong; i++) {
       const at = first + ((last - first) * i) / (arg + 1);
       if (!(await seekTo(page, at, fps))) walk.wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;

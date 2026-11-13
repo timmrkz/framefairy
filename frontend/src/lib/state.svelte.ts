@@ -14,8 +14,15 @@ export type Work = "whole" | "clips" | "render";
 
 const works: Work[] = ["whole", "clips", "render"];
 
+// The whole video's transcription, Transcribe whole video in its menu. A
+// transcription with an end is a part of a clip or the stretch around
+// one, which the Go side hears by itself, see JobRecord.Hears there.
+function transcribesWhole(j: Job): boolean {
+  return j.kind === "transcribe" && !j.to;
+}
+
 function doing(work: Work, j: Job): boolean {
-  if (work === "whole") return j.kind === "transcribe";
+  if (work === "whole") return transcribesWhole(j);
   if (work === "render") return j.kind === "render";
   return j.kind === "search" || j.kind === "clip";
 }
@@ -28,7 +35,7 @@ type Press = { path: string; work: Work; what: string };
 const of = (path: string, work: Work) => (p: Press) => p.path === path && p.work === work;
 
 export class JobStore {
-  list = $state<Job[]>([]);
+  list = $state.raw<Job[]>([]);
   // What a person pressed that the Go side has not answered yet, the same
   // for every kind of work, so no control keeps a flag of its own. A start
   // lasts until its call answers with the job, see startJob. A stop lasts
@@ -41,6 +48,8 @@ export class JobStore {
 
   // The rev of the newest state of each video the jobs were taken from.
   private revs = new Map<string, number>();
+  // The state taken last.
+  private taken: VideoState | null = null;
 
   // The jobs of a video, from a state of it the Go side sent or a call
   // answered with. Each is kept unless the list has a later snapshot of
@@ -48,6 +57,11 @@ export class JobStore {
   // video there is to say anything about, so a job of the video it no
   // longer holds, older than it, is one the Go side forgot, and goes.
   take(state: VideoState) {
+    // Every state the Go side sends comes here twice, from the store's own
+    // listener and passed on by the video's session, see start. The second
+    // has nothing new.
+    if (state === this.taken) return;
+    this.taken = state;
     for (const job of state.jobs) {
       const had = this.list.find((j) => j.id === job.id);
       if (!had || (job.seq ?? 0) > (had.seq ?? 0)) this.apply(job);
@@ -175,7 +189,7 @@ export class JobStore {
   // and neither has one settled, carried on by the next or forgotten with
   // its video when the video left the library.
   transcription(path: string): Job | undefined {
-    const last = this.list.findLast((j) => j.episode === path && j.kind === "transcribe");
+    const last = this.list.findLast((j) => j.episode === path && transcribesWhole(j));
     if (!outstanding(last)) return undefined;
     return last;
   }

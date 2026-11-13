@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 
 import type { ClipEntry, EpisodeStatus, Job, VideoState, WindowView } from "./api";
-import { EpisodeSession } from "./session.svelte";
+import { ANSWER, EpisodeSession, Unanswered } from "./session.svelte";
+import { said } from "./said";
 import { JobStore } from "./state.svelte";
 
 vi.mock("./api", () => ({ api: {}, onJob: () => {}, onVideoState: () => {} }));
@@ -99,6 +100,74 @@ describe("a video's state in its session", () => {
     await expect(edited).rejects.toThrow("the plan is gone");
     expect(here.clips[0].thumbnails).toBeUndefined();
     expect(here.status?.measured).toBe(6);
+  });
+
+  // The time the session keeps, held by the test: what it was asked to
+  // wait for, and the moment it has passed.
+  function clock() {
+    const waits: { ms: number; fn: () => void; off: boolean }[] = [];
+    return {
+      waits,
+      after: (ms: number, fn: () => void) => {
+        const w = { ms, fn, off: false };
+        waits.push(w);
+        return () => (w.off = true);
+      },
+      pass: () => waits.filter((w) => !w.off).forEach((w) => w.fn()),
+    };
+  }
+
+  // A call the Go side never answers, the way one does while the plan's
+  // lock is held elsewhere, and whether it was called off.
+  function hung<T>() {
+    const off = { called: false };
+    const p = new Promise<T>(() => {}) as Promise<T> & { cancel: () => void };
+    p.cancel = () => (off.called = true);
+    return { p, off };
+  }
+
+  test("lets go of an edit with no answer, calls it off, says so, and reads the state again", async () => {
+    const time = clock();
+    let read: Promise<VideoState> | undefined;
+    const here = new EpisodeSession("/v.mp4", new JobStore(), () => (read = Promise.resolve(state(9, { clips: [clip("a", { end: 28 })] }))), time.after);
+    here.take(state(1));
+    const write = hung<ClipEntry>();
+    const edited = here.edit("a", (c) => ({ ...c, end: 25 }), () => write.p);
+    // The search goes on while the edit waits.
+    here.take(state(2, { clips: [clip("a"), clip("b")] }));
+    expect([here.rev, here.clips[0].end]).toEqual([1, 25]);
+    expect(time.waits.map((w) => w.ms)).toEqual([ANSWER]);
+    time.pass();
+    await expect(edited).rejects.toBeInstanceOf(Unanswered);
+    expect(write.off.called).toBe(true);
+    expect(vi.mocked(said)).toHaveBeenCalledWith(expect.stringContaining("the edit of a had no answer"), { video: "/v.mp4" });
+    // The states held for it are taken, and the state read again after
+    // them, which the session heard before the test does.
+    expect(read).toBeDefined();
+    await read;
+    expect([here.rev, here.clips.map((c) => c.key), here.clips[0].end]).toEqual([9, ["a"], 28]);
+  });
+
+  test("keeps no time for an edit that was answered", async () => {
+    const time = clock();
+    const here = new EpisodeSession("/v.mp4", new JobStore(), undefined, time.after);
+    here.take(state(1));
+    await here.edit("a", (c) => ({ ...c, end: 25 }), async () => clip("a", { end: 25, rev: 2 }));
+    expect(time.waits.map((w) => w.off)).toEqual([true]);
+  });
+
+  test("lets go of a pick with no answer, and shows what the states say is chosen", async () => {
+    const time = clock();
+    const here = new EpisodeSession("/v.mp4", new JobStore(), undefined, time.after);
+    here.take(state(1, { chosen: "a" }));
+    const choose = hung<VideoState>();
+    const picked = here.pick("b", () => choose.p);
+    here.take(state(2, { chosen: "c", clips: [clip("a"), clip("b"), clip("c")] }));
+    expect([here.rev, here.chosen]).toEqual([2, "b"]);
+    time.pass();
+    await picked;
+    expect(choose.off.called).toBe(true);
+    expect(here.chosen).toBe("c");
   });
 
   test("keeps a clip that did not change the very same clip, unless it is read for an edit", () => {
