@@ -3,7 +3,6 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
-	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"maps"
@@ -317,125 +316,16 @@ func addClip(fsys afero.Fs, path string, set PlanFile, clip PlanClip, prefix str
 
 func findClip(clips []*object, id string) (*object, error) {
 	for i, c := range clips {
-		raw, ok := c.get(keyID)
-		if clipIDOf(raw, ok, i+1) == id {
+		fallback := twoDigits(i + 1)
+		text := fallback
+		if raw, ok := c.get(keyID); ok {
+			text = num.FormatValue(raw)
+		}
+		if SanitiseName(text, fallback) == id {
 			return c, nil
 		}
 	}
 	return nil, renderErr("no clip %s in the plan", id)
-}
-
-// clipIDOf is the id of the nth clip of a plan, counted from 1, from the
-// value of its "id" when it has one: the one rule findClip and
-// orderedClip find a clip by.
-func clipIDOf(raw any, has bool, n int) string {
-	fallback := twoDigits(n)
-	text := fallback
-	if has {
-		text = num.FormatValue(raw)
-	}
-	return SanitiseName(text, fallback)
-}
-
-// orderedClip is the clip of a plan findClip finds by id in its clips,
-// decoded in its own order the way decodeOrdered decodes the whole plan,
-// with every other clip skipped over as text. A step of a drag needs only
-// the clip under the hand, and decoding all of them was half its time on
-// a plan of 80 clips, #801.
-func orderedClip(data []byte, id string) (*object, error) {
-	dec := jsontext.NewDecoder(bytes.NewReader(data), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
-	if tok, err := dec.ReadToken(); err != nil || tok.Kind() != '{' {
-		return nil, renderErr("clip plan must be a JSON object")
-	}
-	var found jsontext.Value
-	for dec.PeekKind() != '}' {
-		name, err := dec.ReadToken()
-		if err != nil {
-			return nil, err
-		}
-		if name.String() != keyClips {
-			if err := dec.SkipValue(); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		// A later "clips" is the one decodeOrdered keeps.
-		found = nil
-		if dec.PeekKind() != '[' {
-			if err := dec.SkipValue(); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if _, err := dec.ReadToken(); err != nil {
-			return nil, err
-		}
-		n := 0
-		for dec.PeekKind() != ']' {
-			raw, err := dec.ReadValue()
-			if err != nil {
-				return nil, err
-			}
-			if raw.Kind() != '{' {
-				continue
-			}
-			n++
-			if found != nil {
-				continue
-			}
-			value, has, err := clipIDValue(raw)
-			if err != nil {
-				return nil, err
-			}
-			if clipIDOf(value, has, n) == id {
-				found = slices.Clone(raw)
-			}
-		}
-		if _, err := dec.ReadToken(); err != nil {
-			return nil, err
-		}
-	}
-	if found == nil {
-		return nil, renderErr("no clip %s in the plan", id)
-	}
-	value, err := decodeOrdered(found)
-	if err != nil {
-		return nil, err
-	}
-	c, _ := value.(*object)
-	return c, nil
-}
-
-// clipIDValue is the value of a clip's last "id", as decodeOrdered reads
-// it, read from the clip's text, and whether it has one.
-func clipIDValue(raw jsontext.Value) (any, bool, error) {
-	dec := jsontext.NewDecoder(bytes.NewReader(raw), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
-	if _, err := dec.ReadToken(); err != nil {
-		return nil, false, err
-	}
-	var value any
-	has := false
-	for dec.PeekKind() != '}' {
-		name, err := dec.ReadToken()
-		if err != nil {
-			return nil, false, err
-		}
-		if name.String() != keyID {
-			if err := dec.SkipValue(); err != nil {
-				return nil, false, err
-			}
-			continue
-		}
-		v, err := dec.ReadValue()
-		if err != nil {
-			return nil, false, err
-		}
-		if value, err = decodeOrdered(v); err != nil {
-			return nil, false, err
-		}
-		has = true
-	}
-	return value, has, nil
 }
 
 // SetRejected marks a clip as rejected or kept. A rejected clip stays in the
@@ -563,6 +453,32 @@ func inPause(words []timed.Cue, at, keepPause float64) bool {
 
 // MaxClipSpan keeps a trimmed clip to a sensible length.
 const MaxClipSpan = 600.0
+
+// cloneObject is a copy of an object of a plan being edited that shares
+// nothing with it, its objects and lists copied all the way down, so a
+// change made to the copy leaves the plan as it was read.
+func cloneObject(o *object) *object {
+	c, _ := cloneValue(o).(*object)
+	return c
+}
+
+func cloneValue(v any) any {
+	switch v := v.(type) {
+	case *object:
+		out := &object{keys: slices.Clone(v.keys), values: make(map[string]any, len(v.values))}
+		for k, x := range v.values {
+			out.values[k] = cloneValue(x)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, x := range v {
+			out[i] = cloneValue(x)
+		}
+		return out
+	}
+	return v
+}
 
 func copyObject(o *object) *object {
 	out := &object{keys: append([]string(nil), o.keys...), values: map[string]any{}}

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/afero"
@@ -69,11 +70,46 @@ type PlanSummary struct {
 	// plan and clips are the plan as it was read for the summary, so what
 	// asks where its clips' shorts are does not read it a second time, and
 	// data the bytes they were parsed from, for what reads the plan in its
-	// own order, a gesture, and the undo's snapshot. All are shared and
-	// only read.
-	plan  Plan
-	clips []Clip
-	data  []byte
+	// own order, a gesture, and the undo's snapshot. ordered is the plan
+	// read in its own order, read once when it is first asked for, see
+	// orderedClips. All are shared and only read.
+	plan    Plan
+	clips   []Clip
+	data    []byte
+	ordered func() ([]*object, error)
+}
+
+// orderedClips are the clips of the plan in its own order, the way an
+// edit reads them, see editPlan. They are read once for the summary, not
+// on every step of a drag, where reading every clip of a plan of 80 was
+// half the time of a step, #801. They are shared and only read: what
+// changes a clip changes a copy, see cloneObject.
+func (s PlanSummary) orderedClips() ([]*object, error) {
+	if s.ordered == nil {
+		return readOrderedClips(s.data)
+	}
+	return s.ordered()
+}
+
+// readOrderedClips reads the clips of a plan in its own order.
+func readOrderedClips(data []byte) ([]*object, error) {
+	value, err := decodeOrdered(data)
+	if err != nil {
+		return nil, err
+	}
+	top, _ := value.(*object)
+	if top == nil {
+		return nil, renderErr("clip plan must be a JSON object")
+	}
+	var clips []*object
+	if list, ok := top.values[keyClips].([]any); ok {
+		for _, item := range list {
+			if c, ok := item.(*object); ok {
+				clips = append(clips, c)
+			}
+		}
+	}
+	return clips, nil
 }
 
 // Over is the part of the episode the clip set was made over, see
@@ -255,7 +291,8 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 		return PlanSummary{}, err
 	}
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
-		Modified: info.ModTime(), plan: plan, clips: clips, data: data}
+		Modified: info.ModTime(), plan: plan, clips: clips, data: data,
+		ordered: sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) })}
 	made := plan.PlannedWith()
 	if v, ok := num.AsFloat(made[keyFrom]); ok {
 		s.From = v

@@ -4,50 +4,53 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
 )
 
-// A step of a drag reads only the clip under the hand from the plan, and
-// finds the clip findClip finds in every plan, the odd ones too: ids that
-// are numbers, names given twice, a list item that is no clip, two lists
-// of clips, #801.
-func TestADragStepReadsTheClipEditsRead(t *testing.T) {
-	plans := []string{
-		`{"clips": [{"id": 1, "x": [1,2]}, {"slug": "b"}, 5, {"id": "03", "id": "07"}, {"id": "x y"}], "clips2": 1}`,
-		`{"clips": [{"id": "01"}], "clips": [{"id": "02", "seg": {"a": null}}, {"id": true}]}`,
-		`{"source": "s", "clips": [{"id": "Ä"}, {"id": 2.50}, {"id": "02"}]}`,
-		`{"clips": "none"}`,
+// The plan a drag reads once is shared by every step of the hand, so no
+// step may change it: a cut taken out, a cut moved and an edge dragged
+// each leave it as it was read, and the next step is shaped from the clip
+// as it is in the file, #801.
+func TestADragStepLeavesThePlanItReadAsItWas(t *testing.T) {
+	s, tr := longPlan(t, false)
+	frames := SourceInfo{Duration: 9000, Width: 1920, Height: 1080, FPSNum: 30, FPSDen: 1}
+	clips, err := s.orderedClips()
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, p := range plans {
-		value, err := decodeOrdered([]byte(p))
+	read, err := MarshalPlan(clips)
+	if err != nil {
+		t.Fatal(err)
+	}
+	look := &Look{Source: frames}
+	steps := []Gesture{
+		{Kind: "cut", From: 4103, To: 4105, Frames: frames},
+		{Kind: "move", Edge: "from", Index: 0, From: 4107.5, Frames: frames},
+		{Kind: "trim", Edge: "start", From: 4101.5, Frames: frames},
+		{Kind: "join", Index: 1, From: 4108.5, Frames: frames},
+	}
+	for _, g := range steps {
+		first, err := ShapeClipView(s, "41", g, tr, 0.1, look)
+		if err != nil {
+			t.Fatalf("%s %s: %v", g.Kind, g.Edge, err)
+		}
+		again, err := ShapeClipView(s, "41", g, tr, 0.1, look)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var clips []*object
-		if list, ok := value.(*object).values[keyClips].([]any); ok {
-			for _, item := range list {
-				if c, ok := item.(*object); ok {
-					clips = append(clips, c)
-				}
-			}
+		if !reflect.DeepEqual(first.Clip.Segments, again.Clip.Segments) {
+			t.Errorf("%s %s: the same step made %v and then %v", g.Kind, g.Edge, first.Clip.Segments, again.Clip.Segments)
 		}
-		for _, id := range []string{"01", "02", "03", "04", "05", "07", "x-y", "x_y", "true", "2.5", "2.50", "a", "nope"} {
-			want, werr := findClip(clips, id)
-			got, gerr := orderedClip([]byte(p), id)
-			if (werr == nil) != (gerr == nil) {
-				t.Fatalf("%s, clip %q: findClip says %v and orderedClip %v", p, id, werr, gerr)
-			}
-			if werr != nil {
-				continue
-			}
-			a, _ := MarshalPlan(want)
-			b, _ := MarshalPlan(got)
-			if !bytes.Equal(a, b) {
-				t.Errorf("%s, clip %q: findClip found %s and orderedClip %s", p, id, a, b)
-			}
+		now, err := MarshalPlan(clips)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(read, now) {
+			t.Fatalf("%s %s changed the plan every step reads", g.Kind, g.Edge)
 		}
 	}
 }
@@ -55,7 +58,7 @@ func TestADragStepReadsTheClipEditsRead(t *testing.T) {
 // longPlan is a video of 2.3 h with 25000 words and a plan of 80 clips over
 // it, each in three pieces with keyframes, clip 41 with a corrected word
 // when corrected.
-func longPlan(b *testing.B, corrected bool) (PlanSummary, *Transcript) {
+func longPlan(b testing.TB, corrected bool) (PlanSummary, *Transcript) {
 	tr := fromStored(longHeard(25000), nil, 0, 0, nil)
 	var clips []string
 	for i := range 80 {

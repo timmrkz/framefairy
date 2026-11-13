@@ -108,13 +108,15 @@ func ShapeClip(s PlanSummary, clipID string, g Gesture, t *Transcript, keepPause
 	if err != nil {
 		return Shaped{}, err
 	}
-	// Only the clip the hand is on is read in the plan's own order. The
-	// whole plan was, on every step of the hand, half the time of a step
-	// on a plan of 80 clips.
-	c, err := orderedClip(s.data, clipID)
+	clips, err := s.orderedClips()
 	if err != nil {
 		return Shaped{}, err
 	}
+	c, err := findClip(clips, clipID)
+	if err != nil {
+		return Shaped{}, err
+	}
+	c = cloneObject(c)
 	out, err := checkedPieces(change, segmentObjects(c), rotationsOf(c), g.Frames)
 	if err != nil {
 		return Shaped{}, err
