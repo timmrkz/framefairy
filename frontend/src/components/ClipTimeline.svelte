@@ -35,7 +35,6 @@
     api,
     clock,
     intoWord,
-    wordStep,
     type Gesture,
     type ClipEntry,
     type Word,
@@ -52,7 +51,6 @@
     frameAt,
     frameMiddle,
     frameBegins,
-    insideClip,
     cutsOf,
     litWord,
     wordInEpisode,
@@ -980,10 +978,6 @@
   // before its first piece to a frame after its last, its cuts included. A
   // clip playing on the clip crosses its cuts, and a step in a cut walks
   // the words heard there and stays on the clip.
-  function onClip(t: number, step: number): boolean {
-    return insideClip(wholeClip ? [wholeClip] : [], t, step);
-  }
-
   // The arrow keys step the playhead a frame at a time, as in every video
   // tool, unless a field or an edge of the clip has the keyboard. On a
   // clip, Shift steps by words, which is the thing the picture is showing:
@@ -1052,15 +1046,14 @@
   // further than a stream reads on, so the frames there would cost a seek
   // each, back and on, at every move of the playhead, a click too, and
   // the decoder would be busy with them when the hand goes somewhere else.
+  // Where the keys go is arrowStep's, the one onKey asks, and only a step
+  // onto a word is read ahead.
   $effect(() => {
     if (playing || scrubbing || gripping || !onahead) return;
-    const step = Math.max(frame, 1 / 240);
-    if (!onClip(time, step)) return;
-    const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
     const times: number[] = [];
     for (const back of [false, true]) {
-      const to = wordStep(walk, time, back, step);
-      if (to !== null) times.push(Math.max(0, Math.min(to, duration)));
+      const to = arrowStep({ time, frame, back, shift: true, through: false, clip: wholeClip, pieces: drawnPieces, lit, words, looping });
+      if (to && to !== "clip" && to.word) times.push(Math.max(0, Math.min(to.to, duration)));
     }
     if (times.length) onahead(times);
   });
