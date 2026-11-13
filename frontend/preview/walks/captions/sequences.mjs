@@ -45,9 +45,10 @@ export default [
     // The clip's start dragged near the end of the first word lands it on
     // the frame before "war", which starts in the middle of the clip's
     // first frame, so the first frame shows its caption with no word lit
-    // and a click a frame into "war" by its own time landed there.
+    // and a click a frame into "war" by its own time landed there. Only
+    // the canvas draws the captions, the caption box over it none.
     name: "every caption block clicked lights a word of its caption",
-    steps: [["trim into", 0.04], ["every block"]],
+    steps: [["trim into", 0.04], ["every block"], ["drawn once"]],
   },
   {
     name: "delete removes the caption block clicked on the clip timeline",
@@ -55,10 +56,13 @@ export default [
       ["block", "Schulhof"],
       ["press", "Backspace"],
       ["blocks", 8],
+      ["box", ""],
       ["undo"],
       ["blocks", 9],
+      ["box", "als mich auf dem Schulhof irgendein"],
       ["redo"],
       ["blocks", 8],
+      ["box", ""],
     ],
   },
   {

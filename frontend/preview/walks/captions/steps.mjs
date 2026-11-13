@@ -752,6 +752,33 @@ export const steps = {
     console.log(`    ${white} white pixels on the canvas under "${box}"`);
     if (white < 100) walk.wrong = `the picture shows no captions, ${white} white pixels, under the caption box "${box}"`;
   },
+  // ["drawn once"]     only the canvas draws the captions in the video
+  //                    preview: the caption box over it shows no word and
+  //                    no pill while no word is being typed, so the
+  //                    captions are never drawn a second time
+  async "drawn once"(walk) {
+    const { page } = walk;
+    // Twice: the frame's own layer, then the pop it may start over the
+    // frame once it is drawn.
+    for (let i = 0; i < 2; i++) {
+      await page.evaluate(() => window.__captionLayers?.rested());
+      await nextPaint(page);
+    }
+    const painted = await page.evaluate(() => {
+      const alpha = (c) => {
+        const m = c.match(/rgba?\(([^)]*)\)/);
+        const parts = m ? m[1].split(/[\s,/]+/).filter(Boolean) : [];
+        return parts.length > 3 ? Number(parts[3]) : 1;
+      };
+      return [...document.querySelectorAll(".captions .line, .captions .line *")]
+        .filter((e) => {
+          const s = getComputedStyle(e);
+          return (e.textContent.trim() && alpha(s.color) > 0) || alpha(s.backgroundColor) > 0;
+        })
+        .map((e) => e.textContent.trim());
+    });
+    if (painted.length) walk.wrong = `the caption box draws "${painted[0]}" over the video preview, a second drawing of the captions`;
+  },
   // ["box", text]      the caption box reads this, word by word
   async box(walk, arg, s) {
     const box = s.map((w) => w.text).join(" ");
