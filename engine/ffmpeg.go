@@ -784,51 +784,15 @@ func (e *Engine) readPictureStart(ctx context.Context, path string) (float64, bo
 // file, once for as long as the file stays as it is, see probed.go.
 func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	key, keep := keyFor("probe", e.FFprobe, path)
-	if keep {
-		if info, ok := recall[SourceInfo](e.Machine, key); ok {
-			return info.clone(), nil
-		}
-	}
 	if !keep {
 		return e.probe(ctx, path)
 	}
-	// One probe of a file at a time. As the app opens, the window asks for
-	// the state and the source of every video at once, and each asked
-	// ffprobe six times on its own, #799. A second probe waits for the one
-	// under way and takes its answer, or probes itself when that one
-	// kept none, because it failed or was stopped.
-	e.Machine.probes.mu.Lock()
-	if e.Machine.probes.flying == nil {
-		e.Machine.probes.flying = map[probeKey]chan struct{}{}
-	}
-	if wait, ok := e.Machine.probes.flying[key]; ok {
-		e.Machine.probes.mu.Unlock()
-		select {
-		case <-wait:
-		case <-ctx.Done():
-			return SourceInfo{}, ctx.Err()
-		}
-		if info, ok := recall[SourceInfo](e.Machine, key); ok {
-			return info.clone(), nil
-		}
+	// One probe of a file at a time, see askOnce. What is kept and handed
+	// on is shared, so each caller is given a copy of its own.
+	info, err := askOnce(ctx, e.Machine, key, func(ctx context.Context) (SourceInfo, error) {
 		return e.probe(ctx, path)
-	}
-	done := make(chan struct{})
-	e.Machine.probes.flying[key] = done
-	e.Machine.probes.mu.Unlock()
-	defer func() {
-		e.Machine.probes.mu.Lock()
-		delete(e.Machine.probes.flying, key)
-		e.Machine.probes.mu.Unlock()
-		close(done)
-	}()
-	info, err := e.probe(ctx, path)
-	// A probe stopped halfway may have read no sound or no uneven frames
-	// without failing, which is not what the file holds.
-	if err == nil && ctx.Err() == nil {
-		remember(e.Machine, key, info.clone())
-	}
-	return info, err
+	})
+	return info.clone(), err
 }
 
 func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
