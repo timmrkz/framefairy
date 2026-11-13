@@ -176,13 +176,16 @@ type replyBlock struct {
 	Text string `json:"text"`
 }
 
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
+// waitToRetry waits d on the machine's clock before a request is asked
+// again, or until ctx is called off.
+func (e *Engine) waitToRetry(ctx context.Context, d time.Duration) error {
+	up := make(chan struct{})
+	stop := e.Clock.AfterFunc(d, func() { close(up) })
+	defer stop()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-timer.C:
+	case <-up:
 		return nil
 	}
 }
@@ -238,7 +241,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 			if attempt < maxAttempts {
 				e.Log.Warn("network error (%s), retrying in %ss", runes.Scrub(err.Error(), 80),
 					num.Fixed(delay, 0))
-				if err := sleepCtx(ctx, time.Duration(delay*float64(time.Second))); err != nil {
+				if err := e.waitToRetry(ctx, time.Duration(delay*float64(time.Second))); err != nil {
 					return nil, nil, err
 				}
 				delay = min(delay*2, 60)
@@ -280,7 +283,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 			}
 			e.Log.Warn("the API's answer broke off (%s), retrying in %ss", runes.Scrub(err.Error(), 80),
 				num.Fixed(delay, 0))
-			if err := sleepCtx(ctx, time.Duration(delay*float64(time.Second))); err != nil {
+			if err := e.waitToRetry(ctx, time.Duration(delay*float64(time.Second))); err != nil {
 				return nil, nil, err
 			}
 			delay = min(delay*2, 60)
@@ -299,7 +302,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 			if attempt < maxAttempts {
 				e.Log.Warn("network error (%s), retrying in %ss", runes.Scrub(readErr.Error(), 80),
 					num.Fixed(delay, 0))
-				if err := sleepCtx(ctx, time.Duration(delay*float64(time.Second))); err != nil {
+				if err := e.waitToRetry(ctx, time.Duration(delay*float64(time.Second))); err != nil {
 					return nil, nil, err
 				}
 				delay = min(delay*2, 60)
@@ -329,7 +332,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 				}
 				e.Log.Warn("API returned %d, retrying in %ss (attempt %d of %d)",
 					code, num.Fixed(wait, 0), attempt, maxAttempts)
-				if err := sleepCtx(ctx, time.Duration(wait*float64(time.Second))); err != nil {
+				if err := e.waitToRetry(ctx, time.Duration(wait*float64(time.Second))); err != nil {
 					return nil, nil, err
 				}
 				delay = min(delay*2, 60)

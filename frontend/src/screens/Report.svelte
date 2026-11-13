@@ -27,6 +27,7 @@
   import { Undo } from "../lib/undo";
   import { caretBox, landing } from "../lib/caret";
   import { revealed } from "../lib/reveal";
+  import { afterRest } from "../lib/rest";
 
   // Report a Problem, in the window Bugs in the sidebar opens: what the
   // person says happened, the pictures they attach, and one button that
@@ -112,7 +113,7 @@
   function keepText() {
     if (!loaded) return;
     if (saving) clearTimeout(saving);
-    saving = setTimeout(saveNow, 300);
+    saving = afterRest(saveNow, 300);
   }
   function saveNow() {
     if (saving) clearTimeout(saving);

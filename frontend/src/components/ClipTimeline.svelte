@@ -66,6 +66,7 @@
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
   import { rotationAt } from "../lib/rotate";
+  import { afterRest } from "../lib/rest";
 
   let {
     path,
@@ -1067,7 +1068,7 @@
   function readSoon(how: "swiped" | "pinched") {
     swipedFrom ??= { ...view };
     clearTimeout(settle);
-    settle = setTimeout(() => {
+    settle = afterRest(() => {
       const was = swipedFrom;
       swipedFrom = null;
       if (was) said(`clip timeline: ${how} from ${was.from.toFixed(2)}–${was.to.toFixed(2)} s to ${view.from.toFixed(2)}–${view.to.toFixed(2)} s`, { video: path });

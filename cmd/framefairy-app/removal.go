@@ -24,25 +24,6 @@ import (
 // frontend/src/lib/removed.ts.
 const removalTime = 10 * time.Second
 
-// timeKeeper is the clock removed work is timed by: the time of day, and
-// a call once a while has gone by, which can be stopped. The app's is the
-// system's, and the bridge hands in the one a walk runs on, so a walk
-// that runs the page's ten seconds on runs these on with them, see
-// walkTime in walktime_test.go.
-type timeKeeper interface {
-	Now() time.Time
-	AfterFunc(d time.Duration, f func()) (stop func() bool)
-}
-
-// systemTime is the system's clock.
-type systemTime struct{}
-
-func (systemTime) Now() time.Time { return time.Now() }
-
-func (systemTime) AfterFunc(d time.Duration, f func()) func() bool {
-	return time.AfterFunc(d, f).Stop
-}
-
 // JobAway is how the removal of a job stands: when it is forgotten, or,
 // while a hand holds its row, how long is left.
 type JobAway struct {
@@ -147,7 +128,8 @@ func (q *queue) away(id string, change func(*Job, time.Time) bool, forget func(s
 		q.mu.Unlock()
 		return ""
 	}
-	if !change(job, q.time.Now()) {
+	clock := q.store.machine.Clock
+	if !change(job, clock.Now()) {
 		q.mu.Unlock()
 		return job.Episode
 	}
@@ -156,7 +138,7 @@ func (q *queue) away(id string, change func(*Job, time.Time) bool, forget func(s
 		delete(q.removals, id)
 	}
 	if a := job.Away; a != nil && a.Until != 0 && !q.shut {
-		q.removals[id] = q.time.AfterFunc(time.UnixMilli(a.Until).Sub(q.time.Now()), func() {
+		q.removals[id] = clock.AfterFunc(time.UnixMilli(a.Until).Sub(clock.Now()), func() {
 			q.mu.Lock()
 			delete(q.removals, id)
 			// Only the removal the timer was set for is forgotten. Work

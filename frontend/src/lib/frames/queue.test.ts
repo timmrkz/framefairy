@@ -693,7 +693,14 @@ describe("the clock a play runs on", () => {
   // The play as the clock is told it: frames 0.2 s apart from 35 s, of
   // one run, with the frame of rank 102 on screen. asked is how many
   // frames the run's decoder has been asked for and not given yet.
-  function standing(k: number, ready: number[] = [], thisPlay = true, asked = 1, over: FrameQueue["over"] = null) {
+  function standing(
+    k: number,
+    ready: number[] = [],
+    thisPlay = true,
+    asked = 1,
+    over: FrameQueue["over"] = null,
+    sound: { handedTo: number; soundDone: boolean } | null = null,
+  ) {
     const inside = queue() as unknown as {
       k: number;
       shown: unknown;
@@ -710,6 +717,9 @@ describe("the clock a play runs on", () => {
     inside.putFor = thisPlay ? inside.ticket : inside.ticket - 1;
     inside.shown = { run: 0, rank: 102 };
     inside.slots = [{ run: { id: 0 }, ready: ready.map((rank) => ({ rank })), decoder: { decodeQueueSize: asked } }];
+    // A play with sound, started at 35 s of the program on the sound
+    // card's 10 s, which has been handed the sound up to handedTo.
+    if (sound) Object.assign(inside, { sound: { sampleRate: 48000 }, aplan: {}, c0: 10, m0: 35 * 48000, ...sound });
     return inside.unshown({
       need: (k: number) => (k >= 0 && k < 10 ? { run: 0, rank: 100 + k } : null),
       at: (k: number) => (k >= 0 && k < 10 ? 35 + k * 0.2 : NaN),
@@ -772,5 +782,18 @@ describe("the clock a play runs on", () => {
     here = true;
     expect(next.ready()).toBe(true);
     expect(asked).toEqual([103 / 25, 103 / 25]);
+  });
+
+  // The walk's clock goes on as fast as the frames are decoded, and the
+  // sound comes as it is decoded, on a busy machine later than the
+  // frames. A clock that went on to a frame before its sound was on the
+  // sound card played silence there, which a walk heard in CI as a play
+  // with sound in 288 of 675 quanta. The play started at 35 s of the
+  // program on the sound card's 10 s, and the frame due starts at 35.6 s.
+  test("is told the frame is ready only once its sound is on the sound card", () => {
+    const at = (handedTo: number, soundDone = false) => standing(2, [103], true, 1, null, { handedTo, soundDone }).ready();
+    expect(at(10.5)).toBe(false);
+    expect(at(10.6)).toBe(true);
+    expect(at(-Infinity, true)).toBe(true);
   });
 });

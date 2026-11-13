@@ -255,10 +255,8 @@ type queue struct {
 	// notice is told each failure to say, once, see notice.go.
 	notice func(Notice)
 	// removals stops the timer of each removed job, which forgets it
-	// when its time is up, and time is the clock they run on, see
-	// removal.go.
+	// when its time is up, on the machine's clock, see removal.go.
 	removals map[string]func() bool
-	time     timeKeeper
 }
 
 // moved says a job changed the state of its video.
@@ -317,7 +315,7 @@ func (q *queue) stampLocked(j *Job) {
 // newQueue builds the queue.
 func newQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 	q := &queue{store: s, notify: quietly(notify), closed: map[string]int{},
-		lanes: newLanes(), calledOff: map[string]string{}, removals: map[string]func() bool{}, time: systemTime{}}
+		lanes: newLanes(), calledOff: map[string]string{}, removals: map[string]func() bool{}}
 	tell := quietly(emit)
 	q.emit = func(u JobUpdate) {
 		// The video's state is due before the job's news goes out, so

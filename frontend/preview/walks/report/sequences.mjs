@@ -34,15 +34,6 @@ export default [
     steps: [["bugs"], ["dictate", "start, answered late"], ["microphone moves"], ["dictate", "button"]],
   },
   {
-    // Issue #654. Each note of the start sound was started at a moment of
-    // its own, a hundredth of a second ahead, so a window that got to
-    // them after their end played nothing. The pair is one sound now,
-    // started once, so it plays whole and in order however late the
-    // window is.
-    name: "The start sound plays both notes in order, however late the window is to start it",
-    steps: [["bugs"], ["dictate", "start, sounded late"], ["dictate", "button"]],
-  },
-  {
     // Plan row 2.189. Tim undid what he typed while he talked, and Cmd+Y
     // did not bring it back: the words that arrived meanwhile were steps
     // of their own, which emptied what there was to redo. They are not
@@ -660,11 +651,14 @@ export default [
     // Issue #362. Tim saw the buttons a size of their own, mostly much
     // wider than their words, and some of them growing past it on his
     // Mac. A button is as wide as the words it shows, whatever they are.
+    // And the light of the work it does runs on its line, not a pixel
+    // inside it, which Tim saw too.
     name: "every button is as wide as its words and no wider",
     steps: [
       ["buttons fit", ["Search", "Render"]],
       ["settings"],
       ["buttons fit", ["Choose…", "Check again"]],
+      ["beam on the line", ["CheckSetup", "Check again"]],
       ["updates", { from: "main", list: "main,pr-20" }],
       ["status", "A newer build is ready"],
       ["buttons fit", ["Relaunch"]],

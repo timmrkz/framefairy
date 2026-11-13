@@ -528,7 +528,10 @@ func TestManySalesAtOnce(t *testing.T) {
 				jobs = append(jobs, job{fmt.Sprintf("txn_%03d", i), 1 + i%3})
 			}
 		}
-		rand.Shuffle(len(jobs), func(i, j int) { jobs[i], jobs[j] = jobs[j], jobs[i] })
+		// The same order on every run, so one that fails runs again the
+		// same way. Which worker takes which is still the scheduler's.
+		r := rand.New(rand.NewPCG(531, 0))
+		r.Shuffle(len(jobs), func(i, j int) { jobs[i], jobs[j] = jobs[j], jobs[i] })
 
 		var mu sync.Mutex
 		got := map[string][]licence.Key{}

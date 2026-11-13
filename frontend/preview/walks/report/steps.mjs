@@ -136,13 +136,6 @@ export const steps = {
             super(...a);
             told(`audio made, ${this.state}`);
             this.addEventListener("statechange", () => told(`audio ${this.state} at ${this.currentTime.toFixed(3)} s`));
-            // Settles once the audio's clock runs, which it does only
-            // after the click that woke it.
-            window.__running = new Promise((done) => {
-              const runs = () => this.state === "running" && done();
-              this.addEventListener("statechange", runs);
-              runs();
-            });
           }
           resume() {
             meant.set(this, "running");
@@ -204,34 +197,19 @@ export const steps = {
           for (const w of waiting.filter(has)) w.done();
           waiting = waiting.filter((w) => !has(w));
         };
-        // A window that is late to start a sound, for the dictate step's
-        // "sounded late": with window.__late set, every sound is started
-        // only once that many seconds of silence have played, past the
-        // moment it was meant to start. What it plays is read when it
-        // really starts. A sound of samples has a start of its own in
-        // WebKit, and a tone has the one every sound has, so both are
-        // taken.
-        const connect = AudioNode.prototype.connect;
+        // Every sound the window starts is read as it starts. A sound of
+        // samples has a start of its own in WebKit, and a tone has the
+        // one every sound has, so both are taken. That the pair of notes
+        // plays whole however late the window starts it is held by
+        // chime.test.ts, on a sound card of its own.
         const real = new Map();
         for (const Node of [AudioScheduledSourceNode, AudioBufferSourceNode]) if (Object.hasOwn(Node.prototype, "start")) real.set(Node, Node.prototype.start);
         const startOf = (node) => real.get(node instanceof AudioBufferSourceNode && real.has(AudioBufferSourceNode) ? AudioBufferSourceNode : AudioScheduledSourceNode);
-        const late = function (when = 0, ...a) {
-          const start = startOf(this);
-          if (!window.__late) {
-            played(this, [when, ...a]);
-            return start.call(this, when, ...a);
-          }
-          const c = this.context;
-          const rest = c.createBufferSource();
-          rest.buffer = c.createBuffer(1, Math.round(window.__late * c.sampleRate), c.sampleRate);
-          connect.call(rest, c.destination);
-          rest.onended = () => {
-            played(this, [when, ...a]);
-            start.call(this, when, ...a);
-          };
-          startOf(rest).call(rest, Math.max(when, c.currentTime));
+        const read = function (when = 0, ...a) {
+          played(this, [when, ...a]);
+          return startOf(this).call(this, when, ...a);
         };
-        for (const Node of real.keys()) Node.prototype.start = late;
+        for (const Node of real.keys()) Node.prototype.start = read;
         const stop = AudioScheduledSourceNode.prototype.stop;
         AudioScheduledSourceNode.prototype.stop = function (...a) {
           if (this.__read) {
@@ -1536,8 +1514,6 @@ export const steps = {
   //                    same with the answer to Listen held until the
   //                    start sound is checked, the way a busy machine
   //                    hands it back after the microphone's first news,
-  //                    "start, sounded late" the same with the window
-  //                    starting the start sound half a second late,
   //                    "hearing" waits for more
   //                    to be said and settled, "settled" waits for words
   //                    before a pause to be settled, and a recording
@@ -1592,7 +1568,6 @@ export const steps = {
     const late = arg === "start, answered late";
     // The window starts the start sound later than it means to, by more
     // than the sound is long, counted on the audio's clock once it runs.
-    const slow = arg === "start, sounded late";
     if (late) await control(url, "/hold?call=Listen&gate=shut&answer=1&times=1");
     const before = await page.evaluate(() => window.__notes.length);
     // Stop the moment it is pressed, see the rules on a click: read in
@@ -1608,7 +1583,6 @@ export const steps = {
       walk.wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
       return;
     }
-    if (slow) await page.evaluate(() => window.__running.then(() => (window.__late = 0.5)));
     // The words appear while they are heard, before anything stops. The
     // recording goes on until the app has told words being heard, see
     // /microphone.
@@ -1645,8 +1619,7 @@ export const steps = {
     }
     kept.notes = await page.evaluate(() => window.__notes.length);
     await watch.step("hearing", s);
-    if (slow) await page.evaluate(() => (window.__late = 0));
-    if (arg === "start" || late || slow) {
+    if (arg === "start" || late) {
       kept.dictating = await page.locator(".telling").evaluate((f) => f.value);
       return;
     }

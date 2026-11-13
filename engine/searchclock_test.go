@@ -33,7 +33,7 @@ var lastTime = searchSpeed{Version: speedVersion, Load: 20, Read: 1000, Thought:
 
 // clockFor is a search clock measured against past, as a search makes one.
 func clockFor(past searchSpeed) *searchClock {
-	return &searchClock{past: past, known: true}
+	return &searchClock{clock: SystemClock{}, past: past, known: true}
 }
 
 func TestASearchWithNothingToGoOnSaysNoShare(t *testing.T) {
@@ -487,7 +487,7 @@ func TestTheTailIsKeptPerClip(t *testing.T) {
 // keeps how long a clip took to fit and to frame after the answer.
 func TestTheClockCountsTheFittingAndKeepsItPerClip(t *testing.T) {
 	r := speedRecords()
-	c := newSearchClock(runlog.New(&bytes.Buffer{}, false, false), r, "gemma", true, 30000, 6, -1)
+	c := newSearchClock(runlog.New(&bytes.Buffer{}, false, false), SystemClock{}, r, "gemma", true, 30000, 6, -1)
 	c.now.Framers = 4
 	c.enter(partReading)
 	c.enter(partWriting)
@@ -598,7 +598,7 @@ func TestEveryClipWaitsWhenTheModelWritesFast(t *testing.T) {
 // The time left goes down with the clock. An estimate above it for a
 // report is not shown, and one that stays above is.
 func TestTheTimeLeftGoesUpOnlyWhenItStaysUp(t *testing.T) {
-	c := &searchClock{}
+	c := &searchClock{clock: SystemClock{}}
 	at := time.Unix(1000, 0)
 	if got := c.steadyLeft(15, at); got != 15 {
 		t.Fatalf("first %.1f", got)

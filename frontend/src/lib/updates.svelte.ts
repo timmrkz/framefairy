@@ -156,7 +156,7 @@ export function railDot(u: UpdateState | null): string {
   return "";
 }
 
-class Updates {
+export class Updates {
   // What is on screen, which trails what the Go side last said while a
   // check is held.
   shown = $state<UpdateState | null>(null);
