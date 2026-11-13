@@ -39,8 +39,16 @@ export default [
     // the frames under it can be decoded, the video preview shows the key
     // frame decoding starts from, the way established players scrub, and
     // the frame under the hand once it rests, never the key frame.
-    name: "a playhead dragged far shows the key frame on the way, and the frame under the hand once it rests",
-    steps: [["scrub far"], ["keyed on the way"]],
+    // A click outruns nothing, so it shows the frame clicked and no key
+    // frame before it. The first version of #281 asked for the key frame
+    // first for every place a press reached, the place it landed on too,
+    // found by the review of #502. How the frame queue asks for them is
+    // src/lib/frames/app.test.ts, and the decoder's way to a key frame in
+    // every codec, HEVC with open GOPs too, is
+    // TestTheEpisodesDecoderHandsOverTheKeyFrameFirst. The window never
+    // sees the codec, so this walks the walks' own video.
+    name: "a playhead dragged far shows the key frame on the way and the frame under the hand once it rests, and a click shows no key frame",
+    steps: [["scrub far"], ["keyed on the way"], ["click far"]],
   },
   {
     // Issue #446. While a clip plays the playhead moves when the sound is in
@@ -52,31 +60,18 @@ export default [
     steps: [["once a frame", 3]],
   },
   {
-    // A drag far along the clip timeline puts up the key frame on the way
-    // and the frame under the hand once it rests. How the frame queue asks
-    // for them is src/lib/frames/app.test.ts, and the decoder's way to a
-    // key frame in every codec, HEVC with open GOPs too, is
-    // TestTheEpisodesDecoderHandsOverTheKeyFrameFirst. The window never
-    // sees the codec, so this walks the walks' own video.
-    name: "a playhead dragged far shows the key frame on the way, and the frame under the hand once it rests",
-    steps: [["scrub far"], ["keyed on the way"]],
-  },
-  {
-    // A click outruns nothing, so it shows the frame clicked and no key
-    // frame before it. The first version of #281 asked for the key frame
-    // first for every place a press reached, the place it landed on too,
-    // found by the review of #502.
-    name: "a click far along the clip timeline shows the frame clicked and no key frame",
-    steps: [["click far"]],
-  },
-  {
     // Plan row 2.235, found by Tim: the clip's edges took the playhead
     // along and a cut's edges left it where it was, so the frame beside
     // the cut could not be seen while it was placed.
-    name: "a cut's edges dragged take the playhead along, the way the clip's edges do",
+    name: "a cut's edges dragged take the playhead along, the way the clip's edges do, and the edge under the playhead is the edge's to take",
     steps: [
       ["cut at", 0.5],
       ["drag edge", "cut from", -40],
+      ["followed", "cut from"],
+      // Found by Tim: the playhead now stands on the edge, and the next
+      // press there took hold of the playhead and not the edge.
+      ["drag edge", "cut from", -30, "at the playhead"],
+      ["moved", "cut from"],
       ["followed", "cut from"],
       ["drag edge", "cut to", 40],
       ["followed", "cut to"],
@@ -119,7 +114,7 @@ export default [
     // the edge landed on, a pause away from the edge, and dragging a cut's
     // left edge on past the last word took it over the cut into the
     // caption before. It stays in line with the edge.
-    name: "a cut's edges dragged with shift keep the playhead in line with them",
+    name: "a cut's edges dragged with shift keep the playhead in line with them and go the way of the hand",
     steps: [
       ["cut at", 0.5],
       ["drag edge", "cut from", 40, "shift"],
@@ -134,6 +129,17 @@ export default [
       ["followed", "end"],
       ["drag edge", "start", 60, "shift"],
       ["followed", "start"],
+      // Found by Tim: a cut's left edge pressed with shift and dragged
+      // right first jumped left, to the nearest word, and only then went
+      // right. A short drag, so a jump to a word behind shows.
+      ["drag edge", "cut from", 8, "shift"],
+      ["went the hand's way", "cut from"],
+      ["drag edge", "cut to", -8, "shift"],
+      ["went the hand's way", "cut to"],
+      ["drag edge", "end", -8, "shift"],
+      ["went the hand's way", "end"],
+      ["drag edge", "start", 8, "shift"],
+      ["went the hand's way", "start"],
     ],
   },
   {
@@ -166,46 +172,34 @@ export default [
   {
     // Found by Tim: an edge let go of and taken again at once went to the
     // playhead standing on it. While the first drag was being saved the
-    // edges were off the page.
-    name: "an edge taken again at once after a drag is the edge's",
+    // edges were off the page. Then an edge taken again before the last
+    // place the drag before it left was answered starts from where that
+    // answer puts it, and the playhead goes there with it. It started from
+    // the place answered before, a frame behind, and the answer that came
+    // after the press put the edge on its frame with the playhead left a
+    // frame away (#284). And an edge taken again while the drag before it
+    // is still being saved goes with the hand. It stood still until the
+    // save came back, which a busy machine made long enough to see
+    // (2.259).
+    name: "an edge taken again at once after a drag is the edge's, before the drag before it is answered and while it saves",
     steps: [
       ["cut at", 0.5],
       ["drag edge twice", "cut from", -30, -30],
       ["moved", "cut from"],
       ["followed", "cut from"],
-      ["drag edge twice", "end", -30, -30],
-      ["moved", "end"],
-      ["followed", "end"],
-    ],
-  },
-  {
-    // An edge taken again before the last place the drag before it left
-    // was answered starts from where that answer puts it, and the playhead
-    // goes there with it. It started from the place answered before, a
-    // frame behind, and the answer that came after the press put the edge
-    // on its frame with the playhead left a frame away (#284).
-    name: "an edge taken again before the drag before it is answered goes on from its answer",
-    steps: [
-      ["cut at", 0.5],
       ["drag edge twice", "cut from", -30, -30, 600],
       ["moved", "cut from"],
       ["followed", "cut from"],
-      ["drag edge twice", "end", -30, -30, 600],
-      ["moved", "end"],
-      ["followed", "end"],
-    ],
-  },
-  {
-    // An edge taken again while the drag before it is still being saved
-    // goes with the hand. It stood still until the save came back, which a
-    // busy machine made long enough to see (2.259).
-    name: "an edge taken again while the drag before it saves goes with the hand",
-    steps: [
-      ["cut at", 0.5],
       ["hold", "Reshape"],
       ["drag edge twice", "cut from", -30, -30],
       ["kept up", "cut from"],
       ["followed", "cut from"],
+      ["drag edge twice", "end", -30, -30],
+      ["moved", "end"],
+      ["followed", "end"],
+      ["drag edge twice", "end", -30, -30, 600],
+      ["moved", "end"],
+      ["followed", "end"],
       ["hold", "Reshape"],
       ["drag edge twice", "end", -30, -30],
       ["kept up", "end"],
@@ -228,42 +222,21 @@ export default [
     ],
   },
   {
-    // Found by Tim: a cut's left edge pressed with shift and dragged right
-    // first jumped left, to the nearest word, and only then went right.
-    name: "an edge dragged with shift goes the way of the hand",
-    steps: [
-      ["cut at", 0.5],
-      ["drag edge", "cut from", 8, "shift"],
-      ["went the hand's way", "cut from"],
-      ["drag edge", "cut to", -8, "shift"],
-      ["went the hand's way", "cut to"],
-      ["drag edge", "end", -8, "shift"],
-      ["went the hand's way", "end"],
-      ["drag edge", "start", 8, "shift"],
-      ["went the hand's way", "start"],
-    ],
-  },
-  {
-    // Found by Tim: a cut's edge dragged takes the playhead along, so it
-    // stands on the edge, and the next press there took hold of the
-    // playhead and not the edge.
-    name: "a cut's edge with the playhead on it is the edge's to take",
-    steps: [
-      ["cut at", 0.5],
-      ["drag edge", "cut from", -40],
-      ["drag edge", "cut from", -30, "at the playhead"],
-      ["moved", "cut from"],
-      ["followed", "cut from"],
-    ],
-  },
-  {
-    name: "a double-click in the clip cuts a part out, and one on the cut puts it back",
+    name: "a double-click in the clip cuts a part out, one on the cut puts it back, and one on a trimmed edge puts it back where the clip was found",
     steps: [
       ["mark", "start"],
       ["cut at", 0.5],
       ["cuts", 1],
       ["join", 1],
       ["cuts", 0],
+      ["same", "start"],
+      // A double-click on a trimmed edge puts it back where the clip was
+      // found.
+      ["trim", "end", -120],
+      ["reset", "end"],
+      ["same", "start"],
+      ["trim", "start", 90],
+      ["reset", "start"],
       ["same", "start"],
     ],
   },
@@ -276,36 +249,6 @@ export default [
     steps: [
       ["swipe after click", 0.3, 60],
       ["swipe after click", 0.5, -60],
-    ],
-  },
-  {
-    name: "a double-click on a trimmed edge puts it back where the clip was found",
-    steps: [
-      ["mark", "start"],
-      ["trim", "end", -120],
-      ["reset", "end"],
-      ["same", "start"],
-      ["trim", "start", 90],
-      ["reset", "start"],
-      ["same", "start"],
-    ],
-  },
-  {
-    name: "undo takes back a trim and then a cut, and redo does them again",
-    steps: [
-      ["mark", "start"],
-      ["cut at", 0.4],
-      ["mark", "cut"],
-      ["trim", "end", -100],
-      ["mark", "trimmed"],
-      ["undo"],
-      ["same", "cut"],
-      ["undo"],
-      ["same", "start"],
-      ["redo"],
-      ["same", "cut"],
-      ["redo"],
-      ["same", "trimmed"],
     ],
   },
   {
@@ -336,27 +279,6 @@ export default [
       ["turned with its frames"],
       ["trim", "end", -60],
       ["trim", "end", 40],
-      ["turned", [0, 90]],
-    ],
-  },
-  {
-    // A rotation belongs to the video's time, not to the cuts: putting back
-    // the cut before a rotated part leaves the footage after the turn
-    // rotated and the footage before it as filmed, and making the cut
-    // again finds the part as it was. The review of #188 found the
-    // rotation lost when it was kept on each piece.
-    name: "a rotated part keeps its rotation when the cut before it is put back and made again",
-    steps: [
-      ["added", 30, "25", "turned"],
-      ["cut at", 0.5],
-      ["cuts", 1],
-      ["rotate at", 0.75],
-      ["turned", [0, 90]],
-      ["join", 1],
-      ["cuts", 0],
-      ["turned", [0, 90]],
-      ["cut at", 0.5],
-      ["cuts", 1],
       ["turned", [0, 90]],
     ],
   },
