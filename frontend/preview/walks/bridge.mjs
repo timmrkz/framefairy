@@ -366,9 +366,10 @@ if (traces) {
 // clock is the clock a play runs on, see
 // preview/clock.ts: "frames", the walk's clock, stands on each frame
 // until it is up and holds the sound card meanwhile, so every frame of a
-// play is shown and read on any machine, issues #534 and #588. "sound"
-// is the sound card's, as the app runs without a walk, for what a walk
-// checks on the sound's own time, see soundCard in common/steps.mjs.
+// play is shown and read on any machine, issues #534 and #588, and the
+// sound it plays is kept on the walk's sound card for a walk to listen
+// to. "sound" is the system's sound card's, as the app runs without a
+// walk, for smooth.mjs, which measures how evenly a play goes.
 // kept is the page the sequence before passed in, opened on again when it
 // can be, see letGo and openAgain, and closed when it cannot.
 export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null, browser: given = null, named = browserFor(), still = false, clock = "frames", gpu = false, start = null, kept = null } = {}) {

@@ -698,7 +698,7 @@ and keep its crop frame and its captions in the piece after it. Against
 main it fails the same way, at 6.8 s.
 
 `loop switched off near the end stops the play at the clip's end` is
-Tim's test of 2.183. It records every sample the sound card is handed,
+Tim's test of 2.183. It records every sample the walk's sound card plays,
 plays the clip, presses L to loop it, and two seconds before the clip's
 end presses L five times quickly, the loop off after the last, once the
 play has worked out the next time through. No press may start the play
@@ -823,8 +823,8 @@ Every walk plays on the walk's clock and the walk's sound card,
 queue it makes, see `FrameQueue.clock` and `FrameQueue.soundCard` in
 `lib/frames/queue.ts`, whose own are the system's sound card and its
 clock. The app never builds `preview/`, so it holds no walk's clock, no
-walk's card and no switch for either. The walk's card plays nothing, and
-its time moves only when the walk's clock moves it: on to the next frame
+walk's card and no switch for either. The walk's card plays nothing out
+loud, and its time moves only when the walk's clock moves it: on to the next frame
 the moment that frame is decoded and its captions are here, never while
 either is on its way, and with no time made up for once it stood. So
 every frame of a play is shown with its captions on any machine, which
@@ -835,14 +835,18 @@ second. By the system's sound card a busy machine showed two frames of a
 glide's nine, issue #534, a play of the captions showed fewer frames,
 each longer, issue #338, and every play took as long as it lasts. Each of
 those walks had a clock of its own, until a new walk that played was the
-next to fail, issue #588. A sequence that checks what a play does on the
-sound's own time, or listens to the sound, plays on the system's sound
-card and its clock instead, the way the app does: how much sound the
-sound card is handed, the loop switched off as the sound comes to the
-clip's end, and a playhead that never stands still while a hand drags.
-It asks for it by one of those steps, `soundCard` in `common/steps.mjs`,
-the way a sequence asks for motion, see Where they run below, and a new
-step of that kind goes in there. `smooth.mjs` asks `open` for it by name,
+next to fail, issue #588. A walk that listens to a play asks the card
+to record, and reads what it played sample by sample, `record` and
+`heard`: the sum of the stretches the frame queue handed it, each from
+its frame and through the gain as it was set and ramped at that frame,
+worked out as the card's time moves, the way the system's card does. So
+how much sound a play had, a click as the loop is switched off and sound
+heard past the clip's end are read on the walk's clock too, and take the
+frames a play draws, not the seconds it lasts. A moment the system's card
+would have gone on while the page was held, the sound crossing the
+clip's end before the playhead, is made on purpose by moving the card on
+by hand, `run`. Only `smooth.mjs`, which measures how evenly a play goes,
+plays on the system's sound card and its clock, asked of `open` by name,
 `clock: "sound"`, which the page reads from `window.__playClock` before
 the app starts. A walk can also hold the sound
 card a moment by hand, `holdSound`, as the end dragged back past the
@@ -1150,7 +1154,7 @@ among it, so the settle waits for none of it. On main those two were
 those steps and every random walk keep the motion, so the app is still
 walked the way it moves on Tim's Mac. A new step that looks at motion
 goes into `moving`, or it passes without ever seeing what it checks, and
-`--names` fails on a name in `moving` or `soundCard` that is no step. `make walks
+`--names` fails on a name in `moving` that is no step. `make walks
 STILL=none` walks every sequence with the motion, and
 `walks-nightly.yml` does so on main every night, so a step that looks at
 motion and was left out of `moving` fails there.

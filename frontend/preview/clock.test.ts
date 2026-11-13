@@ -172,6 +172,99 @@ describe("the walk's sound card", () => {
   });
 });
 
+// What the walk's sound card says it played, which "heard" and "stopped
+// at its end" listen to in walks/playback/steps.mjs.
+describe("what the walk's sound card played", () => {
+  // A stretch of the samples given, at 1000 Hz, through the card's gain.
+  async function playing() {
+    const card = new WalkCard({ sampleRate: 1000 });
+    await card.resume();
+    const out = card.createGain();
+    out.connect(card.destination);
+    const stretch = (samples: number[]) => {
+      const src = card.createBufferSource();
+      src.buffer = card.createBuffer(1, samples.length, 1000);
+      src.buffer.copyToChannel(Float32Array.from(samples), 0);
+      src.connect(out);
+      return src;
+    };
+    return { card, out, stretch };
+  }
+  const played = (card: WalkCard) => Array.from(card.heard().data);
+
+  test("is every stretch it played since it recorded, each at its own frame", async () => {
+    const { card, stretch } = await playing();
+    stretch([9, 9]).start(0);
+    card.run(0.002);
+    card.record();
+    stretch([1, 2, 3]).start(0.003);
+    stretch([4, 5]).start(0.006);
+    card.run(0.008);
+    expect(card.heard()).toEqual({ frame: 2, data: Float32Array.from([0, 1, 2, 3, 4, 5, 0, 0]) });
+  });
+
+  test("plays only what reaches its output", async () => {
+    const { card, stretch } = await playing();
+    card.record();
+    stretch([1, 1]).start(0);
+    const astray = card.createBufferSource();
+    astray.buffer = card.createBuffer(1, 2, 1000);
+    astray.buffer.copyToChannel(Float32Array.from([5, 5]), 0);
+    astray.connect(card.createGain());
+    astray.start(0);
+    card.run(0.002);
+    expect(played(card)).toEqual([1, 1]);
+  });
+
+  test("plays nothing while it is held", async () => {
+    const { card, stretch } = await playing();
+    card.record();
+    stretch([1, 1, 1, 1]).start(0);
+    card.run(0.002);
+    await card.suspend();
+    card.run(0.002);
+    await card.resume();
+    card.run(0.001);
+    expect(played(card)).toEqual([1, 1, 1]);
+  });
+
+  // The frame queue starts a stretch handed over late from where the
+  // card is, skipping what it missed, and stops one at the program's end.
+  test("starts a stretch from its offset and ends it where it was stopped, moved or not", async () => {
+    const { card, stretch } = await playing();
+    card.record();
+    card.run(0.002);
+    stretch([1, 2, 3, 4, 5]).start(0, 0.002);
+    const b = stretch([6, 7, 8, 9]);
+    b.start(0.005);
+    b.stop(0.006);
+    b.stop(0.007);
+    card.run(0.008);
+    expect(played(card)).toEqual([0, 0, 3, 4, 5, 6, 7, 0, 0, 0]);
+  });
+
+  // The frame queue ramps its gain from where it is when a play pauses
+  // or goes on: it takes the ramp to come away and starts its own from
+  // the value read.
+  test("goes through the gain as it was set and ramped, and reads what it was last", async () => {
+    const { card, out, stretch } = await playing();
+    card.record();
+    out.gain.setValueAtTime(1, 0.004);
+    out.gain.linearRampToValueAtTime(0, 0.008);
+    stretch(Array(10).fill(1)).start(0);
+    card.run(0.002);
+    expect(out.gain.value).toBe(1);
+    card.run(0.004);
+    expect(out.gain.value).toBe(0.5);
+    out.gain.cancelScheduledValues(0.006);
+    expect(out.gain.value).toBe(0.5);
+    out.gain.setValueAtTime(out.gain.value, 0.006);
+    out.gain.linearRampToValueAtTime(1, 0.008);
+    card.run(0.004);
+    expect(played(card)).toEqual([1, 1, 1, 1, 1, 0.75, 0.5, 0.75, 1, 1]);
+  });
+});
+
 describe("the hand on the sound card", () => {
   // A paused play holds its sound card, and the hand let go after the
   // pause leaves it held.
