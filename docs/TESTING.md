@@ -291,8 +291,10 @@ through the app's own calls: an edit stays where it was made, taking a
 word out or removing a caption changes no other caption, moving a
 caption edge moves that edge and nothing else, and Undo and Redo put
 back the clip from before and after the step. It makes every edit from
-a fresh clip, and random runs of edits with Undo and Redo over fixed
-seeds.
+a fresh clip, and random runs over fixed seeds of word edits, trims,
+cuts, joins and crops, with Undo and Redo. Caption removals and edges
+moved are left out of the random runs until the engine keeps their
+rules there too, see #820.
 
 ### `timeline.mjs`: the clip timeline
 
