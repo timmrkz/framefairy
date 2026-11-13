@@ -406,7 +406,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			return
 		}
 		q := r.URL.Query()
-		path, err := b.startWith(q.Get("seconds"), q.Get("rate"), q.Get("timing"), q.Get("in") == "mkv")
+		path, err := b.startWith(q.Get("seconds"), q.Get("rate"), q.Get("timing"))
 		answer(w, path, err)
 	})
 	// A mark sent down the events behind everything the Go side told the
@@ -446,7 +446,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
-			q.Get("box") != "0", q.Get("in") == "mkv", cameraHeight(q.Get("size")))
+			q.Get("box") != "0", cameraHeight(q.Get("size")))
 		answer(w, path, err)
 	})
 	// Files dropped on the app, which the window hands over the way the
@@ -1399,16 +1399,15 @@ func openBridge(t *testing.T) *bridge {
 }
 
 // frameTimings are the timings a walk's video may have, each a fixture
-// of its own, see filmed in internal/fixtures: a phone's uneven frames, a
-// picture a quarter of a second or 4 ms after its sound, and a phone's
-// picture stored on its side.
-var frameTimings = map[string]bool{"uneven": true, "late": true, "late4ms": true, "turned": true}
+// of its own, see filmed in internal/fixtures: a picture a quarter of a
+// second or 4 ms after its sound, and a phone's picture stored on its
+// side.
+var frameTimings = map[string]bool{"late": true, "late4ms": true, "turned": true}
 
 // startWith puts a second video in the app reset a moment ago, heard and
 // searched, the way Add and its first search leave it, for a walk that
 // only needs a video of this kind to work on: seconds long, filmed at
-// rate, with its frames timed by timing and in Matroska with mkv, see
-// pick. It says where the video is. The first bridge of the walks to be
+// rate, with its frames timed by timing, see pick. It says where the video is. The first bridge of the walks to be
 // asked for a kind adds it and keeps what the app made of it in the
 // folder FRAMEFAIRY_BRIDGE_PREPARED names, and every bridge after it
 // puts that back, so the work of hearing and searching it is done once
@@ -1418,7 +1417,7 @@ var frameTimings = map[string]bool{"uneven": true, "late": true, "late4ms": true
 // bridge made the video.
 //
 // On the real disk: the bridges of the walks are processes of their own, and ffmpeg reads the video.
-func (b *bridge) startWith(seconds, rate, timing string, mkv bool) (string, error) {
+func (b *bridge) startWith(seconds, rate, timing string) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		return "", fmt.Errorf("%q is no length of a video to start with", seconds)
@@ -1430,9 +1429,6 @@ func (b *bridge) startWith(seconds, rate, timing string, mkv bool) (string, erro
 		return "", fmt.Errorf("%q is no timing of frames", timing)
 	}
 	file := walkFixture(n, rate, 0, timing, false)
-	if mkv {
-		file = strings.TrimSuffix(file, ".mp4") + ".mkv"
-	}
 	// Named by its kind, so it never meets a video a walk picks next,
 	// folge-1 and on.
 	path := filepath.Join(b.d.home, file)
@@ -1670,14 +1666,13 @@ func cameraHeight(size string) int {
 // bridge's own kind of video, at five frames a second, and with one it is
 // filmed at that rate. With a switch, in seconds, the bridge's own kind is
 // filmed by two cameras that switch then, and with hevc it is HEVC with
-// 10-bit colour. With mkv it is the same video in Matroska, the way OBS
-// records. Each is a copy of a video committed in internal/fixtures, see
+// 10-bit colour. Each is a copy of a video committed in internal/fixtures, see
 // walkFixture, so one that is not there is refused with its name. With a
 // height it is a camera's picture of that height instead, see
 // makeCameraEpisode.
 //
 // On the real disk: the app adds the video from the disk.
-func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, box, mkv bool, height int) (string, error) {
+func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, box bool, height int) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
@@ -1702,12 +1697,7 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, box, mkv boo
 	if height > 0 {
 		err = makeCameraEpisode(path, n, height, hevc)
 	} else {
-		name := walkFixture(n, rate, at, timing, hevc)
-		if mkv {
-			name = strings.TrimSuffix(name, ".mp4") + ".mkv"
-			path = strings.TrimSuffix(path, ".mp4") + ".mkv"
-		}
-		err = fixtures.CopyTo(name, path)
+		err = fixtures.CopyTo(walkFixture(n, rate, at, timing, hevc), path)
 	}
 	if err != nil {
 		return "", err
@@ -1951,7 +1941,10 @@ func (m *freshMachine) keyed() []string {
 	return slices.Clone(m.keys)
 }
 
-// letArrive lets the download of a kind of model arrive, see arriving.
+// letArrive lets the download of a kind of model on its way arrive, see
+// arriving. A download of that kind pressed after it waits part way
+// again, so a walk can look at it on its way in the settings, and a walk
+// lets it arrive the same way or cancels it.
 func (b *bridge) letArrive(kind string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -1959,11 +1952,8 @@ func (b *bridge) letArrive(kind string) error {
 	if !ok {
 		return fmt.Errorf("no download of a %q model to let arrive, the bridge is not on its first run", kind)
 	}
-	select {
-	case <-gate:
-	default:
-		close(gate)
-	}
+	close(gate)
+	b.arrive[kind] = make(chan struct{})
 	return nil
 }
 

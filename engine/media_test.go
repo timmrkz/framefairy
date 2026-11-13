@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"io"
 	"runtime"
 	"slices"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"framefairy/engine/runlog"
 	"framefairy/internal/framewire"
 )
 
@@ -57,6 +59,26 @@ func TestOnlyAMachineHandedTheMediaEngineReachesIt(t *testing.T) {
 	}
 	if args := mac.EpisodeFrames("framefairy-frames", "folge.mp4").args(); !slices.Equal(args, []string{"-chip", "folge.mp4"}) {
 		t.Errorf("a Mac starts the episode's decoder with %v", args)
+	}
+}
+
+// The face detector is the program's to hand in, the way the media engine
+// is: UseSystem hands it, a test's machine has none and frames by what is
+// in focus, and the command line takes it away when FRAMEFAIRY_NO_FACES
+// is set. The engine reads no switch of its own for it.
+func TestOnlyAMachineHandedTheFaceDetectorLooksForFaces(t *testing.T) {
+	t.Setenv("FRAMEFAIRY_NO_FACES", "1")
+	if own := NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs())); own.faceDetector() != nil {
+		t.Error("a machine NewMachine makes looks for faces")
+	}
+	program := NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
+	program.UseSystem()
+	if program.faceDetector() == nil {
+		t.Error("UseSystem hands the machine no face detector, so the app frames every clip by what is in focus, whatever the environment says")
+	}
+	program.FrameByFocus()
+	if program.faceDetector() != nil {
+		t.Error("FrameByFocus leaves the machine its face detector")
 	}
 }
 

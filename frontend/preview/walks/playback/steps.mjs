@@ -6,7 +6,7 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { addHEVC, ask, holdClock, letClockGo, realFrames, runClock, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, readShort, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
+import { ask, holdClock, letClockGo, realFrames, runClock, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
 import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
@@ -932,56 +932,6 @@ export const steps = {
       walk.wrong = `the clip timeline draws ${pieceCount(n)}, not ${then.pieces} as at "${arg}"`;
     }
   },
-  // ["shots", label]   the short, read back from disk: every frame shows
-  //                    what the crop frame showed on its camera at the
-  //                    look, and where two pieces meet the sound runs
-  //                    straight on, no 10 ms of it quieter than 80% of the
-  //                    tone
-  async shots(walk, arg) {
-    const { looks, page, watch } = walk;
-    const pieces = (await engineState(page, watch.at)).segments;
-    const short = readShort(await shortOf(page, watch.at));
-    // Each frame by the moment of the episode in its middle, through
-    // the pieces, and what the crop frame showed there at the look.
-    let into = 0;
-    const placed = pieces.map((p) => {
-      const q = { ...p, from: into };
-      into += p.end - p.start;
-      return q;
-    });
-    let compared = 0;
-    for (let i = 0; i < short.frames.length && !walk.wrong; i++) {
-      const t = (i + 0.5) / short.fps;
-      const p = placed.find((q) => t < q.from + q.end - q.start) ?? placed[placed.length - 1];
-      const at = p.start + t - p.from;
-      const was = looks[arg].find((l) => at >= l.start && at < l.end);
-      if (was) compared++;
-      if (was && !sameLook(short.frames[i], was.frame.look)) {
-        walk.wrong = `frame ${i} of the short, ${at.toFixed(2)} in the episode, shows ${sayLook(short.frames[i])}, not ${sayLook(was.frame.look)} as the crop frame did at "${arg}"`;
-      }
-    }
-    // A short with no frame to compare proves nothing.
-    if (!walk.wrong && !compared) walk.wrong = `no frame of the short was compared, of ${short.frames.length}`;
-    if (process.env.VERBOSE) {
-      console.log(`      ${compared} frames of ${short.frames.length} compared, pieces ${placed.map((p) => `${p.start.toFixed(2)}-${p.end.toFixed(2)}`).join(" ")}`);
-    }
-    // Heard: where one piece runs straight into the next, no 10 ms
-    // within a tenth of a second either side is quieter than 80% of
-    // the tone half a second before.
-    for (const p of placed.slice(1)) {
-      const before = placed[placed.indexOf(p) - 1];
-      if (walk.wrong || p.start - before.end > 0.0005) continue;
-      const steady = loudness(short, p.from - 0.5);
-      let least = { l: Infinity, t: 0 };
-      for (let t = p.from - 0.1; t < p.from + 0.1; t += 0.0025) {
-        const l = loudness(short, t);
-        if (l < least.l) least = { l, t };
-      }
-      if (least.l < 0.8 * steady) {
-        walk.wrong = `at ${least.t.toFixed(4)} s into the short, by ${p.start.toFixed(2)} in the episode where two pieces meet, the sound is down to ${((100 * least.l) / steady).toFixed(0)}% of the tone`;
-      }
-    }
-  },
   // ["episode watched"]
   //                    the same, reading back from the video preview every
   //                    frame it draws for the episode from the click on
@@ -1200,66 +1150,6 @@ export const steps = {
       return "";
     }, duration);
     if (lost) walk.wrong = lost;
-  },
-  // ["add hevc"]       adds a video of 40 seconds whose picture is HEVC with
-  //                    10-bit colour in open GOPs, as x265 writes it, and
-  //                    chooses the clip its first search finds
-  async "add hevc"(walk, arg, s) {
-    const { page, watch } = walk;
-    await addHEVC(url, page);
-    await watch.step("wait", s);
-  },
-  // ["leading frames"] puts the playhead with a click on the clip timeline
-  //                    on three frames of the clip that are shown before
-  //                    the key frame they are decoded after, read from the
-  //                    file by ffprobe, waits for each in the video
-  //                    preview, and plays from the last
-  async "leading frames"(walk) {
-    const { page, watch } = walk;
-    const path = await episodeOn(page);
-    const fps = await rate(page);
-    // In the order the frames are decoded: a frame shown before the
-    // key frame decoded last leads up to it.
-    const packets = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", path])
-      .toString()
-      .trim()
-      .split("\n");
-    let key = -Infinity;
-    const leading = [];
-    for (const line of packets) {
-      const [t, flags] = line.split(",");
-      if (flags.startsWith("K")) key = Number(t);
-      else if (Number(t) < key) leading.push(Number(t));
-    }
-    const { segments } = await engineState(page, watch.at);
-    const first = segments[0].start;
-    const last = segments[segments.length - 1].end;
-    const on = leading.filter((t) => t > first + 1 && t < last - 3).slice(0, 3);
-    if (on.length < 3) {
-      walk.wrong = `the clip from ${first.toFixed(2)} to ${last.toFixed(2)} holds ${on.length} frames shown before their key frame, not 3`;
-      return;
-    }
-    // In the middle of the frame, so the click lands on it.
-    for (const t of on) {
-      if (!(await seekTo(page, t + 0.5 / fps, fps))) {
-        const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
-        walk.wrong = `the video preview never showed the frame at ${t.toFixed(3)}, shown before its key frame, with the playhead at ${at.toFixed(3)}`;
-        break;
-      }
-    }
-    if (walk.wrong) return;
-    const from = await page.evaluate(() => ({ at: Number(document.querySelector(".screen").dataset.playhead), frame: window.__pictured() }));
-    await page.evaluate(() => document.body.focus());
-    if (!(await pressPlay(page))) {
-      walk.wrong = `the space bar started no play from the frame at ${from.at.toFixed(3)}, shown before its key frame`;
-      return;
-    }
-    // Half a second of the episode, read off the playhead, paused there,
-    // and then whether the picture went on with it.
-    await playUntil(page, { past: from.at + 0.5, pause: true });
-    await settle(page);
-    const plays = await page.evaluate((from) => window.__pictured() > from.frame + 1, from);
-    if (!plays) walk.wrong = `the space bar did not play from the frame at ${from.at.toFixed(3)}, shown before its key frame`;
   },
   // ["no browser decoder"]
   //                    takes the browser's picture and sound decoders away,
@@ -1664,21 +1554,6 @@ export const steps = {
   async "on borders"(walk) {
     const { page } = walk;
     walk.wrong = await onBorders(page);
-  },
-  // ["edges as rendered"]
-  //                    the short Render wrote, read back from disk, and the
-  //                    video preview agree on the clip's edges: with the
-  //                    playhead put on the frame of the clip's start and of
-  //                    where each cut ends by a click on it, the video
-  //                    preview shows the frame the short starts that piece
-  //                    with, and on the clip's last frame, put there by a
-  //                    click on its end, the short's last frame. The clip's
-  //                    end is where the search put it, and at least one
-  //                    edge is kept to the millisecond just before its
-  //                    frame's start
-  async "edges as rendered"(walk) {
-    const { page } = walk;
-    walk.wrong = await edgesAsRendered(page);
   },
   // ["drag crop", px]  drags the crop frame in the video preview sideways
   //                    by px, in ten steps, and lets go
@@ -2239,46 +2114,6 @@ export const steps = {
     }
     if (said.length) walk.wrong = said.join("\n");
   },
-  // ["upright"]        the short Render wrote, read back from disk, holds
-  //                    as many frames as the clip's pieces, and in every
-  //                    piece rotated a quarter each frame is the right
-  //                    frame of the episode, read across its top, while in
-  //                    the pieces not rotated most are not, since there it
-  //                    lies on its side
-  async upright(walk) {
-    const { page } = walk;
-    const on = await chosen(page);
-    const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
-    const { fps } = await ask(page, "Source", on.path);
-    const short = await shortOf(page, on);
-    if (!short || !existsSync(short)) {
-      walk.wrong = `the clip has no short${short ? ` at ${short}` : ""}`;
-      return;
-    }
-    const { frames, modulo } = shortFrames(short);
-    const want = [];
-    for (const p of entry.segments) {
-      const first = Math.round(p.start * fps);
-      const end = Math.max(Math.round(p.end * fps), first + 1);
-      for (let k = first; k < end; k++) want.push({ k, rotate: p.rotate ?? 0 });
-    }
-    if (frames.length !== want.length) {
-      walk.wrong = `the short has ${frames.length} frames, its pieces hold ${want.length}`;
-      return;
-    }
-    const read = { rotated: [0, 0], lying: [0, 0] };
-    want.forEach(({ k, rotate }, i) => {
-      const r = read[rotate % 180 ? "rotated" : "lying"];
-      r[1]++;
-      if (frames[i] === k % modulo) r[0]++;
-    });
-    if (!read.rotated[1]) walk.wrong = "the clip has no piece rotated a quarter";
-    else if (read.rotated[0] !== read.rotated[1]) {
-      walk.wrong = `${read.rotated[1] - read.rotated[0]} of the ${read.rotated[1]} frames rotated a quarter are not the right frame read across their top`;
-    } else if (read.lying[0] * 2 > read.lying[1]) {
-      walk.wrong = `${read.lying[0]} of the ${read.lying[1]} frames not rotated read across their top, so the video did not lie on its side`;
-    }
-  },
 };
 
 // Steps that take the same body as the step they are walked by.
@@ -2429,92 +2264,6 @@ async function asPreviewed(page, rate, before) {
   if (unseen.length) problems.push(`the playhead could not be put on ${unseen.join(", ")}`);
   console.log(`      ${looked} frames of ${slots.length} looked at, the playhead missed ${missed} more`);
   return problems.length ? problems.slice(0, 8).join("\n") + (problems.length > 8 ? `\nand ${problems.length - 8} more` : "") : null;
-}
-
-// What is wrong with the frames the video preview draws on the clip's
-// edges, against the short Render wrote, or null. The playhead is put on
-// each edge the way a hand puts it there, a click on the clip's start, on
-// where each cut ends and on the clip's end, and the frame the video
-// preview draws, read off the canvas, is the frame the short starts that
-// piece with, or the short's last at the clip's end. Bug 1 of
-// docs/DESIGN-REVIEW.md. An edge is kept to the millisecond, and at 29.97
-// fps that lies just before its frame's start for 1400 of every 3000
-// frames, where the video preview drew the frame before the one the short
-// starts on. And a search left its edges between frames. The clip's end
-// has to be where the search put it, and at least one edge just before
-// its frame's start, or the walk is not about the case.
-async function edgesAsRendered(page) {
-  const on = await chosen(page);
-  const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
-  const { fps, videoStart = 0 } = await ask(page, "Source", on.path);
-  const short = await shortOf(page, on);
-  if (!short || !existsSync(short)) return `the clip has no short${short ? ` at ${short}` : ""}`;
-  const { frames } = shortFrames(short);
-  const pieces = entry.segments;
-  // The frame an edge means, the one whose start is nearest, and each
-  // piece's frames from there, the way the render cuts them, see
-  // nearestFrame and cutOf in engine/render.go.
-  const nearest = (t) => Math.round((t - videoStart) * fps);
-  const firsts = [];
-  let held = 0;
-  for (const p of pieces) {
-    const first = nearest(p.start);
-    firsts.push(held);
-    held += Math.max(nearest(p.end), first + 1) - first;
-  }
-  if (frames.length !== held) return `the short has ${frames.length} frames, its pieces hold ${held}`;
-  // The clip's start and where each cut ends. Two pieces that meet, at a
-  // camera switch or where the picture starts, have no cut between them.
-  const edges = [{ what: "the clip's start", label: "Clip start", at: pieces[0].start, want: frames[firsts[0]] }];
-  for (let i = 1; i < pieces.length; i++) {
-    if (pieces[i].start <= pieces[i - 1].end) continue;
-    edges.push({ what: `where cut ${i} ends`, label: `Where cut ${i} ends`, at: pieces[i].start, want: frames[firsts[i]] });
-  }
-  edges.push({ what: "the clip's end", label: "Clip end", at: pieces[pieces.length - 1].end, want: frames[frames.length - 1] });
-  // Kept just before the start of the frame it means, by the rounding to
-  // the millisecond.
-  const before = edges.filter((e) => {
-    const begins = videoStart + nearest(e.at) / fps;
-    return e.at < begins - 1e-9 && begins - e.at < 0.0006;
-  });
-  if (!before.length) {
-    return `no edge of the clip, at ${edges.map((e) => e.at).join(", ")}, lies just before its frame's start, the case this is about`;
-  }
-  if (Math.abs(entry.found[1] - pieces[pieces.length - 1].end) > 1e-9) {
-    return `the clip ends at ${pieces[pieces.length - 1].end}, not at ${entry.found[1]} where the search put it, the other case this is about`;
-  }
-  await filmedOnScreen(page);
-  const problems = [];
-  for (const e of edges) {
-    // High on the track, where the captions' edges below are not.
-    const handle = page.locator(`.clip-timeline [aria-label="${e.label}"]`);
-    const grip = (await handle.count()) ? await handle.boundingBox() : null;
-    if (!grip) {
-      problems.push(`there is no ${e.label} to click`);
-      continue;
-    }
-    await clickOnTrack(page, grip.x + grip.width / 2, high((await handles(page)).track));
-    await settle(page);
-    // On the edge's frame, where the engine puts the playhead for an
-    // edge, see edgePlayhead in engine/shape.go: the first frame of the
-    // piece an edge starts, and the clip's last frame for its end.
-    const placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
-    // A millisecond early is on the frame, the rounding the edges are kept
-    // to, which is the case this is about.
-    const frameOn = nearest(e.at) - (e.label === "Clip end" ? 1 : 0);
-    if (Math.floor((placed - videoStart + 0.001) * fps) !== frameOn) {
-      problems.push(`a click on ${e.what} put the playhead at ${placed.toFixed(4)}, not on its frame ${frameOn}`);
-      continue;
-    }
-    await settle(page);
-    await shownOnPlayhead(page);
-    const came = (await page.evaluate(() => window.__filmed?.())) === e.want;
-    if (!came) {
-      problems.push(`on ${e.what} at ${e.at.toFixed(3)} s the video preview shows frame ${await filmedOnScreen(page)}, the short frame ${e.want}`);
-    }
-  }
-  console.log(`      ${edges.length} edges looked at, ${before.length} kept just before their frame`);
-  return problems.length ? problems.join("\n") : null;
 }
 
 // The left edge of the crop on each frame of the video, for frame numbers

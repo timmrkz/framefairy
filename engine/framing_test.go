@@ -39,13 +39,12 @@ func decodingMachine() *Machine {
 	return m
 }
 
-// framingEngine frames by what is in focus rather than by faces. These
-// tests are about how a clip is framed, and looking for faces in
-// every sampled frame under the race detector is most of a minute.
+// framingEngine frames by what is in focus rather than by faces, as a
+// machine NewMachine makes does. These tests are about how a clip is
+// framed, and looking for faces in every sampled frame under the race
+// detector is most of a minute.
 func framingEngine() *Engine {
-	e := NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
-	e.NoFaces = true
-	return e
+	return NewEngine(runlog.New(io.Discard, false, false), NewMachine(afero.NewMemMapFs()))
 }
 
 // A clip has one crop, whatever cameras it shows. It used to be parted at
@@ -107,7 +106,7 @@ func TestAMacFramesOnTheProcessor(t *testing.T) {
 	}
 	var said bytes.Buffer
 	e := NewEngine(runlog.New(&said, false, false), decodingMachine())
-	e.FFmpeg, e.NoFaces = recording, true
+	e.FFmpeg = recording
 	segments, err := e.ClipSegments(context.Background(), path, []timed.Span{{Start: 7, End: 13}}, source, 202, nil)
 	if err != nil {
 		t.Fatal(err)

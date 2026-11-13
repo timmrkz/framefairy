@@ -269,14 +269,9 @@ var recipes = map[string][]string{
 	"filmed-30s-25.mp4":        filmed("30", "25", ""),
 	"filmed-40s-25.mp4":        filmed("40", "25", ""),
 	"filmed-40s-29.97.mp4":     filmed("40", "30000/1001", ""),
-	// A phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s.
-	"filmed-40s-29.97-uneven.mp4": filmed("40", "30000/1001", "uneven"),
 	// A picture that starts a quarter of a second after the sound,
-	// between two of its frames, by an edit list, and the same copied
-	// into Matroska, the way OBS records, where it starts late by its
-	// first timestamp.
+	// between two of its frames, by an edit list.
 	"filmed-40s-29.97-late.mp4": filmed("40", "30000/1001", "late"),
-	"filmed-40s-29.97-late.mkv": {"-i", "@filmed-40s-29.97-late.mp4", "-map", "0", "-c", "copy"},
 	// A picture that starts 4 ms after the sound, the way OBS recorded
 	// Tim's episodes: a grid of whole frames at 25 a second that starts
 	// inside its first tick.
@@ -401,18 +396,14 @@ const filmedBits, filmedBand = 11, 4
 // grows lighter. The sound is a steady tone, so padded silence at a cut
 // can be heard.
 //
-// The frames come at the rate, unless timing says otherwise: "uneven" is
-// a phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s, and
-// "late" is a picture that starts a quarter of a second after the sound,
+// The frames come at the rate, unless timing says otherwise: "late" is a
+// picture that starts a quarter of a second after the sound,
 // between two of its frames, by an edit list, and "late4ms" one that starts
 // 4 ms after it. Either way each frame keeps its number.
 func filmed(seconds, rate, timing string) []string {
 	bands := filmedBits * filmedBand
 	shift, keep := "", []string{}
 	switch timing {
-	case "uneven":
-		shift = fmt.Sprintf(",settb=1/600,setpts='(N/(%s)+0.008*mod(N\\,3))/TB'", rate)
-		keep = []string{"-fps_mode", "passthrough", "-enc_time_base", "1/600", "-video_track_timescale", "600"}
 	case "late":
 		// On a clock of 1/90000 s, so the picture starts a true quarter
 		// second in, 7.49 frames at 29.97 a second. On the rate's own

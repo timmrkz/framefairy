@@ -108,10 +108,7 @@ type Engine struct {
 	// Prefill starts the model's reply with an opening brace. Models with
 	// thinking enabled reject it, and it switches itself off when they do.
 	Prefill bool
-	// NoFaces turns face detection off, leaving the in-focus fallback.
-	NoFaces bool
-
-	Calls APICalls
+	Calls   APICalls
 
 	// OpenRecognizer loads the speech model. The command-line front end sets
 	// it, which keeps the native speech library out of this package.
@@ -158,8 +155,7 @@ type Engine struct {
 func NewEngine(log *runlog.Log, m *Machine) *Engine {
 	return &Engine{Machine: m, Log: log,
 		FFmpeg:  m.Tools.Path("FRAMEFAIRY_FFMPEG", "ffmpeg"),
-		FFprobe: m.Tools.Path("FRAMEFAIRY_FFPROBE", "ffprobe"),
-		NoFaces: os.Getenv("FRAMEFAIRY_NO_FACES") != ""}
+		FFprobe: m.Tools.Path("FRAMEFAIRY_FFPROBE", "ffprobe")}
 }
 
 // parseProgress reads seconds of media processed so far from an ffmpeg

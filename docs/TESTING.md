@@ -99,11 +99,10 @@ bars away, so its frame number is eleven bands one above the other across
 the whole width, the highest bit at the top, four pixels each of 180,
 light for one and dark for nought, with the grey below them. Light and
 dark are only 100 apart, so the bands change little of the picture. Its
-sound is a steady tone. `shortFrames` and
-`shortSound` in `walks/bridge.mjs` read a short of it back from disk.
-With a timing its frames keep their numbers but not their times: `uneven`
-is a phone's frames, each 0, 8 or 16 ms late in ticks of 1/600 s, and
-`late` a picture that starts after its sound, by an edit list, on a
+sound is a steady tone. `shortFrames` in `walks/bridge.mjs` reads a
+short of it back from disk.
+With a timing its frames keep their numbers but not their times: `late`
+is a picture that starts after its sound, by an edit list, on a
 clock of 1/90000 s so that ffprobe reads it as a true 0.25 s after it,
 7.49 frames at 29.97 a second. On the rate's own clock it came out a whole
 7 frames, 0.233 s, which is on the grid of the file's start, so frames
@@ -154,7 +153,7 @@ each with a POST:
 
 | Path | What it does |
 | --- | --- |
-| `/pick?seconds=N` | puts a new video of N seconds, not in the library, for the Add button's box to hand over next. It is a copy of one committed in `internal/fixtures`, named by `walkFixture` in `bridge_test.go`, so only the lengths and kinds there are can be asked for, and any other is refused with the name it would have. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only put there, not handed to the box, for a walk to drop instead. With `&size=1080` it is made rather than copied, 1920 by 1080, the size a camera makes, and with `&size=2160` 3840 by 2160, with a key frame every two seconds and frames stored after their key frame, and carries no frame number, for `speed.mjs` |
+| `/pick?seconds=N` | puts a new video of N seconds, not in the library, for the Add button's box to hand over next. It is a copy of one committed in `internal/fixtures`, named by `walkFixture` in `bridge_test.go`, so only the lengths and kinds there are can be asked for, and any other is refused with the name it would have. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only put there, not handed to the box, for a walk to drop instead. With `&size=1080` it is made rather than copied, 1920 by 1080, the size a camera makes, and with `&size=2160` 3840 by 2160, with a key frame every two seconds and frames stored after their key frame, and carries no frame number, for `speed.mjs` |
 | `/drop` | takes the files in its body, a JSON list of paths, as dropped on the app, the way `WindowFilesDropped` does in the app: adds the videos with `dropFiles` and sends the window `dropped`. A walk does not call it itself: it calls `window._wails.handleDragEnter()`, `window._wails.handleDragOver(x, y)` and `window._wails.handlePlatformFileDrop(files, x, y)`, which `wails-bridge.ts` defines the way the runtime does, so a drop reaches `/drop` only where the page marks a drop target. A walk makes the video to drop with `/pick` and `&box=0`, so Add's box does not hand it over too |
 | `/drop-report` | takes the files in its body, a JSON list of paths, as dropped on the report window, the way `WindowFilesDropped` does on it: `bugs.go` attaches the pictures and tells the window. `wails-bridge.ts` sends a drop there when the page is the report window |
 | `/report-window` | says how many report windows the app made and brought forward and whether one is open, and with `?close=1` closes it, the way its close button does. The walk opens the report window itself as a second page on `?window=report` |
@@ -170,7 +169,7 @@ each with a POST:
 | `/fresh`, `/fresh?memory=8`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like Tim's, or of the gigabytes `memory` gives, so the setup offers the same models on every machine. A key saved there is kept by the bridge, never the keychain, and counted as there. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
 | `/reset` | the app closed the one way it quits, `closeDown` in `quit.go`, and what the end of its process stops stopped too, see `quit` in `bridge_test.go`, so nothing it started writes while its folders go, and then as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, the episode's decoders the walk before left are closed, and the app is opened again on them, on a machine that keeps only what the one before learned about the computer's programs, what ffmpeg offers and what it said about files that stay as they are, see `engine.Machine.LearnFrom`. So a video a walk adds is heard with the same words, however many walks came before it, and a walk that moves the playhead far starts from no decoder rather than one left where the walk before stopped, which let a drag go on without a key frame, issue #552 |
-| `/reset?seconds=30&rate=25&timing=turned&in=mkv` | the same, with a second video in the app, of the kind `add` picks with the same words, heard and searched the way adding it and its first search leave it, and answers with its path. The first bridge asked for a kind adds it and keeps what the app made of it, and every bridge after it puts that back, see the `added` step |
+| `/reset?seconds=30&rate=25&timing=turned` | the same, with a second video in the app, of the kind `add` picks with the same words, heard and searched the way adding it and its first search leave it, and answers with its path. The first bridge asked for a kind adds it and keeps what the app made of it, and every bridge after it puts that back, see the `added` step |
 
 To open it by hand:
 
@@ -286,7 +285,7 @@ nothing on the page moves for a moment, see below:
 | A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
 | Moving a caption edge moves that edge and nothing else: its other edge stays, every other caption appears and goes when it did, and every word outside the caption is as it was | the caption before growing into the room a left edge was dragged in from, found by Tim |
 | Undo puts back the engine's clip from before the step it takes back, its captions, how they look, and its pieces with their crops, and Redo the clip from after it | a crop or a font that undo did not put back, which the rule could not see until it compared them too, issue #248 |
-| A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, once the frame queue says the picture stands, `standing` in `lib/frames/queue.ts`, `stillBlurred` in `rules.mjs` | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
+| A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, once the frame queue says the picture stands, `standing` in `lib/frames/queue.ts`, `blurOf` in `rules.mjs`. Looked at again only after a step that changes the video, the clip, the playhead, the frame shown or the size of the canvas | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
 
 The engine's captions are asked for directly, `Captions` through
 `/call`, and are what the screen is compared with: the walk knows
@@ -1168,7 +1167,7 @@ what the app made of it in a folder all the bridges of the walks share,
 and every bridge after it puts that back, so the add, 2.5 s of CPU and
 1.9 s on its own in a cloud session, is paid once for each kind. So
 what the interface shows while the first search of a 29.97 fps, a
-Matroska, an uneven, a late or a turned video comes in is no longer
+late or a turned video comes in is no longer
 walked, only of the kind the sequences about adding add, since the
 interface does the same for every kind. A walk that asks for a
 length or a kind none of them has is refused with the name it wanted,
@@ -1361,15 +1360,14 @@ milliseconds, on frames that start between two. A sequence did the same
 through the app and rendered a short for it on every push. It was taken
 out, since the app only hands the clip to the engine.
 
-Two sequences hold the render to the video preview where the frames do
-not keep to their rate, plan row 2.130: "a short of a phone's uneven
-frames shows what the video preview shows" and "a short of a picture
-that starts after its sound shows what the video preview shows". Each
-adds a video of 40 seconds made that way with Add, cuts its clip twice
-with a double-click, the second with its start dragged to before the
-picture begins, renders it with Render and reads the short back. Its
-rate has to be 30 for the phone's frames, their average of 29.75
-rounded, and 29.97 for the late picture, its own. Then, with the clip
+One sequence holds the render to the video preview where the frames do
+not keep to their rate, plan row 2.130: "a short of a picture that
+starts after its sound shows what the video preview shows". It adds a
+video of 40 seconds made that way with Add, cuts its clip twice with a
+double-click, the second with its start dragged to before the picture
+begins, renders it with Render and reads the short back at 29.97, the
+picture's own rate. A phone's uneven frames, Matroska and every other
+container are the engine's alone, since the window never sees them. Then, with the clip
 timeline pinched in to a tenth, the playhead is put with a click on the
 moments the short's frames stand for, one where each piece starts and
 one where it ends, and the frame on the video preview's canvas, read

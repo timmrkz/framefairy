@@ -58,3 +58,37 @@ describe("the dot on Updates in the sidebar", () => {
     expect(railDot(null)).toBe("");
   });
 });
+
+// The words of the line under the build, one case for each way things
+// stand, so a walk of the Updates page reads them once and does not hold
+// every wording itself. The time a check was made is given, never read
+// from the clock.
+describe("the line under the build", () => {
+  const now = Date.UTC(2026, 10, 13, 9, 30);
+  const justNow = new Date(now - 10_000).toISOString();
+  const cases: [string, Partial<UpdateState>, { working?: string }, string, string][] = [
+    ["looking", { phase: "checking" }, {}, "Looking for a newer build", "Of PR #400."],
+    ["downloading half", { phase: "downloading", next: "0.3.0-pr400.abcdef0", total: 2_000_000, written: 1_000_000 }, {}, "A newer build is downloading", "0.3.0-pr400.abcdef0. 50 % of 2 MB."],
+    ["ready", { phase: "ready", next: "0.3.0-pr400.abcdef0" }, {}, "A newer build is ready", "0.3.0-pr400.abcdef0. Relaunch to finish updating, or it goes in when you quit."],
+    ["ready while a search runs", { phase: "ready", next: "0.3.0-pr400.abcdef0" }, { working: "the search" }, "A newer build is ready", "0.3.0-pr400.abcdef0. Relaunch once the search is done, or it goes in when you quit."],
+    ["ready with a newer commit building", { phase: "ready", next: "0.3.0-pr400.abcdef0", building: "0123456789" }, {}, "A newer build is ready", "0.3.0-pr400.abcdef0. Relaunch to finish updating, or it goes in when you quit. 0123456 is being built."],
+    ["failed", { phase: "failed", problem: "No network.", checked: justNow }, {}, "The check did not get through", "No network. Checked just now."],
+    ["a newer commit building", { building: "0123456789", checked: justNow }, {}, "A newer commit is being built", "0123456. This is the build before it, the newest of PR #400 so far. Checked just now."],
+    ["up to date in conflict", { channels: inConflict }, {}, "Up to date", "This is the newest build of PR #400. It conflicts with main, so CI has not tested it."],
+    ["up to date", { follows: "main", channel: "main" }, {}, "Up to date", "This is the newest build of Branch main."],
+    ["closed", { phase: "gone", gone: "pr-400" }, {}, "PR #400 is closed", "Nothing downloads until you choose what to follow next."],
+    ["built on this Mac", { channel: "", phase: "" }, {}, "Built on this Mac", "It stays as it is until you choose a channel to follow."],
+    ["not checked yet", { phase: "" }, {}, "Not checked yet", "It looks when the app starts and every ten minutes."],
+    ["off", { off: "Made by make." }, {}, "This build does not update itself", "Made by make."],
+  ];
+  for (const [name, u, how, head, more] of cases) {
+    test(`${name}: ${head}`, () => {
+      expect(standing(at(u), { ...how, now })).toEqual(expect.objectContaining({ head, more }));
+    });
+  }
+
+  test("says when it last checked, by the hour and minute", () => {
+    const earlier = new Date(2026, 10, 13, 7, 5).toISOString();
+    expect(standing(at({ checked: earlier }), { now: Date.parse(earlier) + 3_600_000 }).more).toBe("This is the newest build of PR #400. Checked at 07:05.");
+  });
+});

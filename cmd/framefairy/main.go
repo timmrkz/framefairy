@@ -442,6 +442,9 @@ func main() {
 	// The system's fonts among it, so --font takes the fonts installed on
 	// the machine too.
 	machine.UseSystem()
+	if os.Getenv("FRAMEFAIRY_NO_FACES") != "" {
+		machine.FrameByFocus()
+	}
 	// What llama-server says is the run's to say too: its errors always,
 	// the rest with --verbose. It warns on every load about things a run
 	// cannot change, like a context shorter than the model was trained on.

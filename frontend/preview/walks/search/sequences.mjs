@@ -37,42 +37,35 @@ export default [
     steps: [["said fails", "on"], ["trim", "start", 300], ["said fails", "check"]],
   },
   {
-    // The same on a video heard only as far as its first search reached,
-    // so part of it is not heard yet and says so, in the list and on the
-    // range picker.
-    name: "a search of what was said shows the parts not transcribed yet",
+    // A video heard only part of the way, held and let through a piece at
+    // a time, so part of it is still to come while the hand and the keys
+    // work on it. Found by Tim on 20 October: a card under the hand was
+    // lit a step less than the card the keys were on, and a part not
+    // transcribed yet walked to with the keys lit nothing on the range
+    // picker, where the hand on its card lit it there. Whatever is lit is
+    // lit one way. Shift and the down arrow stopped at the card before a
+    // part not transcribed yet, and the up arrow went past it. Then a
+    // click on that card lit the part. Found by Tim on 19 October: while
+    // the work heard a window, the parts not transcribed yet gave way in
+    // thirds of it, each time the transcript was saved. They give way as
+    // the work hears. And a search of what was said shows the parts not
+    // transcribed yet, in the list and on the range picker.
+    name: "the parts not transcribed yet light one way, the arrows walk onto and off them, they give way as the work hears, and a search of what was said shows them",
     steps: [
-      // Held, and let through a piece at a time until some of it is
-      // heard, so part of it is still to come while the search looks.
       ["speech", "hold"],
       ["add", 600],
+      // First, since it opens the transcript itself.
+      ["heard some"],
+      ["parts give way"],
+      ["heard some", 3],
+      ["one light", "said"],
+      ["walk over a part"],
       ["heard some", 12],
+      // Escape gives the head and the clips back, where a search starts.
+      ["press", "Escape"],
       ["search said", ["*", 1]],
       ["speech", "go"],
     ],
-  },
-  {
-    // Found by Tim on 20 October: Shift and the down arrow stopped at the
-    // card before a part not transcribed yet, and the up arrow went past
-    // it. Then a click on that card lit the part. The speech model is
-    // held, so the part stays where it is.
-    name: "Shift and the arrows walk onto a part not transcribed yet and off it",
-    steps: [["speech", "hold"], ["add", 600], ["heard some"], ["walk over a part"], ["speech", "go"]],
-  },
-  {
-    // Found by Tim on 20 October: a card under the hand was lit a step
-    // less than the card the keys were on, and a part not transcribed yet
-    // walked to with the keys lit nothing on the range picker, where the
-    // hand on its card lit it there. Whatever is lit is lit one way.
-    name: "the hand and the keys light a card of the transcript and a part not transcribed yet the same",
-    steps: [["speech", "hold"], ["add", 600], ["heard some", 3], ["one light", "said"], ["speech", "go"]],
-  },
-  {
-    // Found by Tim on 19 October: while the work heard a window, the parts
-    // not transcribed yet gave way in thirds of it, each time the
-    // transcript was saved. They give way as the work hears.
-    name: "the parts not transcribed yet give way as the work hears",
-    steps: [["speech", "hold"], ["add", 600], ["heard some"], ["parts give way"], ["speech", "go"]],
   },
   {
     // Tim felt the app lag while it worked. A running search reads the
@@ -274,18 +267,6 @@ export default [
     steps: [["add", 120], ["wait for", "Search"], ["no mark after the end", 120]],
   },
   {
-    // The fourth review of #458. A search that found its clips moved the
-    // window on one answer after its first clip was picked, a step of its
-    // own at the end of a search, and the window still drawn could be
-    // written back over the one the Go side moved on.
-    name: "a search that found its clips moves the window on in the frame they show",
-    steps: [
-      ["speech", "hold"],
-      ["add", 1200],
-      ["walks on with the clips"],
-    ],
-  },
-  {
     // Tim's report of 24 October, 15.02. A search on a window at the very
     // end of a video, partly transcribed, ended in one state after another:
     // the window's marks put in place and moved a frame later, then the
@@ -307,11 +288,15 @@ export default [
     ],
   },
   {
-    // Tim's report of 25 October, 21.40: the window moved on to where the
-    // search had transcribed to, and the dots after it began a few pixels
-    // right of its edge, because they were laid from the end of the
-    // video and the room left over fell at the window.
-    name: "the dots after a search's window begin at the window it moves on to, with a dashed edge",
+    // The fourth review of #458. A search that found its clips moved the
+    // window on one answer after its first clip was picked, a step of its
+    // own at the end of a search, and the window still drawn could be
+    // written back over the one the Go side moved on. Tim's report of 25
+    // October, 21.40: the window moved on to where the search had
+    // transcribed to, and the dots after it began a few pixels right of
+    // its edge, because they were laid from the end of the video and the
+    // room left over fell at the window.
+    name: "a search that found its clips moves the window on in the frame they show, and the dots after it begin at that window, with a dashed edge",
     steps: [
       ["speech", "hold"],
       ["add", 1200],

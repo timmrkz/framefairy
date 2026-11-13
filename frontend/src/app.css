@@ -104,6 +104,10 @@
      on a picture or a track: the crop in the video preview, the window on
      the range picker and the clip on the clip timeline. See .frame. */
   --frame-line: 2px;
+  /* How thick the line round a control or a card is, and the line between
+     two rows of a card. The beam of work in hand runs on it, see Busy, so
+     the two are the one number. */
+  --line-w: 1px;
   --frame-radius: 3px;
   --control-h: 32px;
   /* The room on either side of the words in a button or a field. */
@@ -295,7 +299,7 @@ input {
   color: inherit;
   height: var(--control-h);
   border-radius: var(--radius-s);
-  border: 1px solid var(--line);
+  border: var(--line-w) solid var(--line);
   background: var(--ink-2);
   padding: 0 var(--control-pad);
 }
@@ -800,17 +804,21 @@ input[type="password"] {
 }
 
 /* A control with work running in it carries the beam, and so does the
-   card in the clip list a search is filling next. The beam is drawn
-   inside it: over its own background, under its own words.
-   A stacking context of the control's own is what puts it there, and the
-   rounded corners clip it. Both belong to the control rather than to the
-   beam, because only the control knows them. */
+   card in the clip list a search is filling next. The beam is drawn on
+   its line, over its own background and under its own words.
+   A stacking context of the control's own is what puts it there, and how
+   far outside the control its line lies is what puts the light on the
+   line: a button's border, and nothing for a clip card, which draws its
+   line inside itself. Both belong to the control rather than to the
+   beam, because only the control knows them. The control clips nothing
+   itself: it would clip the light at the inside of its line. The beam
+   cuts itself to the control's corners. */
 button:has(> .beam),
 li:has(> .beam),
 .busyhost:has(> .beam) {
   position: relative;
-  overflow: hidden;
   isolation: isolate;
+  --beam-edge: 0px;
   /* The light the control wears: its brightest point, and the two ends of
      the wash the fill lays over what is done. On a control that is
      already the app's colour they are white, because the app's colour
@@ -818,6 +826,36 @@ li:has(> .beam),
   --lit: var(--accent-lit);
   --wash-from: var(--accent-fill);
   --wash-to: var(--accent-fill-hi);
+}
+
+button:has(> .beam) {
+  --beam-edge: var(--line-w);
+}
+
+/* A row of a card has no line round it of its own. Its lines are the
+   card's: the line over it, the card's sides, and the line under it, which
+   is the next row's or the card's. So the beam of a row runs on those,
+   and where the row meets a corner of the card, it goes round that
+   corner. The card then cuts nothing at the inside of its line while the
+   beam runs, and the row is drawn over the row under it, whose line the
+   light lies on too. */
+.card .item:has(> .beam) {
+  --beam-edge: var(--line-w);
+}
+
+.card:has(.item > .beam) {
+  overflow: visible;
+}
+
+.card > .item:first-child:has(> .beam) {
+  border-top-left-radius: var(--radius-m);
+  border-top-right-radius: var(--radius-m);
+}
+
+.card > .item:last-child:has(> .beam),
+.card > :last-child > .item:last-child:has(> .beam) {
+  border-bottom-left-radius: var(--radius-m);
+  border-bottom-right-radius: var(--radius-m);
 }
 
 button.primary:has(> .beam) {
@@ -896,7 +934,7 @@ button:has(> .beam):disabled {
 .card {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--line);
+  border: var(--line-w) solid var(--line);
   border-radius: var(--radius-m);
   background: var(--ink-1);
   /* So nothing in a row spills over the card's corners. */
@@ -920,7 +958,7 @@ button:has(> .beam):disabled {
    the buttons of Report a Problem at 309.5 px. So a row under a line is
    the line and 64 px, as tall as the first row below its line. */
 .card .item + .item {
-  border-top: 1px solid var(--line);
+  border-top: var(--line-w) solid var(--line);
   min-height: 65px;
 }
 

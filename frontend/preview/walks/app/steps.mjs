@@ -4,8 +4,8 @@
 // walk so far, the step's argument, what the caption box showed before it
 // and the step's name. A sequence of any folder can take it. Below them the
 // helpers only these steps use. See docs/TESTING.md.
-import { ask, chosen, control, engineState, fromSidebar, nextPaint, seekTo, seenUntil, settle, sidebarStill, reload } from "../bridge.mjs";
-import { rate, url } from "../common/steps.mjs";
+import { ask, chosen, control, engineState, fromSidebar, nextPaint, pageUntil, seekTo, seenUntil, settle, sidebarStill, reload } from "../bridge.mjs";
+import { beamsOff, rate, url } from "../common/steps.mjs";
 
 export const steps = {
   // ["asked once", name...]
@@ -80,6 +80,11 @@ export const steps = {
     else if (both.some((r) => !/B of [\d.]+ [KMG]B/.test(r.far) || !r.maker)) walk.wrong = `a download says ${JSON.stringify(both)}, with its maker gone or how far it came out of its column`;
     else if (both.some((r) => !/^\d+:\d\d left$/.test(r.left))) walk.wrong = `a download says ${JSON.stringify(both.map((r) => r.left))} where its time left goes`;
     else if (shaped) walk.wrong = `a row on its way stands out of the table: ${JSON.stringify(shaped)} beside ${JSON.stringify(first[0])}`;
+    if (walk.wrong) return;
+    // The light of a row on its way runs on the card's own lines round
+    // it, and round the card's corner at the foot, as Tim asked.
+    const off = await beamsOff(page);
+    if (off.length) walk.wrong = `while both download, ${off.join(", and ")}`;
     if (walk.wrong) return;
 
     await control(url, "/fresh?arrive=speech");
@@ -402,6 +407,40 @@ export const steps = {
       await settle(page);
     }
     if (problems.length) walk.wrong = problems.join("\n");
+  },
+  // ["download in settings"]
+  //                    Settings, on a machine the first run made new:
+  //                    picks a clip model not downloaded yet, presses
+  //                    Download and, while it downloads, sees the light of
+  //                    its Cancel run on the button's line and the fill
+  //                    fill the inside of it, corners and all, see
+  //                    beamsOff. Tim saw the fill's corners rounder than
+  //                    the line's. Then Cancel stops it.
+  async "download in settings"(walk) {
+    const { page } = walk;
+    const card = ".card.finding";
+    await page.locator(`${card} > .item button.pick`).click();
+    await page.locator('[role="option"]').first().waitFor();
+    const name = await page.evaluate(
+      () =>
+        [...document.querySelectorAll('[role="option"]')]
+          .find((o) => o.querySelector(".tick.marked")?.getAttribute("title") === "Not downloaded yet")
+          ?.querySelector(".what")
+          ?.textContent.trim() ?? "",
+    );
+    if (!name) {
+      walk.wrong = 'the clip model list offers no model marked "Not downloaded yet"';
+      await page.keyboard.press("Escape");
+      return;
+    }
+    await page.locator('[role="option"]').filter({ has: page.locator(".what", { hasText: name }) }).first().click();
+    await settle(page);
+    await page.locator(`${card} > .item button.act`, { hasText: "Download" }).click();
+    await pageUntil(page, (card) => !!document.querySelector(`${card} button.act > .beam > .fill`), card);
+    const off = await beamsOff(page);
+    await page.locator(`${card} > .item button.act`, { hasText: "Cancel" }).click();
+    await pageUntil(page, (card) => [...document.querySelectorAll(`${card} > .item button.act`)].some((b) => b.textContent.trim() === "Download" && !b.disabled), card);
+    if (off.length) walk.wrong = `while a clip model downloads in the settings, ${off.join(", and ")}`;
   },
   // ["a pick shows at once"]
   //                    Settings: a model picked in the clip model list
@@ -914,8 +953,8 @@ export const steps = {
     );
     walk.picked = { name: arg, ...read };
   },
-  // ["channel", name]  the Updates page's list says this, in ten seconds
-  //                    at most
+  // ["channel", name]  the Updates page's list comes to say this, waited
+  //                    for on the page
   async channel(walk, arg) {
     const { page } = walk;
     const now = await updatesComeTo(page, (u) => u.channel === arg);
@@ -945,8 +984,8 @@ export const steps = {
     }
   },
   // ["status", head, more]
-  //                    the line under the build comes to say this head, in
-  //                    ten seconds at most, and more somewhere after it
+  //                    the line under the build comes to say this head,
+  //                    waited for on the page, and more somewhere after it
   async status(walk, arg) {
     const { page } = walk;
     const [head, more] = [arg].flat();
@@ -1093,8 +1132,9 @@ export const steps = {
   },
   // ["relaunch", how]  the line under the build offers Relaunch, "waits"
   //                    greyed out with its title saying it waits for the
-  //                    search, and "ready" usable again, within a minute,
-  //                    and the line wears the card's own background
+  //                    search, and "ready" usable again once the page
+  //                    says so, and the line wears the card's own
+  //                    background
   async relaunch(walk, arg) {
     const { page } = walk;
     const waits = arg === "waits";
