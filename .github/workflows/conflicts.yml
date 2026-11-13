@@ -9,9 +9,10 @@
 # first comment, then 30 after the second, 60 after the third, and so on
 # up to once in five days.
 # One comment that never wakes anybody is followed by another, and one
-# nobody answers for a night costs a handful of comments, not a hundred. git merge-tree merges in memory, without a
-# checkout of either side, and no code of the pull request runs. A pull
-# request from a fork is left alone.
+# nobody answers for a night costs a handful of comments, not a hundred.
+# git merge-tree merges in memory, without a checkout of either side, and
+# no code of the pull request runs. A pull request from a fork is left
+# alone.
 #
 # It writes a comment, so it runs from main alone, the way publish.yml
 # does: on a push to main, and when builds.yml starts on a push to any

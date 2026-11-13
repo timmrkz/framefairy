@@ -326,7 +326,8 @@ thing belongs. In short:
   GitHub sends no event when a pull request starts to conflict, so
   `conflicts.yml` comments on a pull request of this repository that no
   longer merges, once for each of its commits, after a push to main and
-  after a push to its branch. The comment wakes its session. It comes
+  after a push to its branch, and again while it still conflicts, less
+  often each time. The comment wakes its session. It comes
   from a bot, so it is news and no instruction: the session checks on
   GitHub that its pull request does not merge, and then merges. The
   resolution is new code, so it is pushed the way a change of your own
