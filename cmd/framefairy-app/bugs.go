@@ -113,6 +113,10 @@ type reporting struct {
 	dir    string
 	draft  draftFile
 	loaded bool
+	// fromToast is set while the window holds a report a toast's Report
+	// started, see ReportAbout. The draft written before it waits in
+	// aside.json until the window closes.
+	fromToast bool
 	// The open window: front brings it forward and shut closes it, both
 	// nil while there is none.
 	front, shut func()
@@ -155,36 +159,85 @@ func (s *FrameFairy) OpenReport(how string) {
 	}
 }
 
-// ReportAbout opens Report a Problem with text written in its field, after
-// whatever is written there already, from the Report button of a toast.
-// There is one report at a time: while the window is open, its Report
-// buttons are greyed out, and a click that comes anyway only brings the
-// window forward and writes nothing into the report being written. Issue
-// #311, and Tim's choice of 13 November 2026.
+// ReportAbout opens Report a Problem from the Report button of a toast, as
+// a report of its own with only the toast's words in it. The draft written
+// before waits aside, and comes back when the window closes, while the
+// toast's report is let go, sent or not. Tim pressed Report on two toasts,
+// closed the window between them, and found both in one report, after
+// his own words. There is one report at a time: while the window is open,
+// its Report buttons are greyed out, and a click that comes anyway only
+// brings the window forward and writes nothing into the report being
+// written. Issue #311, and Tim's asks of 13 November 2026.
 func (s *FrameFairy) ReportAbout(text string) {
 	if s.report == nil {
 		return
 	}
 	r := s.report
 	r.mu.Lock()
-	if r.front == nil {
+	if r.front == nil && !r.making {
 		r.load()
-		r.draft.Text = cut(after(r.draft.Text, text), reportWordsMax)
-		if err := r.keep(); err != nil {
-			theLog.line(zerolog.WarnLevel, "report").Err(err).Msg("the text from a toast was not kept")
+		if err := r.setAside(); err != nil {
+			theLog.line(zerolog.WarnLevel, "report").Err(err).Msg("the draft was not set aside for a toast's report")
+		} else {
+			r.fromToast = true
+			r.draft = draftFile{Text: cut(text, reportWordsMax), Pictures: []ReportPicture{}, Next: r.draft.Next}
+			if err := r.keep(); err != nil {
+				theLog.line(zerolog.WarnLevel, "report").Err(err).Msg("the text from a toast was not kept")
+			}
 		}
 	}
 	r.mu.Unlock()
 	r.open("toast")
 }
 
-// after is text written after what is already written, a line apart.
-func after(was, text string) string {
-	was = strings.TrimRight(was, "\n ")
-	if was == "" {
-		return text
+// setAside writes the draft to aside.json, where it waits while a toast's
+// report is written. The file is there for as long as that report is, so
+// an app that ends with it open finds its draft again, see load.
+func (r *reporting) setAside() error {
+	if err := r.files.MkdirAll(r.dir, 0o700); err != nil {
+		return err
 	}
-	return was + "\n\n" + text
+	if r.draft.Pictures == nil {
+		r.draft.Pictures = []ReportPicture{}
+	}
+	body, _ := json.MarshalIndent(r.draft, "", "  ")
+	return fileio.WriteAtomic(r.files, filepath.Join(r.dir, "aside.json"), body)
+}
+
+// takeBack lets go of a toast's report, its pictures with it, and brings
+// back the draft that waited in aside.json. Called with r.mu held.
+func (r *reporting) takeBack() {
+	r.fromToast = false
+	path := filepath.Join(r.dir, "aside.json")
+	data, err := afero.ReadFile(r.files, path)
+	if err != nil {
+		return
+	}
+	var aside draftFile
+	if json.Unmarshal(data, &aside) != nil {
+		aside = draftFile{}
+	}
+	kept := map[string]bool{}
+	for _, p := range aside.Pictures {
+		kept[p.ID] = true
+	}
+	for _, p := range r.draft.Pictures {
+		// An id is a file's name in the draft's folder, so only one that
+		// looks like an id is let go, see load.
+		if !kept[p.ID] && pictureID.MatchString(p.ID) {
+			r.forget(p)
+		}
+	}
+	// The next picture's number goes on from both, so no picture of the
+	// draft is ever written over.
+	aside.Next = max(aside.Next, r.draft.Next)
+	r.draft = aside
+	if err := r.keep(); err != nil {
+		theLog.line(zerolog.WarnLevel, "report").Err(err).Msg("the draft set aside was not brought back")
+		return
+	}
+	_ = r.files.Remove(path)
+	theLog.line(zerolog.InfoLevel, "report").Int("characters", utf8.RuneCountInString(aside.Text)).Msg("the toast's report was let go, and the draft before it is back")
 }
 
 // ReportWindowOpen says whether the report window is open, for Bugs in the
@@ -250,6 +303,9 @@ func (r *reporting) closed(which int, gone *bool) {
 	}
 	how := r.closing
 	r.closing = ""
+	if r.made == which && r.fromToast {
+		r.takeBack()
+	}
 	r.mu.Unlock()
 	if how == "" {
 		how = "window"
@@ -697,6 +753,19 @@ func (r *reporting) load() {
 	data, err := afero.ReadFile(r.files, filepath.Join(r.dir, "draft.json"))
 	if err != nil {
 		return
+	}
+	// The app ended while a toast's report was open: that report goes,
+	// and the draft before it comes back.
+	if _, err := r.files.Stat(filepath.Join(r.dir, "aside.json")); err == nil {
+		var left draftFile
+		if json.Unmarshal(data, &left) == nil {
+			r.draft = left
+		}
+		r.takeBack()
+		data, err = afero.ReadFile(r.files, filepath.Join(r.dir, "draft.json"))
+		if err != nil {
+			return
+		}
 	}
 	var d draftFile
 	if json.Unmarshal(data, &d) != nil {

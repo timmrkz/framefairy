@@ -93,6 +93,8 @@ export default [
       ["report greyed", true],
       ["close report"],
       ["report greyed", false],
+      ["report logged", 1],
+      ["close report"],
       ["button", "Remove the app's log"],
       ["button", "Cancel"],
       ["app log", 2],

@@ -2486,11 +2486,15 @@ is the Go side's: the queue tells each once, as the job goes from
 waiting or running to failed, or is refused as it is asked for, a search,
 a clip made by hand, a transcription or a render, see
 `cmd/framefairy-app/notice.go`. One found failed only as the app opens
-said why the time it failed. Report opens Report a Problem with the toast's
-words written in its field, after what was there. There is one report at
-a time: while Report a Problem is open, every Report button is greyed
-out, and the window is only brought forward, with nothing written into
-it, see `ReportAbout` in `bugs.go`. Cut to one line in the row, the reason lost the part that
+said why the time it failed. Report opens Report a Problem as a report
+of its own, with only the toast's words in its field. A draft written
+before waits aside and comes back when the window closes, and the
+toast's report is let go then, sent or not, so the next toast's Report
+starts from nothing again. Tim found two toasts in one report after
+closing the window between them. There is one report at a time: while
+Report a Problem is open, every Report button is greyed out, and the
+window is only brought forward, with nothing written into it, see
+`ReportAbout` in `bugs.go`. Cut to one line in the row, the reason lost the part that
 said what to do, and Tim read "Anthropic is busy and did not a…".
 
 A video whose file is gone says so in a toast as the workspace finds it
@@ -3593,6 +3597,9 @@ found.
 What is written and attached is a draft, kept in the app's folder
 under `report/` as it is written, so closing the window, or the app,
 loses nothing. Report lets go of it, and the next report starts empty.
+A report a toast's Report started is the one exception: it is let go as
+its window closes, and the draft from before comes back, see the toasts
+above.
 A recording goes with the window: closing it while somebody talks drops
 the recording, and what was written down by then stays in the draft as
 text. This is on purpose and not the way Stop ends one, which the first

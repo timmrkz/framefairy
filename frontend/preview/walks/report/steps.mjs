@@ -545,7 +545,7 @@ export const steps = {
   // ["report logged", i]
   //                    presses Report on toast i, from 1, in the app's
   //                    log, and the report window opens with its words
-  //                    written in it
+  //                    and nothing else written in it, a report of its own
   async "report logged"(walk, arg) {
     const { page } = walk;
     const row = (await logCard(page)).locator(".item.logged").nth(arg - 1);
@@ -555,7 +555,7 @@ export const steps = {
     await settle(page);
     const w = await (await fetch(new URL("/report-window", url))).json();
     if (!w.open) walk.wrong = "Report on a toast in the app's log opened no report window";
-    else if (!w.text.includes(text)) walk.wrong = `the report window reads ${JSON.stringify(w.text)}, without the toast's words ${JSON.stringify(text)}`;
+    else if (w.text.trim() !== text) walk.wrong = `the report window reads ${JSON.stringify(w.text)}, not only the toast's words ${JSON.stringify(text)}`;
   },
   // ["report greyed", yes]
   //                    every Report on a toast in the app's log is greyed
