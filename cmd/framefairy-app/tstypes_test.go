@@ -35,16 +35,6 @@ type tsField struct {
 	of       *tsType
 }
 
-// nullable says whether the type takes null.
-func (t *tsType) nullable() bool {
-	for _, m := range t.members {
-		if m.kind == "null" {
-			return true
-		}
-	}
-	return false
-}
-
 // tsDecls are the types a TypeScript file declares, as written, by name.
 type tsDecls struct {
 	// interfaces are the bodies, and the names they extend.

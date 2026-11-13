@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -119,7 +120,7 @@ func (c *channel) compare(g reflect.Type, t *tsType, where string, goSends bool)
 			if m.name != "" {
 				fields = c.fieldsOf(m.name, where)
 			}
-			for _, name := range slices.Sorted(mapKeys(fields)) {
+			for _, name := range slices.Sorted(maps.Keys(fields)) {
 				c.compare(g.Elem(), fields[name].of, where+"."+name, goSends)
 			}
 			continue
@@ -256,7 +257,7 @@ func (c *channel) object(g reflect.Type, m tsMember, where string, goSends bool)
 		where = m.name
 	}
 	gos := jsonFields(g)
-	for _, name := range slices.Sorted(mapKeys(gos)) {
+	for _, name := range slices.Sorted(maps.Keys(gos)) {
 		f := gos[name]
 		tf, ok := ts[name]
 		if !ok {
@@ -271,7 +272,7 @@ func (c *channel) object(g reflect.Type, m tsMember, where string, goSends bool)
 		}
 		c.compare(f.of, tf.of, where+"."+name, goSends)
 	}
-	for _, name := range slices.Sorted(mapKeys(ts)) {
+	for _, name := range slices.Sorted(maps.Keys(ts)) {
 		if _, ok := gos[name]; ok {
 			continue
 		}
@@ -279,16 +280,6 @@ func (c *channel) object(g reflect.Type, m tsMember, where string, goSends bool)
 			c.errorf("api.ts reads %s.%s, which Go (%s) never sends", where, name, g)
 		} else {
 			c.errorf("api.ts sends %s.%s, which Go (%s) does not read", where, name, g)
-		}
-	}
-}
-
-func mapKeys[V any](m map[string]V) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		for k := range m {
-			if !yield(k) {
-				return
-			}
 		}
 	}
 }
