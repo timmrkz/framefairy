@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -681,4 +682,35 @@ func TestAStateIsSentWithOnlyTheClipsThatChanged(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A video with no clips is sent an order with nothing in it, never no
+// order, because a state with no order is one the window takes as read
+// whole and does not keep: the state after it said its clips were kept,
+// the window had none kept, asked for every clip and was sent no order
+// again, and so every state of the video was dropped while it had no
+// clip, a search removed among them.
+func TestAVideoWithNoClipsIsSentAnEmptyOrder(t *testing.T) {
+	keys := func(st VideoState) map[string]json.RawMessage {
+		b, err := json.Marshal(st)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	var tl telling
+	first := keys(tl.trim(VideoState{Video: "v.mp4", Clips: []ClipEntry{}}))
+	if string(first["order"]) != "[]" || first["kept"] != nil {
+		t.Errorf("the first state of a video with no clips has the order %s and kept %s, want [] and none", first["order"], first["kept"])
+	}
+	if next := keys(tl.trim(VideoState{Video: "v.mp4", Clips: []ClipEntry{}})); string(next["kept"]) != "true" {
+		t.Errorf("the next state of a video with no clips has kept %s, want true", next["kept"])
+	}
+	if read := keys(VideoState{Video: "v.mp4", Clips: []ClipEntry{}}); read["order"] != nil {
+		t.Errorf("a state read has the order %s, want none", read["order"])
+	}
 }

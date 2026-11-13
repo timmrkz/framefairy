@@ -74,6 +74,13 @@ describe("a state sent made whole", () => {
     expect(sent.whole(kept(9))?.rev).toBe(9);
   });
 
+  test("keeps a video with no clips, and the states after it that kept them", () => {
+    const { sent, out } = asks();
+    expect(sent.whole(state(1, [], []))?.clips).toEqual([]);
+    expect(sent.whole(kept(2))?.clips).toEqual([]);
+    expect(out).toEqual([]);
+  });
+
   test("keeps the clips of each video apart", () => {
     const { sent } = asks();
     sent.whole(state(1, [clip("a", "1")], [["a", "1"]]));
