@@ -243,6 +243,21 @@ var firstWindow = window{0, 0}
 
 type window struct{ from, to float64 }
 
+// checked is closed once the picture of a video just added has been
+// checked, and what the check starts or takes out is done: at once for a
+// video that is not being checked. A test waits on it before it looks at
+// the first search or the library.
+func (s *FrameFairy) checked(video string) <-chan struct{} {
+	s.checkMu.Lock()
+	defer s.checkMu.Unlock()
+	if c, ok := s.checking[video]; ok {
+		return c.done
+	}
+	done := make(chan struct{})
+	close(done)
+	return done
+}
+
 // numbers is what the tests ask every search for.
 func (w window) request() engine.PlanRequest {
 	return engine.PlanRequest{From: w.from, To: w.to, Count: 1, Min: 5, Max: 30}
@@ -413,6 +428,9 @@ func (d *desk) outcome(path string) outcome {
 // test until go test's own -timeout, which shows every goroutine.
 func (d *desk) idle(path string) {
 	d.t.Helper()
+	// A video just added has its picture checked behind the answer, and
+	// its first search starts once it is.
+	<-d.svc.checked(path)
 	d.svc.jobs.until(func(jobs []*Job) bool {
 		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == path && j.going() })
 	}, nil)

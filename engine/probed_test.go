@@ -19,6 +19,8 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine/runlog"
+	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/standin"
 )
 
@@ -39,9 +41,8 @@ echo "$*" >> '` + asked + `'
 case "$*" in
 *-filters*) printf ' ... ass               V->V       Render ASS subtitles\n' ;;
 *-read_intervals*) printf '0.000000\n0.040000\n0.080000\n' ;;
-*a:0*) printf '{"streams":[{"sample_rate":"48000","channels":2}]}' ;;
+*stream=codec_type*) printf '{"streams":[{"codec_type":"audio","sample_rate":"48000","channels":2},{"codec_type":"video","width":1920,"height":1080,"r_frame_rate":"25/1","avg_frame_rate":"25/1","start_time":"0.000000","color_primaries":"bt709"}],"format":{"duration":"60.0","start_time":"0.000000","format_name":"mov,mp4"}}' ;;
 *stream=start_time*) printf '{"streams":[{"start_time":"0.000000"}],"format":{"start_time":"0.000000"}}' ;;
-*v:0*) printf '{"streams":[{"width":1920,"height":1080,"r_frame_rate":"25/1","avg_frame_rate":"25/1","start_time":"0.000000","color_primaries":"bt709"}],"format":{"duration":"60.0","start_time":"0.000000","format_name":"mov,mp4"}}' ;;
 esac
 `
 	if err := standin.Write(path, []byte(script), 0o755); err != nil {
@@ -563,4 +564,21 @@ func TestAProbeThatFailedHandsOnItsError(t *testing.T) {
 			t.Errorf("a failed probe was kept, the next was told %v", err)
 		}
 	})
+}
+
+// BenchmarkAColdProbe is what a video the app has not seen costs before
+// its workspace has its picture: Probe on a machine that knows nothing,
+// with the real ffprobe, of a 25 minute walk video.
+//
+// On the real disk: ffprobe reads the fixture.
+func BenchmarkAColdProbe(b *testing.B) {
+	ffmpegtest.Need(b)
+	video := fixtures.Path(b, "walk-1500s.mp4")
+	ctx := context.Background()
+	for b.Loop() {
+		e := &Engine{Machine: &Machine{}, Log: runlog.New(io.Discard, false, false), FFprobe: "ffprobe"}
+		if _, err := e.Probe(ctx, video); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
