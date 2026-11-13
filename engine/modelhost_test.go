@@ -3,11 +3,14 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"math/rand/v2"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/spf13/afero"
@@ -255,35 +258,53 @@ func TestASearchWaitsForTheModelBeingLoaded(t *testing.T) {
 // searches, reads ahead, the app keeping a model and giving it up, the app
 // closing. Whatever order they come in, no more than one model is ever in
 // memory, none is left running once everybody has let go, and none loads
-// after the app has closed them.
+// after the app has closed them. Each seed picks how long each hand holds
+// the model and whether it lets go with a moment to stay, on the clock of
+// a bubble, so a seed that fails holds them the same way again and no
+// moment to stay is spent. Hands that wake at the same moment still run
+// in the order Go's scheduler picks.
 func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 	t.Parallel()
+	for seed := range uint64(8) {
+		t.Run(fmt.Sprint(seed), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) { holdFromEverywhere(t, seed) })
+		})
+	}
+}
+
+func holdFromEverywhere(t *testing.T, seed uint64) {
 	s := useStandIn(t)
 	host := &s.machine.host
 	e := s.engine()
-	var wg sync.WaitGroup
+	var hands, reads sync.WaitGroup
 	for i := range 48 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			size := 32768 << (i % 2)
-			m := gemma
-			if i%5 == 0 {
-				m = LocalModel{Model: "qwen"}
-			}
+		r := rand.New(rand.NewPCG(seed, uint64(i)))
+		size := 32768 << (i % 2)
+		m := gemma
+		if i%5 == 0 {
+			m = LocalModel{Model: "qwen"}
+		}
+		// A read ahead waits until a search calls it off, so it is waited
+		// for once every other hand is done, below.
+		if i%8 == 5 {
+			reads.Go(func() {
+				ctx, giveWay := context.WithCancelCause(context.Background())
+				if _, release, ok := host.holdIdle(m.Model, size, giveWay); ok {
+					<-ctx.Done()
+					release(0)
+				}
+			})
+			continue
+		}
+		hands.Go(func() {
+			// Comes in a moment of the bubble's clock its seed picks.
+			time.Sleep(time.Duration(r.IntN(4)) * time.Millisecond) //nolint:forbidigo // synctest bubble
 			switch i % 8 {
 			case 1:
 				_, _ = e.keep(context.Background(), m, 0)
 				return
 			case 3:
 				host.keepOnly("")
-				return
-			case 5:
-				ctx, giveWay := context.WithCancelCause(context.Background())
-				if _, release, ok := host.holdIdle(m.Model, size, giveWay); ok {
-					<-ctx.Done()
-					release(0)
-				}
 				return
 			}
 			hold := e.holdModel
@@ -294,23 +315,22 @@ func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 			if err != nil {
 				return
 			}
-			runtime.Gosched()
-			if i%3 == 0 {
-				release(time.Millisecond)
-			} else {
-				release(0)
-			}
+			time.Sleep(time.Duration(r.IntN(4)) * time.Millisecond) //nolint:forbidigo // synctest bubble
+			release(time.Duration(r.IntN(2)) * time.Millisecond)
 			host.modelReady("gemma", size)
-		}()
+		})
 	}
-	wg.Wait()
-	// A read that no search called off is let go of before the app closes.
+	hands.Wait()
+	// Every hand is done and every read ahead holds or has gone, and a
+	// read that no search called off is let go of before the app closes.
+	synctest.Wait()
 	host.mu.Lock()
 	if h := host.model; h != nil && h.giveWay != nil {
 		h.giveWay(errModelBusy)
 		h.giveWay = nil
 	}
 	host.mu.Unlock()
+	reads.Wait()
 	s.machine.CloseModels()
 	if loaded, _ := e.keep(context.Background(), gemma, 0); loaded {
 		t.Error("the model was kept after the app had closed them")
@@ -319,15 +339,15 @@ func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 	kept := host.kept
 	host.mu.Unlock()
 	if kept != "" {
-		t.Errorf("%s is still kept after the app closed the models", kept)
+		t.Errorf("seed %d: %s is still kept after the app closed the models", seed, kept)
 	}
 	// Closing them stops them before it returns, whatever was still let
 	// go of with a moment to stay.
 	if s.running.Load() != 0 {
-		t.Errorf("%d models left running", s.running.Load())
+		t.Errorf("seed %d: %d models left running", seed, s.running.Load())
 	}
 	if s.peak.Load() > 1 {
-		t.Errorf("%d models were in memory at once, there is room for one", s.peak.Load())
+		t.Errorf("seed %d: %d models were in memory at once, there is room for one", seed, s.peak.Load())
 	}
 }
 
