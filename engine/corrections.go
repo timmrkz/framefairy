@@ -89,14 +89,18 @@ func putCorrections(c *object, corrections map[string]string) {
 	c.set(keyCorrections, fixes)
 }
 
+// wordMost is the most characters a corrected word may have, all of it
+// when it reads as several words.
+const wordMost = 60
+
 // CleanWordText checks a corrected word.
 func CleanWordText(text string) (string, error) {
 	text = strings.Join(strings.Fields(runes.Scrub(text, 200)), " ")
 	if text == "" {
 		return "", renderErr("a word cannot be empty")
 	}
-	if utf8.RuneCountInString(text) > 60 {
-		return "", renderErr("a word can be at most 60 characters")
+	if utf8.RuneCountInString(text) > wordMost {
+		return "", renderErr("a word can be at most %d characters", wordMost)
 	}
 	return text, nil
 }

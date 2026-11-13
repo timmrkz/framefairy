@@ -1113,7 +1113,7 @@
   // caption box: text is that one word, the one corrected or removed
   // when this is, and the others stay as they are. A word typed in after
   // another, the way a removed word is put back, is one of these.
-  type Heard = { start: number; whole: string; part: number | null; text: string };
+  type Heard = { start: number; whole: string; part: number | null; text: string; room: number };
   const rows = $derived.by(() =>
     (caption?.lines ?? []).map((line) =>
       line.words.map((word) => {
@@ -1121,10 +1121,27 @@
         const whole = word.whole ?? word.text;
         const part = word.part ?? null;
         const text = part === null ? whole : (whole.split(" ")[part] ?? whole);
-        return { word, said: { start: word.said, whole, part, text } as Heard };
+        return { word, said: { start: word.said, whole, part, text, room: word.room ?? 0 } as Heard };
       }),
     ),
   );
+
+  // A word takes as many characters as the engine keeps, room, which it
+  // says with the word. What is typed or pasted past it is not let in,
+  // since a word saved longer would be refused and everything typed into
+  // it lost. What fits of a paste is let in.
+  function wordRoom(event: InputEvent, said: Heard | null) {
+    if (!said || !event.inputType.startsWith("insert")) return;
+    const typed = [...(event.data ?? event.dataTransfer?.getData("text/plain") ?? "")];
+    if (!typed.length) return;
+    const node = event.currentTarget as HTMLElement;
+    const chosen = window.getSelection();
+    const replaced = chosen && node.contains(chosen.anchorNode) ? [...chosen.toString()].length : 0;
+    const left = said.room - [...(node.textContent ?? "")].length + replaced;
+    if (typed.length <= left) return;
+    event.preventDefault();
+    if (left > 0) document.execCommand("insertText", false, typed.slice(0, left).join(""));
+  }
 
   // What a heard word reads as with one of its words changed, or taken
   // out when the text is empty.
@@ -2012,6 +2029,7 @@
                     onfocusin={(e) => takeWord(e.currentTarget, word, said)}
                     onfocusout={(e) => dropWord(e.currentTarget, word, said)}
                     onkeydown={wordKey}
+                    onbeforeinput={(e) => wordRoom(e, said)}
                   ></span
                   >{/if}{/each}
             </div>

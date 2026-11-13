@@ -1142,7 +1142,10 @@ bubble scrolled by those eight pixels.
   the pointer becomes a caret, so what can be corrected says so without a
   word of instruction. The caret lands where the hand clicked, letters are
   typed and taken out from there, Enter saves and Escape leaves the word as
-  it was. Clicking a word stops the picture, because a caption that moved on
+  it was. A word holds at most 60 characters, with any words typed beside
+  it, and the engine says with each word how many are left for it, so
+  what is typed or pasted past them is not let in, rather than the whole
+  word refused when it is saved. Clicking a word stops the picture, because a caption that moved on
   under the caret would leave the hand correcting a word that is no longer
   there. Playing the other way round ends the correction: a click on the
   video preview or anything else that plays saves the word the way Enter

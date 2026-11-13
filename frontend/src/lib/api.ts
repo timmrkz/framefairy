@@ -215,10 +215,13 @@ export interface Word {
   // starts, and all of it, for a word shown in halves or a correction that
   // reads as several words. It is what a correction is kept against. Part
   // is, for a correction that reads as several words, which of them this
-  // is, counted from nought.
+  // is, counted from nought. Room is how many characters may be typed for
+  // it in the caption box, given with every word said and left out when
+  // nothing may.
   said?: number;
   whole?: string;
   part?: number;
+  room?: number;
   // A word lit on frames of the short, see WordFrame: start is where the
   // first of them starts and end where the last ends, in the episode.
   framed?: boolean;
