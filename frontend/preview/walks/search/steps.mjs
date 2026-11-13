@@ -7,6 +7,7 @@
 // docs/TESTING.md.
 import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
 import { clock } from "../../../src/lib/clock.ts";
+import { suggestedCount } from "../../../src/lib/count.ts";
 import { nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -159,7 +160,7 @@ export const steps = {
       await page.mouse.move(x + (share * track.width * i) / 6, y);
       await nextPaint(page);
       const w = await seen();
-      const want = 1 + steps.filter((at) => at <= w.to - w.from).length;
+      const want = suggestedCount(steps, w.to - w.from);
       const says = Number(await field.inputValue());
       counts.add(says);
       if (says !== want) walk.wrong = `dragged to ${w.from.toFixed(0)}–${w.to.toFixed(0)} s, the Target field says ${says}, not the ${want} that length suggests`;
