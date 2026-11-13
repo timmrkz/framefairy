@@ -106,48 +106,57 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 		// left off, so what its records say stopped says so again, the way
 		// it does when the app starts.
 		s.restoreJobs([]string{v})
-		done := s.startCheck(v)
+		ctx, done := s.startCheck(v)
 		go func() {
 			defer done()
-			s.checkAdded(v, fresh[v])
+			s.checkAdded(ctx, v, fresh[v])
 		}()
 	}
 	return added, err
 }
 
+// check is the picture of a video just added being checked: done is
+// closed once it is, and stop calls it off.
+type check struct {
+	done chan struct{}
+	stop context.CancelFunc
+}
+
 // startCheck says that the picture of a video just added is being
-// checked, and gives back what says it is done.
-func (s *FrameFairy) startCheck(video string) (done func()) {
-	ch := make(chan struct{})
+// checked. It gives back what the check runs under, called off by
+// stopCheck, and what says it is done.
+func (s *FrameFairy) startCheck(video string) (context.Context, func()) {
+	ctx, stop := context.WithCancel(context.Background())
+	c := &check{done: make(chan struct{}), stop: stop}
 	s.checkMu.Lock()
 	defer s.checkMu.Unlock()
 	if s.checking == nil {
-		s.checking = map[string]chan struct{}{}
+		s.checking = map[string]*check{}
 	}
-	s.checking[video] = ch
-	return func() {
+	s.checking[video] = c
+	return ctx, func() {
 		s.checkMu.Lock()
 		defer s.checkMu.Unlock()
-		if s.checking[video] == ch {
+		if s.checking[video] == c {
 			delete(s.checking, video)
 		}
-		close(ch)
+		stop()
+		close(c.done)
 	}
 }
 
-// checked is closed once the picture of a video just added has been
-// checked, and what the check starts or takes out is done: at once for a
-// video that is not being checked. A test waits on it before it looks at
-// the first search or the library.
-func (s *FrameFairy) checked(video string) <-chan struct{} {
+// stopCheck calls off the check of a video's picture, and waits until it
+// has ended, so a video removed while it is checked starts no search on
+// its way out and takes nothing out after it was added again.
+func (s *FrameFairy) stopCheck(video string) {
 	s.checkMu.Lock()
-	defer s.checkMu.Unlock()
-	if ch, ok := s.checking[video]; ok {
-		return ch
+	c := s.checking[video]
+	s.checkMu.Unlock()
+	if c == nil {
+		return
 	}
-	done := make(chan struct{})
-	close(done)
-	return done
+	c.stop()
+	<-c.done
 }
 
 // checkAdded asks whether the picture of a video just added can be
@@ -158,27 +167,27 @@ func (s *FrameFairy) checked(video string) <-chan struct{} {
 // new video's first search starts once its picture is known to be there.
 // It hears the episode as far as its window and no further. An episode
 // that has been searched before waits for a search to be asked for.
-func (s *FrameFairy) checkAdded(video string, fresh bool) {
+func (s *FrameFairy) checkAdded(ctx context.Context, video string, fresh bool) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			theLog.line(zerolog.ErrorLevel, "app").Str("video", filepath.Base(video)).Str("stack", string(debug.Stack())).
 				Msgf("checking a video just added stopped unexpectedly: %v", caught)
 		}
 	}()
-	why := s.undecodable(video, s.frameLate)
+	why := s.undecodable(ctx, video, s.frameLate)
 	// Removed while it was checked: nothing is left to start or take out.
-	if !s.store.Known(video) {
+	if ctx.Err() != nil || !s.store.Known(video) {
 		return
 	}
 	if why == "" {
 		s.levels.start(video)
-		s.firstSearch(context.Background(), video)
+		s.firstSearch(ctx, video)
 		return
 	}
 	said := fmt.Sprintf("the picture of %s cannot be decoded, %s, so it cannot be added", filepath.Base(video), why)
 	theLog.line(zerolog.WarnLevel, "app").Str("video", filepath.Base(video)).Bool("work_deleted", fresh).Str("why", why).
 		Msg("a video just added is taken out again, its picture cannot be decoded")
-	if err := s.RemoveEpisode(video, fresh); err != nil {
+	if err := s.removeEpisode(video, fresh); err != nil {
 		said += ". And it could not be taken out of the library, " + err.Error()
 	}
 	droppedEvent.to(s.tell, Added{Added: []string{}, Error: said})
@@ -200,7 +209,7 @@ const firstFrameWait = 30 * time.Second
 // out as "context deadline exceeded" after 30 s, which would have told a
 // person their video could not be decoded. Such a video is taken, and
 // the video preview shows how its decoder does.
-func (s *FrameFairy) undecodable(video string, late <-chan struct{}) string {
+func (s *FrameFairy) undecodable(ctx context.Context, video string, late <-chan struct{}) string {
 	abs, err := filepath.Abs(video)
 	if err != nil {
 		return err.Error()
@@ -210,7 +219,7 @@ func (s *FrameFairy) undecodable(video string, late <-chan struct{}) string {
 		return strings.TrimSuffix(err.Error(), ".")
 	}
 	asked := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), firstFrameWait)
+	ctx, cancel := context.WithTimeout(ctx, firstFrameWait)
 	defer cancel()
 	if late != nil {
 		go func() {
@@ -255,6 +264,15 @@ var errFirstFrame = errors.New("a frame came")
 // also deletes everything made for it, so adding it again starts from
 // nothing. The episode file itself always stays.
 func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
+	// A video removed while its picture is being checked: the check is
+	// called off first, so nothing it starts outlives the video.
+	s.stopCheck(path)
+	return s.removeEpisode(path, deleteWork)
+}
+
+// removeEpisode is RemoveEpisode once nothing checks the video's picture
+// any more, or from the check itself.
+func (s *FrameFairy) removeEpisode(path string, deleteWork bool) error {
 	if !s.store.Known(path) {
 		return errNotInLibrary
 	}

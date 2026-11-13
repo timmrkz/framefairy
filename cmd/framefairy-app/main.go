@@ -401,11 +401,10 @@ type FrameFairy struct {
 	// the clock, see undecodable. A test sets it, so it waits for no
 	// limit of the clock.
 	frameLate <-chan struct{}
-	// checking holds a channel for each video just added whose picture
-	// is still being checked, closed once it is, see addEpisodes and
-	// checked.
+	// checking holds each video just added whose picture is still being
+	// checked, see addEpisodes and stopCheck.
 	checkMu  sync.Mutex
-	checking map[string]chan struct{}
+	checking map[string]*check
 	// now is the time of day an edit is timed by, time.Now unless a test
 	// hands in a clock it moves, see clock.
 	now func() time.Time

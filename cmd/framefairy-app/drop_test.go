@@ -225,6 +225,10 @@ func BenchmarkADrop(b *testing.B) {
 	b.Run("checked", func(b *testing.B) { benchDrop(b, true) })
 }
 
+// benchDrop drops a new video each round, and with checked waits until
+// its picture has been checked too.
+//
+// On the real disk: ffprobe and the episode's decoder read the video.
 func benchDrop(b *testing.B, checked bool) {
 	ffmpegtest.Need(b)
 	if os.Getenv("FRAMEFAIRY_FRAMES") == "" {

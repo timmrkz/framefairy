@@ -140,6 +140,63 @@ func TestAddTakesAVideoWhoseFirstFrameIsLate(t *testing.T) {
 	}
 }
 
+// A video removed while its picture is still being checked has the check
+// called off, and nothing the check would have started outlives the
+// video: no first search, nothing taken out of a library it is added to
+// again. One test removed a video and added it again while the check of
+// the add before was still running, and that check started a search of
+// the video being removed, which failed.
+//
+// The decoder is a stand-in that takes every request and answers none,
+// so the check is held where a slow first frame holds it.
+//
+// On the real disk: the stand-in decoder is a program that is run. And
+// FRAMEFAIRY_FRAMES names it for the whole process, which open does
+// already with HOME, so the test does not run beside others.
+func TestAVideoRemovedWhileItsPictureIsCheckedStartsNothing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	d := open(t)
+	video := d.episode("weg", "6")
+	pipe, hangs := standin.Hangs(t)
+	hung := filepath.Join(t.TempDir(), "framefairy-frames")
+	if err := standin.Write(hung, []byte("#!/bin/sh\necho hangs > '"+pipe+"'\nexec cat >/dev/null\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FRAMEFAIRY_FRAMES", hung)
+	abs, _ := filepath.Abs(video)
+	t.Cleanup(func() {
+		d.svc.previews.mu.Lock()
+		dec := d.svc.previews.decoders[abs]
+		delete(d.svc.previews.decoders, abs)
+		d.svc.previews.mu.Unlock()
+		if dec != nil {
+			dec.Close()
+		}
+	})
+	if _, err := d.svc.addEpisodes([]string{video}); err != nil {
+		t.Fatal(err)
+	}
+	<-hangs
+	if err := d.svc.RemoveEpisode(abs, true); err != nil {
+		t.Fatalf("removing the video while its picture was checked: %v", err)
+	}
+	select {
+	case <-d.svc.checked(abs):
+	default:
+		t.Error("the check still runs after the video was removed")
+	}
+	if eps := d.svc.store.Episodes(); len(eps) != 0 {
+		t.Errorf("the library holds %v", eps)
+	}
+	for _, j := range d.svc.Jobs() {
+		if j.Episode == abs {
+			t.Errorf("the video removed has a %s, %s", j.Kind, j.State)
+		}
+	}
+}
+
 // A label given in the sidebar comes back with the library, and the video
 // keeps its name and its bytes. A label inside a video's own work folder
 // is no video of the library, so it is refused.
