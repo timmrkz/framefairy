@@ -37,6 +37,10 @@ type standIn struct {
 	hold    chan struct{}
 	// machine is the test's own, whose host loads the stand-in.
 	machine *Machine
+	// loading is how long a load takes on the clock of a test's bubble.
+	// Zero, a load only lets the others have their turn, for a test that
+	// runs outside a bubble.
+	loading time.Duration
 }
 
 // engine is a quiet engine on the stand-in's machine, so every engine of
@@ -73,6 +77,8 @@ func useStandIn(t *testing.T) *standIn {
 				s.up.Add(-1)
 				return "", nil, ctx.Err()
 			}
+		} else if s.loading > 0 {
+			time.Sleep(s.loading) //nolint:forbidigo // synctest bubble
 		} else {
 			// Others get their turn while this one loads.
 			runtime.Gosched()
@@ -274,6 +280,7 @@ func TestTheModelHeldFromEverywhereAtOnce(t *testing.T) {
 
 func holdFromEverywhere(t *testing.T, seed uint64) {
 	s := useStandIn(t)
+	s.loading = time.Millisecond
 	host := &s.machine.host
 	e := s.engine()
 	var hands, reads sync.WaitGroup
