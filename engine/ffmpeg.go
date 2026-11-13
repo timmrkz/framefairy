@@ -784,18 +784,15 @@ func (e *Engine) readPictureStart(ctx context.Context, path string) (float64, bo
 // file, once for as long as the file stays as it is, see probed.go.
 func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	key, keep := keyFor("probe", e.FFprobe, path)
-	if keep {
-		if info, ok := recall[SourceInfo](e.Machine, key); ok {
-			return info.clone(), nil
-		}
+	if !keep {
+		return e.probe(ctx, path)
 	}
-	info, err := e.probe(ctx, path)
-	// A probe stopped halfway may have read no sound or no uneven frames
-	// without failing, which is not what the file holds.
-	if err == nil && keep && ctx.Err() == nil {
-		remember(e.Machine, key, info.clone())
-	}
-	return info, err
+	// One probe of a file at a time, see askOnce. What is kept and handed
+	// on is shared, so each caller is given a copy of its own.
+	info, err := askOnce(ctx, e.Machine, key, func(ctx context.Context) (SourceInfo, error) {
+		return e.probe(ctx, path)
+	})
+	return info.clone(), err
 }
 
 func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
