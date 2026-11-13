@@ -294,7 +294,7 @@ back the clip from before and after the step. It makes every edit from
 a fresh clip, and random runs over fixed seeds of word edits, trims,
 cuts, joins and crops, with Undo and Redo. Caption removals and edges
 moved are left out of the random runs until the engine keeps their
-rules there too, see #820.
+rules after words typed in, too.
 
 ### `timeline.mjs`: the clip timeline
 
