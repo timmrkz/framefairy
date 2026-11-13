@@ -190,3 +190,36 @@ func TestARemovedCaptionTakesTheWordsItsEdgesHid(t *testing.T) {
 		})
 	}
 }
+
+// A word a cut leaves out of a caption is no word of the clip's, so
+// removing the caption leaves it as it was: the cut put back plays it
+// again. Removing the words its edges hide took it too, found by the
+// review of the pull request that began to.
+func TestARemovedCaptionLeavesTheWordACutHid(t *testing.T) {
+	// "auf", 62.15 to 62.4, is cut out of the first sentence.
+	fsys, path := writePlanAt(t, strings.Replace(captionPlan,
+		`{"start": 59.9, "end": 66.0}`, `{"start": 59.9, "end": 62.12}, {"start": 62.42, "end": 66.0}`, 1))
+	tr := fromStored(captionHeard(), nil, 0, 0, nil)
+	was, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(was.Captions) == 0 || cueWords(was.Captions[0]) != "Da stand ein Typ Schulhof." {
+		t.Fatalf("the test needs the first caption to run over the cut: %+v", was.Captions)
+	}
+	if err := RemoveCaption(fsys, path, "01", was.Captions[0].First, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	reshape(t, fsys, path, Gesture{Kind: "join", From: 62.2})
+	after, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, c := range after.Captions {
+		got = append(got, cueWords(c))
+	}
+	if strings.Join(got, " | ") != "auf | Und dann kam" {
+		t.Errorf("with the cut put back the captions read %q, not auf and then Und dann kam", got)
+	}
+}

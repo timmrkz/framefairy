@@ -352,7 +352,22 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 	}
 	// The words its edges hide, dragged in over them, are its words too.
 	// Left in the clip, they came back as a caption of their own once it
-	// was gone, and the caption before stayed up until it appeared.
+	// was gone, and the caption before stayed up until it appeared. Those
+	// are the words the clip plays before its first word shown or after
+	// its last. A word a cut leaves out is no word of the clip's, and
+	// stays as it was.
+	lo, hi := words[0].heard.Start, words[0].heard.Start
+	for _, w := range words {
+		lo, hi = min(lo, w.heard.Start), max(hi, w.heard.Start)
+	}
+	played := func(at float64) bool {
+		for _, s := range clip.Segments {
+			if at >= s.Start && at < s.End {
+				return true
+			}
+		}
+		return false
+	}
 	shown := map[float64]bool{}
 	for _, c := range view.Captions {
 		for _, line := range c.Lines {
@@ -367,7 +382,8 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 		}
 	}
 	for _, heard := range t.HeardWords {
-		if heard.Start >= cue.First-0.0015 && heard.Start <= cue.Last+0.0015 && !shown[heard.Start] {
+		edge := heard.Start >= cue.First-0.0015 && heard.Start < lo || heard.Start > hi && heard.Start <= cue.Last+0.0015
+		if edge && played(heard.Start) && !shown[heard.Start] {
 			words = append(words, shownWord{heard, -1})
 		}
 	}
