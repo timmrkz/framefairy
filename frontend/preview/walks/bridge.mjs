@@ -1539,31 +1539,6 @@ export async function cropFrame(page) {
   return { left: got.left, width: got.width, look: lookOf(bytes(got.pixels), got.w, got.h) };
 }
 
-// A short read back from disk with ffmpeg: every frame, small, as what it
-// looks like, and the sound, one channel at 48 kHz.
-export function readShort(path) {
-  const w = 90, h = 160;
-  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", `scale=${w}:${h}`,
-    "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
-  const frames = [];
-  for (let at = 0; at + w * h * 3 <= raw.length; at += w * h * 3) {
-    frames.push(lookOf(raw.subarray(at, at + w * h * 3), w, h, 3));
-  }
-  const sound = shortSound(path);
-  const rate = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
-    "stream=r_frame_rate", "-of", "csv=p=0", path]).toString().trim().split("/");
-  return { frames, fps: Number(rate[0]) / Number(rate[1] ?? 1), sound, rate: 48000 };
-}
-
-// How loud the sound is over 10 ms from a moment, as its root mean square.
-export function loudness(short, at) {
-  const from = Math.round(at * short.rate);
-  const n = Math.round(0.01 * short.rate);
-  let sum = 0;
-  for (let i = from; i < from + n; i++) sum += (short.sound[i] ?? 0) ** 2;
-  return Math.sqrt(sum / n);
-}
-
 // A filmed episode, made by /pick with a rate, carries its frame number
 // in a way a render keeps, see filmed in internal/fixtures/fixtures_test.go:
 // bands one above the other across the whole width of a picture 180 pixels
@@ -1629,13 +1604,6 @@ export async function filmedOnScreen(page) {
     };
   }, [FILMED_BITS, BAND]);
   return page.evaluate(() => window.__filmed());
-}
-
-// The sound of a rendered short, one channel at 48 kHz, sample by sample.
-export function shortSound(path) {
-  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-ac", "1", "-ar", "48000",
-    "-f", "f32le", "-"], { maxBuffer: 1 << 30 });
-  return new Float32Array(Uint8Array.from(raw).buffer);
 }
 
 // The crop in the video preview as the canvas has it, at the canvas's own

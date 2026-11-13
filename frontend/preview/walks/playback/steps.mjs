@@ -6,7 +6,7 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { ask, holdClock, letClockGo, realFrames, runClock, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, loudness, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
+import { ask, holdClock, letClockGo, realFrames, runClock, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
 import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
@@ -2264,92 +2264,6 @@ async function asPreviewed(page, rate, before) {
   if (unseen.length) problems.push(`the playhead could not be put on ${unseen.join(", ")}`);
   console.log(`      ${looked} frames of ${slots.length} looked at, the playhead missed ${missed} more`);
   return problems.length ? problems.slice(0, 8).join("\n") + (problems.length > 8 ? `\nand ${problems.length - 8} more` : "") : null;
-}
-
-// What is wrong with the frames the video preview draws on the clip's
-// edges, against the short Render wrote, or null. The playhead is put on
-// each edge the way a hand puts it there, a click on the clip's start, on
-// where each cut ends and on the clip's end, and the frame the video
-// preview draws, read off the canvas, is the frame the short starts that
-// piece with, or the short's last at the clip's end. Bug 1 of
-// docs/DESIGN-REVIEW.md. An edge is kept to the millisecond, and at 29.97
-// fps that lies just before its frame's start for 1400 of every 3000
-// frames, where the video preview drew the frame before the one the short
-// starts on. And a search left its edges between frames. The clip's end
-// has to be where the search put it, and at least one edge just before
-// its frame's start, or the walk is not about the case.
-async function edgesAsRendered(page) {
-  const on = await chosen(page);
-  const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
-  const { fps, videoStart = 0 } = await ask(page, "Source", on.path);
-  const short = await shortOf(page, on);
-  if (!short || !existsSync(short)) return `the clip has no short${short ? ` at ${short}` : ""}`;
-  const { frames } = shortFrames(short);
-  const pieces = entry.segments;
-  // The frame an edge means, the one whose start is nearest, and each
-  // piece's frames from there, the way the render cuts them, see
-  // nearestFrame and cutOf in engine/render.go.
-  const nearest = (t) => Math.round((t - videoStart) * fps);
-  const firsts = [];
-  let held = 0;
-  for (const p of pieces) {
-    const first = nearest(p.start);
-    firsts.push(held);
-    held += Math.max(nearest(p.end), first + 1) - first;
-  }
-  if (frames.length !== held) return `the short has ${frames.length} frames, its pieces hold ${held}`;
-  // The clip's start and where each cut ends. Two pieces that meet, at a
-  // camera switch or where the picture starts, have no cut between them.
-  const edges = [{ what: "the clip's start", label: "Clip start", at: pieces[0].start, want: frames[firsts[0]] }];
-  for (let i = 1; i < pieces.length; i++) {
-    if (pieces[i].start <= pieces[i - 1].end) continue;
-    edges.push({ what: `where cut ${i} ends`, label: `Where cut ${i} ends`, at: pieces[i].start, want: frames[firsts[i]] });
-  }
-  edges.push({ what: "the clip's end", label: "Clip end", at: pieces[pieces.length - 1].end, want: frames[frames.length - 1] });
-  // Kept just before the start of the frame it means, by the rounding to
-  // the millisecond.
-  const before = edges.filter((e) => {
-    const begins = videoStart + nearest(e.at) / fps;
-    return e.at < begins - 1e-9 && begins - e.at < 0.0006;
-  });
-  if (!before.length) {
-    return `no edge of the clip, at ${edges.map((e) => e.at).join(", ")}, lies just before its frame's start, the case this is about`;
-  }
-  if (Math.abs(entry.found[1] - pieces[pieces.length - 1].end) > 1e-9) {
-    return `the clip ends at ${pieces[pieces.length - 1].end}, not at ${entry.found[1]} where the search put it, the other case this is about`;
-  }
-  await filmedOnScreen(page);
-  const problems = [];
-  for (const e of edges) {
-    // High on the track, where the captions' edges below are not.
-    const handle = page.locator(`.clip-timeline [aria-label="${e.label}"]`);
-    const grip = (await handle.count()) ? await handle.boundingBox() : null;
-    if (!grip) {
-      problems.push(`there is no ${e.label} to click`);
-      continue;
-    }
-    await clickOnTrack(page, grip.x + grip.width / 2, high((await handles(page)).track));
-    await settle(page);
-    // On the edge's frame, where the engine puts the playhead for an
-    // edge, see edgePlayhead in engine/shape.go: the first frame of the
-    // piece an edge starts, and the clip's last frame for its end.
-    const placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
-    // A millisecond early is on the frame, the rounding the edges are kept
-    // to, which is the case this is about.
-    const frameOn = nearest(e.at) - (e.label === "Clip end" ? 1 : 0);
-    if (Math.floor((placed - videoStart + 0.001) * fps) !== frameOn) {
-      problems.push(`a click on ${e.what} put the playhead at ${placed.toFixed(4)}, not on its frame ${frameOn}`);
-      continue;
-    }
-    await settle(page);
-    await shownOnPlayhead(page);
-    const came = (await page.evaluate(() => window.__filmed?.())) === e.want;
-    if (!came) {
-      problems.push(`on ${e.what} at ${e.at.toFixed(3)} s the video preview shows frame ${await filmedOnScreen(page)}, the short frame ${e.want}`);
-    }
-  }
-  console.log(`      ${edges.length} edges looked at, ${before.length} kept just before their frame`);
-  return problems.length ? problems.join("\n") : null;
 }
 
 // The left edge of the crop on each frame of the video, for frame numbers

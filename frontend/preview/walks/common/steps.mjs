@@ -263,13 +263,13 @@ export function clock(seq) {
 }
 
 // What a sequence that starts with ["added", ...] starts with, as the
-// bridge's /reset takes it: a second video of so many seconds, at a rate,
-// with a timing and in Matroska, the way ["add", ...] picks one, already
+// bridge's /reset takes it: a second video of so many seconds, at a rate
+// and with a timing, the way ["add", ...] picks one, already
 // heard and searched, with the app open on its clip. Or null.
 export function started(seq) {
-  const [what, seconds, rate, timing, inside] = seq.steps[0] ?? [];
+  const [what, seconds, rate, timing] = seq.steps[0] ?? [];
   if (what !== "added") return null;
-  return { seconds, ...(rate && { rate }), ...(timing && { timing }), ...(inside && { in: inside }) };
+  return { seconds, ...(rate && { rate }), ...(timing && { timing }) };
 }
 
 // Holds files over the app and drops them, the way the runtime reports a
