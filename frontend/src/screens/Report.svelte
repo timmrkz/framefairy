@@ -74,6 +74,14 @@
   // settle or cut what it is hearing, see tell.
   let recording = 0;
   let asked = 0;
+  // Which press of Dictate is the latest, and the last recording this
+  // page finished with. While the Mac asks for the microphone, Stop
+  // answers before Listen does, so a press of Dictate can still be
+  // waiting when the next one is made, issue #792. Only the latest press
+  // takes Listen's answer, and nothing from a finished recording is
+  // taken while the next one has no number yet.
+  let presses = 0;
+  let past = 0;
   // The asks to settle or cut go to the Go side one at a time, in the
   // order they were made, and stopping waits for them. Each call runs on
   // a goroutine of its own there, so two Shift+Enters in quick succession
@@ -583,13 +591,13 @@
 
   onMount(() =>
     onLoudness((n) => {
-      if (listening && (!recording || n.recording === recording)) loud = n.level;
+      if (listening && n.recording > past && (!recording || n.recording === recording)) loud = n.level;
     }),
   );
 
   onMount(() =>
     onDictation((d) => {
-      if (!listening || (recording && d.recording !== recording)) return;
+      if (!listening || d.recording <= past || (recording && d.recording !== recording)) return;
       if (d.error || d.ended) {
         if (d.error) oops(sentence(d.error));
         if (d.ended) note = sentence(d.ended) + ".";
@@ -625,11 +633,15 @@
     field.focus({ preventScroll: true });
     field.setSelectionRange(at, at);
     wake();
+    const press = ++presses;
     try {
-      recording = await api.listen();
+      const r = await api.listen();
+      if (press !== presses) return;
+      recording = r;
       // The microphone is open: what is said from here is written down.
       if (listening) chime("on");
     } catch (e) {
+      if (press !== presses) return;
       listening = false;
       finish([]);
       oops(sentence(e));
@@ -650,6 +662,7 @@
       await told;
       // It may have stopped by itself just before, and then says why.
       const d = await api.stopListening();
+      past = Math.max(past, d.recording);
       if (d.recording === recording) {
         pieces = d.said ?? pieces;
         if (d.ended) note = sentence(d.ended) + ".";

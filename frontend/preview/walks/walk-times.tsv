@@ -2,7 +2,6 @@
  45	sequences.mjs SEQUENCE=a video added is transcribed to its end from its menu
  44	sequences.mjs SEQUENCE=a step onto a word pops it over the paused frame
  42	timeline.mjs
- 41	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
  40	sequences.mjs SEQUENCE=the video preview shows the short's captions, frame for frame
  39	searching.mjs
  37	sequences.mjs SEQUENCE=a slow drag of the playhead to the left reads its frames in runs, not a seek a step
@@ -38,6 +37,7 @@
  15	sequences.mjs SEQUENCE=a search of what was said finds the sentences, names their clips and puts the playhead on one
  14	sequences.mjs SEQUENCE=a short rendered into the folder for shorts is known as rendered
  14	sequences.mjs SEQUENCE=an edge dragged while the clip plays changes nothing that plays
+ 14	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
  13	sequences.mjs SEQUENCE=a rotated part keeps its keyframe, and has the rotate icon drawn in its middle
  12	sequences.mjs SEQUENCE=the episode played through a clip with cuts shows only the video, and the clip its frame and captions
  12	sequences.mjs SEQUENCE=undo takes back a crop moved, a word corrected and a font picked, in turn, and redo does them again
