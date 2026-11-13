@@ -1171,8 +1171,8 @@ const shovelPlan = `{
 // a piece a frame long, which moving a cut's edge made before.
 func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
 	tr := editableTranscript()
-	// At 25 frames a second, the least a piece may hold is MinCut, 0.05, in whole frames, 0.08,
-	// and the pieces are put on frames as they are saved.
+	// At 25 frames a second, the least a piece or a cut may hold is a
+	// frame, 0.04, and the pieces are put on frames as they are saved.
 	cases := []struct {
 		name string
 		clip string
@@ -1181,17 +1181,26 @@ func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
 	}{
 		{"the start short of the cut", "01", Gesture{Edge: "start", From: 11}, "11.000-12.000 13.000-13.200 13.520-20.000"},
 		{"the start into the first cut, which gets narrower", "01", Gesture{Edge: "start", From: 12.5},
-			"12.520-12.600 13.000-13.200 13.520-20.000"},
-		{"the start near the first cut's far side, where it is gone", "01", Gesture{Edge: "start", From: 12.88},
-			"12.880-13.200 13.520-20.000"},
+			"12.520-12.560 13.000-13.200 13.520-20.000"},
+		// Tim saw the cut go while several frames of it were left, when
+		// the least was two frames: the cut is now a frame at the last,
+		// and goes only once the edge is a frame from its far side.
+		{"the start near the first cut's far side, which is two frames", "01", Gesture{Edge: "start", From: 12.88},
+			"12.880-12.920 13.000-13.200 13.520-20.000"},
+		{"the start nearer the first cut's far side, which is a frame", "01", Gesture{Edge: "start", From: 12.92},
+			"12.920-12.960 13.000-13.200 13.520-20.000"},
+		{"the start a frame from the first cut's far side, where it is gone", "01", Gesture{Edge: "start", From: 12.96},
+			"12.960-13.200 13.520-20.000"},
 		{"the start past the first cut, which stays behind", "01", Gesture{Edge: "start", From: 13.1},
 			"13.120-13.200 13.520-20.000"},
 		{"the start past both cuts, as far as the clip keeps a second", "01", Gesture{Edge: "start", From: 19.5},
 			"19.000-20.000"},
 		{"the end past the second cut into the first, which gets narrower", "01", Gesture{Edge: "end", From: 12.5},
-			"10.000-12.000 12.440-12.520"},
-		{"the end into the second cut, too narrow to be left a cut", "01", Gesture{Edge: "end", From: 13.3},
-			"10.000-12.000 13.000-13.320"},
+			"10.000-12.000 12.480-12.520"},
+		{"the end into the second cut, which gets narrower", "01", Gesture{Edge: "end", From: 13.3},
+			"10.000-12.000 13.000-13.200 13.280-13.320"},
+		{"the end a frame from the second cut's far side, where it is gone", "01", Gesture{Edge: "end", From: 13.24},
+			"10.000-12.000 13.000-13.240"},
 		{"the start dragged back out", "01", Gesture{Edge: "start", From: 9}, "9.000-12.000 13.000-13.200 13.520-20.000"},
 		{"a press on a start a frame from a cut", "02", Gesture{Edge: "start", From: 30},
 			"30.000-30.040 31.000-39.000 39.520-39.560"},
@@ -1204,17 +1213,19 @@ func TestAnEdgeDraggedIntoACutPushesIt(t *testing.T) {
 		// it, as if all of the cut were still ahead, and jumped once the
 		// hand had passed it.
 		{"the start into a cut with a short part after it", "03", Gesture{Edge: "start", From: 52.5},
-			"52.520-52.600 53.000-54.200"},
+			"52.520-52.560 53.000-54.200"},
 		{"the start near the far side of a cut with a short part after it", "03", Gesture{Edge: "start", From: 52.8},
-			"52.800-52.880 53.000-54.200"},
+			"52.800-52.840 53.000-54.200"},
 		{"the end into a cut with a short part before it", "04", Gesture{Edge: "end", From: 61.5},
-			"60.000-61.200 61.440-61.520"},
-		// A cut two frames wide is gone as soon as the edge comes within
-		// the least of it, or the edge would leave a piece a frame long.
+			"60.000-61.200 61.480-61.520"},
+		// A cut two frames wide is pushed to a single frame, which can be
+		// taken out of a video on its own, and is gone a frame later.
 		{"the start a frame from a cut two frames wide", "05", Gesture{Edge: "start", From: 71.96},
-			"71.960-80.000"},
-		{"the start short of a cut two frames wide", "05", Gesture{Edge: "start", From: 71.92},
-			"71.920-72.000 72.080-80.000"},
+			"71.960-72.000 72.080-80.000"},
+		{"the start at a cut two frames wide, which is a frame", "05", Gesture{Edge: "start", From: 72},
+			"72.000-72.040 72.080-80.000"},
+		{"the start a frame into a cut two frames wide, where it is gone", "05", Gesture{Edge: "start", From: 72.04},
+			"72.040-80.000"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1550,17 +1561,17 @@ func TestAnEdgeDraggedIntoACutCarriesTheKeyframes(t *testing.T) {
 		pieces string
 		marks  []CropMark
 	}{
-		{"diamonds, the start into a cut", "01", Gesture{Edge: "start", From: 12.5}, "12.520-12.600 13.000-13.200 13.520-20.000",
+		{"diamonds, the start into a cut", "01", Gesture{Edge: "start", From: 12.5}, "12.520-12.560 13.000-13.200 13.520-20.000",
 			[]CropMark{{At: 12.52, X: 100}, {At: 13, X: 200}, {At: 15, X: 300}}},
 		// The first circle starts its glide from the clip's own crop
 		// wherever it is carried, see opened.
-		{"circles, the start into a cut", "02", Gesture{Edge: "start", From: 32.5}, "32.520-32.600 33.000-33.200 33.520-40.000",
+		{"circles, the start into a cut", "02", Gesture{Edge: "start", From: 32.5}, "32.520-32.560 33.000-33.200 33.520-40.000",
 			[]CropMark{{At: 32.52, X: 100, Glide: true, Opens: true, FromClip: true}, {At: 33, X: 200, Glide: true}, {At: 35, X: 300, Glide: true}}},
 		// The end carries the first keyframe it covers onto the clip's
 		// end, and the narrower cut the one it still covers onto the
 		// first frame after it.
-		{"diamonds, the end into a cut", "03", Gesture{Edge: "end", From: 57.5}, "50.000-56.480 56.800-57.000 57.440-57.520",
-			[]CropMark{{At: 55, X: 100}, {At: 57.44, X: 200}, {At: 57.52, X: 300, Last: true}}},
+		{"diamonds, the end into a cut", "03", Gesture{Edge: "end", From: 57.5}, "50.000-56.480 56.800-57.000 57.480-57.520",
+			[]CropMark{{At: 55, X: 100}, {At: 57.48, X: 200}, {At: 57.52, X: 300, Last: true}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -487,14 +487,14 @@ that meet become one piece again, `meet`, unless a rotation starts or ends
 between them, `partedAtTurns`. Two pieces that meet have no cut between
 them, so a join or a move there is refused. An edge of the clip dragged
 into a cut pushes the cut's near edge ahead like a snow shovel, `shovel`,
-with the least a piece may hold between them, in whole frames,
-`leastPiece`, the same least a moved cut's edge leaves beside it, so the
-edge stays under the hand and both can still be dragged. The cut's far
-edge stays where it is, so the cut gets narrower as the edge goes in, and
-once less than that least of it is left it is gone and the edge goes on
-into what it took out. So a cut goes a little before the edge reaches its
-far side, at 25 frames a second four frames before, and a cut two frames
-wide goes as soon as the edge comes within the least of it. A cut the
+with a frame of the clip between them, `leastPiece`, the least a piece
+or a cut may hold and the same least a moved cut's edge leaves beside
+it, so the edge stays under the hand and both can still be dragged. The
+cut's far edge stays where it is, so the cut gets narrower as the edge
+goes in, down to a single frame, and once the edge is a frame from its
+far side it is gone and the edge goes on into what it took out. A cut
+made by hand can be a single frame too, so one frame can be taken out of
+a video. Where the frames are not known, the least is `MinCut`. A cut the
 edge has gone past goes with the part trimmed off. Only the edge dragged
 pushes, and only once it has moved in, so a press or a drag outward moves
 no cut. The keyframes the edge and the narrower cut cover are carried as

@@ -297,7 +297,7 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 				return nil, -1, renderErr("there is no room for a cut there")
 			}
 		}
-		if to-from < MinCut-1e-6 {
+		if to-from < g.leastPiece()-1e-6 {
 			return nil, -1, renderErr("a cut has to take out more than that")
 		}
 		return func(pieces []*object) ([]*object, error) {
@@ -416,16 +416,18 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 	return nil, -1, renderErr("there is no gesture called %s", runes.Scrub(g.Kind, 20))
 }
 
-// leastPiece is the least a piece of a clip holds, MinCut in whole
-// frames, so putting the pieces on frames never closes it: beside a cut
-// whose edge is moved, and between a cut and the edge of the clip that
-// pushes it.
+// leastPiece is the least a piece of a clip or a cut holds: one frame,
+// the smallest step there is, so a single frame can be taken out or
+// left in, and MinCut when the frames are not known. It holds beside a
+// cut whose edge is moved, between a cut and the edge of the clip that
+// pushes it, and for a cut made. It was MinCut in whole frames, two at
+// 25 frames a second, and Tim saw a cut pushed by the clip's edge go
+// while several frames of it were left.
 func (g Gesture) leastPiece() float64 {
-	frame := g.frame()
-	if frame <= 0 {
-		return MinCut
+	if frame := g.frame(); frame > 0 {
+		return frame
 	}
-	return math.Ceil(MinCut/frame-1e-9) * frame
+	return MinCut
 }
 
 // onFrame puts a moment on the start of the frame it means, the only place
@@ -647,11 +649,10 @@ func shovel(pieces []Segment, start, end, least float64, fromStart bool) []shove
 		if c.from == c.was && c.to == c.wasTo {
 			continue
 		}
-		// Too little of it is left to be a cut: the edge has all but
-		// passed it, and what it took out plays. A cut two frames wide
-		// is gone as soon as the edge comes within least of it, or the
-		// edge would leave a piece shorter than least before it.
-		c.gone = c.to-c.from < least
+		// Too little of it is left to be a cut: the edge has passed all
+		// but least of it, and what it took out plays. A frame is the
+		// least, so a cut a frame wide stays a cut.
+		c.gone = c.to-c.from < least-1e-9
 		c.from, c.to = num.RoundTo(c.from, 3), num.RoundTo(c.to, 3)
 		pushed = append(pushed, c)
 	}
@@ -750,15 +751,16 @@ func (g Gesture) edgePlayhead(start, end float64, opens bool) float64 {
 
 // cutOnFrames is where a cut put on frames goes. It is centred where it
 // was put, both edges land on frames and it is a whole number of frames
-// wide, rounded up, never narrower than the least a cut may be. Rounding
-// the two ends on their own brings them closer than they were asked to be:
-// at 25 frames a second a frame is 40 milliseconds against a least of 50.
+// wide, rounded up, never narrower than the least a cut may be, a frame,
+// see leastPiece. Rounding the two ends on their own brings them closer
+// than they were asked to be.
 // A cut in one piece stays inside it, with room left on both sides,
 // because a piece squeezed to nothing is a clip that cannot be rendered,
 // and it says so when there is no room for it. A cut drawn across into
 // another piece takes from both.
 func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, bool) {
-	width := math.Max(to-from, MinCut)
+	least := g.leastPiece()
+	width := math.Max(to-from, least)
 	if frame := g.frame(); frame > 0 {
 		width = math.Ceil(width/frame-1e-9) * frame
 	}
@@ -786,8 +788,8 @@ func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, boo
 		// The room keeps a little of the piece either side, on frames, so
 		// the pieces left end on a frame and are not grown to one, which
 		// pushed a sliver over the start of the next piece.
-		low, high := g.frameAfter(p.Start+MinCut), g.frameBefore(p.End-MinCut)
-		if high-low < MinCut {
+		low, high := g.frameAfter(p.Start+least), g.frameBefore(p.End-least)
+		if high-low < least-1e-9 {
 			return 0, 0, false
 		}
 		width = math.Min(width, high-low)
@@ -801,7 +803,7 @@ func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, boo
 		}
 		break
 	}
-	if b-a < MinCut-1e-9 {
+	if b-a < least-1e-9 {
 		return 0, 0, false
 	}
 	return num.RoundTo(a, 3), num.RoundTo(b, 3), true

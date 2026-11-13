@@ -616,7 +616,9 @@ func segmentObjects(c *object) []*object {
 	return pieces
 }
 
-// MinCut is the shortest part worth taking out of a clip.
+// MinCut is the shortest part taken out of a clip, or left in it, when
+// the video's frames are not known. Where they are, it is one frame, see
+// Gesture.leastPiece.
 const MinCut = 0.05
 
 // MinClip is the least a clip may be left holding.
