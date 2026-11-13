@@ -18,6 +18,29 @@ import { equal } from "./equal";
 // because that card was written as it, or nothing.
 export type Chose = (key: string, before: string, card: string) => void;
 
+// fn run once ms have passed, and what calls it off.
+export type After = (ms: number, fn: () => void) => () => void;
+
+const timer: After = (ms, fn) => {
+  const t = setTimeout(fn, ms);
+  return () => clearTimeout(t);
+};
+
+// How long a change waits for the Go side's answer before the session
+// lets go of the states it holds back for it, in ms. An edit or a pick
+// answers in well under a second, the slowest calls in the app's logs
+// in one or two, so ten is a call that is not coming: one held for
+// good kept the workspace on the state before it until the app was
+// started again.
+export const ANSWER = 10_000;
+
+// What a change says that was let go of, see bounded.
+export class Unanswered extends Error {
+  constructor() {
+    super(`The change got no answer within ${ANSWER / 1000} seconds, so it may not have been saved`);
+  }
+}
+
 export class EpisodeSession {
   // The video's state, from the newest VideoState kept: null until the
   // first is in.
@@ -43,14 +66,49 @@ export class EpisodeSession {
   // answered it, see Hand.
   chosen = $state("");
   window = $state.raw<WindowView | null>(null);
-  private picks = new Hand();
-  private places = new Hand();
+  private picks: Hand;
+  private places: Hand;
   private chose: Chose = () => {};
 
+  // read reads the video's state again, for a change that got no answer,
+  // and after keeps the time, see ANSWER.
   constructor(
     readonly path: string,
     private store: JobStore,
-  ) {}
+    private read?: () => Promise<VideoState>,
+    private after: After = timer,
+  ) {
+    this.picks = new Hand((call) => this.bounded(call, "the pick of a clip", false));
+    this.places = new Hand((call) => this.bounded(call, "the window put somewhere", false));
+  }
+
+  // call, or Unanswered once ANSWER has passed without its answer. Then
+  // the call is called off, which ends it on the Go side when it takes a
+  // context, the log says what was let go of, and the video's state is
+  // read again, since what is on screen may be a change that never landed.
+  private bounded<T>(call: Promise<T>, what: string, fresh: boolean): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const stop = this.after(ANSWER, () => {
+        (call as Partial<{ cancel: () => unknown }>).cancel?.();
+        said(`clip list: ${what} had no answer after ${ANSWER} ms, let go, the state is read again`, { video: this.path });
+        reject(new Unanswered());
+        this.read?.().then(
+          (state) => this.take(state, fresh),
+          () => {},
+        );
+      });
+      call.then(
+        (v) => {
+          stop();
+          resolve(v);
+        },
+        (err: unknown) => {
+          stop();
+          reject(err);
+        },
+      );
+    });
+  }
 
   // The workspace is on the page: from now on the session says when the
   // app chose another clip with chose, and takes every state of the video
@@ -168,15 +226,17 @@ export class EpisodeSession {
   // is refused puts the clip back as it was and throws. The states that
   // come while it writes are kept aside, because each was read before the
   // edit and would undo it on screen for a moment. The newest of them is
-  // taken once it has answered, unless the answer is newer.
+  // taken once it has answered, unless the answer is newer. A write with
+  // no answer is let go of, see bounded, and throws Unanswered: what the
+  // clip shows then comes from the states, not from before the edit.
   async edit(key: string, to: (clip: ClipEntry) => ClipEntry, write: () => Promise<ClipEntry>): Promise<void> {
     const was = this.clips.find((c) => c.key === key);
     this.holds++;
     this.clips = this.clips.map((c) => (c.key === key ? to(c) : c));
     try {
-      this.put(await write());
+      this.put(await this.bounded(write(), `the edit of ${key}`, true));
     } catch (err) {
-      if (was) this.clips = this.clips.map((c) => (c.key === key ? was : c));
+      if (was && !(err instanceof Unanswered)) this.clips = this.clips.map((c) => (c.key === key ? was : c));
       throw err;
     } finally {
       this.holds--;
@@ -210,6 +270,9 @@ class Hand {
   private at = 0;
   private late: VideoState | null = null;
 
+  // bound holds a call to the time it may take, see EpisodeSession.bounded.
+  constructor(private bound: (call: Promise<VideoState>) => Promise<VideoState>) {}
+
   // Whether what a state says is held back: kept for later while a call
   // is on its way, or older than the newest answer.
   holds(state: VideoState): boolean {
@@ -225,7 +288,7 @@ class Hand {
   // newest state that came meanwhile, once nothing is on its way.
   ask(call: () => Promise<VideoState>, take: (state: VideoState) => void, show: (late: VideoState) => void): Promise<void> {
     this.asking++;
-    return call()
+    return this.bound(call())
       .then((state) => {
         this.at = Math.max(this.at, state.rev);
         take(state);

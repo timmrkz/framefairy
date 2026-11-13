@@ -105,7 +105,7 @@ waiting for the day the two disagree.
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
 | how a job stands beyond its step: that it is stopping, how a search ended, how long removed work has left | the job the queue holds, `Stopping`, `Ended` and `Away` in `cmd/framefairy-app/jobs.go`, and the timer of each removal in the queue, see `removal.go` | the app's Go side |
-| what is on screen | the interface's stores, and a video's status, clips, coverage, jobs, clip chosen and window in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick or move of the window until Go answers it | from what Go sends, and nothing else. What a hand pressed is kept by the job store until Go answers, see `startJob` |
+| what is on screen | the interface's stores, and a video's status, clips, coverage, jobs, clip chosen and window in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick or move of the window until Go answers it, or ten seconds have passed without an answer | from what Go sends, and nothing else. What a hand pressed is kept by the job store until Go answers, see `startJob` |
 
 ## The programs that run
 

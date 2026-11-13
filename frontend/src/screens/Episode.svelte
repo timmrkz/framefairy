@@ -132,6 +132,7 @@
   const session = new EpisodeSession(
     untrack(() => path),
     jobs,
+    () => api.state(untrack(() => path)),
   );
   const status = $derived(session.status);
   let source = $state<SourceView | null>(null);
