@@ -393,6 +393,54 @@ func randomWordEdit(r *rand.Rand, v *engine.CaptionsView) captionEdit {
 	return edit
 }
 
+// randomTimelineEdit is a gesture on the clip timeline or a crop moved in
+// the video preview: an edge of the clip trimmed, a part cut out, a cut
+// put back or the crop moved to the side, made through the app and named
+// for a failure. What it does to the clip is held by the engine's tests of
+// the gestures. Here it is a step for Undo and Redo to take back.
+func (e *captionEditor) randomTimelineEdit(r *rand.Rand) string {
+	ctx := context.Background()
+	var held struct {
+		Clips []struct {
+			Segments []struct {
+				Start float64 `json:"start"`
+				End   float64 `json:"end"`
+			} `json:"segments"`
+		} `json:"clips"`
+	}
+	body, err := afero.ReadFile(e.svc.store.files, e.plan)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	if err := json.Unmarshal(body, &held); err != nil || len(held.Clips) == 0 || len(held.Clips[0].Segments) == 0 {
+		e.t.Fatalf("the plan holds no clip: %v", err)
+	}
+	pieces := held.Clips[0].Segments
+	first, last := pieces[0].Start, pieces[len(pieces)-1].End
+	in := first + r.Float64()*(last-first)
+	var g engine.Gesture
+	switch r.IntN(5) {
+	case 0:
+		g = engine.Gesture{Kind: "trim", Edge: "start", From: first - 0.5 + 2*r.Float64(), ToWords: r.IntN(2) == 0}
+	case 1:
+		g = engine.Gesture{Kind: "trim", Edge: "end", From: last + 0.5 - 2*r.Float64(), ToWords: r.IntN(2) == 0}
+	case 2:
+		g = engine.Gesture{Kind: "cut", From: in, To: in + 0.2 + 0.4*r.Float64()}
+	case 3:
+		g = engine.Gesture{Kind: "join", From: in}
+		if len(pieces) > 1 {
+			k := r.IntN(len(pieces) - 1)
+			g.From = (pieces[k].End + pieces[k+1].Start) / 2
+		}
+	default:
+		left := r.IntN(1400)
+		_, _ = e.svc.SetCrop(ctx, e.mine, e.plan, "01", in, left)
+		return fmt.Sprintf("the crop at %.3f moved to %d", in, left)
+	}
+	_, _ = e.svc.Reshape(ctx, e.mine, e.plan, "01", g, [2]float64{in, in})
+	return fmt.Sprintf("%s %s from %.3f to %.3f, on words %v", g.Kind, g.Edge, g.From, g.To, g.ToWords)
+}
+
 func saidWords(v *engine.CaptionsView) []shownWord {
 	var out []shownWord
 	for _, w := range wordsOf(v) {
@@ -410,14 +458,19 @@ func TestRandomCaptionEditsKeepTheirRules(t *testing.T) {
 			r := rand.New(rand.NewPCG(seed, 0))
 			e := newCaptionEditor(t)
 			// The clip before each step, for Undo, and after each step
-			// taken back, for Redo.
-			var undone, redone []*engine.CaptionsView
+			// taken back, for Redo: its captions as the interface is
+			// given them, and its plan, which holds its crops too.
+			type clipThen struct {
+				view *engine.CaptionsView
+				file map[string]any
+			}
+			var undone, redone []clipThen
 			now := e.view()
 			var done []string
 			for range 40 {
 				before, file := now, e.planFile()
 				var step string
-				switch k := r.IntN(8); {
+				switch k := r.IntN(10); {
 				case k == 0 || k == 1:
 					back := k == 0
 					step = map[bool]string{true: "undo", false: "redo"}[back]
@@ -441,10 +494,20 @@ func TestRandomCaptionEditsKeepTheirRules(t *testing.T) {
 					case len(*from) > 0:
 						want := (*from)[len(*from)-1]
 						*from = (*from)[:len(*from)-1]
-						*to = append(*to, before)
-						if !got.Done || !sameClip(now, want) {
-							t.Fatalf("after %s\n%s does not put it back\nwant %s\nnow  %s", strings.Join(done, "\n"), step, spansOf(want), spansOf(now))
+						*to = append(*to, clipThen{before, file})
+						if !got.Done || !sameClip(now, want.view) {
+							t.Fatalf("after %s\n%s does not put it back\nwant %s\nnow  %s", strings.Join(done, "\n"), step, spansOf(want.view), spansOf(now))
 						}
+						if held := e.planFile(); !reflect.DeepEqual(held, want.file) {
+							t.Fatalf("after %s\n%s does not put the plan back\nwant %v\nnow  %v", strings.Join(done, "\n"), step, want.file, held)
+						}
+					}
+				case k == 2 || k == 3:
+					step = e.randomTimelineEdit(r)
+					now = e.view()
+					if !reflect.DeepEqual(e.planFile(), file) {
+						undone = append(undone, clipThen{before, file})
+						redone = nil
 					}
 				case len(now.Captions) == 0:
 					// Every caption is removed, and there is nothing to
@@ -461,7 +524,7 @@ func TestRandomCaptionEditsKeepTheirRules(t *testing.T) {
 						}
 						break
 					}
-					undone = append(undone, before)
+					undone = append(undone, clipThen{before, file})
 					redone = nil
 					if why := broken(c, before, now); why != "" {
 						t.Fatalf("after %s\n%s: %s\nthen %s\nnow  %s", strings.Join(done, "\n"), step, why, spansOf(before), spansOf(now))
@@ -504,9 +567,14 @@ func TestEveryCaptionEditKeepsTheRules(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			e := newCaptionEditor(t)
-			before := e.view()
+			before, file := e.view(), e.planFile()
 			e.make(c)
 			after := e.view()
+			// Every one of these edits does something to a fresh clip, so a
+			// refused one would pass every rule below and prove nothing.
+			if reflect.DeepEqual(e.planFile(), file) {
+				t.Fatalf("the edit changed nothing in the plan")
+			}
 			if why := broken(c, before, after); why != "" {
 				t.Errorf("%s\nthen %s\nnow  %s", why, spansOf(before), spansOf(after))
 			}

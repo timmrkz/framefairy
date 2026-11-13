@@ -307,10 +307,10 @@ rather than the captions' band.
 
 Every walk also checks, after every step, that the clip timeline shows
 the clip the engine has: where it starts and ends and every cut, read
-off the handles' `aria-valuenow`, to a millisecond. The engine's state a
-walk compares before and after a step, for Undo and Redo, is the clip's
-pieces with their crops, keyframes and turns as well as its captions and
-how they look. A play goes as far into the clip as the
+off the handles' `aria-valuenow`, to a millisecond. That Undo and Redo
+put back the clip, its pieces, crops and captions, is tested in Go, in
+`cmd/framefairy-app/captionedits_test.go`, whose random runs trim, cut,
+join and crop as well as correct words. A play goes as far into the clip as the
 walk asked, by the playhead, `playFor`, the same as in `words.mjs`.
 
 A walk is a script in the folder that walks with `walk.mjs`, which runs
