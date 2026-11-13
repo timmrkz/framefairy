@@ -1,3 +1,4 @@
+ 53	sequences.mjs SEQUENCE=the parts not transcribed yet light one way, the arrows walk onto and off them, they give way as the work hears, and a search of what was said shows them
  50	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
  45	sequences.mjs SEQUENCE=a video added is transcribed to its end from its menu
  44	sequences.mjs SEQUENCE=a step onto a word pops it over the paused frame
@@ -10,14 +11,13 @@
  31	sequences.mjs SEQUENCE=Dictating in the middle of a long report keeps the cursor in view
  30	sequences.mjs SEQUENCE=a label tells a video apart, the video keeps its name, and both are centred in the title bar
  29	sequences.mjs SEQUENCE=a cut's left edge dragged shows the frames before the cut, never one after it
- 29	sequences.mjs SEQUENCE=a search that found its clips moves the window on in the frame they show
  28	sequences.mjs SEQUENCE=a short of a picture that starts after its sound shows what the video preview shows
+ 26	sequences.mjs SEQUENCE=a search that found its clips moves the window on in the frame they show, and the dots after it begin at that window, with a dashed edge
  26	sequences.mjs SEQUENCE=The arrow keys scroll the report a line at a time, while dictating and after
  26	sequences.mjs SEQUENCE=a clip filmed by two cameras has one crop, through a cut, a trim and a drag
  26	words.mjs
  26	sequences.mjs SEQUENCE=a cut's edges dragged with shift keep the playhead in line with them and go the way of the hand
  24	sequences.mjs SEQUENCE=a restart brings back a clip trimmed, its short and a search stopped, as they were
- 24	sequences.mjs SEQUENCE=the dots after a search's window begin at the window it moves on to, with a dashed edge
  24	sequences.mjs SEQUENCE=a video whose file is moved away says File not found at once while the app is in front, says so once in a toast when opened, and shows again once it is back
  23	sequences.mjs SEQUENCE=a clip card clicked changes the picture, the crop frame and the captions in one frame
  23	sequences.mjs SEQUENCE=the app dragged a pixel at a time moves every part one way, the sides equal and set by the width
@@ -29,20 +29,16 @@
  20	sequences.mjs SEQUENCE=a render cut off by the app closing says so at its Render button, and Continue carries it on
  18	sequences.mjs SEQUENCE=a clip card clicked puts up its clip from what was read while the hand rested
  18	sequences.mjs SEQUENCE=a word corrected in a clip reads corrected in the search of what was said
- 18	sequences.mjs SEQUENCE=the parts not transcribed yet give way as the work hears
  18	sequences.mjs SEQUENCE=the walks' video has words that share a frame at the start, in the middle and at the end of a caption
  17	sequences.mjs SEQUENCE=the captions stay over the video preview while the clip's start is dragged later and its end earlier
  17	sequences.mjs SEQUENCE=a cut's edges dragged take the playhead along, the way the clip's edges do, and the edge under the playhead is the edge's to take
  15	sequences.mjs SEQUENCE=Shift and the arrows skip 5 seconds outside a clip, past where the transcript ends
- 15	sequences.mjs SEQUENCE=Shift and the arrows walk onto a part not transcribed yet and off it
  15	sequences.mjs SEQUENCE=Shift+Enter and the arrow keys keep the cursor in view in the report
  15	sequences.mjs SEQUENCE=a press on an edge or a mark puts the playhead on it at once
  15	sequences.mjs SEQUENCE=a search of what was said finds the sentences, names their clips and puts the playhead on one
- 14	sequences.mjs SEQUENCE=a search of what was said shows the parts not transcribed yet
  14	sequences.mjs SEQUENCE=a short rendered into the folder for shorts is known as rendered
  13	sequences.mjs SEQUENCE=a rotated part keeps its keyframe, and has the rotate icon drawn in its middle
  12	sequences.mjs SEQUENCE=the episode played through a clip with cuts shows only the video, and the clip its frame and captions
- 12	sequences.mjs SEQUENCE=the hand and the keys light a card of the transcript and a part not transcribed yet the same
  12	sequences.mjs SEQUENCE=undo takes back a crop moved, a word corrected and a font picked, in turn, and redo does them again
  12	sequences.mjs SEQUENCE=one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it
  11	sequences.mjs SEQUENCE=Relaunch waits while a search runs, and the search goes on
