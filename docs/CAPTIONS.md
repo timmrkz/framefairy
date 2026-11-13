@@ -117,8 +117,9 @@ and ←, a new frame each press. The walks' video says "so", "sich" and
 in the middle and at the end of a caption in every walk that shows
 captions, and every other word keeps its time. Every caption walk, the
 edges dragged, a word corrected or removed, runs over them, and the walk
-"the walks' video has words that share a frame at the start, in the
-middle and at the end of a caption" checks the three are lit together.
+"the walks' video has words that share a frame" checks that "so" is lit
+together with the word beside it. Where in a caption such a word may
+be is the engine's, `TestWordsTooShortForAFrameAreLitTogether`.
 They found that a click on the edge where a caption appears put the
 playhead in the middle of its first word, in the frame before the
 caption is up, when that word is too short for a frame. `captionAppears`
