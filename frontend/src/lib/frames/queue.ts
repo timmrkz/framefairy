@@ -858,7 +858,7 @@ export class FrameQueue {
   // time it comes true the listeners are told, or the canvas has changed
   // its size, or the queue has closed, which tells no one: the video
   // preview it belonged to has gone or has a queue of its own by then. For the walks and the
-  // benchmark, which read the picture once it stands, see stillBlurred in
+  // benchmark, which read the picture once it stands, see stillFrame in
   // walks/rules.mjs. It needs the app's own timers to run, the one after
   // a frame is put up that asks for it again among them, see put.
   get standing(): boolean {

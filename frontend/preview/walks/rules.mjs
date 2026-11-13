@@ -89,19 +89,18 @@ export function overlaid(samples, state, frame) {
 }
 
 // What is wrong with the size of the frame standing on the video preview,
-// or null: nothing stands still, or it was decoded at the size the canvas
-// asks for. A frame asked for again after a resize may still be on its
-// way, so the size is read once the frame queue says the picture stands,
-// see standing in lib/frames/queue.ts, in the same moment. The page hears
-// that from the queue and from the page changing, the canvas's size among
-// it, never on the clock, and follows a new queue when a step opens
-// another video, see __standing in preview/standing.ts. A frame that
-// never comes is a walk that hangs, ended by the -timeout of make walks. The queue needs the app's own timers to stand, so under a
+// as stillFrame read it, or null when it was decoded at the size the
+// canvas asks for. A frame asked for again after a resize may still be on
+// its way, so stillFrame reads the size once the frame queue says the
+// picture stands, see standing in lib/frames/queue.ts, in the same moment.
+// The page hears that from the queue and from the page changing, the
+// canvas's size among it, never on the clock, and follows a new queue when
+// a step opens another video, see __standing in preview/standing.ts. A
+// frame that never comes is a walk that hangs, ended by the -timeout of
+// make walks. The queue needs the app's own timers to stand, so under a
 // held clock a picture that does not stand yet is a walk that reads it at
 // the wrong time, and fails at once.
-export async function stillBlurred(page) {
-  const got = await stillFrame(page);
-  if (!got || (got.state !== "paused" && got.state !== "cued")) return null;
+function blurOf(got) {
   if (got.frame[0] === got.want[0] && got.frame[1] === got.want[1]) return null;
   return `the frame on the video preview is ${got.frame.join(" by ")}, the canvas is ${got.canvas.join(" by ")} and the file ${got.file.join(" by ")}, so it should be ${got.want.join(" by ")}`;
 }
@@ -219,9 +218,24 @@ export class Watch {
     // larger than the file's own. A frame asked for again after a resize
     // may still be on its way, and is waited for. Tim saw the
     // first frame of every workspace blurred, decoded at the 300 by 150 of
-    // a canvas not laid out yet, plan row 2.187.
-    const blurred = await stillBlurred(page);
-    if (blurred) this.broke("a still frame is at the canvas's size", blurred);
+    // a canvas not laid out yet, plan row 2.187. Looked at once for each
+    // clip on screen and each size of the canvas, the first time the
+    // picture stands still: the size a frame is decoded at is the frame
+    // queue's rule, held in lib/frames/queue.test.ts, and waiting for the
+    // picture to stand after every step was most of what this rule cost.
+    const canvas = await page.evaluate(() => {
+      const c = document.querySelector(".screen canvas");
+      return c ? `${c.width}x${c.height}` : "";
+    });
+    const look = `${JSON.stringify(at)} ${canvas}`;
+    if (look !== this.sharpSeen) {
+      const got = await stillFrame(page);
+      if (got && (got.state === "paused" || got.state === "cued")) {
+        this.sharpSeen = look;
+        const blurred = blurOf(got);
+        if (blurred) this.broke("a still frame is at the canvas's size", blurred);
+      }
+    }
 
     // Enter opens the word in the keyboard's frame, and no other: the
     // frame is there to say which word Enter opens.
