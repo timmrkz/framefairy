@@ -36,6 +36,7 @@
  14	sequences.mjs SEQUENCE=a short rendered into the folder for shorts is known as rendered
  14	sequences.mjs SEQUENCE=an edge dragged while the clip plays changes nothing that plays
  14	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
+ 14	sequences.mjs SEQUENCE=I after the last word is not offered, and says why, and a first search leaves the cards a hand works in alone
  13	sequences.mjs SEQUENCE=a rotated part keeps its keyframe, and has the rotate icon drawn in its middle
  12	sequences.mjs SEQUENCE=one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it
  12	sequences.mjs SEQUENCE=the episode played through a clip with cuts shows only the video, and the clip its frame and captions
@@ -46,7 +47,6 @@
  11	sequences.mjs SEQUENCE=after Cancel the window moves, and Search looks where it was moved
  11	sequences.mjs SEQUENCE=the walks' video has words that share a frame
  11	sequences.mjs SEQUENCE=two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back
- 10	sequences.mjs SEQUENCE=I after the last word is not offered, and says why
  10	sequences.mjs SEQUENCE=Moving the cursor up while dictating keeps it in view, and the words coming in leave the field where it is
  10	sequences.mjs SEQUENCE=The settings say each thing once, in one way
  10	sequences.mjs SEQUENCE=While dictating, the cursor after the words is the field's own, and ArrowDown there moves nothing
@@ -55,7 +55,6 @@
  10	sequences.mjs SEQUENCE=a video dropped on any page is added and opens, the way Add adds one
  10	sequences.mjs SEQUENCE=the font list hangs on the field's edge in each font's own face, searches in order, and a family picked keeps its look
  10	sequences.mjs SEQUENCE=the transcript is exported with a word corrected in the caption box
- 10	sequences.mjs SEQUENCE=a running search leaves the clip on screen alone, and the view a hand works in
   9	sequences.mjs SEQUENCE=While dictating the field follows the words until scrolled away, like a terminal
   9	sequences.mjs SEQUENCE=a caption's edges dragged in over a word and back out stay where they are let go
   9	sequences.mjs SEQUENCE=a click on a thumbnail or a keyframe while a word is open ends the correction, and the captions follow
@@ -69,6 +68,7 @@
   9	sequences.mjs SEQUENCE=loop switched off as the sound crosses the clip's end ends the play ahead of the sound
   9	sequences.mjs SEQUENCE=removing the chosen clip chooses the one beside it, and put back it is chosen again where the playhead was
   9	sequences.mjs SEQUENCE=shift and the arrows skip ahead through a clip on the video, and walk its words on the clip
+  8	sequences.mjs SEQUENCE=a running search leaves the clip on screen alone, and a card clicked centres the playhead
   8	sequences.mjs SEQUENCE=Backspace after typing at the end of a dictation takes away no words still to be written down
   8	sequences.mjs SEQUENCE=Continue fills the transcription from nothing over what is left to hear
   8	sequences.mjs SEQUENCE=Dictate writes what is said while it is said, where the cursor was, and undo takes it back

@@ -1530,10 +1530,12 @@ export const steps = {
   },
   // ["work in the cards"]
   //                    while a search runs, opens the transcript and clicks
-  //                    a card no clip holds, in the middle of the list. The
-  //                    playhead goes there and stands in the middle of the
-  //                    clip timeline, and what the screen shows is kept for
-  //                    "view stays". Tim's report of 14 November
+  //                    a card no clip holds, in the middle of the list,
+  //                    and keeps what the screen shows for "view stays".
+  // ["work in the cards", "centred"]
+  //                    the same, on a clip, and the playhead stands in the
+  //                    middle of the clip timeline. Tim's report of 14
+  //                    November
   async "work in the cards"(walk, arg, s) {
     const { page, watch } = walk;
     const path = await episodeOn(page);
@@ -1553,16 +1555,16 @@ export const steps = {
     await watch.step("click", s);
     await settle(page);
     const seen = await viewOf(page);
+    const st = await ask(page, "State", path);
+    walk.atWork = { path, row, clips: st.clips.length, chosen: st.chosen ?? "", ...seen };
+    if (arg !== "centred") return;
     // The playhead is drawn on the start of its frame, so it stands up to
     // a frame off the moment the card put it on.
     const second = (await xOf(page, seen.at + 1)) - (await xOf(page, seen.at));
     const frameWide = second / (await rate(page));
     if (!(Math.abs(seen.x - seen.middle) <= frameWide + 1)) {
       walk.wrong = `the card ${row} clicked put the playhead at ${seen.x.toFixed(1)} px, not in the middle of the clip timeline at ${seen.middle.toFixed(1)} px`;
-      return;
     }
-    const st = await ask(page, "State", path);
-    walk.atWork = { path, row, clips: st.clips.length, chosen: st.chosen ?? "", ...seen };
   },
   // ["view stays"]     the search "work in the cards" worked during ends
   //                    with clips found, and the clip chosen, the playhead,
@@ -1582,6 +1584,9 @@ export const steps = {
     else if (Math.abs(now.at - was.at) > 0.001) walk.wrong = `the playhead went from ${was.at.toFixed(3)} s, where the card put it, to ${now.at.toFixed(3)} s`;
     else if (Math.abs(now.top - was.top) > 1) walk.wrong = `the cards scrolled from ${was.top.toFixed(0)} px to ${now.top.toFixed(0)} px`;
     else if (Math.abs(now.x - was.x) > 1) walk.wrong = `the playhead moved on the clip timeline from ${was.x.toFixed(1)} px to ${now.x.toFixed(1)} px`;
+    // The clip list again, for the steps after it.
+    await page.locator('button[aria-label="Close the search"]').click();
+    await watch.step("click", s);
   },
   // ["hand stopped"]   I is pressed on a part not heard yet and Cancel at
   //                    the head of the clip list, so the clip made by hand

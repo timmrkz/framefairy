@@ -72,20 +72,16 @@ export default [
     // clip list again every two seconds, and every read made every clip a
     // new one, the clip on screen too, so its captions were asked for
     // again and the clip timeline and the caption box drew them again,
-    // with nothing changed. Plan row 2.242. And a search that ends while
-    // the hand works in the transcript leaves the playhead, the cards and
-    // the clip timeline where the hand put them, and a card clicked puts
-    // the playhead in the middle of the clip timeline. Tim's report of 14
+    // with nothing changed. Plan row 2.242. And a card clicked puts the
+    // playhead in the middle of the clip timeline, Tim's report of 14
     // November, issue #852.
-    name: "a running search leaves the clip on screen alone, and the view a hand works in",
+    name: "a running search leaves the clip on screen alone, and a card clicked centres the playhead",
     steps: [
       ["model", "holds"],
       ["head"],
       ["wait for", "Cancel"],
       ["asks none", "Captions", 7],
-      ["work in the cards"],
-      ["model", "answers"],
-      ["view stays"],
+      ["work in the cards", "centred"],
     ],
   },
   {
@@ -270,8 +266,20 @@ export default [
   {
     // Tim on #456: I at the end of the video made a card that could only
     // fail. Nothing is said after the last word, so I is not offered there.
-    name: "I after the last word is not offered, and says why",
-    steps: [["add", 120], ["wait for", "Search"], ["no mark after the end", 120]],
+    // And Tim's report of 14 November, issue #852: the first search of a
+    // video just added ended while he picked cards in the transcript, and
+    // its first clip took the playhead, the cards and the clip timeline
+    // away from him. None of its clips is chosen then.
+    name: "I after the last word is not offered, and says why, and a first search leaves the cards a hand works in alone",
+    steps: [
+      ["model", "holds"],
+      ["add", 120],
+      ["wait for", "Cancel"],
+      ["work in the cards"],
+      ["model", "answers"],
+      ["view stays"],
+      ["no mark after the end", 120],
+    ],
   },
   {
     // Tim's report of 24 October, 15.02. A search on a window at the very
