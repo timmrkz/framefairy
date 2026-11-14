@@ -1792,12 +1792,16 @@ export const steps = {
       walk.wrong = `I at ${at} s on a video with no speech made a clip that is ${job.state}, not failed`;
       return;
     }
-    // The failed news is in the store, so its card is drawn once the app
-    // is quiet. Its toast comes with the Go side's notice, an event of its
-    // own after the news, see notice.go, there once the interface has
-    // heard all the Go side said. Both are read straight away, well
-    // inside the toast's own time.
-    await caughtUp(page, url);
+    // Until the app has kept a state with the news the list of jobs has,
+    // by its seq, since the Go side sends it after it lets go of the
+    // queue, and a state the app could not make whole is dropped and
+    // asked for again, issue #829. Then its card is drawn once the app is
+    // quiet. Its toast comes with the
+    // Go side's notice, an event of its own after the news, see
+    // notice.go, there once the interface has heard all the Go side
+    // said. Both are read straight away, well inside the toast's own
+    // time.
+    await caughtUp(page, url, [job]);
     const said = await page.evaluate((id) => {
       const li = document.querySelector(`li[data-key^="${id}/"]`);
       return {

@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"framefairy/engine"
@@ -435,5 +436,86 @@ func TestAClipsPartIsHeardBesideTheWholeVideo(t *testing.T) {
 	}
 	if again := svc.Transcribe(eps[0]); again.ID != whole.ID {
 		t.Errorf("the whole video asked for again is %s, not the one that runs, %s", again.ID, whole.ID)
+	}
+}
+
+// A clip made by hand that fails, or is stopped with Cancel, is told to
+// the window failed or stopped in the same news as its card says so, never
+// as a job still running with its clip in the step failed or stopped. The
+// window draws a running job's clip by its step, and knows no such step,
+// so its card said the job's name, Make a clip, until the next news came,
+// issue #829.
+//
+// On the real disk: ffprobe is asked for the video that fails, which is
+// not there.
+func TestAClipMadeByHandThatEndsIsToldSoInOneNews(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name  string
+		stops bool
+		state string
+		step  string
+	}{
+		{"failed", false, JobFailed, engine.StepFailed},
+		{"stopped with Cancel", true, JobStopped, engine.StepStopped},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			s, eps := memoryLibrary(t, "talk.mp4")
+			var mu sync.Mutex
+			var heard []Job
+			ended := make(chan string, 4)
+			s.jobs = newQueue(s.store, func(u JobUpdate) {
+				mu.Lock()
+				heard = append(heard, u.Job)
+				mu.Unlock()
+				if !u.Job.going() {
+					ended <- u.Job.ID
+				}
+			}, func(string) {})
+			logJobsOnFailure(t, s.jobs)
+			id, req := engine.NewClipID(), engine.ClipRequest{At: 0}
+			running := make(chan struct{})
+			job := s.jobs.addSteps(eps[0], engine.JobClip, "Make a clip", false, func(j *Job) {
+				j.JobRecord.ID, j.At = id, req.At
+			}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
+				// The one stopped makes its clip once Cancel has reached it,
+				// so it is called off on its way, the way the engine is
+				// called off anywhere.
+				if c.stops {
+					close(running)
+					<-ctx.Done()
+				}
+				return p.MakeClip(ctx, id, req, host)
+			})
+			if c.stops {
+				<-running
+				s.StopClipWork(eps[0], "")
+			}
+			for got := range ended {
+				if got == job.ID {
+					break
+				}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			var last Job
+			for _, j := range heard {
+				if j.ID != job.ID {
+					continue
+				}
+				for _, u := range j.Underway {
+					if j.going() && (u.Step == engine.StepFailed || u.Step == engine.StepStopped) {
+						t.Errorf("the window was told the job is %s with its clip %s: %+v", j.State, u.Step, j.Underway)
+					}
+				}
+				if j.Seq > last.Seq {
+					last = j
+				}
+			}
+			if last.State != c.state || len(last.Underway) != 1 || last.Underway[0].Step != c.step {
+				t.Errorf("the clip ended %s with %+v, not %s where it lies", last.State, last.Underway, c.state)
+			}
+		})
 	}
 }
