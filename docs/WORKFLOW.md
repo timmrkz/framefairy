@@ -246,14 +246,6 @@ may conflict. When several pushes to `main` come close together, the
 newest run stops the older ones, and a hidden mark in the comment keeps
 a run stopped halfway from telling a pull request twice.
 
-One comment is easy to lose: a session that was not listening, or a
-delivery that never came, and the pull request sits in conflict with
-nobody told. So the workflow also runs every 15 minutes and tells a pull
-request that still conflicts at the same commit again, 15 minutes after
-the first comment, 30 after the second, 60 after the third, and so on up
-to once in five days. A session answers the first one it hears, and one
-that hears nothing all night gets a handful of comments, not a hundred.
-
 It comments, so it needs a token that writes, and it gets one only from
 `main`'s own copy of the file, the way `publish.yml` does. A push to
 `main` starts it, and a push to any other branch starts it through

@@ -269,8 +269,7 @@ func braces(glob string) []string {
 // and on a push to any other branch through builds.yml, whose start GitHub
 // reports to main's copy. A push to a branch must not start it directly,
 // because then the branch's own copy, code nobody has reviewed, would get
-// the token that comments. It runs on a schedule too, which GitHub runs
-// from main, so a pull request still in conflict is told again.
+// the token that comments.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestNoPullRequestTarget(t *testing.T) {
@@ -322,11 +321,6 @@ func TestNoPullRequestTarget(t *testing.T) {
 			continue
 		}
 		waitsOn = fmt.Sprint(builds[0])
-		// A comment that wakes nobody is the whole notice, unless the
-		// schedule tells the pull request again.
-		if crons, _ := events["schedule"].([]any); len(crons) == 0 {
-			t.Errorf("%s runs on no schedule, so a pull request whose one comment woke nobody is never told again", name)
-		}
 	}
 	if !seen {
 		t.Error("found no conflicts.yml, so nothing tells a pull request that it conflicts")

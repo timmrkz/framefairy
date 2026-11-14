@@ -1,18 +1,12 @@
 # A pull request that no longer merges into main is told so in a comment
-# that names the files in conflict. GitHub sends no event when a pull
-# request starts to conflict, and runs no CI on one, so without the
-# comment nothing wakes the session that owns it. After a push to main
-# every open pull request is tried, and after a push to another branch of
-# this repository, the pull request of that branch, at the commit pushed.
-# Every 15 minutes every open pull request is tried again, and one that
-# still conflicts at the same commit is told again, 15 minutes after the
-# first comment, then 30 after the second, 60 after the third, and so on
-# up to once in five days.
-# One comment that never wakes anybody is followed by another, and one
-# nobody answers for a night costs a handful of comments, not a hundred.
-# git merge-tree merges in memory, without a checkout of either side, and
-# no code of the pull request runs. A pull request from a fork is left
-# alone.
+# that names the files in conflict, once for each commit of it. GitHub
+# sends no event when a pull request starts to conflict, and runs no CI
+# on one, so without the comment nothing wakes the session that owns it.
+# After a push to main every open pull request is tried, and after a push
+# to another branch of this repository, the pull request of that branch,
+# at the commit pushed. git merge-tree merges in memory, without a
+# checkout of either side, and no code of the pull request runs. A pull
+# request from a fork is left alone.
 #
 # It writes a comment, so it runs from main alone, the way publish.yml
 # does: on a push to main, and when builds.yml starts on a push to any
@@ -35,8 +29,6 @@ on:
   workflow_run:
     workflows: ["Builds to update to"]
     types: [requested]
-  schedule:
-    - cron: "*/15 * * * *"
 
 # A newer main says all there is to say, and so does a newer push to a
 # branch. The hidden mark in each comment keeps a run that was stopped
@@ -55,7 +47,7 @@ jobs:
   tell:
     # A build of a push to a branch of this repository other than main.
     if: >-
-      github.event_name == 'push' || github.event_name == 'schedule' || (
+      github.event_name == 'push' || (
         github.event.workflow_run.event == 'push' &&
         github.event.workflow_run.head_repository.full_name == github.repository &&
         github.event.workflow_run.head_branch != 'main')
@@ -72,7 +64,6 @@ jobs:
           # the pull request may not show as its head yet.
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           PUSHED: ${{ github.event.workflow_run.head_sha }}
-          EVENT: ${{ github.event_name }}
         shell: bash
         run: |
           gh pr list --base main --state open --limit 100 --json number,headRefName,headRefOid,isCrossRepository \
@@ -89,24 +80,9 @@ jobs:
             # 1 and a tree is a conflict, anything else git could not try.
             [ $? -eq 1 ] && [[ ${out%%$'\n'*} =~ ^[0-9a-f]{40,64}$ ]] ||
               { echo "::warning::#$n: git merge-tree could not merge it: $out"; continue; }
-            # When each comment with the mark was written, oldest first.
-            told=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$n/comments" \
-              --jq ".[] | select(.body | contains(\"$mark\")) | .created_at") ||
+            said=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$n/comments" --jq '.[].body') ||
               { echo "::warning::#$n: could not read its comments"; continue; }
-            times=$(printf '%s' "$told" | grep -c . || true)
-            if [ "$times" -gt 0 ]; then
-              # A push tells a commit once. The schedule tells it again once
-              # 15 minutes have passed since the last comment, twice that
-              # after the second, and so on.
-              [ "$EVENT" = schedule ] ||
-                { echo "#$n at ${head:0:7} conflicts, told already"; continue; }
-              last=$(date -d "${told##*$'\n'}" +%s) ||
-                { echo "::warning::#$n: could not read when it was told: ${told##*$'\n'}"; continue; }
-              since=$(( $(date +%s) - last ))
-              wait=$(( 900 << (times < 10 ? times - 1 : 9) ))
-              [ "$since" -ge "$wait" ] ||
-                { echo "#$n at ${head:0:7} conflicts, told $times times, the last $since s ago, again after $wait s"; continue; }
-            fi
+            case $said in *"$mark"*) echo "#$n at ${head:0:7} conflicts, told already"; continue ;; esac
             echo "#$n at ${head:0:7} conflicts, telling it"
             files=$(printf '%s\n' "$out" | tail -n +2 | sed 's/.*/- `&`/')
             gh pr comment "$n" --body "This pull request at $(git rev-parse --short "$head") no longer merges into main at $(git rev-parse --short HEAD). These files conflict:
