@@ -12,21 +12,6 @@ import { clock } from "../../../src/lib/clock.ts";
 import { canLook, changesOf, clickCard, clickedFromAhead, halfOf, newCards, pieceCount, rate, restAhead, shortOf, shotClips, url } from "../common/steps.mjs";
 
 export const steps = {
-  // ["clips with", [word, n]]
-  //                    n clips of the episode on screen, of those not
-  //                    removed, have a caption with this very word
-  async "clips with"(walk, arg) {
-    const { page } = walk;
-    const [word, n] = arg;
-    const path = await episodeOn(page);
-    const bare = (text) => text.replace(/[^\p{L}\p{N}]/gu, "");
-    let have = 0;
-    for (const c of (await ask(page, "Clips", path)).filter((c) => !c.rejected)) {
-      const view = await ask(page, "Captions", path, c.plan, c.id);
-      if (view.captions.some((cap) => cap.lines.some((l) => l.words.some((w) => bare(w.text) === word)))) have++;
-    }
-    if (have !== n) walk.wrong = `${have} clips have "${word}", not ${n}`;
-  },
   // ["make while paused", key]
   //                    the same with the video paused, and no play
   // ["make while playing", key]

@@ -332,6 +332,7 @@ export const steps = {
     const g = await handles(page);
     await drag(page, middle(g.start), high(g.track), (await xOf(page, end - arg - 4.5)) - middle(g.start), false);
     await watch.step("trim", s);
+    const start = (await engineState(page, watch.at)).segments[0].start;
     await preview(page, 0.2);
     // Every sample the sound card plays from here, with the sound card's
     // own frame it plays at, see record in preview/clock.ts.
@@ -360,7 +361,15 @@ export const steps = {
     // fast as its frames are decoded, so a play not held ran on into the
     // clip's end and round to its start between two presses, and the loop
     // went off at the clip's start.
-    await playUntil(page, { past: end - arg, hold: true });
+    //
+    // Each way is the sound's, not the playhead's. The loop switched off
+    // ends the play after the time through the sound is in, see sounded
+    // in lib/frames/queue.ts, and on a busy runner the picture came so
+    // late that the sound had crossed the clip's end while the playhead
+    // still stood more than a second behind it. The play then rightly
+    // went round once more, and the walk read the clip's start drawn
+    // after its end.
+    await playUntil(page, { past: end - arg - start, hold: true, sound: true });
     await page.evaluate(() => {
       window.__played = [];
       window.__playWatch = true;
@@ -385,7 +394,7 @@ export const steps = {
       await page.keyboard.press("l");
       await settle(page);
       await holdSound(page, false);
-      await playUntil(page, { most: 0.12, hold: i < 4 });
+      await playUntil(page, { most: 0.12, hold: i < 4, sound: true });
     }
     const pressed = await counts();
     // Until the play stops at the end, or has gone on by what was left
