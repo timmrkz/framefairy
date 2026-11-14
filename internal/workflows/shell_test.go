@@ -92,6 +92,8 @@ func TestNoNewShellScript(t *testing.T) {
 }
 
 // shebang says whether a file starts the way a shell script does.
+//
+// On the real disk: what is read is the repository's own files.
 func shebang(t *testing.T, path string) bool {
 	t.Helper()
 	f, err := os.Open(path)
