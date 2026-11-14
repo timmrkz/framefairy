@@ -1,9 +1,10 @@
 # Signs and publishes the builds builds.yml makes, and keeps the channel
 # list the app updates itself from. See docs/UPDATES.md.
 #
-# builds.yml runs a branch's own code, so it holds no secret and no token
-# that can write: a push runs the workflow file of the branch pushed, and
-# whatever that file is given, any branch can take. This workflow is
+# builds.yml runs a branch's own code, so main's copy of it asks for no
+# secret and no token that can write. That is no wall: a push runs the
+# workflow file of the branch pushed, and whatever that file asks for, any
+# branch can ask for. What holds is the environment below. This workflow is
 # started by GitHub whenever builds.yml starts or ends, and GitHub always
 # runs it from main, whatever branch the build was of. So the update key,
 # the token that writes the release and the tools that use them are
@@ -172,7 +173,9 @@ jobs:
             channel=main
             name=main
             tag=main
-            holder=main
+            # main's commit, never its name: a tag called main is the very
+            # thing this check is for, and a name could be read as the tag.
+            holder=$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha 2>/dev/null) || holder=
           else
             found=$(gh pr list --head "$BRANCH" --state open --json number,title,headRefOid,isCrossRepository \
               --jq '[.[] | select(.isCrossRepository | not)][0] // empty')
@@ -192,11 +195,14 @@ jobs:
           # newer one after it. A tag pushed with the name of main, or of a
           # pull request's branch, runs at any commit, and its record reads
           # just like a push to that branch.
-          held=$(gh api "repos/$GH_REPO/compare/$SHA...$holder" --jq .status 2>/dev/null) || held=
+          held=
+          if [ -n "$holder" ]; then
+            held=$(gh api "repos/$GH_REPO/compare/$SHA...$holder" --jq .status 2>/dev/null) || held=
+          fi
           case $held in
           identical | ahead) ;;
           "")
-            echo "::error::GitHub could not compare $SHA with $holder, so it is not known to be $channel's, and it is not signed."
+            echo "::error::GitHub could not compare $SHA with $channel's newest commit, so it is not known to be $channel's, and it is not signed."
             exit 1
             ;;
           *)
@@ -300,7 +306,7 @@ jobs:
           fi
 
       - id: sign
-        if: steps.zip.outputs.ready == 'true'
+        if: steps.check.outcome == 'success'
         name: Sign it
         env:
           FRAMEFAIRY_UPDATE_KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
@@ -318,22 +324,6 @@ jobs:
             exit 1
           fi
           ls -l dist
-
-      # This workflow runs from main, so a build it refuses fails here, on
-      # main's runs, and the pull request would only miss its Ready to
-      # update to with no reason given. The refusal goes on the commit
-      # that was built, where the pull request shows it. Issue #369.
-      - name: Say on the commit why it is not signed
-        if: failure() && (steps.check.outcome == 'failure' || steps.sign.outcome == 'failure')
-        env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          why=$(grep -m1 '^  ' "$RUNNER_TEMP/refused.txt" | sed 's/^ *//' || true)
-          [ -n "$why" ] || why=$(head -n 1 "$RUNNER_TEMP/refused.txt" | sed 's/^framefairy-release: //')
-          gh api "repos/$GH_REPO/statuses/$SHA" \
-            -f state=failure -f context="Ready to update to" \
-            -f description="Not signed: $(printf '%s' "$why" | cut -c1-120)" \
-            -f target_url="$GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID" >/dev/null
 
       - name: The release the builds live in
         if: steps.zip.outputs.ready == 'true'
@@ -379,6 +369,31 @@ jobs:
           gh api "repos/$GH_REPO/statuses/$SHA" \
             -f state=success -f context="Ready to update to" \
             -f description="On the Updates page as $CHANNEL" >/dev/null
+
+      # This workflow runs from main, so a build that is not published
+      # fails here, on main's runs, and the pull request would only miss
+      # its Ready to update to with no reason given. So whatever failed,
+      # the refusal of the check or the signer, or anything else on the
+      # way, says so on the commit that was built, where the pull request
+      # shows it, issue #369. The list reads it too: a commit marked so has
+      # no build coming, see scripts/build-ended.sh.
+      - name: Say on the commit why it is not published
+        if: failure()
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          why=
+          if [ -s "$RUNNER_TEMP/refused.txt" ]; then
+            why=$(grep -m1 '^  ' "$RUNNER_TEMP/refused.txt" | sed 's/^ *//' || true)
+            [ -n "$why" ] || why=$(head -n 1 "$RUNNER_TEMP/refused.txt" | sed 's/^framefairy-release: //')
+            why="Not signed: $why"
+          else
+            why="Not published: a step of its publishing failed, see the run"
+          fi
+          gh api "repos/$GH_REPO/statuses/$SHA" \
+            -f state=failure -f context="Ready to update to" \
+            -f description="$(printf '%s' "$why" | cut -c1-140)" \
+            -f target_url="$GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID" >/dev/null
 
   # Whenever a build ends, whether publish signed it, skipped it or
   # refused it: a build that ended without one is a build no longer to

@@ -340,8 +340,8 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
   settings page, and keeps a copy in his password manager.
 - **No branch can read it.** A push runs the workflow file of the branch
   pushed, so whatever the build workflow is given, any branch can take,
-  by rewriting that file. So the build, `builds.yml`, gets no secret and no
-  token that can write, and leaves only the zip. `publish.yml` signs it.
+  by rewriting that file. So the build, `builds.yml`, asks for no secret
+  and no token that can write, and leaves only the zip. `publish.yml` signs it.
   GitHub runs that one from main whatever branch was built, and the key
   sits in an environment only main can enter. Which channel, commit and
   version a build is, it works out again from GitHub's record of the run,
@@ -417,7 +417,8 @@ reviewed yet, and `sign` runs only once it passed:
 
 A refused build says so on the commit that was built, as a failed
 Ready to update to with the first thing found, so the pull request shows
-why its build never reached the Updates page.
+why its build never reached the Updates page. A publish that fails for
+any other reason says so the same way.
 
 The signer runs from main, so the lists are main's, and a branch that
 changes them changes nothing about how its own build is judged. Each
@@ -722,8 +723,8 @@ minutes. Once a channel is picked, another channel is what follows it.
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, a newer build in place of one that is ready once it is whole, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
 | The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot whenever the page marks something, in the colour the page wears it in, issue #406: work on a newer build, looking, downloading or a newer commit being built, pulses in the accent, a newer build ready stands still in the accent, a pull request followed that closed or that conflicts with main stands still in the colour of a warning, the dot of work on it pulsing in that colour too, and a check that did not get through stands still in red. Up to date, a build made on the Mac and a build that does not update itself wear none. Both read the one state and the one mark, in `frontend/src/lib/updates.svelte.ts`, so the row never says less than the page or something else. Its title then says what the page says. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or PR #18, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check while a channel is followed, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. A check or a download that did not get through says why in words a person uses, from `updateProblem`, no connection to GitHub, GitHub busy, nothing found, a build that could not be verified or a disk that took nothing, in one short sentence, and asks to check the internet connection only when the error was the network's, a certificate the Mac does not trust among them, which is what a hotel's Wi-Fi or a company's proxy shows it. What the system said is under it apart, in a field at the height of a control on one line that scrolls sideways, with a button at its end that copies it for a report, and Try again stands on the same row as the field, issue #417. Looking is shown for at least 1.4 seconds, on the page and on the row alike, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
-| The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
-| The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so it gets no secret and no token that can write. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
+| The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `check` refuses a build that could reach past the app, before the key is there, `sign` signs a build `check` passed and refuses a key that is not the app's, `list` writes the channel list |
+| The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so main's copy asks for no secret and no token that can write, which a branch's copy could, so what holds is the `updates` environment and the history check in `publish.yml`. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
 | The publishing | `.github/workflows/publish.yml` | runs from main whenever a build starts or ends. It works out which channel, commit and version a build is from GitHub's record of the run, signs the zip, uploads it and its entry to the `dev` release, writes the list at the start of a push and when its build is done, and marks a pull request's commit Ready to update to the moment its entry is up |
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
 

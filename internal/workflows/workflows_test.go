@@ -346,6 +346,7 @@ func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
 		Jobs map[string]struct {
 			Env   map[string]string `yaml:"env"`
 			Steps []struct {
+				ID   string            `yaml:"id"`
 				Name string            `yaml:"name"`
 				If   string            `yaml:"if"`
 				Env  map[string]string `yaml:"env"`
@@ -358,11 +359,11 @@ func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
 	}
 	signed := false
 	for job, j := range wf.Jobs {
-		checked := false
+		checked := ""
 		for _, s := range j.Steps {
 			switch {
 			case strings.Contains(s.Run, "framefairy-release check"):
-				checked = true
+				checked = s.ID
 				for k, v := range j.Env {
 					if strings.Contains(v, "secrets.") {
 						t.Errorf("publish.yml's %s job holds the secret %s in every step, the check of the build too", job, k)
@@ -375,11 +376,10 @@ func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
 				}
 			case strings.Contains(s.Run, "framefairy-release sign"):
 				signed = true
-				if !checked {
-					t.Errorf("%q signs a build no step before it checked", s.Name)
-				}
-				if strings.Contains(s.If, "always()") || strings.Contains(s.If, "failure()") {
-					t.Errorf("%q runs when a step before it failed, with if: %s, so it can sign a build the check refused", s.Name, s.If)
+				if checked == "" {
+					t.Errorf("%q signs a build no step before it checked, or the check has no id to be asked by", s.Name)
+				} else if want := "steps." + checked + ".outcome == 'success'"; strings.TrimSpace(s.If) != want {
+					t.Errorf("%q runs if %s, where only if: %s says it signs nothing the check did not pass", s.Name, s.If, want)
 				}
 			}
 		}
@@ -483,11 +483,50 @@ func TestOnlyACommitOfTheChannelIsPublished(t *testing.T) {
 	}
 	compared := false
 	for _, s := range publish.Steps {
-		if s.ID == "which" && strings.Contains(s.Run, `/compare/$SHA...$holder`) {
-			compared = true
+		if s.ID != "which" {
+			continue
+		}
+		compared = strings.Contains(s.Run, `/compare/$SHA...$holder`)
+		// main by its commit: the name main is what the tag takes.
+		if !strings.Contains(s.Run, `git/ref/heads/main`) || regexp.MustCompile(`holder=["']?main\b`).MatchString(s.Run) {
+			t.Error("publish's step which compares with main by its name, which a tag called main can take, and not by the commit refs/heads/main is")
 		}
 	}
 	if !compared {
 		t.Error("publish's step which does not compare the commit with main or the pull request's newest commit, so a tag named main is signed as main's build")
+	}
+}
+
+// A publish that fails says so on the commit that was built, whatever
+// failed, so the pull request shows why and the channel list stops
+// saying a build is coming, see scripts/build-ended.sh. The step that
+// says so is the last of the job, so it hears every step before it.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestAFailedPublishMarksItsCommit(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "publish.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string `yaml:"name"`
+				If   string `yaml:"if"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	steps := wf.Jobs["publish"].Steps
+	if len(steps) == 0 {
+		t.Fatal("publish.yml has no job called publish")
+	}
+	last := steps[len(steps)-1]
+	if strings.TrimSpace(last.If) != "failure()" || !strings.Contains(last.Run, "state=failure") || !strings.Contains(last.Run, `context="Ready to update to"`) {
+		t.Errorf("the last step of publish, %q, is not one that marks the commit when any step before it failed", last.Name)
 	}
 }
