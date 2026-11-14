@@ -91,7 +91,10 @@
       if (!was || was.typed !== typed) return;
       const card = list?.querySelector<HTMLElement>(`li[data-row="${CSS.escape(was.key)}"]`);
       const box = scroller();
-      if (card && box) box.scrollTop += card.getBoundingClientRect().top - was.top;
+      if (card && box) {
+        box.scrollTop += card.getBoundingClientRect().top - was.top;
+        atTop = false;
+      }
     });
   });
 
@@ -102,6 +105,18 @@
   // search, or the one clicked in it. It went back to the top of the
   // whole transcript, found by Tim.
   let typedWas: string | null = null;
+  // Whether the list stands at its top, as its last scroll left it, so a
+  // letter typed there does not scroll it to where it is: the scroll
+  // laid out every card at once for each letter, issue #806. The list's
+  // own scrolls say so the moment they are made.
+  let atTop = false;
+  onMount(() => {
+    const box = scroller();
+    if (!box) return;
+    const heard = () => (atTop = box.scrollTop === 0);
+    box.addEventListener("scroll", heard, { passive: true });
+    return () => box.removeEventListener("scroll", heard);
+  });
   $effect(() => {
     const now = typed;
     const was = typedWas;
@@ -110,7 +125,8 @@
     // A new list picks nothing of the one before.
     picked = null;
     if (now.trim() || !was.trim()) {
-      scroller()?.scrollTo({ top: 0 });
+      if (!atTop) scroller()?.scrollTo({ top: 0 });
+      atTop = true;
       return;
     }
     untrack(() => follow(true));
@@ -181,7 +197,10 @@
     const was = followed;
     followed = key;
     // The search opens at the playhead, or at its top.
-    if (!key && (was === undefined || always)) scroller()?.scrollTo({ top: 0 });
+    if (!key && (was === undefined || always)) {
+      scroller()?.scrollTo({ top: 0 });
+      atTop = true;
+    }
     if (!key || (key === was && !always && !put)) return;
     if (step) pageTo(key, step);
     else turnTo(key);
@@ -304,7 +323,10 @@
     const at = shows(key);
     if (!at || (at.above <= 0.5 && at.below <= 0.5)) return;
     if (step > 0) toTop(key);
-    else at.box.scrollTop += at.below;
+    else {
+      at.box.scrollTop += at.below;
+      atTop = false;
+    }
   }
 
   // The card of a row, at the top of the list. Where it is
@@ -318,6 +340,7 @@
     if (!card || !box) return;
     const head = list.firstElementChild as HTMLElement;
     box.scrollTo({ top: card.getBoundingClientRect().top - head.getBoundingClientRect().top });
+    atTop = false;
   }
 
   type Row =
@@ -421,6 +444,53 @@
     matches = answered;
   });
 
+  // A card may be passed over while it is out of view in a search, so
+  // typing does not lay out a video's every card again, issue #806. The
+  // browser then takes the height it last laid the card out at, so a card
+  // is laid out whole in the frame it comes in, and once more after the
+  // list changes width, before it may be passed over, see .kept. A card
+  // never laid out was taken at a guessed height, and a card walked to
+  // landed off where it should stand, found by Tim.
+  const coming = new Set<HTMLElement>();
+  const laying = new Set<HTMLElement>();
+  let frame = 0;
+  function settle(li: HTMLElement) {
+    li.classList.remove("kept");
+    laying.delete(li);
+    coming.add(li);
+    frame ||= requestAnimationFrame(step);
+  }
+  // Each frame, the cards laid out in the frame before are kept, and the
+  // cards come in since are laid out in this one.
+  function step() {
+    for (const li of laying) li.classList.add("kept");
+    laying.clear();
+    for (const li of coming) laying.add(li);
+    coming.clear();
+    frame = laying.size ? requestAnimationFrame(step) : 0;
+  }
+  function laidOut(li: HTMLElement) {
+    settle(li);
+    return () => {
+      coming.delete(li);
+      laying.delete(li);
+    };
+  }
+  // The width is only read, to know the cards are to be laid out again.
+  onMount(() => {
+    let width = -1;
+    const resized = new ResizeObserver(([e]) => {
+      const now = e.borderBoxSize[0].inlineSize;
+      if (width >= 0 && now !== width) for (const li of list.querySelectorAll<HTMLElement>("li[data-row]")) settle(li);
+      width = now;
+    });
+    resized.observe(list);
+    return () => {
+      resized.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  });
+
   // The sentence in pieces, bold where it answers what was typed.
   function pieces(text: string, bold: [number, number][]) {
     const out: { text: string; bold: boolean }[] = [];
@@ -435,7 +505,7 @@
   }
 </script>
 
-<ol class="said" bind:this={list} data-followed={followed}>
+<ol class="said" class:searching={!!typed.trim()} bind:this={list} data-followed={followed}>
   {#if failed}
     <li class="none failed" title={failed}>The transcript could not be read</li>
   {/if}
@@ -464,6 +534,7 @@
         data-at={row.sentence.start}
         data-row={row.key}
         data-clip={row.clip?.key}
+        {@attach laidOut}
         {@attach row.clip ? hoverClip(row.clip.key, onhover) : undefined}
       >
         <button class="pick" class:inclip={!!row.clip} class:clip-edge={!!row.clip} class:current={row.key === current} class:picked={pickedKeys.has(row.key)} title="Put the playhead here. Shift-click picks every card from the current one to here, and Copy copies their words" onclick={(e) => {
@@ -518,10 +589,19 @@
     border-radius: var(--radius-m);
     background: var(--ink-1);
     box-shadow: inset 0 0 0 1px var(--ink-3);
-    /* Laid out whole, every card, though only a few are in view. Cards
-       out of view laid out at a guessed height put the place a clip is
-       gone to off once they were laid out, and WebKit keeps no anchor
-       that would have made up for it, found by Tim. */
+    contain-intrinsic-size: auto var(--card-h);
+    /* Laid out whole, every card, though only a few are in view, unless
+       a search is typed, see .kept. Cards out of view laid out at a
+       guessed height put the place a clip is gone to off once they were
+       laid out, and WebKit keeps no anchor that would have made up for
+       it, found by Tim. So the height a card was last laid out at is
+       kept, auto here, and a card is passed over only once it has one. */
+  }
+
+  /* In a search, a card out of view that has been laid out is passed
+     over, so a letter typed lays out only the cards in view. */
+  ol.searching li:global(.kept) {
+    content-visibility: auto;
   }
 
   /* The space between two cards belongs to them, the half above to the
