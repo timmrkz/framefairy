@@ -520,7 +520,9 @@ export const steps = {
   //                    in a toast, and the library does not hold it
   async "left out"(walk, arg) {
     const { page } = walk;
-    const said = await toastSays(page);
+    // Add takes the file at once and checks its picture after, so the
+    // reason comes as news of its own, later than Add's answer.
+    const said = await seenUntil(page, url, () => toastSays(page), (said) => said.includes(arg));
     const library = await ask(page, "Library");
     if (!said.includes(`the picture of ${arg}`) || !said.includes("cannot be decoded")) {
       walk.wrong = `the app says "${said.trim()}", not why ${arg} was left out`;
