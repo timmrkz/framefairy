@@ -21,6 +21,14 @@
 # a branch's code, so what the zip holds is as trusted as the branch: the
 # key is the development key, which only development builds carry.
 #
+# The record alone is not enough. GitHub starts this workflow for any run
+# of a workflow named "Builds to update to", whatever file it came from,
+# and a tag pushed with the name main gives a run whose branch reads main.
+# A branch that runs its own builds.yml on tags could push a tag called
+# main at any commit and have it signed as main's build. So only a push
+# run of builds.yml is published, and only a commit that main's history
+# holds, or the history of the pull request's newest commit.
+#
 # Three jobs:
 #
 # 1. announce, the moment a build starts, writes the channel list again,
@@ -118,6 +126,8 @@ jobs:
     if: >-
       github.event.action == 'completed' &&
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.path == '.github/workflows/builds.yml' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -159,8 +169,9 @@ jobs:
             channel=main
             name=main
             tag=main
+            holder=main
           else
-            found=$(gh pr list --head "$BRANCH" --state open --json number,title,isCrossRepository \
+            found=$(gh pr list --head "$BRANCH" --state open --json number,title,headRefOid,isCrossRepository \
               --jq '[.[] | select(.isCrossRepository | not)][0] // empty')
             if [ -z "$found" ]; then
               echo "::notice::$BRANCH has no open pull request any more, so its build has no channel."
@@ -168,10 +179,35 @@ jobs:
             fi
             number=$(printf '%s' "$found" | jq -r .number)
             title=$(printf '%s' "$found" | jq -r .title | tr -d '\r' | head -n 1)
+            holder=$(printf '%s' "$found" | jq -r .headRefOid)
             channel="pr-$number"
             name="#$number $title"
             tag="pr$number"
           fi
+          # The commit has to be one the channel's own history holds: main
+          # or the pull request's newest commit is the commit built or a
+          # newer one after it. A tag pushed with the name of main, or of a
+          # pull request's branch, runs at any commit, and its record reads
+          # just like a push to that branch.
+          held=$(gh api "repos/$GH_REPO/compare/$SHA...$holder" --jq .status 2>/dev/null) || held=
+          case $held in
+          identical | ahead) ;;
+          "")
+            echo "::error::GitHub could not compare $SHA with $holder, so it is not known to be $channel's, and it is not signed."
+            exit 1
+            ;;
+          *)
+            if [ "$channel" = main ]; then
+              echo "::error::$SHA is not in main's history, so it is not signed as main's build. A tag named main may have been pushed: look at the tags of the repository."
+              exit 1
+            fi
+            # A branch whose history was rewritten after the push, as
+            # Dependabot does when it rebases, is the usual reason. Its
+            # newer push builds and publishes by itself.
+            echo "::warning::$SHA is not in the history of #$number's newest commit, so it is not published for it."
+            exit 0
+            ;;
+          esac
           # The engine's version at the commit built, read and not run. It
           # is in engine/doc.go, and in engine/log.go on a branch made
           # before the log of a run got a package of its own. This workflow
@@ -341,9 +377,16 @@ jobs:
             -f state=success -f context="Ready to update to" \
             -f description="On the Updates page as $CHANNEL" >/dev/null
 
+  # Whenever a build ends, whether publish signed it, skipped it or
+  # refused it: a build that ended without one is a build no longer to
+  # come, and the list stops saying it is. A pull request that is closed
+  # builds nothing and leaves the list this way too.
   list:
     needs: publish
-    if: always() && needs.publish.result == 'success'
+    if: >-
+      always() &&
+      github.event.action == 'completed' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     concurrency:

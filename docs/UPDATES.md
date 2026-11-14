@@ -348,6 +348,16 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
   not from anything the build wrote. Until #43 the build signed itself
   with the key in its own environment, and a branch could also have
   replaced main's entry in the list.
+- **The record of the run is checked too.** It names the branch, but a
+  tag called `main`, pushed by a branch whose own `builds.yml` runs on
+  tags, gives a record that reads like a push to main, at any commit. So
+  `publish.yml` publishes only a push run of `.github/workflows/builds.yml`,
+  and only a commit that main's history holds, or the history of the pull
+  request's newest commit, by GitHub's compare. A commit main does not
+  hold fails main's publish with an error that says to look at the tags.
+  "No token that can write" is how main's `builds.yml` is written, not a
+  wall: a branch's copy can ask for one. What holds is the environment,
+  the signatures and this check.
 - **The public half is not a secret.** It sits in the repository and is
   built into the app, which is what lets the app check a download without
   asking anybody.

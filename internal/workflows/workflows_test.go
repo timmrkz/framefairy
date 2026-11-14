@@ -444,3 +444,50 @@ func TestNoJobInASharedQueueMarksACommit(t *testing.T) {
 		}
 	}
 }
+
+// publish.yml signs only what builds.yml built on a push, and only a
+// commit the channel's own history holds. GitHub starts it for a run of
+// any workflow with the name it waits on, and a tag pushed with the name
+// main gives a record that reads like a push to main, at any commit.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestOnlyACommitOfTheChannelIsPublished(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "publish.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			If    string `yaml:"if"`
+			Steps []struct {
+				ID  string `yaml:"id"`
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	publish, ok := wf.Jobs["publish"]
+	if !ok {
+		t.Fatal("publish.yml has no job called publish")
+	}
+	for _, want := range []string{
+		"github.event.workflow_run.event == 'push'",
+		"github.event.workflow_run.path == '.github/workflows/builds.yml'",
+	} {
+		if !strings.Contains(publish.If, want) {
+			t.Errorf("publish runs without %s, so a run of another workflow file, or of no push, is signed", want)
+		}
+	}
+	compared := false
+	for _, s := range publish.Steps {
+		if s.ID == "which" && strings.Contains(s.Run, `/compare/$SHA...$holder`) {
+			compared = true
+		}
+	}
+	if !compared {
+		t.Error("publish's step which does not compare the commit with main or the pull request's newest commit, so a tag named main is signed as main's build")
+	}
+}
