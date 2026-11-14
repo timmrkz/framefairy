@@ -2257,7 +2257,12 @@ costs no start later. Asked first, the probe and the first frame kept
 the workspace from opening for 0.3 to 1.4 s on a Mac, issue #832. A file
 with no picture leaves the list and the workspace again, the folder its
 add made goes with it, and a toast says why. A new video's first search
-starts once its picture is known to be there. A file with no picture,
+starts once its picture is known to be there. Until then the video's
+state says the search is on its way, `SearchComing`, so the clip list
+says Cancel from the moment the video opens, the way it does from a
+press of Search, and Cancel there calls the search off before it starts:
+it comes stopped, with Continue. The list said Search in that moment,
+issue #848. A file with no picture,
 and one that is no video at all, said nothing at Add before and failed in
 the video preview after.
 

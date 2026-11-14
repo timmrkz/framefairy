@@ -45,6 +45,14 @@ export class JobStore {
   // press, and not when the work ends a second or two later.
   starting = $state.raw<Press[]>([]);
   stopping = $state.raw<Press[]>([]);
+  // The videos whose first search the Go side has on its way, from the
+  // moment it answered Add until the search is queued, as their newest
+  // states say, see VideoState.searchComing. It is a start the same as a
+  // press of Search on its way, one the Go side made, so everything that
+  // shows a press shows it: Cancel at the head of the clip list, the
+  // video's dot, and a stop pressed meanwhile lasts until the search
+  // comes stopping.
+  coming = $state.raw<string[]>([]);
 
   // The rev of the newest state of each video the jobs were taken from.
   private revs = new Map<string, number>();
@@ -68,6 +76,10 @@ export class JobStore {
     }
     if (state.rev <= (this.revs.get(state.video) ?? 0)) return;
     this.revs.set(state.video, state.rev);
+    if (!!state.searchComing !== this.coming.includes(state.video)) {
+      this.coming = state.searchComing ? [...this.coming, state.video] : this.coming.filter((v) => v !== state.video);
+      this.settle();
+    }
     const held = new Set(state.jobs.map((j) => j.id));
     const kept = this.list.filter((j) => j.episode !== state.video || held.has(j.id) || (j.seq ?? 0) > state.rev);
     if (kept.length < this.list.length) {
@@ -83,7 +95,10 @@ export class JobStore {
     this.settle();
   }
 
+  // Whether a start of the work is on its way: a press the Go side has
+  // not answered, or the first search it has on its way itself.
   isStarting(path: string, work: Work, what?: string): boolean {
+    if (work === "clips" && (what === undefined || what === "search") && this.coming.includes(path)) return true;
     return this.starting.some((p) => of(path, work)(p) && (what === undefined || p.what === what));
   }
 
@@ -128,7 +143,7 @@ export class JobStore {
   // the Go side does not say is stopping yet.
   private settle() {
     const left = this.stopping.filter(
-      (p) => this.starting.some(of(p.path, p.work)) || this.list.some((j) => j.episode === p.path && live(j) && doing(p.work, j) && !j.stopping),
+      (p) => this.isStarting(p.path, p.work) || this.list.some((j) => j.episode === p.path && live(j) && doing(p.work, j) && !j.stopping),
     );
     if (left.length < this.stopping.length) this.stopping = left;
   }
