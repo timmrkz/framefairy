@@ -641,7 +641,8 @@ export const steps = {
     // stays where it is, and the app is opened again so it reads the
     // cards that way from the start.
     const path = await episodeOn(page);
-    const call = async (route, name, args) => (await route.fetch({ postData: JSON.stringify({ name, args }) })).json();
+    const call = async (route, name, args) =>
+      (await route.fetch({ postData: JSON.stringify({ name: `main.FrameFairy.${name}`, args }) })).json();
     const later = async (route) => {
       const body = route.request().postDataJSON?.() ?? {};
       if (!String(body.name ?? "").endsWith("Sentences")) return route.fallback();

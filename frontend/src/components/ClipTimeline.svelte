@@ -20,6 +20,12 @@
   const DIAMOND =
     "M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0Z";
   const CIRCLE = "M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17Z";
+  // How wide the ring of a glide keyframe on its own is, in pixels on
+  // screen: --frame-line in app.css, the clip's frame line it stands on,
+  // so the two read as one line. A snippet's attributes cannot read the
+  // token, so the number is said again here, and the glides walk checks
+  // the two agree. Tim on #835, the ring was 2.25 px and looked heavy.
+  const FRAME_LINE = 2;
   const CAMERA =
     "M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z";
 </script>
@@ -37,6 +43,7 @@
     intoWord,
     type Gesture,
     type ClipEntry,
+    type LitWord,
     type Word,
     type CaptionCue,
     type CropMark,
@@ -147,7 +154,7 @@
     // reads as two words is two here and one there, so a word added by
     // hand is in this list and in no other, and a word a cut takes out is
     // in the transcript and never in this one.
-    lit?: Word[];
+    lit?: LitWord[];
     // Puts the playhead at a moment. A gesture about the clip itself, an
     // edge, a trim or a caption, says so, and the playhead is then on the
     // clip whatever the moment, and a step while the episode plays on the
@@ -221,7 +228,7 @@
     onshape?: (
       shape: {
         cues: CaptionCue[];
-        pieces: { start: number; end: number }[];
+        pieces: { start: number; end: number; part: number }[];
         track?: string;
         playhead?: number;
         framing?: Framing;
@@ -2471,11 +2478,14 @@
      second one is put, the way an unset radio button reads. The well's
      outline around it is the solid mark's, so the two stand alike on the
      rule. Tim picked it from a sheet of eight on #778, over a dimmed
-     circle that looked like a mistake. -->
+     circle that looked like a mistake. The ring is as wide as the clip's
+     frame line and its outer edge is the solid circle's, so what it is
+     thinner by goes to the dark inside, #835. -->
 {#snippet ring(size: number)}
+  {@const line = (FRAME_LINE * 24) / size}
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="12" r="8.5" fill="var(--well)" stroke="var(--well)" stroke-width={(3 * 24) / size} />
-    <circle class="hollow" cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="3" />
+    <circle class="hollow" cx="12" cy="12" r={8.5 - line / 2} fill="none" stroke="currentColor" stroke-width={line} />
   </svg>
 {/snippet}
 

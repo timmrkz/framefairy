@@ -1304,7 +1304,7 @@ export const steps = {
       if (!it) return null;
       const style = getComputedStyle(it);
       const face = style.fontFamily.split(",")[0].replace(/["']/g, "").trim();
-      const fonts = await fetch("/call", { method: "POST", body: JSON.stringify({ name: "Fonts", args: [] }) })
+      const fonts = await fetch("/call", { method: "POST", body: JSON.stringify({ name: "main.FrameFairy.Fonts", args: [] }) })
         .then((r) => r.json())
         .catch(() => null);
       return {

@@ -414,7 +414,7 @@ A file is added as a video when all of this holds:
 | Check | Where |
 | --- | --- |
 | Its name ends in `.mp4`, `.mov`, `.m4v` or `.mkv`, in capitals or not | `IsVideo` in `engine/episode.go` |
-| The decoder reads a first frame from it, or says nothing for 30 s | `undecodable` in `cmd/framefairy-app/library.go` |
+| The decoder reads a first frame from it, or says nothing for 30 s, asked once it is in the list | `checkAdded` and `undecodable` in `cmd/framefairy-app/library.go` |
 | Neither it nor the work folder beside it is a link | `Episode.Linked` in `engine/owns.go` |
 | No video in the list would share its work folder, as `ep.mp4` and `ep.mov` would | `AddEpisodes` in `cmd/framefairy-app/settings.go` |
 
@@ -2245,12 +2245,18 @@ extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
 
-A file whose picture ffmpeg cannot decode is left out the same way, with
-ffmpeg's reason: the episode's decoder is asked for its first frame as it
-is added, `undecodable` in `library.go`, and the decoder that answers is
-the one the video preview reads from when the episode opens, so asking
-costs no start later. A file with no picture, and one that is no video at
-all, said nothing at Add before and failed in the video preview after.
+A file whose picture ffmpeg cannot decode is taken out again, with
+ffmpeg's reason. A video dropped or picked goes into the list and opens
+at once, and its picture is checked behind that, `checkAdded` in
+`library.go`: the episode's decoder is asked for its first frame, and the
+decoder that answers is the one the video preview reads from, so asking
+costs no start later. Asked first, the probe and the first frame kept
+the workspace from opening for 0.3 to 1.4 s on a Mac, issue #832. A file
+with no picture leaves the list and the workspace again, the folder its
+add made goes with it, and a toast says why. A new video's first search
+starts once its picture is known to be there. A file with no picture,
+and one that is no video at all, said nothing at Add before and failed in
+the video preview after.
 
 ### Searching what was said
 
@@ -2748,7 +2754,11 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   pressing S or G on it or dragging it makes it a keyframe of its own
   where it stands. Removing it removes only it, and the others it
   covered stay out of sight until the edge is dragged back out past them,
-  so no keyframe comes up in its place. The keyframes, the glide line and
+  so no keyframe comes up in its place. Removing a cut with a
+  double-click moves no keyframe, Tim's report of 13 November: the one
+  it carried becomes a keyframe of its own where it stands, and the
+  others it covered come back on their own moments with the part they
+  are in. The keyframes, the glide line and
   the crop in the video preview follow the edge while the hand is still
   on it.
 - **The video preview switches and glides the crop on the keyframes'

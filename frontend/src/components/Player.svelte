@@ -1852,6 +1852,7 @@
   <div class="viewer">
   <div
     class="screen asks"
+    class:waiting={!pictured && !missing}
     class:turned={shownTurn !== 0}
     class:sideways={shownTurn % 180 !== 0}
     bind:this={screen}
@@ -2132,6 +2133,14 @@
   .screen {
     background: #000;
     overflow: hidden;
+  }
+
+  /* Before its first frame the picture is a place waiting to be filled,
+     and wears the breath every such place wears, see .waiting in
+     app.css. A video just added comes to the front with it, rather than
+     a black box that reads as a video that will not play. */
+  .screen.waiting {
+    background: var(--ink-2);
   }
 
   @supports (width: round(down, 3px, 2px)) {

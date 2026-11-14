@@ -437,6 +437,7 @@ export default [
       ["crop kept", 0.8],
       ["keyframe key", ["g", "none"]],
       ["keyframes", 1],
+      ["glides", 0],
     ],
   },
   {

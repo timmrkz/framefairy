@@ -1,12 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+
+	"framefairy/engine"
+	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 )
 
 // A drop on the app adds what Add would add: the video among the files,
@@ -40,6 +45,7 @@ func TestDropAddsTheVideosAndOpensOne(t *testing.T) {
 	if !slices.Contains(d.svc.store.Episodes(), video) {
 		t.Errorf("%s is not in the library", filepath.Base(video))
 	}
+	<-d.svc.checked(video)
 	if !slices.ContainsFunc(d.svc.Jobs(), func(j Job) bool { return j.Episode == video }) {
 		t.Errorf("no first search started for %s, as Add starts one", filepath.Base(video))
 	}
@@ -68,11 +74,14 @@ func TestNotVideos(t *testing.T) {
 
 // A drop of nothing but other files adds nothing and opens nothing, and
 // says why. A video whose picture cannot be decoded, dropped with them,
-// is left out in the same sentence, the way Add leaves it out.
+// opens at once, the way every video dropped does, and goes out of the
+// library again once its decoder found no picture in it, with its folder
+// and the reason, which the window shows as it shows a file left out.
 //
 // On the real disk: the frames decoder reads kaputt.mp4 and finds no picture.
 func TestDropOfNoVideoSaysWhy(t *testing.T) {
 	d := open(t)
+	told := hearDrops(d.svc)
 	notes := filepath.Join(d.home, "notizen.pdf")
 	broken := filepath.Join(d.home, "kaputt.mp4")
 	for _, f := range []string{notes, broken} {
@@ -85,16 +94,46 @@ func TestDropOfNoVideoSaysWhy(t *testing.T) {
 		t.Errorf("a PDF dropped: %+v, want nothing added, nothing to open, and why", got)
 	}
 	got = d.svc.dropFiles([]string{broken, notes})
-	if len(got.Added) != 0 || got.Open != "" {
-		t.Errorf("added %v and opens %q, want neither", got.Added, got.Open)
+	if got.Open != broken {
+		t.Errorf("opens %q, want %s at once, before its picture is checked", got.Open, filepath.Base(broken))
 	}
-	for _, want := range []string{"notizen.pdf cannot be added because it is not a video", "the picture of kaputt.mp4 cannot be decoded"} {
-		if !strings.Contains(got.Error, want) {
-			t.Errorf("said %q, want it to say %q", got.Error, want)
-		}
+	if !strings.Contains(got.Error, "notizen.pdf cannot be added because it is not a video") {
+		t.Errorf("said %q, want it to say why notizen.pdf is left out", got.Error)
+	}
+	<-d.svc.checked(broken)
+	heard := told()
+	if len(heard) != 1 || len(heard[0].Added) != 0 || heard[0].Open != "" ||
+		!strings.Contains(heard[0].Error, "the picture of kaputt.mp4 cannot be decoded") {
+		t.Errorf("the window was told %+v, want once that kaputt.mp4 cannot be decoded", heard)
 	}
 	if eps := d.svc.store.Episodes(); len(eps) != 0 {
 		t.Errorf("the library holds %v", eps)
+	}
+	if _, err := os.Stat(engine.WorkDir(broken)); !os.IsNotExist(err) {
+		t.Errorf("the folder the drop made for kaputt.mp4 is still there, %v", err)
+	}
+}
+
+// hearDrops is what the app tells the window of files given to it after
+// its answer, the videos it took out again, see checkAdded.
+func hearDrops(s *FrameFairy) func() []Added {
+	var mu sync.Mutex
+	var heard []Added
+	s.tell = emitterFunc(func(name string, data ...any) bool {
+		if name != string(droppedEvent) || len(data) != 1 {
+			return true
+		}
+		if a, ok := data[0].(Added); ok {
+			mu.Lock()
+			heard = append(heard, a)
+			mu.Unlock()
+		}
+		return true
+	})
+	return func() []Added {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(heard)
 	}
 }
 
@@ -133,6 +172,9 @@ func TestDropsAtOnce(t *testing.T) {
 		})
 	}
 	wg.Wait()
+	for _, v := range videos {
+		<-d.svc.checked(v)
+	}
 	library := d.svc.store.Episodes()
 	for _, v := range videos {
 		if n := len(slices.DeleteFunc(slices.Clone(library), func(p string) bool { return p != v })); n != 1 {
@@ -167,5 +209,58 @@ func TestADropThatPanicsSaysWhyNotTheAppGoing(t *testing.T) {
 	has(t, line, map[string]any{"level": "error", "from": "app", "how": "drop"})
 	if stack, _ := line["stack"].(string); !strings.Contains(stack, "goroutine") {
 		t.Errorf("the app's log holds no stack of the panic, %v", line)
+	}
+}
+
+// BenchmarkADrop is how long the window waits after a video it has not
+// seen is dropped, issue #832: until the drop is answered and the window
+// can open the video, and until its picture has been checked and its
+// first search started. Each round drops a 10 minute video copied under
+// a new name, so nothing is known of it, and closes its decoder before
+// the next, the way a video dropped for the first time finds none.
+//
+// On the real disk: ffprobe and the episode's decoder read the video.
+func BenchmarkADrop(b *testing.B) {
+	b.Run("answered", func(b *testing.B) { benchDrop(b, false) })
+	b.Run("checked", func(b *testing.B) { benchDrop(b, true) })
+}
+
+// benchDrop drops a new video each round, and with checked waits until
+// its picture has been checked too.
+//
+// On the real disk: ffprobe and the episode's decoder read the video.
+func benchDrop(b *testing.B, checked bool) {
+	ffmpegtest.Need(b)
+	if os.Getenv("FRAMEFAIRY_FRAMES") == "" {
+		b.Skip("FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	home := b.TempDir()
+	b.Setenv("HOME", home)
+	b.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	svc := &FrameFairy{store: openStore()}
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	b.Cleanup(func() { svc.jobs.shutDown() })
+	round := 0
+	for b.Loop() {
+		b.StopTimer()
+		round++
+		video := fixtures.Copy(b, "walk-600s.mp4", filepath.Join(home, fmt.Sprintf("dropped-%d.mp4", round)))
+		b.StartTimer()
+		got := svc.dropFiles([]string{video})
+		if checked {
+			<-svc.checked(video)
+		}
+		b.StopTimer()
+		if got.Open != video {
+			b.Fatalf("the drop opens %q, want %s, and said %q", got.Open, filepath.Base(video), got.Error)
+		}
+		<-svc.checked(video)
+		svc.previews.mu.Lock()
+		for path, dec := range svc.previews.decoders {
+			delete(svc.previews.decoders, path)
+			dec.Close()
+		}
+		svc.previews.mu.Unlock()
+		b.StartTimer()
 	}
 }

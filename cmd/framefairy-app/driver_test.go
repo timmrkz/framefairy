@@ -121,42 +121,22 @@ func open(t *testing.T) *desk {
 // start runs the app over a store.
 func (d *desk) start(st *store) {
 	d.svc = &FrameFairy{store: st}
-	toJob := func(u JobUpdate) {
-		if toWindow(u) {
-			d.bus.send("job", u)
-		}
-	}
 	if d.time != nil {
 		st.machine.Clock = d.time
 	}
-	d.svc.jobs = newQueue(st, toJob, func(episode string) { d.bus.send("episode", episode) })
 	svc := d.svc
-	// A video's state is sent only to a window, which a path test has
-	// none of.
+	svc.newReport()
 	if d.bus != nil {
-		svc.news = newVideoNews(func(path string) (VideoState, error) {
-			return svc.State(context.Background(), path)
-		}, func(v VideoState) { d.bus.send("video", v) })
-		svc.jobs.news = svc.told
-		svc.setupNews = func(state SetupState) {
-			if d.setup != nil {
-				state = d.setup(state)
-			}
-			d.bus.send("setup", state)
-		}
-		svc.jobs.notice = func(n Notice) { d.bus.send("notice", n) }
+		// The bridge tells its pages what the app tells its window, with
+		// the app's own wiring, see events.go.
+		svc.tellWindow(d)
+	} else {
+		// A path test has no window to tell.
+		svc.jobs = newQueue(st, func(JobUpdate) {}, func(string) {})
 	}
-	d.svc.listening.say = func(x Dictation) {
-		if d.told != nil {
-			d.told(x)
-		}
-		d.bus.send("dictation", x)
-	}
-	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
 	d.svc.listening.still = d.still
 	d.svc.listening.beats = d.beats
 	d.svc.listening.most = d.most
-	d.svc.report = newReporting(st.machine, filepath.Join(st.dir, "report"))
 	// The clipboard is the desk's, so a walk can read what was copied.
 	d.svc.clipboard = func(text string) bool {
 		d.clipboard.Store(&text)
@@ -174,9 +154,6 @@ func (d *desk) start(st *store) {
 		d.exported.Store(&path)
 		return path, nil
 	}
-	d.svc.report.stop = d.svc.CancelListening
-	d.svc.report.told = func(open bool) { d.bus.send("report-window", open) }
-	d.svc.report.said = func(r ReportDraft) { d.bus.send("report-draft", r) }
 	d.svc.report.make = func(closed func()) (func(), func()) {
 		d.reportMade.Add(1)
 		return func() { d.reportFronted.Add(1) }, closed
@@ -189,7 +166,6 @@ func (d *desk) start(st *store) {
 		return picked, nil
 	}
 	if d.bus != nil {
-		d.svc.levels = newMeasuring(d.svc.store.machine, svc.told)
 		// The library is on the real disk, so the walks change its
 		// folders from outside the app the way Finder does. The watch
 		// starts once every field it can reach is set, the way main
@@ -207,6 +183,25 @@ func (d *desk) start(st *store) {
 	if d.fit != nil {
 		d.fit(d.svc)
 	}
+}
+
+// Emit tells the pages on the bridge's bus what the app tells its window,
+// the setup as the bridge's machine has it, see standInsSetup, and a
+// recording's news to the bridge's microphone too, see told.
+func (d *desk) Emit(name string, data ...any) bool {
+	if len(data) == 1 {
+		switch v := data[0].(type) {
+		case SetupState:
+			if d.setup != nil {
+				data[0] = d.setup(v)
+			}
+		case Dictation:
+			if d.told != nil {
+				d.told(v)
+			}
+		}
+	}
+	return d.bus.Emit(name, data...)
 }
 
 // episode puts a copy of the video of this many seconds in the library's
@@ -247,6 +242,21 @@ func TestMain(m *testing.M) {
 var firstWindow = window{0, 0}
 
 type window struct{ from, to float64 }
+
+// checked is closed once the picture of a video just added has been
+// checked, and what the check starts or takes out is done: at once for a
+// video that is not being checked. A test waits on it before it looks at
+// the first search or the library.
+func (s *FrameFairy) checked(video string) <-chan struct{} {
+	s.checkMu.Lock()
+	defer s.checkMu.Unlock()
+	if c, ok := s.checking[video]; ok {
+		return c.done
+	}
+	done := make(chan struct{})
+	close(done)
+	return done
+}
 
 // numbers is what the tests ask every search for.
 func (w window) request() engine.PlanRequest {
@@ -418,6 +428,9 @@ func (d *desk) outcome(path string) outcome {
 // test until go test's own -timeout, which shows every goroutine.
 func (d *desk) idle(path string) {
 	d.t.Helper()
+	// A video just added has its picture checked behind the answer, and
+	// its first search starts once it is.
+	<-d.svc.checked(path)
 	d.svc.jobs.until(func(jobs []*Job) bool {
 		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == path && j.going() })
 	}, nil)

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -82,40 +83,114 @@ func (s *FrameFairy) AddEpisodes() Added {
 // engine.VideoExtensions.
 func (s *FrameFairy) VideoNames() string { return engine.VideoNames() }
 
-// addEpisodes adds videos to the library. A new episode's first search
-// starts by itself, and hears the episode as far as its window and no
-// further. An episode that has been searched before waits for a search to
-// be asked for.
+// addEpisodes adds videos to the library and answers at once, so the
+// window opens the video the moment it was dropped or picked. Whether its
+// picture can be decoded is asked behind that, see checkAdded: the probe
+// and the decoder's first frame took 0.3 to 1.4 s on Tim's Mac, with
+// nothing on screen while they ran, issue #832.
 func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
-	// A file whose picture ffmpeg cannot decode is left out with the
-	// reason, the way a file that clashes is: the video preview would have
-	// nothing to show, and the render nothing to cut.
-	var take, refused []string
+	// Which of them have no work folder yet, so a video taken out again
+	// takes the folder this add made with it, and only that one.
+	fresh := map[string]bool{}
 	for _, v := range videos {
-		if why := s.undecodable(v, s.frameLate); why != "" {
-			refused = append(refused, fmt.Sprintf("the picture of %s cannot be decoded, %s", filepath.Base(v), why))
-			continue
+		if abs, err := filepath.Abs(v); err == nil {
+			if _, err := s.store.files.Stat(engine.WorkDir(abs)); err != nil {
+				fresh[abs] = true
+			}
 		}
-		take = append(take, v)
 	}
-	added, err := s.store.AddEpisodes(take)
-	if len(refused) > 0 {
-		why := strings.Join(refused, ", ") + ", so it cannot be added"
-		if err != nil {
-			why = err.Error() + ". And " + why
-		}
-		err = errors.New(why)
-	}
+	added, err := s.store.AddEpisodes(videos)
 	for _, v := range added {
 		s.jobs.openEpisode(v)
 		// A video added again whose work folder was kept picks up where it
 		// left off, so what its records say stopped says so again, the way
 		// it does when the app starts.
 		s.restoreJobs([]string{v})
-		s.levels.start(v)
-		s.firstSearch(context.Background(), v)
+		ctx, done := s.startCheck(v)
+		go func() {
+			defer done()
+			s.checkAdded(ctx, v, fresh[v])
+		}()
 	}
 	return added, err
+}
+
+// check is the picture of a video just added being checked: done is
+// closed once it is, and stop calls it off.
+type check struct {
+	done chan struct{}
+	stop context.CancelFunc
+}
+
+// startCheck says that the picture of a video just added is being
+// checked. It gives back what the check runs under, called off by
+// stopCheck, and what says it is done.
+func (s *FrameFairy) startCheck(video string) (context.Context, func()) {
+	ctx, stop := context.WithCancel(context.Background())
+	c := &check{done: make(chan struct{}), stop: stop}
+	s.checkMu.Lock()
+	defer s.checkMu.Unlock()
+	if s.checking == nil {
+		s.checking = map[string]*check{}
+	}
+	s.checking[video] = c
+	return ctx, func() {
+		s.checkMu.Lock()
+		defer s.checkMu.Unlock()
+		if s.checking[video] == c {
+			delete(s.checking, video)
+		}
+		stop()
+		close(c.done)
+	}
+}
+
+// stopCheck calls off the check of a video's picture, and waits until it
+// has ended, so a video removed while it is checked starts no search on
+// its way out and takes nothing out after it was added again.
+func (s *FrameFairy) stopCheck(video string) {
+	s.checkMu.Lock()
+	c := s.checking[video]
+	s.checkMu.Unlock()
+	if c == nil {
+		return
+	}
+	c.stop()
+	<-c.done
+}
+
+// checkAdded asks whether the picture of a video just added can be
+// decoded. A file whose picture ffmpeg cannot decode goes out of the
+// library again, with the folder its add made, and the window is told why
+// the way it is told why a file given to it was left out: the video
+// preview would have nothing to show, and the render nothing to cut. A
+// new video's first search starts once its picture is known to be there.
+// It hears the episode as far as its window and no further. An episode
+// that has been searched before waits for a search to be asked for.
+func (s *FrameFairy) checkAdded(ctx context.Context, video string, fresh bool) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			theLog.line(zerolog.ErrorLevel, "app").Str("video", filepath.Base(video)).Str("stack", string(debug.Stack())).
+				Msgf("checking a video just added stopped unexpectedly: %v", caught)
+		}
+	}()
+	why := s.undecodable(ctx, video, s.frameLate)
+	// Removed while it was checked: nothing is left to start or take out.
+	if ctx.Err() != nil || !s.store.Known(video) {
+		return
+	}
+	if why == "" {
+		s.levels.start(video)
+		s.firstSearch(ctx, video)
+		return
+	}
+	said := fmt.Sprintf("the picture of %s cannot be decoded, %s, so it cannot be added", filepath.Base(video), why)
+	theLog.line(zerolog.WarnLevel, "app").Str("video", filepath.Base(video)).Bool("work_deleted", fresh).Str("why", why).
+		Msg("a video just added is taken out again, its picture cannot be decoded")
+	if err := s.removeEpisode(video, fresh); err != nil {
+		said += ". And it could not be taken out of the library, " + err.Error()
+	}
+	droppedEvent.to(s.tell, Added{Added: []string{}, Error: said})
 }
 
 // firstFrameWait is how long Add waits for the first frame of a video
@@ -134,7 +209,7 @@ const firstFrameWait = 30 * time.Second
 // out as "context deadline exceeded" after 30 s, which would have told a
 // person their video could not be decoded. Such a video is taken, and
 // the video preview shows how its decoder does.
-func (s *FrameFairy) undecodable(video string, late <-chan struct{}) string {
+func (s *FrameFairy) undecodable(ctx context.Context, video string, late <-chan struct{}) string {
 	abs, err := filepath.Abs(video)
 	if err != nil {
 		return err.Error()
@@ -144,7 +219,8 @@ func (s *FrameFairy) undecodable(video string, late <-chan struct{}) string {
 		return strings.TrimSuffix(err.Error(), ".")
 	}
 	asked := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), firstFrameWait)
+	called := ctx
+	ctx, cancel := context.WithTimeout(ctx, firstFrameWait)
 	defer cancel()
 	if late != nil {
 		go func() {
@@ -171,6 +247,9 @@ func (s *FrameFairy) undecodable(video string, late <-chan struct{}) string {
 	switch {
 	case frames > 0:
 		return ""
+	case called.Err() != nil:
+		// The video is being removed, and nothing came late.
+		return ""
 	case ctx.Err() != nil:
 		theLog.line(zerolog.WarnLevel, "files").Str("video", filepath.Base(abs)).Dur("waited", time.Since(asked)).
 			Msg("no first frame came in time, so the video is taken without one")
@@ -189,6 +268,15 @@ var errFirstFrame = errors.New("a frame came")
 // also deletes everything made for it, so adding it again starts from
 // nothing. The episode file itself always stays.
 func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
+	// A video removed while its picture is being checked: the check is
+	// called off first, so nothing it starts outlives the video.
+	s.stopCheck(path)
+	return s.removeEpisode(path, deleteWork)
+}
+
+// removeEpisode is RemoveEpisode once nothing checks the video's picture
+// any more, or from the check itself.
+func (s *FrameFairy) removeEpisode(path string, deleteWork bool) error {
 	if !s.store.Known(path) {
 		return errNotInLibrary
 	}
