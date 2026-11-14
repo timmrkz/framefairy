@@ -312,6 +312,7 @@ func TestTimingsKeptFromSeveralSearchesAtOnce(t *testing.T) {
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestASearchSaysHowFarItIs(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "40")
 	var heard, asked int32
 	server := fakeModel(t, &asked)

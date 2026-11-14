@@ -129,6 +129,7 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 //
 // On the real disk: ffmpeg reads the episode the search hears.
 func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
+	t.Parallel()
 	// Not beside the others: it adds a recipe to the package's list.
 	edit := linesRecipe
 	edit.Name, edit.Edit = "lines-edit", true

@@ -463,6 +463,7 @@ func TestProbeStandsAPhoneVideoUp(t *testing.T) {
 //
 // On the real disk: the episode's decoder reads the episode.
 func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {

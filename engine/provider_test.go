@@ -461,6 +461,8 @@ func TestReadAPIKeyNamesTheProvider(t *testing.T) {
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestProjectPlansWithOpenAI(t *testing.T) {
+	// Not side by side with the others: cloud sets the API keys in the
+	// environment the whole test binary shares.
 	source := testEpisode(t, "40")
 	// One story, the first line, as middle answers, in two pieces.
 	fake, e := cloud(t, disk, openAIStream([]string{"1 1", " 1\n"}, "stop",
@@ -504,6 +506,8 @@ func TestProjectPlansWithOpenAI(t *testing.T) {
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestAPlainAnswerIsNotPrefilled(t *testing.T) {
+	// Not side by side with the others: cloud sets the API keys in the
+	// environment the whole test binary shares.
 	source := testEpisode(t, "40")
 	fake, e := cloud(t, disk, claudeStream("1 1 1\n"))
 	var heard int32

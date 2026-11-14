@@ -34,6 +34,7 @@ import (
 //
 // On the real disk: the frames decoder reads the episode.
 func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
@@ -104,6 +105,7 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 //
 // On the real disk: the frames decoder reads the episode.
 func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
@@ -505,6 +507,7 @@ func meanDiff(a, b []byte) float64 {
 //
 // On the real disk: the frames decoder reads the episode.
 func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
@@ -565,6 +568,7 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 //
 // On the real disk: the frames decoder reads the episodes.
 func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
@@ -624,6 +628,7 @@ func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 //
 // On the real disk: the frames decoder reads the episodes.
 func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
@@ -811,6 +816,7 @@ func TestTheEpisodesDecoderGivesTheFramesBeforeAnOpenKeyFrame(t *testing.T) {
 //
 // On the real disk: the frames decoder reads the episodes.
 func TestTheEpisodesDecoderHearsWhatFFmpegDoes(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
@@ -924,6 +930,7 @@ func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
 //
 // On the real disk: the frames decoder reads the episodes.
 func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
