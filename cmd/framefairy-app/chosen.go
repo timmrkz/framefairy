@@ -114,15 +114,18 @@ type picked struct {
 	// plays, the clips there were as the newest search began, the search
 	// it follows, the clip each removal chose instead of the one it
 	// removed, the rev of the newest state it chose from and the clip
-	// chosen before it, and the card the clip became was, rule 7.
-	playing bool
-	begins  *followed
-	search  *followed
-	instead map[string]string
-	decided uint64
-	prior   string
-	card    string
-	became  string
+	// chosen before it, and the card the clip became was, rule 7. And
+	// the search during which a hand last worked in the clip timeline or
+	// the cards, see AtWork.
+	playing  bool
+	workedIn string
+	begins   *followed
+	search   *followed
+	instead  map[string]string
+	decided  uint64
+	prior    string
+	card     string
+	became   string
 }
 
 // chosenIn is what is chosen in the video at path, see picked.

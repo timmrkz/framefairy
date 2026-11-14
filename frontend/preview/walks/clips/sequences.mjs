@@ -41,9 +41,12 @@ export default [
     // Found in the second review of the search on 21 October: two clips
     // over the same words have a card each that begin at the same moment,
     // and Shift and the down arrow stuck on the first, because the step to
-    // the second left the playhead where it was.
-    name: "Shift and the arrows walk past two cards that begin at the same moment",
-    steps: [["walk two at once"]],
+    // the second left the playhead where it was. And a card of a clip
+    // not chosen, clicked, chooses it and puts the playhead in the middle
+    // of the clip timeline at the zoom it had, Tim's report of 14
+    // November.
+    name: "Shift and the arrows walk past two cards that begin at the same moment, and a card clicked centres the playhead",
+    steps: [["walk two at once"], ["card centres", "another clip"]],
   },
   {
     // Found by Tim on 20 October: the clip chosen with the keys had its

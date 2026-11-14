@@ -1569,6 +1569,7 @@ const Answers = {
         (window as any).__chosen = args[1];
         return videoState(String(args[0]));
       case "Playing":
+      case "AtWork":
         return Promise.resolve(null);
       // The Go side places the window again where nothing is kept: the
       // first half hour nobody searched, on its step, see window.go. The

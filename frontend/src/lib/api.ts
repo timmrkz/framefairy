@@ -979,6 +979,10 @@ export const api = {
   // Whether the video plays: the Go side chooses a search's clips only
   // while it is paused.
   playing: (path: string, playing: boolean) => call<void>("Playing", path, playing),
+  // A hand at work in the clip timeline or the transcript cards: the Go
+  // side then chooses none of the clips of the search that runs, so what
+  // the hand works in stays where it put it, see AtWork in choose.go.
+  atWork: (path: string) => call<void>("AtWork", path),
   // The window put back where the app places it, a double-click on its
   // marks, as a step undo takes back, answered with the state after it.
   placeWindow: (path: string) => call<VideoState>("PlaceWindow", path),

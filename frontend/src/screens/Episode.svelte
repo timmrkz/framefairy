@@ -234,6 +234,19 @@
     const playing = !paused;
     untrack(() => api.playing(path, playing).catch(() => {}));
   });
+  // A hand at work in the clip timeline or the transcript cards while a
+  // search runs is told to the Go side once for that search, which then
+  // chooses none of its clips: a clip chosen is shown the way a pick is,
+  // and the playhead, the cards and the clip timeline went to it under a
+  // hand already at work there, Tim's report of 14 November. See AtWork
+  // in choose.go.
+  let atWorkIn = "";
+  function atWork() {
+    const id = working?.id;
+    if (!id || id === atWorkIn) return;
+    atWorkIn = id;
+    api.atWork(path).catch(() => {});
+  }
   let looping = $state(false);
   // Whether the playhead is on the chosen clip or on the video, which the
   // video preview keeps, see lib/playhead.ts. On the video the clip is
@@ -529,6 +542,7 @@
   let clipListTop = 0;
   function openSaying() {
     act("search what was said");
+    atWork();
     clipListTop = root?.querySelector<HTMLElement>(".pane .list")?.scrollTop ?? 0;
     saying = true;
     void tick().then(() => sayField?.focus());
@@ -1287,16 +1301,18 @@
   // jump is off for a clip chosen by clicking one of its sentences, so the
   // sentences stay where they are rather than go to the clip's first.
   // step is the way the clip list was walked to it, see showChosen.
-  async function select(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0) {
+  // fit is off for a clip chosen by clicking one of its cards, whose view
+  // is the card's, see the cards' onseek.
+  async function select(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0, fit = true) {
     // The Go side keeps it, so the video's state says it and opening the
     // video again opens on the same clip.
     session.pick(key, (k) => api.chooseClip(path, k));
-    await show(key, seek, jump, step);
+    await show(key, seek, jump, step, fit);
   }
 
   // A clip chosen, shown: by a hand, see select, or by the app, see the
   // move chose.
-  async function show(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0) {
+  async function show(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0, fit = true) {
     if (jump) chosenTimes++;
     const clip = clips.find((c) => c.key === key);
     // On the clip, at its start: picking a clip is a gesture about it.
@@ -1306,7 +1322,7 @@
     // selected and the timeline was moved by hand since.
     await tick();
     showChosen(step);
-    timeline?.fit();
+    if (fit) timeline?.fit();
   }
 
   // Removing a clip is one click, so putting it back is one click too, for
@@ -1361,7 +1377,8 @@
     closing = closing.filter((k) => k !== key);
   }
 
-  // A clip is always chosen while there is one. Removing the chosen clip
+  // A clip stays chosen while there is one, unless a hand worked during
+  // the search that found them, see AtWork in choose.go. Removing the chosen clip
   // chooses the next in the list, or the one before it when it was the
   // last, the way Finder and Mail move the selection on from what was
   // deleted. It used to leave nothing chosen and the clip timeline empty.
@@ -3328,6 +3345,7 @@
                 placeholder="Search transcript"
                 aria-label="Search transcript"
                 onkeydown={(e) => {
+                  atWork();
                   if (e.key === "Escape") {
                     e.preventDefault();
                     e.stopPropagation();
@@ -3407,7 +3425,7 @@
             </button>
             {/if}
           </div>
-          <div class="scroll list">
+          <div class="scroll list" onpointerdowncapture={saying ? atWork : undefined} onwheelcapture={saying ? atWork : undefined}>
             {#if saying}
               <SaidList
                 bind:this={saidList}
@@ -3432,8 +3450,24 @@
                   } else if (!walked) sayFrom = null;
                   // A sentence of a clip makes that clip the one worked on,
                   // the way its mark does, found by Tim.
-                  if (clip && clip !== selected) void select(clip, false, false);
-                  seekTo(intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30));
+                  atWork();
+                  const to = intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30);
+                  const other = clip && clip !== selected ? clip : undefined;
+                  if (walked) {
+                    if (other) void select(other, false, false);
+                    seekTo(to);
+                    return;
+                  }
+                  // A card clicked puts the playhead in the middle of the
+                  // clip timeline, at the zoom it has, the way the
+                  // crosshair does, Tim's report of 14 November. The one
+                  // move of the view, for the clip it chooses too, so the
+                  // clip is not fitted first and read for nothing. A card
+                  // walked to with the keys turns the page instead, see
+                  // SaidList.
+                  timeline?.toPlayhead(to, other);
+                  if (other) void select(other, false, false, 0, false);
+                  player?.seek(to);
                 }}
               />
             {:else}
@@ -3471,7 +3505,7 @@
          answered for, with frames or none. A walk clicks a caption block
          once a click goes by the frames, issue #290. Nothing on screen
          reads them. -->
-    <div class="detail" data-framed={framedTrack} data-answered={answeredTrack}>
+    <div class="detail" data-framed={framedTrack} data-answered={answeredTrack} onpointerdowncapture={atWork} onwheelcapture={atWork}>
       <ClipTimeline
         bind:this={timeline}
         {path}
@@ -3490,7 +3524,10 @@
         {lit}
         bind:numbers
         bind:drawn
-        onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
+        onseek={(t, about, wordStep) => {
+          atWork();
+          player?.seek(t, about, wordStep);
+        }}
         onahead={readAhead}
         onhold={holdPlayhead}
         dimmed={!onClip}

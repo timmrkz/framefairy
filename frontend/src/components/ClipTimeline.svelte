@@ -942,11 +942,15 @@
   // With a clip chosen this counts as putting the view somewhere by hand,
   // or the effect below would pull it straight back to the clip. With no
   // clip the view follows the playhead by itself and has to keep doing so.
-  export function toPlayhead() {
-    held = !!clip;
-    viewFor = clip?.key ?? "";
+  // A moment given is where the playhead is going, for a hand that put it
+  // there in the same act, a card clicked, before time says it, and a key
+  // the clip that act chooses, so the view is that clip's already and is
+  // not fitted to it once it comes.
+  export function toPlayhead(at = time, key?: string) {
+    held = !!(key ?? clip);
+    viewFor = key ?? clip?.key ?? "";
     const whole = Math.max(duration, span);
-    const from = Math.max(0, Math.min(time - span / 2, whole - span));
+    const from = Math.max(0, Math.min(at - span / 2, whole - span));
     load(from, from + span);
   }
 

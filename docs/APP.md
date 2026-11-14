@@ -1468,7 +1468,14 @@ bubble scrolled by those eight pixels.
       one shown a little later. When the search is over, the earliest of
       the clips it found, the first of them in the list, is the one chosen,
       with the playhead at its start, as long as the clip chosen is still
-      the one the search chose and the video is paused. The model names its
+      the one the search chose and the video is paused. A hand at work in
+      the clip timeline or the transcript cards while the search runs, a
+      card clicked or picked, the cards scrolled, the playhead put or the
+      view moved, keeps the search from choosing any of its clips: they
+      come into the list, and the playhead, the cards and the clip
+      timeline stay where the hand left them, Tim's report of 14
+      November. A video with no clip chosen then stays so until a clip is
+      picked or a later search chooses one. The model names its
       clips strongest first, so the first to land is often not the first
       in the list. A clip that has landed can be played,
       trimmed and corrected while the rest are still coming. Stopping a
@@ -1683,8 +1690,9 @@ bubble scrolled by those eight pixels.
       after a search, a render or an undo, leaves the rows as they are, and
       an undo that puts the clip back makes it a clip again. Leaving the
       episode, or any of those, used to take every way back with it.
-      A clip is always chosen while there is one: removing the chosen
-      clip chooses the next in the list, or the one before it when it
+      A clip stays chosen while there is one, and the one exception is
+      a search a hand worked during, see Clips arrive one at a time:
+      removing the chosen clip chooses the next in the list, or the one before it when it
       was the last, the way Finder and Mail move on from what was
       deleted. It used to leave nothing chosen, Tim found.
       Putting a clip back takes back the remove and nothing more: the
@@ -2373,7 +2381,11 @@ found is a place in the video, and I and O make a clip there.
   before the first step, the way a search through a document goes back
   to where it began, found by Tim. Enter at a card walked to stays there,
   and so does a card clicked or the playhead moved off the card walked
-  to, because then the person went where they meant to go.
+  to, because then the person went where they meant to go. A card
+  clicked puts the playhead in the middle of the clip timeline, the way
+  the crosshair does, at the zoom the clip timeline has, so the place
+  clicked is seen with the same room either side. It stood wherever the
+  clip timeline happened to show it, found by Tim.
 - **Shift and a click pick cards, and Copy copies their words.** The
   way files are picked in Finder, Shift and a click pick every card
   from the card of the playhead to the one clicked, in the grey the card

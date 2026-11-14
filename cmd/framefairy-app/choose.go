@@ -37,7 +37,12 @@ import (
 //  7. when a clip on its way that is chosen, a card, is written, the clip.
 //
 // The first two only while the video is paused, so a picture that is
-// playing never jumps to a clip nobody asked for.
+// playing never jumps to a clip nobody asked for, and the first two and
+// the fourth, for a video with no clip chosen, only while no hand works
+// in the clip timeline or the transcript cards during the search, see
+// AtWork. A clip chosen moves the playhead, the cards and the clip
+// timeline to it, and they moved under a hand at work there, Tim's
+// report of 14 November.
 
 // followed is the search the app follows to choose its clips: the clip
 // chosen and the clips there were when it began, and the clip it chose.
@@ -60,6 +65,38 @@ func (s *FrameFairy) Playing(path string, playing bool) error {
 	p.mu.Lock()
 	p.playing = playing
 	p.mu.Unlock()
+	return nil
+}
+
+// AtWork says a hand works in the video's clip timeline or its
+// transcript cards: it put the playhead, clicked or picked a card,
+// scrolled the cards or moved the view. The app then chooses none of the
+// clips of the search that runs, so what the hand is at work in stays
+// where it put it. The clips it finds come into the list, and a hand
+// chooses among them. Nothing is noted while no search runs.
+func (s *FrameFairy) AtWork(path string) error {
+	if !s.store.Known(path) {
+		return errNotInLibrary
+	}
+	jobs, _ := s.jobs.ofVideo(path)
+	id := ""
+	for i := range jobs {
+		if jobs[i].Kind == engine.JobSearch && jobs[i].going() {
+			id = jobs[i].ID
+		}
+	}
+	if id == "" {
+		return nil
+	}
+	p := s.chosenIn(path)
+	p.load(s.store.files, path)
+	p.mu.Lock()
+	noted := p.workedIn != id
+	p.workedIn = id
+	p.mu.Unlock()
+	if noted {
+		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("job", id).Msg("a hand works in the clip timeline or the cards, so the app chooses none of the search's clips")
+	}
 	return nil
 }
 
@@ -107,10 +144,12 @@ func (s *FrameFairy) chosenFor(path string, st VideoState) (clip, was string) {
 			p.prior, p.kept.Clip = before, now
 			return true
 		}
-		if first := firstKept(st.Clips); first != "" && !holdsClip(st.Clips, now) && card(st.Jobs, now) == nil {
+		if first := firstKept(st.Clips); first != "" && !holdsClip(st.Clips, now) && card(st.Jobs, now) == nil && (now != "" || p.workedIn == "") {
 			// Rule 4. What is chosen here is not written: the file says
 			// what a hand or a search chose, and a video opened again
-			// opens on the clip chosen last once it is there.
+			// opens on the clip chosen last once it is there. A video
+			// with no clip chosen because a hand was at work during its
+			// search stays so until a hand or a later search chooses.
 			p.prior, p.kept.Clip = before, first
 			said = append(said, "the clip chosen is not there, so the first")
 		}
@@ -194,7 +233,7 @@ func (p *picked) follow(st VideoState, now string, said []string) (string, []str
 			return now, said
 		}
 		f.shown = true
-		if now != f.before || p.playing {
+		if now != f.before || p.playing || p.workedIn == f.id {
 			return now, said
 		}
 		f.chose = found[0].Key
@@ -206,12 +245,12 @@ func (p *picked) follow(st VideoState, now string, said []string) (string, []str
 	}
 	if len(found) > 0 {
 		f.shown = true
-		if (now != f.before && now != f.chose) || p.playing || found[0].Key == now {
+		if (now != f.before && now != f.chose) || p.playing || p.workedIn == f.id || found[0].Key == now {
 			return now, said
 		}
 		return found[0].Key, append(said, "the earliest clip the search found")
 	}
-	if f.shown || now != f.before || p.playing || search.Result == "" {
+	if f.shown || now != f.before || p.playing || p.workedIn == f.id || search.Result == "" {
 		return now, said
 	}
 	for _, c := range st.Clips {
