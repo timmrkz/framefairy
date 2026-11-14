@@ -298,6 +298,7 @@
   // Whether the card of a row is in view, inside the veil the list fades
   // its ends with.
   function shows(key: string): { card: HTMLElement; box: HTMLElement; veil: number; above: number; below: number } | null {
+    layOutChanged();
     const card = list?.querySelector<HTMLElement>(`li[data-row="${CSS.escape(key)}"]`);
     const box = scroller();
     if (!card || !box) return null;
@@ -335,6 +336,7 @@
   // the first card of the list stands, under the veil the list fades its
   // ends with.
   function toTop(key: string) {
+    layOutChanged();
     const card = list?.querySelector<HTMLElement>(`li[data-row="${CSS.escape(key)}"]`);
     const box = scroller();
     if (!card || !box) return;
@@ -447,10 +449,9 @@
   // A card may be passed over while it is out of view in a search, so
   // typing does not lay out a video's every card again, issue #806. The
   // browser then takes the height it last laid the card out at, so a card
-  // is laid out whole in the frame it comes in, and once more after the
-  // list changes width, before it may be passed over, see .kept. A card
-  // never laid out was taken at a guessed height, and a card walked to
-  // landed off where it should stand, found by Tim.
+  // is laid out whole in the frame it comes in, before it may be passed
+  // over, see .kept. A card never laid out was taken at a guessed height,
+  // and a card walked to landed off where it should stand, found by Tim.
   const coming = new Set<HTMLElement>();
   const laying = new Set<HTMLElement>();
   let frame = 0;
@@ -469,6 +470,31 @@
     coming.clear();
     frame = laying.size ? requestAnimationFrame(step) : 0;
   }
+  // A card passed over keeps the height it was laid out at, though its
+  // words or the list's width changed since: a letter typed makes them
+  // bold, and cards laid out before that stood the card walked to 18 px
+  // off in WebKit, which has no scroll anchoring to hide it. So before a
+  // card is walked to, the whole list is laid out once, for all the
+  // letters typed and the widths dragged through since, and neither
+  // typing nor a drag of the app's edge lays out a card out of view,
+  // see .whole. Taking .kept off every card for it made a drag of the
+  // edge 80 % slower, all of it in style.
+  let changed = false;
+  $effect(() => {
+    void rows;
+    void typed;
+    changed = true;
+  });
+  let wholeFrame = 0;
+  function layOutChanged() {
+    if (!changed || !list) return;
+    changed = false;
+    list.classList.add("whole");
+    // Off again once a frame has laid it out, which is when the browser
+    // keeps the height it laid each card out at.
+    cancelAnimationFrame(wholeFrame);
+    wholeFrame = requestAnimationFrame(() => (wholeFrame = requestAnimationFrame(() => list?.classList.remove("whole"))));
+  }
   function laidOut(li: HTMLElement) {
     settle(li);
     return () => {
@@ -476,18 +502,20 @@
       laying.delete(li);
     };
   }
-  // The width is only read, to know the cards are to be laid out again.
+  // The width is only read, to know the cards are to be laid out again
+  // before the next card walked to.
   onMount(() => {
     let width = -1;
     const resized = new ResizeObserver(([e]) => {
       const now = e.borderBoxSize[0].inlineSize;
-      if (width >= 0 && now !== width) for (const li of list.querySelectorAll<HTMLElement>("li[data-row]")) settle(li);
+      if (width >= 0 && now !== width) changed = true;
       width = now;
     });
     resized.observe(list);
     return () => {
       resized.disconnect();
       cancelAnimationFrame(frame);
+      cancelAnimationFrame(wholeFrame);
     };
   });
 
@@ -600,7 +628,7 @@
 
   /* In a search, a card out of view that has been laid out is passed
      over, so a letter typed lays out only the cards in view. */
-  ol.searching li:global(.kept) {
+  ol.searching:not(:global(.whole)) li:global(.kept) {
     content-visibility: auto;
   }
 
