@@ -918,7 +918,10 @@ func (q *queue) stopByHand(id string) {
 // makeWayForSearch readies the queue for a search of a video, asked for
 // by Search or Continue. A search called off a moment ago may still be on
 // its way out, and it writes the same record as it goes, so the new one
-// waits for it. The video's transcription and the work on its clips go one
+// waits for it. The new job would wait for it too, see
+// waitForThoseBefore, but only once it is added, and the search that
+// stopped has to have ended here, so that settle finds it stopped and its
+// row says no more that it stopped. The video's transcription and the work on its clips go one
 // at a time, so the whole video being transcribed stops, see
 // makeWayForTranscribe. And a search that stopped is settled, since the
 // new one writes a record of its own in its place.

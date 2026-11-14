@@ -2413,37 +2413,35 @@ export const steps = {
     // straight after the move. Read straight after, it had not moved yet,
     // the hand went on by more pixels, and a busy WebKit took several
     // frames back in one step, which the app rightly opened with a key
-    // frame first, issue #851.
-    // Frames are counted the way from is, from the episode's start.
-    const onFrame = (n) =>
-      page.locator(".screen").evaluate(
-        (screen, [n, fps]) =>
-          new Promise((done) => {
-            const on = () => Math.floor(Number(screen.dataset.playhead) * fps + 1e-6) === n;
-            if (on()) return done();
-            const watch = new MutationObserver(() => {
-              if (!on()) return;
-              watch.disconnect();
-              done();
-            });
-            watch.observe(screen, { attributes: true, attributeFilter: ["data-playhead"] });
-          }),
-        [n, fps],
-      );
+    // frame first, issue #851. Frames are counted the way from is, from
+    // the episode's start. The wait ends once the playhead is on that
+    // frame or past it to the left, so a step that went a frame too far
+    // says so and never hangs.
     let back = 0;
+    let off = "";
     while (back < arg) {
       const to = await xOf(page, (from - back - 0.5) / fps);
       if (to <= g.start.x + g.start.w) break;
       await page.mouse.move(to, y);
       back++;
-      await onFrame(from - back);
+      await pageUntil(
+        page,
+        ([n, fps]) => Math.floor(Number(document.querySelector(".screen").dataset.playhead) * fps + 1e-6) <= n,
+        [from - back, fps],
+      );
+      const on = from - Math.floor((await at()) * fps + 1e-6);
+      if (on !== back) {
+        off = `a step of the hand to frame ${from - back} put the playhead on frame ${from - on}`;
+        break;
+      }
       await shownOnPlayhead(page);
     }
     await page.mouse.up();
     await settle(page);
     const streams = (await page.evaluate(() => window.__appFrames.stats.streams)) - was;
     await watch.step("scrub", s);
-    if (back < arg) walk.wrong = `the drag reached the clip's start ${back} frames back, not ${arg}`;
+    if (off) walk.wrong = off;
+    else if (back < arg) walk.wrong = `the drag reached the clip's start ${back} frames back, not ${arg}`;
     else if (streams > Math.ceil(back / 15) + 1) {
       const why = await page.evaluate((n) => window.__appFrames.stats.newFor.slice(-n), Math.min(16, streams));
       // What the video preview said of its streams meanwhile, in the
