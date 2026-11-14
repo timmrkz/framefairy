@@ -30,35 +30,30 @@
 # run of builds.yml is published, and only a commit that main's history
 # holds, or the history of the pull request's newest commit.
 #
-# Three jobs:
+# Three jobs, each step one command of cmd/framefairy-release, which
+# makes every decision in Go, see
+# docs/decisions/2026-11-14-update-decisions-in-go.md:
 #
 # 1. announce, the moment a build starts, writes the channel list again,
 #    so the Updates page says for the whole of the build that the build it
-#    offers is not the newest.
+#    offers is not the newest. It also cancels a publish that has waited
+#    half an hour to enter the environment, see unstick in channels.go:
+#    on 7 October one of main waited for good, and main stayed on that
+#    day's build for three days.
 # 2. publish, per channel, one after another and never stopped half way,
-#    checks the build, signs the zip and uploads it with its entry to the
-#    release dev. What it decides, it decides in Go, in
-#    cmd/framefairy-release, and each step runs one command of it. When
-#    a pull request's entry is up, it marks the commit ready to update to.
-# 3. list, when a build ends, writes channels.json again from every entry.
-#    It also takes away the entry of any pull request that is not open any
-#    more, which is how a closed pull request leaves the list.
+#    checks that the commit is its channel's, checks the build, signs the
+#    zip and uploads it with its entry to the release dev, and marks a
+#    pull request's commit ready to update to. A build it does not
+#    publish says why on its commit.
+# 3. list, whenever a build ends, however it ended, writes the list again
+#    from every entry. It takes away the entry of any pull request that is
+#    not open any more, which is how a closed pull request leaves the
+#    list, and stops saying a build is coming once it ended without one.
 #
 # announce and list share one queue, and each writes the list from what is
 # there when it runs, so the order they run in does not matter, and one
 # that GitHub cancels in the queue loses nothing the next one does not
 # write. Nothing that only one of them does may live in them.
-#
-# And one beside them:
-#
-# 4. unstick cancels any publish that has waited to enter the environment
-#    for half an hour. updates has no reviewers and no wait timer, so a
-#    publish waits there for seconds, but on 7 October one of main waited
-#    for good. publish never stops half way, so it holds its channel's
-#    queue while it waits, and every publish of main after it waited
-#    behind it and was replaced by the next: main stayed on that day's
-#    build for three days while the page said it was up to date. A wait
-#    is not a running job, so timeout-minutes does not end it.
 name: Publish builds
 
 on:
@@ -81,53 +76,22 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
-      # What became of a commit's build, see ended in
-      # cmd/framefairy-release/github.go.
-      actions: read
+      # What became of a commit's build, and the publish runs that wait.
+      actions: write
       statuses: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Nothing is published until the key is made, and a list without it
-      # cannot be checked.
-      - id: key
-        name: Is there an update key
-        run: |
-          if [ -s cmd/framefairy-app/update-key.txt ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::No update key yet, so there is no list to write."
-          fi
-      - if: steps.key.outputs.ready == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - if: steps.key.outputs.ready == 'true'
-        name: Write the channel list from every entry
-        run: sh scripts/channel-list.sh
-
-  unstick:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      actions: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-    steps:
       - name: Cancel a publish stuck before the environment
-        run: |
-          before=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
-          gh run list --workflow publish.yml --status waiting --limit 100 \
-            --json databaseId,createdAt \
-            --jq ".[] | select(.createdAt < \"$before\") | .databaseId" |
-          while read -r run; do
-            echo "::warning::Publish run $run has waited for the environment since before $before, so it is cancelled."
-            gh run cancel "$run" || true
-          done
+        run: go run ./cmd/framefairy-release unstick
+      - name: Write the channel list from every entry
+        run: go run ./cmd/framefairy-release channels
 
   publish:
     if: >-
@@ -150,91 +114,26 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       # main, the default for a workflow_run, never the branch.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
 
       # What the build is a build of, from GitHub's record of the run and
-      # not from anything the build wrote. A run that left no zip is a
-      # commit that needed no build, a pull request that closed, or a
-      # branch with no pull request, and there is nothing to publish.
+      # not from anything the build wrote, and only a commit its channel's
+      # history holds, #838. See publishPlan in plan.go.
       - id: which
         name: What this is a build of
         env:
-          EVENT: ${{ github.event.workflow_run.event }}
-          BRANCH: ${{ github.event.workflow_run.head_branch }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
           RUN: ${{ github.event.workflow_run.id }}
-        run: |
-          zips=$(gh api "repos/$GH_REPO/actions/runs/$RUN/artifacts" \
-            --jq '[.artifacts[] | select(.name == "build" and (.expired | not))] | length')
-          if [ "$zips" = 0 ]; then
-            echo "::notice::The run left no build, so there is nothing to publish."
-            exit 0
-          fi
-          if [ "$EVENT" = push ] && [ "$BRANCH" = main ]; then
-            channel=main
-            name=main
-            tag=main
-            head=
-          else
-            found=$(gh pr list --head "$BRANCH" --state open --json number,title,headRefOid,isCrossRepository \
-              --jq '[.[] | select(.isCrossRepository | not)][0] // empty')
-            if [ -z "$found" ]; then
-              echo "::notice::$BRANCH has no open pull request any more, so its build has no channel."
-              exit 0
-            fi
-            number=$(printf '%s' "$found" | jq -r .number)
-            title=$(printf '%s' "$found" | jq -r .title | tr -d '\r' | head -n 1)
-            head=$(printf '%s' "$found" | jq -r .headRefOid)
-            channel="pr-$number"
-            name="#$number $title"
-            tag="pr$number"
-          fi
-          # The engine's version at the commit built, read and not run. It
-          # is in engine/doc.go, and in engine/log.go on a branch made
-          # before the log of a run got a package of its own. This workflow
-          # runs from main for every branch, so it reads both until no open
-          # pull request is that old.
-          engine=
-          for file in engine/doc.go engine/log.go; do
-            engine=$(gh api "repos/$GH_REPO/contents/$file?ref=$SHA" \
-              -H 'Accept: application/vnd.github.raw' 2>/dev/null |
-              awk -F'"' '/^const Version = /{ print $2; exit }')
-            if [ -n "$engine" ]; then break; fi
-          done
-          if ! printf '%s' "$engine" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::The engine's version at $SHA is not a version: $engine"
-            exit 1
-          fi
-          short=$(echo "$SHA" | cut -c1-7)
-          version="$engine-$tag.$short"
-          mkdir -p dist
-          # The name can hold anything a title can, so it goes by file.
-          printf '%s' "$name" > dist/name.txt
-          {
-            echo "run=true"
-            echo "channel=$channel"
-            echo "head=$head"
-            echo "version=$version"
-            echo "commit=$(echo "$SHA" | cut -c1-12)"
-            echo "zip=app-$channel-$version.zip"
-          } >> "$GITHUB_OUTPUT"
-          echo "$SHA is $version, for $channel"
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: go run ./cmd/framefairy-release publish-plan -run "$RUN" -branch "$BRANCH" -commit "$SHA"
 
-      - id: key
-        if: steps.which.outputs.run == 'true'
-        name: Is there an update key
-        env:
-          KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
-        run: |
-          if [ -z "$KEY" ] || [ ! -s cmd/framefairy-app/update-key.txt ]; then
-            echo "::notice::No update key yet, so nothing is published. See docs/UPDATES.md, The keys."
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - if: steps.key.outputs.ready == 'true'
+      - if: steps.which.outputs.run == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build
@@ -242,145 +141,49 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
-      # A branch that has not merged main since builds.yml stopped signing
-      # runs the builds.yml it has, which still signs and publishes its own
-      # build and leaves no app.zip. That build is its own to publish.
-      - id: zip
-        if: steps.key.outputs.ready == 'true'
-        name: Is it a build this workflow signs
-        env:
-          BUILT: ${{ runner.temp }}/build/app.zip
-        run: |
-          if [ -f "$BUILT" ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::The build has no app.zip. It was made by a builds.yml from before main signed the builds, which publishes it itself."
-          fi
-
-      - if: steps.zip.outputs.ready == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      # Only a commit its channel's history holds: GitHub reports a tag
-      # pushed with the name main, or with a pull request's branch, as a
-      # push to that branch, at any commit. See held in
-      # cmd/framefairy-release/github.go.
-      - if: steps.zip.outputs.ready == 'true'
-        name: Is it a commit of its channel
-        env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
-          CHANNEL: ${{ steps.which.outputs.channel }}
-          HEAD: ${{ steps.which.outputs.head }}
-        run: go run ./cmd/framefairy-release held -channel "$CHANNEL" -commit "$SHA" -head "$HEAD"
-
       # The build is a branch's code, read here before anybody reviewed
       # it, so this step does not hold the key: nothing needs it until the
       # reading is done, and a zip made to trip the reader finds nothing
       # to take. The step after it signs only a build this one passed.
       - id: check
-        if: steps.zip.outputs.ready == 'true'
+        if: steps.which.outputs.run == 'true'
         name: Check what it could reach
-        env:
-          BUILT: ${{ runner.temp }}/build/app.zip
-          ZIP: ${{ steps.which.outputs.zip }}
-        run: |
-          mv "$BUILT" "dist/$ZIP"
-          if ! go run ./cmd/framefairy-release check -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
-            cat "$RUNNER_TEMP/refused.txt" >&2
-            exit 1
-          fi
+        run: go run ./cmd/framefairy-release check -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
 
       - id: sign
         if: steps.check.outcome == 'success'
         name: Sign it
         env:
           FRAMEFAIRY_UPDATE_KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
-          ZIP: ${{ steps.which.outputs.zip }}
           CHANNEL: ${{ steps.which.outputs.channel }}
+          NAME: ${{ steps.which.outputs.name }}
           VERSION: ${{ steps.which.outputs.version }}
           COMMIT: ${{ steps.which.outputs.commit }}
-        run: |
-          if ! go run ./cmd/framefairy-release sign \
-            -zip "dist/$ZIP" -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
-            -version "$VERSION" -commit "$COMMIT" \
-            -url "https://github.com/$GH_REPO/releases/download/dev/$ZIP" \
-            -out "dist/channel-$CHANNEL.json" 2> "$RUNNER_TEMP/refused.txt"; then
-            cat "$RUNNER_TEMP/refused.txt" >&2
-            exit 1
-          fi
-          ls -l dist
+          URL: https://github.com/${{ github.repository }}/releases/download/dev/${{ steps.which.outputs.zip }}
+        run: >-
+          go run ./cmd/framefairy-release sign -zip "$RUNNER_TEMP/build/app.zip" -channel "$CHANNEL" -name "$NAME"
+          -version "$VERSION" -commit "$COMMIT" -url "$URL" -out "$RUNNER_TEMP/entry.json" -refusal "$RUNNER_TEMP/refused.txt"
 
-      - name: The release the builds live in
-        if: steps.zip.outputs.ready == 'true'
-        run: |
-          gh release view dev >/dev/null 2>&1 ||
-            gh release create dev --prerelease --latest=false --target main \
-              --title "Builds to update to" \
-              --notes "The builds of main and of each open pull request, for the app to update itself to while it is being made. Not for customers. See docs/UPDATES.md." ||
-            gh release view dev >/dev/null
-
-      # The two files of this channel by name, never a pattern: one channel
-      # has no business with another's entry. The zip goes up first and the
-      # entry only once it is there, because the app reads the entry of the
-      # channel it follows and would be offered a build it cannot download
-      # yet. One command sends its files side by side, so the small entry
-      # was up long before the zip. Issue #420.
-      - id: upload
-        if: steps.zip.outputs.ready == 'true'
+      # The zip first and its entry after, and a pull request's commit
+      # marked ready the moment its entry is up, #839. See publish.go.
+      - if: steps.sign.outcome == 'success'
         name: Upload the build and its entry
         env:
           ZIP: ${{ steps.which.outputs.zip }}
           CHANNEL: ${{ steps.which.outputs.channel }}
-        run: |
-          gh release upload dev "dist/$ZIP" --clobber
-          gh release upload dev "dist/channel-$CHANNEL.json" --clobber
-          echo "published=true" >> "$GITHUB_OUTPUT"
+        run: >-
+          go run ./cmd/framefairy-release publish -zip "$RUNNER_TEMP/build/app.zip" -as "$ZIP"
+          -entry "$RUNNER_TEMP/entry.json" -channel "$CHANNEL" -commit "$SHA"
 
-      # This workflow runs from main, so its checks show on main's commit
-      # and not on the pull request. The pull request learns its build is
-      # ready from a status on the commit that was built. It is set here,
-      # the moment the entry is up, and not by list: list shares its queue
-      # with announce, GitHub keeps one waiting job a queue and cancels the
-      # one before, and a cancelled list took the status with it, so the
-      # builds of #798 and #816 never said they were ready. The app reads
-      # the entry of the channel it follows, so the build is there to
-      # update to once the entry is up, whenever the list follows.
-      - name: Mark the commit ready to update to
-        if: steps.upload.outputs.published == 'true' && steps.which.outputs.channel != 'main'
-        env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
-          CHANNEL: ${{ steps.which.outputs.channel }}
-        run: |
-          gh api "repos/$GH_REPO/statuses/$SHA" \
-            -f state=success -f context="Ready to update to" \
-            -f description="On the Updates page as $CHANNEL" >/dev/null
-
-      # This workflow runs from main, so a build that is not published
-      # fails here, on main's runs, and the pull request would only miss
-      # its Ready to update to with no reason given. So whatever failed,
-      # the refusal of the check or the signer, or anything else on the
-      # way, says so on the commit that was built, where the pull request
-      # shows it, issue #369. The list reads it too: a commit marked so has
-      # no build coming, see ended in cmd/framefairy-release/github.go.
+      # Whatever failed, the refusal of the check or the signer, or any
+      # step on the way, says so on the commit that was built, where the
+      # pull request shows it, issue #369. The list reads it too: a commit
+      # marked so has no build coming, #840.
       - name: Say on the commit why it is not published
         if: failure()
         env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          why=
-          if [ -s "$RUNNER_TEMP/refused.txt" ]; then
-            why=$(grep -m1 '^  ' "$RUNNER_TEMP/refused.txt" | sed 's/^ *//' || true)
-            [ -n "$why" ] || why=$(head -n 1 "$RUNNER_TEMP/refused.txt" | sed 's/^framefairy-release: //')
-            why="Not signed: $why"
-          else
-            why="Not published: a step of its publishing failed, see the run"
-          fi
-          gh api "repos/$GH_REPO/statuses/$SHA" \
-            -f state=failure -f context="Ready to update to" \
-            -f description="$(printf '%s' "$why" | cut -c1-140)" \
-            -f target_url="$GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID" >/dev/null
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: go run ./cmd/framefairy-release not-published -commit "$SHA" -run "$RUN" -refusal "$RUNNER_TEMP/refused.txt"
 
   # Whenever a build ends, whether publish signed it, skipped it or
   # refused it: a build that ended without one is a build no longer to
@@ -400,8 +203,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
-      # What became of a commit's build, see ended in
-      # cmd/framefairy-release/github.go.
+      # What became of a commit's build.
       actions: read
       statuses: read
     env:
@@ -409,39 +211,9 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - id: key
-        name: Is there an update key
-        run: |
-          if [ -s cmd/framefairy-app/update-key.txt ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::No update key yet, so there is no list to write."
-          fi
-      - if: steps.key.outputs.ready == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-
-      - if: steps.key.outputs.ready == 'true'
-        name: Write the channel list from every entry
-        run: sh scripts/channel-list.sh
-
-      # A zip no entry points at is gone an hour after it was made. Not at
-      # once: a publish that runs beside this job may have uploaded a zip
-      # whose entry this job has not seen yet.
-      - if: steps.key.outputs.ready == 'true'
-        name: Remove builds nobody can reach any more
-        run: |
-          jq -r '.channels[].url | split("/") | last' channels.json > kept.txt
-          now=$(date -u +%s)
-          gh release view dev --json assets \
-            --jq '.assets[] | select(.name | test("^app-.*\\.zip$")) | "\(.name) \(.createdAt)"' |
-          while read -r name created; do
-            grep -qxF "$name" kept.txt && continue
-            age=$(( now - $(date -u -d "$created" +%s) ))
-            if [ "$age" -gt 3600 ]; then
-              echo "removing $name"
-              gh release delete-asset dev "$name" -y || true
-            fi
-          done
+      - name: Write the channel list from every entry
+        run: go run ./cmd/framefairy-release channels

@@ -393,8 +393,9 @@ func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
 // cancelled by GitHub before it starts: a group keeps one job waiting and
 // cancels the one before. So such a job only does what the next one in
 // the group does again, like writing the channel list, and never marks a
-// commit. A cancelled list in publish.yml took the Ready to update to of
-// two pull requests with it.
+// commit, by GitHub's statuses or by framefairy-release publish or
+// not-published, which mark one. A cancelled list in publish.yml took the
+// Ready to update to of two pull requests with it.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestNoJobInASharedQueueMarksACommit(t *testing.T) {
@@ -437,13 +438,16 @@ func TestNoJobInASharedQueueMarksACommit(t *testing.T) {
 				continue
 			}
 			for _, s := range j.Steps {
-				if strings.Contains(s.Run, "/statuses/") {
+				if strings.Contains(s.Run, "/statuses/") || marks.MatchString(s.Run) {
 					t.Errorf("%s: the job %s shares the queue %s, where GitHub can cancel it before it starts, and %q marks a commit, which nothing marks again", filepath.Base(f), name, group(j.Concurrency), s.Name)
 				}
 			}
 		}
 	}
 }
+
+// The commands of framefairy-release that mark a commit.
+var marks = regexp.MustCompile(`framefairy-release (publish|not-published)(\s|$)`)
 
 // publish.yml signs only what builds.yml built on a push, and only a
 // commit the channel's own history holds. GitHub starts it for a run of
@@ -484,12 +488,12 @@ func TestOnlyACommitOfTheChannelIsPublished(t *testing.T) {
 	// the build is read or signed.
 	asked := false
 	for _, s := range publish.Steps {
-		if strings.Contains(s.Run, "framefairy-release held") {
+		if strings.Contains(s.Run, "framefairy-release publish-plan") {
 			asked = true
 		}
 		if strings.Contains(s.Run, "framefairy-release check") || strings.Contains(s.Run, "framefairy-release sign") {
 			if !asked {
-				t.Errorf("publish runs %q before it asks whether the channel holds the commit, with framefairy-release held", s.Run)
+				t.Errorf("publish runs %q before it asks whether the channel holds the commit, with framefairy-release publish-plan", s.Run)
 			}
 			break
 		}
@@ -528,7 +532,7 @@ func TestAFailedPublishMarksItsCommit(t *testing.T) {
 		t.Fatal("publish.yml has no job called publish")
 	}
 	last := steps[len(steps)-1]
-	if strings.TrimSpace(last.If) != "failure()" || !strings.Contains(last.Run, "state=failure") || !strings.Contains(last.Run, `context="Ready to update to"`) {
+	if strings.TrimSpace(last.If) != "failure()" || !strings.Contains(last.Run, "framefairy-release not-published") {
 		t.Errorf("the last step of publish, %q, is not one that marks the commit when any step before it failed", last.Name)
 	}
 }

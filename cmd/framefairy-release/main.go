@@ -1,29 +1,40 @@
-// Command framefairy-release makes the update key, and signs and lists the
-// builds the app updates itself to. It is not shipped. Tim runs it once, to
-// make the key, and the publish workflow runs the rest. See docs/UPDATES.md.
+// Command framefairy-release decides, signs and lists the builds the app
+// updates itself to, and makes the update key. It is not shipped. Tim
+// runs it once, to make the key, and the workflows run the rest, one
+// command a step: every decision about a build is made here, in Go, and
+// none in the workflows' shell. See docs/UPDATES.md and
+// docs/decisions/2026-11-14-update-decisions-in-go.md.
 //
 //	framefairy-release key
 //	    make an update key: the public half into the repository, the
 //	    private half to the clipboard, for GitHub's secrets and the
 //	    password manager
-//	framefairy-release check -zip F
+//	framefairy-release build-plan -event E -branch B -commit X
+//	    for builds.yml: what a push is a build of, and whether it needs one
+//	framefairy-release publish-plan -run R -branch B -commit X
+//	    for publish.yml: what a finished build is, and whether to publish
+//	    it, only for a commit its channel's history holds
+//	framefairy-release check -zip F [-refusal F]
 //	    refuse a build that could read input meant for other apps, watch
 //	    the screen or the camera, or ask for administrator rights, see
 //	    inputs.go. The workflow runs it before sign, in a step that does
 //	    not hold the key
-//	framefairy-release held -channel C -commit X [-head H]
-//	    refuse a commit its channel's history does not hold: main's, or
-//	    that of H, the pull request's newest commit. It asks GitHub, with
-//	    GH_TOKEN and GH_REPO
-//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F
+//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-refusal F]
 //	    sign a build that check passed with the private half, read from
 //	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list
-//	framefairy-release list -out F [-newest CHANNEL=COMMIT]... [-conflict CHANNEL]... ENTRY...
-//	    write the channel list from the entries of every channel, with the
-//	    newest commit of each channel that has one still to be built, and
-//	    the pull requests that no longer merge into main. A newest commit
-//	    whose build already ended without one is left out, which it asks
-//	    GitHub, with GH_TOKEN and GH_REPO
+//	framefairy-release publish -zip F -as NAME -entry F -channel C -commit X
+//	    upload the build and its entry, and mark a pull request's commit
+//	    Ready to update to
+//	framefairy-release not-published -commit X -run URL [-refusal F]
+//	    mark a commit whose build was not published, and why
+//	framefairy-release channels
+//	    write the channel list again from every entry, and take away what
+//	    nobody can reach any more
+//	framefairy-release unstick
+//	    cancel a publish that has waited half an hour for its environment
+//
+// Every command but key, check and sign asks GitHub, with GH_TOKEN and
+// GH_REPO, through the interface in github.go.
 package main
 
 import (
@@ -52,17 +63,24 @@ func main() {
 		usage()
 	}
 	var err error
+	args := os.Args[2:]
 	switch os.Args[1] {
 	case "key":
 		err = makeKey()
+	case "build-plan", "publish-plan":
+		err = planCommand(os.Args[1], args, gitHubFromEnv())
 	case "check":
-		err = check(os.Args[2:])
-	case "held":
-		err = holds(os.Args[2:], gitHubFromEnv())
+		err = check(args)
 	case "sign":
-		err = sign(os.Args[2:])
-	case "list":
-		err = list(os.Args[2:], gitHubFromEnv())
+		err = sign(args)
+	case "publish":
+		err = publishCommand(args, gitHubFromEnv())
+	case "not-published":
+		err = notPublishedCommand(args, gitHubFromEnv())
+	case "channels":
+		err = channelsCommand(gitHubFromEnv())
+	case "unstick":
+		err = unstick(gitHubFromEnv(), time.Now(), os.Stdout)
 	default:
 		usage()
 	}
@@ -73,7 +91,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | check -zip FILE | held ... | sign ... | list -out FILE ENTRY...")
+	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | check | sign | publish | not-published | channels | unstick, see the head of main.go")
 	os.Exit(2)
 }
 
@@ -148,22 +166,14 @@ func keys() (ed25519.PrivateKey, ed25519.PublicKey, error) {
 func check(args []string) error {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
 	zipPath := fs.String("zip", "", "the zip holding the app")
+	refusal := fs.String("refusal", "", "where to keep why the build was refused, for not-published")
 	_ = fs.Parse(args)
-	return checkInputs(*zipPath)
-}
-
-// holds refuses a build whose commit its channel does not hold, see held.
-func holds(args []string, gh gitHub) error {
-	fs := flag.NewFlagSet("held", flag.ExitOnError)
-	channel := fs.String("channel", "", "main, or pr- and the pull request's number")
-	commit := fs.String("commit", "", "the commit built")
-	head := fs.String("head", "", "the pull request's newest commit")
-	_ = fs.Parse(args)
-	return held(gh, *channel, *commit, *head)
+	return refused(*refusal, checkInputs(*zipPath), os.Stderr)
 }
 
 func sign(args []string) error {
 	fs := flag.NewFlagSet("sign", flag.ExitOnError)
+	refusal := fs.String("refusal", "", "where to keep why the build was refused, for not-published")
 	zipPath := fs.String("zip", "", "the zip holding the app")
 	channel := fs.String("channel", "", "main, or pr- and the pull request's number")
 	name := fs.String("name", "", "what the app shows for the channel")
@@ -172,11 +182,16 @@ func sign(args []string) error {
 	where := fs.String("url", "", "where the zip will be downloaded from")
 	out := fs.String("out", "", "where the entry goes")
 	_ = fs.Parse(args)
+	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *out), os.Stderr)
+}
+
+// signBuild signs the zip and writes its entry.
+func signBuild(zipPath, channel, name, version, commit, where, out string) error {
 	private, public, err := keys()
 	if err != nil {
 		return err
 	}
-	f, err := os.Open(*zipPath)
+	f, err := os.Open(zipPath)
 	if err != nil {
 		return err
 	}
@@ -186,12 +201,12 @@ func sign(args []string) error {
 		return err
 	}
 	// A pull request's title can be long, and the app shows it in a list.
-	shown := []rune(strings.TrimSpace(*name))
+	shown := []rune(strings.TrimSpace(name))
 	if len(shown) > 100 {
 		shown = append(shown[:99], '…')
 	}
 	b := updates.Build{
-		Channel: *channel, Name: string(shown), Version: *version, Commit: *commit, URL: *where,
+		Channel: channel, Name: string(shown), Version: version, Commit: commit, URL: where,
 		Size: size, SHA256: hex.EncodeToString(digest), Signature: updates.Sign(private, digest),
 		Published: time.Now().UTC().Truncate(time.Second),
 	}
@@ -205,103 +220,47 @@ func sign(args []string) error {
 	if err := updates.VerifyClaim(public, b); err != nil {
 		return err
 	}
-	return writeJSON(*out, b)
+	return writeJSON(out, b)
 }
 
-// list writes the channel list from every channel's entry. Each entry is
-// read with the same rules as the app reads the list, and checked against
-// the public key, so the list never promises a build no app will take.
-// A newest commit is asked of gh, see ended.
-func list(args []string, gh gitHub) error {
-	fs := flag.NewFlagSet("list", flag.ExitOnError)
-	out := fs.String("out", "", "where the channel list goes")
-	// A channel's newest commit, when it has one still to be built. The
-	// workflow knows which pull requests have one, and the entry, written
-	// when the build was made, cannot.
-	newest := map[string]string{}
-	fs.Func("newest", "a channel's newest commit still to be built, as CHANNEL=COMMIT", func(v string) error {
-		channel, commit, ok := strings.Cut(v, "=")
-		if !ok || !updates.ValidChannel(channel) {
-			return fmt.Errorf("%q is not a channel and a commit", v)
-		}
-		newest[channel] = commit
-		return nil
-	})
-	// The pull requests that no longer merge into main. Like the newest
-	// commit, the workflow knows it when it writes the list, and the
-	// entry cannot.
-	conflict := map[string]bool{}
-	fs.Func("conflict", "a pull request that no longer merges into main, as its channel", func(v string) error {
-		if !updates.ValidChannel(v) || v == "main" {
-			return fmt.Errorf("%q is not the channel of a pull request", v)
-		}
-		conflict[v] = true
-		return nil
-	})
+func publishCommand(args []string, gh gitHub) error {
+	fs := flag.NewFlagSet("publish", flag.ExitOnError)
+	zipPath := fs.String("zip", "", "the signed zip")
+	as := fs.String("as", "", "the name it is published under")
+	entry := fs.String("entry", "", "its entry for the channel list")
+	channel := fs.String("channel", "", "main, or pr- and the pull request's number")
+	commit := fs.String("commit", "", "the whole commit it was built from")
 	_ = fs.Parse(args)
+	return publish(gh, *zipPath, *as, *entry, *channel, *commit)
+}
+
+func notPublishedCommand(args []string, gh gitHub) error {
+	fs := flag.NewFlagSet("not-published", flag.ExitOnError)
+	commit := fs.String("commit", "", "the whole commit that was built")
+	run := fs.String("run", "", "the address of the run, which the mark links to")
+	refusal := fs.String("refusal", "", "where check or sign kept why they refused, if they did")
+	_ = fs.Parse(args)
+	text, _ := os.ReadFile(*refusal)
+	return notPublished(gh, *commit, text, *run)
+}
+
+// channelsCommand writes the list with the public half in the checkout of
+// main it runs in. Until the key is made there is no list to write, since
+// a list without it cannot be checked.
+func channelsCommand(gh gitHub) error {
 	text, err := os.ReadFile(publicKeyFile)
 	if err != nil {
 		return err
 	}
 	public, err := updates.PublicKey(string(text))
-	if err != nil || public == nil {
-		return fmt.Errorf("no public key in %s", publicKeyFile)
-	}
-	var l updates.List
-	for _, path := range fs.Args() {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		var b updates.Build
-		if err := json.Unmarshal(data, &b); err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		if err := b.Check(); err != nil {
-			fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
-			continue
-		}
-		if err := updates.Verify(public, b); err != nil {
-			fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
-			continue
-		}
-		// An entry from before claims were made is kept, for the apps
-		// that do not check them yet, and the apps that do leave it alone.
-		// One whose claim is there and wrong is no build of ours.
-		if b.Claim != "" {
-			if err := updates.VerifyClaim(public, b); err != nil {
-				fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
-				continue
-			}
-		}
-		// A build that ended without one, failed, cancelled or not
-		// published, is not coming, and the Updates page would say
-		// "A newer commit is being built" until the next push.
-		if n := newest[b.Channel]; n != "" {
-			gone, why := ended(gh, n)
-			fmt.Fprintf(os.Stderr, "%s: %s\n", b.Channel, why)
-			if !gone {
-				// Twelve characters, the way the app keeps a commit.
-				b.Newest = n[:min(len(n), 12)]
-			}
-		}
-		b.Conflict = conflict[b.Channel]
-		l.Channels = append(l.Channels, b)
-	}
-	// When it was written, so the app can tell the newer of the list's
-	// two copies, see updates.ListCopies.
-	l.Written = time.Now().UTC().Truncate(time.Second)
-	data, err := json.Marshal(l)
 	if err != nil {
 		return err
 	}
-	// The same reading the app does, so what is written is what it keeps,
-	// and a newest commit that is not one is not written.
-	parsed, err := updates.Parse(data)
-	if err != nil {
-		return err
+	if public == nil {
+		fmt.Println("::notice::No update key yet, so there is no list to write.")
+		return nil
 	}
-	return writeJSON(*out, parsed)
+	return writeChannels(gh, gitTrees{gh}, public, time.Now(), os.Stdout)
 }
 
 func writeJSON(path string, v any) error {

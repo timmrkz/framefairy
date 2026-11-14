@@ -272,8 +272,8 @@ How it would work:
   pull request in conflict can still be tested.
 - **A commit gets one build.** One that is built already, or that only
   changes the docs against the build there is, gets none of its own.
-  `scripts/needs-build.sh` decides it, for the build and for the list
-  alike. It measures against what is built, not against the push before,
+  `needsBuild` in `cmd/framefairy-release/needs.go` decides it, for the
+  build and for the list alike. It measures against what is built, not against the push before,
   so a push of the docs that stops the build of a push of code before it
   does not leave that code without a build.
 - **Each pull request is a channel**, `pr-18`, and main is one too. All
@@ -354,7 +354,7 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
   `publish.yml` publishes only a push run of `.github/workflows/builds.yml`,
   and only a commit that main's history holds, or the history of the pull
   request's newest commit, by GitHub's compare, which
-  `framefairy-release held` asks. main is compared by its commit, never by
+  `framefairy-release publish-plan` asks. main is compared by its commit, never by
   its name, which the tag takes. A commit main does not hold fails main's
   publish with an error that says to look at the tags.
   "No token that can write" is how main's `builds.yml` is written, not a
@@ -463,7 +463,8 @@ a few seconds more, measured at up to four from outside, and how long is
 GitHub's to decide.
 
 So the list is never replaced where an app reads it. There are two
-copies, and `scripts/channel-list.sh` replaces only the older one each
+copies, and `writeChannels` in `cmd/framefairy-release/channels.go`
+replaces only the older one each
 time, which leaves the newer one where it is the whole time. The app
 reads both at once and keeps the one written last, by the time the list
 says it was written, see `fetchCopies` in `updates/source.go`. The
@@ -510,7 +511,7 @@ with its newest build, so one fetch is the whole check:
   the newest. That build can still be installed. A commit that only
   changes the docs has no build coming and is never named. Neither is a
   commit whose build already ended without one: it failed, was cancelled
-  or was refused by the signer, see `ended` in `cmd/framefairy-release/github.go`. The list is
+  or was refused by the signer, see `ended` in `cmd/framefairy-release/channels.go`. The list is
   written again whenever a build ends, however it ended, so the page
   stops saying a build is coming as soon as it is known that none is.
   Until #840 such a commit was named until the next push. A pull request that is merged or closed has its
@@ -725,8 +726,8 @@ minutes. Once a channel is picked, another channel is what follows it.
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, a newer build in place of one that is ready once it is whole, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
 | The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot whenever the page marks something, in the colour the page wears it in, issue #406: work on a newer build, looking, downloading or a newer commit being built, pulses in the accent, a newer build ready stands still in the accent, a pull request followed that closed or that conflicts with main stands still in the colour of a warning, the dot of work on it pulsing in that colour too, and a check that did not get through stands still in red. Up to date, a build made on the Mac and a build that does not update itself wear none. Both read the one state and the one mark, in `frontend/src/lib/updates.svelte.ts`, so the row never says less than the page or something else. Its title then says what the page says. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or PR #18, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check while a channel is followed, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. A check or a download that did not get through says why in words a person uses, from `updateProblem`, no connection to GitHub, GitHub busy, nothing found, a build that could not be verified or a disk that took nothing, in one short sentence, and asks to check the internet connection only when the error was the network's, a certificate the Mac does not trust among them, which is what a hotel's Wi-Fi or a company's proxy shows it. What the system said is under it apart, in a field at the height of a control on one line that scrolls sideways, with a button at its end that copies it for a report, and Try again stands on the same row as the field, issue #417. Looking is shown for at least 1.4 seconds, on the page and on the row alike, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
-| The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `held` refuses a commit its channel's history does not hold, `check` refuses a build that could reach past the app, before the key is there, `sign` signs a build `check` passed and refuses a key that is not the app's, `list` writes the channel list and leaves out a newest commit whose build ended without one. What they ask GitHub is in `github.go`, behind an interface the tests replace |
-| The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so main's copy asks for no secret and no token that can write, which a branch's copy could, so what holds is the `updates` environment and the history check in `publish.yml`. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
+| The key and the signing | `cmd/framefairy-release` | every decision the two workflows make, one command a step. `key` makes the pair, `build-plan` says what a push is a build of and whether it needs one, `publish-plan` what a finished build is published as and refuses a commit its channel's history does not hold, `check` refuses a build that could reach past the app, before the key is there, `sign` signs a build `check` passed and refuses a key that is not the app's, `publish` uploads the zip, then its entry, then marks the commit, `not-published` marks a commit whose publishing failed and says why, `channels` writes the channel list and leaves out a newest commit whose build ended without one, and `unstick` cancels a publish stuck before its environment. What they ask GitHub is in `github.go`, behind an interface the tests replace. A decision about a build goes here, never into a script, see [the decision record](decisions/2026-11-14-update-decisions-in-go.md) |
+| The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so main's copy asks for no secret and no token that can write, which a branch's copy could, so what holds is the `updates` environment and the history check in `publish.yml`. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `needsBuild` in `cmd/framefairy-release` |
 | The publishing | `.github/workflows/publish.yml` | runs from main whenever a build starts or ends. It works out which channel, commit and version a build is from GitHub's record of the run, signs the zip, uploads it and its entry to the `dev` release, writes the list at the start of a push and when its build is done, and marks a pull request's commit Ready to update to the moment its entry is up |
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
 
