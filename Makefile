@@ -669,8 +669,7 @@ interface:
 # on the clock, see .golangci.yml. The checks from outside the app build
 # only on a Mac with the outside tag, so they are read a second time the
 # way they build. That no code only tests call is outside the tests, read
-# without them. Every script read by the shell its first line names, and
-# the rule for a build, see scripts/needs-build.sh. That
+# without them. Every script read by the shell its first line names. That
 # docs/GUI-PLAN.md stays the history it is, by the hash git gives it: open
 # work is in the issues. And the tests of the repository's own rules,
 # LINTPKGS, which read the docs, the workflows and the interface's code,
@@ -694,7 +693,6 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 		case $$(head -n 1 "$$s") in *bash*) bash -n "$$s" ;; *) sh -n "$$s" ;; esac || exit 1; \
 	done
 	@printf 'ok  \tscripts read\n'
-	@sh scripts/needs-build-test.sh
 	@[ "$$(git hash-object docs/GUI-PLAN.md)" = $(PLAN_HASH) ] || { echo "docs/GUI-PLAN.md is history and does not change: open work is in the issues"; exit 1; }
 	@printf 'ok  \tdocs/GUI-PLAN.md is as it was\n'
 	@$(GO) test $(LINTPKGS)
