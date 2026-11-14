@@ -1,9 +1,11 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"sync"
+	"syscall"
 	"testing"
 	"testing/synctest"
 
@@ -19,6 +21,12 @@ import (
 
 func listed(lib []engine.EpisodeStatus, path string) bool {
 	return slices.ContainsFunc(lib, func(e engine.EpisodeStatus) bool { return e.Source == path })
+}
+
+// isMarked says whether the folder of a video is known to carry the mark.
+func isMarked(files afero.Fs, video string) bool {
+	ok, err := marked(files, video)
+	return ok && err == nil
 }
 
 // withJobs gives the app a queue, which letting a video go stops the work
@@ -56,7 +64,7 @@ func TestAVideoWhoseFolderIsDeletedLeavesTheLibrary(t *testing.T) {
 	if added, err := svc.store.AddEpisodes([]string{gone}); err != nil || len(added) != 1 {
 		t.Fatalf("adding it again: %v %v", added, err)
 	}
-	if !listed(svc.Library(), gone) || !marked(files, gone) {
+	if !listed(svc.Library(), gone) || !isMarked(files, gone) {
 		t.Errorf("added again, %s is not in the library with its folder marked", gone)
 	}
 }
@@ -205,7 +213,7 @@ func TestTheLibraryIsReadWhileAVideoLetGoIsCleared(t *testing.T) {
 			t.Fatal(err)
 		}
 		svc.clearing.Wait()
-		if !listed(svc.Library(), gone) || !marked(files, gone) {
+		if !listed(svc.Library(), gone) || !isMarked(files, gone) {
 			t.Errorf("added again while it was cleared, %s is not in the library with its folder marked", gone)
 		}
 	})
@@ -283,5 +291,66 @@ func TestTheAppNeverOpensOnAVideoDeletedOutsideIt(t *testing.T) {
 	t.Cleanup(svc.clearing.Wait)
 	if opened := svc.Opened(10); slices.Contains(opened, gone) || !slices.Contains(opened, stays) {
 		t.Errorf("the app opens on %v, want %s and not %s", opened, stays, gone)
+	}
+}
+
+// markUnreadable is a disk on which the mark of a work folder cannot be
+// looked at, while everything else reads as usual: a network share or an
+// external drive waking from sleep that fails one look.
+type markUnreadable struct {
+	afero.Fs
+	err error
+}
+
+func (f markUnreadable) Stat(name string) (os.FileInfo, error) {
+	if filepath.Base(name) == addedFile {
+		return nil, &os.PathError{Op: "stat", Path: name, Err: f.err}
+	}
+	return f.Fs.Stat(name)
+}
+
+func TestAMarkThatCannotBeLookedAtKeepsTheVideoAndItsWork(t *testing.T) {
+	// One failed look at the mark of a video's folder took the video out
+	// of the library and deleted its transcript, as if the folder had
+	// been deleted in Finder. Only a mark that is not there means that.
+	for _, c := range []struct {
+		name string
+		err  error
+	}{
+		{"an input or output error", syscall.EIO},
+		{"no permission", syscall.EACCES},
+		{"a drive that went away for a moment", syscall.ENXIO},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			svc, eps := memoryLibrary(t, "youtube.mp4")
+			withJobs(svc)
+			ep := eps[0]
+			files := svc.store.files
+			transcript := filepath.Join(engine.WorkDir(ep), "logs", "transcript.json")
+			if err := afero.WriteFile(files, transcript, []byte("{}"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			svc.store.files = markUnreadable{files, c.err}
+
+			lib := svc.Library()
+			svc.clearing.Wait()
+			if !listed(lib, ep) {
+				t.Errorf("with its mark not to be looked at, %s left the library", ep)
+			}
+			if there, _ := afero.Exists(files, transcript); !there {
+				t.Errorf("with its mark not to be looked at, the transcript of %s was deleted", ep)
+			}
+
+			// Out of the library, a folder whose mark cannot be looked at
+			// may be the folder of the same video added again, so it is
+			// not deleted either.
+			svc.store.episodes = nil
+			if cleared, err := svc.store.clearLetGo(ep); cleared || err == nil {
+				t.Errorf("clearing the folder of %s with its mark not to be looked at said %v, %v", ep, cleared, err)
+			}
+			if there, _ := afero.Exists(files, transcript); !there {
+				t.Errorf("clearing the folder of %s with its mark not to be looked at deleted its transcript", ep)
+			}
+		})
 	}
 }

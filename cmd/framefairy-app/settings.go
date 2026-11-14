@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
@@ -362,14 +364,25 @@ func markAdded(files afero.Fs, video string) error {
 	return fileio.WriteAtomic(files, file, body)
 }
 
-// marked says whether the work folder of a video carries the mark.
-func marked(files afero.Fs, video string) bool {
+// marked says whether the work folder of a video carries the mark, and
+// gives an error when it cannot tell. Only a mark that is not there, or
+// is no file, is a folder without one. A mark that cannot be looked at
+// for a moment, on a network share or a drive waking from sleep, is an
+// error, and nothing is let go or deleted on it: one failed look once
+// took a video out of the library and deleted its transcript and plans.
+func marked(files afero.Fs, video string) (bool, error) {
 	file, err := fileio.SafeChildIn(files, engine.WorkDir(video), addedFile)
 	if err != nil {
-		return false
+		return false, nil
 	}
 	info, err := files.Stat(file)
-	return err == nil && info.Mode().IsRegular()
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return info.Mode().IsRegular(), nil
 }
 
 // deletedOutside says whether a video in the library was deleted outside
@@ -380,7 +393,13 @@ func marked(files afero.Fs, video string) bool {
 // whose folder is gone with it is not judged: it says File not found
 // until it is back.
 func deletedOutside(files afero.Fs, video string) bool {
-	if marked(files, video) {
+	ok, err := marked(files, video)
+	if err != nil {
+		theLog.line(zerolog.WarnLevel, "files").Str("video", filepath.Base(video)).Err(err).
+			Msg("the mark of the video's folder could not be looked at, so the video and its folder stay as they are")
+		return false
+	}
+	if ok {
 		return false
 	}
 	info, err := files.Stat(video)
@@ -419,8 +438,11 @@ func (s *store) clearLetGo(path string) (bool, error) {
 	s.mu.Lock()
 	again := slices.Contains(s.episodes, path)
 	s.mu.Unlock()
-	if again || marked(s.files, path) {
+	if again {
 		return false, nil
+	}
+	if ok, err := marked(s.files, path); ok || err != nil {
+		return false, err
 	}
 	if _, err := fileio.LstatIn(s.files, engine.WorkDir(path)); err != nil {
 		return false, nil

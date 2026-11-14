@@ -180,7 +180,7 @@ func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
 			// captions write nothing into a folder that is gone, which
 			// would bring the folder back. The engine checks
 			// again as it writes, see engine.ErrNoWorkFolder.
-			if !marked(st.files, path) {
+			if ok, _ := marked(st.files, path); !ok {
 				http.NotFound(w, r)
 				return
 			}

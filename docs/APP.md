@@ -382,7 +382,10 @@ deleted again once the video is let go. A video deleted
 together with its folder leaves the list the same way, plan row 2.250. Only
 a video whose own folder is gone too, on a drive taken out or in a folder
 moved away, keeps its place and says File not found until it is back, see
-`deletedOutside` in `settings.go`. With no folder beside it there is nothing to
+`deletedOutside` in `settings.go`. Only a mark that is not there means a
+deleted folder. A mark the disk cannot show for a moment, a network share
+or a drive waking from sleep, leaves the video and its folder as they are,
+and the next look decides. With no folder beside it there is nothing to
 keep or to throw away, so the box says so and offers one **Remove**.
 
 Anything that cannot be taken back asks in that same box, and nothing else
