@@ -36,6 +36,13 @@ type VideoState struct {
 	Clips    []ClipEntry          `json:"clips"`
 	Coverage CoverageView         `json:"coverage"`
 	Jobs     []Job                `json:"jobs"`
+	// SearchComing says the video's first search is on its way: the video
+	// was just added and its picture is checked, and the search is asked
+	// for once it is, see checkAdded. Nothing of the video runs meanwhile,
+	// yet the work has begun, so the clip list says so, the way it does
+	// from a press of Search until its job comes. It is read with Jobs,
+	// so a state that no longer says it holds the search, see State.
+	SearchComing bool `json:"searchComing,omitempty"`
 	// Window is the video's window, with its limits, see WindowView, or
 	// nil while the video cannot be read.
 	Window *WindowView `json:"window"`
@@ -91,8 +98,15 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	// is fitted to its lines, and both take it from this one read, where
 	// each read the files for itself before, #800.
 	_, _ = s.heardIn(path)
+	// The jobs and whether the first search is on its way are read as
+	// one: the check queues the search before it ends, and it ends under
+	// the same lock, so a state that says no search is coming holds the
+	// one that came, and a state read later never says it is coming again.
+	s.checkMu.Lock()
 	jobs, rev := s.jobs.ofVideo(path)
-	st := VideoState{Video: path, Rev: rev, Jobs: jobs, Status: s.Episode(path), Coverage: CoverageView{Passes: []PassView{}}}
+	coming := s.searchComingLocked(path) != ""
+	s.checkMu.Unlock()
+	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.Episode(path), Coverage: CoverageView{Passes: []PassView{}}}
 	plans := st.Status.Plans
 	if st.Status.Missing {
 		// A video whose file is gone keeps its clips, see Clips.

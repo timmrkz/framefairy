@@ -253,8 +253,10 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 // firstSearch asks for the first search of an episode that has never been
 // searched, the moment it is added. It searches the video's window, which
 // it places, see videoWindow, the same one the workspace draws, and looks
-// for the clips that window suggests, or for the target typed.
-func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
+// for the clips that window suggests, or for the target typed. click is
+// the press it is asked for with, so Cancel at the head of the clip list
+// stops it even while it is on its way, see StopClipWork.
+func (s *FrameFairy) firstSearch(ctx context.Context, path, click string) {
 	if s.store.machine.Episode(path).EverSearched() {
 		return
 	}
@@ -279,7 +281,7 @@ func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
 	if req.Count == 0 {
 		req.Count = engine.SuggestedCount(w.To-w.From, req.Min, req.Max)
 	}
-	s.Search(path, req, "")
+	s.Search(path, req, click)
 }
 
 // cancelSteps calls off a search or a render, or takes away the note of

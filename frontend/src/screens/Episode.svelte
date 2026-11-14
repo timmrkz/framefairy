@@ -155,7 +155,8 @@
   const max = $derived(win?.longest ?? 30);
   // A click has to show at once, long before the job it starts reports in.
   // The store keeps the press, the same for this work as for the whole
-  // video heard from its menu.
+  // video heard from its menu, and the first search the Go side has on its
+  // way while it checks the picture of a video just added.
   const starting = $derived(jobs.isStarting(path, "clips", "search"));
   // The press of Search or Continue the work in hand was asked for by. Cancel
   // names it, so it stops that search whether or not the Go side has heard
