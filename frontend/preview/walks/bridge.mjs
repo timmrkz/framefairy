@@ -1180,7 +1180,11 @@ export async function reader(page) {
 // screen when recording starts is where it starts from and is not one of
 // them, since it was put up before. Also whether the playhead moved,
 // data-playhead on the video preview, so a play whose first frame is the
-// one already on screen is seen to have started. And on every animation
+// one already on screen is seen to have started. It is read once more as
+// the recording stops: a play from the clip's last frame has no frame to
+// put up and goes to the end at once, and the playhead and the Play
+// button changed in one update that no animation frame had seen yet,
+// issue #850. And on every animation
 // frame, what lies over the picture, see overlay, with the number of the
 // frame on screen under it, pictured, or -1 while there is none.
 export async function recordFrames(page, frame) {
@@ -1193,6 +1197,7 @@ export async function recordFrames(page, frame) {
     window.__frames = [];
     window.__overlays = [];
     window.__moved = false;
+    window.__movedFrom = from;
     window.__recording = true;
     const watch = () => {
       if (!window.__recording) return;
@@ -1208,7 +1213,8 @@ export async function recordFrames(page, frame) {
   return async () => {
     const r = await page.evaluate(() => {
       window.__recording = false;
-      return { frames: window.__frames, moved: window.__moved, overlays: window.__overlays };
+      const moved = window.__moved || document.querySelector(".screen").dataset.playhead !== window.__movedFrom;
+      return { frames: window.__frames, moved, overlays: window.__overlays };
     });
     return { frames: r.frames.map((n) => n * frame), moved: r.moved, overlays: r.overlays };
   };

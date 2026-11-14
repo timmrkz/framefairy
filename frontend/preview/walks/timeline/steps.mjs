@@ -2378,7 +2378,7 @@ export const steps = {
   },
   // ["slow drag left", n]
   //                    presses the clip timeline near the clip's end and
-  //                    drags the playhead to the left a pixel at a time,
+  //                    drags the playhead to the left a frame at a time,
   //                    the way a slow hand does, each frame back shown
   //                    before it moves on, until its frame
   //                    is n frames back, then lets go. The frames under
@@ -2396,46 +2396,52 @@ export const steps = {
     // the streams counted are the drag's own: on a busy runner the cards
     // were still to come, and their streams were counted too.
     await page.evaluate(() => window.__readAheadRested());
-    let x = g.end.x - 0.1 * (g.end.x - g.start.x - g.start.w);
+    const x = g.end.x - 0.1 * (g.end.x - g.start.x - g.start.w);
     await page.mouse.move(x, y);
     await page.mouse.down();
     await settle(page);
     const from = Math.floor((await at()) * fps + 1e-6);
     const was = await page.evaluate(() => window.__appFrames.stats.streams);
     const calls = await page.evaluate(() => window.__calls.length);
-    // A frame of the clip is some 8 pixels wide on the clip timeline, so
-    // a frame of the page after each pixel waited 333 frames of the page
-    // for 40 back. The pixels that stay on the same frame ask for no
-    // other, so the hand goes on over them by two pixels fewer than the
-    // frame before took, which stays inside the next frame, since two
-    // frames differ by a pixel at most, and on from there a pixel at a
-    // time. Once the playhead is on the next frame back, the
-    // hand waits until the video preview shows that frame, the way a
-    // slow hand sees each frame before it moves on: a hand quicker than
-    // the frames asks while a stream is still coming, which the app
-    // parks, and would open fewer streams than a slow one, issue #596.
+    // The hand goes a frame back at a time, to the middle of that frame on
+    // the clip timeline, and waits until the playhead is on it and the
+    // video preview shows it, the way a slow hand sees each frame before it
+    // moves on: a hand quicker than the frames asks while a stream is
+    // still coming, which the app parks, and would open fewer streams than
+    // a slow one, issue #596. The playhead follows the hand once an
+    // animation frame, see lib/scrub.ts, so it is waited for, never read
+    // straight after the move. Read straight after, it had not moved yet,
+    // the hand went on by more pixels, and a busy WebKit took several
+    // frames back in one step, which the app rightly opened with a key
+    // frame first, issue #851. Frames are counted the way from is, from
+    // the episode's start. The wait ends once the playhead is on that
+    // frame or past it to the left, so a step that went a frame too far
+    // says so and never hangs.
     let back = 0;
-    let wide = 1;
-    let since = 0;
-    while (back < arg && x > g.start.x + g.start.w) {
-      const by = since ? 1 : Math.max(1, wide - 2);
-      x -= by;
-      since += by;
-      await page.mouse.move(x, y);
-      const now = from - Math.floor((await at()) * fps + 1e-6);
-      if (now === back) continue;
-      // A frame passed over would be a frame never asked for, so the
-      // hand goes back to a pixel at a time.
-      wide = now === back + 1 ? since : 1;
-      since = 0;
-      back = now;
+    let off = "";
+    while (back < arg) {
+      const to = await xOf(page, (from - back - 0.5) / fps);
+      if (to <= g.start.x + g.start.w) break;
+      await page.mouse.move(to, y);
+      back++;
+      await pageUntil(
+        page,
+        ([n, fps]) => Math.floor(Number(document.querySelector(".screen").dataset.playhead) * fps + 1e-6) <= n,
+        [from - back, fps],
+      );
+      const on = from - Math.floor((await at()) * fps + 1e-6);
+      if (on !== back) {
+        off = `a step of the hand to frame ${from - back} put the playhead on frame ${from - on}`;
+        break;
+      }
       await shownOnPlayhead(page);
     }
     await page.mouse.up();
     await settle(page);
     const streams = (await page.evaluate(() => window.__appFrames.stats.streams)) - was;
     await watch.step("scrub", s);
-    if (back < arg) walk.wrong = `the drag reached the clip's start ${back} frames back, not ${arg}`;
+    if (off) walk.wrong = off;
+    else if (back < arg) walk.wrong = `the drag reached the clip's start ${back} frames back, not ${arg}`;
     else if (streams > Math.ceil(back / 15) + 1) {
       const why = await page.evaluate((n) => window.__appFrames.stats.newFor.slice(-n), Math.min(16, streams));
       // What the video preview said of its streams meanwhile, in the

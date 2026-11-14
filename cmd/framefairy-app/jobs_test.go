@@ -1018,8 +1018,9 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 		}
 		return engine.JobRecord{}, false
 	}
-	// A stand-in for TranscribeJob: it writes its record and hears until
-	// it is called off, and then holds until it is let go.
+	// A stand-in for TranscribeJob: it writes its record and tells the
+	// app, as the engine's job does, and hears until it is called off,
+	// and then holds until it is let go.
 	started := make(chan struct{})
 	transcribe := func(letGo chan struct{}) Job {
 		return svc.jobs.addSteps(ep, engine.JobTranscribe, "Transcribe whole video", true, func(j *Job) {
@@ -1029,6 +1030,7 @@ func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
 			if err := engine.WriteJob(svc.store.files, ep, rec); err != nil {
 				return "", err
 			}
+			host.Changed(rec)
 			started <- struct{}{}
 			<-ctx.Done()
 			<-letGo
