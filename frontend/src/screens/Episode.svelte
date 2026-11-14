@@ -233,6 +233,19 @@
     const playing = !paused;
     untrack(() => api.playing(path, playing).catch(() => {}));
   });
+  // A hand at work in the clip timeline or the transcript cards while a
+  // search runs is told to the Go side once for that search, which then
+  // chooses none of its clips: a clip chosen is shown the way a pick is,
+  // and the playhead, the cards and the clip timeline went to it under a
+  // hand already at work there, Tim's report of 14 November. See AtWork
+  // in choose.go.
+  let atWorkIn = "";
+  function atWork() {
+    const id = working?.id;
+    if (!id || id === atWorkIn) return;
+    atWorkIn = id;
+    api.atWork(path).catch(() => {});
+  }
   let looping = $state(false);
   // Whether the playhead is on the chosen clip or on the video, which the
   // video preview keeps, see lib/playhead.ts. On the video the clip is
@@ -3406,7 +3419,7 @@
             </button>
             {/if}
           </div>
-          <div class="scroll list">
+          <div class="scroll list" onpointerdowncapture={saying ? atWork : undefined} onwheelcapture={saying ? atWork : undefined}>
             {#if saying}
               <SaidList
                 bind:this={saidList}
@@ -3431,8 +3444,19 @@
                   } else if (!walked) sayFrom = null;
                   // A sentence of a clip makes that clip the one worked on,
                   // the way its mark does, found by Tim.
-                  if (clip && clip !== selected) void select(clip, false, false);
-                  seekTo(intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30));
+                  atWork();
+                  const to = intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30);
+                  // A card clicked puts the playhead in the middle of the
+                  // clip timeline, the way the crosshair does, after the
+                  // clip it chose was fitted, Tim's report of 14
+                  // November. A card walked to with the keys turns the
+                  // page instead, see SaidList.
+                  const centre = () => {
+                    if (!walked) timeline?.toPlayhead(to);
+                  };
+                  if (clip && clip !== selected) void select(clip, false, false).then(centre);
+                  seekTo(to);
+                  if (!clip || clip === selected) centre();
                 }}
               />
             {:else}
@@ -3470,7 +3494,7 @@
          answered for, with frames or none. A walk clicks a caption block
          once a click goes by the frames, issue #290. Nothing on screen
          reads them. -->
-    <div class="detail" data-framed={framedTrack} data-answered={answeredTrack}>
+    <div class="detail" data-framed={framedTrack} data-answered={answeredTrack} onpointerdowncapture={atWork} onwheelcapture={atWork}>
       <ClipTimeline
         bind:this={timeline}
         {path}
@@ -3489,7 +3513,10 @@
         {lit}
         bind:numbers
         bind:drawn
-        onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
+        onseek={(t, about, wordStep) => {
+          atWork();
+          player?.seek(t, about, wordStep);
+        }}
         onahead={readAhead}
         onhold={holdPlayhead}
         dimmed={!onClip}

@@ -72,13 +72,20 @@ export default [
     // clip list again every two seconds, and every read made every clip a
     // new one, the clip on screen too, so its captions were asked for
     // again and the clip timeline and the caption box drew them again,
-    // with nothing changed. Plan row 2.242.
-    name: "a running search leaves the clip on screen alone",
+    // with nothing changed. Plan row 2.242. And a search that ends while
+    // the hand works in the transcript leaves the playhead, the cards and
+    // the clip timeline where the hand put them, and a card clicked puts
+    // the playhead in the middle of the clip timeline. Tim's report of 14
+    // November, issue #852.
+    name: "a running search leaves the clip on screen alone, and the view a hand works in",
     steps: [
       ["model", "holds"],
       ["head"],
       ["wait for", "Cancel"],
       ["asks none", "Captions", 7],
+      ["work in the cards"],
+      ["model", "answers"],
+      ["view stays"],
     ],
   },
   {

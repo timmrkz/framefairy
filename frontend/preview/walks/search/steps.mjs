@@ -5,10 +5,10 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound, xOf } from "../bridge.mjs";
 import { clock } from "../../../src/lib/clock.ts";
 import { suggestedCount } from "../../../src/lib/count.ts";
-import { nextCall, onePiece, toastSays, url } from "../common/steps.mjs";
+import { nextCall, onePiece, rate, toastSays, url } from "../common/steps.mjs";
 
 export const steps = {
   // ["model", how]     the language model "holds" its answers, "fails" or
@@ -1528,6 +1528,61 @@ export const steps = {
     const these = asked.filter((c) => c === name).length;
     if (these) walk.wrong = `${name} was asked ${these} times in ${reports} reports of the search, with nothing changed: ${asked.join(", ")}`;
   },
+  // ["work in the cards"]
+  //                    while a search runs, opens the transcript and clicks
+  //                    a card no clip holds, in the middle of the list. The
+  //                    playhead goes there and stands in the middle of the
+  //                    clip timeline, and what the screen shows is kept for
+  //                    "view stays". Tim's report of 14 November
+  async "work in the cards"(walk, arg, s) {
+    const { page, watch } = walk;
+    const path = await episodeOn(page);
+    await page.mouse.move(1, 1);
+    await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+    await watch.step("click", s);
+    await page.waitForSelector("ol.said li[data-row] button.pick");
+    const row = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll("ol.said li[data-row]:not([data-clip])")].filter((li) => li.querySelector("button.pick"));
+      return cards[Math.floor(cards.length / 2)]?.dataset.row ?? null;
+    });
+    if (!row) {
+      walk.wrong = "the transcript has no card outside the clips to click";
+      return;
+    }
+    await page.locator(`ol.said li[data-row="${row}"] button.pick`).click();
+    await watch.step("click", s);
+    await settle(page);
+    const seen = await viewOf(page);
+    // The playhead is drawn on the start of its frame, so it stands up to
+    // a frame off the moment the card put it on.
+    const second = (await xOf(page, seen.at + 1)) - (await xOf(page, seen.at));
+    const frameWide = second / (await rate(page));
+    if (!(Math.abs(seen.x - seen.middle) <= frameWide + 1)) {
+      walk.wrong = `the card ${row} clicked put the playhead at ${seen.x.toFixed(1)} px, not in the middle of the clip timeline at ${seen.middle.toFixed(1)} px`;
+      return;
+    }
+    const st = await ask(page, "State", path);
+    walk.atWork = { path, row, clips: st.clips.length, chosen: st.chosen ?? "", ...seen };
+  },
+  // ["view stays"]     the search "work in the cards" worked during ends
+  //                    with clips found, and the clip chosen, the playhead,
+  //                    the cards and the clip timeline are where the hand
+  //                    left them: none of its clips was chosen
+  async "view stays"(walk, arg, s) {
+    const { page, watch } = walk;
+    const was = walk.atWork;
+    const going = (jobs) => jobs.some((j) => j.episode === was.path && j.kind === "search" && (j.state === "running" || j.state === "queued"));
+    await seenUntil(page, url, () => ask(page, "Jobs"), (jobs) => !going(jobs));
+    await settle(page);
+    await watch.step("search ended", s);
+    const st = await ask(page, "State", was.path);
+    const now = await viewOf(page);
+    if (!(st.clips.length > was.clips)) walk.wrong = `the search found no clip, ${st.clips.length} clips before and after, so it proves nothing`;
+    else if ((st.chosen ?? "") !== was.chosen) walk.wrong = `the search chose ${st.chosen || "no clip"} in place of ${was.chosen || "no clip"} while a hand worked in the cards`;
+    else if (Math.abs(now.at - was.at) > 0.001) walk.wrong = `the playhead went from ${was.at.toFixed(3)} s, where the card put it, to ${now.at.toFixed(3)} s`;
+    else if (Math.abs(now.top - was.top) > 1) walk.wrong = `the cards scrolled from ${was.top.toFixed(0)} px to ${now.top.toFixed(0)} px`;
+    else if (Math.abs(now.x - was.x) > 1) walk.wrong = `the playhead moved on the clip timeline from ${was.x.toFixed(1)} px to ${now.x.toFixed(1)} px`;
+  },
   // ["hand stopped"]   I is pressed on a part not heard yet and Cancel at
   //                    the head of the clip list, so the clip made by hand
   //                    says Stopped with Continue in its card
@@ -2338,4 +2393,20 @@ async function playedTo(page, to, read, every = false) {
     [to, read.toString()],
   );
   return every ? frames : frames.at(-1);
+}
+
+// What the hand works in: where the playhead is, on the video's clock and
+// on the clip timeline, the middle of the clip timeline's track, and how
+// far the transcript's cards are scrolled.
+function viewOf(page) {
+  return page.evaluate(() => {
+    const head = document.querySelector(".clip-timeline .playhead").getBoundingClientRect();
+    const track = document.querySelector(".clip-timeline .track").getBoundingClientRect();
+    return {
+      at: Number(document.querySelector(".screen")?.dataset.playhead),
+      x: head.left + head.width / 2,
+      middle: track.left + track.width / 2,
+      top: document.querySelector("ol.said")?.closest(".scroll")?.scrollTop ?? NaN,
+    };
+  });
 }

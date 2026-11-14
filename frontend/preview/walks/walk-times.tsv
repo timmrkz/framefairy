@@ -55,6 +55,7 @@
  10	sequences.mjs SEQUENCE=a video dropped on any page is added and opens, the way Add adds one
  10	sequences.mjs SEQUENCE=the font list hangs on the field's edge in each font's own face, searches in order, and a family picked keeps its look
  10	sequences.mjs SEQUENCE=the transcript is exported with a word corrected in the caption box
+ 10	sequences.mjs SEQUENCE=a running search leaves the clip on screen alone, and the view a hand works in
   9	sequences.mjs SEQUENCE=While dictating the field follows the words until scrolled away, like a terminal
   9	sequences.mjs SEQUENCE=a caption's edges dragged in over a word and back out stay where they are let go
   9	sequences.mjs SEQUENCE=a click on a thumbnail or a keyframe while a word is open ends the correction, and the captions follow
@@ -86,7 +87,6 @@
   7	sequences.mjs SEQUENCE=While dictating, undo and redo are about what was typed
   7	sequences.mjs SEQUENCE=a clip looped from early on goes round its end, the picture with the sound
   7	sequences.mjs SEQUENCE=a clip made with I while the episode plays or is paused is not dimmed
-  7	sequences.mjs SEQUENCE=a running search leaves the clip on screen alone
   7	sequences.mjs SEQUENCE=a search that failed is red everywhere, and its row can be removed, put back first
   7	sequences.mjs SEQUENCE=a word typed sits on the pill libass draws, its selection in it, and lets go of its caret for a button
   7	sequences.mjs SEQUENCE=every caption block clicked lights a word of its caption
