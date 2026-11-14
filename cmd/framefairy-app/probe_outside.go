@@ -465,6 +465,19 @@ func (p *probe) add(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("%s was not added: %v", video, err), http.StatusBadRequest)
 		return
 	}
+	// Its first search is asked for on its own once the decoder has handed
+	// over its first frame, see checkAdded. So the add answers once that
+	// check is done and the search is in the queue.
+	// It answered at once, a step after it found no search and took that
+	// for one that had ended, and the search the step after that asked
+	// for was then the first search, which failed on the setup's speech
+	// model in place of saying Interrupted, issue #723.
+	p.svc.checkMu.Lock()
+	c := p.svc.checking[added[0]]
+	p.svc.checkMu.Unlock()
+	if c != nil {
+		<-c.done
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
