@@ -6,11 +6,14 @@
 //	    make an update key: the public half into the repository, the
 //	    private half to the clipboard, for GitHub's secrets and the
 //	    password manager
+//	framefairy-release check -zip F
+//	    refuse a build that could read input meant for other apps, watch
+//	    the screen or the camera, or ask for administrator rights, see
+//	    inputs.go. The workflow runs it before sign, in a step that does
+//	    not hold the key
 //	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F
-//	    sign a build with the private half, read from FRAMEFAIRY_UPDATE_KEY,
-//	    and write its entry for the channel list, unless the build could
-//	    read input meant for other apps, watch the screen or the camera,
-//	    or ask for administrator rights, see inputs.go
+//	    sign a build that check passed with the private half, read from
+//	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list
 //	framefairy-release list -out F [-newest CHANNEL=COMMIT]... [-conflict CHANNEL]... ENTRY...
 //	    write the channel list from the entries of every channel, with the
 //	    newest commit of each channel that has one still to be built, and
@@ -46,6 +49,8 @@ func main() {
 	switch os.Args[1] {
 	case "key":
 		err = makeKey()
+	case "check":
+		err = check(os.Args[2:])
 	case "sign":
 		err = sign(os.Args[2:])
 	case "list":
@@ -60,7 +65,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | sign ... | list -out FILE ENTRY...")
+	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | check -zip FILE | sign ... | list -out FILE ENTRY...")
 	os.Exit(2)
 }
 
@@ -128,6 +133,17 @@ func keys() (ed25519.PrivateKey, ed25519.PublicKey, error) {
 	return private, public, nil
 }
 
+// check reads a build before it is signed. It is a command of its own,
+// and not the first thing sign does, so the workflow can run it in a step
+// that does not hold the key: the build is a branch's code, and its bytes
+// are read before anybody has reviewed them.
+func check(args []string) error {
+	fs := flag.NewFlagSet("check", flag.ExitOnError)
+	zipPath := fs.String("zip", "", "the zip holding the app")
+	_ = fs.Parse(args)
+	return checkInputs(*zipPath)
+}
+
 func sign(args []string) error {
 	fs := flag.NewFlagSet("sign", flag.ExitOnError)
 	zipPath := fs.String("zip", "", "the zip holding the app")
@@ -138,9 +154,6 @@ func sign(args []string) error {
 	where := fs.String("url", "", "where the zip will be downloaded from")
 	out := fs.String("out", "", "where the entry goes")
 	_ = fs.Parse(args)
-	if err := checkInputs(*zipPath); err != nil {
-		return err
-	}
 	private, public, err := keys()
 	if err != nil {
 		return err

@@ -3,14 +3,18 @@
 # build of itself is publish.yml's work, not this one's. See
 # docs/UPDATES.md.
 #
-# This workflow runs the branch's own code, so it gets no secret and no
-# token that can write. A branch is code nobody has reviewed yet, and a
-# push to a branch runs the workflow file of that branch, so whatever this
-# file is given, any branch can take. publish.yml runs from main whenever
-# this workflow starts or ends, takes the zip this one leaves as an
-# artifact, and signs and publishes it with main's own tools. The zip is
-# the only thing it takes from here: which channel, which commit and which
-# version it works out again from GitHub's own record of the run.
+# This workflow runs the branch's own code, so main's copy of it asks for
+# no secret and no token that can write. That is how this copy is
+# written, not a wall: a push to a branch runs the workflow file of that
+# branch, and a branch's copy can ask for a token that writes. What holds
+# the update key away from a branch is the environment updates, limited
+# to main, which no branch's workflow can enter. publish.yml runs from
+# main whenever this workflow starts or ends, takes the zip this one
+# leaves as an artifact, and signs and publishes it with main's own tools.
+# The zip is the only thing it takes from here: which channel, which
+# commit and which version it works out again from GitHub's own record of
+# the run, and it signs only a commit that main's history, or the pull
+# request's, holds.
 #
 # A push to a pull request is built on the push, not on the pull request's
 # synchronize. GitHub runs no pull_request workflow while a pull request is

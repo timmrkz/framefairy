@@ -329,3 +329,204 @@ func TestNoPullRequestTarget(t *testing.T) {
 		t.Errorf("conflicts.yml waits on the workflow %q, but builds.yml is called %q", waitsOn, names["builds.yml"])
 	}
 }
+
+// publish.yml reads a branch's build before it signs it, and the reading
+// runs in a step of its own that holds no secret: the zip is code nobody
+// has reviewed, and nothing needs the update key until it has passed.
+// The step that signs comes after it, and runs only when it passed.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "publish.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Env   map[string]string `yaml:"env"`
+			Steps []struct {
+				ID   string            `yaml:"id"`
+				Name string            `yaml:"name"`
+				If   string            `yaml:"if"`
+				Env  map[string]string `yaml:"env"`
+				Run  string            `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	signed := false
+	for job, j := range wf.Jobs {
+		checked := ""
+		for _, s := range j.Steps {
+			switch {
+			case strings.Contains(s.Run, "framefairy-release check"):
+				checked = s.ID
+				for k, v := range j.Env {
+					if strings.Contains(v, "secrets.") {
+						t.Errorf("publish.yml's %s job holds the secret %s in every step, the check of the build too", job, k)
+					}
+				}
+				for k, v := range s.Env {
+					if strings.Contains(v, "secrets.") {
+						t.Errorf("%q holds the secret %s while it reads the build", s.Name, k)
+					}
+				}
+			case strings.Contains(s.Run, "framefairy-release sign"):
+				signed = true
+				if checked == "" {
+					t.Errorf("%q signs a build no step before it checked, or the check has no id to be asked by", s.Name)
+				} else if want := "steps." + checked + ".outcome == 'success'"; strings.TrimSpace(s.If) != want {
+					t.Errorf("%q runs if %s, where only if: %s says it signs nothing the check did not pass", s.Name, s.If, want)
+				}
+			}
+		}
+	}
+	if !signed {
+		t.Error("found no step in publish.yml that runs framefairy-release sign")
+	}
+}
+
+// A job that shares its concurrency group with another job can be
+// cancelled by GitHub before it starts: a group keeps one job waiting and
+// cancels the one before. So such a job only does what the next one in
+// the group does again, like writing the channel list, and never marks a
+// commit. A cancelled list in publish.yml took the Ready to update to of
+// two pull requests with it.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestNoJobInASharedQueueMarksACommit(t *testing.T) {
+	t.Parallel()
+	for _, f := range actionFiles(t) {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wf struct {
+			Jobs map[string]struct {
+				Concurrency any `yaml:"concurrency"`
+				Steps       []struct {
+					Name string `yaml:"name"`
+					Run  string `yaml:"run"`
+				} `yaml:"steps"`
+			} `yaml:"jobs"`
+		}
+		if err := yaml.Unmarshal(b, &wf); err != nil {
+			t.Fatal(err)
+		}
+		// The group is a word, or a map with a group in it.
+		group := func(c any) string {
+			if m, ok := c.(map[string]any); ok {
+				return fmt.Sprint(m["group"])
+			}
+			if c == nil {
+				return ""
+			}
+			return fmt.Sprint(c)
+		}
+		jobs := map[string]int{}
+		for _, j := range wf.Jobs {
+			if g := group(j.Concurrency); g != "" {
+				jobs[g]++
+			}
+		}
+		for name, j := range wf.Jobs {
+			if jobs[group(j.Concurrency)] < 2 {
+				continue
+			}
+			for _, s := range j.Steps {
+				if strings.Contains(s.Run, "/statuses/") {
+					t.Errorf("%s: the job %s shares the queue %s, where GitHub can cancel it before it starts, and %q marks a commit, which nothing marks again", filepath.Base(f), name, group(j.Concurrency), s.Name)
+				}
+			}
+		}
+	}
+}
+
+// publish.yml signs only what builds.yml built on a push, and only a
+// commit the channel's own history holds. GitHub starts it for a run of
+// any workflow with the name it waits on, and a tag pushed with the name
+// main gives a record that reads like a push to main, at any commit.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestOnlyACommitOfTheChannelIsPublished(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "publish.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			If    string `yaml:"if"`
+			Steps []struct {
+				ID  string `yaml:"id"`
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	publish, ok := wf.Jobs["publish"]
+	if !ok {
+		t.Fatal("publish.yml has no job called publish")
+	}
+	for _, want := range []string{
+		"github.event.workflow_run.event == 'push'",
+		"github.event.workflow_run.path == '.github/workflows/builds.yml'",
+	} {
+		if !strings.Contains(publish.If, want) {
+			t.Errorf("publish runs without %s, so a run of another workflow file, or of no push, is signed", want)
+		}
+	}
+	compared := false
+	for _, s := range publish.Steps {
+		if s.ID != "which" {
+			continue
+		}
+		compared = strings.Contains(s.Run, `/compare/$SHA...$holder`)
+		// main by its commit: the name main is what the tag takes.
+		if !strings.Contains(s.Run, `git/ref/heads/main`) || regexp.MustCompile(`holder=["']?main\b`).MatchString(s.Run) {
+			t.Error("publish's step which compares with main by its name, which a tag called main can take, and not by the commit refs/heads/main is")
+		}
+	}
+	if !compared {
+		t.Error("publish's step which does not compare the commit with main or the pull request's newest commit, so a tag named main is signed as main's build")
+	}
+}
+
+// A publish that fails says so on the commit that was built, whatever
+// failed, so the pull request shows why and the channel list stops
+// saying a build is coming, see scripts/build-ended.sh. The step that
+// says so is the last of the job, so it hears every step before it.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestAFailedPublishMarksItsCommit(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "publish.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string `yaml:"name"`
+				If   string `yaml:"if"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	steps := wf.Jobs["publish"].Steps
+	if len(steps) == 0 {
+		t.Fatal("publish.yml has no job called publish")
+	}
+	last := steps[len(steps)-1]
+	if strings.TrimSpace(last.If) != "failure()" || !strings.Contains(last.Run, "state=failure") || !strings.Contains(last.Run, `context="Ready to update to"`) {
+		t.Errorf("the last step of publish, %q, is not one that marks the commit when any step before it failed", last.Name)
+	}
+}

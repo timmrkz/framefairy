@@ -340,14 +340,24 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
   settings page, and keeps a copy in his password manager.
 - **No branch can read it.** A push runs the workflow file of the branch
   pushed, so whatever the build workflow is given, any branch can take,
-  by rewriting that file. So the build, `builds.yml`, gets no secret and no
-  token that can write, and leaves only the zip. `publish.yml` signs it.
+  by rewriting that file. So the build, `builds.yml`, asks for no secret
+  and no token that can write, and leaves only the zip. `publish.yml` signs it.
   GitHub runs that one from main whatever branch was built, and the key
   sits in an environment only main can enter. Which channel, commit and
   version a build is, it works out again from GitHub's record of the run,
   not from anything the build wrote. Until #43 the build signed itself
   with the key in its own environment, and a branch could also have
   replaced main's entry in the list.
+- **The record of the run is checked too.** It names the branch, but a
+  tag called `main`, pushed by a branch whose own `builds.yml` runs on
+  tags, gives a record that reads like a push to main, at any commit. So
+  `publish.yml` publishes only a push run of `.github/workflows/builds.yml`,
+  and only a commit that main's history holds, or the history of the pull
+  request's newest commit, by GitHub's compare. A commit main does not
+  hold fails main's publish with an error that says to look at the tags.
+  "No token that can write" is how main's `builds.yml` is written, not a
+  wall: a branch's copy can ask for one. What holds is the environment,
+  the signatures and this check.
 - **The public half is not a secret.** It sits in the repository and is
   built into the app, which is what lets the app check a download without
   asking anybody.
@@ -366,9 +376,19 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
 
 A build that could read input meant for other apps, watch the screen or
 the camera, or ask for administrator rights, is refused before it is
-signed, so no app is ever offered it, issues #369 and #751. `framefairy-release sign` reads every file of the zip
+signed, so no app is ever offered it, issues #369 and #751. `framefairy-release check` reads every file of the zip
 first, see `cmd/framefairy-release/inputs.go`, with Go's `debug/macho`, so
-it needs no Mac:
+it needs no Mac. It runs in a step of its own, before the step that holds
+the update key, because the zip is a branch's code that nobody has
+reviewed yet, and `sign` runs only once it passed:
+
+- **Every file.** Each file's bytes are read for the names below, a
+  script or a licence as well as a program, since the app could run a
+  script through `/bin/sh`. A file that starts like a program but that
+  Go cannot read as one fails, because its imports, libraries and
+  entitlements cannot be checked and macOS may still run it. A zip that
+  says it unpacks to more than 4 GB fails before anything is read, since
+  every file is read whole and at once. A build holds about 160 MB.
 
 - **Imports and names.** No program imports, or names anywhere in its
   bytes, what taps every key, reads other apps' windows, records the
@@ -397,7 +417,8 @@ it needs no Mac:
 
 A refused build says so on the commit that was built, as a failed
 Ready to update to with the first thing found, so the pull request shows
-why its build never reached the Updates page.
+why its build never reached the Updates page. A publish that fails for
+any other reason says so the same way.
 
 The signer runs from main, so the lists are main's, and a branch that
 changes them changes nothing about how its own build is judged. Each
@@ -485,7 +506,12 @@ with its newest build, so one fetch is the whole check:
   three days in October. The page then says **A newer commit is
   being built** and names it, rather than offering the build before as
   the newest. That build can still be installed. A commit that only
-  changes the docs has no build coming and is never named. A pull request that is merged or closed has its
+  changes the docs has no build coming and is never named. Neither is a
+  commit whose build already ended without one: it failed, was cancelled
+  or was refused by the signer, see `scripts/build-ended.sh`. The list is
+  written again whenever a build ends, however it ended, so the page
+  stops saying a build is coming as soon as it is known that none is.
+  Until #840 such a commit was named until the next push. A pull request that is merged or closed has its
   entry taken away, and its builds go an hour later. Every writing of the
   list also takes away the entry of any pull request that is not open,
   because GitHub runs nothing for a pull request that no longer merges
@@ -697,9 +723,9 @@ minutes. Once a channel is picked, another channel is what follows it.
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, a newer build in place of one that is ready once it is whole, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
 | The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot whenever the page marks something, in the colour the page wears it in, issue #406: work on a newer build, looking, downloading or a newer commit being built, pulses in the accent, a newer build ready stands still in the accent, a pull request followed that closed or that conflicts with main stands still in the colour of a warning, the dot of work on it pulsing in that colour too, and a check that did not get through stands still in red. Up to date, a build made on the Mac and a build that does not update itself wear none. Both read the one state and the one mark, in `frontend/src/lib/updates.svelte.ts`, so the row never says less than the page or something else. Its title then says what the page says. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or PR #18, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check while a channel is followed, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. A check or a download that did not get through says why in words a person uses, from `updateProblem`, no connection to GitHub, GitHub busy, nothing found, a build that could not be verified or a disk that took nothing, in one short sentence, and asks to check the internet connection only when the error was the network's, a certificate the Mac does not trust among them, which is what a hotel's Wi-Fi or a company's proxy shows it. What the system said is under it apart, in a field at the height of a control on one line that scrolls sideways, with a button at its end that copies it for a report, and Try again stands on the same row as the field, issue #417. Looking is shown for at least 1.4 seconds, on the page and on the row alike, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
-| The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
-| The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so it gets no secret and no token that can write. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
-| The publishing | `.github/workflows/publish.yml` | runs from main whenever a build starts or ends. It works out which channel, commit and version a build is from GitHub's record of the run, signs the zip, uploads it and its entry to the `dev` release, writes the list at the start of a push and when its build is done, and marks a pull request's commit Ready to update to |
+| The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `check` refuses a build that could reach past the app, before the key is there, `sign` signs a build `check` passed and refuses a key that is not the app's, `list` writes the channel list |
+| The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so main's copy asks for no secret and no token that can write, which a branch's copy could, so what holds is the `updates` environment and the history check in `publish.yml`. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
+| The publishing | `.github/workflows/publish.yml` | runs from main whenever a build starts or ends. It works out which channel, commit and version a build is from GitHub's record of the run, signs the zip, uploads it and its entry to the `dev` release, writes the list at the start of a push and when its build is done, and marks a pull request's commit Ready to update to the moment its entry is up |
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
 
 The signature is Ed25519 over the SHA-256 of the zip, which is what Wails'
