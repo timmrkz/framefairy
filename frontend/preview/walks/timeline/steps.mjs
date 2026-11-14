@@ -8,10 +8,6 @@ import { execFileSync } from "node:child_process";
 import { BITS, ask, caughtUp, chosen, clickOnTrack, control, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, reader, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
-// The stretch heard around a clip made by hand, on either side, aroundClip
-// in cmd/framefairy-app/export.go.
-const aroundClip = 60;
-
 export const steps = {
   // ["trim into", s]   drags the clip's start to s seconds before the end of
   //                    the first word of its first caption
@@ -74,10 +70,9 @@ export const steps = {
   //                    side, which goes along at the zoom it had with the
   //                    caption blocks still drawn, then pinches the clip
   //                    timeline out, drags the clip's
-  //                    start back a hundred and twenty seconds, and half
-  //                    a minute past the minute the app keeps heard around
-  //                    a clip made by hand wherever the first drag left
-  //                    it, lets go and pinches back in on it. The app
+  //                    start back a hundred and twenty seconds, past the
+  //                    minute the app keeps heard around a clip made by
+  //                    hand, lets go and pinches back in on it. The app
   //                    hears that part by itself, ahead of the stretch
   //                    around the clip, and the clip timeline then has
   //                    caption blocks of words said in it, issue #745
@@ -186,11 +181,8 @@ export const steps = {
       walk.wrong = `a joined block from ${one.left.toFixed(0)} px clicked in its middle put the playhead at ${head.toFixed(0)} px`;
       return;
     }
-    // The first drag went as far as the view went along with it, further
-    // on a busy machine, and the minute around the clip may have been
-    // heard from there, so the start goes half a minute past that too.
     g = await handles(page);
-    const to = Math.min(before.start - 120, past.start - aroundClip - 30);
+    const to = before.start - 120;
     const x = await xOf(page, to);
     if (!inside(g.track, x)) {
       walk.wrong = `${to.toFixed(1)} s is not on the clip timeline pinched out`;
