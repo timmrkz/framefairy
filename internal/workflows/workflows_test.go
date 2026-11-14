@@ -388,3 +388,59 @@ func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
 		t.Error("found no step in publish.yml that runs framefairy-release sign")
 	}
 }
+
+// A job that shares its concurrency group with another job can be
+// cancelled by GitHub before it starts: a group keeps one job waiting and
+// cancels the one before. So such a job only does what the next one in
+// the group does again, like writing the channel list, and never marks a
+// commit. A cancelled list in publish.yml took the Ready to update to of
+// two pull requests with it.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestNoJobInASharedQueueMarksACommit(t *testing.T) {
+	t.Parallel()
+	for _, f := range actionFiles(t) {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wf struct {
+			Jobs map[string]struct {
+				Concurrency any `yaml:"concurrency"`
+				Steps       []struct {
+					Name string `yaml:"name"`
+					Run  string `yaml:"run"`
+				} `yaml:"steps"`
+			} `yaml:"jobs"`
+		}
+		if err := yaml.Unmarshal(b, &wf); err != nil {
+			t.Fatal(err)
+		}
+		// The group is a word, or a map with a group in it.
+		group := func(c any) string {
+			if m, ok := c.(map[string]any); ok {
+				return fmt.Sprint(m["group"])
+			}
+			if c == nil {
+				return ""
+			}
+			return fmt.Sprint(c)
+		}
+		jobs := map[string]int{}
+		for _, j := range wf.Jobs {
+			if g := group(j.Concurrency); g != "" {
+				jobs[g]++
+			}
+		}
+		for name, j := range wf.Jobs {
+			if jobs[group(j.Concurrency)] < 2 {
+				continue
+			}
+			for _, s := range j.Steps {
+				if strings.Contains(s.Run, "/statuses/") {
+					t.Errorf("%s: the job %s shares the queue %s, where GitHub can cancel it before it starts, and %q marks a commit, which nothing marks again", filepath.Base(f), name, group(j.Concurrency), s.Name)
+				}
+			}
+		}
+	}
+}

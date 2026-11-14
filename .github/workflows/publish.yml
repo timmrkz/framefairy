@@ -27,14 +27,16 @@
 #    so the Updates page says for the whole of the build that the build it
 #    offers is not the newest.
 # 2. publish, per channel, one after another and never stopped half way,
-#    signs the zip and uploads it with its entry to the release dev.
+#    signs the zip and uploads it with its entry to the release dev. When
+#    a pull request's entry is up, it marks the commit ready to update to.
 # 3. list, when a build ends, writes channels.json again from every entry.
 #    It also takes away the entry of any pull request that is not open any
-#    more, which is how a closed pull request leaves the list. When a pull
-#    request's build is listed, it marks the commit ready to update to.
+#    more, which is how a closed pull request leaves the list.
 #
 # announce and list share one queue, and each writes the list from what is
-# there when it runs, so the order they run in does not matter.
+# there when it runs, so the order they run in does not matter, and one
+# that GitHub cancels in the queue loses nothing the next one does not
+# write. Nothing that only one of them does may live in them.
 #
 # And one beside them:
 #
@@ -128,9 +130,6 @@ jobs:
       pull-requests: read
       actions: read
       statuses: write
-    outputs:
-      published: ${{ steps.upload.outputs.published }}
-      channel: ${{ steps.which.outputs.channel }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -323,6 +322,25 @@ jobs:
           gh release upload dev "dist/channel-$CHANNEL.json" --clobber
           echo "published=true" >> "$GITHUB_OUTPUT"
 
+      # This workflow runs from main, so its checks show on main's commit
+      # and not on the pull request. The pull request learns its build is
+      # ready from a status on the commit that was built. It is set here,
+      # the moment the entry is up, and not by list: list shares its queue
+      # with announce, GitHub keeps one waiting job a queue and cancels the
+      # one before, and a cancelled list took the status with it, so the
+      # builds of #798 and #816 never said they were ready. The app reads
+      # the entry of the channel it follows, so the build is there to
+      # update to once the entry is up, whenever the list follows.
+      - name: Mark the commit ready to update to
+        if: steps.upload.outputs.published == 'true' && steps.which.outputs.channel != 'main'
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          CHANNEL: ${{ steps.which.outputs.channel }}
+        run: |
+          gh api "repos/$GH_REPO/statuses/$SHA" \
+            -f state=success -f context="Ready to update to" \
+            -f description="On the Updates page as $CHANNEL" >/dev/null
+
   list:
     needs: publish
     if: always() && needs.publish.result == 'success'
@@ -334,7 +352,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
-      statuses: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -376,16 +393,3 @@ jobs:
               gh release delete-asset dev "$name" -y || true
             fi
           done
-
-      # This workflow runs from main, so its checks show on main's commit
-      # and not on the pull request. The pull request learns its build is
-      # ready from a status on the commit that was built.
-      - name: Mark the commit ready to update to
-        if: needs.publish.outputs.published == 'true' && needs.publish.outputs.channel != 'main'
-        env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
-          CHANNEL: ${{ needs.publish.outputs.channel }}
-        run: |
-          gh api "repos/$GH_REPO/statuses/$SHA" \
-            -f state=success -f context="Ready to update to" \
-            -f description="On the Updates page as $CHANNEL" >/dev/null
