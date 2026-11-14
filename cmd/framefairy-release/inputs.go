@@ -5,9 +5,12 @@ package main
 // with administrator rights, issue #751. macOS asks the person before any
 // of that works, so what is checked here is that a build never asks: a
 // build that can is refused before it is signed, and no app installs a
-// build that is not signed, see updates.Verify. sign runs from main, see publish.yml, so
-// these lists are main's, and a branch that changes them changes nothing
-// about how its own build is judged.
+// build that is not signed, see updates.Verify. check runs from main, see
+// publish.yml, so these lists are main's, and a branch that changes them
+// changes nothing about how its own build is judged. It runs in a step of
+// its own, before the step that holds the update key: what it reads is a
+// branch's build, bytes nobody has reviewed, and nothing needs the key
+// until the reading is done.
 //
 // What this cannot catch is code that hides the name it looks up, built
 // from pieces at run time. Then macOS is the wall that holds: none of
@@ -35,7 +38,7 @@ import (
 // up by name at run time, with dlsym or NSClassFromString.
 // RegisterEventHotKey is not one of them: Wails links it for global
 // shortcuts, which take only the keys they are registered for, and the app
-// registers none, see the test in internal/inputs.
+// registers none, see TestWhatCouldWatchInputIsFound.
 var watching = []string{
 	// Every key and click of every app, with Input Monitoring.
 	"CGEventTapCreate", "CGEventTapCreateForPid", "CGRequestListenEventAccess",
@@ -158,6 +161,14 @@ var asks = []string{
 // turned off, the dyld environment or get-task-allow.
 var entitled = []string{"com.apple.security.device.audio-input"}
 
+// mostUnpacked is the most the files of a build may hold together once
+// they are unpacked. Every file is read whole and all of them at once, so
+// a zip that says it holds more would fill the runner's memory before a
+// single file was judged. A build holds about 160 MB today. Go's zip
+// reader fails a file that unpacks to more than it says it holds, so the
+// sizes the zip says are the sizes read.
+const mostUnpacked = 4 << 30
+
 // checkInputs reads every file of the zip and says everything in it that
 // could read input meant for other apps, watch the screen or the camera,
 // or ask for administrator rights.
@@ -167,6 +178,13 @@ func checkInputs(zipPath string) error {
 		return fmt.Errorf("the build is not a zip: %w", err)
 	}
 	defer z.Close()
+	var total uint64
+	for _, f := range z.File {
+		total += f.UncompressedSize64
+		if total > mostUnpacked || total < f.UncompressedSize64 {
+			return fmt.Errorf("the build says it unpacks to more than %d GB, so it is not read and not signed", mostUnpacked>>30)
+		}
+	}
 	// Each file is unpacked and read on its own goroutine: unpacking is
 	// most of the time, and the programs of the app are five of about the
 	// same size.
@@ -215,14 +233,21 @@ func checkInputs(zipPath string) error {
 }
 
 // inputsOf says what in one file of the build could read input or ask
-// for administrator rights, or nothing.
+// for administrator rights, or nothing. Every file's bytes are read for
+// the names, whatever the file is: a script the app runs through /bin/sh
+// can say "with administrator privileges" as well as a program can.
 func inputsOf(name string, data []byte) []string {
+	var found []string
+	for _, n := range slices.Concat(watching, raising) {
+		if bytes.Contains(data, []byte(n)) {
+			found = append(found, "names "+n)
+		}
+	}
 	if path.Base(name) == "Info.plist" {
 		keys, err := plistKeys(data)
 		if err != nil {
-			return []string{fmt.Sprintf("cannot be read: %v", err)}
+			return append(found, fmt.Sprintf("cannot be read: %v", err))
 		}
-		var found []string
 		for _, k := range keys {
 			if strings.HasPrefix(k, "NS") && strings.HasSuffix(k, "UsageDescription") && !slices.Contains(asks, k) {
 				found = append(found, "asks for "+k)
@@ -247,20 +272,35 @@ func inputsOf(name string, data []byte) []string {
 		}
 	} else if f, err := macho.NewFile(bytes.NewReader(data)); err == nil {
 		files = append(files, arch{f, data})
+	} else if startsLikeAProgram(data) {
+		// Its libraries, imports and entitlements cannot be read, and
+		// macOS's loader may still run it.
+		return append(found, fmt.Sprintf("starts like a program but cannot be read as one: %v", err))
 	} else {
-		return nil
-	}
-	var found []string
-	for _, n := range slices.Concat(watching, raising) {
-		if bytes.Contains(data, []byte(n)) {
-			found = append(found, "names "+n)
-		}
+		return found
 	}
 	for _, a := range files {
 		found = append(found, machoInputs(path.Base(name), a.f, a.data)...)
 	}
 	slices.Sort(found)
 	return slices.Compact(found)
+}
+
+// startsLikeAProgram says whether data starts with one of the numbers a
+// Mach-O file starts with, a program, a library or a universal file of
+// them, either way round. A universal file is 0xcafebabe, which a Java
+// class starts with too. A build of the app holds none, and one that is
+// refused for it is a build that needs a look.
+func startsLikeAProgram(data []byte) bool {
+	if len(data) < 4 {
+		return false
+	}
+	for _, magic := range []uint32{macho.Magic32, macho.Magic64, macho.MagicFat, 0xcafebabf} {
+		if binary.BigEndian.Uint32(data) == magic || binary.LittleEndian.Uint32(data) == magic {
+			return true
+		}
+	}
+	return false
 }
 
 // machoInputs says what one program, or one architecture of it, imports,

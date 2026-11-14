@@ -219,3 +219,42 @@ describe("a state of a video heard twice", () => {
     expect(jobs.list.map((j) => j.state)).toEqual(["done"]);
   });
 });
+
+// A video just added has its picture checked before the Go side asks for
+// its first search, and its state says the search is on its way
+// meanwhile. Nothing of the video ran then, so the clip list offered
+// Search, and a walk waiting for Search took the search for over, issue
+// #848.
+describe("a first search the Go side has on its way", () => {
+  const state = (rev: number, searchComing: boolean, jobs: Job[] = []) =>
+    ({ video: "/v.mp4", rev, jobs, searchComing, clips: [], coverage: { passes: [] }, status: null, window: null, chosen: "" }) as never;
+
+  test("is a start of the search until a newer state no longer says it, and an older state does not bring it back", () => {
+    const jobs = new JobStore();
+    jobs.take(state(3, true));
+    expect(jobs.isStarting("/v.mp4", "clips", "search")).toBe(true);
+    expect(jobs.isStarting("/v.mp4", "clips")).toBe(true);
+    expect(jobs.isStarting("/v.mp4", "clips", "in")).toBe(false);
+    expect(jobs.isStarting("/v.mp4", "whole")).toBe(false);
+    expect(jobs.isStarting("/w.mp4", "clips")).toBe(false);
+    jobs.take(state(5, false, [job("running", 4, "search", "s")]));
+    expect(jobs.isStarting("/v.mp4", "clips")).toBe(false);
+    jobs.take(state(4, true));
+    expect(jobs.isStarting("/v.mp4", "clips")).toBe(false);
+  });
+
+  test("holds a stop pressed meanwhile until the search comes stopping", () => {
+    const jobs = new JobStore();
+    jobs.take(state(3, true));
+    jobs.stopJob("/v.mp4", "clips", asked);
+    // News of another job of the video settles the stops, and this one
+    // is still on its way.
+    jobs.apply(job("running", 4, "transcribe", "t"));
+    expect(jobs.isStopping("/v.mp4", "clips")).toBe(true);
+    jobs.take(state(6, false, [{ ...job("running", 5, "search", "s"), stopping: true }]));
+    expect(jobs.stopping).toEqual([]);
+    expect(jobs.isStopping("/v.mp4", "clips")).toBe(true);
+    jobs.apply(job("stopped", 7, "search", "s"));
+    expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
+  });
+});

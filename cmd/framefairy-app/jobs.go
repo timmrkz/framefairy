@@ -1384,10 +1384,19 @@ func (s *FrameFairy) CancelJob(id string) {
 // StopClipWork is Cancel at the head of the clip list: it stops all the
 // work on the clips of an episode, and the search the press of Search or
 // Continue named click asked for, whether or not that has reached the Go
-// side yet, see stopClips.
+// side yet, see stopClips. While the first search of a video just added
+// is on its way, the clip list says Cancel and no press of Search can be
+// on its way, so it is that search that is called off: it is queued
+// stopped once the picture is checked, and says Stopped with Continue,
+// the way a search called off before it began does.
 func (s *FrameFairy) StopClipWork(path, click string) {
 	if !s.store.Known(path) {
 		return
 	}
+	s.checkMu.Lock()
+	if coming := s.searchComingLocked(path); coming != "" {
+		click = coming
+	}
+	s.checkMu.Unlock()
 	s.jobs.stopClips(path, click)
 }

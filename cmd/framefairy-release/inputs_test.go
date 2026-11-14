@@ -231,7 +231,10 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 		{"a key inside another", "Frame Fairy.app/Contents/Info.plist",
 			[]byte(plistHead + "<key>CFBundleURLTypes</key><array><dict><key>NSScreenCaptureUsageDescription</key><string>x</string></dict></array>\n</dict>\n</plist>\n"),
 			nil},
-		{"a file that is no program", "Frame Fairy.app/Contents/Resources/LICENSE", []byte("CGEventTapCreate is named here"), nil},
+		// Any file is read for the names, since the app could hand one to
+		// a program that runs it.
+		{"a file that is no program", "Frame Fairy.app/Contents/Resources/LICENSE", []byte("CGEventTapCreate is named here"),
+			[]string{"names CGEventTapCreate"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -279,6 +282,14 @@ func TestWhatCouldAskForAdministratorRightsIsFound(t *testing.T) {
 		{"sudo", "framefairy-frames",
 			with(func(p *program) { p.links = nil; p.text = "/usr/bin/sudo" }),
 			[]string{"names /usr/bin/sudo"}},
+		// A script is no program, and the app could still run it through
+		// /bin/sh.
+		{"a script that asks as an administrator", "Frame Fairy.app/Contents/Resources/helper.sh",
+			[]byte("#!/bin/sh\nosascript -e 'do shell script \"x\" with administrator privileges'\n"),
+			[]string{"names with administrator privileges"}},
+		{"a script that runs sudo", "Frame Fairy.app/Contents/Resources/helper.sh",
+			[]byte("#!/bin/sh\n/usr/bin/sudo true\n"),
+			[]string{"names /usr/bin/sudo"}},
 		// What the app links today and looks alike: Go's os/exec imports
 		// setuid and setgid, which only give rights up, Wails opens the
 		// app at login as the person with mainAppService, and Go's
@@ -296,6 +307,81 @@ func TestWhatCouldAskForAdministratorRightsIsFound(t *testing.T) {
 				t.Errorf("found %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// A file that starts like a program but that Go cannot read as one hides
+// its libraries, imports and entitlements, and macOS's loader may still
+// run it, so it is refused. A file that starts like nothing is read for
+// names and nothing more, the way a licence or the icon is.
+func TestAFileThatStartsLikeAProgramButIsNoneIsFound(t *testing.T) {
+	t.Parallel()
+	torn := app.bytes()[:40]
+	cases := []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{"a program cut short", torn, "starts like a program but cannot be read as one"},
+		{"a 32-bit program of nothing", append([]byte{0xce, 0xfa, 0xed, 0xfe}, make([]byte, 12)...), "starts like a program but cannot be read as one"},
+		{"a universal file of nothing", append([]byte{0xca, 0xfe, 0xba, 0xbe}, 0, 0, 0, 9), "starts like a program but cannot be read as one"},
+		{"a 64-bit universal file, which Go cannot read", append([]byte{0xca, 0xfe, 0xba, 0xbf}, 0, 0, 0, 1), "starts like a program but cannot be read as one"},
+		{"a licence", []byte("GNU LESSER GENERAL PUBLIC LICENSE\n"), ""},
+		{"a file shorter than a magic number", []byte{0xcf, 0xfa}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := inputsOf("Frame Fairy.app/Contents/Resources/thing", c.data)
+			if c.want == "" {
+				if got != nil {
+					t.Errorf("found %q in a file that is no program", got)
+				}
+				return
+			}
+			if len(got) != 1 || !strings.HasPrefix(got[0], c.want) {
+				t.Errorf("found %q, want one finding that %s", got, c.want)
+			}
+		})
+	}
+}
+
+// Every file of a build is read whole, all at once, so a zip that says
+// it unpacks to more than mostUnpacked is refused before anything is
+// read. It says so in a few bytes: the size is only what its header says.
+//
+// On the real disk: the release tool reads the build as a zip file.
+func TestABuildThatSaysItIsTooBigIsNotRead(t *testing.T) {
+	t.Parallel()
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	for name, data := range theApp("main") {
+		f, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A stored file whose header says it holds 5 GB, and holds 4 bytes.
+	f, err := w.CreateRaw(&zip.FileHeader{Name: "Frame Fairy.app/Contents/Resources/bomb", Method: zip.Store,
+		CompressedSize64: 4, UncompressedSize64: 5 << 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte("bomb")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	zipPath := filepath.Join(t.TempDir(), "app.zip")
+	if err := os.WriteFile(zipPath, b.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = checkInputs(zipPath)
+	if err == nil || !strings.Contains(err.Error(), "unpacks to more than 4 GB") {
+		t.Errorf("a build that says it holds 5 GB said %v", err)
 	}
 }
 
@@ -399,12 +485,14 @@ func theApp(channel string) map[string][]byte {
 	}
 }
 
-// A build that could watch input is refused before it is signed, and no
-// entry is written for it, so no app is offered it.
+// A build that could watch input fails the check the workflow runs
+// before it signs, see TestTheBuildIsCheckedBeforeTheKeyIsThere in
+// internal/workflows, so no entry is written for it and no app is
+// offered it.
 //
-// On the real disk: the release tool reads the zip and writes the entry as files.
-func TestABuildThatCouldWatchInputIsNotSigned(t *testing.T) {
-	release(t)
+// On the real disk: the release tool reads the zip as a file.
+func TestABuildThatCouldWatchInputFailsTheCheck(t *testing.T) {
+	t.Parallel()
 	files := theApp("main")
 	watcher := app
 	watcher.imports = append(slices.Clone(app.imports), "_CGWindowListCreateImage")
@@ -413,13 +501,16 @@ func TestABuildThatCouldWatchInputIsNotSigned(t *testing.T) {
 	if err := os.WriteFile(zipPath, zipped(t, files), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(t.TempDir(), "main.json")
-	err := sign([]string{"-zip", zipPath, "-channel", "main", "-name", "main", "-version", "0.1.0-main.abc1234",
-		"-commit", "abc1234def56", "-url", "https://example.com/main.zip", "-out", out})
+	err := check([]string{"-zip", zipPath})
 	if err == nil || !strings.Contains(err.Error(), "Frame Fairy.app/Contents/MacOS/framefairy-app: imports _CGWindowListCreateImage") {
-		t.Errorf("signing a build that imports CGWindowListCreateImage said %v", err)
+		t.Errorf("checking a build that imports CGWindowListCreateImage said %v", err)
 	}
-	if _, err := os.Stat(out); !os.IsNotExist(err) {
-		t.Error("an entry was written for it")
+	// The app as it is passes.
+	clean := filepath.Join(t.TempDir(), "app.zip")
+	if err := os.WriteFile(clean, zipped(t, theApp("main")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := check([]string{"-zip", clean}); err != nil {
+		t.Errorf("checking the app as it is said %v", err)
 	}
 }

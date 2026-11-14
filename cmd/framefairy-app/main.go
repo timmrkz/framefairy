@@ -406,9 +406,11 @@ type FrameFairy struct {
 	// limit of the clock.
 	frameLate <-chan struct{}
 	// checking holds each video just added whose picture is still being
-	// checked, see addEpisodes and stopCheck.
+	// checked, see addEpisodes and stopCheck. checks counts the checks,
+	// so the first search each one starts has a press of its own.
 	checkMu  sync.Mutex
 	checking map[string]*check
+	checks   int
 	// now is the time of day an edit is timed by, time.Now unless a test
 	// hands in a clock it moves, see clock.
 	now func() time.Time

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"cmp"
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -203,6 +206,135 @@ func TestAVideoRemovedWhileItsPictureIsCheckedStartsNothing(t *testing.T) {
 		if msg, _ := line["msg"].(string); strings.Contains(msg, "first frame") {
 			t.Errorf("the log says of a check called off: %v", line)
 		}
+	}
+}
+
+// From the moment Add answers until the first search of a video just
+// added is queued, the video's state says the search is on its way, so
+// the clip list shows the work and not Search, and a state that no longer
+// says so holds the search, issue #848. Since Add answers at once, #832,
+// the window read a state with nothing of the video running while its
+// picture was checked, and walks that waited for Search went on before
+// the search had begun. Cancel pressed meanwhile calls that search off:
+// it comes stopped, with Continue, the way a search called off before it
+// began does.
+//
+// The decoder is a stand-in that takes every request and answers none,
+// so the checks are held where a slow first frame holds them, and the
+// test lets them go by saying the frame is late. The states read while
+// they are let go are read side by side with it.
+//
+// On the real disk: the stand-in decoder is a program that is run. And
+// FRAMEFAIRY_FRAMES names it for the whole process, which open does
+// already with HOME, so the test does not run beside others.
+func TestAVideoJustAddedSaysItsFirstSearchIsComing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	d := open(t)
+	kept, _ := filepath.Abs(d.episode("kommt", "6"))
+	called, _ := filepath.Abs(d.episode("abgesagt", "6"))
+	pipe, hangs := standin.Hangs(t)
+	hung := filepath.Join(t.TempDir(), "framefairy-frames")
+	if err := standin.Write(hung, []byte("#!/bin/sh\necho hangs > '"+pipe+"'\nexec cat >/dev/null\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FRAMEFAIRY_FRAMES", hung)
+	t.Cleanup(func() {
+		for _, v := range []string{kept, called} {
+			d.svc.previews.mu.Lock()
+			dec := d.svc.previews.decoders[v]
+			delete(d.svc.previews.decoders, v)
+			d.svc.previews.mu.Unlock()
+			if dec != nil {
+				dec.Close()
+			}
+		}
+	})
+	late := make(chan struct{})
+	d.svc.frameLate = late
+	if _, err := d.svc.addEpisodes([]string{kept, called}); err != nil {
+		t.Fatal(err)
+	}
+	// Both decoders were asked for their first frame, and neither answers.
+	<-hangs
+	<-hangs
+	searchIn := func(st VideoState) (Job, bool) {
+		i := slices.IndexFunc(st.Jobs, func(j Job) bool { return j.Kind == engine.JobSearch })
+		if i < 0 {
+			return Job{}, false
+		}
+		return st.Jobs[i], true
+	}
+	for _, v := range []string{kept, called} {
+		st, err := d.svc.State(context.Background(), v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := searchIn(st); !st.SearchComing || ok {
+			t.Errorf("while its picture is checked, %s says its search is coming %v, with jobs %v",
+				filepath.Base(v), st.SearchComing, st.Jobs)
+		}
+	}
+	// Cancel at the head of the clip list, after a press of the window's
+	// own long done.
+	d.stop(called, "a press long done")
+	states := make(chan VideoState, 16)
+	var reads sync.WaitGroup
+	for range cap(states) {
+		reads.Go(func() {
+			st, err := d.svc.State(context.Background(), kept)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			states <- st
+		})
+	}
+	close(late)
+	reads.Wait()
+	close(states)
+	<-d.svc.checked(kept)
+	<-d.svc.checked(called)
+	var read []VideoState
+	for st := range states {
+		read = append(read, st)
+	}
+	st, err := d.svc.State(context.Background(), kept)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read = append(read, st)
+	slices.SortFunc(read, func(a, b VideoState) int { return cmp.Compare(a.Rev, b.Rev) })
+	came := false
+	for _, st := range read {
+		_, ok := searchIn(st)
+		switch {
+		case !st.SearchComing && !ok:
+			t.Errorf("the state of rev %d says no search is coming and holds none: %v", st.Rev, st.Jobs)
+		case st.SearchComing && came:
+			t.Errorf("the state of rev %d says the search is coming again after one said it came", st.Rev)
+		}
+		came = came || !st.SearchComing
+	}
+	if search, ok := searchIn(st); st.SearchComing || !ok || !search.going() {
+		t.Errorf("once its picture was checked, %s says its search is coming %v, with jobs %v",
+			filepath.Base(kept), st.SearchComing, st.Jobs)
+	}
+	st, err = d.svc.State(context.Background(), called)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.SearchComing {
+		t.Errorf("once its picture was checked, %s still says its search is coming", filepath.Base(called))
+	}
+	d.idle(kept)
+	d.idle(called)
+	if o := d.outcome(called); !o.stopped {
+		t.Errorf("the search Cancel was pressed for on its way ended %+v, want it stopped with Continue", o)
+	}
+	if o := d.outcome(kept); o.stopped || o.failed != "" || o.interrupted {
+		t.Errorf("the search nobody called off ended %+v", o)
 	}
 }
 

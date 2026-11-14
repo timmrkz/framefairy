@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,7 +138,7 @@ func TestANewKeyIsNotMadeOverAnOldOne(t *testing.T) {
 
 // On the real disk: the release tool reads the entries and writes the list as files.
 func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
-	release(t)
+	private := release(t)
 	good := signed(t, "main", "main")
 	pr := signed(t, "pr-58", "#58 Small things")
 
@@ -154,15 +155,16 @@ func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := filepath.Join(t.TempDir(), "channels.json")
-	if err := list([]string{"-out", out, "-newest", "pr-58=0123456789ab", "-conflict", "pr-58", good, pr, forgedPath}); err != nil {
-		t.Fatal(err)
+	entries := map[string][]byte{}
+	for _, f := range []string{good, pr, forgedPath} {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries[filepath.Base(f)] = data
 	}
-	written, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := updates.Parse(written)
+	l, err := makeList(entries, map[string]string{"pr-58": "0123456789abcdef"}, map[string]bool{"pr-58": true},
+		private.Public().(ed25519.PublicKey), time.Now(), io.Discard) //nolint:forbidigo // when the list says it was written, waits on nothing
 	if err != nil {
 		t.Fatalf("the app cannot read the list: %v", err)
 	}
