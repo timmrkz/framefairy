@@ -71,7 +71,7 @@ export interface TrainingStatus {
   decisions: number;
 }
 
-// The app's log as Settings, Advanced shows it, see LogStatus in
+// The app's log as Settings shows it, see LogStatus in
 // applog.go: the file in use, how many files there are with the older
 // ones, and what they hold together. No path while the app keeps no log.
 export interface LogStatus {
@@ -79,6 +79,17 @@ export interface LogStatus {
   files: number;
   bytes: number;
   lines: number;
+  // The last toasts the app showed, newest first, see LoggedToast. Null
+  // from a log that could not be read.
+  toasts: LoggedToast[] | null;
+}
+
+// A toast the app showed, read back from its log: when, in ms since
+// 1970, the video it was about and its words. Issue #421.
+export interface LoggedToast {
+  at: number;
+  video?: string;
+  text: string;
 }
 
 export interface Settings {
@@ -213,10 +224,13 @@ export interface Word {
   // starts, and all of it, for a word shown in halves or a correction that
   // reads as several words. It is what a correction is kept against. Part
   // is, for a correction that reads as several words, which of them this
-  // is, counted from nought.
+  // is, counted from nought. Room is how many characters may be typed for
+  // it in the caption box, given with every word said and left out when
+  // nothing may.
   said?: number;
   whole?: string;
   part?: number;
+  room?: number;
 }
 
 // A word the captions light, as the workspace lays them out from the
@@ -910,7 +924,7 @@ export const api = {
   platform: () => call<string>("Platform"),
   // Lines for the app's own log, each with the moment it was said, in ms
   // since 1970, its level and the video it is about, see lib/said.ts.
-  said: (lines: { at: number; text: string; level?: string; video?: string; act?: string }[]) => call<void>("Said", lines),
+  said: (lines: { at: number; text: string; level?: string; video?: string; act?: string; toast?: boolean }[]) => call<void>("Said", lines),
   // What the person did, said at once so the Go side's lines for it carry
   // its id, see lib/said.ts.
   acted: (act: { id: string; at: number; what: string; video?: string }) => call<void>("Acted", act),
@@ -973,6 +987,9 @@ export const api = {
   training: () => call<TrainingStatus>("Training"),
   clearTraining: () => call<void>("ClearTraining"),
   appLog: () => call<LogStatus>("AppLog"),
+  // Whether Settings is open, so the log is sent to it as it is written,
+  // see onAppLog.
+  watchAppLog: (on: boolean) => call<void>("WatchAppLog", on),
   showAppLog: () => call<void>("ShowAppLog"),
   // Every file of the log goes, and what comes back is the new one, which
   // holds the line that says so.
@@ -1346,6 +1363,12 @@ export interface ReportDraft {
   error?: string;
 }
 
+// The app's log as Settings shows it, sent while Settings watches it as
+// lines are written, see watch in applog.go.
+export function onAppLog(fn: (st: LogStatus) => void): () => void {
+  return Events.On("applog", (ev) => fn(ev.data as LogStatus));
+}
+
 // The report window opened or closed, for Bugs in the sidebar.
 export function onReportWindow(fn: (open: boolean) => void): () => void {
   return Events.On("report-window", (ev) => fn(Boolean(ev.data)));
@@ -1354,12 +1377,6 @@ export function onReportWindow(fn: (open: boolean) => void): () => void {
 // What became of files dropped on the report window.
 export function onReportDraft(fn: (d: ReportDraft) => void): () => void {
   return Events.On("report-draft", (ev) => fn(ev.data as ReportDraft));
-}
-
-// Words a toast's Report button hands the report window, already open,
-// to write in its field, see ReportAbout in bugs.go.
-export function onReportAbout(fn: (text: string) => void): () => void {
-  return Events.On("report-about", (ev) => fn(String(ev.data ?? "")));
 }
 
 export function onEpisodeChanged(fn: (path: string) => void): () => void {

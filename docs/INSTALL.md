@@ -176,7 +176,7 @@ it, run "Go: Restart Language Server" from the command palette.
   until you build again.
 - **Windows:** copy `onnxruntime.dll`, `sherpa-onnx-c-api.dll` and
   `sherpa-onnx-cxx-api.dll` from
-  `%USERPROFILE%\go\pkg\mod\github.com\k2-fsa\sherpa-onnx-go-windows@v1.13.8\lib\x86_64-pc-windows-gnu`
+  `%USERPROFILE%\go\pkg\mod\github.com\k2-fsa\sherpa-onnx-go-windows\v2@v2.0.1\lib\x86_64-pc-windows-gnu`
   next to the `.exe` you built.
 
 Because of the native library, each platform is built on that platform, or

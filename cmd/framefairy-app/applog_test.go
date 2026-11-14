@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -689,8 +690,146 @@ func TestTheLogCanBeRemovedWhole(t *testing.T) {
 	}
 }
 
-// close stops writing the log, for the tests.
+// Settings shows the last five toasts the app showed, newest first, read
+// back from its log, the older files too, with when each came and the
+// video it was about. A toast said again stands once, where it was said
+// last. A line that only names a toast, one from elsewhere and one cut off
+// are no toasts. Removing the log takes them away too. Issue #421.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestSettingsShowsTheLastToasts(t *testing.T) {
+	path, _ := testLog(t)
+	dir := filepath.Dir(path)
+	s := &FrameFairy{}
+	if st := s.AppLog(); len(st.Toasts) != 0 {
+		t.Fatalf("a log with no toast shows %v", st.Toasts)
+	}
+
+	// Two toasts in the older file, from before the log turned over.
+	var older bytes.Buffer
+	z := gzip.NewWriter(&older)
+	_, _ = z.Write([]byte(`{"level":"warn","time":"2026-11-12T09:00:00.000+01:00","run":"a","from":"window","toast":true,"msg":"one"}` + "\n" +
+		`{"level":"warn","time":"2026-11-12T09:01:00.000+01:00","run":"a","from":"window","video":"talk.mp4","toast":true,"msg":"two"}` + "\n"))
+	_ = z.Close()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "app-2026-11-12T09-02-00.000.log.gz"), older.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Add(-30 * time.Second).Truncate(time.Millisecond)
+	at := func(i int) float64 { return float64(start.Add(time.Duration(i) * time.Second).UnixMilli()) }
+	s.Said([]SaidLine{
+		{At: at(0), Level: "warn", Toast: true, Text: "three"},
+		{At: at(1), Level: "info", Text: "toast closed: three"},
+		{At: at(2), Level: "warn", Video: "/videos/start.mp4", Toast: true, Text: "The video start.mp4 is gone."},
+		{At: at(3), Level: "warn", Toast: true, Text: "four"},
+		{At: at(4), Level: "warn", Text: "the window said \"toast\":true as words"},
+		{At: at(5), Level: "warn", Toast: true, Text: "five"},
+		{At: at(6), Level: "warn", Toast: true, Text: "four"},
+	})
+	theLog.line(zerolog.WarnLevel, "app").Bool("toast", true).Msg("not the window's")
+	if f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0); err != nil {
+		t.Fatal(err)
+	} else {
+		_, _ = f.WriteString(`{"level":"warn","from":"window","toast":true,"msg":"cut of` + "\n")
+		_ = f.Close()
+	}
+
+	got := s.AppLog().Toasts
+	want := []LoggedToast{
+		{At: int64(at(6)), Text: "four"},
+		{At: int64(at(5)), Text: "five"},
+		{At: int64(at(2)), Video: "start.mp4", Text: "The video start.mp4 is gone."},
+		{At: int64(at(0)), Text: "three"},
+		{At: time.Date(2026, 11, 12, 8, 1, 0, 0, time.UTC).UnixMilli(), Video: "talk.mp4", Text: "two"},
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("Settings shows the toasts\n%v\nwant the last five, newest first\n%v", got, want)
+	}
+
+	if _, err := s.RemoveAppLog(); err != nil {
+		t.Fatal(err)
+	}
+	if st := s.AppLog(); len(st.Toasts) != 0 {
+		t.Fatalf("the log was removed, and Settings still shows %v", st.Toasts)
+	}
+}
+
+// Settings, while it is open, is sent the log as lines are written,
+// without a reload: the toasts that came and the lines counted, once a
+// beat however many lines come in it, the same as read afresh. A log
+// turned over is a new file of the same name, and is counted as one.
+// Issue #421.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestSettingsSeesTheLogAsItIsWritten(t *testing.T) {
+	l := &appLog{run: "watch", grew: make(chan struct{}, 1)}
+	l.open(filepath.Join(t.TempDir(), "logs", "app.log"))
+	t.Cleanup(l.close)
+	// Turned over by hand below, and kept plain, since packing it runs
+	// on lumberjack's own goroutine.
+	l.file.Compress = false
+	told := make(chan LogStatus, 4)
+	beat := make(chan time.Time)
+	done := make(chan struct{})
+	go func() {
+		l.watch(func(st LogStatus) { told <- st }, func() <-chan time.Time { return beat })
+		close(done)
+	}()
+	toast := func(text string) { l.line(zerolog.WarnLevel, "window").Bool("toast", true).Msg(text) }
+	shows := func(st LogStatus, files, lines int, texts ...string) {
+		t.Helper()
+		got := []string{}
+		for _, t := range st.Toasts {
+			got = append(got, t.Text)
+		}
+		if st.Files != files || st.Lines != lines || !slices.Equal(got, texts) {
+			t.Fatalf("Settings shows %d files, %d lines and %v, want %d, %d and %v", st.Files, st.Lines, got, files, lines, texts)
+		}
+	}
+
+	// Nothing is sent while Settings is not open.
+	toast("before")
+	l.watching.Store(true)
+	toast("one")
+	shows(<-told, 1, 2, "one", "before")
+
+	// Two lines in one beat are one message, sent once the beat is over.
+	l.line(zerolog.InfoLevel, "app").Msg("a line")
+	toast("two")
+	beat <- time.Time{}
+	shows(<-told, 1, 4, "two", "one", "before")
+
+	// The same as the log read afresh.
+	l.counting.Lock()
+	l.counted = nil
+	l.counting.Unlock()
+	shows(l.status(), 1, 4, "two", "one", "before")
+
+	// Turned over, the old file keeps its lines under a new name, and a
+	// new one starts under the old name. It grows past where the old one
+	// was read, and is still read from its start.
+	if err := l.file.Rotate(); err != nil {
+		t.Fatal(err)
+	}
+	for range 6 {
+		l.line(zerolog.InfoLevel, "app").Msg("a line in the new file")
+	}
+	toast("three")
+	beat <- time.Time{}
+	shows(<-told, 2, 11, "three", "two", "one", "before")
+
+	close(l.grew)
+	beat <- time.Time{}
+	<-done
+}
+
+// close stops writing the log, for the tests, the way the app's process
+// ending does. Nothing watches the log then either, so a walk that ends
+// with Settings open leaves no watch to the walk after it.
 func (l *appLog) close() {
+	l.watching.Store(false)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.root.Store(nil)

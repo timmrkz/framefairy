@@ -6,7 +6,6 @@
     onEpisodeChanged,
     onDropped,
     onAcknowledgements,
-    onReportWindow,
     onUndo,
     onShowUpdates,
     onLicenceLink,
@@ -30,6 +29,7 @@
   import Confirm from "./components/Confirm.svelte";
   import Toasts from "./components/Toasts.svelte";
   import { toasts } from "./lib/toast.svelte";
+  import { reporting } from "./lib/reporting.svelte";
   import Busy from "./components/Busy.svelte";
   import Pick from "./components/Pick.svelte";
   import VideoMenu from "./components/VideoMenu.svelte";
@@ -477,8 +477,6 @@
   const update = $derived(updates.shown);
   const updateDot = $derived(railDot(update));
   const updateStanding = $derived(standing(update));
-  // Whether the report window is open, which lights Bugs.
-  let reporting = $state(false);
   const updateReady = $derived(update?.phase === "ready");
   // What went wrong with the library or with files given to the app,
   // which has no row of its own: a toast, issue #327. Each time is a
@@ -761,11 +759,7 @@
       if (nav.view.name !== "episode" && typing()) document.execCommand(what);
     });
     // Bugs is lit while the report window is open, see bugs.go.
-    const noReport = onReportWindow((open) => (reporting = open));
-    api
-      .reportWindowOpen()
-      .then((open) => (reporting = open))
-      .catch(() => {});
+    const noReport = reporting.listen();
     // Where updates stand, heard from the start for the dot on Updates and
     // kept for the Updates page, see lib/updates.svelte.ts.
     const noUpdates = updates.listen();
@@ -929,7 +923,7 @@
       <!-- Report a Problem, in a window of its own, one at a time, so a
            person can talk about a problem while going through it here.
            Lit while that window is open. Plan row 2.244. -->
-      <button class="quiet nav bugs" class:current={reporting} onclick={() => api.openReport("bugs").catch(() => {})} title="Report a problem">
+      <button class="quiet nav bugs" class:current={reporting.open} onclick={() => api.openReport("bugs").catch(() => {})} title="Report a problem">
         <Icon name="report" />
         <span class="label">Bugs</span>
       </button>

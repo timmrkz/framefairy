@@ -21,7 +21,7 @@
 # The images below are pinned to a digest, so the same file always means
 # the same image. Moving them is a change to this file, which builds anew,
 # and Dependabot moves them once a week, see .github/dependabot.yml.
-FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d AS node
+FROM node:22.23.5-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS node
 
 FROM golang:1.27.4-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea AS go
 

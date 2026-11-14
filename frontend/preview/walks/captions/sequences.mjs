@@ -389,6 +389,16 @@ export default [
       ["press", "Shift+ArrowLeft"],
       ["press", "Shift+ArrowLeft"],
       ["captions drawn"],
+      // A word takes no more than the engine keeps, 60 characters. What
+      // is typed past them is not let in, so the word is saved with what
+      // fits rather than refused with all of it. Found by the words walk.
+      ["click", "Ich"],
+      ["press", "End"],
+      ["type", " one two three four five six seven eight nine ten eleven twelve thirteen fourteen"],
+      ["open", "Ich one two three four five six seven eight nine ten eleven "],
+      ["press", "Enter"],
+      ["captions drawn"],
+      ["drawn", "eleven"],
     ],
   },
   {

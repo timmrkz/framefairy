@@ -17,7 +17,7 @@ import { api, tellTo } from "./api";
 // between. trace: what comes with every frame, written only while the log
 // is detailed.
 export type Level = "error" | "warn" | "info" | "debug" | "trace";
-export type Said = { level?: Level; video?: string };
+export type Said = { level?: Level; video?: string; toast?: boolean };
 
 type Line = { at: number; text: string; act?: string } & Said;
 
@@ -58,7 +58,7 @@ const MOST = 400;
 // counted, not written again.
 export function said(text: string, how: Said = {}) {
   const at = Date.now();
-  const key = `${acting} ${how.level ?? ""} ${how.video ?? ""} ${text}`;
+  const key = `${acting} ${how.level ?? ""} ${how.video ?? ""} ${how.toast ?? ""} ${text}`;
   if (key === last) {
     repeats++;
     repeatedAt = at;

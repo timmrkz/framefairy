@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 	"weak"
 
 	"github.com/spf13/afero"
@@ -570,7 +571,9 @@ type SegmentView struct {
 // Whole is all of it, for a word the captions show in halves or a
 // correction that reads as several words. Part is, for a correction that
 // reads as several words, which of them this is, counted from nought, so
-// one of them can be corrected or removed without the others.
+// one of them can be corrected or removed without the others. Room is how
+// many characters may be typed for it in the caption box, the rest of the
+// whole word taken off, so a correction is never one the engine refuses.
 type WordView struct {
 	Start float64  `json:"start"`
 	End   float64  `json:"end"`
@@ -578,6 +581,22 @@ type WordView struct {
 	Said  *float64 `json:"said,omitempty"`
 	Whole string   `json:"whole,omitempty"`
 	Part  *int     `json:"part,omitempty"`
+	Room  int      `json:"room,omitempty"`
+}
+
+// typingRoom is how many characters may be typed for part of whole, nil for
+// all of it, so the word it makes is still at most wordMost. The others
+// keep a space each between them.
+func typingRoom(whole string, part *int) int {
+	if part == nil {
+		return wordMost
+	}
+	fields := strings.Fields(whole)
+	if *part < 0 || *part >= len(fields) {
+		return wordMost
+	}
+	others := utf8.RuneCountInString(strings.Join(fields, " ")) - utf8.RuneCountInString(fields[*part])
+	return max(0, wordMost-others)
 }
 
 // PlanView is a plan with everything the candidates screen needs.
@@ -1245,6 +1264,7 @@ func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, 
 							part := t.PartOf(heard, at)
 							word.Part = &part
 						}
+						word.Room = typingRoom(heard.Text, word.Part)
 					}
 				}
 				row.Words = append(row.Words, word)

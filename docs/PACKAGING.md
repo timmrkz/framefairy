@@ -463,7 +463,7 @@ ships shared libraries, and its cgo directive writes the Go module cache
 path into the executable as the place to find them:
 
 ```
-RUNPATH  /root/go/pkg/mod/github.com/k2-fsa/sherpa-onnx-go-linux@v1.13.8/lib/x86_64-unknown-linux-gnu
+RUNPATH  /root/go/pkg/mod/github.com/k2-fsa/sherpa-onnx-go-linux/v2@v2.0.1/lib/x86_64-unknown-linux-gnu
 ```
 
 Nobody else has that folder, so the app dies before it draws anything.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -61,6 +63,14 @@ type appLog struct {
 	// log keeps them because they decide which lines it writes, and the
 	// log is the program's one.
 	repeats repeatedFailures
+	// counted is what status read of each file, so the next look reads
+	// only what was written since, see counting.
+	counting sync.Mutex
+	counted  map[string]fileCount
+	// grew hears that a line went into the file, and watching whether
+	// Settings is open to be told, see watch.
+	grew     chan struct{}
+	watching atomic.Bool
 }
 
 // The log is at most 10 MB of lines in use and three older files
@@ -70,7 +80,7 @@ const (
 	appLogOlder = 3
 )
 
-var theLog = &appLog{run: runID()}
+var theLog = &appLog{run: runID(), grew: make(chan struct{}, 1)}
 
 func init() {
 	// A moment to the millisecond, with the Mac's offset from UTC.
@@ -108,7 +118,7 @@ func (l *appLog) open(path string) {
 		_ = l.file.Close()
 	}
 	l.file = &lumberjack.Logger{Filename: path, MaxSize: appLogMB, MaxBackups: appLogOlder, Compress: true}
-	lg := zerolog.New(byLevel{file: l.file, recent: &l.recent}).Level(zerolog.TraceLevel)
+	lg := zerolog.New(byLevel{file: l.file, recent: &l.recent, grew: l.grew}).Level(zerolog.TraceLevel)
 	l.root.Store(&lg)
 }
 
@@ -127,7 +137,7 @@ func (l *appLog) files() []string {
 	return append(older, path)
 }
 
-// LogStatus is the app's log as Settings, Advanced shows it: where the
+// LogStatus is the app's log as Settings shows it: where the
 // file in use is, how many files there are with the older ones, and how
 // much they hold together. Plan row 2.245.
 type LogStatus struct {
@@ -135,16 +145,127 @@ type LogStatus struct {
 	Files int    `json:"files"`
 	Bytes int64  `json:"bytes"`
 	Lines int    `json:"lines"`
+	// Toasts are the last toasts the app showed, newest first, at most
+	// toastsShown of them.
+	Toasts []LoggedToast `json:"toasts"`
+}
+
+// LoggedToast is a toast the app showed, read back from its log: when, in
+// ms since 1970, the video it was about, and its words. Settings shows
+// the last few, so a toast that ran out unread is not lost and can still
+// be reported. Issue #421.
+type LoggedToast struct {
+	At    int64  `json:"at"`
+	Video string `json:"video,omitempty"`
+	Text  string `json:"text"`
+}
+
+// toastsShown is how many toasts Settings shows, the last five Tim asked
+// for.
+const toastsShown = 5
+
+// toastsIn adds the toasts the lines of data say to toasts, in the order
+// they were said: the lines the window marked as a toast, see Said. A
+// toast said again takes the place of the one before, so one failure
+// that keeps coming back does not push every other toast out of the last
+// five. A line that is not whole JSON is passed over, the way a line cut
+// off by a crash is.
+func toastsIn(data []byte, toasts []LoggedToast) []LoggedToast {
+	for line := range bytes.Lines(data) {
+		if !bytes.Contains(line, []byte(`"toast":true`)) {
+			continue
+		}
+		var l struct {
+			Time  string `json:"time"`
+			From  string `json:"from"`
+			Video string `json:"video"`
+			Toast bool   `json:"toast"`
+			Msg   string `json:"msg"`
+		}
+		if json.Unmarshal(line, &l) != nil || !l.Toast || l.From != "window" || l.Msg == "" {
+			continue
+		}
+		at, _ := time.Parse(zerolog.TimeFieldFormat, l.Time)
+		toasts = laterToast(toasts, LoggedToast{At: at.UnixMilli(), Video: l.Video, Text: l.Msg})
+	}
+	return toasts
+}
+
+// laterToast is toasts with t said last, in the place of the same toast
+// said before.
+func laterToast(toasts []LoggedToast, t LoggedToast) []LoggedToast {
+	toasts = slices.DeleteFunc(toasts, func(o LoggedToast) bool { return o.Video == t.Video && o.Text == t.Text })
+	return append(toasts, t)
+}
+
+// fileCount is what one file of the log held when it was last read: which
+// file it was, how far it was read, the lines up to there and the toasts
+// in them.
+type fileCount struct {
+	file   os.FileInfo
+	read   int64
+	lines  int
+	toasts []LoggedToast
+}
+
+// count is what the file at path holds now, from what it held when was
+// was read. An older file never changes, so it is read once. The file in
+// use only grows until it is turned over, so only what was written since
+// is read, up to its last whole line, and a line being written is read
+// the next time. A file of the same name that is not the same file is a
+// new one, the log turned over or removed, and is read whole.
+func count(path string, info os.FileInfo, was fileCount) fileCount {
+	if was.file == nil || !os.SameFile(was.file, info) || info.Size() < was.read {
+		was = fileCount{}
+	}
+	was.file = info
+	size := info.Size()
+	if was.read > 0 && (size == was.read || strings.HasSuffix(path, ".gz")) {
+		return was
+	}
+	var data []byte
+	if strings.HasSuffix(path, ".gz") {
+		all, err := readLog(path)
+		if err != nil {
+			return was
+		}
+		data = all
+	} else {
+		f, err := os.Open(path)
+		if err != nil {
+			return was
+		}
+		defer f.Close()
+		if _, err := f.Seek(was.read, io.SeekStart); err != nil {
+			return was
+		}
+		if data, err = io.ReadAll(io.LimitReader(f, size-was.read)); err != nil {
+			return was
+		}
+		data = data[:bytes.LastIndexByte(data, '\n')+1]
+	}
+	return fileCount{
+		file:   info,
+		read:   was.read + int64(len(data)),
+		lines:  was.lines + bytes.Count(data, []byte("\n")),
+		toasts: toastsIn(data, slices.Clone(was.toasts)),
+	}
 }
 
 // status counts the log's files, their bytes on the disk and their lines,
-// the older ones unpacked to count them.
+// the older ones unpacked to count them, and the last toasts in them.
+// What was counted before is not counted again, see count, so Settings
+// can be kept up to date while lines are written.
 func (l *appLog) status() LogStatus {
 	files := l.files()
 	if len(files) == 0 {
-		return LogStatus{}
+		return LogStatus{Toasts: []LoggedToast{}}
 	}
 	st := LogStatus{Path: files[len(files)-1]}
+	toasts := []LoggedToast{}
+	l.counting.Lock()
+	defer l.counting.Unlock()
+	counted := make(map[string]fileCount, len(files))
 	for _, path := range files {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -152,11 +273,45 @@ func (l *appLog) status() LogStatus {
 		}
 		st.Files++
 		st.Bytes += info.Size()
-		if data, err := readLog(path); err == nil {
-			st.Lines += bytes.Count(data, []byte("\n"))
+		now := count(path, info, l.counted[path])
+		counted[path] = now
+		st.Lines += now.lines
+		for _, t := range now.toasts {
+			toasts = laterToast(toasts, t)
 		}
 	}
+	// A file gone is forgotten.
+	l.counted = counted
+	toasts = toasts[max(0, len(toasts)-toastsShown):]
+	slices.Reverse(toasts)
+	st.Toasts = toasts
 	return st
+}
+
+// watch tells tell the log as Settings shows it while Settings watches,
+// after lines were written, and then waits for beat before it tells
+// again, so a busy log is told about once a beat and not once a line. It
+// runs until grew is closed, which only a test does.
+func (l *appLog) watch(tell func(LogStatus), beat func() <-chan time.Time) {
+	for range l.grew {
+		if !l.watching.Load() {
+			continue
+		}
+		tell(l.status())
+		<-beat()
+	}
+}
+
+// WatchAppLog says whether Settings is open, so the log it shows is sent
+// to it as lines are written, as the event applog. Issue #421.
+func (s *FrameFairy) WatchAppLog(on bool) {
+	theLog.watching.Store(on)
+	if on {
+		select {
+		case theLog.grew <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // remove removes every file of the log, the older ones too, and the next
@@ -180,10 +335,13 @@ func (l *appLog) remove() (LogStatus, error) {
 		_ = l.file.Close()
 	}
 	l.mu.Unlock()
+	l.counting.Lock()
+	l.counted = nil
+	l.counting.Unlock()
 	return was, failed
 }
 
-// AppLog is the app's log for Settings, Advanced.
+// AppLog is the app's log for Settings.
 func (s *FrameFairy) AppLog() LogStatus { return theLog.status() }
 
 // ShowAppLog shows the file of the log in use in Finder.
@@ -256,15 +414,27 @@ func wailsPanicked(d *application.PanicDetails) {
 type byLevel struct {
 	file   io.Writer
 	recent *recentLines
+	// grew is told that the file has a line more, without waiting for
+	// anyone to hear it, see watch.
+	grew chan struct{}
 }
 
-func (s byLevel) Write(p []byte) (int, error) { return s.file.Write(p) }
+func (s byLevel) Write(p []byte) (int, error) { return s.toFile(p) }
 
 func (s byLevel) WriteLevel(level zerolog.Level, p []byte) (int, error) {
 	if level == zerolog.TraceLevel {
 		return s.recent.Write(p)
 	}
-	return s.file.Write(p)
+	return s.toFile(p)
+}
+
+func (s byLevel) toFile(p []byte) (int, error) {
+	n, err := s.file.Write(p)
+	select {
+	case s.grew <- struct{}{}:
+	default:
+	}
+	return n, err
 }
 
 // The trace lines kept: at about two a second while a video plays, the
@@ -425,11 +595,14 @@ const (
 // they happened, though the window sends its own a moment later. Its
 // level is error, warn, info, debug or trace, debug when it says none,
 // and Video is the file name of the video it is about, where there is one.
+// Toast marks a toast the app showed, which Settings reads back, see
+// toastsIn.
 type SaidLine struct {
 	At    float64 `json:"at"`
 	Level string  `json:"level,omitempty"`
 	Video string  `json:"video,omitempty"`
 	Act   string  `json:"act,omitempty"`
+	Toast bool    `json:"toast,omitempty"`
 	Text  string  `json:"text"`
 }
 
@@ -472,6 +645,9 @@ func (f *FrameFairy) Said(lines []SaidLine) {
 		ev := theLog.lineAt(levelOf(line.Level), "window", at)
 		if line.Video != "" {
 			ev = ev.Str("video", filepath.Base(line.Video))
+		}
+		if line.Toast {
+			ev = ev.Bool("toast", true)
 		}
 		withAct(ev, clipped(line.Act, actMax)).Msg(text)
 	}

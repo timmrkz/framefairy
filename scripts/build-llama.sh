@@ -33,11 +33,11 @@ SYSTEM=$(uname -s 2>/dev/null)
 
 # Pinned, because a build nobody can repeat is not a build. Raising this is
 # a deliberate act with a real plan generated after it.
-LLAMA_VERSION=b11430
+LLAMA_VERSION=b12332
 # The commit the tag names, checked after the clone, since a tag can be
 # moved. Raising the version means raising this beside it: git ls-remote
 # of the tag.
-LLAMA_COMMIT=8345f333951c661d166b00e6f9362e553768f292
+LLAMA_COMMIT=a8575a3ef4e2631d0540b2879fff86ad8411dbf6
 LLAMA_REPO=https://github.com/ggml-org/llama.cpp
 
 mkdir -p "$WORK"

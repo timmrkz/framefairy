@@ -307,16 +307,17 @@ export const steps = {
       }).observe(document.body, { attributes: true, attributeFilter: ["class"], subtree: true });
     });
   },
-  // ["said once"]      Settings, Advanced opened: the section for where
-  //                    clips go says Clips, the models are said in their
+  // ["said once"]      Settings, the app's log and Advanced opened: the
+  //                    section for where clips go says Clips, the models
+  //                    are said in their
   //                    own sections and not again under Advanced, the
   //                    caption fonts are one line of two counts, and the
   //                    app's log, which is in the home folder, is written
   //                    in full, from /
   async "said once"(walk) {
     const { page } = walk;
-    const disclose = page.locator("button.disclose");
-    if ((await disclose.getAttribute("aria-expanded")) !== "true") await disclose.click();
+    for (const disclose of await page.locator("button.disclose").all())
+      if ((await disclose.getAttribute("aria-expanded")) !== "true") await disclose.click();
     await page.locator(".item.found").first().waitFor();
     await settle(page);
     const m = await page.evaluate(() => {
@@ -329,7 +330,7 @@ export const steps = {
         found: [...document.querySelectorAll(".item.found .words > span:first-child")].map(text),
         fonts: text(detail),
         fontLines: detail ? Math.round(detail.getBoundingClientRect().height / parseFloat(getComputedStyle(detail).lineHeight)) : 0,
-        log: text([...document.querySelectorAll(".card")].find((c) => text(c).includes("The app's log"))?.querySelector(".path")),
+        log: text([...document.querySelectorAll(".group")].find((g) => text(g.querySelector(":scope > h2")) === "Logs")?.querySelector(".path")),
       };
     });
     const problems = [];
