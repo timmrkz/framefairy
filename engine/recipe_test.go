@@ -151,6 +151,7 @@ func TestStoriesSaysTheLengthInWords(t *testing.T) {
 //
 // On the real disk: ffmpeg reads the episode the search hears.
 func TestAnExperimentKeepsToItself(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "40")
 	var heard, asked int32
 	server := fakeModel(t, &asked)

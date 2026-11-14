@@ -230,6 +230,55 @@ export const steps = {
       walk.wrong = `the list said "${failing.says}", with "${failing.why}" under the pointer`;
     else if (again.failed || !again.cards) walk.wrong = `read again, the list still says it could not be read, over ${again.cards} cards`;
   },
+  // ["said lands", [typed, ...]]
+  //                    opens the search of what was said and types each
+  //                    in turn, the field emptied before the next, and
+  //                    after each clicks six places on the range picker:
+  //                    the card of the playhead stands right at the top
+  //                    of the list each time, or, with the list scrolled
+  //                    to its end, whole in view. In a short app the
+  //                    cards a search has laid out once are skipped while
+  //                    out of view, so cards that came in again could
+  //                    stand hundreds of pixels off, found while making
+  //                    typing in the search faster
+  async "said lands"(walk, arg) {
+    const { page } = walk;
+    await page.locator('.listhead button[aria-label="Search the transcript"]').click();
+    const field = page.locator('input[aria-label="Search transcript"]');
+    await field.waitFor();
+    const where = () =>
+      page.evaluate(() => {
+        const ol = document.querySelector("ol.said");
+        const card = ol.querySelector(`li[data-row="${CSS.escape(ol.dataset.followed ?? "")}"]`);
+        if (!card) return null;
+        const list = ol.closest(".scroll");
+        const box = list.getBoundingClientRect();
+        const r = card.getBoundingClientRect();
+        return {
+          off: Math.round(r.top - box.top - (parseFloat(getComputedStyle(ol).paddingTop) || 0)),
+          end: list.scrollTop >= list.scrollHeight - list.clientHeight - 1,
+          seen: r.top >= box.top && r.bottom <= box.bottom,
+        };
+      });
+    for (const typed of [arg].flat()) {
+      await field.fill(typed);
+      await settle(page);
+      const track = await page.getByLabel("The range picker", { exact: true }).boundingBox();
+      for (const at of [0.9, 0.3, 0.7, 0.5, 0.95, 0.1]) {
+        await page.mouse.click(track.x + track.width * at, track.y + track.height / 2);
+        await settle(page);
+        const w = await where();
+        if (w && (w.end ? w.seen : w.off === 0)) continue;
+        walk.wrong = w
+          ? `after "${typed}", a click at ${at} of the range picker left the card of the playhead ${w.off} px from the top of the list`
+          : `after "${typed}", a click at ${at} of the range picker followed no card`;
+        break;
+      }
+      if (walk.wrong) break;
+    }
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+  },
   // ["search said", word]
   // ["search said", [word, n]]
   //                    presses the transcript button in the head of the clip column

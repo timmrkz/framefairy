@@ -12,7 +12,17 @@ export default [
     // A second clip, made with I, so choosing one on the range picker has
     // somewhere to take the list.
     // Shift and a click pick cards and Copy copies their words, Tim's ask.
-    steps: [["trim", "start", 300], ["make while paused", "i"], ["search said", ["Jahre", 0, "copy"]]],
+    // Then, in a short app so most cards are out of view, a card walked
+    // to lands where it should, though typing lays out only the cards in
+    // view. "a" after "ar" brings cards in again not laid out in that
+    // search.
+    steps: [
+      ["trim", "start", 300],
+      ["make while paused", "i"],
+      ["search said", ["Jahre", 0, "copy"]],
+      ["app size", 1100, 520],
+      ["said lands", ["e", "ar", "a", ""]],
+    ],
   },
   {
     // Found by Tim: a word corrected in the caption box read corrected in

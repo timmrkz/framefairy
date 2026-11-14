@@ -95,6 +95,7 @@ func landed(t *testing.T, p *Project, path string, n int) []Clip {
 
 // On the real disk: a search runs ffmpeg on the episode.
 func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
+	t.Parallel()
 	letGo := make(chan struct{})
 	p, path := searching(t, letGo)
 	records := ownRecords(p.engine)
@@ -412,6 +413,7 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
+	t.Parallel()
 	letGo := make(chan struct{})
 	close(letGo)
 	p, path := searching(t, letGo)

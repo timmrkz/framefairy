@@ -16,6 +16,7 @@ import (
 //
 // On the real disk: ffmpeg reads the episode the search hears.
 func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "15")
 	var heard, asked int32
 	server := fakeModel(t, &asked)
@@ -65,6 +66,7 @@ func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
 //
 // On the real disk: ffmpeg reads the episode the search hears.
 func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "15")
 	var heard, asked int32
 	server := fakeModel(t, &asked)

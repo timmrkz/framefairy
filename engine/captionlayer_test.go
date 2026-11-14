@@ -43,6 +43,7 @@ import (
 // On the real disk: ffmpeg and the decoder read the episode and the
 // caption file.
 func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
+	t.Parallel()
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
@@ -280,6 +281,7 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 //
 // On the real disk: the decoder reads the caption file and its fonts.
 func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testing.T) {
+	t.Parallel()
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
