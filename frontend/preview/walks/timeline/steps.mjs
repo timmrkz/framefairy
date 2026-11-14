@@ -1044,9 +1044,10 @@ export const steps = {
     await settle(page);
   },
   // ["no page turn once held"]
-  //                    puts the playhead a twentieth into the chosen
-  //                    clip, pinches in on it, plays, and takes hold of
-  //                    the clip's start edge and lets go while it plays.
+  //                    fits the view to the chosen clip with its card,
+  //                    pinches the clip timeline in on its start edge, puts the playhead a little after it,
+  //                    plays, and takes hold of the start edge and lets
+  //                    go while it plays.
   //                    The play runs past the end of the view, and the
   //                    view never moves: once the hand has worked on the
   //                    clip, that play turns no page. A new play turns the
@@ -1056,9 +1057,21 @@ export const steps = {
   async "no page turn once held"(walk) {
     const { page } = walk;
     const t = await timeline(page);
-    await clickOnTrack(page, await xOf(page, t.start + 0.05 * (t.end - t.start)), high((await handles(page)).track));
+    // The clip's card clicked fits the view to the clip again, wherever
+    // the plays before left it.
+    await page.locator("aside ol li[data-key] button.pick.current").click();
     await settle(page);
-    await steps["pinch in"](walk);
+    // Pinched in on the start edge, which stays under the hand, so the
+    // edge is in the view to take hold of, and the playhead just after it.
+    const g0 = await handles(page);
+    await page.mouse.move(middle(g0.start), high(g0.track));
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -330);
+    await page.keyboard.up("Control");
+    await settle(page);
+    const g1 = await handles(page);
+    await clickOnTrack(page, g1.start.x + g1.start.w + 0.1 * g1.track.w, high(g1.track));
+    await settle(page);
     // Where the clip's frame stands, which moves with the view, and the
     // moment at the right end of the view, read off it.
     const frameX = () => page.evaluate(() => document.querySelector(".clip-timeline .span.frame").getBoundingClientRect().left);
@@ -1069,7 +1082,7 @@ export const steps = {
     });
     const viewEnd = t.start + ((g.track.x + g.track.w - span.x) / span.w) * (t.end - t.start);
     if (!g.start || g.start.x + g.start.w < g.track.x || g.start.x > g.track.x + g.track.w) {
-      walk.wrong = "pinched in a twentieth into the clip, the clip's start edge is out of view, so there is nothing to take hold of";
+      walk.wrong = "pinched in on the clip's start edge, the edge is out of view, so there is nothing to take hold of";
       return;
     }
     await page.evaluate(() => document.body.focus());

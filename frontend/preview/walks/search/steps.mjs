@@ -1493,6 +1493,16 @@ export const steps = {
           else if (escaped.current !== span.keys[0]) walk.wrong = `after Escape, ${escaped.current} is the current card, not ${span.keys[0]}, the one before the pick`;
           else if (escaped.at !== span.at) walk.wrong = `Escape with cards picked moved the playhead from ${span.at} to ${escaped.at}`;
         }
+        // With no card picked and nothing typed, the next Escape closes
+        // the search, and the search is opened again for what follows.
+        if (!walk.wrong) {
+          const closed = await unpicked();
+          if (closed.open) walk.wrong = "with the cards picked let go, a second Escape left the search open";
+          else {
+            await page.locator('.listhead button[aria-label="Search the transcript"]').click();
+            await watch.step("click", s);
+          }
+        }
         // Among the answers to a search, two Shift and clicks pick the
         // cards between them, wherever the playhead is.
         if (!walk.wrong) {
@@ -1546,6 +1556,8 @@ export const steps = {
           else if (alone.text !== words(one)) walk.wrong = `Copy after a click on a card put ${JSON.stringify(alone.text)} on the clipboard, not its words, ${JSON.stringify(words(one))}`;
         }
       }
+      // What follows needs the search open, which a wrong Escape closed.
+      if (walk.wrong) return;
     }
     // The keyboard on a card of what was typed, for Escape.
     await field.fill(word);

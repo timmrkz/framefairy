@@ -378,7 +378,7 @@ func (s *FrameFairy) clearLetGo(path string) {
 	cleared, err := s.store.clearLetGo(path)
 	if err != nil {
 		theLog.line(zerolog.WarnLevel, "files").Str("video", filepath.Base(path)).Err(err).
-			Msg("what was written back into the folder of a video let go could not be deleted")
+			Msg("what was written back into the folder of a video let go was not deleted")
 	} else if cleared {
 		theLog.line(zerolog.InfoLevel, "files").Str("video", filepath.Base(path)).
 			Msg("what was written back into the folder of a video let go is deleted")

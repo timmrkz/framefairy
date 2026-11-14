@@ -378,12 +378,14 @@
   let scrubbing = $state(false);
   // An edge, a cut or a caption held under the hand.
   let gripping = $state(false);
-  // Whether the hand took hold of an edge, a cut or a caption during this
-  // play. From then on the play turns no page, see the page turn below,
-  // until the play stops, and a new play turns pages again.
+  // Whether the hand held an edge, a cut or a caption during this play,
+  // taken while it played or held when the play started. From then on the
+  // play turns no page, see the page turn below, until the play stops, and
+  // a new play turns pages again.
   let workedOn = $state(false);
   $effect(() => {
     if (!playing) workedOn = false;
+    else if (gripping) workedOn = true;
   });
 
   // One seek a frame while an edge is dragged, for the playhead that goes
@@ -2089,7 +2091,6 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     gripping = true;
-    if (playing) workedOn = true;
     // A paused video preview is held under the hand while an edge, a cut
     // or a caption is dragged, the way it is while the playhead is: each
     // place shows its frame alone, and the play is cued where the hand

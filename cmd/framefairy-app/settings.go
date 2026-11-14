@@ -442,6 +442,9 @@ func (s *store) clearLetGo(path string) (bool, error) {
 		return false, nil
 	}
 	if ok, err := marked(s.files, path); ok || err != nil {
+		if err != nil {
+			err = fmt.Errorf("its mark could not be looked at, so nothing was deleted: %w", err)
+		}
 		return false, err
 	}
 	if _, err := fileio.LstatIn(s.files, engine.WorkDir(path)); err != nil {
