@@ -50,22 +50,18 @@ if open=$(gh pr list --state open --limit 1000 --json number,headRefOid,mergeabl
 		# A newer commit than the one built, with a build to come, is said
 		# beside the build, by the same rule the build goes by. One that
 		# only changes the docs has no build coming, and a list that said
-		# it had would say so for good.
-		# A build that already ended without one, failed, cancelled or
-		# refused by the signer, has nothing coming either, see
-		# scripts/build-ended.sh.
+		# it had would say so for good. The whole commit, so the list can
+		# ask GitHub whether its build already ended without one.
 		built=$(jq -r '.commit // empty' "$entry")
-		if [ "$(sh scripts/needs-build.sh "$built" "$head")" = build ] &&
-			[ "$(sh scripts/build-ended.sh "$head")" = coming ]; then
+		if [ "$(sh scripts/needs-build.sh "$built" "$head")" = build ]; then
 			echo "pull request $number has $head still to be built"
-			newest="$newest -newest pr-$number=$(echo "$head" | cut -c1-12)"
+			newest="$newest -newest pr-$number=$head"
 		fi
 	done
 fi
 
-# main's newest commit, when it is not the one built and its build has not
-# ended without one. Every push to main is built, docs too, so any other
-# commit is one still to come, unless its build failed. Without
+# main's newest commit, when it is not the one built. Every push to main
+# is built, docs too, so any other commit is one still to come. Without
 # this the page said main was up to date for three days while every
 # publish of main waited behind one that never started.
 if [ -e "$entries/channel-main.json" ] &&
@@ -74,10 +70,8 @@ if [ -e "$entries/channel-main.json" ] &&
 	case $head in
 	"$built"*) ;;
 	*)
-		if [ "$(sh scripts/build-ended.sh "$head")" = coming ]; then
-			echo "main has $head still to be built"
-			newest="$newest -newest main=$(echo "$head" | cut -c1-12)"
-		fi
+		echo "main has $head still to be built"
+		newest="$newest -newest main=$head"
 		;;
 	esac
 fi

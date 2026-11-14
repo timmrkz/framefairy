@@ -155,7 +155,7 @@ func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "channels.json")
-	if err := list([]string{"-out", out, "-newest", "pr-58=0123456789ab", "-conflict", "pr-58", good, pr, forgedPath}); err != nil {
+	if err := list([]string{"-out", out, "-newest", "pr-58=0123456789ab", "-conflict", "pr-58", good, pr, forgedPath}, building()); err != nil {
 		t.Fatal(err)
 	}
 	written, err := os.ReadFile(out)

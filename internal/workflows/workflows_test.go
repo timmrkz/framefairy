@@ -461,7 +461,6 @@ func TestOnlyACommitOfTheChannelIsPublished(t *testing.T) {
 		Jobs map[string]struct {
 			If    string `yaml:"if"`
 			Steps []struct {
-				ID  string `yaml:"id"`
 				Run string `yaml:"run"`
 			} `yaml:"steps"`
 		} `yaml:"jobs"`
@@ -481,25 +480,28 @@ func TestOnlyACommitOfTheChannelIsPublished(t *testing.T) {
 			t.Errorf("publish runs without %s, so a run of another workflow file, or of no push, is signed", want)
 		}
 	}
-	compared := false
+	// The step that asks whether the channel holds the commit comes before
+	// the build is read or signed.
+	asked := false
 	for _, s := range publish.Steps {
-		if s.ID != "which" {
-			continue
+		if strings.Contains(s.Run, "framefairy-release held") {
+			asked = true
 		}
-		compared = strings.Contains(s.Run, `/compare/$SHA...$holder`)
-		// main by its commit: the name main is what the tag takes.
-		if !strings.Contains(s.Run, `git/ref/heads/main`) || regexp.MustCompile(`holder=["']?main\b`).MatchString(s.Run) {
-			t.Error("publish's step which compares with main by its name, which a tag called main can take, and not by the commit refs/heads/main is")
+		if strings.Contains(s.Run, "framefairy-release check") || strings.Contains(s.Run, "framefairy-release sign") {
+			if !asked {
+				t.Errorf("publish runs %q before it asks whether the channel holds the commit, with framefairy-release held", s.Run)
+			}
+			break
 		}
 	}
-	if !compared {
-		t.Error("publish's step which does not compare the commit with main or the pull request's newest commit, so a tag named main is signed as main's build")
+	if !asked {
+		t.Error("publish never asks whether the channel holds the commit, so a tag named main is signed as main's build")
 	}
 }
 
 // A publish that fails says so on the commit that was built, whatever
 // failed, so the pull request shows why and the channel list stops
-// saying a build is coming, see scripts/build-ended.sh. The step that
+// saying a build is coming, see ended in cmd/framefairy-release. The step that
 // says so is the last of the job, so it hears every step before it.
 //
 // On the real disk: what is read is the repository's own workflows.

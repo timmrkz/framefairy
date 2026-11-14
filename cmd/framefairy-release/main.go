@@ -11,13 +11,19 @@
 //	    the screen or the camera, or ask for administrator rights, see
 //	    inputs.go. The workflow runs it before sign, in a step that does
 //	    not hold the key
+//	framefairy-release held -channel C -commit X [-head H]
+//	    refuse a commit its channel's history does not hold: main's, or
+//	    that of H, the pull request's newest commit. It asks GitHub, with
+//	    GH_TOKEN and GH_REPO
 //	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F
 //	    sign a build that check passed with the private half, read from
 //	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list
 //	framefairy-release list -out F [-newest CHANNEL=COMMIT]... [-conflict CHANNEL]... ENTRY...
 //	    write the channel list from the entries of every channel, with the
 //	    newest commit of each channel that has one still to be built, and
-//	    the pull requests that no longer merge into main
+//	    the pull requests that no longer merge into main. A newest commit
+//	    whose build already ended without one is left out, which it asks
+//	    GitHub, with GH_TOKEN and GH_REPO
 package main
 
 import (
@@ -51,10 +57,12 @@ func main() {
 		err = makeKey()
 	case "check":
 		err = check(os.Args[2:])
+	case "held":
+		err = holds(os.Args[2:], gitHubFromEnv())
 	case "sign":
 		err = sign(os.Args[2:])
 	case "list":
-		err = list(os.Args[2:])
+		err = list(os.Args[2:], gitHubFromEnv())
 	default:
 		usage()
 	}
@@ -65,7 +73,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | check -zip FILE | sign ... | list -out FILE ENTRY...")
+	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | check -zip FILE | held ... | sign ... | list -out FILE ENTRY...")
 	os.Exit(2)
 }
 
@@ -144,6 +152,16 @@ func check(args []string) error {
 	return checkInputs(*zipPath)
 }
 
+// holds refuses a build whose commit its channel does not hold, see held.
+func holds(args []string, gh gitHub) error {
+	fs := flag.NewFlagSet("held", flag.ExitOnError)
+	channel := fs.String("channel", "", "main, or pr- and the pull request's number")
+	commit := fs.String("commit", "", "the commit built")
+	head := fs.String("head", "", "the pull request's newest commit")
+	_ = fs.Parse(args)
+	return held(gh, *channel, *commit, *head)
+}
+
 func sign(args []string) error {
 	fs := flag.NewFlagSet("sign", flag.ExitOnError)
 	zipPath := fs.String("zip", "", "the zip holding the app")
@@ -193,7 +211,8 @@ func sign(args []string) error {
 // list writes the channel list from every channel's entry. Each entry is
 // read with the same rules as the app reads the list, and checked against
 // the public key, so the list never promises a build no app will take.
-func list(args []string) error {
+// A newest commit is asked of gh, see ended.
+func list(args []string, gh gitHub) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	out := fs.String("out", "", "where the channel list goes")
 	// A channel's newest commit, when it has one still to be built. The
@@ -255,7 +274,17 @@ func list(args []string) error {
 				continue
 			}
 		}
-		b.Newest = newest[b.Channel]
+		// A build that ended without one, failed, cancelled or not
+		// published, is not coming, and the Updates page would say
+		// "A newer commit is being built" until the next push.
+		if n := newest[b.Channel]; n != "" {
+			gone, why := ended(gh, n)
+			fmt.Fprintf(os.Stderr, "%s: %s\n", b.Channel, why)
+			if !gone {
+				// Twelve characters, the way the app keeps a commit.
+				b.Newest = n[:min(len(n), 12)]
+			}
+		}
 		b.Conflict = conflict[b.Channel]
 		l.Channels = append(l.Channels, b)
 	}
