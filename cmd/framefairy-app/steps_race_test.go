@@ -101,6 +101,68 @@ func TestContinueWhileTheOneBeforeStillStops(t *testing.T) {
 	}
 }
 
+// Cancel pressed between Search and the search being added, or Stop
+// transcribing just before Continue transcribing, on a job whose goroutine
+// had not begun yet: the one called off still writes its record as it
+// starts, and the job that carries it on must not have begun on that
+// record before it, issue #827. The order the race test found now and
+// then, made to happen here: the first job's work is held until the
+// second has written its record and rests in its first step.
+func TestAJobCalledOffBeforeItBeganWritesNothingOverTheNext(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{engine.JobSearch, engine.JobTranscribe} {
+		t.Run(kind, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				st := memoryStore()
+				q := newQueue(st, func(JobUpdate) {}, func(string) {})
+				logJobsOnFailure(t, q)
+				jobs := &fakeJobs{t: t, st: st, about: kind}
+				const ep = "/eps/a.mp4"
+				id, names := engine.SearchID, []string{engine.StepHearing, engine.StepFinding}
+				if kind == engine.JobTranscribe {
+					id, names = engine.TranscribeID, []string{engine.StepHearing, engine.StepHearing}
+				}
+				add := func(work func(context.Context, *engine.Project, engine.Host) (string, error)) Job {
+					return q.addSteps(ep, kind, kind, true, func(j *Job) { j.JobRecord.ID = id }, work)
+				}
+
+				// The first is asked for, and its goroutine is late.
+				held := make(chan struct{})
+				late := jobs.steps(ep, id, kind, names, 10*time.Millisecond)
+				first := add(func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
+					<-held
+					return late(ctx, p, host)
+				})
+				// The way is made for the next while the first still runs,
+				// and then the first is called off.
+				if kind == engine.JobSearch {
+					q.makeWayForSearch(ep)
+				} else if !q.makeWayForTranscribe(ep) {
+					t.Fatal("Continue transcribing was refused")
+				}
+				q.stopByHand(first.ID)
+				second := add(jobs.steps(ep, id, kind, names, 25*time.Millisecond))
+				if second.ID == first.ID {
+					t.Fatalf("the %s called off was handed back for the next", kind)
+				}
+				// The second writes its record or waits for the first to
+				// end, and then the first begins.
+				synctest.Wait()
+				close(held)
+				q.waitJob(second.ID)
+				for _, j := range q.list() {
+					if j.ID == second.ID && j.State != JobDone {
+						t.Errorf("the %s carried on ended %s, not done", kind, j.State)
+					}
+				}
+				if !q.shutDown() {
+					t.Error("the jobs did not stop when the app quit")
+				}
+			})
+		})
+	}
+}
+
 func walkTheStepPath(t *testing.T, seed uint64) {
 	st := memoryStore()
 	q := newQueue(st, func(u JobUpdate) {

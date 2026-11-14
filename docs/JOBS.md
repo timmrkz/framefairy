@@ -290,7 +290,13 @@ record stopped as it ends. A new search takes the record of one that
 stopped away. A render or a clip made by hand that stopped has only
 Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). Search on an episode waits for a search that
 was just called off to be on its way out first, because both write the
-same record.
+same record. Every job writes its record as it begins, also one called
+off before it began, so a job that writes a record begins its work only
+once every job of the same record still going when it was added has
+written its record, and a search only once they have ended, see
+`waitForThoseBefore` in `cmd/framefairy-app/jobs.go`. Those jobs are named
+as it is added, under the queue's lock, so a Cancel pressed between Search
+and the search being added is waited for too.
 
 Four things wait for jobs to stop: Search after Cancel, removing a video
 with its files, clearing a video whose folder was deleted outside the

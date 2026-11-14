@@ -169,6 +169,12 @@ type Job struct {
 	// window and let go of its lane, so whatever waits for jobs to stop
 	// waits for this too, see runSafely.
 	alive bool
+	// after is the jobs of the same record that were still going when
+	// this one was added, called off, see waitForThoseBefore.
+	after []*Job
+	// wrote is set once the engine has written the job's record, see
+	// heard.
+	wrote bool
 }
 
 // going says whether a job is queued or running.
@@ -479,6 +485,16 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 		job.byHand = job.JobRecord.ID != ""
 		cancel()
 	}
+	// The jobs before it that write the same record and have not ended,
+	// looked for under the same lock as the job is added, so one called
+	// off a moment ago is among them, see waitForThoseBefore.
+	if job.JobRecord.ID != "" {
+		for _, j := range q.jobs {
+			if j.Episode == episode && j.JobRecord.ID == job.JobRecord.ID && j.going() {
+				job.after = append(job.after, j)
+			}
+		}
+	}
 	job.alive = !q.idle
 	q.stampLocked(job)
 	q.jobs = append(q.jobs, job)
@@ -569,10 +585,13 @@ func (q *queue) heard(job *Job, rec engine.JobRecord) {
 	if rec.Step == "" || rec.Step == engine.StepFailed {
 		q.mu.Lock()
 		job.ending = &rec
+		job.wrote = true
+		q.changed.WakeLocked()
 		q.mu.Unlock()
 		return
 	}
 	q.update(job, func(j *Job) {
+		j.wrote = true
 		if rec.Step != j.Step {
 			j.Progress = nil
 		}
@@ -1098,6 +1117,30 @@ func (q *queue) runSafely(job *Job) {
 	q.runJob(job)
 }
 
+// waitForThoseBefore waits until the jobs of the same record that were
+// still going when job was added can no longer write over its record:
+// until each has written its record once, since every job writes it as it
+// begins, also one called off before it began, see engine.Search, and a
+// search until it has ended, since a search writes its record as it goes,
+// see makeWayForSearch. Continue clicked while the one before had not yet
+// begun started the new job beside it, and the one before wrote its
+// record of another pass over the new one's, issue #827. The jobs are
+// named as job is added, under the queue's lock, so a Cancel that came
+// between Search and the search being added is no way past it, the way
+// it was past makeWayForSearch. A whole video heard that stops writes no
+// more, so Continue transcribing carries on while it still saves what it
+// heard. Nothing waits on job meanwhile: it holds no turn of a lane.
+func (q *queue) waitForThoseBefore(job *Job) {
+	if len(job.after) == 0 {
+		return
+	}
+	q.until(func([]*Job) bool {
+		return !slices.ContainsFunc(job.after, func(j *Job) bool {
+			return j.going() && (!j.wrote || j.Kind == engine.JobSearch)
+		})
+	}, nil)
+}
+
 // quietly is a function that never panics into its caller. What the queue
 // hands its news to is the window's, and the queue must not die of it.
 func quietly[T any](f func(T)) func(T) {
@@ -1114,6 +1157,7 @@ func (q *queue) runJob(job *Job) {
 	if (makesClips(job.Kind) || job.Kind == engine.JobTranscribe) && q.searched != nil {
 		defer q.searched()
 	}
+	q.waitForThoseBefore(job)
 	ctx := job.ctx
 	if job.ask != nil {
 		turnCtx, release, err := q.lanes.wait(job.ctx, job.ask)
