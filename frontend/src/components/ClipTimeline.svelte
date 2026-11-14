@@ -378,6 +378,13 @@
   let scrubbing = $state(false);
   // An edge, a cut or a caption held under the hand.
   let gripping = $state(false);
+  // Whether the hand took hold of an edge, a cut or a caption during this
+  // play. From then on the play turns no page, see the page turn below,
+  // until the play stops, and a new play turns pages again.
+  let workedOn = $state(false);
+  $effect(() => {
+    if (!playing) workedOn = false;
+  });
 
   // One seek a frame while an edge is dragged, for the playhead that goes
   // with it, the same pace the playhead itself is dragged at.
@@ -1232,9 +1239,15 @@
   // only while nothing plays: a playhead nobody can see is worse than a
   // view that moved, and after a turn the view is held, the way a move by
   // hand holds it, until the crosshair or the clip takes it back.
+  //
+  // Once the hand takes hold of an edge, a cut or a caption during a play,
+  // that play turns no page, even after it lets go: only the person's own
+  // actions move the view while they work on the clip. A page turned under
+  // a dragged edge moved the edge by almost a whole view, found by Tim. A
+  // new play turns pages again.
   const PAGE_EDGE = 0.05;
   $effect(() => {
-    if (!playing || !loaded) return;
+    if (!playing || !loaded || workedOn) return;
     const t = time;
     const shown = view.to - view.from;
     if (t >= view.from && t < view.to - shown * PAGE_EDGE) return;
@@ -2076,6 +2089,7 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     gripping = true;
+    if (playing) workedOn = true;
     // A paused video preview is held under the hand while an edge, a cut
     // or a caption is dragged, the way it is while the playhead is: each
     // place shows its frame alone, and the play is cued where the hand

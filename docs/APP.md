@@ -2165,7 +2165,10 @@ bubble scrolled by those eight pixels.
       it. A quarter in, tried first, left Tim too little to look ahead to. It turns rather than slides, so
       the waveform holds still to be read between turns, and the view
       turned is held, like a move by hand, until the crosshair or the clip
-      takes it back. **The keys keep it in sight the same way:** an arrow,
+      takes it back. **Once the hand takes hold of an edge, a cut or a
+      caption while it plays, that play turns no page**, even after the
+      hand lets go, so a page never turns under a drag and moves the edge
+      with it. A new play turns pages again. **The keys keep it in sight the same way:** an arrow,
       or Shift and an arrow, that lands in the last twentieth of the view
       the way it goes, or out of the view, turns the page there, to the
       left as to the right. A skip of 5 s left the view behind, #677.

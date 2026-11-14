@@ -509,7 +509,8 @@ export default [
     // Tim saw the play stutter, the playhead with it, as he dragged the
     // edge of a cut while the clip played. Only the space bar and a click
     // on the clip timeline change a play: an edge dragged while it plays
-    // is saved and drawn, and the play goes on as it was.
+    // is saved and drawn, and the play goes on as it was. Once the hand
+    // has taken hold of an edge, the play turns no page under it, #837.
     name: "an edge dragged while the clip plays changes nothing that plays",
     steps: [
       ["cut at", 0.6],
@@ -518,6 +519,7 @@ export default [
       ["played through"],
       ["drag while playing", "end", -60],
       ["played through"],
+      ["no page turn once held"],
     ],
   },
   {
