@@ -661,16 +661,6 @@ export const steps = {
         const r = document.querySelector(`${f} .screen`)?.getBoundingClientRect();
         return r ? { top: r.top, left: r.left, width: r.width, height: r.height } : null;
       }, front);
-    // The video on screen was just added, and its first search starts
-    // only once its picture has been checked, so the clip list's head
-    // could say Search before that search began. The clip list is read
-    // once the search has ended, read each time a job has news, so a clip
-    // it finds later is not taken for one the missing file brought.
-    let heard = await news(page);
-    const searched = (jobs) =>
-      jobs.some((j) => j.episode === source && j.kind === "search" && j.state !== "running" && j.state !== "queued");
-    while (!searched(await ask(page, "Jobs"))) heard = await nextNews(page, heard);
-    await caughtUp(page, url);
     const was = await picture();
     const listed = (await clipList(page))?.cards ?? [];
     const buttons = page.locator("aside button.episode");
