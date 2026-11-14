@@ -145,18 +145,21 @@ func (s *FrameFairy) startCheck(video string) (context.Context, func()) {
 	}
 }
 
+// checkOf is the check of a video's picture that runs, or nil.
+func (s *FrameFairy) checkOf(video string) *check {
+	s.checkMu.Lock()
+	defer s.checkMu.Unlock()
+	return s.checking[video]
+}
+
 // stopCheck calls off the check of a video's picture, and waits until it
 // has ended, so a video removed while it is checked starts no search on
 // its way out and takes nothing out after it was added again.
 func (s *FrameFairy) stopCheck(video string) {
-	s.checkMu.Lock()
-	c := s.checking[video]
-	s.checkMu.Unlock()
-	if c == nil {
-		return
+	if c := s.checkOf(video); c != nil {
+		c.stop()
+		<-c.done
 	}
-	c.stop()
-	<-c.done
 }
 
 // checkAdded asks whether the picture of a video just added can be
