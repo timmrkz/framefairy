@@ -64,10 +64,15 @@ func TestNoNewShellScript(t *testing.T) {
 			}
 			return nil
 		}
+		rel, _ := filepath.Rel(root, p)
 		switch filepath.Ext(p) {
 		case ".sh", ".bash", ".bats", ".zsh":
-			rel, _ := filepath.Rel(root, p)
 			found = append(found, filepath.ToSlash(rel))
+		case "":
+			// A script with no ending is still a script, by its first line.
+			if shebang(t, p) {
+				found = append(found, filepath.ToSlash(rel))
+			}
 		}
 		return nil
 	})
@@ -86,6 +91,28 @@ func TestNoNewShellScript(t *testing.T) {
 	}
 }
 
+// shebang says whether a file starts the way a shell script does.
+func shebang(t *testing.T, path string) bool {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	head := make([]byte, 64)
+	n, _ := f.Read(head)
+	line, _, _ := strings.Cut(string(head[:n]), "\n")
+	if !strings.HasPrefix(line, "#!") {
+		return false
+	}
+	for _, sh := range []string{"/sh", "/bash", "/zsh", "/dash", " sh", " bash", " zsh"} {
+		if strings.Contains(line, sh) {
+			return true
+		}
+	}
+	return false
+}
+
 // The steps that were longer than five lines of shell when the rule came,
 // with their length then. They may get shorter, never longer, and a step
 // that gets shorter lowers its number here.
@@ -102,7 +129,10 @@ var longSteps = map[string]int{
 
 // The most lines of shell a workflow step runs, comments and blank lines
 // aside. A command and its error, or a few commands in a row, fit. A
-// decision with branches and loops does not, and goes into Go.
+// decision with branches and loops does not, and goes into Go. A folded
+// run, >-, is one line however it is wrapped, which is what it is for: one
+// command with long arguments. Folding a decision into it to pass is
+// what the review reads for.
 const mostShell = 5
 
 // A workflow step runs a command or two, never a script written into it.

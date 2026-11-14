@@ -87,6 +87,54 @@ func TestWhatAPushBuilds(t *testing.T) {
 	}
 }
 
+// A build older than the one its channel has is not published: a run of
+// an old commit, run again, or a tag named main at an old commit of main,
+// would otherwise take the newer build away.
+//
+// On the real disk: the release tool reads the public key from its file in the repository.
+func TestAnOlderBuildIsNotPublished(t *testing.T) {
+	release(t)
+	old, newer := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "cccccccccccccccccccccccccccccccccccccccc"
+	gh := &fakeGitHub{
+		main:     newer,
+		zips:     map[string]int{"1": 1},
+		compares: map[string]string{old + "..." + newer: "ahead", old + "...cccccccccccc": "ahead", newer + "..." + newer: "identical"},
+		files:    map[string]string{"engine/doc.go@" + old: doc, "engine/doc.go@" + newer: doc},
+	}
+	gh.put("channel-main.json", []byte(`{"commit":"cccccccccccc"}`), now)
+	got, err := publishPlan(gh, "1", "main", old)
+	if err != nil || outputs(got)["run"] != "false" || !strings.Contains(got.notice, "newer build") {
+		t.Errorf("an older commit of main planned %v, %v, %q", outputs(got), err, got.notice)
+	}
+	// The commit built already is published again: a rerun of a build
+	// that did not reach the page.
+	if got, err := publishPlan(gh, "1", "main", newer); err != nil || outputs(got)["run"] != "true" {
+		t.Errorf("main's newest commit planned %v, %v", outputs(got), err)
+	}
+}
+
+// A push whose channel's build cannot be read is built, with a notice
+// that says why: a doubt about the build there is never leaves a commit
+// without one.
+//
+// On the real disk: the release tool reads the public key from its file in the repository.
+func TestAPushIsBuiltWhenItsBuildCannotBeRead(t *testing.T) {
+	release(t)
+	commit := "0123456789abcdef0123456789abcdef01234567"
+	gh := assetsDown{&fakeGitHub{open: []pull{{number: 7, title: "T", head: commit, branch: "b"}}}}
+	p, err := buildPlan(gh, fakeTrees{}, "push", "b", commit, []byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outputs(p)["build"] != "true" || !strings.Contains(p.notice, "could not be read") {
+		t.Errorf("planned %v with the notice %q", outputs(p), p.notice)
+	}
+}
+
+type assetsDown struct{ *fakeGitHub }
+
+func (assetsDown) assets() ([]asset, error) { return nil, errDown }
+
 // What a finished build is published as, from GitHub's record of the run.
 //
 // On the real disk: the release tool reads the public key from its file in the repository.

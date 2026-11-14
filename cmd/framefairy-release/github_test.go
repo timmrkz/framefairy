@@ -332,7 +332,7 @@ func TestGitHubIsAskedWhatTheToolNeeds(t *testing.T) {
 		}
 	}
 	want := []string{
-		`POST /repos/o/r/statuses/c application/json {"context":"Ready to update to","description":"On the Updates page as pr-7","state":"success","target_url":""}`,
+		`POST /repos/o/r/statuses/c application/json {"context":"Ready to update to","description":"On the Updates page as pr-7","state":"success"}`,
 		`GET /repos/o/r/releases/tags/dev`,
 		// The file of the same name goes first, as gh release upload
 		// --clobber did.

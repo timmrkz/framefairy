@@ -33,7 +33,7 @@ func (p *plan) set(name, value string) {
 // the notice where the run shows it.
 func (p plan) write(out io.Writer, outputs string) error {
 	if p.notice != "" {
-		fmt.Fprintf(out, "::notice::%s\n", p.notice)
+		fmt.Fprintf(out, "::notice::%s\n", strings.Join(strings.Fields(p.notice), " "))
 	}
 	if outputs == "" {
 		return errors.New("GITHUB_OUTPUT is not set, so there is nowhere to say the plan")
@@ -150,9 +150,12 @@ func buildPlan(gh gitHub, t trees, event, branch, commit string, engineDoc []byt
 		// main is always built. A pull request's commit that is built
 		// already, or only changes the docs against its build, is not, and
 		// Tim gets no restart for nothing.
+		// A build that cannot be read is no build, so a doubt builds, the
+		// way every doubt in needsBuild does.
 		from, err := builtCommit(gh, channel)
 		if err != nil {
-			return p, err
+			p.notice = "The build there is could not be read, so this commit is built: " + err.Error()
+			from = ""
 		}
 		if answer, why := needsBuild(t, from, commit); answer != needed {
 			return no(why)
@@ -209,6 +212,13 @@ func publishPlan(gh gitHub, run, branch, commit string) (plan, error) {
 	}
 	if err := held(gh, channel, commit, head); err != nil {
 		return p, err
+	}
+	// A run of an older commit, run again, or a tag named main at an old
+	// commit of main, would put an older build in place of the newer one.
+	if built, err := builtCommit(gh, channel); err == nil && built != "" && !strings.HasPrefix(commit, built) {
+		if status, err := gh.compare(commit, built); err == nil && status == "ahead" {
+			return no(fmt.Sprintf("%s has a newer build already, of %s, so this older one is not published.", channel, built))
+		}
 	}
 	doc, err := gh.fileAt("engine/doc.go", commit)
 	if err != nil {

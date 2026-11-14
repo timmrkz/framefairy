@@ -357,6 +357,9 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
   `framefairy-release publish-plan` asks. main is compared by its commit, never by
   its name, which the tag takes. A commit main does not hold fails main's
   publish with an error that says to look at the tags.
+  A commit older than the build its channel has, a run of it run again
+  or a tag named `main` at an old commit of main, is not published
+  either, so a build never takes a newer one's place.
   "No token that can write" is how main's `builds.yml` is written, not a
   wall: a branch's copy can ask for one. What holds is the environment,
   the signatures and this check.

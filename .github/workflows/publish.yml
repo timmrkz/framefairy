@@ -36,10 +36,7 @@
 #
 # 1. announce, the moment a build starts, writes the channel list again,
 #    so the Updates page says for the whole of the build that the build it
-#    offers is not the newest. It also cancels a publish that has waited
-#    half an hour to enter the environment, see unstick in channels.go:
-#    on 7 October one of main waited for good, and main stayed on that
-#    day's build for three days.
+#    offers is not the newest.
 # 2. publish, per channel, one after another and never stopped half way,
 #    checks that the commit is its channel's, checks the build, signs the
 #    zip and uploads it with its entry to the release dev, and marks a
@@ -53,7 +50,11 @@
 # announce and list share one queue, and each writes the list from what is
 # there when it runs, so the order they run in does not matter, and one
 # that GitHub cancels in the queue loses nothing the next one does not
-# write. Nothing that only one of them does may live in them.
+# write. Nothing that only one of them does may live in them. So both,
+# once the list is written, cancel a publish that has waited half an hour
+# to enter the environment, see unstick in channels.go: on 7 October one
+# of main waited for good, and main stayed on that day's build for three
+# days. A wait is not a running job, so timeout-minutes does not end it.
 name: Publish builds
 
 on:
@@ -88,10 +89,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Cancel a publish stuck before the environment
-        run: go run ./cmd/framefairy-release unstick
       - name: Write the channel list from every entry
         run: go run ./cmd/framefairy-release channels
+      - name: Cancel a publish stuck before the environment
+        run: go run ./cmd/framefairy-release unstick
 
   publish:
     if: >-
@@ -111,9 +112,9 @@ jobs:
       pull-requests: read
       actions: read
       statuses: write
+    # The token is handed only to the steps that ask GitHub, so the step
+    # that reads the build holds nothing that can write.
     env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
       SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       # main, the default for a workflow_run, never the branch.
@@ -129,6 +130,8 @@ jobs:
       - id: which
         name: What this is a build of
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RUN: ${{ github.event.workflow_run.id }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: go run ./cmd/framefairy-release publish-plan -run "$RUN" -branch "$BRANCH" -commit "$SHA"
@@ -143,8 +146,8 @@ jobs:
 
       # The build is a branch's code, read here before anybody reviewed
       # it, so this step does not hold the key: nothing needs it until the
-      # reading is done, and a zip made to trip the reader finds nothing
-      # to take. The step after it signs only a build this one passed.
+      # reading is done, and a zip made to trip the reader finds no key
+      # and no token to take. The step after it signs only a build this one passed.
       - id: check
         if: steps.which.outputs.run == 'true'
         name: Check what it could reach
@@ -169,6 +172,8 @@ jobs:
       - if: steps.sign.outcome == 'success'
         name: Upload the build and its entry
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           ZIP: ${{ steps.which.outputs.zip }}
           CHANNEL: ${{ steps.which.outputs.channel }}
         run: >-
@@ -182,6 +187,8 @@ jobs:
       - name: Say on the commit why it is not published
         if: failure()
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: go run ./cmd/framefairy-release not-published -commit "$SHA" -run "$RUN" -refusal "$RUNNER_TEMP/refused.txt"
 
@@ -203,8 +210,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
-      # What became of a commit's build.
-      actions: read
+      # What became of a commit's build, and the publish runs that wait.
+      actions: write
       statuses: read
     env:
       GH_TOKEN: ${{ github.token }}
@@ -217,3 +224,5 @@ jobs:
           cache: true
       - name: Write the channel list from every entry
         run: go run ./cmd/framefairy-release channels
+      - name: Cancel a publish stuck before the environment
+        run: go run ./cmd/framefairy-release unstick

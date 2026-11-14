@@ -220,9 +220,12 @@ func (g *restGitHub) ready(commit string) (string, error) {
 const readyContext = "Ready to update to"
 
 func (g *restGitHub) setReady(commit, state, description, target string) error {
-	body, _ := json.Marshal(map[string]string{
-		"state": state, "context": readyContext, "description": description, "target_url": target,
-	})
+	fields := map[string]string{"state": state, "context": readyContext, "description": description}
+	// Only an address: GitHub's statuses take a link or none.
+	if target != "" {
+		fields["target_url"] = target
+	}
+	body, _ := json.Marshal(fields)
 	return g.call(http.MethodPost, "statuses/"+url.PathEscape(commit), bytes.NewReader(body), "application/json", nil)
 }
 

@@ -82,6 +82,24 @@ always runs from main. The issues are each one such mistake.
 Two did not converge. 3 moves the problem to a server we would have to
 run. 2 keeps the shell and its stand-ins.
 
+## How GitHub is reached
+
+The review asked about one more way, inside design 1: reach GitHub
+through `gh api` or the `go-github` library, behind the same
+interface, rather than a client of our own over `net/http`.
+
+- `gh api` from Go is a program started for every question, the shell
+  again under another name, and a test of it needs a stand-in `gh`.
+- `go-github` is a large dependency, a module of its own with a release
+  every few weeks, for twelve calls. Each call would still be written
+  here, behind the interface, and checked against a test server. What
+  it saves is the paging, the upload address and the redirect of a
+  download, which `TestGitHubIsAskedWhatTheToolNeeds` holds.
+
+So the client stays our own, in `github.go`, and the test server checks
+every call it makes. If it ever grows past these calls, `go-github` is
+the step after it.
+
 ## What it costs
 
 - One pull request, #842, with the four fixes it already holds.

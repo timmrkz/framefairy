@@ -331,8 +331,9 @@ func TestNoPullRequestTarget(t *testing.T) {
 }
 
 // publish.yml reads a branch's build before it signs it, and the reading
-// runs in a step of its own that holds no secret: the zip is code nobody
-// has reviewed, and nothing needs the update key until it has passed.
+// runs in a step of its own that holds no secret and no token: the zip is
+// code nobody has reviewed, and nothing needs the update key or a token
+// that writes until it has passed.
 // The step that signs comes after it, and runs only when it passed.
 //
 // On the real disk: what is read is the repository's own workflows.
@@ -364,14 +365,15 @@ func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
 			switch {
 			case strings.Contains(s.Run, "framefairy-release check"):
 				checked = s.ID
+				held := func(v string) bool { return strings.Contains(v, "secrets.") || strings.Contains(v, "github.token") }
 				for k, v := range j.Env {
-					if strings.Contains(v, "secrets.") {
-						t.Errorf("publish.yml's %s job holds the secret %s in every step, the check of the build too", job, k)
+					if held(v) {
+						t.Errorf("publish.yml's %s job holds %s in every step, the check of the build too", job, k)
 					}
 				}
 				for k, v := range s.Env {
-					if strings.Contains(v, "secrets.") {
-						t.Errorf("%q holds the secret %s while it reads the build", s.Name, k)
+					if held(v) {
+						t.Errorf("%q holds %s while it reads the build", s.Name, k)
 					}
 				}
 			case strings.Contains(s.Run, "framefairy-release sign"):
