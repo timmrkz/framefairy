@@ -44,7 +44,9 @@ class Toasts {
     const words = text.trim();
     if (!words) return;
     untrack(() => {
-      said(`toast: ${words}`, { level: "warn", video: how.video });
+      // Marked as a toast, so Settings can list it again once it is gone,
+      // see toastsIn in applog.go.
+      said(words, { level: "warn", video: how.video, toast: true });
       const others = this.list.filter((t) => !(t.from === from && t.text === words));
       this.list = [{ id: next++, from, text: words, ...how }, ...others];
     });

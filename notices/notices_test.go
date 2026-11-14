@@ -95,7 +95,9 @@ func TestTheToolsNoticesAreForTheVersionsBuilt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m := regexp.MustCompile(`k2-fsa/sherpa-onnx-go v(\S+)`).FindSubmatch(mod); m != nil {
+	if m := regexp.MustCompile(`k2-fsa/sherpa-onnx-go(?:/v\d+)? v(\S+)`).FindSubmatch(mod); m == nil {
+		t.Error("go.mod pins no sherpa-onnx this test can read, so its notice is checked against nothing")
+	} else {
 		n, ok := find(list, "sherpa-onnx")
 		if !ok || n.Version != string(m[1]) {
 			t.Errorf("go.mod pins sherpa-onnx %s, and the notice is for %q", m[1], n.Version)

@@ -25,6 +25,12 @@ function theTwo(notes, first, second) {
   return notes.length === 2 && !notes.some((n) => n.silent) && near(notes[0], first) && near(notes[1], second) && notes[0].at < notes[1].at;
 }
 
+// logCard is the card of the app's log in Settings, the area Logs.
+async function logCard(page) {
+  await settle(page);
+  return page.locator(".group", { has: page.locator(":scope > h2", { hasText: /^Logs$/ }) }).locator(".card");
+}
+
 export const steps = {
   // ["bugs"]           clicks Bugs in the sidebar, which has the app open
   //                    the report window or bring it forward, and opens
@@ -466,24 +472,80 @@ export const steps = {
   // ["app log", "open"]
   //                    the app starts its log, with an older file beside
   //                    the one in use, see /app-log in bridge_test.go
-  // ["app log", n]     Settings, Advanced, opened if it is not, says the
-  //                    app's log has n files, and the Go side has as many
+  // ["app log", n]     the app's log in Settings says it has n files, and
+  //                    the Go side has as many
   async "app log"(walk, arg) {
     const { page } = walk;
     if (arg === "open") {
       await fetch(new URL("/app-log?open=1", url));
       return;
     }
-    // Advanced reads the log again whenever it opens.
-    const disclose = page.locator("button.disclose");
-    if ((await disclose.getAttribute("aria-expanded")) !== "true") await disclose.click();
     const said = arg === 1 ? "1 file," : `${arg} files,`;
-    const card = page.locator(".card", { hasText: "The app's log" });
-    await settle(page);
-    const shown = ((await card.locator(".num").textContent().catch(() => "")) ?? "").trim();
+    const card = await logCard(page);
+    const shown = ((await card.locator(".head.num").textContent().catch(() => "")) ?? "").trim();
     const kept = await (await fetch(new URL("/app-log", url))).json();
     if (!shown.startsWith(said)) walk.wrong = `Settings says the app's log is "${shown}", not ${arg} files`;
     else if (kept.files !== arg) walk.wrong = `the app's log has ${kept.files} files on the disk, not ${arg}`;
+  },
+  // ["toast logged", text]
+  //                    the app logs a toast with these words while
+  //                    Settings is open, the way the window logs one, and
+  //                    Settings hears it with no reload (#421)
+  async "toast logged"(walk, arg) {
+    const { page } = walk;
+    const answer = await fetch(new URL(`/app-log?toast=${encodeURIComponent(arg)}`, url));
+    if (!answer.ok) walk.wrong = `the toast was not logged: ${await answer.text()}`;
+    await settle(page);
+  },
+  // ["logged toasts", texts]
+  //                    the app's log in Settings
+  //                    lists the toasts the app showed, these and no
+  //                    other, newest first, each with Report only while
+  //                    the pointer is on its row (#421)
+  async "logged toasts"(walk, arg) {
+    const { page } = walk;
+    const rows = (await logCard(page)).locator(".item.logged");
+    const said = await rows.locator(".words > span:first-child").allTextContents();
+    if (said.length !== arg.length || said.some((t, i) => t.trim() !== arg[i])) {
+      walk.wrong = `the app's log lists the toasts ${JSON.stringify(said)}, not ${JSON.stringify(arg)}`;
+      return;
+    }
+    if (!arg.length) return;
+    // The pointer on the head of another group, away from every row and
+    // from the sidebar, which opens when the pointer reaches it.
+    await page.locator("h2", { hasText: "Training data" }).hover();
+    const hidden = await rows.first().locator("button.report").evaluate((b) => getComputedStyle(b).opacity);
+    await rows.first().hover();
+    const shown = await rows.first().locator("button.report").evaluate((b) => getComputedStyle(b).opacity);
+    if (hidden !== "0") walk.wrong = `a toast's Report shows with the pointer away, at opacity ${hidden}`;
+    else if (shown !== "1") walk.wrong = `a toast's Report is at opacity ${shown} with the pointer on its row`;
+  },
+  // ["report logged", i]
+  //                    presses Report on toast i, from 1, in the app's
+  //                    log, and the report window opens with its words
+  //                    and nothing else written in it, a report of its own
+  async "report logged"(walk, arg) {
+    const { page } = walk;
+    const row = (await logCard(page)).locator(".item.logged").nth(arg - 1);
+    const text = ((await row.locator(".words > span:first-child").textContent()) ?? "").trim();
+    await row.hover();
+    await row.locator("button.report").click();
+    await settle(page);
+    const w = await (await fetch(new URL("/report-window", url))).json();
+    if (!w.open) walk.wrong = "Report on a toast in the app's log opened no report window";
+    else if (w.text.trim() !== text) walk.wrong = `the report window reads ${JSON.stringify(w.text)}, not only the toast's words ${JSON.stringify(text)}`;
+  },
+  // ["report greyed", yes]
+  //                    every Report on a toast in the app's log is greyed
+  //                    out, yes, or none is: one report at a time, so
+  //                    while Report a Problem is open none can start
+  //                    another
+  async "report greyed"(walk, arg) {
+    const { page } = walk;
+    const greyed = await (await logCard(page)).locator(".item.logged button.report").evaluateAll((bs) => bs.map((b) => b.disabled));
+    if (!greyed.length) walk.wrong = "the app's log lists no toast with Report";
+    else if (greyed.some((g) => g !== arg))
+      walk.wrong = `Report on the toasts is ${JSON.stringify(greyed)}, greyed out, with Report a Problem ${arg ? "open" : "closed"}`;
   },
   // ["windows", made, fronted]
   //                    the app has made so many report windows and
@@ -1405,19 +1467,20 @@ export const steps = {
     if (c === "rgba(0, 0, 0, 0)") walk.wrong = "the field hides its cursor after a click into its first line";
   },
   // ["buttons fit", words]
-  //                    opens Advanced where there is one, and every button
-  //                    on screen that holds words alone is as wide as the
+  //                    opens Advanced and the app's log where they are,
+  //                    and every button on screen that holds words alone
+  //                    is as wide as the
   //                    words it shows and its padding, to a pixel. A
   //                    button made to fill its row, like a caption
   //                    setting's name, is not about its words. Buttons
   //                    saying each of words are among them (#362)
   async "buttons fit"(walk, arg) {
     const { page } = walk;
-    const disclose = page.locator("button.disclose");
-    if ((await disclose.count()) && (await disclose.getAttribute("aria-expanded")) !== "true") {
-      await disclose.click();
-      await settle(page);
-    }
+    for (const disclose of await page.locator("button.disclose").all())
+      if ((await disclose.getAttribute("aria-expanded")) !== "true") {
+        await disclose.click();
+        await settle(page);
+      }
     const seen = await page.evaluate(() => {
       const out = [];
       const ruler = document.createElement("span");

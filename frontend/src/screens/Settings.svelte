@@ -46,8 +46,10 @@
     type SetupState,
     onLicenceLink,
     onSetup,
+    onAppLog,
   } from "../lib/api";
   import { live } from "../lib/flow";
+  import { reporting, reportTitle } from "../lib/reporting.svelte";
   import ApiKey from "../components/ApiKey.svelte";
   import Confirm from "../components/Confirm.svelte";
   import Busy from "../components/Busy.svelte";
@@ -67,9 +69,10 @@
   // makes the trash can beside them mean anything.
   let training = $state<TrainingStatus>({ dir: "", plans: 0, decisions: 0 });
   let clearing = $state(false);
-  // The app's log, under Advanced: read again whenever Advanced opens, so
-  // it says what the log holds now and not what it held at the start.
-  let appLog = $state<LogStatus>({ path: "", files: 0, bytes: 0, lines: 0 });
+  // The app's log, an area of its own, kept up to date while Settings is
+  // open, so it says what the log holds now and the last toasts with it.
+  // Issue #421.
+  let appLog = $state<LogStatus>({ path: "", files: 0, bytes: 0, lines: 0, toasts: [] });
   let removingLog = $state(false);
   const logFolder = $derived(appLog.path.replace(/[\\/][^\\/]*$/, ""));
   // The models that can be installed, and what the machine can hold. The
@@ -395,6 +398,11 @@
     }
   }
 
+  // When a toast came, the way Finder writes a date in its lists: the day
+  // and the time.
+  const when = (at: number) =>
+    new Date(at).toLocaleString("en", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+
   async function showLog() {
     try {
       await api.showAppLog();
@@ -653,9 +661,14 @@
     nav.hold = hold;
     const noLink = onLicenceLink(takeLink);
     const noSetup = onSetup(tookModels);
+    const noLog = onAppLog((st) => (appLog = st));
+    readLog();
+    api.watchAppLog(true).catch(() => {});
     return () => {
       noLink();
       noSetup();
+      noLog();
+      api.watchAppLog(false).catch(() => {});
       clearTimeout(saveTimer);
       if (nav.hold === hold) nav.hold = null;
     };
@@ -993,6 +1006,66 @@
         </div>
       </div>
 
+      <!-- The app's own log, the file a report takes along, an area of
+           its own, kept up to date as lines are written. It is the app's
+           and nobody else's, so it can go whole, after asking. It lists
+           the last toasts the app showed, so one that ran out unread can
+           still be read and reported. Issue #421. -->
+      <div class="group">
+        <h2>Logs</h2>
+        <div class="card">
+          <div class="item">
+            <div class="words">
+              {#if appLog.path}
+                <span class="head num">
+                  {plural(appLog.files, "file", "files")}, {size(appLog.bytes) || "empty"}, {plural(appLog.lines, "line", "lines")}
+                </span>
+                <span class="small muted selectable path">{shown(appLog.path)}</span>
+              {:else}
+                <span class="head">Nothing written yet</span>
+              {/if}
+            </div>
+            <button
+              class="quiet bin"
+              disabled={!appLog.path}
+              title="Show in folder"
+              aria-label="Show the app's log in folder"
+              onclick={showLog}
+            >
+              <Icon name="folder" />
+            </button>
+            <button
+              class="quiet danger bin"
+              disabled={!appLog.path}
+              title="Remove the log, the older files too"
+              aria-label="Remove the app's log"
+              aria-haspopup="dialog"
+              onclick={() => (removingLog = true)}
+            >
+              <Icon name="trash" />
+            </button>
+          </div>
+          {#each appLog.toasts ?? [] as t, i (i)}
+            <!-- A toast the app showed, in its words, for one that ran
+                 out unread. Report opens Report a Problem with them
+                 written in it, the way the toast's own Report does. -->
+            <div class="item logged">
+              <span class="mark err" aria-hidden="true"><Icon name="warn" /></span>
+              <div class="words">
+                <span class="selectable">{t.text}</span>
+                <span class="small muted num">{when(t.at)}{#if t.video}, {t.video}{/if}</span>
+              </div>
+              <button
+                class="act report"
+                disabled={reporting.open}
+                title={reportTitle()}
+                onclick={() => api.reportAbout(t.text).catch((err) => (problem = errorText(err)))}>Report</button
+              >
+            </div>
+          {/each}
+        </div>
+      </div>
+
       <!-- The machinery: where the tools and the models are, for the day
            one has to be pointed somewhere by hand. Empty uses what the app
            finds by itself, the same as the command line. -->
@@ -1000,10 +1073,7 @@
         <button
           class="quiet disclose"
           aria-expanded={advanced}
-          onclick={() => {
-            advanced = !advanced;
-            if (advanced) readLog();
-          }}
+          onclick={() => (advanced = !advanced)}
         >
           <span class="chevron" class:open={advanced}><Icon name="chevron" size={14} /></span>
           <h2>Advanced</h2>
@@ -1029,43 +1099,6 @@
               </span>
               <input type="text" bind:value={settings.trainingDir} placeholder={shown("~/.framefairy/training")} spellcheck="false" />
             </label>
-          </div>
-
-          <!-- The app's own log, the file a report takes along. It is the
-               app's and nobody else's, so it can go whole, after asking. -->
-          <div class="card">
-            <div class="item">
-              <div class="words">
-                <span class="head">The app's log</span>
-                {#if appLog.path}
-                  <span class="small muted num">
-                    {plural(appLog.files, "file", "files")}, {size(appLog.bytes) || "empty"}, {plural(appLog.lines, "line", "lines")}
-                  </span>
-                  <span class="small muted selectable path">{shown(appLog.path)}</span>
-                {:else}
-                  <span class="small muted">Nothing written yet.</span>
-                {/if}
-              </div>
-              <button
-                class="quiet bin"
-                disabled={!appLog.path}
-                title="Show in folder"
-                aria-label="Show the app's log in folder"
-                onclick={showLog}
-              >
-                <Icon name="folder" />
-              </button>
-              <button
-                class="quiet danger bin"
-                disabled={!appLog.path}
-                title="Remove the log, the older files too"
-                aria-label="Remove the app's log"
-                aria-haspopup="dialog"
-                onclick={() => (removingLog = true)}
-              >
-                <Icon name="trash" />
-              </button>
-            </div>
           </div>
 
           <!-- Everything the check looked at, found or not, for whoever
@@ -1217,6 +1250,21 @@
     flex: none;
   }
 
+  /* A toast in the log offers Report while the pointer is on its row or
+     the keyboard is on the button, and stands invisible in its place
+     otherwise, so the row does not move as it comes. */
+  .logged .report {
+    opacity: 0;
+  }
+  .logged:hover .report,
+  .logged .report:focus-visible {
+    opacity: 1;
+  }
+  /* Greyed out the way every button is, while a report is being
+     written. */
+  .logged:hover .report:disabled {
+    opacity: var(--dimmed);
+  }
   /* Advanced opens and closes like a disclosure in Finder: a chevron that
      turns, and the head of the group beside it. */
   .disclose {

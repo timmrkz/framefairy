@@ -57,9 +57,9 @@ const (
 	acknowledgementsEvent cue                = "acknowledgements"
 	loudnessEvent         event[Loudness]    = "loudness"
 	dictationEvent        event[Dictation]   = "dictation"
+	appLogEvent           event[LogStatus]   = "applog"
 	reportWindowEvent     event[bool]        = "report-window"
 	reportDraftEvent      event[ReportDraft] = "report-draft"
-	reportAboutEvent      event[string]      = "report-about"
 	episodeEvent          event[string]      = "episode"
 	droppedEvent          event[Added]       = "dropped"
 	videoEvent            event[VideoState]  = "video"
@@ -93,7 +93,6 @@ func (s *FrameFairy) tellWindow(w emitter) {
 	// The report window and its draft, see bugs.go.
 	s.report.told = func(open bool) { reportWindowEvent.to(w, open) }
 	s.report.said = func(d ReportDraft) { reportDraftEvent.to(w, d) }
-	s.report.about = func(text string) { reportAboutEvent.to(w, text) }
 	// How far the loudness is measured is in the video's state.
 	s.levels = newMeasuring(s.store.machine, s.told)
 	// The models changed outside the app, see tellSetup.

@@ -28,6 +28,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"framefairy/engine"
 	"framefairy/engine/fileio"
@@ -166,6 +167,22 @@ func (d *desk) start(st *store) {
 		return picked, nil
 	}
 	if d.bus != nil {
+		// The app's log is told to Settings through the desk made last,
+		// by one watch for the process, the way main starts one, and with
+		// no beat to wait for between two tellings.
+		logTo.Store(d)
+		logWatch.Do(func() {
+			now := make(chan time.Time)
+			close(now)
+			go theLog.watch(func(st LogStatus) {
+				appLogEvent.to(logTo.Load(), st)
+				logMu.Lock()
+				logLast = st
+				close(logNews)
+				logNews = make(chan struct{})
+				logMu.Unlock()
+			}, func() <-chan time.Time { return now })
+		})
 		// The library is on the real disk, so the walks change its
 		// folders from outside the app the way Finder does. The watch
 		// starts once every field it can reach is set, the way main
@@ -203,6 +220,18 @@ func (d *desk) Emit(name string, data ...any) bool {
 	}
 	return d.bus.Emit(name, data...)
 }
+
+// The desk the app's log is told through in the bridge, and the one watch that
+// tells it, see above.
+var (
+	logTo    atomic.Pointer[desk]
+	logWatch sync.Once
+	// The last log sent, and news closed when the next is, for toastTold
+	// in bridge_test.go.
+	logMu   sync.Mutex
+	logLast LogStatus
+	logNews = make(chan struct{})
+)
 
 // episode puts a copy of the video of this many seconds in the library's
 // folder under name, see grey in internal/fixtures.

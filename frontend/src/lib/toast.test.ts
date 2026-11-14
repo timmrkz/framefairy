@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 // What a toast writes into the app's log goes nowhere here. That every
-// toast is in the log is said below, by what reaches said.
+// toast is in the log is said below, by what reaches said, a toast marked
+// as one, which is how Settings finds it again, see toastsIn in
+// applog.go.
 const logged: string[] = [];
-vi.mock("./said", () => ({ said: (text: string) => logged.push(text) }));
+const told: unknown[] = [];
+vi.mock("./said", () => ({
+  said: (text: string, how: { toast?: boolean } = {}) => {
+    logged.push(`${how.toast ? "[toast] " : ""}${text}`);
+    told.push(how);
+  },
+}));
 
 import { toasts } from "./toast.svelte";
 
@@ -13,6 +21,7 @@ describe("toasts", () => {
   beforeEach(() => {
     toasts.list = [];
     logged.length = 0;
+    told.length = 0;
   });
 
   // The way macOS stacks its notes: Tim dropped one picture after another
@@ -73,7 +82,15 @@ describe("toasts", () => {
     toasts.say("app", "a.png is not a video");
     toasts.close(toasts.list[0].id, "ran out");
     toasts.close(12345, "closed");
-    expect(logged).toEqual(["toast: a.png is not a video", "toast ran out: a.png is not a video"]);
+    expect(logged).toEqual(["[toast] a.png is not a video", "toast ran out: a.png is not a video"]);
     expect(toasts.list).toEqual([]);
+  });
+
+  // Settings lists the last toasts again, with the video each was about.
+  // Issue #421.
+  test("a toast is in the log with its words and its video", () => {
+    toasts.say("/v.mp4", "  The file notes.pdf is no video.  ", { video: "/v.mp4" });
+    expect(logged).toEqual(["[toast] The file notes.pdf is no video."]);
+    expect(told).toEqual([{ level: "warn", video: "/v.mp4", toast: true }]);
   });
 });

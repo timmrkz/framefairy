@@ -7,7 +7,7 @@
 # directive writes the Go module cache path into the program as the place to
 # find them:
 #
-#   RUNPATH /Users/tim/go/pkg/mod/github.com/k2-fsa/sherpa-onnx-go-macos@v1.13.8/lib/...
+#   RUNPATH /Users/tim/go/pkg/mod/github.com/k2-fsa/sherpa-onnx-go-macos/v2@v2.0.1/lib/...
 #
 # Nobody else has that folder, so the program dies before it draws anything.
 # It has gone unnoticed because everyone who has run the app also built it.
@@ -42,8 +42,11 @@ SYSTEM=$(uname -s 2>/dev/null)
 GOMOD=$(go env GOMODCACHE)
 VERSION=$(awk '/k2-fsa\/sherpa-onnx-go-/ { print $2; exit }' "$(dirname "$0")/../go.mod")
 if [ -z "$VERSION" ]; then
-	VERSION=$(awk '/k2-fsa\/sherpa-onnx-go /{ print $2; exit }' "$(dirname "$0")/../go.mod")
+	VERSION=$(awk '/k2-fsa\/sherpa-onnx-go(\/v[0-9]+)? /{ print $2; exit }' "$(dirname "$0")/../go.mod")
 fi
+# From v2 on, Go keeps a module under its major, sherpa-onnx-go-macos/v2.
+MAJOR=${VERSION%%.*}
+case "$MAJOR" in v0 | v1) MAJOR="" ;; *) MAJOR="/$MAJOR" ;; esac
 
 # Where the prebuilt libraries for this system live inside the module cache.
 case "$SYSTEM" in
@@ -52,14 +55,14 @@ Darwin)
 	arm64) TRIPLE=aarch64-apple-darwin ;;
 	*) TRIPLE=x86_64-apple-darwin ;;
 	esac
-	FROM="$GOMOD/github.com/k2-fsa/sherpa-onnx-go-macos@$VERSION/lib/$TRIPLE"
+	FROM="$GOMOD/github.com/k2-fsa/sherpa-onnx-go-macos$MAJOR@$VERSION/lib/$TRIPLE"
 	;;
 Linux)
 	case "$(uname -m)" in
 	aarch64 | arm64) TRIPLE=aarch64-unknown-linux-gnu ;;
 	*) TRIPLE=x86_64-unknown-linux-gnu ;;
 	esac
-	FROM="$GOMOD/github.com/k2-fsa/sherpa-onnx-go-linux@$VERSION/lib/$TRIPLE"
+	FROM="$GOMOD/github.com/k2-fsa/sherpa-onnx-go-linux$MAJOR@$VERSION/lib/$TRIPLE"
 	;;
 *)
 	# Windows keeps the DLLs beside the program and needs no rewriting,

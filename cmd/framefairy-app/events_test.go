@@ -28,9 +28,9 @@ var told = map[string]reflect.Type{
 	string(acknowledgementsEvent): nil,
 	string(loudnessEvent):         carries(loudnessEvent),
 	string(dictationEvent):        carries(dictationEvent),
+	string(appLogEvent):           carries(appLogEvent),
 	string(reportWindowEvent):     carries(reportWindowEvent),
 	string(reportDraftEvent):      carries(reportDraftEvent),
-	string(reportAboutEvent):      carries(reportAboutEvent),
 	string(episodeEvent):          carries(episodeEvent),
 	string(droppedEvent):          carries(droppedEvent),
 	string(videoEvent):            carries(videoEvent),
@@ -105,7 +105,6 @@ func TestEveryPartTellsTheWindowOnItsOwnEvent(t *testing.T) {
 		{string(loudnessEvent), func() { s.listening.loud(Loudness{}) }},
 		{string(reportWindowEvent), func() { s.report.told(true) }},
 		{string(reportDraftEvent), func() { s.report.said(ReportDraft{}) }},
-		{string(reportAboutEvent), func() { s.report.about("why") }},
 		{string(setupEvent), func() { s.setupNews(SetupState{}) }},
 	}
 	for _, step := range steps {

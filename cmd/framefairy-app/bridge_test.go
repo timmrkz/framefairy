@@ -509,6 +509,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		}
 		answer(w, map[string]any{
 			"made": b.d.reportMade.Load(), "fronted": b.d.reportFronted.Load(), "open": b.d.svc.ReportWindowOpen(),
+			"text": b.d.svc.ReportDraft().Text,
 		}, nil)
 	})
 	// A picture of w by h pixels, for the paperclip's box to hand over
@@ -684,13 +685,21 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, map[string]string{"name": filepath.Base(*p), "text": string(body)}, err)
 	})
 	// The app's log, which the bridge keeps none of until a walk asks:
-	// with ?open=1 it starts one in the bridge's home with a few lines and
-	// an older file beside it, the way a log that has turned over once
-	// looks. Without it, what the log holds. Settings, Advanced shows it,
-	// and the next walk starts with none again, see reset.
+	// with ?open=1 it starts one in the bridge's home with a few lines,
+	// two toasts among them, and an older file beside it, the way a log
+	// that has turned over once looks. Without it, what the log holds.
+	// Settings shows it, and the next walk starts with none again, see
+	// reset.
 	mux.HandleFunc("/app-log", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("open") == "1" {
 			answer(w, nil, b.openLog())
+			return
+		}
+		// With ?toast=words, the app logs a toast with them the way the
+		// window logs one, while Settings watches the log, and answers
+		// once Settings has been sent the log with it.
+		if text := r.URL.Query().Get("toast"); text != "" {
+			answer(w, nil, toastTold(text))
 			return
 		}
 		answer(w, theLog.status(), nil)
@@ -3563,6 +3572,25 @@ func TestEveryCommitWalksSeedsOfItsOwn(t *testing.T) {
 	}
 }
 
+// toastTold logs a toast with text the way the window does, and returns
+// once the log with it has been sent to Settings, so a walk that waits
+// for the bridge's mark then sees what Settings has heard.
+func toastTold(text string) error {
+	if !theLog.watching.Load() {
+		return errors.New("Settings is not open, so nothing watches the log")
+	}
+	theLog.line(zerolog.WarnLevel, "window").Bool("toast", true).Msg(text)
+	for {
+		logMu.Lock()
+		last, news := logLast, logNews
+		logMu.Unlock()
+		if slices.ContainsFunc(last.Toasts, func(t LoggedToast) bool { return t.Text == text }) {
+			return nil
+		}
+		<-news
+	}
+}
+
 // openLog starts the app's log in the bridge's home, four lines in the
 // file in use and three in an older file beside it, see /app-log.
 //
@@ -3583,6 +3611,10 @@ func (b *bridge) openLog() error {
 	for i := range 4 {
 		theLog.line(zerolog.InfoLevel, "app").Int("i", i).Msg("a line for the walk")
 	}
+	// Two toasts the app showed, the way the window says them, the
+	// second about a video. Settings lists them, newest first.
+	theLog.line(zerolog.WarnLevel, "window").Bool("toast", true).Msg("The first toast for the walk.")
+	theLog.line(zerolog.WarnLevel, "window").Str("video", "start.mp4").Bool("toast", true).Msg("The second toast for the walk.")
 	return nil
 }
 

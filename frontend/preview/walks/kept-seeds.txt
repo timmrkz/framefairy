@@ -7,3 +7,8 @@
 # frames a second, cut between two frames and was refused: the sliver it
 # left grew to a whole frame, over the next piece.
 timeline.mjs 454045
+
+# Words typed one after another into one word in the caption box made it
+# longer than the engine keeps, and saving it was refused: the caption box
+# let in more than a word may hold.
+words.mjs 366410

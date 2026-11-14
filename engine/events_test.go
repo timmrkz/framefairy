@@ -773,11 +773,13 @@ func TestTheWordsOfOneCorrectionSayWhichTheyAre(t *testing.T) {
 				if w.Said != nil {
 					said = *w.Said
 				}
-				got = append(got, fmt.Sprintf("%s@%g:%s/%s", w.Text, said, part, w.Whole))
+				got = append(got, fmt.Sprintf("%s@%g:%s/%s+%d", w.Text, said, part, w.Whole, w.Room))
 			}
 		}
 	}
-	want := "weil@10:0/weil es es@10:1/weil es das@10.5:-/das"
+	// What may be typed for a word is what the engine keeps, less the
+	// other words of its correction and the spaces between them.
+	want := "weil@10:0/weil es+57 es@10:1/weil es+55 das@10.5:-/das+60"
 	if strings.Join(got, " ") != want {
 		t.Errorf("words\n got %s\nwant %s", strings.Join(got, " "), want)
 	}

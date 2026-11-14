@@ -1144,7 +1144,10 @@ bubble scrolled by those eight pixels.
   the pointer becomes a caret, so what can be corrected says so without a
   word of instruction. The caret lands where the hand clicked, letters are
   typed and taken out from there, Enter saves and Escape leaves the word as
-  it was. Clicking a word stops the picture, because a caption that moved on
+  it was. A word holds at most 60 characters, with any words typed beside
+  it, and the engine says with each word how many are left for it, so
+  what is typed or pasted past them is not let in, rather than the whole
+  word refused when it is saved. Clicking a word stops the picture, because a caption that moved on
   under the caret would leave the hand correcting a word that is no longer
   there. Playing the other way round ends the correction: a click on the
   video preview or anything else that plays saves the word the way Enter
@@ -2516,10 +2519,15 @@ is the Go side's: the queue tells each once, as the job goes from
 waiting or running to failed, or is refused as it is asked for, a search,
 a clip made by hand, a transcription or a render, see
 `cmd/framefairy-app/notice.go`. One found failed only as the app opens
-said why the time it failed. Report opens Report a Problem with the toast's
-words written in its field, after what was there, and a report window
-already open is handed them to write in, see `ReportAbout` in
-`bugs.go`. Cut to one line in the row, the reason lost the part that
+said why the time it failed. Report opens Report a Problem as a report
+of its own, with only the toast's words in its field. A draft written
+before waits aside and comes back when the window closes, and the
+toast's report is let go then, sent or not, so the next toast's Report
+starts from nothing again. Tim found two toasts in one report after
+closing the window between them. There is one report at a time: while
+Report a Problem is open, every Report button is greyed out, and the
+window is only brought forward, with nothing written into it, see
+`ReportAbout` in `bugs.go`. Cut to one line in the row, the reason lost the part that
 said what to do, and Tim read "Anthropic is busy and did not a…".
 
 A video whose file is gone says so in a toast as the workspace finds it
@@ -3510,13 +3518,24 @@ folder. Inside the home folder from `~` and the rest in full was tried
 first, and Tim still saw two kinds of path on one page, 2026-10-28. Only
 what is shown changes, what is saved stays as it came.
 
-Between the paths and the check is **The app's log**, see
-[LOGGING.md](LOGGING.md): where the file in use is, how many files it has
-with the older ones, their size and their lines, read again whenever
-Advanced opens. The folder button shows it in Finder, the way Show in
-folder does for a video in the sidebar, and the trash can removes every file of the
-log, the older ones too and nothing else in their folder, after asking.
-The app starts a new log with its next line, which says what went.
+**Logs** is the app's log, an area of its own between Training data and
+Advanced, always open, see [LOGGING.md](LOGGING.md). It says how many
+files the log has with the older ones, their size and their lines, and
+where the file in use is, and keeps up while Settings is open: the app
+sends it again as lines are written, about once a second at most, so a
+toast that comes while Settings is open is listed without a reload.
+Tim asked for the name, for no fold, and for it to keep up, 13 November
+2026. The folder button shows it in Finder, the
+way Show in folder does for a video in the sidebar, and the trash can
+removes every file of the log, the older ones too and nothing else in
+their folder, after asking. The app starts a new log with its next line,
+which says what went. Under it are the last five toasts the app showed,
+newest first, in their own words, with when each came and the video it
+was about, read back from the log. A toast runs out after ten seconds,
+and this is where one that went unread is read again. Report on a row,
+shown while the pointer is on it, opens Report a Problem with the
+toast's words written in it, the way the toast's own Report does. Issue
+#421, Tim's ask of 20 October 2026.
 
 What belongs to the episode being worked on is not here: the caption face,
 the size and the height, and how many clips a search looks for and how
@@ -3624,6 +3643,9 @@ found.
 What is written and attached is a draft, kept in the app's folder
 under `report/` as it is written, so closing the window, or the app,
 loses nothing. Report lets go of it, and the next report starts empty.
+A report a toast's Report started is the one exception: it is let go as
+its window closes, and the draft from before comes back, see the toasts
+above.
 A recording goes with the window: closing it while somebody talks drops
 the recording, and what was written down by then stays in the draft as
 text. This is on purpose and not the way Stop ends one, which the first

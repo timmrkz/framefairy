@@ -73,20 +73,35 @@ export default [
     steps: [["acknowledgements"]],
   },
   {
-    // Plan row 2.245. Settings, Advanced shows the app's log, and its bin
-    // removes every file of it, the older one too, after asking. Cancel
-    // leaves it as it was, and the log that follows is the one new file.
+    // Plan row 2.245. Settings shows the app's log, and its bin removes
+    // every file of it, the older one too, after asking. Cancel leaves
+    // it as it was, and the log that follows is the one new file. Issue
+    // #421: the log is an area of its own, Logs, and lists the last
+    // toasts the app showed, so one that ran out unread can still be
+    // reported. Tim saw it stay as it was while the app went on writing
+    // until the page was loaded again: it keeps up as lines are written.
     name: "The app's log is removed whole from Settings, after asking",
     steps: [
       ["app log", "open"],
       ["settings"],
       ["app log", 2],
+      ["logged toasts", ["The second toast for the walk.", "The first toast for the walk."]],
+      ["toast logged", "A third toast, while Settings is open."],
+      ["logged toasts", ["A third toast, while Settings is open.", "The second toast for the walk.", "The first toast for the walk."]],
+      ["report greyed", false],
+      ["report logged", 2],
+      ["report greyed", true],
+      ["close report"],
+      ["report greyed", false],
+      ["report logged", 1],
+      ["close report"],
       ["button", "Remove the app's log"],
       ["button", "Cancel"],
       ["app log", 2],
       ["button", "Remove the app's log"],
       ["button", "Remove them"],
       ["app log", 1],
+      ["logged toasts", []],
     ],
   },
   {

@@ -86,6 +86,10 @@ func main() {
 		return app != nil && app.Event.Emit(name, data...)
 	}))
 	svc.jobs.searched = svc.keeping.ask
+	// The log as Settings shows it, while Settings is open, as lines are
+	// written, about once a second at most. See watch in applog.go.
+	go theLog.watch(func(st LogStatus) { appLogEvent.to(svc.tell, st) },
+		func() <-chan time.Time { return time.After(time.Second) })
 	// What changes in the folders of the videos, whoever changed it, is
 	// looked at as it happens, and every video once now, see reconcile.go.
 	// It comes once every field it can reach is set, since the watch hands

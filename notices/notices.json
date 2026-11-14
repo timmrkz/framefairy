@@ -309,7 +309,7 @@
   },
   {
     "name": "kaldi-native-fbank",
-    "version": "1.22.3",
+    "version": "1.22.4",
     "licence": "Apache-2.0",
     "url": "https://github.com/csukuangfj/kaldi-native-fbank",
     "part": "Speech recognition",
@@ -354,7 +354,7 @@
   },
   {
     "name": "sherpa-onnx",
-    "version": "1.13.8",
+    "version": "2.0.1",
     "licence": "Apache-2.0",
     "url": "https://github.com/k2-fsa/sherpa-onnx",
     "part": "Speech recognition",
@@ -388,7 +388,7 @@
   },
   {
     "name": "FreeType",
-    "version": "2.14.3",
+    "version": "2.15.0",
     "licence": "FTL",
     "url": "https://freetype.org",
     "part": "ffmpeg",
@@ -400,7 +400,7 @@
   },
   {
     "name": "FriBidi",
-    "version": "1.0.17",
+    "version": "1.0.18",
     "licence": "LGPL-2.1-or-later",
     "url": "https://github.com/fribidi/fribidi",
     "part": "ffmpeg",
@@ -411,7 +411,7 @@
   },
   {
     "name": "HarfBuzz",
-    "version": "14.5.1",
+    "version": "15.1.0",
     "licence": "MIT-Modern-Variant",
     "url": "https://harfbuzz.github.io",
     "part": "ffmpeg",
@@ -432,7 +432,7 @@
   },
   {
     "name": "cpp-httplib",
-    "version": "0.59.0",
+    "version": "0.66.0",
     "licence": "MIT",
     "url": "https://github.com/yhirose/cpp-httplib",
     "part": "llama-server",
@@ -454,7 +454,7 @@
   },
   {
     "name": "llama.cpp",
-    "version": "b11430",
+    "version": "b12332",
     "licence": "MIT",
     "url": "https://github.com/ggml-org/llama.cpp",
     "part": "llama-server",

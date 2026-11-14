@@ -5,7 +5,6 @@
     clock,
     onDictation,
     onLoudness,
-    onReportAbout,
     onReportDraft,
     onUndo,
     type Dictation,
@@ -736,24 +735,10 @@
       .catch(() => {})
       .finally(() => (loaded = true));
     const noDraft = onReportDraft(dropped);
-    // A toast's Report button, while this window is open: its words go
-    // after what is written, a line apart, and are kept like typing.
-    const noAbout = onReportAbout((text) => {
-      if (!text) return;
-      // Words written in end what Cmd+Z could bring back after Clear.
-      unclear();
-      const was = what.replace(/\s+$/, "");
-      const [a, b, put] = changed(what, was ? `${was}\n\n${text}` : text);
-      field.setRangeText(put, a, b);
-      steps.did(a, b, what.slice(a, b), put, true);
-      follow(a, b, put);
-      read();
-    });
     const leave = () => saveNow();
     window.addEventListener("pagehide", leave);
     return () => {
       noDraft();
-      noAbout();
       window.removeEventListener("pagehide", leave);
       saveNow();
     };

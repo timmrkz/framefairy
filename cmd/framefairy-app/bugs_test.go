@@ -702,37 +702,61 @@ func chunk(kind string, data []byte) []byte {
 }
 
 // The Report button of a toast opens Report a Problem with the toast's
-// words in its field, after what was written there. An open window is
-// handed them to write in, and the draft it keeps is not written behind
-// its back, since the window's field would save over it. Issue #311.
+// words in its field, after what was written there. There is one report
+// at a time, so with the window open a click only brings it forward and
+// writes nothing into the report being written. Issues #311 and #421.
 func TestAToastsReportButtonWritesItsWordsInTheReport(t *testing.T) {
-	r := newReporting(engine.NewMachine(afero.NewMemMapFs()), "/config/report")
-	made := 0
+	files := afero.NewMemMapFs()
+	r := newReporting(engine.NewMachine(files), "/config/report")
+	made, fronted := 0, 0
+	var shut func()
 	r.make = func(closed func()) (func(), func()) {
 		made++
-		return func() {}, func() { closed() }
+		shut = closed
+		return func() { fronted++ }, func() { closed() }
 	}
-	var handed []string
-	r.about = func(text string) { handed = append(handed, text) }
 	s := &FrameFairy{report: r}
 
 	if err := s.SaveReportText("The search stopped.\n"); err != nil {
 		t.Fatal(err)
 	}
 	s.ReportAbout("Anthropic is busy.")
-	if d := s.ReportDraft(); d.Text != "The search stopped.\n\nAnthropic is busy." {
-		t.Fatalf("the report says %q", d.Text)
+	if d := s.ReportDraft(); d.Text != "Anthropic is busy." {
+		t.Fatalf("the toast's report says %q, not only the toast's words", d.Text)
 	}
-	if made != 1 || len(handed) != 0 {
-		t.Fatalf("%d windows made, %v handed to one", made, handed)
+	if made != 1 || fronted != 0 {
+		t.Fatalf("%d windows made, %d brought forward", made, fronted)
 	}
 
 	s.ReportAbout("Could not reach Anthropic.")
-	if made != 1 || fmt.Sprint(handed) != "[Could not reach Anthropic.]" {
-		t.Fatalf("with the window open: %d windows made, %v handed to it", made, handed)
+	if made != 1 || fronted != 1 {
+		t.Fatalf("with the window open: %d windows made, %d brought forward", made, fronted)
 	}
-	if d := s.ReportDraft(); d.Text != "The search stopped.\n\nAnthropic is busy." {
-		t.Fatalf("the draft was written behind the open window's back: %q", d.Text)
+	if d := s.ReportDraft(); d.Text != "Anthropic is busy." {
+		t.Fatalf("the report being written was written into: %q", d.Text)
+	}
+
+	// Closed without a report, the toast's report goes, and the draft
+	// written before it is back.
+	shut()
+	if d := s.ReportDraft(); d.Text != "The search stopped.\n" {
+		t.Fatalf("after the toast's report closed, the draft says %q", d.Text)
+	}
+
+	// The next toast's report starts from nothing too, not after the last.
+	s.ReportAbout("Could not reach Anthropic.")
+	if d := s.ReportDraft(); d.Text != "Could not reach Anthropic." {
+		t.Fatalf("the second toast's report says %q", d.Text)
+	}
+
+	// The app ends with the toast's report open: opened again, it finds
+	// the draft from before.
+	again := newReporting(engine.NewMachine(files), "/config/report")
+	if d := (&FrameFairy{report: again}).ReportDraft(); d.Text != "The search stopped.\n" {
+		t.Fatalf("after the app ended with a toast's report open, the draft says %q", d.Text)
+	}
+	if _, err := files.Stat("/config/report/aside.json"); err == nil {
+		t.Fatal("the draft set aside is still there once it is back")
 	}
 }
 
