@@ -1,7 +1,8 @@
 // A walk over the clip timeline: the hand's gestures on a clip in a random
 // order, with rules checked after every step, see rules.mjs. Above all,
-// the clip timeline shows the engine's clip, and Undo and Redo put back
-// the pieces and the captions as they were. See docs/TESTING.md.
+// the clip timeline shows the engine's clip, after Undo and Redo too.
+// What Undo and Redo put back is tested in Go, in
+// cmd/framefairy-app/captionedits_test.go. See docs/TESTING.md.
 //
 //   SEED=12 STEPS=80 BRIDGE_URL=http://127.0.0.1:8123/ node timeline.mjs
 import { begin, walk } from "./walk.mjs";

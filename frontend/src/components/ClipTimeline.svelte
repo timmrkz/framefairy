@@ -70,6 +70,7 @@
   import { hoverClip } from "../lib/hover";
   import { arrowStep, type About } from "../lib/playhead";
   import { asleep, keysElsewhere } from "../lib/keys";
+  import { keyOnPick } from "../lib/picked";
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
   import { rotationAt } from "../lib/rotate";
@@ -1026,14 +1027,14 @@
   // On the clip and paused, a step lands where its frame says, see
   // placeOf.
   function onKey(event: KeyboardEvent) {
-    if (removePicked(event)) return;
-    // Any other key lets the pick go, and the key does what it does. A
-    // block clicked only to put the playhead there, and then Shift and an
-    // arrow to walk to a word, is work on that word now: delete was meant
-    // for the word, and it removed the block still picked as well.
-    if (picked !== null && event.key !== "Backspace" && event.key !== "Delete") {
-      picked = null;
-      if (event.key === "Escape") return;
+    // Delete removes the caption block picked, and any other key lets the
+    // pick go and does what it does, see keyOnPick.
+    const pick = keyOnPick(picked, event, canRemoveCaption(event));
+    if (pick.picked !== picked) picked = pick.picked;
+    if (pick.remove !== null) {
+      event.preventDefault();
+      removeCaption(pick.remove);
+      return;
     }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
@@ -1563,12 +1564,10 @@
     return word ? wordInEpisode(cuePieces, word.start) : -1;
   }
 
-  // A caption block clicked is picked, the way a file is in the Finder,
-  // and delete removes it: the key marked delete on the Mac, which is
-  // Backspace to the browser, and the forward delete key alike. Its words
-  // leave the captions as a removed word does, and the clip keeps its
-  // time. A caption is known by the moment its first word starts, which
-  // stays the same when the captions around it change.
+  // A caption block clicked is picked, and delete removes it, see
+  // keyOnPick. Its words leave the captions as a removed word does, and
+  // the clip keeps its time. A caption is known by the moment its first
+  // word starts, which stays the same when the captions around it change.
   let picked = $state<number | null>(null);
   // Removed blocks leave at once, and the engine's answer, the captions
   // without them, takes over when it lands.
@@ -1591,7 +1590,7 @@
 
   // A press of the pointer anywhere but on a caption block lets the pick
   // go, the same as the word picked in the caption box, and so does any
-  // key but delete, see onKey.
+  // key but delete, see keyOnPick.
   function unpick(event: PointerEvent) {
     if (picked === null) return;
     const on = event.target as Element | null;
@@ -1599,22 +1598,18 @@
     picked = null;
   }
 
-  function removePicked(event: KeyboardEvent): boolean {
-    if (event.key !== "Backspace" && event.key !== "Delete") return false;
-    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat) return false;
-    if (picked === null || !onremovecaption || locked || event.defaultPrevented) return false;
-    if (keysElsewhere() || asleep(track)) return false;
-    const first = picked;
-    event.preventDefault();
-    picked = null;
+  function canRemoveCaption(event: KeyboardEvent): () => boolean {
+    return () => !!onremovecaption && !locked && !event.defaultPrevented && !keysElsewhere() && !asleep(track);
+  }
+
+  function removeCaption(first: number) {
     goneCaps = new Set([...goneCaps, first]);
-    onremovecaption(first).catch(() => {
+    onremovecaption?.(first).catch(() => {
       // The workspace says what went wrong, and the block comes back.
       const back = new Set(goneCaps);
       back.delete(first);
       goneCaps = back;
     });
-    return true;
   }
 
   // The other clips in view, as marks across the middle of the track.

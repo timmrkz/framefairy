@@ -955,15 +955,20 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
 // machine, and a clip that reached its end in between would play again
 // from its start. With hold, a play still going is held where it is in
 // that frame instead, sound and picture, see holdSound, until the walk
-// lets it go.
-export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false, hold = false } = {}) {
+// lets it go. With sound, past and from are places on the play's program
+// and every way is read off the sound card, as far as the play says it
+// has played, see sounded in lib/frames/queue.ts, on every animation
+// frame: a busy machine draws the picture late, and the sound ran on more
+// than a second ahead of a playhead that stood still.
+export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false, hold = false, sound = false } = {}) {
   return page.evaluate(
-    ([past, most, from, pause, hold]) =>
+    ([past, most, from, pause, hold, sound]) =>
       new Promise((done) => {
-        let last = Number.isFinite(from) ? from : Number(document.querySelector(".screen")?.dataset.playhead);
+        const where = () => (sound ? window.__frameQueue.sounded() : Number(document.querySelector(".screen")?.dataset.playhead));
+        let last = Number.isFinite(from) ? from : where();
         let gone = 0;
         const look = () => {
-          const at = Number(document.querySelector(".screen")?.dataset.playhead);
+          const at = where();
           const playing = !document.querySelector('button[aria-label="Play"]');
           if (Number.isFinite(at) && at > last) gone += at - last;
           last = at;
@@ -978,6 +983,15 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
         };
         const now = look();
         if (now) return done(now);
+        if (sound) {
+          const frame = () => {
+            const now = look();
+            if (now) done(now);
+            else requestAnimationFrame(frame);
+          };
+          requestAnimationFrame(frame);
+          return;
+        }
         const watch = new MutationObserver(() => {
           const now = look();
           if (!now) return;
@@ -986,7 +1000,7 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
         });
         watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
       }),
-    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause, hold],
+    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause, hold, sound],
   );
 }
 
@@ -1621,32 +1635,6 @@ export async function filmedOnScreen(page) {
   return page.evaluate(() => window.__filmed());
 }
 
-// The crop in the video preview as the canvas has it, at the canvas's own
-// pixels, where the captions are drawn: from the crop's left edge in
-// pixels of the picture, data-crop, and the episode's width and the
-// crop's, source, as the video preview works it out, and its pixels, red,
-// green, blue and alpha, row after row. Null while there is no crop.
-export async function cropPixels(page, source) {
-  const got = await page.evaluate(({ width, cropWidth }) => {
-    const left = Number(document.querySelector(".screen").dataset.crop);
-    const canvas = document.querySelector(".screen canvas");
-    if (!Number.isFinite(left) || !canvas?.width) return null;
-    const x = Math.round((left / width) * canvas.width);
-    const w = Math.round((cropWidth / width) * canvas.width);
-    const h = canvas.height;
-    // The canvas may be a WebGPU canvas, which has no 2D context, so the
-    // piece is copied to a 2D canvas to be read.
-    const s = document.createElement("canvas");
-    s.width = w;
-    s.height = h;
-    const t = s.getContext("2d", { willReadFrequently: true });
-    t.drawImage(canvas, x, 0, w, h, 0, 0, w, h);
-    const { data } = t.getImageData(0, 0, w, h);
-    return { x, w, h, pixels: new Uint8Array(data.buffer).toBase64() };
-  }, source);
-  return got && { ...got, pixels: bytes(got.pixels) };
-}
-
 // The pixels a page read off a canvas, which it hands over as base64
 // text. As an array of numbers, [...data], each is a number in the JSON
 // both sides write and read, and a picture the size of a short took most
@@ -1655,22 +1643,3 @@ function bytes(base64) {
   return Buffer.from(base64, "base64");
 }
 
-// One frame of a short read back from disk with ffmpeg, the nth from
-// nought, at width by height, red, green and blue, row after row.
-export function shortFrame(path, n, w, h) {
-  return execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", `select=eq(n\\,${n}),scale=${w}:${h}:flags=area`,
-    "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
-}
-
-// The frames of a short from the nth to the mth, both counted, read back
-// with ffmpeg in one go, each the way shortFrame gives one. ffmpeg decodes
-// a short from its start to reach a frame, so the frames either side of
-// one cost nothing more read with it, and three times as much read alone.
-export function shortFramesFrom(path, n, m, w, h) {
-  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", `select=between(n\\,${n}\\,${m}),scale=${w}:${h}:flags=area`,
-    "-fps_mode", "passthrough", "-frames:v", String(m - n + 1), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
-  const size = w * h * 3;
-  const out = [];
-  for (let at = 0; at + size <= raw.length; at += size) out.push(raw.subarray(at, at + size));
-  return out;
-}

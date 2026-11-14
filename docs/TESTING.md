@@ -280,17 +280,21 @@ nothing on the page moves for a moment, see below:
 | The caption box shows one of the engine's captions exactly, the same words in the same order at the same moments, whenever no word is open | a word typed in beside another shown twice, "weil ein \| ein" |
 | Enter opens the word in the frame | Enter opening the word at the playhead instead, found by the first walks |
 | One word at most wears the frame, and one at most is open | |
-| An edit stays where it was made: every word more than three seconds of the episode from the word corrected keeps its text and its time | removing a word typed in beside another taking the other with it |
-| Taking a word out changes no other caption: every caption still there appears and goes when it did, the one the word was in only draws in at the edge the word was at, and only one whose words were all removed may go, leaving its time empty | the caption that broke where a removed word had been, the next caption's first word pulled up into the room a removed word left, and the caption before a removed caption staying up through its time, found by Tim |
-| A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
-| Moving a caption edge moves that edge and nothing else: its other edge stays, every other caption appears and goes when it did, and every word outside the caption is as it was | the caption before growing into the room a left edge was dragged in from, found by Tim |
-| Undo puts back the engine's clip from before the step it takes back, its captions, how they look, and its pieces with their crops, and Redo the clip from after it | a crop or a font that undo did not put back, which the rule could not see until it compared them too, issue #248 |
 | A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, once the frame queue says the picture stands, `standing` in `lib/frames/queue.ts`, `blurOf` in `rules.mjs`. Looked at again only after a step that changes the video, the clip, the playhead, the frame shown or the size of the canvas | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
 
 The engine's captions are asked for directly, `Captions` through
 `/call`, and are what the screen is compared with: the walk knows
-nothing of what a correction should do. It only knows what must not
-happen, which is what keeps it from being a third engine.
+nothing of what a correction should do, which keeps it from being a
+third engine. What an edit does to the captions is the engine's rule
+and is tested in Go, in `cmd/framefairy-app/captionedits_test.go`,
+through the app's own calls: an edit stays where it was made, taking a
+word out or removing a caption changes no other caption, moving a
+caption edge moves that edge and nothing else, and Undo and Redo put
+back the clip from before and after the step. It makes every edit from
+a fresh clip, and random runs over fixed seeds of word edits, trims,
+cuts, joins and crops, with Undo and Redo. Caption removals and edges
+moved are left out of the random runs until the engine keeps their
+rules after words typed in, too.
 
 ### `timeline.mjs`: the clip timeline
 
@@ -304,10 +308,10 @@ rather than the captions' band.
 
 Every walk also checks, after every step, that the clip timeline shows
 the clip the engine has: where it starts and ends and every cut, read
-off the handles' `aria-valuenow`, to a millisecond. The engine's state a
-walk compares before and after a step, for Undo and Redo, is the clip's
-pieces with their crops, keyframes and turns as well as its captions and
-how they look. A play goes as far into the clip as the
+off the handles' `aria-valuenow`, to a millisecond. That Undo and Redo
+put back the clip, its pieces, crops and captions, is tested in Go, in
+`cmd/framefairy-app/captionedits_test.go`, whose random runs trim, cut,
+join and crop as well as correct words. A play goes as far into the clip as the
 walk asked, by the playhead, `playFor`, the same as in `words.mjs`.
 
 A walk is a script in the folder that walks with `walk.mjs`, which runs
@@ -534,21 +538,13 @@ its word at that edge, `edge out` back to where it was at the mark
 `start`, or `edge nudge` a little short of any word, each held a moment
 before it is let go and failing when the edge is not saved where it was
 drawn under the hand, and `remove edge word`, the first or last word of
-that caption removed in the caption box, with `gone last` and `gone
-first`, that caption reading as it did at a mark less its last or first
-word, `drawn in`, the captions reading as they did at a mark and that
-caption drawn in at its first or last edge from where it was at `start`,
-`others`, every other caption appearing and going when it did at a
-mark, `edge put back`, a double-click on an edge of the caption holding a
+that caption removed in the caption box, `edge put back`, a double-click on an edge of the caption holding a
 word, and `count pops` and `pops`, how often a caption block popped
 since. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
 clip as it was at a mark, `differs from`, the clip no longer as it was at a
-mark, so a step meant to change it did, `spans`, every caption
-appearing and going when it did at a mark, `fewer`, so many words fewer
-than at a mark and no caption fewer, `gone`, no caption holding a
-word, `blocks`, a block on the clip timeline for every caption the engine
-has, and `cuts`, how many cuts the clip timeline shows. For finding clips: `model` holds, fails or answers,
+mark, so a step meant to change it did, `blocks`, a block on the clip
+timeline for every caption the engine has, and as many as it says, and `cuts`, how many cuts the clip timeline shows. For finding clips: `model` holds, fails or answers,
 `add` a video, press the clip list's `head` button and `restart` the app,
 and then `wait for` the head to say a word, a `row` to say something, and
 how many `cards` the list holds. For a render: press `render` and wait for the short, and `rendered`,
@@ -559,10 +555,6 @@ serving it, Render saying Render again and Show in folder there.
 For shorts: `thumbnail`, which presses T and waits for the clip to have
 one more thumbnail, and `by its words`, the short named after the
 clip's words alone, `<slug>.mp4`, with nothing of its id.
-`captions like the short`, after `render`, makes the video preview as
-large as the short, steps to the start and the middle of a dozen words and
-holds what the canvas shows to that frame of the short, and to it rather
-than the frame before or after, see [CAPTIONS.md](CAPTIONS.md#the-tests).
 For the settings: `settings` opens them from the sidebar and `episode`
 the episode again, `pick model` opens the list of what finds clips and
 picks another model if it opens, `remove model` presses the bin of the

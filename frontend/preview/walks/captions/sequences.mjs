@@ -15,13 +15,27 @@ export default [
     ],
   },
   {
-    name: "delete removes the framed word and nothing else",
+    // Which words a removal leaves, and when every caption shows, is the
+    // Go side's, see cmd/framefairy-app/captionedits_test.go. The walk
+    // holds the keys that remove a word and the caption box showing it
+    // gone, and back with Undo.
+    name: "a word removed with delete or saved empty leaves the caption box, and undo and redo show it",
     steps: [
-      ["mark", "start"],
       ["frame", "vielleicht"],
       ["press", "Backspace"],
       ["box", "Ich war sechs Jahre alt,"],
-      ["spans", "start"],
+      ["undo"],
+      ["box", "Ich war vielleicht sechs Jahre alt,"],
+      ["redo"],
+      ["box", "Ich war sechs Jahre alt,"],
+      ["click", "Jahre"],
+      ["press", "ControlOrMeta+A"],
+      ["press", "Backspace"],
+      ["press", "Enter"],
+      ["box", "Ich war sechs alt,"],
+      ["frame", "sechs"],
+      ["press", "Delete"],
+      ["box", "Ich war alt,"],
     ],
   },
   {
@@ -31,24 +45,24 @@ export default [
     // The clip's start dragged near the end of the first word lands it on
     // the frame before "war", which starts in the middle of the clip's
     // first frame, so the first frame shows its caption with no word lit
-    // and a click a frame into "war" by its own time landed there.
+    // and a click a frame into "war" by its own time landed there. Only
+    // the canvas draws the captions, the caption box over it none.
     name: "every caption block clicked lights a word of its caption",
-    steps: [["trim into", 0.04], ["every block"]],
+    steps: [["trim into", 0.04], ["every block"], ["drawn once"]],
   },
   {
     name: "delete removes the caption block clicked on the clip timeline",
     steps: [
-      ["mark", "start"],
       ["block", "Schulhof"],
       ["press", "Backspace"],
-      ["gone", "Schulhof"],
-      ["blocks"],
-      ["mark", "removed"],
+      ["blocks", 8],
+      ["box", ""],
       ["undo"],
-      ["same", "start"],
-      ["blocks"],
+      ["blocks", 9],
+      ["box", "als mich auf dem Schulhof irgendein"],
       ["redo"],
-      ["same", "removed"],
+      ["blocks", 8],
+      ["box", ""],
     ],
   },
   {
@@ -57,79 +71,41 @@ export default [
     // was. The clip came back, and the caption he had removed was still
     // gone from it: a removed word was kept for the whole video, so every
     // clip over it lost it. Now it is the clip's, and goes with it, and the
-    // clip put back has it removed as it was. Plan row 2.249.
-    name: "a caption removed, then its clip removed and made again with I, has the caption again",
+    // clip put back has it removed as it was. Plan row 2.249. Which words
+    // a clip made again has is the Go side's, see
+    // TestAClipMadeAgainHasTheCaptionsItsRemovedOneLost and the tests
+    // beside it in engine/clipstate_test.go.
+    name: "a caption removed stays removed when its clip is put back, and is there again when the clip is made again with I",
     steps: [
       ["block", "Schulhof"],
       ["press", "Backspace"],
-      ["gone", "Schulhof"],
-      ["blocks"],
-      ["remove clip"],
-      ["make here", "i"],
-      ["holds", "Schulhof"],
-      ["blocks"],
-    ],
-  },
-  {
-    name: "a caption removed, then its clip removed and put back, is still removed",
-    steps: [
-      ["block", "Schulhof"],
-      ["press", "Backspace"],
-      ["mark", "removed"],
+      ["blocks", 8],
       ["remove clip"],
       ["put back"],
-      ["same", "removed"],
-      ["gone", "Schulhof"],
-      ["blocks"],
-    ],
-  },
-  {
-    // A word removed in the caption box is the clip's too, and goes with
-    // it.
-    name: "a word removed, then its clip removed and made again with I, has the word again",
-    steps: [
-      ["frame", "Schulhof"],
-      ["press", "Backspace"],
-      ["gone", "Schulhof"],
+      ["blocks", 8],
       ["remove clip"],
       ["make here", "i"],
-      ["holds", "Schulhof"],
-      ["blocks"],
-    ],
-  },
-  {
-    // Plan row 2.249, Tim chose: a spelling fix is the clip's, and goes
-    // with it.
-    name: "a word corrected, then its clip removed and made again with I, reads as it was heard",
-    steps: [
-      ["frame", "Schulhof"],
-      ["click", "Schulhof"],
-      ["press", "End"],
-      ["type", "f"],
-      ["press", "Enter"],
-      ["holds", "Schulhoff"],
-      ["remove clip"],
-      ["make here", "i"],
-      ["gone", "Schulhoff"],
-      ["holds", "Schulhof"],
-      ["blocks"],
+      ["blocks", 9],
     ],
   },
   {
     // A drag sets when a caption is shown: the word is left out while the
-    // edge stands past it, and is still there, #598.
-    name: "a caption's right edge dragged in over its last word leaves the word out, and back out puts it back",
+    // edge stands past it, and is still there, #598. Which words an edge
+    // leaves out, and that it moves no other caption, is the Go side's,
+    // see TestDraggingACaptionEdgeOverAWordRemovesIt and
+    // cmd/framefairy-app/captionedits_test.go. Each drag here checks the
+    // edge stays where it was let go.
+    name: "a caption's edges dragged in over a word and back out stay where they are let go",
     steps: [
       ["mark", "start"],
       ["edge in", ["end", "Schulhof"]],
-      ["gone last", ["start", "Schulhof"]],
-      ["others", ["start", "Schulhof"]],
+      ["differs from", "start"],
       ["undo"],
       ["same", "start"],
       ["edge in", ["end", "Schulhof"]],
       ["edge out", ["end", "Schulhof"]],
-      ["fewer", "start", 0],
-      ["others", ["start", "Schulhof"]],
+      ["edge in", ["start", "Schulhof"]],
+      ["edge out", ["start", "Schulhof"]],
     ],
   },
   {
@@ -148,25 +124,10 @@ export default [
   {
     name: "a caption's edges dragged with shift land on words",
     steps: [
-      ["mark", "start"],
       ["edge to word", ["start", "Schulhof"]],
       ["drawn", "Schulhof"],
-      ["others", ["start", "Schulhof"]],
       ["edge to word", ["end", "Schulhof"]],
       ["drawn", "Schulhof"],
-      ["others", ["start", "Schulhof"]],
-    ],
-  },
-  {
-    name: "a caption's left edge dragged in over its first word leaves the word out and the caption before it alone",
-    steps: [
-      ["mark", "start"],
-      ["edge in", ["start", "Schulhof"]],
-      ["others", ["start", "Schulhof"]],
-      ["gone first", ["start", "Schulhof"]],
-      ["edge out", ["start", "Schulhof"]],
-      ["fewer", "start", 0],
-      ["others", ["start", "Schulhof"]],
     ],
   },
   {
@@ -174,25 +135,23 @@ export default [
     // only sets when the caption is shown. Tim removed a word, dragged the
     // start of the caption after it out to where he heard its next word
     // begin, and the word came back, #598.
+    // The word staying removed is the Go side's, see
+    // TestNoEdgeBringsBackAWordRemovedInTheCaptionBox. The walk holds the
+    // blocks on the clip timeline meeting after the drag.
     name: "a caption's first word removed stays removed when its left edge is dragged out over it",
     steps: [
       ["mark", "start"],
       ["remove edge word", ["first", "Schulhof"]],
-      ["fewer", "start", 1],
-      ["mark", "removed"],
       ["edge out", ["start", "Schulhof"]],
-      ["earlier", ["removed", "Schulhof"]],
-      ["fewer", "start", 1],
       ["meets", ["start", "Schulhof", "before"]],
     ],
   },
   {
-    name: "a caption's right edge dragged in and double-clicked, twice, is back where it was with its words",
+    // However often it was dragged is the Go side's, see
+    // TestAnEdgePutBackShowsItsWords. The walk holds the double-click.
+    name: "a caption's right edge dragged in and double-clicked is back where it was with its words",
     steps: [
       ["mark", "start"],
-      ["edge in", ["end", "Schulhof"]],
-      ["edge put back", ["end", "Schulhof"]],
-      ["same", "start"],
       ["edge in", ["end", "Schulhof"]],
       ["edge put back", ["end", "Schulhof"]],
       ["same", "start"],
@@ -217,98 +176,42 @@ export default [
     ],
   },
   {
-    name: "a caption's edges moved by hand leave the captions beside them alone",
-    steps: [
-      ["mark", "start"],
-      ["edge nudge", ["start", "Schulhof"]],
-      ["others", ["start", "Schulhof"]],
-      ["edge nudge", ["end", "Schulhof"]],
-      ["others", ["start", "Schulhof"]],
-    ],
-  },
-  {
-    // On the caption that ends a sentence, so a pause comes after its last
-    // word. Where the speech runs on, the caption stays up until the next
-    // appears, see the walk below on the last word, #597.
-    name: "removing a caption's last word draws it in like dragging its right edge over the word",
-    steps: [
-      ["mark", "start"],
-      ["edge in", ["end", "geschubst"]],
-      ["mark", "dragged"],
-      ["undo"],
-      ["same", "start"],
-      ["remove edge word", ["last", "geschubst"]],
-      ["drawn in", ["dragged", "geschubst", "last"]],
-      ["others", ["start", "geschubst"]],
-    ],
-  },
-  {
-    // The speech runs on into "als", so the caption before stays up
-    // until this one appears, #597, which the edge dragged in leaves
-    // alone.
-    name: "removing a caption's first word draws it in like dragging its left edge over the word",
-    steps: [
-      ["mark", "start"],
-      ["edge in", ["start", "Schulhof"]],
-      ["mark", "dragged"],
-      ["undo"],
-      ["same", "start"],
-      ["remove edge word", ["first", "Schulhof"]],
-      ["drawn in", ["dragged", "Schulhof", "first"]],
-      ["others", ["start", "Schulhof", "held"]],
-    ],
-  },
-  {
     // Tim removed a word and saw the caption blocks come apart with the
-    // sound running on under the gap, #597.
-    name: "removing a caption's first word leaves no gap to the caption before while the speech runs on",
+    // sound running on under the gap, #597. When each caption shows is
+    // the Go side's, see TestARemovedWordLeavesNoGapWhileTheSpeechRunsOn.
+    // The walk holds the blocks meeting on the clip timeline.
+    name: "removing a caption's first or last word leaves no gap to the caption beside while the speech runs on",
     steps: [
       ["mark", "start"],
-      ["meets", ["start", "Schulhof", "before"]],
       ["remove edge word", ["first", "Schulhof"]],
       ["meets", ["start", "Schulhof", "before"]],
-    ],
-  },
-  {
-    name: "removing a caption's last word leaves no gap to the caption after while the speech runs on",
-    steps: [
-      ["mark", "start"],
-      ["meets", ["start", "Schulhof", "after"]],
       ["remove edge word", ["last", "Schulhof"]],
       ["meets", ["start", "Schulhof", "after"]],
     ],
   },
   {
-    name: "a caption block clicked, then a word walked to, delete removes only the word",
+    // A caption block clicked is picked, and delete removes it. Let go of
+    // with Escape, or with the playhead moved a frame, delete removes
+    // nothing, and with a word walked to, only the word. Each round clicks
+    // a block of its own: two clicks on one block within the Mac's
+    // double-click time are a double-click, which cuts a part out there.
+    name: "a caption block clicked and let go of, or left for a word, is not removed by delete",
     steps: [
-      ["mark", "start"],
-      ["block", "Schulhof"],
-      ["press", "Shift+ArrowRight"],
-      ["press", "Backspace"],
-      ["fewer", "start", 1],
-      ["blocks"],
-    ],
-  },
-  {
-    name: "a caption block clicked, then the playhead moved a frame, delete removes nothing",
-    steps: [
-      ["mark", "start"],
-      ["block", "Schulhof"],
-      ["press", "ArrowRight"],
-      ["press", "Backspace"],
-      ["same", "start"],
-      ["blocks"],
-    ],
-  },
-  {
-    name: "a caption block clicked and then let go of is not removed by delete",
-    steps: [
-      ["mark", "start"],
       ["block", "Schulhof"],
       ["press", "Escape"],
       ["press", "Delete"],
-      ["same", "start"],
-      ["blocks"],
+      ["blocks", 9],
+      ["box", "als mich auf dem Schulhof irgendein"],
+      ["block", "Typ"],
+      ["press", "ArrowRight"],
+      ["press", "Backspace"],
+      ["blocks", 9],
+      ["box", "Typ geschubst hat."],
+      ["block", "Ich"],
+      ["press", "Shift+ArrowRight"],
+      ["press", "Backspace"],
+      ["blocks", 9],
+      ["box", "Ich vielleicht sechs Jahre alt,"],
     ],
   },
   {
@@ -317,13 +220,6 @@ export default [
     // was left, and leaving it popped the word lit.
     name: "a word opened in the caption box stays where libass draws it",
     steps: [["open in place", "Jahre"]],
-  },
-  {
-    // Found by Tim on #201: a word typed longer ran out of its pill,
-    // because libass drew the pill at the word's old size, and opening a
-    // word on a frame of its pop is to move nothing.
-    name: "a word typed longer grows its pill round its middle",
-    steps: [["frame", "Jahre"], ["grow", "Jahre"]],
   },
   {
     // Found by Tim: in Archivo Black, a face of weight 400 that libass
@@ -350,42 +246,24 @@ export default [
     // Found by Tim on #349: the Font list lined up with neither edge of
     // its field, its rows were squeezed to the height of their text, and
     // every name was in the app's face, so nothing showed what a font
-    // looks like.
-    name: "the font list hangs on the field's edge with rows as tall as it, each in its own face",
-    steps: [["font list"]],
-  },
-  {
-    // Found by Tim on #349: a search sorted what it found by how well it
-    // answered, so Archivo Black stood under the head of the installed
-    // fonts.
-    name: "a search of the fonts keeps the order and the heads of the list",
-    steps: [["search order", "b"]],
-  },
-  {
+    // looks like. A search sorted what it found by how well it answered,
+    // so Archivo Black stood under the head of the installed fonts. The
+    // Style list of one style lay over the Size field two pixels short of
+    // its bottom, so its border showed twice. Nothing matches stood where
+    // the names start, after the room of a tick that is never there, and
+    // widened the list. A family is picked first and then its style, the
+    // way Pages does, so the list is as wide as a family's name, and a
+    // family picked comes in the style nearest the face it replaces.
     // Tim, 19 October: the font list open and the transcript button
     // pressed left both open, the keyboard in the font list's field, and
     // Escape closed the font list first, though it was opened first.
-    name: "the transcript button pressed with the font list open closes the list and takes the keyboard",
-    steps: [["font then transcript"]],
-  },
-  {
-    // Found by Tim on #349: the Style list of one style lay over the Size
-    // field two pixels short of its bottom, so its border showed twice.
-    name: "a list of one style covers the field under it",
-    steps: [["style list"]],
-  },
-  {
-    // Found by Tim on #349: Nothing matches stood where the names start,
-    // after the room of a tick that is never there, and widened the list.
-    name: "a search that finds nothing says so in the middle of a narrow list",
-    steps: [["nothing found", "zzqx"]],
-  },
-  {
-    // Found by Tim on #349: a family is picked first and then its style,
-    // the way Pages does, so the list is as wide as a family's name. A
-    // family picked comes in the style nearest the face it replaces.
-    name: "a family picked keeps the look of the face it replaces",
+    name: "the font list hangs on the field's edge in each font's own face, searches in order, and a family picked keeps its look",
     steps: [
+      ["font list"],
+      ["search order", "b"],
+      ["nothing found", "zzqx"],
+      ["style list"],
+      ["font then transcript"],
       ["font", "Bridge Sans"],
       ["style is", "Heavy"],
       ["style", "Regular"],
@@ -394,76 +272,47 @@ export default [
   {
     // Found by Tim on #201: a word opened while another was lit was typed
     // on the dark box, and the lit one on its pill inside a lighter ring.
-    // Every word typed sits on the one pill libass draws, lit or not.
-    name: "a word typed sits on the pill libass draws, lit or not",
-    steps: [["one pill", "Jahre"]],
-  },
-  {
-    // Found by Tim: the selection's blue reached over the pill, since a
-    // selection is as tall as the face's line and the pill is not.
-    name: "the letters selected in a word typed stay in its pill",
-    steps: [["click", "Jahre"], ["selection in the pill"]],
-  },
-  {
-    // Found by Tim: a word opened with Enter and left for Report a problem
-    // kept its caret, and keys went on typing into it.
-    name: "a word left for a button lets go of its caret",
-    steps: [["click", "Jahre"], ["button", "Report a problem"], ["no caret"]],
-  },
-  {
-    name: "a word saved empty is removed",
+    // Every word typed sits on the one pill libass draws, lit or not. The
+    // selection's blue reached over the pill, since a selection is as tall
+    // as the face's line and the pill is not. Enter opens the framed word
+    // wherever the playhead is. A word opened with Enter and left for
+    // Report a problem kept its caret, and keys went on typing into it.
+    name: "a word typed sits on the pill libass draws, its selection in it, and lets go of its caret for a button",
     steps: [
+      ["one pill", "Jahre"],
       ["click", "Jahre"],
-      ["press", "ControlOrMeta+A"],
-      ["press", "Backspace"],
+      ["selection in the pill"],
+      ["press", "Escape"],
       ["press", "Enter"],
-      ["box", "Ich war vielleicht sechs alt,"],
+      ["open", "Jahre"],
+      ["button", "Report a problem"],
+      ["no caret"],
     ],
   },
   {
-    name: "undo puts a removed word back and redo takes it again",
+    // That it is the word put back, and not a word typed in, is the Go
+    // side's, see TestAWordTypedBackGoesWhereItWasHeard.
+    name: "a removed word typed back beside the word before it or after it is the word put back",
     steps: [
-      ["mark", "start"],
-      ["frame", "sechs"],
-      ["press", "Delete"],
-      ["mark", "removed"],
-      ["undo"],
-      ["same", "start"],
-      ["box", "Ich war vielleicht sechs Jahre alt,"],
-      ["redo"],
-      ["same", "removed"],
-    ],
-  },
-  {
-    name: "a removed word typed back after the word before it is the word put back",
-    steps: [
-      ["mark", "start"],
       ["frame", "vielleicht"],
       ["press", "Backspace"],
       ["click", "war"],
       ["press", "End"],
       ["type", " vielleicht"],
       ["press", "Enter"],
-      ["same", "start"],
-    ],
-  },
-  {
-    name: "a removed word typed back before the word after it is the word put back",
-    steps: [
-      ["mark", "start"],
+      ["box", "Ich war vielleicht sechs Jahre alt,"],
       ["frame", "vielleicht"],
       ["press", "Backspace"],
       ["click", "sechs"],
       ["press", "Home"],
       ["type", "vielleicht "],
       ["press", "Enter"],
-      ["same", "start"],
+      ["box", "Ich war vielleicht sechs Jahre alt,"],
     ],
   },
   {
     name: "a word typed in beside another is a word of its own, removed alone",
     steps: [
-      ["mark", "start"],
       ["click", "war"],
       ["press", "End"],
       ["type", " noch"],
@@ -476,7 +325,6 @@ export default [
       ["press", "Escape"],
       ["press", "Backspace"],
       ["box", "Ich war vielleicht sechs Jahre alt,"],
-      ["same", "start"],
     ],
   },
   {
@@ -491,7 +339,6 @@ export default [
       ["type", " Q Schulhofgeschichten"],
       ["press", "Enter"],
       ["captions drawn"],
-      ["holds", "Q"],
       ["lit together", "Q"],
       // A step back from the frame they share goes on to the word
       // before, never to the same frame again.
@@ -501,18 +348,15 @@ export default [
   {
     // #280: the walks' video says "so", "sich" and "wir" faster than a
     // frame, see quick in bridge_test.go, so every caption walk meets
-    // words that share a frame, at the start, in the middle and at the
-    // end of a caption. This holds it: each is lit with the word beside
-    // it, and a step back goes on from there.
-    name: "the walks' video has words that share a frame at the start, in the middle and at the end of a caption",
+    // words that share a frame. Which words share a frame, at the start,
+    // in the middle and at the end of a caption, is the Go side's, see
+    // TestWordsTooShortForAFrameAreLitTogether. This holds one on screen:
+    // it is lit with the word beside it, and a step back goes on from
+    // there.
+    name: "the walks' video has words that share a frame",
     steps: [
       ["frame", "dabei"],
       ["lit together", "so"],
-      ["steps back", 1],
-      ["lit together", "sich"],
-      ["steps back", 1],
-      ["frame", "abgeholt"],
-      ["lit together", "wir"],
       ["steps back", 1],
     ],
   },
@@ -529,15 +373,11 @@ export default [
       ["type", " eins zwei drei"],
       ["press", "Enter"],
       ["captions drawn"],
-      ["holds", "drei"],
       ["click", "war"],
       ["press", "End"],
       ["type", " Q Schulhofgeschichten"],
       ["press", "Enter"],
       ["captions drawn"],
-      ["holds", "Q"],
-      ["holds", "Schulhofgeschichten"],
-      ["holds", "drei"],
       ["press", "Shift+ArrowRight"],
       ["press", "Shift+ArrowRight"],
       ["press", "Enter"],
@@ -549,28 +389,16 @@ export default [
       ["press", "Shift+ArrowLeft"],
       ["press", "Shift+ArrowLeft"],
       ["captions drawn"],
-      ["holds", "neun"],
-      ["holds", "Q"],
-      ["holds", "drei"],
       // A word takes no more than the engine keeps, 60 characters. What
       // is typed past them is not let in, so the word is saved with what
       // fits rather than refused with all of it. Found by the words walk.
       ["click", "Ich"],
       ["press", "End"],
       ["type", " one two three four five six seven eight nine ten eleven twelve thirteen fourteen"],
+      ["open", "Ich one two three four five six seven eight nine ten eleven "],
       ["press", "Enter"],
       ["captions drawn"],
-      ["holds", "eleven"],
-      ["gone", "twelve"],
-    ],
-  },
-  {
-    name: "Enter opens the framed word, wherever the playhead is",
-    steps: [
-      ["click", "Jahre"],
-      ["press", "Escape"],
-      ["press", "Enter"],
-      ["open", "Jahre"],
+      ["drawn", "eleven"],
     ],
   },
   {
@@ -642,18 +470,8 @@ export default [
     name: "a step onto a word pops it over the paused frame",
     steps: [
       ["added", 40, "25"],
-      ["step onto words and see them pop", 6],
+      ["step onto words and see them pop", 3],
       ["step frame by frame and see nothing pop", 40],
-    ],
-  },
-  {
-    name: "removing a word in the middle of a caption leaves the caption whole",
-    steps: [
-      ["mark", "start"],
-      ["frame", "auf"],
-      ["press", "Backspace"],
-      ["box", "als mich dem Schulhof irgendein"],
-      ["spans", "start"],
     ],
   },
 ];
