@@ -106,6 +106,8 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 		// left off, so what its records say stopped says so again, the way
 		// it does when the app starts.
 		s.restoreJobs([]string{v})
+		// A video with no work folder before this add was never searched,
+		// and is not read for it: the answer waits on every read here.
 		ctx, search, done := s.startCheck(v, fresh[v] || !s.store.machine.Episode(v).EverSearched())
 		go func() {
 			defer done()
