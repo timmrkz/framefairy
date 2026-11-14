@@ -1590,7 +1590,7 @@ export const steps = {
     if (!(st.clips.length > was.clips)) walk.wrong = `the search found no clip, ${st.clips.length} clips before and after, so it proves nothing`;
     else if ((st.chosen ?? "") !== was.chosen) walk.wrong = `the search chose ${st.chosen || "no clip"} in place of ${was.chosen || "no clip"} while a hand worked in the cards`;
     else if (Math.abs(now.at - was.at) > 0.001) walk.wrong = `the playhead went from ${was.at.toFixed(3)} s, where the card put it, to ${now.at.toFixed(3)} s`;
-    else if (Math.abs(now.top - was.top) > 1) walk.wrong = `the cards scrolled from ${was.top.toFixed(0)} px to ${now.top.toFixed(0)} px`;
+    else if (!(Math.abs(now.top - was.top) <= 1)) walk.wrong = `the card of the playhead moved in the transcript from ${was.top.toFixed(0)} px to ${now.top.toFixed(0)} px`;
     else if (Math.abs(now.x - was.x) > 1) walk.wrong = `the playhead moved on the clip timeline from ${was.x.toFixed(1)} px to ${now.x.toFixed(1)} px`;
     // The clip list again, for the steps after it.
     await page.locator('button[aria-label="Close the search"]').click();
@@ -2409,8 +2409,8 @@ async function playedTo(page, to, read, every = false) {
 }
 
 // What the hand works in: where the playhead is, on the video's clock and
-// on the clip timeline, the middle of the clip timeline's track, and how
-// far the transcript's cards are scrolled.
+// on the clip timeline, the middle of the clip timeline's track, and where
+// the card of the playhead stands in the transcript.
 function viewOf(page) {
   return page.evaluate(() => {
     const head = document.querySelector(".clip-timeline .playhead").getBoundingClientRect();
@@ -2419,7 +2419,15 @@ function viewOf(page) {
       at: Number(document.querySelector(".screen")?.dataset.playhead),
       x: head.left + head.width / 2,
       middle: track.left + track.width / 2,
-      top: document.querySelector("ol.said")?.closest(".scroll")?.scrollTop ?? NaN,
+      // Where the card of the playhead stands in the list, on screen. The
+      // list's scroll itself changes as cards above it change, a clip's
+      // captions in place of its sentences, and the list keeps the card
+      // where it stands for it.
+      top: (() => {
+        const card = document.querySelector("ol.said .pick.current");
+        const box = document.querySelector("ol.said")?.closest(".scroll");
+        return card && box ? card.getBoundingClientRect().top - box.getBoundingClientRect().top : NaN;
+      })(),
     };
   });
 }
