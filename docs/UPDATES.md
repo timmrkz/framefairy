@@ -366,9 +366,19 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
 
 A build that could read input meant for other apps, watch the screen or
 the camera, or ask for administrator rights, is refused before it is
-signed, so no app is ever offered it, issues #369 and #751. `framefairy-release sign` reads every file of the zip
+signed, so no app is ever offered it, issues #369 and #751. `framefairy-release check` reads every file of the zip
 first, see `cmd/framefairy-release/inputs.go`, with Go's `debug/macho`, so
-it needs no Mac:
+it needs no Mac. It runs in a step of its own, before the step that holds
+the update key, because the zip is a branch's code that nobody has
+reviewed yet, and `sign` runs only once it passed:
+
+- **Every file.** Each file's bytes are read for the names below, a
+  script or a licence as well as a program, since the app could run a
+  script through `/bin/sh`. A file that starts like a program but that
+  Go cannot read as one fails, because its imports, libraries and
+  entitlements cannot be checked and macOS may still run it. A zip that
+  says it unpacks to more than 4 GB fails before anything is read, since
+  every file is read whole and at once. A build holds about 160 MB.
 
 - **Imports and names.** No program imports, or names anywhere in its
   bytes, what taps every key, reads other apps' windows, records the

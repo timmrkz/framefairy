@@ -244,18 +244,33 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # The build is a branch's code, read here before anybody reviewed
+      # it, so this step does not hold the key: nothing needs it until the
+      # reading is done, and a zip made to trip the reader finds nothing
+      # to take. The step after it signs only a build this one passed.
+      - id: check
+        if: steps.zip.outputs.ready == 'true'
+        name: Check what it could reach
+        env:
+          BUILT: ${{ runner.temp }}/build/app.zip
+          ZIP: ${{ steps.which.outputs.zip }}
+        run: |
+          mv "$BUILT" "dist/$ZIP"
+          if ! go run ./cmd/framefairy-release check -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
+            cat "$RUNNER_TEMP/refused.txt" >&2
+            exit 1
+          fi
+
       - id: sign
         if: steps.zip.outputs.ready == 'true'
         name: Sign it
         env:
           FRAMEFAIRY_UPDATE_KEY: ${{ secrets.FRAMEFAIRY_UPDATE_KEY }}
-          BUILT: ${{ runner.temp }}/build/app.zip
           ZIP: ${{ steps.which.outputs.zip }}
           CHANNEL: ${{ steps.which.outputs.channel }}
           VERSION: ${{ steps.which.outputs.version }}
           COMMIT: ${{ steps.which.outputs.commit }}
         run: |
-          mv "$BUILT" "dist/$ZIP"
           if ! go run ./cmd/framefairy-release sign \
             -zip "dist/$ZIP" -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
             -version "$VERSION" -commit "$COMMIT" \
@@ -271,7 +286,7 @@ jobs:
       # update to with no reason given. The refusal goes on the commit
       # that was built, where the pull request shows it. Issue #369.
       - name: Say on the commit why it is not signed
-        if: failure() && steps.sign.outcome == 'failure'
+        if: failure() && (steps.check.outcome == 'failure' || steps.sign.outcome == 'failure')
         env:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |

@@ -329,3 +329,62 @@ func TestNoPullRequestTarget(t *testing.T) {
 		t.Errorf("conflicts.yml waits on the workflow %q, but builds.yml is called %q", waitsOn, names["builds.yml"])
 	}
 }
+
+// publish.yml reads a branch's build before it signs it, and the reading
+// runs in a step of its own that holds no secret: the zip is code nobody
+// has reviewed, and nothing needs the update key until it has passed.
+// The step that signs comes after it, and runs only when it passed.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "publish.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Env   map[string]string `yaml:"env"`
+			Steps []struct {
+				Name string            `yaml:"name"`
+				If   string            `yaml:"if"`
+				Env  map[string]string `yaml:"env"`
+				Run  string            `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	signed := false
+	for job, j := range wf.Jobs {
+		checked := false
+		for _, s := range j.Steps {
+			switch {
+			case strings.Contains(s.Run, "framefairy-release check"):
+				checked = true
+				for k, v := range j.Env {
+					if strings.Contains(v, "secrets.") {
+						t.Errorf("publish.yml's %s job holds the secret %s in every step, the check of the build too", job, k)
+					}
+				}
+				for k, v := range s.Env {
+					if strings.Contains(v, "secrets.") {
+						t.Errorf("%q holds the secret %s while it reads the build", s.Name, k)
+					}
+				}
+			case strings.Contains(s.Run, "framefairy-release sign"):
+				signed = true
+				if !checked {
+					t.Errorf("%q signs a build no step before it checked", s.Name)
+				}
+				if strings.Contains(s.If, "always()") || strings.Contains(s.If, "failure()") {
+					t.Errorf("%q runs when a step before it failed, with if: %s, so it can sign a build the check refused", s.Name, s.If)
+				}
+			}
+		}
+	}
+	if !signed {
+		t.Error("found no step in publish.yml that runs framefairy-release sign")
+	}
+}
