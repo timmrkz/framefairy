@@ -955,15 +955,20 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
 // machine, and a clip that reached its end in between would play again
 // from its start. With hold, a play still going is held where it is in
 // that frame instead, sound and picture, see holdSound, until the walk
-// lets it go.
-export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false, hold = false } = {}) {
+// lets it go. With sound, past and from are places on the play's program
+// and every way is read off the sound card, as far as the play says it
+// has played, see sounded in lib/frames/queue.ts, on every animation
+// frame: a busy machine draws the picture late, and the sound ran on more
+// than a second ahead of a playhead that stood still.
+export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false, hold = false, sound = false } = {}) {
   return page.evaluate(
-    ([past, most, from, pause, hold]) =>
+    ([past, most, from, pause, hold, sound]) =>
       new Promise((done) => {
-        let last = Number.isFinite(from) ? from : Number(document.querySelector(".screen")?.dataset.playhead);
+        const where = () => (sound ? window.__frameQueue.sounded() : Number(document.querySelector(".screen")?.dataset.playhead));
+        let last = Number.isFinite(from) ? from : where();
         let gone = 0;
         const look = () => {
-          const at = Number(document.querySelector(".screen")?.dataset.playhead);
+          const at = where();
           const playing = !document.querySelector('button[aria-label="Play"]');
           if (Number.isFinite(at) && at > last) gone += at - last;
           last = at;
@@ -978,6 +983,15 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
         };
         const now = look();
         if (now) return done(now);
+        if (sound) {
+          const frame = () => {
+            const now = look();
+            if (now) done(now);
+            else requestAnimationFrame(frame);
+          };
+          requestAnimationFrame(frame);
+          return;
+        }
         const watch = new MutationObserver(() => {
           const now = look();
           if (!now) return;
@@ -986,7 +1000,7 @@ export async function playUntil(page, { past = Infinity, most = Infinity, from =
         });
         watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
       }),
-    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause, hold],
+    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause, hold, sound],
   );
 }
 
