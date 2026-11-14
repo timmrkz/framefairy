@@ -37,6 +37,8 @@ func TestTheAppChoosesTheClipsASearchFinds(t *testing.T) {
 		st      VideoState
 		pick    string
 		playing bool
+		// A hand works in the clip timeline or the cards, see AtWork.
+		working bool
 		want    string
 	}
 	cases := []struct {
@@ -69,6 +71,17 @@ func TestTheAppChoosesTheClipsASearchFinds(t *testing.T) {
 			{st: stateOf(2, old, searchJob(JobRunning)), playing: true, want: "old/1"},
 			{st: stateOf(3, with("new/2"), searchJob(JobRunning)), playing: true, want: "old/1"},
 			{st: stateOf(4, with("new/1", "new/2"), searchJob(JobDone)), playing: true, want: "old/1"},
+		}},
+		{"nothing is chosen while a hand works", []step{
+			{st: stateOf(1, old), want: "old/1"},
+			{st: stateOf(2, old, searchJob(JobRunning)), want: "old/1"},
+			{st: stateOf(3, with("new/2"), searchJob(JobRunning)), working: true, want: "old/1"},
+			{st: stateOf(4, with("new/1", "new/2"), searchJob(JobDone)), want: "old/1"},
+		}},
+		{"a window searched again chooses nothing while a hand works", []step{
+			{st: stateOf(1, []string{"old/1", "new/1", "new/2"}), want: "old/1"},
+			{st: stateOf(2, []string{"old/1", "new/1", "new/2"}, searchJob(JobRunning)), working: true, want: "old/1"},
+			{st: stateOf(3, []string{"old/1", "new/1", "new/2"}, searchJob(JobDone)), want: "old/1"},
 		}},
 		{"a search that stopped chooses nothing at its end", []step{
 			{st: stateOf(1, old), want: "old/1"},
@@ -116,7 +129,20 @@ func TestTheAppChoosesTheClipsASearchFinds(t *testing.T) {
 		t.Run(c.what, func(t *testing.T) {
 			s, eps := memoryLibrary(t, "ep.mp4")
 			ep := eps[0]
+			s.jobs = newQueue(s.store, func(JobUpdate) {}, func(string) {})
 			for i, st := range c.steps {
+				if st.working {
+					// The search the states say runs, running in the queue
+					// AtWork asks.
+					job := searchJob(JobRunning)
+					job.Episode = ep
+					s.jobs.mu.Lock()
+					s.jobs.jobs = append(s.jobs.jobs, &job)
+					s.jobs.mu.Unlock()
+					if err := s.AtWork(ep); err != nil {
+						t.Fatal(err)
+					}
+				}
 				if st.pick != "" {
 					if err := s.pick(ep, st.pick); err != nil {
 						t.Fatal(err)
@@ -462,11 +488,17 @@ func TestACardPickedAfterItsClipWasWrittenIsItsClipInAStateFromBefore(t *testing
 }
 
 // Everything the window can do to what is chosen at once, from several
-// goroutines, while states are read: picks, plays and pauses, removes
+// goroutines, while states are read: picks, plays and pauses, a hand at work, removes
 // and states, under the race detector.
 func TestWhatIsChosenTakesEverythingAtOnce(t *testing.T) {
 	svc, mine, plan := anEpisodeWithAPlan(t)
 	ctx := context.Background()
+	// A search runs, so a hand at work, AtWork, notes it as the others
+	// pick, play and read.
+	job := Job{ID: "s1", Episode: mine, State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobSearch}}
+	svc.jobs.mu.Lock()
+	svc.jobs.jobs = append(svc.jobs.jobs, &job)
+	svc.jobs.mu.Unlock()
 	var wg sync.WaitGroup
 	for i := range 20 {
 		wg.Go(func() {
@@ -476,6 +508,11 @@ func TestWhatIsChosenTakesEverythingAtOnce(t *testing.T) {
 		})
 		wg.Go(func() {
 			if err := svc.Playing(mine, i%2 == 0); err != nil {
+				t.Error(err)
+			}
+		})
+		wg.Go(func() {
+			if err := svc.AtWork(mine); err != nil {
 				t.Error(err)
 			}
 		})

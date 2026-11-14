@@ -541,6 +541,7 @@
   let clipListTop = 0;
   function openSaying() {
     act("search what was said");
+    atWork();
     clipListTop = root?.querySelector<HTMLElement>(".pane .list")?.scrollTop ?? 0;
     saying = true;
     void tick().then(() => sayField?.focus());
@@ -1299,16 +1300,18 @@
   // jump is off for a clip chosen by clicking one of its sentences, so the
   // sentences stay where they are rather than go to the clip's first.
   // step is the way the clip list was walked to it, see showChosen.
-  async function select(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0) {
+  // fit is off for a clip chosen by clicking one of its cards, whose view
+  // is the card's, see the cards' onseek.
+  async function select(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0, fit = true) {
     // The Go side keeps it, so the video's state says it and opening the
     // video again opens on the same clip.
     session.pick(key, (k) => api.chooseClip(path, k));
-    await show(key, seek, jump, step);
+    await show(key, seek, jump, step, fit);
   }
 
   // A clip chosen, shown: by a hand, see select, or by the app, see the
   // move chose.
-  async function show(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0) {
+  async function show(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0, fit = true) {
     if (jump) chosenTimes++;
     const clip = clips.find((c) => c.key === key);
     // On the clip, at its start: picking a clip is a gesture about it.
@@ -1318,7 +1321,7 @@
     // selected and the timeline was moved by hand since.
     await tick();
     showChosen(step);
-    timeline?.fit();
+    if (fit) timeline?.fit();
   }
 
   // Removing a clip is one click, so putting it back is one click too, for
@@ -1373,7 +1376,8 @@
     closing = closing.filter((k) => k !== key);
   }
 
-  // A clip is always chosen while there is one. Removing the chosen clip
+  // A clip stays chosen while there is one, unless a hand worked during
+  // the search that found them, see AtWork in choose.go. Removing the chosen clip
   // chooses the next in the list, or the one before it when it was the
   // last, the way Finder and Mail move the selection on from what was
   // deleted. It used to leave nothing chosen and the clip timeline empty.
@@ -3340,6 +3344,7 @@
                 placeholder="Search transcript"
                 aria-label="Search transcript"
                 onkeydown={(e) => {
+                  atWork();
                   if (e.key === "Escape") {
                     e.preventDefault();
                     e.stopPropagation();
@@ -3446,17 +3451,22 @@
                   // the way its mark does, found by Tim.
                   atWork();
                   const to = intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30);
+                  const other = clip && clip !== selected ? clip : undefined;
+                  if (walked) {
+                    if (other) void select(other, false, false);
+                    seekTo(to);
+                    return;
+                  }
                   // A card clicked puts the playhead in the middle of the
-                  // clip timeline, the way the crosshair does, after the
-                  // clip it chose was fitted, Tim's report of 14
-                  // November. A card walked to with the keys turns the
-                  // page instead, see SaidList.
-                  const centre = () => {
-                    if (!walked) timeline?.toPlayhead(to);
-                  };
-                  if (clip && clip !== selected) void select(clip, false, false).then(centre);
-                  seekTo(to);
-                  if (!clip || clip === selected) centre();
+                  // clip timeline, at the zoom it has, the way the
+                  // crosshair does, Tim's report of 14 November. The one
+                  // move of the view, for the clip it chooses too, so the
+                  // clip is not fitted first and read for nothing. A card
+                  // walked to with the keys turns the page instead, see
+                  // SaidList.
+                  timeline?.toPlayhead(to, other);
+                  if (other) void select(other, false, false, 0, false);
+                  player?.seek(to);
                 }}
               />
             {:else}

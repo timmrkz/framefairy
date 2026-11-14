@@ -81,7 +81,7 @@ export default [
       ["head"],
       ["wait for", "Cancel"],
       ["asks none", "Captions", 7],
-      ["work in the cards", "centred"],
+      ["card centres", "outside"],
     ],
   },
   {

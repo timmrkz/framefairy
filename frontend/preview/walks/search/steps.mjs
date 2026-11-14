@@ -1532,39 +1532,47 @@ export const steps = {
   //                    while a search runs, opens the transcript and clicks
   //                    a card no clip holds, in the middle of the list,
   //                    and keeps what the screen shows for "view stays".
-  // ["work in the cards", "centred"]
-  //                    the same, on a clip, and the playhead stands in the
-  //                    middle of the clip timeline. Tim's report of 14
-  //                    November
+  //                    Tim's report of 14 November
   async "work in the cards"(walk, arg, s) {
-    const { page, watch } = walk;
+    const { page } = walk;
     const path = await episodeOn(page);
-    await page.mouse.move(1, 1);
-    await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
-    await watch.step("click", s);
-    await page.waitForSelector("ol.said li[data-row] button.pick");
-    const row = await page.evaluate(() => {
-      const cards = [...document.querySelectorAll("ol.said li[data-row]:not([data-clip])")].filter((li) => li.querySelector("button.pick"));
-      return cards[Math.floor(cards.length / 2)]?.dataset.row ?? null;
-    });
-    if (!row) {
-      walk.wrong = "the transcript has no card outside the clips to click";
-      return;
-    }
-    await page.locator(`ol.said li[data-row="${row}"] button.pick`).click();
-    await watch.step("click", s);
-    await settle(page);
+    const row = await openCard(walk, "outside", s);
+    if (!row) return;
     const seen = await viewOf(page);
     const st = await ask(page, "State", path);
     walk.atWork = { path, row, clips: st.clips.length, chosen: st.chosen ?? "", ...seen };
-    if (arg !== "centred") return;
+  },
+  // ["card centres", which]
+  //                    opens the transcript, if it is not open, and clicks a
+  //                    card in the middle of those "outside" every clip, or
+  //                    of "another clip" than the one chosen. The playhead
+  //                    stands in the middle of the clip timeline, at the
+  //                    zoom it had, and the clip chosen is the card's.
+  //                    Tim's report of 14 November
+  async "card centres"(walk, arg, s) {
+    const { page } = walk;
+    const path = await episodeOn(page);
+    const wide = async () => (await xOf(page, 1)) - (await xOf(page, 0));
+    const before = await wide();
+    // Half the clip timeline either side of the card, or the view stops
+    // at the video's start or end and the playhead cannot be in its
+    // middle.
+    const room = (await page.evaluate(() => document.querySelector(".clip-timeline .track").getBoundingClientRect().width)) / before / 2;
+    const { duration } = await ask(page, "Source", path);
+    const row = await openCard(walk, arg, s, [room, duration - room]);
+    if (!row) return;
+    const seen = await viewOf(page);
+    const st = await ask(page, "State", path);
+    const clip = await page.evaluate((r) => document.querySelector(`ol.said li[data-row="${r}"]`)?.dataset.clip ?? "", row);
     // The playhead is drawn on the start of its frame, so it stands up to
     // a frame off the moment the card put it on.
-    const second = (await xOf(page, seen.at + 1)) - (await xOf(page, seen.at));
+    const second = await wide();
     const frameWide = second / (await rate(page));
-    if (!(Math.abs(seen.x - seen.middle) <= frameWide + 1)) {
+    if (arg === "another clip" && st.chosen !== clip) walk.wrong = `the card ${row} of ${clip} clicked left ${st.chosen || "no clip"} chosen`;
+    else if (!(Math.abs(seen.x - seen.middle) <= frameWide + 1))
       walk.wrong = `the card ${row} clicked put the playhead at ${seen.x.toFixed(1)} px, not in the middle of the clip timeline at ${seen.middle.toFixed(1)} px`;
-    }
+    else if (Math.abs(second - before) > 0.01 * before)
+      walk.wrong = `the card ${row} clicked zoomed the clip timeline from ${before.toFixed(1)} to ${second.toFixed(1)} px a second`;
   },
   // ["view stays"]     the search "work in the cards" worked during ends
   //                    with clips found, and the clip chosen, the playhead,
@@ -2414,4 +2422,40 @@ function viewOf(page) {
       top: document.querySelector("ol.said")?.closest(".scroll")?.scrollTop ?? NaN,
     };
   });
+}
+
+// Opens the transcript, if it is not open, and clicks the card in the
+// middle of those "outside" every clip, or of "another clip" than the one
+// chosen, and that begins inside within, when it is given. Says which, or
+// nothing, with walk.wrong, when there is none.
+async function openCard(walk, which, s, within = [-Infinity, Infinity]) {
+  const { page, watch } = walk;
+  if (!(await page.locator("ol.said").count())) {
+    await page.mouse.move(1, 1);
+    await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+    await watch.step("click", s);
+  }
+  await page.waitForSelector("ol.said li[data-row] button.pick");
+  const chosen = (await ask(page, "State", await episodeOn(page))).chosen ?? "";
+  const row = await page.evaluate(
+    ([which, chosen, [from, to]]) => {
+      const cards = [...document.querySelectorAll("ol.said li[data-row]")].filter(
+        (li) =>
+          li.querySelector("button.pick") &&
+          Number(li.dataset.at) >= from &&
+          Number(li.dataset.at) <= to &&
+          (which === "outside" ? !li.dataset.clip : li.dataset.clip && li.dataset.clip !== chosen),
+      );
+      return cards[Math.floor(cards.length / 2)]?.dataset.row ?? null;
+    },
+    [which, chosen, within],
+  );
+  if (!row) {
+    walk.wrong = `the transcript has no card ${which === "outside" ? "outside the clips" : `of a clip other than ${chosen}`} to click`;
+    return null;
+  }
+  await page.locator(`ol.said li[data-row="${row}"] button.pick`).click();
+  await watch.step("click", s);
+  await settle(page);
+  return row;
 }

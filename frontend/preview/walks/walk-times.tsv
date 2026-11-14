@@ -97,7 +97,7 @@
   7	sequences.mjs SEQUENCE=the playhead's time is in a field beside the buttons, and the clip's numbers on its card
   6	sequences.mjs SEQUENCE=Cancel pressed at once after Search stops the search before it starts
   6	sequences.mjs SEQUENCE=Enter and Escape keep what was dictated, and undo takes it back
-  6	sequences.mjs SEQUENCE=Shift and the arrows walk past two cards that begin at the same moment
+  6	sequences.mjs SEQUENCE=Shift and the arrows walk past two cards that begin at the same moment, and a card clicked centres the playhead
   6	sequences.mjs SEQUENCE=Stop and Enter both leave the end of a long report in view
   6	sequences.mjs SEQUENCE=The start sound plays once Dictate hears back, however late that is
   6	sequences.mjs SEQUENCE=Two Shift+Enters while dictating make two new lines, kept as text

@@ -1690,8 +1690,9 @@ bubble scrolled by those eight pixels.
       after a search, a render or an undo, leaves the rows as they are, and
       an undo that puts the clip back makes it a clip again. Leaving the
       episode, or any of those, used to take every way back with it.
-      A clip is always chosen while there is one: removing the chosen
-      clip chooses the next in the list, or the one before it when it
+      A clip stays chosen while there is one, and the one exception is
+      a search a hand worked during, see Clips arrive one at a time:
+      removing the chosen clip chooses the next in the list, or the one before it when it
       was the last, the way Finder and Mail move on from what was
       deleted. It used to leave nothing chosen, Tim found.
       Putting a clip back takes back the remove and nothing more: the
