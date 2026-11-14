@@ -78,6 +78,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
+      # What became of a commit's build, see scripts/build-ended.sh.
+      actions: read
+      statuses: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -395,6 +398,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
+      # What became of a commit's build, see scripts/build-ended.sh.
+      actions: read
+      statuses: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}

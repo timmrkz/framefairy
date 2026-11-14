@@ -505,7 +505,12 @@ with its newest build, so one fetch is the whole check:
   three days in October. The page then says **A newer commit is
   being built** and names it, rather than offering the build before as
   the newest. That build can still be installed. A commit that only
-  changes the docs has no build coming and is never named. A pull request that is merged or closed has its
+  changes the docs has no build coming and is never named. Neither is a
+  commit whose build already ended without one: it failed, was cancelled
+  or was refused by the signer, see `scripts/build-ended.sh`. The list is
+  written again whenever a build ends, however it ended, so the page
+  stops saying a build is coming as soon as it is known that none is.
+  Until #840 such a commit was named until the next push. A pull request that is merged or closed has its
   entry taken away, and its builds go an hour later. Every writing of the
   list also takes away the entry of any pull request that is not open,
   because GitHub runs nothing for a pull request that no longer merges
