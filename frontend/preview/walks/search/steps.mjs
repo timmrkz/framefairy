@@ -304,7 +304,8 @@ export const steps = {
   //                    where it was, among the answers to a search too,
   //                    and Copy putting their words on the clipboard,
   //                    leaving words chosen in the field to the web view,
-  //                    and a card clicked alone alone
+  //                    a card clicked alone alone, and Escape letting go
+  //                    of the cards picked before the search
   async "search said"(walk, arg, s) {
     const { page, settled, watch } = walk;
     const path = await episodeOn(page);
@@ -1449,6 +1450,18 @@ export const steps = {
           current: getComputedStyle(document.querySelector("ol.said button.pick.current") ?? document.body).backgroundColor,
           at: document.querySelector(".screen")?.dataset.playhead,
         }));
+      // Escape pressed, and what is picked, current and typed after it.
+      const unpicked = async () => {
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        return page.evaluate(() => ({
+          picked: [...document.querySelectorAll("ol.said button.pick.picked")].map((b) => b.closest("li").dataset.row),
+          current: document.querySelector("ol.said button.pick.current")?.closest("li").dataset.row ?? null,
+          open: !!document.querySelector("ol.said"),
+          typed: document.querySelector('input[aria-label="Search transcript"]')?.value ?? null,
+          at: document.querySelector(".screen")?.dataset.playhead,
+        }));
+      };
       const span = await page.evaluate(() => {
         const ol = document.querySelector("ol.said");
         const rows = [...ol.querySelectorAll("li[data-row]")].map((li) => ({ key: li.dataset.row, card: !!li.querySelector("button.pick") }));
@@ -1469,6 +1482,27 @@ export const steps = {
         else if (!copied.on) walk.wrong = "with cards picked, the page said it had nothing to copy, so Copy in the Edit menu stays greyed out";
         else if (!copied.took || copied.text !== want)
           walk.wrong = `Copy put ${JSON.stringify(copied.text)} on the clipboard, not the words of the ${span.keys.length} cards picked, ${JSON.stringify(want)}`;
+        // Escape lets go of the cards picked and nothing more: the search
+        // stays open, and the card current before the pick is current
+        // still, with the playhead where it was. Escape closed the whole
+        // search with the cards picked, found by Tim.
+        if (!walk.wrong) {
+          const escaped = await unpicked();
+          if (escaped.picked.length) walk.wrong = `Escape left ${JSON.stringify(escaped.picked)} picked`;
+          else if (!escaped.open) walk.wrong = "Escape with cards picked closed the search, not only the cards picked";
+          else if (escaped.current !== span.keys[0]) walk.wrong = `after Escape, ${escaped.current} is the current card, not ${span.keys[0]}, the one before the pick`;
+          else if (escaped.at !== span.at) walk.wrong = `Escape with cards picked moved the playhead from ${span.at} to ${escaped.at}`;
+        }
+        // With no card picked and nothing typed, the next Escape closes
+        // the search, and the search is opened again for what follows.
+        if (!walk.wrong) {
+          const closed = await unpicked();
+          if (closed.open) walk.wrong = "with the cards picked let go, a second Escape left the search open";
+          else {
+            await page.locator('.listhead button[aria-label="Search the transcript"]').click();
+            await watch.step("click", s);
+          }
+        }
         // Among the answers to a search, two Shift and clicks pick the
         // cards between them, wherever the playhead is.
         if (!walk.wrong) {
@@ -1489,6 +1523,13 @@ export const steps = {
             if (among.keys.join() !== should.join())
               walk.wrong = `two Shift and clicks among the answers picked ${JSON.stringify(among.keys)}, not ${JSON.stringify(should)}, with ${current ?? "no card"} current`;
             else if (copied.text !== should.map(words).join(" ")) walk.wrong = `Copy among the answers put ${JSON.stringify(copied.text)} on the clipboard`;
+            // Among the answers, Escape lets go of the cards picked and
+            // leaves what was typed, which the next Escape takes back.
+            if (!walk.wrong) {
+              const escaped = await unpicked();
+              if (escaped.picked.length) walk.wrong = `among the answers, Escape left ${JSON.stringify(escaped.picked)} picked`;
+              else if (!escaped.open || escaped.typed !== "e") walk.wrong = `among the answers, Escape with cards picked took back the search too, leaving ${JSON.stringify(escaped.typed)} typed`;
+            }
           }
         }
         // Words chosen in the field are the web view's to copy, and the
@@ -1515,6 +1556,8 @@ export const steps = {
           else if (alone.text !== words(one)) walk.wrong = `Copy after a click on a card put ${JSON.stringify(alone.text)} on the clipboard, not its words, ${JSON.stringify(words(one))}`;
         }
       }
+      // What follows needs the search open, which a wrong Escape closed.
+      if (walk.wrong) return;
     }
     // The keyboard on a card of what was typed, for Escape.
     await field.fill(word);

@@ -430,7 +430,7 @@
   // said in the list until the next read works.
   let sentencesFailed = $state<string | null>(null);
   let sayField = $state<HTMLInputElement>();
-  let saidList = $state<{ walk: (step: 1 | -1) => void }>();
+  let saidList = $state<{ walk: (step: 1 | -1) => void; unpick: () => boolean }>();
   const savedKey = $derived(saved.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}`).join(","));
   // The parts every clip keeps, whose captions are cards of their own, so
   // the cards are read again when a clip changes, see engine.SaidCards.
@@ -601,9 +601,11 @@
     if (event.target !== sayField) sayRefocus = false;
   }
 
-  // Escape takes back one step at a time: what was typed first, so the
-  // whole of what was said is there again, and then the search itself.
+  // Escape takes back one step at a time: the cards picked with Shift
+  // first, then what was typed, so the whole of what was said is there
+  // again, and then the search itself.
   function escapeSaying() {
+    if (saidList?.unpick()) return;
     if (sayTyped) sayTyped = "";
     else closeSaying();
   }

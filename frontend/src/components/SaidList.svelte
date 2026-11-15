@@ -13,6 +13,7 @@
   import { hoverClip } from "../lib/hover";
   import { between, copies, joined, pick, type Picked } from "../lib/copy";
   import { asleep } from "../lib/keys";
+  import { said } from "../lib/said";
   import { onMount, tick, untrack } from "svelte";
 
   let {
@@ -399,6 +400,18 @@
   // current card alone.
   let picked = $state<Picked | null>(null);
   const pickedKeys = $derived(new Set(picked ? between(rows.map((r) => r.key), picked.from, picked.to) : []));
+
+  // Escape lets go of the cards picked before anything else, and says
+  // whether there were any to let go of, see escapeSaying. The current
+  // card is the one it was before the Shift and click, since picking
+  // never moves the playhead. Escape closed the whole search with the
+  // cards still picked, found by Tim.
+  export function unpick(): boolean {
+    if (!pickedKeys.size) return false;
+    picked = null;
+    said("search: Escape let go of the transcript cards picked");
+    return true;
+  }
 
   // The words of the cards picked, or of the current card, for Copy, see
   // lib/copy.ts. Picked cards gone from the list leave the current card.
