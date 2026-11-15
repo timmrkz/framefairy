@@ -120,8 +120,8 @@ func (s *FrameFairy) searchBegins(path string) {
 // chosenFor is the clip chosen in the video whose state st is, read with
 // its jobs and its clips, after the app chose by rules 1, 2, 3, 4 and 7
 // from them, and the card that clip was while it was on its way, if it
-// was one. A state older than the newest it chose from chooses nothing.
-// It says what is chosen now when its clips hold it, and otherwise the
+// was one. A state older than the newest it chose from, or than the last
+// choice of a hand, chooses nothing, see picked.handChose. It says what is chosen now when its clips hold it, and otherwise the
 // clip chosen before, so a state never names a clip it does not hold.
 func (s *FrameFairy) chosenFor(path string, st VideoState) (clip, was string) {
 	p := s.chosenIn(path)

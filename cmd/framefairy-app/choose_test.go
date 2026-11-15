@@ -487,6 +487,67 @@ func TestACardPickedAfterItsClipWasWrittenIsItsClipInAStateFromBefore(t *testing
 	}
 }
 
+// A clip made with O while a state of the video was being read: the
+// state read the jobs before the clip's job was queued, and chose from
+// them after its card was chosen. It held neither the card nor its job,
+// took the card for gone and chose the first clip in its place, and the
+// clip made with O was never chosen once written, issue #864. A state
+// read before the job was queued chooses nothing, says the clip chosen
+// before, and the card stays chosen.
+func TestAStateReadBeforeAClipMadeWithOLeavesItsCardChosen(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	svc.jobs = newIdleQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	ctx := context.Background()
+	if _, err := svc.ChooseClip(ctx, mine, "clips.json/02"); err != nil {
+		t.Fatal(err)
+	}
+	jobs, rev := svc.jobs.ofVideo(mine)
+	older := stateOf(rev, []string{"clips.json/01", "clips.json/02"}, jobs...)
+	job := svc.MakeClip(mine, 21, true)
+	if job.State != JobRunning {
+		t.Fatalf("the clip made with O was not queued: %+v", job)
+	}
+	card := cardKey(job.ID, 1)
+	if clip, was := svc.chosenFor(mine, older); clip != "clips.json/02" || was != "" {
+		t.Errorf("a state read before the clip made with O was queued says %q, written as %q", clip, was)
+	}
+	now, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if now.Chosen != card {
+		t.Errorf("the state read after says %q is chosen, not the card %q", now.Chosen, card)
+	}
+}
+
+// A clip picked by a hand while a state was being read. The state read
+// before the pick chooses nothing from what it read: it does not hold
+// the card picked, and still leaves it chosen.
+func TestAStateReadBeforeAPickLeavesThePickChosen(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	if _, err := svc.ChooseClip(ctx, mine, "clips.json/02"); err != nil {
+		t.Fatal(err)
+	}
+	jobs, rev := svc.jobs.ofVideo(mine)
+	older := stateOf(rev, []string{"clips.json/01", "clips.json/02"}, jobs...)
+	job := Job{ID: "c1", Episode: mine, State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobClip}}
+	svc.jobs.mu.Lock()
+	svc.jobs.jobs = append(svc.jobs.jobs, &job)
+	svc.jobs.mu.Unlock()
+	if err := svc.pick(mine, "c1/1"); err != nil {
+		t.Fatal(err)
+	}
+	if clip, _ := svc.chosenFor(mine, older); clip != "clips.json/02" {
+		t.Errorf("a state read before the card was picked says %q", clip)
+	}
+	if now, err := svc.State(ctx, mine); err != nil {
+		t.Fatal(err)
+	} else if now.Chosen != "c1/1" {
+		t.Errorf("the state read after says %q is chosen, not the card picked", now.Chosen)
+	}
+}
+
 // Everything the window can do to what is chosen at once, from several
 // goroutines, while states are read: picks, plays and pauses, a hand at work, removes
 // and states, under the race detector.
