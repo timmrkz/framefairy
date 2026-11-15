@@ -305,7 +305,7 @@ func mediaMiddleware(s *FrameFairy) application.Middleware {
 				_, _ = w.Write(data)
 				return
 			}
-			if strings.HasPrefix(r.URL.Path, "/frames/") {
+			if rec != nil {
 				logged(rec, r, s.serveFrames)
 				return
 			}
