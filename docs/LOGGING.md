@@ -240,7 +240,9 @@ so their lines are counted, not written one by one. Their part is
   warning a step.
 - A panic while drawing the captions or placing their words is an
   `error` with its stack, `the window's request stopped unexpectedly`,
-  as is a panic in any request for frames, sound or fonts. A panic while
+  as is a panic in any request for frames, sound or fonts. A request
+  that panics after its answer began is cut short where it stopped, and
+  its line says so with the `status` and `bytes` that went out. A panic while
   the caption file is laid out, which outlives the request, is an
   `error` from `captions`, and the engine's stack follows it as a `debug`
   line.

@@ -466,3 +466,22 @@ func TestARequestThatPanicsFailsItselfNotTheApp(t *testing.T) {
 		t.Errorf("the app's log holds no stack of the panic, %v", line)
 	}
 }
+
+// A request that panics after its answer began is cut short where it
+// stopped. Its status went out already, so the reason written after
+// would have been read as frames or as sound, issue #859. The log says
+// how much went out.
+func TestARequestThatPanicsAfterItsAnswerBeganIsCutShort(t *testing.T) {
+	_, read := testLog(t)
+	w := httptest.NewRecorder()
+	half := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("12345678"))
+		panic("a frame nobody read before")
+	})
+	mediaMiddleware(nil)(half).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/index.html", nil))
+	if w.Code != http.StatusOK || w.Body.String() != "12345678" {
+		t.Errorf("the request that panicked was answered %d, %q, want 200 and only what it wrote", w.Code, w.Body.String())
+	}
+	has(t, find(read(), "the window's request stopped unexpectedly, its answer cut short"),
+		map[string]any{"level": "error", "from": "files", "path": "/index.html", "status": 200, "bytes": 8})
+}
