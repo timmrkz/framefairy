@@ -651,6 +651,31 @@ func TestAPickStopsTheDownloadBefore(t *testing.T) {
 	}
 }
 
+// A state left by a change before a pick, and sent after the pick's, is
+// not sent: the screen keeps the pick. A progress of the download of the
+// channel before left the lock before the pick, and reached the screen
+// after it, so the page said Downloading main once pr-20 was picked.
+func TestAStateOlderThanTheOneSentIsNotSent(t *testing.T) {
+	var sent []UpdateState
+	c := &updating{emit: func(s UpdateState) { sent = append(sent, s) }}
+	downloading, before := c.apply(func(s *UpdateState) {
+		s.Picked, s.Phase, s.Next = "main", "downloading", "0.3.0-main.5"
+	})
+	picked, after := c.apply(func(s *UpdateState) {
+		s.Picked, s.Phase, s.Next = "pr-20", "checking", ""
+	})
+	c.send(picked, after)
+	c.send(downloading, before)
+	if len(sent) != 1 || sent[0].Picked != "pr-20" || sent[0].Phase != "checking" {
+		t.Errorf("the screen was told %+v", sent)
+	}
+	// A change after it is sent, as ever.
+	c.change(func(s *UpdateState) { s.Phase = "ready" })
+	if len(sent) != 2 || sent[1].Picked != "pr-20" || sent[1].Phase != "ready" {
+		t.Errorf("the screen was told %+v", sent)
+	}
+}
+
 // Everything the interface and the timer can do, at once.
 func TestUpdatesFromEverywhereAtOnce(t *testing.T) {
 	cs := newChannelServer(t)
