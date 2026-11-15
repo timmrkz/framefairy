@@ -149,7 +149,7 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 	_, read := testLog(t)
 
 	serve := func(target string, h func(w http.ResponseWriter, r *http.Request)) {
-		logged(httptest.NewRecorder(), httptest.NewRequest("GET", target, nil), h)
+		logged(&recorded{ResponseWriter: httptest.NewRecorder()}, httptest.NewRequest("GET", target, nil), h)
 	}
 	pull := func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(make([]byte, 64)) }
 	serve("/frames/open?path=/videos/start.mp4&from=1.5&w=874&h=492", func(w http.ResponseWriter, r *http.Request) {

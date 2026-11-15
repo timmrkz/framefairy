@@ -300,7 +300,7 @@ func mediaMiddleware(s *FrameFairy) application.Middleware {
 				return
 			}
 			if strings.HasPrefix(r.URL.Path, "/frames/") {
-				logged(w, r, s.serveFrames)
+				logged(rec, r, s.serveFrames)
 				return
 			}
 			next.ServeHTTP(w, r)

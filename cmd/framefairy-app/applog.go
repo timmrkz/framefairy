@@ -783,10 +783,11 @@ const slowPull = 300 * time.Millisecond
 // logged serves a request for the episode's file or its frames and says
 // in the app's log how it went: which video, what was asked, the answer
 // and how long it took. See the video preview's lines in lib/said.ts,
-// which these stand among.
-func logged(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWriter, *http.Request)) {
+// which these stand among. rec is the answer as mediaMiddleware already
+// records it, so a frame pulled is recorded once.
+func logged(rec *recorded, r *http.Request, serve func(http.ResponseWriter, *http.Request)) {
 	start := time.Now()
-	rec := &recorded{ResponseWriter: w, keep: r.URL.Path != "/frames/read" && strings.HasPrefix(r.URL.Path, "/frames/")}
+	rec.keep = r.URL.Path != "/frames/read" && strings.HasPrefix(r.URL.Path, "/frames/")
 	serve(rec, r)
 	took := time.Since(start)
 	if rec.status == 0 {
