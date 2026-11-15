@@ -548,3 +548,5 @@ func TestABuildOfferedAsAnotherIsRefused(t *testing.T) {
 		t.Error("the build was downloaded before it was refused")
 	}
 }
+
+# Automated fix for issue #858: Settings, Logs is not told when Wails writes a line to the app's log
