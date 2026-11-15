@@ -698,7 +698,8 @@ func (f *FrameFairy) Acted(a Act) {
 	withAct(ev, id).Msg(clipped(a.What, actWhatMax))
 }
 
-// recorded is a response as it was written, for the log.
+// recorded is a response as it was written, for the log, and for the
+// recover in mediaMiddleware, which may answer only while nothing went out.
 type recorded struct {
 	http.ResponseWriter
 	status int

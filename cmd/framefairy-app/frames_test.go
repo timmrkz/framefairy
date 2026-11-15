@@ -467,21 +467,39 @@ func TestARequestThatPanicsFailsItselfNotTheApp(t *testing.T) {
 	}
 }
 
-// A request that panics after its answer began is cut short where it
-// stopped. Its status went out already, so the reason written after
-// would have been read as frames or as sound, issue #859. The log says
-// how much went out.
-func TestARequestThatPanicsAfterItsAnswerBeganIsCutShort(t *testing.T) {
+// A pull of frames that panics after its answer began is cut short
+// where it stopped. Its status went out already, so the reason written
+// after would have been read as a frame, or played as sound, issue #859.
+// The log says how much went out. The panic comes from the window's end
+// of the answer, the shortest way there is to one after the first byte.
+func TestAPullThatPanicsAfterItsAnswerBeganIsCutShort(t *testing.T) {
 	_, read := testLog(t)
-	w := httptest.NewRecorder()
-	half := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("12345678"))
-		panic("a frame nobody read before")
+	svc := &FrameFairy{}
+	// Reaping already, so no reaper of its own outlives the test.
+	svc.previews.reaping = true
+	id := svc.previews.start("frames", nil, nil, nil, func(_ context.Context, got func(float64, []byte) error) error {
+		return got(1.5, []byte("a frame"))
 	})
-	mediaMiddleware(nil)(half).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/index.html", nil))
-	if w.Code != http.StatusOK || w.Body.String() != "12345678" {
-		t.Errorf("the request that panicked was answered %d, %q, want 200 and only what it wrote", w.Code, w.Body.String())
+	t.Cleanup(func() { svc.previews.close(id) })
+	w := &breaksOnSecondWrite{ResponseRecorder: httptest.NewRecorder()}
+	mediaMiddleware(svc)(nil).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/frames/read?n=1&id="+id, nil))
+	if w.Code != http.StatusOK || w.Body.Len() != 8 {
+		t.Errorf("the pull that panicked was answered %d, %q, want 200 and only the frame's 8 bytes of time", w.Code, w.Body.String())
 	}
 	has(t, find(read(), "the window's request stopped unexpectedly, its answer cut short"),
-		map[string]any{"level": "error", "from": "files", "path": "/index.html", "status": 200, "bytes": 8})
+		map[string]any{"level": "error", "from": "files", "path": "/frames/read", "status": 200, "bytes": 8})
+}
+
+// breaksOnSecondWrite is the window's end of an answer that takes the
+// first write and panics on the next.
+type breaksOnSecondWrite struct {
+	*httptest.ResponseRecorder
+	writes int
+}
+
+func (b *breaksOnSecondWrite) Write(p []byte) (int, error) {
+	if b.writes++; b.writes > 1 {
+		panic("the window went away")
+	}
+	return b.ResponseRecorder.Write(p)
 }

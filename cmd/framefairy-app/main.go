@@ -262,16 +262,22 @@ func mediaMiddleware(s *FrameFairy) application.Middleware {
 			// recover, and a frame, a sound, a caption or a font is our
 			// code over a video or a word nobody checked. A panic in one
 			// ended the whole app. Now it fails that request, issue #604.
-			// Once the answer has begun, its status is gone and the reason
-			// would be read as frames or sound, so it is cut short instead,
-			// issue #859. Wails cannot fail an answer that began, and a
-			// panic passed on, even http.ErrAbortHandler, would end the app.
-			rec := &recorded{ResponseWriter: w}
-			w = rec
+			// Once the answer for frames or sound has begun, its status is
+			// gone and the reason would be read as frames or sound, so it
+			// is cut short instead, issue #859. Wails cannot fail an answer
+			// that began, and a panic passed on, even http.ErrAbortHandler,
+			// would end the app. Only those answers are written a piece at
+			// a time, and the log records them already, see logged: a font
+			// is written whole, and Wails recovers the window's calls before
+			// they answer.
+			var rec *recorded
+			if strings.HasPrefix(r.URL.Path, "/frames/") {
+				rec = &recorded{ResponseWriter: w}
+			}
 			defer func() {
 				if caught := recover(); caught != nil {
 					line := theLog.line(zerolog.ErrorLevel, "files").Str("path", r.URL.Path).Str("stack", string(debug.Stack()))
-					if rec.status != 0 {
+					if rec != nil && rec.status != 0 {
 						line.Int("status", rec.status).Int64("bytes", rec.bytes).
 							Msgf("the window's request stopped unexpectedly, its answer cut short: %v", caught)
 						return
