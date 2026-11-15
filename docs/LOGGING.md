@@ -97,7 +97,8 @@ brings only itself into the build, since the two modules it needs are in
 it already, and it has a trace level below debug for lines that come
 with every frame. Since 1.35 it also takes slog's lines. Wails, the
 library that runs the app's window, logs through slog, and its lines go
-into the same file that way. A panic Wails catches is an `error` line
+the way every other line goes, into the same file, where Settings hears
+of them as they come. A panic Wails catches is an `error` line
 from `wails` with its `stack`, and the app goes on.
 
 What a library or net/http says through Go's standard log is a `warn`

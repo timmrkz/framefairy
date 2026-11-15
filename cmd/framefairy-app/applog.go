@@ -514,17 +514,17 @@ func (l *appLog) lineAt(level zerolog.Level, from string, at time.Time) *zerolog
 	return lg.WithLevel(level).Time(zerolog.TimestampFieldName, at).Str("run", l.run).Str("from", from)
 }
 
-// slog is a logger for code that speaks log/slog, whose lines go into the
-// same file as the part named, from the level given. Wails, which runs
-// the app's window, logs that way. Lines said before the log is open go
-// nowhere.
+// slog is a logger for code that speaks log/slog, whose lines go the way
+// every other line goes, as the part named, from the level given: into
+// the file, telling Settings that it grew, and a trace line into the
+// recent lines, see byLevel. Wails, which runs the app's window, logs
+// that way. Lines said before the log is open go nowhere.
 func (l *appLog) slog(from string, least zerolog.Level) *slog.Logger {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.file == nil {
+	root := l.root.Load()
+	if root == nil {
 		return slog.New(slog.DiscardHandler)
 	}
-	lg := zerolog.New(l.file).Level(least).With().Str("run", l.run).Str("from", from).Logger()
+	lg := root.Level(least).With().Str("run", l.run).Str("from", from).Logger()
 	return slog.New(zerolog.NewSlogHandler(lg))
 }
 
