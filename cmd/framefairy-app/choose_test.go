@@ -548,6 +548,30 @@ func TestAStateReadBeforeAPickLeavesThePickChosen(t *testing.T) {
 	}
 }
 
+// An undo chooses the clip it put back, rule 6, while a state was being
+// read. The state read before the undo does not hold that clip, the way
+// it would not hold the clips of a removed search the undo brought back.
+// It chooses nothing from what it read, and the clip the undo chose
+// stays chosen, the cause of issue #864 for an undo.
+func TestAStateReadBeforeAnUndoLeavesItsClipChosen(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	if _, err := svc.ChooseClip(ctx, mine, "clips.json/01"); err != nil {
+		t.Fatal(err)
+	}
+	jobs, rev := svc.jobs.ofVideo(mine)
+	older := stateOf(rev, []string{"clips.json/01"}, jobs...)
+	svc.undone(mine, "clips.json/02")
+	if clip, _ := svc.chosenFor(mine, older); clip != "clips.json/01" {
+		t.Errorf("a state read before the undo, without its clip, says %q", clip)
+	}
+	if now, err := svc.State(ctx, mine); err != nil {
+		t.Fatal(err)
+	} else if now.Chosen != "clips.json/02" {
+		t.Errorf("the state read after the undo says %q is chosen, not the clip it chose", now.Chosen)
+	}
+}
+
 // Everything the window can do to what is chosen at once, from several
 // goroutines, while states are read: picks, plays and pauses, a hand at work, removes
 // and states, under the race detector.

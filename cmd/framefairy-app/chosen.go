@@ -202,13 +202,23 @@ func (p *picked) keep(key string, rev uint64) {
 // card nor its job, took the card for gone and chose the first clip in
 // its place for good, issue #864.
 func (p *picked) handChose(key string, rev uint64) {
-	if p.kept.Clip != key {
-		p.prior = p.kept.Clip
-	}
+	p.choseAt(key, rev)
 	// A clip a hand chose is no longer the one a removal chose, so
 	// putting a removed clip back after it chooses nothing, rule 5.
-	p.kept.Clip, p.instead = key, nil
+	p.instead = nil
+}
+
+// choseAt makes key the clip chosen at rev, the clock of the jobs then,
+// with the lock held, for whatever chooses outside a state: a hand, see
+// handChose, and an undo, see undone. It says whether the clip chosen
+// changed.
+func (p *picked) choseAt(key string, rev uint64) bool {
 	p.decided = max(p.decided, rev)
+	if p.kept.Clip == key {
+		return false
+	}
+	p.prior, p.kept.Clip = p.kept.Clip, key
+	return true
 }
 
 // save writes what is kept through, the newest version only, so what is
