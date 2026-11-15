@@ -763,13 +763,17 @@ function readTimeline() {
 }
 
 // What the caption box shows: each word, the moment it stands for, and
-// the word of the episode it is.
+// the word of the episode it is. A word is read as it reads: WebKit
+// writes a space typed at the end of a word open for typing as a
+// non-breaking one, which looks the same, and a word saved holds a plain
+// space either way, see dropWord in Player.svelte. The walk in WebKit read
+// the two as different words, issue #863.
 export async function shown(page) {
   return page.evaluate(readShown);
 }
 function readShown() {
   return [...document.querySelectorAll(".captions .word")].map((w) => ({
-    text: w.textContent,
+    text: w.textContent.replaceAll("\u00a0", " "),
     at: Number(w.dataset.at),
     to: Number(w.dataset.to),
     keyed: w.classList.contains("keyed"),
