@@ -510,7 +510,8 @@ type inkBox struct{ left, top, right, bottom int }
 // it means knowing how wide the text comes out. The text is rendered to one
 // tall frame with each caption in its own band and the bounding boxes are
 // read straight off the pixels. Exact for any font, any language, any weight,
-// and it costs one frame per clip.
+// and it costs one frame for up to 15000 pixels of captions, see
+// measureBlocks.
 func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 	width, size int) ([]*inkBox, bool) {
 	if len(blocks) == 0 {
@@ -645,8 +646,9 @@ func bandSlot(block string, size int) int {
 	return slot + slot%2
 }
 
-// measureMany measures any number of blocks, a frame at a time, so a clip
-// with many words stays inside the height one frame can have. A block
+// measureMany measures any number of blocks, in frames drawn side by
+// side, so a clip with many words stays inside the height one frame can
+// have. A block
 // measured before in the same face, size and width is not measured again,
 // see Machine.measured, so the caption file of a clip is made again in a moment
 // whenever the video preview needs it in another colour or place.
@@ -753,11 +755,31 @@ func (e *Engine) measureBlocks(ctx context.Context, blocks []string, missing []i
 	}
 	var failed atomic.Bool
 	var frames sync.WaitGroup
-	room := make(chan struct{}, measureAtOnce)
+	turns := e.measuring()
 	for _, batch := range batches {
 		frames.Go(func() {
-			room <- struct{}{}
-			defer func() { <-room }()
+			select {
+			case turns <- struct{}{}:
+			case <-ctx.Done():
+				failed.Store(true)
+				return
+			}
+			defer func() { <-turns }()
+			// A frame that failed fails the whole measuring, so the frames
+			// still waiting for their turn are not drawn, and neither are
+			// those of work called off meanwhile.
+			if failed.Load() || ctx.Err() != nil {
+				failed.Store(true)
+				return
+			}
+			// The frame is drawn for work that recovers what goes wrong in
+			// it, but on a goroutine of its own, outside that recover.
+			defer func() {
+				if caught := recover(); caught != nil {
+					e.Log.Detail("measuring the captions went wrong: %v", caught)
+					failed.Store(true)
+				}
+			}()
 			texts := make([]string, 0, len(batch))
 			for _, i := range batch {
 				texts = append(texts, blocks[i])
@@ -783,10 +805,12 @@ func (e *Engine) measureBlocks(ctx context.Context, blocks []string, missing []i
 // pixels.
 const measureFrameMost = 15000
 
-// measureAtOnce is how many frames of one measuring are drawn at once. A
-// frame is up to 16 MB of grey held by its ffmpeg and again by us, so a
-// long clip's frames take turns beyond this many rather than all at once.
-const measureAtOnce = 4
+// measureAtOnce is how many frames of measuring the machine draws at once,
+// for every ask together. A frame of 1080 by 15000 takes its ffmpeg about
+// 140 MB at its peak, so a long clip's frames, or two clips measured at
+// the same moment, take turns beyond two. Two is what a clip of half a
+// minute needs.
+const measureAtOnce = 2
 
 // measureKey is what a block's ink depends on.
 // The face is known by the name the caption file asks libass for. For a
