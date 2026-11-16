@@ -503,8 +503,8 @@ func splitTop(s string) []string {
 // name. Each is made empty, never nil, where its type is built, and
 // TestEveryListTheWindowReadsIsMadeWhereItsTypeIsBuilt builds each and
 // checks it. A field that joins them joins that test too. Writing every
-// answer through a json that writes a nil list as [] was measured, and
-// made each answer half as slow again.
+// answer through encoding/json/v2, which can write a nil list as [], was
+// measured, and it marshalled each answer about 50 % slower.
 var filledWhereBuilt = map[string]bool{
 	"engine.CaptionLineView.words": true,
 	"engine.CaptionStart.heights":  true,

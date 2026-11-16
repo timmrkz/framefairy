@@ -18,8 +18,8 @@ import (
 // never nil, because encoding/json writes a nil one as null and the
 // window that reads .length of null stops drawing. Each builder is asked
 // for what it builds from as little as it is given: a video not heard
-// yet, a clip with no keyframes, no report, nothing dropped and no
-// dictation.
+// yet, a clip with no keyframes, a video's news with no clip changed and
+// with none at all, no report, nothing dropped and nothing said.
 func TestEveryListTheWindowReadsIsMadeWhereItsTypeIsBuilt(t *testing.T) {
 	t.Parallel()
 	svc, mine := memoryLibrary(t, "ep.mp4", "unheard.mp4")
@@ -39,13 +39,20 @@ func TestEveryListTheWindowReadsIsMadeWhereItsTypeIsBuilt(t *testing.T) {
 		}
 		sent = append(sent, v)
 	}
-	keep(svc.State(ctx, video))
+	state, err := svc.State(ctx, video)
+	keep(state, err)
+	// A video's state as its news sends it: whole the first time, then
+	// with no clip changed, and then with none left.
+	news, removed := &telling{}, state
+	removed.Clips = []ClipEntry{}
+	sent = append(sent, news.trim(state), news.trim(state), news.trim(removed))
 	keep(svc.Shape(video, plan, "01", engine.Gesture{Kind: "trim", Edge: "end", From: 14, To: 14}, ""))
 	keep(svc.Captions(video, plan, "01"))
 	keep(svc.Licences())
 	keep(svc.StopListening())
 	sent = append(sent, svc.framingOf(engine.SourceInfo{}, nil, nil), svc.Library(), svc.Episode(mine[1]),
-		svc.Setup(ctx), svc.ReportDraft(), svc.dropFiles(nil), svc.CaptionStart(), coverageOf(nil, 0))
+		svc.Setup(ctx), svc.ReportDraft(), svc.dropFiles(nil), svc.CaptionStart(), coverageOf(nil, 0),
+		Dictation{Said: copySaid(nil)})
 
 	seen, null := map[string]bool{}, map[string]bool{}
 	for _, v := range sent {

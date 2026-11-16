@@ -142,6 +142,13 @@ type Dictation struct {
 	Asked int `json:"asked"`
 }
 
+// copySaid is a copy of what was said for a Dictation, empty and never
+// nil when nothing was, because the window reads its length, see
+// filledWhereBuilt. slices.Clone would hand back nil.
+func copySaid(said []string) []string {
+	return append([]string{}, said...)
+}
+
 // listenUnheard is how long a microphone may hand over nothing but zeros
 // before the window says so, in samples. One that is there hears its
 // room at once.
@@ -602,7 +609,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		}
 		if settle() {
 			worded = time.Now()
-			l.tell(r, Dictation{Said: append([]string{}, said...), Unheard: unheard, Asked: asked})
+			l.tell(r, Dictation{Said: copySaid(said), Unheard: unheard, Asked: asked})
 		}
 		// Nobody has said anything for a long while, or the recording is
 		// as long as it may be: it stops by itself and keeps what was
@@ -628,7 +635,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			r.hush()
 			settle()
 			out = l.finish(r, rec, said, settled, true)
-			if l.endItself(r, Dictation{Said: append([]string{}, out.said...), Ended: why, Error: errText(out.err)}) {
+			if l.endItself(r, Dictation{Said: copySaid(out.said), Ended: why, Error: errText(out.err)}) {
 				r.line(zerolog.InfoLevel).Str("why", why).Msg("the recording stopped by itself")
 			}
 			return
@@ -669,7 +676,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			}
 			hearing, unheard = now, deaf
 			told = append(told[max(len(told)-15, 0):], heard{now, passed})
-			l.tell(r, Dictation{Said: append([]string{}, said...), Hearing: now, Unheard: deaf, Asked: asked})
+			l.tell(r, Dictation{Said: copySaid(said), Hearing: now, Unheard: deaf, Asked: asked})
 		}
 	}
 }
@@ -844,7 +851,7 @@ func (f *FrameFairy) StopListening() (Dictation, error) {
 	if out.err != nil {
 		return Dictation{Recording: r.id, Said: []string{}}, out.err
 	}
-	return Dictation{Recording: r.id, Said: append([]string{}, out.said...)}, nil
+	return Dictation{Recording: r.id, Said: copySaid(out.said)}, nil
 }
 
 // SettleListening settles the words the window shows as being heard,
