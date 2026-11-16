@@ -1249,9 +1249,10 @@ bubble scrolled by those eight pixels.
     episode's: it is kept in the clip's plan entry, `removed_words`, by
     the moment the word was heard, so the word is gone from this clip's
     captions and its render, and Cmd+Z brings it back. One of the words a
-    correction made, like a word typed in beside another, is removed the
-    same way and keeps its room, so no word moves from one caption to
-    another. The episode still says it, so every other clip
+    correction made, like a word typed in beside another, is taken out of
+    what the correction reads instead, so the words after it close up the
+    way they moved on when it was typed. Removed with its caption, it
+    keeps its room, so no other caption changes. The episode still says it, so every other clip
     shows it, a search and the model read it, and a clip removed and made
     again where it was has it, see `RemovedWords` in
     `engine/removedwords.go`. It used to be a correction to nothing in

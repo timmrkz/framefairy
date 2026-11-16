@@ -142,22 +142,25 @@ func RemoveWord(fsys afero.Fs, planPath, clipID string, at float64, part int, t 
 		if part >= max(len(strings.Fields(heard.Text)), 1) {
 			return renderErr("the word at %s is not %d words", HMS(at), part+1)
 		}
-		var parts map[int]bool
-		if part >= 0 {
-			parts = map[int]bool{part: true}
+		// One of the words typed in beside another is taken out of what
+		// the correction reads, the way it was typed in, so the words
+		// after it close up again: "war noch" with "noch" taken out reads
+		// "war". Removing it undoes the typing.
+		if typed := strings.Fields(heard.Text); part >= 0 && len(typed) > 1 {
+			kept := slices.Delete(slices.Clone(typed), part, part+1)
+			return correctWord(corrections, removed, heard.Start, strings.Join(kept, " "), &work)
 		}
-		dropWords(removed, heard, parts, &work)
+		dropWords(removed, heard, nil, &work)
 		return nil
 	})
 }
 
-// dropWords takes words of a heard word out of a clip: parts, the words a
-// correction made of it, counted from nought, or all of it when parts is
-// nil. Each keeps its room, the way a heard word removed does, so taking
-// one out changes no other caption: "war noch" with "noch" taken out
-// still reads "war noch" and shows "war". It used to read "war" again,
-// and the words after it moved up into the room "noch" had left, from
-// one caption into the one before, issue #820. All of them is the heard
+// dropWords takes words of a heard word out of a clip with the caption
+// they are in: parts, the words a correction made of it, counted from
+// nought, or all of it when parts is nil. Each keeps its room, the way a
+// heard word removed does, so removing a caption changes no other: the
+// words after them used to move up into the room they had left, from the
+// caption after into the one before, issue #820. All of them is the heard
 // word removed. t is the clip's words, and heard is one of its heard
 // words.
 func dropWords(removed RemovedWords, heard timed.Cue, parts map[int]bool, t *Transcript) {
