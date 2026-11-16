@@ -154,6 +154,29 @@ func WorkDir(source string) string {
 	return filepath.Join(filepath.Dir(source), stem+".framefairy")
 }
 
+// ErrNoVideoFolder says the folder a video is in is not there: moved,
+// renamed or on a drive taken out.
+var ErrNoVideoFolder = errors.New("the folder the video is in is not there")
+
+// MakeWorkDir makes the work folder of a video where there is none, and
+// hands back its path. It never makes the folder the video is in. A
+// folder renamed in Finder while the app was closed was made again under
+// its old name, empty but for the work folder, so it could not be renamed
+// back, and the video was then taken for one deleted outside the app,
+// issue #882. A drive taken out would have been the same. What the app
+// writes for a video whose file it cannot find, the clip and the window
+// chosen and the label, is written through this.
+func MakeWorkDir(fsys afero.Fs, source string) (string, error) {
+	work := WorkDir(source)
+	if info, err := fsys.Stat(filepath.Dir(work)); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("%s: %w", filepath.Base(source), ErrNoVideoFolder)
+	}
+	if err := fsys.MkdirAll(work, 0o755); err != nil {
+		return "", err
+	}
+	return work, nil
+}
+
 // EpisodeName is the episode's file name without its extension, the name
 // of the folder its shorts go into inside the folder for shorts. A name
 // that would be no folder of its own keeps its extension.

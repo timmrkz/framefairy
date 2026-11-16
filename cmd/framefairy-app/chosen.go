@@ -74,10 +74,16 @@ func readChosen(files afero.Fs, path string) chosen {
 }
 
 // writeChosen writes the file whole, through a file of its own, so it is
-// never found half written.
+// never found half written. A video whose folder is not there, moved or
+// renamed, keeps what is chosen in memory and writes nothing, so its old
+// folder is not made again, issue #882. picked writes it through with
+// the next change once the folder is back.
 func writeChosen(files afero.Fs, path string, held chosen) error {
-	dir := engine.WorkDir(path)
-	if err := files.MkdirAll(dir, 0o755); err != nil {
+	dir, err := engine.MakeWorkDir(files, path)
+	if errors.Is(err, engine.ErrNoVideoFolder) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
 	file, err := fileio.SafeChildIn(files, dir, chosenFile)
