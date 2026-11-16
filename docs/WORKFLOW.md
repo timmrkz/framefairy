@@ -240,11 +240,16 @@ sends no event when one starts to conflict. So after every push to
 `main`, [`conflicts.yml`](../.github/workflows/conflicts.yml) merges each
 open pull request of this repository into it in memory, with `git
 merge-tree`, and comments on each one that no longer merges, naming the
-files, once for each commit of the pull request. It tries a pull request
-after a push to its branch as well, at the commit pushed, since that push
-may conflict. When several pushes to `main` come close together, the
-newest run stops the older ones, and a hidden mark in the comment keeps
-a run stopped halfway from telling a pull request twice.
+files. It tries a pull request after a push to its branch as well, at
+the commit pushed, since that push may conflict. It tells a pull request
+once for each pair of its commit and `main`'s, so every push to `main`
+that still leaves it in conflict tells it again. So a comment that gets
+lost on its way to the session is followed by the next, and that costs
+no run of its own: the run after a push to `main` happens anyway, and
+nothing runs on a schedule. When several
+pushes to `main` come close together, the newest run stops the older
+ones, and a hidden mark in the comment, both commits, keeps a run
+stopped halfway from telling a pull request twice about the same pair.
 
 It comments, so it needs a token that writes, and it gets one only from
 `main`'s own copy of the file, the way `publish.yml` does. A push to
