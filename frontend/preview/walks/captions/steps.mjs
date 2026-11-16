@@ -6,7 +6,7 @@
 // sequence of any folder can take it. Below them the helpers only these
 // steps use. See docs/TESTING.md.
 import { basename } from "node:path";
-import { ask, caughtUp, clickOnTrack, control, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, pageUntil, playUntil, pressPlay, seekTo, settle, shown, shownOnPlayhead, xOf } from "../bridge.mjs";
+import { ask, caughtUp, clickOnTrack, control, engineState, episodeOn, fromSidebar, handles, high, news, nextNews, nextPaint, pageUntil, playUntil, pressPlay, seekTo, settle, shown, shownOnPlayhead, xOf, playhead } from "../bridge.mjs";
 import { canLook, clickCard, clickedFromAhead, onePiece, rate, restAhead, shotClips, url } from "../common/steps.mjs";
 import { describe } from "../rules.mjs";
 
@@ -721,7 +721,7 @@ export const steps = {
       return n;
     });
     const box = (await shown(page)).map((w) => w.text).join(" ");
-    const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+    const at = await playhead(page);
     if (white < 100 || !box.includes(arg)) {
       walk.wrong = `with the playhead at ${at.toFixed(3)} the video preview shows ${white} white pixels under the caption box "${box}", not the caption with "${arg}"`;
     }
@@ -1862,7 +1862,6 @@ export const steps = {
     }
     const mx = mark.x + mark.width / 2;
     const my = mark.y + mark.height / 2;
-    const playhead = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
     const words = async () => (await shown(page)).map((w) => w.at).join(" ");
     // The caption box shows the caption drawn on the frame on screen,
     // which on a busy machine comes a moment after the playhead, so
@@ -1880,7 +1879,7 @@ export const steps = {
       return true;
     };
     if (!(await clickUp(mx, my, `the ${arg} mark`))) return;
-    const onMark = await playhead();
+    const onMark = await playhead(page);
     const there = await words();
     const g = await handles(page);
     const from = g.start.x + g.start.w;
@@ -1919,7 +1918,7 @@ export const steps = {
     );
     const now = await shown(page);
     const still = now.find((w) => w.focused);
-    const at = await playhead();
+    const at = await playhead(page);
     if (Math.abs(at - onMark) > 0.05) walk.wrong = `a click on the ${arg} mark put the playhead at ${at}, not on the mark at ${onMark}`;
     else if (still) walk.wrong = `after a click on the ${arg} mark, "${still.text}" is still open`;
     else if (!followed)

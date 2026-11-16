@@ -332,7 +332,11 @@ plays, the walk records every frame the video preview puts on screen, by
 the frame number read back from the bars on its canvas on every animation
 frame, not by the clock and not by what the frame queue says it drew.
 Where the playhead is, it reads off `data-playhead` on `.screen`, and
-whether it plays off the play button, Play or Pause. It waits on nothing
+whether it plays off the play button, Play or Pause. After a press, a
+drag or a key it reads the playhead through `playhead` in
+`walks/bridge.mjs`, which waits for the animation frame the playhead
+follows the hand on, `inputHandled`. A walk that read it straight after
+the input read where the playhead had been. It waits on nothing
 but those: a play of a moment goes on until the playhead has moved that
 far into the episode, `playFor`, a play to the end and a play into the
 clip until the playhead is past where they aim or the play has stopped,
