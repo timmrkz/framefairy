@@ -236,7 +236,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 		// With the queue's lock held, so the job cannot run before it.
 		// A job the queue refused chooses nothing.
 		if picks != nil && j.State == JobRunning {
-			picks.keep(cardKey(j.ID, 1))
+			picks.keep(cardKey(j.ID, 1), s.jobs.nextStampLocked())
 		}
 	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
 		return p.MakeClip(ctx, id, req, host)

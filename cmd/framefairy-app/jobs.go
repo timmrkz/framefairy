@@ -292,6 +292,13 @@ func (q *queue) stamp() uint64 {
 	return q.seq
 }
 
+// nextStampLocked is the number the next change to the jobs takes, with
+// q.mu held. A job being added takes it, so a state read before the job
+// was added has a smaller one, see picked.keep.
+func (q *queue) nextStampLocked() uint64 {
+	return q.seq + 1
+}
+
 // ofVideo is the jobs of one video the workspace shows as they are now,
 // and the number the clock of the jobs gives this moment, see
 // VideoState.Rev. Those are the jobs queued or running, those that ended

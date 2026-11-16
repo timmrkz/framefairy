@@ -180,6 +180,11 @@ type updating struct {
 	round int
 	stop  context.CancelFunc
 	emit  func(UpdateState)
+	// made counts the changes to the state, and sent is the change whose
+	// state the screen was told last, under sending, see send.
+	made    uint64
+	sending sync.Mutex
+	sent    uint64
 	// idle says whether no work runs, and when none does it takes no new
 	// work until reopen is called, see queue.closeIfIdle.
 	idle func() (reopen func(), ok bool)
@@ -371,21 +376,52 @@ func (c *updating) loop() bool {
 func (c *updating) State() UpdateState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.stateLocked()
+}
+
+// stateLocked is a copy of the state, with c.mu held.
+func (c *updating) stateLocked() UpdateState {
 	s := c.state
 	s.Channels = append([]UpdateChannel(nil), c.state.Channels...)
 	return s
 }
 
+// change changes the state and tells the screen.
 func (c *updating) change(f func(*UpdateState)) {
+	c.send(c.apply(f))
+}
+
+// apply makes a change to the state, and returns a copy of the state it
+// left and the number of the change.
+func (c *updating) apply(f func(*UpdateState)) (UpdateState, uint64) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	f(&c.state)
 	c.state.settle()
 	c.lastSent = time.Now()
 	c.changed.WakeLocked()
-	c.mu.Unlock()
-	if c.emit != nil {
-		c.emit(c.State())
+	c.made++
+	return c.stateLocked(), c.made
+}
+
+// send tells the screen a state that change n left, unless the screen was
+// told a later one. Two changes leave c.mu in one order and may reach
+// send in the other, and the screen then showed the older state for good:
+// the download of the channel before, after a pick. The later state holds
+// every change the older one did, so nothing is lost by leaving it out.
+func (c *updating) send(s UpdateState, n uint64) {
+	if c.emit == nil {
+		return
 	}
+	c.sending.Lock()
+	defer c.sending.Unlock()
+	if n <= c.sent {
+		theLog.line(zerolog.DebugLevel, "updates").Uint64("change", n).Uint64("sent", c.sent).
+			Msg("a state older than the one on screen was not sent")
+		return
+	}
+	c.sent = n
+	c.emit(s)
 }
 
 func (c *updating) picked() string {

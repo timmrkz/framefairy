@@ -184,14 +184,41 @@ func (p *picked) with(files afero.Fs, path string, change func(*picked) bool) (b
 
 // keep keeps key as the clip chosen by a hand, with only its own lock
 // held, so it can be chosen while the queue's lock is held. It writes
-// nothing: save writes it once that lock is let go.
-func (p *picked) keep(key string) {
+// nothing: save writes it once that lock is let go. rev is the clock of
+// the jobs as the hand chose, see handChose.
+func (p *picked) keep(key string, rev uint64) {
 	p.mu.Lock()
-	// A clip a hand chose is no longer the one a removal chose, so
-	// putting a removed clip back after it chooses nothing, rule 5.
-	p.kept.Clip, p.instead = key, nil
+	p.handChose(key, rev)
 	p.version++
 	p.mu.Unlock()
+}
+
+// handChose makes key the clip chosen, the way a hand chose it at rev,
+// the clock of the jobs then, with the lock held. A state read before
+// rev knows nothing of the choice, so it chooses nothing from what it
+// read, see chosenFor, and says the clip chosen before when it does not
+// hold this one, see answer. A state read before a clip made with O was
+// queued, and chosen from after its card was chosen, held neither the
+// card nor its job, took the card for gone and chose the first clip in
+// its place for good, issue #864.
+func (p *picked) handChose(key string, rev uint64) {
+	p.choseAt(key, rev)
+	// A clip a hand chose is no longer the one a removal chose, so
+	// putting a removed clip back after it chooses nothing, rule 5.
+	p.instead = nil
+}
+
+// choseAt makes key the clip chosen at rev, the clock of the jobs then,
+// with the lock held, for whatever chooses outside a state: a hand, see
+// handChose, and an undo, see undone. It says whether the clip chosen
+// changed.
+func (p *picked) choseAt(key string, rev uint64) bool {
+	p.decided = max(p.decided, rev)
+	if p.kept.Clip == key {
+		return false
+	}
+	p.prior, p.kept.Clip = p.kept.Clip, key
+	return true
 }
 
 // save writes what is kept through, the newest version only, so what is
@@ -241,10 +268,9 @@ func (s *FrameFairy) pick(path, key string) error {
 	if !looksLikeClipKey(key) {
 		return errors.New("that is not the key of a clip")
 	}
+	rev := s.stamp()
 	_, err := s.chosenIn(path).with(s.store.files, path, func(p *picked) bool {
-		// A clip a hand chose is no longer the one a removal chose, so
-		// putting a removed clip back after it chooses nothing, rule 5.
-		p.kept.Clip, p.instead = key, nil
+		p.handChose(key, rev)
 		return true
 	})
 	return err
