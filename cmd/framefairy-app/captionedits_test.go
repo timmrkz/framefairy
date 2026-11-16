@@ -379,7 +379,8 @@ func removalBroken(c captionEdit, before, after *engine.CaptionsView) string {
 		// had moved its own end out under the next one.
 		gone := b+1 < len(before.Captions) &&
 			!slices.ContainsFunc(after.Captions, func(a engine.CaptionView) bool { return close3(a.First, before.Captions[b+1].First) })
-		lets := gone && close3(was.End, before.Captions[b+1].Start) && (now.End < was.End || before.Captions[b+1].StartMoved || was.EndMoved)
+		lets := gone && close3(was.End, before.Captions[b+1].Start) && (now.End < was.End ||
+			(before.Captions[b+1].StartMoved || was.EndMoved) && now.End <= before.Captions[b+1].End+1e-3)
 		startOK := close3(now.Start, was.Start) || starts && now.Start >= was.Start-1e-3
 		endOK := close3(now.End, was.End) || held || lets || ends && now.End <= was.End+1e-3
 		if !startOK || !endOK {
@@ -650,5 +651,41 @@ func TestEveryCaptionEditKeepsTheRules(t *testing.T) {
 				t.Errorf("put back: %s\nthen %s\nnow  %s", why, spansOf(after), spansOf(e.view()))
 			}
 		})
+	}
+}
+
+// A word removed with its caption stays removed when a word typed in
+// beside it, in the caption after, is deleted in the caption box: "Jahre"
+// typed as "Jahre Schulhof", the caption with "Jahre" removed, then
+// "Schulhof" deleted. "Jahre" came back, and the captions after it were
+// laid out again, issue #820.
+func TestAWordRemovedWithItsCaptionStaysRemoved(t *testing.T) {
+	t.Parallel()
+	e := newCaptionEditor(t)
+	const jahre = 11.830
+	e.make(captionEdit{word: jahre, text: "Jahre Schulhof"})
+	typed := e.view()
+	var holds, after float64 = math.NaN(), math.NaN()
+	for _, c := range typed.Captions {
+		for _, w := range wordsOf(&engine.CaptionsView{Captions: []engine.CaptionView{c}}) {
+			if math.Abs(w.said-jahre) < 1e-3 && w.part == 0 {
+				holds = c.First
+			}
+			if w.part == 1 && w.text == "Schulhof" {
+				after = c.First
+			}
+		}
+	}
+	if math.IsNaN(holds) || math.IsNaN(after) || holds == after {
+		t.Fatalf("the two words typed are not in two captions: %s", spansOf(typed))
+	}
+	e.make(captionEdit{word: holds, remove: true})
+	removed := e.view()
+	e.make(captionEdit{word: jahre, deletes: true, part: 1})
+	now := e.view()
+	for _, w := range wordsOf(now) {
+		if w.text == "Jahre" {
+			t.Fatalf("Jahre came back\nthen %s\nnow  %s", spansOf(removed), spansOf(now))
+		}
 	}
 }

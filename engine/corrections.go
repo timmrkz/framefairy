@@ -282,10 +282,11 @@ func keepParts(removed RemovedWords, t *Transcript, heard timed.Cue, says string
 	}
 	key := t.keyOf(heard)
 	removed.dropParts(key)
-	if len(now) < 2 {
-		return
-	}
-	kept := 0
+	// Where each removed word is in what the word reads now, worked out
+	// before anything is decided: a word left alone that was removed
+	// with its caption used to come back once the word beside it was
+	// deleted.
+	var kept []int
 	for _, part := range parts {
 		switch {
 		case part < same:
@@ -294,12 +295,19 @@ func keepParts(removed RemovedWords, t *Transcript, heard timed.Cue, says string
 		default:
 			continue
 		}
-		removed[partKey(key, part)] = true
-		kept++
+		if part >= 0 && part < len(now) {
+			kept = append(kept, part)
+		}
 	}
-	if kept >= len(now) {
-		removed.dropParts(key)
+	if len(kept) >= len(now) {
 		removed[key] = true
+		return
+	}
+	if len(now) < 2 {
+		return
+	}
+	for _, part := range kept {
+		removed[partKey(key, part)] = true
 	}
 }
 

@@ -69,7 +69,7 @@ word, like a word typed in beside another, removed in the caption box,
 is taken out of what the correction reads instead, so the words after it
 close up the way they moved on when it was typed. Removed with its
 caption, it is kept removed by the heard word's key and which of its
-words it is, `61200/1`, and keeps its room the way any word removed
+words it is, `h61200/1`, and keeps its room the way any word removed
 does, so no other caption changes, see `dropWords` in
 `engine/corrections.go`. It never changes what is said: the words said
 keep it, every other clip shows it, and a clip made again where a removed

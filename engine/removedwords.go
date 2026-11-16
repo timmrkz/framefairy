@@ -24,12 +24,14 @@ import (
 
 // RemovedWords is the heard words a clip does not show, each kept by the
 // millisecond the recogniser heard it start, as a correction is, see
-// heardIndex. One of the words a correction made of a heard word is kept
-// by the heard word's key, a slash and which of them it is, counted from
-// nought, "61200/1". The correction still reads it, so the captions keep
-// the room it took, the way they do for a heard word removed. It used to
-// be taken out of what the correction read, and the words after it moved
-// up into its room, from one caption into the one before, issue #820.
+// heardIndex. One of the words a correction made of a heard word, removed
+// with its caption, is kept by the heard word's key, a slash and which of
+// them it is, counted from nought, "h61200/1". The correction still reads
+// it, so the captions keep the room it took, the way they do for a heard
+// word removed, and removing the caption changes no other. Before, the
+// words after it moved up into its room, from the caption after into the
+// one before, issue #820. Removed alone in the caption box, it is taken
+// out of what the correction reads instead, see RemoveWord.
 type RemovedWords map[string]bool
 
 // partKey is the key of one of the words a correction made of the heard
@@ -163,12 +165,14 @@ func (r RemovedWords) forget(t *Transcript, heard timed.Cue) {
 }
 
 // partsOf is which of the words a correction made of a heard word the
-// clip does not show.
+// clip does not show, of those it reads now: a key for a word it no
+// longer has, from a plan, counts for nothing.
 func (r RemovedWords) partsOf(t *Transcript, heard timed.Cue) []int {
 	key := t.keyOf(heard)
 	var out []int
+	n := len(strings.Fields(heard.Text))
 	for k := range r {
-		if word, part, ok := splitRemoved(k); ok && part >= 0 && word == key {
+		if word, part, ok := splitRemoved(k); ok && part >= 0 && part < n && word == key {
 			out = append(out, part)
 		}
 	}
