@@ -640,19 +640,15 @@ func (r *runner) plan(ctx context.Context) error {
 	asked.Count, asked.Whole, asked.Model, asked.OutW, asked.OutH = count, whole, plannerName(opts), outW, outH
 	asked.LogDir, asked.Window, asked.Fresh, asked.Local = logsDir, window, opts.Replan, local
 	asked.Record, asked.PlanPath, asked.wrote = !opts.NoRecord && !experiment, planPath, opts.wrote
+	// The one clip of a short episode made again is the clip that was
+	// removed, made afresh. The removed one goes as it is written, or
+	// putting it back or undoing its removal would show the episode twice.
+	if whole {
+		asked.Replaces = opts.Removed
+	}
 	plan, err := e.BuildPlan(ctx, opts.Source, source, lines, asked)
 	if err != nil {
 		return e.planFailed(ctx, err)
-	}
-	// The one clip of a short episode made again is the clip that was
-	// removed, made afresh. The removed one goes, or putting it back or
-	// undoing its removal would show the episode twice.
-	if whole && len(plan.Clips) > 0 {
-		for _, c := range opts.Removed {
-			if err := DropRemoved(r.e.Files, c.Plan, c.ID); err != nil {
-				log.Warn("could not take out the clip %s that was removed: %s", c.ID, err)
-			}
-		}
 	}
 	// Each clip was written to the plan the moment it was framed, so
 	// there is nothing left to write.

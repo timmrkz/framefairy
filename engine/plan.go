@@ -99,6 +99,12 @@ type PlanOptions struct {
 	// any clip of it in the list is its clip, and it is made again once
 	// that was removed, see wholeClip.
 	Listed []timed.Window
+	// Replaces are the removed clips the clip being made is again: the
+	// one clip of an episode shorter than a clip, made after it was
+	// removed. They are taken out of their plans just before that clip is
+	// written, so no read of the plans ever finds both, and the clip list
+	// never shows the episode as a clip and as a removed one to put back.
+	Replaces []ClipRef
 	// wrote hears what the search wrote, see searchWrote.
 	wrote *searchWrote
 }
@@ -688,8 +694,8 @@ func (e *Engine) wholeClip(ctx context.Context, sourcePath string, source Source
 	// The episode is the one moment there is. A clip of it still in the
 	// list, however it was trimmed, is the clip, and a search finds
 	// nothing new. One removed is no answer to a search asked for since,
-	// which is asking for it again, and the removed one goes once it is
-	// made, see runner.plan.
+	// which is asking for it again, and the removed one goes as it is
+	// written, see PlanOptions.Replaces.
 	listed := len(opts.Listed) > 0
 	opts.Taken = nil
 	build := e.newPlanBuilder(ctx, sourcePath, source, lines, nil, opts, "")
