@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -148,7 +149,7 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 	_, read := testLog(t)
 
 	serve := func(target string, h func(w http.ResponseWriter, r *http.Request)) {
-		logged(httptest.NewRecorder(), httptest.NewRequest("GET", target, nil), h)
+		logged(&recorded{ResponseWriter: httptest.NewRecorder()}, httptest.NewRequest("GET", target, nil), h)
 	}
 	pull := func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(make([]byte, 64)) }
 	serve("/frames/open?path=/videos/start.mp4&from=1.5&w=874&h=492", func(w http.ResponseWriter, r *http.Request) {
@@ -228,6 +229,39 @@ func TestWailsWritesTheAppLog(t *testing.T) {
 	has(t, find(lines, "the window could not be made"), map[string]any{
 		"level": "error", "from": "wails", "run": theLog.run, "error": "no display",
 	})
+}
+
+// A line said through slog goes the way every other line goes: the file
+// it lands in tells Settings that it grew, and a trace line is kept in
+// memory, not in the file. It went straight to the file before, so
+// Settings did not hear of Wails's lines, issue #858.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestALineSaidThroughSlogGoesTheWayEveryLineGoes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "logs", "app.log")
+	l := &appLog{run: "slog", grew: make(chan struct{}, 1)}
+	l.open(path)
+	t.Cleanup(l.close)
+	said := l.slog("wails", zerolog.TraceLevel)
+
+	said.Info("the window was made")
+	select {
+	case <-l.grew:
+	default:
+		t.Error("a line said through slog did not tell Settings the log grew")
+	}
+
+	said.Log(context.Background(), slog.LevelDebug-4, "a request asked")
+	if !strings.Contains(string(l.recent.all()), "a request asked") {
+		t.Error("a trace line said through slog is not in the recent lines")
+	}
+	file, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(file), "the window was made") || strings.Contains(string(file), "a request asked") {
+		t.Errorf("the file holds\n%s\nwant the info line and not the trace line", file)
+	}
 }
 
 // The log keeps to its size: past 10 MB it starts a new file and keeps

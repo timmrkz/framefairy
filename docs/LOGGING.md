@@ -97,7 +97,8 @@ brings only itself into the build, since the two modules it needs are in
 it already, and it has a trace level below debug for lines that come
 with every frame. Since 1.35 it also takes slog's lines. Wails, the
 library that runs the app's window, logs through slog, and its lines go
-into the same file that way. A panic Wails catches is an `error` line
+the way every other line goes, into the same file, where Settings hears
+of them as they come. A panic Wails catches is an `error` line
 from `wails` with its `stack`, and the app goes on.
 
 What a library or net/http says through Go's standard log is a `warn`
@@ -239,7 +240,9 @@ so their lines are counted, not written one by one. Their part is
   warning a step.
 - A panic while drawing the captions or placing their words is an
   `error` with its stack, `the window's request stopped unexpectedly`,
-  as is a panic in any request for frames, sound or fonts. A panic while
+  as is a panic in any request for frames, sound or fonts. A request
+  that panics after its answer began is cut short where it stopped, and
+  its line says so with the `status` and `bytes` that went out. A panic while
   the caption file is laid out, which outlives the request, is an
   `error` from `captions`, and the engine's stack follows it as a `debug`
   line.

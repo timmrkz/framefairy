@@ -514,17 +514,17 @@ func (l *appLog) lineAt(level zerolog.Level, from string, at time.Time) *zerolog
 	return lg.WithLevel(level).Time(zerolog.TimestampFieldName, at).Str("run", l.run).Str("from", from)
 }
 
-// slog is a logger for code that speaks log/slog, whose lines go into the
-// same file as the part named, from the level given. Wails, which runs
-// the app's window, logs that way. Lines said before the log is open go
-// nowhere.
+// slog is a logger for code that speaks log/slog, whose lines go the way
+// every other line goes, as the part named, from the level given: into
+// the file, telling Settings that it grew, and a trace line into the
+// recent lines, see byLevel. Wails, which runs the app's window, logs
+// that way. Lines said before the log is open go nowhere.
 func (l *appLog) slog(from string, least zerolog.Level) *slog.Logger {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.file == nil {
+	root := l.root.Load()
+	if root == nil {
 		return slog.New(slog.DiscardHandler)
 	}
-	lg := zerolog.New(l.file).Level(least).With().Str("run", l.run).Str("from", from).Logger()
+	lg := root.Level(least).With().Str("run", l.run).Str("from", from).Logger()
 	return slog.New(zerolog.NewSlogHandler(lg))
 }
 
@@ -698,7 +698,8 @@ func (f *FrameFairy) Acted(a Act) {
 	withAct(ev, id).Msg(clipped(a.What, actWhatMax))
 }
 
-// recorded is a response as it was written, for the log.
+// recorded is a response as it was written, for the log, and for the
+// recover in mediaMiddleware, which may answer only while nothing went out.
 type recorded struct {
 	http.ResponseWriter
 	status int
@@ -783,10 +784,11 @@ const slowPull = 300 * time.Millisecond
 // logged serves a request for the episode's file or its frames and says
 // in the app's log how it went: which video, what was asked, the answer
 // and how long it took. See the video preview's lines in lib/said.ts,
-// which these stand among.
-func logged(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWriter, *http.Request)) {
+// which these stand among. rec is the answer as mediaMiddleware already
+// records it, so a frame pulled is recorded once.
+func logged(rec *recorded, r *http.Request, serve func(http.ResponseWriter, *http.Request)) {
 	start := time.Now()
-	rec := &recorded{ResponseWriter: w, keep: r.URL.Path != "/frames/read" && strings.HasPrefix(r.URL.Path, "/frames/")}
+	rec.keep = r.URL.Path != "/frames/read" && strings.HasPrefix(r.URL.Path, "/frames/")
 	serve(rec, r)
 	took := time.Since(start)
 	if rec.status == 0 {
