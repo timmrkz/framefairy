@@ -298,11 +298,25 @@ func (r *runner) planned(ctx context.Context) (Plan, []Clip, error) {
 
 // plansNow says whether the run makes its plan: when there is none yet,
 // when a new one is asked for, and when a search that stopped is carried
-// on. A search carried on kept only what it found before it stopped, so
-// Continue found nothing more and said the search was done, issue #881.
+// on with clips still missing. A search carried on kept only what it found
+// before it stopped, so Continue found nothing more and said the search
+// was done, issue #881. One whose clips had all landed has nothing to ask
+// the model for, and asking would cost a paid call or minutes of the
+// machine to throw the whole answer away.
 func (r *runner) plansNow() bool {
-	return r.opts.ClipsPath == "" &&
-		(r.opts.Replan || r.opts.CarryOn || !fileio.Exists(r.e.Files, r.planPath))
+	if r.opts.ClipsPath != "" {
+		return false
+	}
+	if r.opts.Replan || !fileio.Exists(r.e.Files, r.planPath) {
+		return true
+	}
+	return r.opts.CarryOn && !r.planHolds()
+}
+
+// planHolds says whether the plan there holds the clips asked for.
+func (r *runner) planHolds() bool {
+	_, clips, err := LoadClips(r.e.Files, r.planPath)
+	return err == nil && len(clips) >= r.opts.Count
 }
 
 // finish is the end of a run with its clips: nothing more for a plan asked

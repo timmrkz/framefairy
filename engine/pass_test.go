@@ -242,6 +242,41 @@ func TestASearchCarriedOnLeavesOutAClipHoldingOneThatLanded(t *testing.T) {
 	}
 }
 
+// A search stopped once every clip it was asked for had landed, while the
+// model still wrote, has nothing left to find. Continue does not ask the
+// model again, which would cost a paid call or minutes of the machine and
+// throw the whole answer away.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
+func TestASearchCarriedOnWithEveryClipLandedAsksNothing(t *testing.T) {
+	t.Parallel()
+	server, asked := answering(t, clipAnswer(1))
+	p := passProject(t, server.URL)
+	req := PlanRequest{From: 10, To: 30, Count: 1, Min: 1, Max: 30}
+	plan, err := p.Search(context.Background(), req, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replies, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "reply-*.json"))
+	for _, r := range replies {
+		if err := p.Files.Remove(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	carried := req
+	carried.Pass, carried.CarryOn = 1, true
+	again, err := p.Search(context.Background(), carried, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(asked()); n != 1 {
+		t.Errorf("the model was asked %d times, so Continue asked again for a plan that was full", n)
+	}
+	if _, clips, err := LoadClips(p.Files, again); again != plan || err != nil || len(clips) != 1 {
+		t.Errorf("Continue left %s with %d clips, %v, not %s with its one", again, len(clips), err, plan)
+	}
+}
+
 // A later pass over the whole episode is a window from its start to its
 // end, so its plan says which.
 func TestPassNames(t *testing.T) {
