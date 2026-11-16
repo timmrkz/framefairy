@@ -173,7 +173,14 @@ func (s *Source) stream(ctx context.Context, where string, total int64, dst sink
 	outer := ctx
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	arrived, quiet := s.watchQuiet(ctx, cancel)
+	// The same watch as a speech model's download, downloadStall in the
+	// engine: each read that brings something starts its wait again.
+	var quiet atomic.Bool
+	watch := time.AfterFunc(fetchQuiet, func() {
+		quiet.Store(true)
+		cancel()
+	})
+	defer watch.Stop()
 	stopped := func(err error) error {
 		if quiet.Load() && outer.Err() == nil {
 			return fmt.Errorf("the download stopped: nothing came for %d seconds", int(fetchQuiet.Seconds()))
@@ -201,10 +208,7 @@ func (s *Source) stream(ctx context.Context, where string, total int64, dst sink
 	for {
 		n, rerr := body.Read(buf)
 		if n > 0 {
-			select {
-			case arrived <- struct{}{}:
-			default:
-			}
+			watch.Reset(fetchQuiet)
 			if written+int64(n) > total {
 				return errors.New("the build is larger than the channel list says")
 			}
@@ -228,29 +232,4 @@ func (s *Source) stream(ctx context.Context, where string, total int64, dst sink
 		return fmt.Errorf("the download stopped after %d of %d bytes", written, total)
 	}
 	return nil
-}
-
-// watchQuiet calls stop once nothing has arrived for fetchQuiet, and says
-// so in quiet. Each send on arrived puts the watch back. It ends with ctx.
-func (s *Source) watchQuiet(ctx context.Context, stop func()) (arrived chan<- struct{}, quiet *atomic.Bool) {
-	wait := s.Quiet
-	if wait == nil {
-		wait = time.After
-	}
-	came := make(chan struct{}, 1)
-	quiet = new(atomic.Bool)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-came:
-			case <-wait(fetchQuiet):
-				quiet.Store(true)
-				stop()
-				return
-			}
-		}
-	}()
-	return came, quiet
 }

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -340,38 +341,74 @@ func TestADownloadCalledOffStopsWhenTheBuildIsAlreadyThere(t *testing.T) {
 // closing, is given up on once nothing has come for fetchQuiet, and says
 // so. It used to wait for all of fetchTakes, half an hour, and every later
 // check waited with it.
+//
+// It runs in a bubble, with fetchQuiet as the app has it, on the
+// bubble's clock.
 func TestADownloadThatGoesQuietIsGivenUpOn(t *testing.T) {
 	t.Parallel()
-	part := make([]byte, 1<<10)
-	quietFor := make(chan time.Time)
-	var asked sync.Map
-	src := &Source{
-		Client: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+	synctest.Test(t, func(t *testing.T) {
+		part := make([]byte, 1<<10)
+		src := &Source{Client: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Status:     "200 OK",
 				Body:       io.NopCloser(io.MultiReader(bytes.NewReader(part), untilCalledOff{r.Context()})),
 				Request:    r,
 			}, nil
-		})},
-		Quiet: func(d time.Duration) <-chan time.Time {
-			asked.Store(d, true)
-			return quietFor
-		},
-	}
-	var once sync.Once
-	var got bytes.Buffer
-	err := src.stream(context.Background(), "https://example.invalid/app.zip", 4<<20, writerSink{&got},
-		func(int64) { once.Do(func() { close(quietFor) }) })
-	if err == nil || !strings.Contains(err.Error(), "nothing came for 60 seconds") {
-		t.Fatalf("got %v, want the download given up on as quiet", err)
-	}
-	if got.Len() != len(part) {
-		t.Errorf("kept %d bytes, want the %d that came", got.Len(), len(part))
-	}
-	if _, ok := asked.Load(fetchQuiet); !ok {
-		t.Errorf("the quiet was not waited for as fetchQuiet, %s", fetchQuiet)
-	}
+		})}}
+		var got bytes.Buffer
+		began := time.Now() //nolint:forbidigo // synctest bubble
+		err := src.stream(context.Background(), "https://example.invalid/app.zip", 4<<20, writerSink{&got}, func(int64) {})
+		if err == nil || !strings.Contains(err.Error(), "nothing came for 60 seconds") {
+			t.Fatalf("got %v, want the download given up on as quiet", err)
+		}
+		if took := time.Since(began); took != fetchQuiet { //nolint:forbidigo // synctest bubble
+			t.Errorf("gave up after %s on the bubble's clock, want %s", took, fetchQuiet)
+		}
+		if got.Len() != len(part) {
+			t.Errorf("kept %d bytes, want the %d that came", got.Len(), len(part))
+		}
+	})
+}
+
+// A download that takes longer than fetchQuiet, but keeps bringing
+// something, is waited for to its end.
+//
+// It runs in a bubble, on the bubble's clock.
+func TestADownloadThatKeepsBringingIsWaitedFor(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		const parts, size, gap = 4, 1 << 10, fetchQuiet * 2 / 3
+		src := &Source{Client: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+			read, write := io.Pipe()
+			go func() {
+				for range parts {
+					select {
+					case <-time.After(gap): //nolint:forbidigo // synctest bubble
+					case <-r.Context().Done():
+						write.CloseWithError(r.Context().Err())
+						return
+					}
+					if _, err := write.Write(make([]byte, size)); err != nil {
+						return
+					}
+				}
+				write.Close()
+			}()
+			return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: read, Request: r}, nil
+		})}}
+		var got bytes.Buffer
+		began := time.Now() //nolint:forbidigo // synctest bubble
+		if err := src.stream(context.Background(), "https://example.invalid/app.zip", parts*size, writerSink{&got}, func(int64) {}); err != nil {
+			t.Fatal(err)
+		}
+		if took := time.Since(began); took != parts*gap { //nolint:forbidigo // synctest bubble
+			t.Errorf("the download took %s on the bubble's clock, want %s", took, parts*gap)
+		}
+		if got.Len() != parts*size {
+			t.Errorf("kept %d bytes, want %d", got.Len(), parts*size)
+		}
+	})
 }
 
 // untilCalledOff is a body that brings nothing until its request is

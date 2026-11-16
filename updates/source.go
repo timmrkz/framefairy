@@ -51,10 +51,6 @@ type Source struct {
 	// one that is up at once and keeps what it was asked to wait, so the
 	// waits are checked and no test spends them.
 	Wait func(time.Duration) <-chan time.Time
-	// Quiet is how the wait for the next bytes of a download passes, see
-	// fetchQuiet. Empty, it is time.After. A test hands in one it ends
-	// itself, so a download that goes quiet is given up on at once.
-	Quiet func(time.Duration) <-chan time.Time
 	// Copies are the addresses of the two copies of the list, read before
 	// URL, see ListCopies. Empty reads URL alone.
 	Copies []string
