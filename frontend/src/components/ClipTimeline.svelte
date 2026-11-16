@@ -176,8 +176,11 @@
     // the edges of a cut moved, a cut put back. The engine makes the change
     // it showed while the hand moved, see engine/shape.go.
     // It comes with where the playhead stood when the hand took hold and
-    // where the gesture left it, so an undo puts both back.
-    onreshape?: (g: Gesture, playhead: [number, number]) => Promise<void>;
+    // where the gesture left it, so an undo puts both back. Every call
+    // that saves a change to the clip names the clip the hand worked on,
+    // because the save goes out after the hand let go, and by then
+    // another clip may be the chosen one.
+    onreshape?: (clip: ClipEntry, g: Gesture, playhead: [number, number]) => Promise<void>;
     // Walking the words has run off the end of the clip. The words of the
     // clip beside it are not here to walk on to, they arrive with its
     // captions, so the workspace is asked and it takes it from there.
@@ -209,7 +212,13 @@
     // A caption edge let go of: the word it begins or ends on and the new
     // moment, both in the episode, or a moment below nought to put it back
     // where its words put it. True when it was saved.
-    oncaptiontime?: (word: number, edge: "start" | "end", at: number, toWords: boolean) => Promise<boolean>;
+    oncaptiontime?: (
+      clip: ClipEntry,
+      word: number,
+      edge: "start" | "end",
+      at: number,
+      toWords: boolean,
+    ) => Promise<boolean>;
     // The captions as the engine has them with a caption edge where the
     // hand is, so the caption box in the video preview follows the drag.
     // Null once the captions have come back with it saved.
@@ -217,7 +226,7 @@
     // A caption block clicked and then removed with delete, known by the
     // moment its first word starts in the episode. It throws when the
     // caption could not be removed, and the block comes back.
-    onremovecaption?: (first: number) => Promise<void>;
+    onremovecaption?: (clip: ClipEntry, first: number) => Promise<void>;
     // The clip as a drag of an edge or a cut has it, its pieces and the
     // captions the engine made for them, or null when no drag is shaping
     // it. The video preview shows the same clip as the timeline on the way,
@@ -239,14 +248,14 @@
     thumbnails?: number[];
     // A thumbnail dragged to another frame, from where it was to where it
     // was let go, both in the episode.
-    onthumbnail?: (from: number, to: number) => Promise<void>;
+    onthumbnail?: (clip: ClipEntry, from: number, to: number) => Promise<void>;
     // The clip's keyframes, each a crop placed by hand on one frame. Each
     // is a diamond, or a circle, which the crop glides to from a circle, on the top
     // rule of the track. Plan row 3.26.
     cropMarks?: CropMark[];
     // A keyframe dragged to another frame, from where it was to where it
     // was let go, or removed, with to below nought.
-    oncropmark?: (from: number, to: number) => Promise<void>;
+    oncropmark?: (clip: ClipEntry, from: number, to: number) => Promise<void>;
     // Every clip of the episode, the way the range picker has them, so
     // the timeline zoomed out shows where the others are. The chosen one
     // is the frame and has no mark.
@@ -582,7 +591,7 @@
   // a hand that let go while an answer was on its way left the last place
   // unasked, and the playhead stood where the edge had been a few frames
   // before.
-  async function letGo(save: boolean) {
+  async function letGo(save: boolean, on: ClipEntry) {
     const g = hand;
     hand = null;
     if (!save || !g || !onreshape) {
@@ -603,7 +612,7 @@
       await before;
       await idle();
       unsent--;
-      await reshape(g, [heldAt, leftAt]);
+      await reshape(g, [heldAt, leftAt], on);
     })();
     const done = run.then(tick, tick);
     saved = done;
@@ -633,11 +642,11 @@
   const edgeOf = (g: Gesture) => (g.kind === "move" ? `move ${g.index}` : `${g.kind} ${g.edge}`);
 
   // A click on a cut's button moves no playhead, so it stays where it is.
-  async function reshape(g: Gesture, playhead: [number, number] = [time, time]) {
-    if (!onreshape) return;
+  async function reshape(g: Gesture, playhead: [number, number] = [time, time], on = clip) {
+    if (!onreshape || !on) return;
     saving = true;
     try {
-      await onreshape(g, playhead);
+      await onreshape(on, g, playhead);
     } finally {
       saving = unsent > 0;
     }
@@ -712,8 +721,12 @@
   type Begun = { at: number; make: (delta: number, shift: boolean) => Gesture };
   function gestureGrip(key: string, begin: () => Begun | null) {
     const press = owner;
+    // The clip the hand takes hold of. The release can come a while
+    // later, after the saves before it, and the gesture is saved on this
+    // clip even when another one is chosen by then.
+    const on = clip;
     const pressed = begin();
-    if (!pressed) return null;
+    if (!pressed || !on) return null;
     const settled = pending === "" || pending === key;
     let begun = settled && !asking && !nextGesture ? pressed : null;
     let last: [number, boolean] | null = null;
@@ -745,7 +758,7 @@
       },
       async release(moved: boolean) {
         await started;
-        if (moved && begun) await letGo(true);
+        if (moved && begun) await letGo(true, on);
       },
     };
   }
@@ -1626,8 +1639,9 @@
   }
 
   function removeCaption(first: number) {
+    if (!clip) return;
     goneCaps = new Set([...goneCaps, first]);
-    onremovecaption?.(first).catch(() => {
+    onremovecaption?.(clip, first).catch(() => {
       // The workspace says what went wrong, and the block comes back.
       const back = new Set(goneCaps);
       back.delete(first);
@@ -1802,6 +1816,7 @@
   // a double-click puts a moved edge back.
   function captionEdgeGrip(i: number, edge: "start" | "end"): Grip | null {
     if (!clip || locked || capSaving || !oncaptiontime || !captions?.length) return null;
+    const on = clip;
     const c = captions[i];
     if (!c) return null;
     const word = edge === "start" ? c.first : c.last;
@@ -1836,7 +1851,7 @@
           return;
         }
         capSaving = true;
-        const ok = await oncaptiontime(word, edge, onEpisode(d.at), d.toWords);
+        const ok = await oncaptiontime(on, word, edge, onEpisode(d.at), d.toWords);
         capSaving = false;
         if (!ok) dropCaption();
       },
@@ -1860,11 +1875,11 @@
   // words put it, which shows the words it hid again, see SetCaptionTime.
   function resetCaption(i: number, edge: "start" | "end") {
     const c = captions?.[i];
-    if (!c || !oncaptiontime || locked) return;
+    if (!c || !clip || !oncaptiontime || locked) return;
     const word = edge === "start" ? c.first : c.last;
     const moved = edge === "start" ? c.startMoved : c.endMoved;
     if (word === undefined || !moved) return;
-    oncaptiontime(word, edge, -1, false);
+    oncaptiontime(clip, word, edge, -1, false);
   }
 
   // Where in the episode this is. Without them a swipe leaves you nowhere,
@@ -1966,13 +1981,15 @@
   // dragged to another frame with the playhead going along, and a
   // double-click removes it, the way it removes a cut.
   function markGrip(kind: MarkKind, at: number): Grip {
+    // The clip the mark is on, which the change is saved on.
+    const on = clip;
     return {
       at,
       twice: () => {
-        if (!locked) void markChange(kind)?.(at, -1);
+        if (!locked && on) void markChange(kind)?.(on, at, -1);
       },
       drag(delta) {
-        if (locked || !markChange(kind)) return;
+        if (locked || !on || !markChange(kind)) return;
         const to = markFrame(kind, at + delta);
         markDrag = { kind, from: at, to };
         seekSoon(to);
@@ -1991,7 +2008,7 @@
           return;
         }
         try {
-          await markChange(kind)?.(d.from, d.to);
+          if (on) await markChange(kind)?.(on, d.from, d.to);
         } finally {
           markDrag = null;
         }

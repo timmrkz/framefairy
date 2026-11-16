@@ -3533,14 +3533,14 @@
         onahead={readAhead}
         onhold={holdPlayhead}
         dimmed={!onClip}
-        onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
+        onreshape={reshape}
         onwalkclip={walkClip}
         {looping}
         playing={!paused}
         thumbnails={current?.thumbnails ?? []}
-        onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
+        onthumbnail={setThumbnail}
         cropMarks={current?.cropMarks ?? []}
-        oncropmark={(from, to) => (current ? setCropMark(current, from, to, -1) : Promise.resolve())}
+        oncropmark={(clip, from, to) => setCropMark(clip, from, to, -1)}
         {marks}
         {hovered}
         onhover={hoverClip}
@@ -3561,9 +3561,8 @@
                 : "transparent",
             }
           : null}
-        oncaptiontime={(word, edge, at, toWords) =>
-          current ? setCaptionTime(current, word, edge, at, toWords) : Promise.resolve(false)}
-        onremovecaption={(first) => (current ? removeCaption(current, first) : Promise.resolve())}
+        oncaptiontime={setCaptionTime}
+        onremovecaption={removeCaption}
         oncaptionshape={(shape) => (captionShape = shape)}
         onshape={(next) => (reshaped = next)}
       />

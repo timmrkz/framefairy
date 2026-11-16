@@ -879,6 +879,53 @@ export const steps = {
     await watch.step("drag edge twice", s);
     await page.evaluate(() => (window.__followWatch = false));
   },
+  // ["trim then next clip"]
+  //                    drags the clip's end 40 px earlier and, while the
+  //                    answer to the last place the hand reached is still
+  //                    on its way, lets go and presses Shift and the down
+  //                    arrow: the trim is saved on the clip it was made on,
+  //                    and the next clip is left as it was
+  async "trim then next clip"(walk, arg, s) {
+    const { page, watch } = walk;
+    // A busy machine answers late, and the save waits for the answer
+    // before it goes out. By then the next clip was chosen, and the trim
+    // was saved on it, which cut it down to a second. Issue #880.
+    const trimmed = watch.at;
+    const pieces = (clips, at) => clips.find((c) => c.plan === at.plan && c.id === at.clip)?.segments.map((p) => [p.start, p.end]);
+    const before = await ask(page, "Clips", trimmed.path);
+    const was = pieces(before, trimmed);
+    const g = await handles(page);
+    const x = middle(g.end);
+    const y = g.end.y + g.end.h / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i < 10; i++) {
+      await page.mouse.move(x - 4 * i, y);
+      await nextPaint(page);
+    }
+    // Every place so far answered, and the last one held on its way.
+    await settle(page);
+    await hold(page, "Shape");
+    await page.mouse.move(x - 40, y);
+    await page.mouse.up();
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press("Shift+ArrowDown");
+    await watch.step("trim then next clip", s);
+    const next = watch.at;
+    if (!next || (next.plan === trimmed.plan && next.clip === trimmed.clip)) {
+      walk.wrong = "Shift and the down arrow chose no other clip";
+      return;
+    }
+    const after = await ask(page, "Clips", trimmed.path);
+    const now = pieces(after, trimmed);
+    if (JSON.stringify(now) === JSON.stringify(was)) {
+      walk.wrong = `the clip whose end was dragged is as it was, ${JSON.stringify(was)}`;
+    }
+    const other = JSON.stringify(pieces(before, next));
+    if (JSON.stringify(pieces(after, next)) !== other) {
+      walk.wrong = `the trim went to the next clip: ${other} became ${JSON.stringify(pieces(after, next))}`;
+    }
+  },
   // ["edge then track", which]
   //                    clicks an edge and at once presses the track near
   //                    its right end: the playhead stands where the track
