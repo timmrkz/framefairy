@@ -602,7 +602,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		}
 		if settle() {
 			worded = time.Now()
-			l.tell(r, Dictation{Said: slices.Clone(said), Unheard: unheard, Asked: asked})
+			l.tell(r, Dictation{Said: append([]string{}, said...), Unheard: unheard, Asked: asked})
 		}
 		// Nobody has said anything for a long while, or the recording is
 		// as long as it may be: it stops by itself and keeps what was
@@ -669,7 +669,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			}
 			hearing, unheard = now, deaf
 			told = append(told[max(len(told)-15, 0):], heard{now, passed})
-			l.tell(r, Dictation{Said: slices.Clone(said), Hearing: now, Unheard: deaf, Asked: asked})
+			l.tell(r, Dictation{Said: append([]string{}, said...), Hearing: now, Unheard: deaf, Asked: asked})
 		}
 	}
 }

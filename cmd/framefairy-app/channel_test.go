@@ -69,9 +69,9 @@ func TestTheInterfaceReadsTheFieldsGoSends(t *testing.T) {
 			}
 		}
 	}
-	for key := range nullToday {
+	for key := range filledWhereBuilt {
 		if !c.nullSeen[key] {
-			c.errorf("%s can no longer be null where api.ts reads it, take it out of nullToday", key)
+			c.errorf("%s can no longer be null where api.ts reads it, take it out of filledWhereBuilt", key)
 		}
 	}
 	for _, e := range c.errs {
@@ -84,7 +84,7 @@ type channel struct {
 	ts   *tsDecls
 	seen map[string]bool
 	errs []string
-	// nullSeen are the fields of nullToday found as they were.
+	// nullSeen are the fields of filledWhereBuilt found as they were.
 	nullSeen map[string]bool
 }
 
@@ -280,8 +280,8 @@ func (c *channel) object(g reflect.Type, m tsMember, where string, goSends bool)
 		}
 		if key := g.String() + "." + name; goSends && !f.left && !optional && canBeNull(f.of) && !takesNull(tf.of) {
 			c.nullSeen[key] = true
-			if !nullToday[key] {
-				c.errorf("Go can send %s.%s as null, api.ts reads it as always a %s. Send an empty one, or say | null in api.ts", where, name, tsKindOf(f.of))
+			if !filledWhereBuilt[key] {
+				c.errorf("Go can send %s.%s as null, api.ts reads it as always a %s. Make it empty where it is built, add it to filledWhereBuilt and build it in TestEveryListTheWindowReadsIsMadeWhereItsTypeIsBuilt, or say | null in api.ts", where, name, tsKindOf(f.of))
 			}
 		}
 		c.compare(f.of, tf.of, where+"."+name, goSends)
@@ -498,12 +498,14 @@ func splitTop(s string) []string {
 	return out
 }
 
-// nullToday are the fields Go can send as null that api.ts reads as a
-// list or a map always there, by Go type and json name, as they were when
-// this test came. Each is kept a list by hand where it is made, which
-// nothing checks. #819 takes them away one by one, and no field joins
-// them.
-var nullToday = map[string]bool{
+// filledWhereBuilt are the fields whose Go type could be sent as null,
+// a list or a map, that api.ts reads as always there, by Go type and json
+// name. Each is made empty, never nil, where its type is built, and
+// TestEveryListTheWindowReadsIsMadeWhereItsTypeIsBuilt builds each and
+// checks it. A field that joins them joins that test too. Writing every
+// answer through a json that writes a nil list as [] was measured, and
+// made each answer half as slow again.
+var filledWhereBuilt = map[string]bool{
 	"engine.CaptionLineView.words": true,
 	"engine.CaptionStart.heights":  true,
 	"engine.CaptionView.lines":     true,
