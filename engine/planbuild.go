@@ -139,6 +139,10 @@ type planBuilder struct {
 	// same moment is left out the way a second clip of one answer is.
 	had    int
 	before []PlanEntry
+	// carrying is a search carried on adding to the plan of the one that
+	// stopped. Each clip it adds names the training record of this
+	// answer, because the plan names the record of the answer before.
+	carrying bool
 
 	// writing is held while a clip goes to disk, so two framers finishing
 	// at once write one after the other.
@@ -175,6 +179,7 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 			b.taken = takenLines(lines, parts)
 			b.had = len(had)
 			b.opts.Grows = true
+			b.carrying = true
 		}
 	}
 	// A second pass over a later part of the episode must not reuse 01..04,
@@ -883,6 +888,9 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 		return nil
 	}
 	if path := b.opts.PlanPath; path != "" {
+		if b.carrying {
+			clip.PlanID = b.planID
+		}
 		if b.opts.Grows {
 			set := PlanFile{Source: filepath.Base(b.sourcePath), PlanID: b.planID, PlannedWith: b.stamp}
 			added, err := addClip(b.e.Files, path, set, clip, b.prefix)
@@ -974,15 +982,24 @@ func (b *planBuilder) none() error {
 
 // settle writes the plan's id when it turned out to be another than the one
 // the plan was begun with, which is a reused answer found only once it was
-// whole.
+// whole. A search carried on writes it on the clips it added, and the
+// plan keeps the id of the answer its other clips came from.
 func (b *planBuilder) settle(planID string) error {
 	b.writing.Lock()
 	defer b.writing.Unlock()
 	if planID == "" || planID == b.planID || !b.written || b.gone || b.opts.PlanPath == "" {
 		return nil
 	}
-	err := editPlan(b.e.Files, b.opts.PlanPath, func(top *object, _ []*object) error {
-		top.set(keyPlanID, planID)
+	err := editPlan(b.e.Files, b.opts.PlanPath, func(top *object, clips []*object) error {
+		if !b.carrying {
+			top.set(keyPlanID, planID)
+			return nil
+		}
+		for _, c := range clips {
+			if id, ok := c.get(keyPlanID); ok && id == b.planID {
+				c.set(keyPlanID, planID)
+			}
+		}
 		return nil
 	})
 	if os.IsNotExist(err) {

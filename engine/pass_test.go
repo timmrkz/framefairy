@@ -277,6 +277,67 @@ func TestASearchCarriedOnWithEveryClipLandedAsksNothing(t *testing.T) {
 	}
 }
 
+// A clip a search carried on added was proposed in an answer of its own,
+// to a prompt of its own, and a decision about it is recorded against that
+// answer, where it is a candidate. The plan keeps naming the answer its
+// other clips came from, so a decision about one of them still finds it.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
+func TestADecisionOnAClipContinueAddedFindsItsCandidate(t *testing.T) {
+	t.Parallel()
+	server, _ := answering(t, clipAnswer(1), clipAnswer(1, 2))
+	p := passProject(t, server.URL)
+	records := ownRecords(p.engine)
+	req := PlanRequest{From: 10, To: 30, Count: 2, Min: 1, Max: 30}
+	plan, err := p.Search(context.Background(), req, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replies, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "reply-*.json"))
+	for _, r := range replies {
+		if err := p.Files.Remove(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	carried := req
+	carried.Pass, carried.CarryOn = 1, true
+	if _, err := p.Search(context.Background(), carried, Host{}); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, err := LoadClips(p.Files, plan)
+	if err != nil || len(clips) != 2 {
+		t.Fatalf("the plan holds %d clips after Continue, %v, and this test needs 2", len(clips), err)
+	}
+	for _, c := range clips {
+		if err := RecordDecision(p.Files, records, plan, c.ID, DecisionKept, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var decided []DecisionRecord
+	_ = records.readRecords(filepath.Join(records.TrainingDir(), "decisions.jsonl"), func(line []byte) {
+		var d DecisionRecord
+		if json.Unmarshal(line, &d) == nil {
+			decided = append(decided, d)
+		}
+	})
+	if len(decided) != 2 {
+		t.Fatalf("%d decisions were recorded, not one for each clip", len(decided))
+	}
+	for _, d := range decided {
+		rec, ok := records.loadPlanRecord(d.PlanID)
+		found := false
+		for _, c := range rec.Candidates {
+			found = found || c.CID == d.CID
+		}
+		if !ok || !found {
+			t.Errorf("the decision on %s went to %s, where it is no candidate", d.CID, d.PlanID)
+		}
+	}
+	if decided[0].PlanID == decided[1].PlanID {
+		t.Errorf("the clip that landed and the clip Continue added both went to %s, though two answers proposed them", decided[0].PlanID)
+	}
+}
+
 // A later pass over the whole episode is a window from its start to its
 // end, so its plan says which.
 func TestPassNames(t *testing.T) {

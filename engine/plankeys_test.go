@@ -17,7 +17,7 @@ func TestAPlanIsWrittenAndReadByTheSameNames(t *testing.T) {
 	}{
 		{PlanFile{}, map[string]string{"PlanID": keyPlanID, "PlannedWith": keyPlannedWith, "Clips": keyClips}},
 		{PlanClip{}, map[string]string{"ID": keyID, "Slug": keySlug, "Title": keyTitle, "Reason": keyReason,
-			"Keep": keyKeep, "Segments": keySegments}},
+			"Keep": keyKeep, "Segments": keySegments, "PlanID": keyPlanID}},
 		{PlanSegment{}, map[string]string{"Start": keyStart, "End": keyEnd, "CropX": keyCropX}},
 		{PlannedWith{}, map[string]string{"From": keyFrom, "To": keyTo}},
 	} {

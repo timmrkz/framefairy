@@ -145,6 +145,10 @@ type PlanClip struct {
 	Reason   string        `json:"reason"`
 	Keep     [][2]int      `json:"keep"`
 	Segments []PlanSegment `json:"segments"`
+	// PlanID is the training record the clip was proposed in, when it is
+	// another than the plan's: a clip a search carried on added to the
+	// plan of the search that stopped, see Clip.PlanID.
+	PlanID string `json:"plan_id,omitempty"`
 }
 
 // PlanSegment is one segment in clips.json. CropX holds a pixel offset or
