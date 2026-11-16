@@ -538,3 +538,20 @@ func TestAFailedPublishMarksItsCommit(t *testing.T) {
 		t.Errorf("the last step of publish, %q, is not one that marks the commit when any step before it failed", last.Name)
 	}
 }
+
+// No package of the interface runs code of its own while it is installed.
+// frontend/.npmrc says so for every npm ci and npm install in frontend/, in
+// make, in CI and by hand. An install script runs before anybody has read
+// the release it came with, which is how the npm worms of 2026 spread.
+//
+// On the real disk: what is read is the repository's own npm settings.
+func TestNoPackageRunsCodeWhenInstalled(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", "frontend", ".npmrc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`(?m)^\s*ignore-scripts\s*=\s*true\s*$`).Match(b) {
+		t.Error("frontend/.npmrc does not say ignore-scripts=true, so npm ci runs every package's install script")
+	}
+}

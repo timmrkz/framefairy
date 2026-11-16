@@ -606,6 +606,14 @@ scan made once is out of date the week after.
   `overrides` in `frontend/package.json`, like minimatch 11 under ESLint,
   and the pin is taken out once that package accepts the fix. Either
   failing is a red check.
+- **No install scripts.** `frontend/.npmrc` says `ignore-scripts=true`,
+  so no package of the interface runs code of its own while it is
+  installed, in make, in CI or by hand. A hijacked release that runs on
+  install is how the npm worms of 2026 spread, and it would run on Tim's
+  Mac and in a session that can push before anybody had read it. None of
+  our packages needs its script. `npm run` still runs the scripts in
+  `package.json`, only their `pre` and `post` steps are skipped.
+  `internal/workflows` fails when the setting is gone.
 - **The tools we build ourselves**, and the pins Dependabot cannot move,
   which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
   four libraries it is built with, llama.cpp, the speech library and Node
