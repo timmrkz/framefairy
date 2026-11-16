@@ -181,6 +181,12 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 			[]string{"imports _CGEventTapCreate", "names CGEventTapCreate"}},
 		{"the camera", "framefairy-app", with(func(p *program) { p.imports = append(p.imports, "_OBJC_CLASS_$_AVCaptureDevice") }),
 			[]string{"imports _OBJC_CLASS_$_AVCaptureDevice", "names AVCaptureDevice"}},
+		// AppKit's monitor of every app's keys, a selector, so it is only
+		// ever text, and Carbon's, through frameworks the app links.
+		{"a global monitor of keys", "framefairy-app", with(func(p *program) { p.text += "addGlobalMonitorForEventsMatchingMask:handler:" }),
+			[]string{"names addGlobalMonitorForEventsMatchingMask"}},
+		{"Carbon's monitor of keys", "framefairy-app", with(func(p *program) { p.imports = append(p.imports, "_GetEventMonitorTarget") }),
+			[]string{"imports _GetEventMonitorTarget", "names GetEventMonitorTarget"}},
 		// Looked up by name while it runs, with NSClassFromString.
 		{"the screen, by name", "framefairy-app", with(func(p *program) { p.text += "SCShareableContent" }),
 			[]string{"names SCShareableContent"}},
