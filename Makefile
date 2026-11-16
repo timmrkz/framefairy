@@ -450,10 +450,8 @@ test: lint interface unit fuzz walks
 # On a Mac without the race detector: the Go code is the same as on
 # Linux, where it runs with it, and it makes the tests 1.7 times slower.
 # And without the licence server's packages, which run on a Linux server
-# and never on a customer's Mac, nor framefairy-release, which runs only
-# in CI's Linux jobs, nor the read of the workflows and of how the video
-# endings are named, which are the same on every machine. RACE= and
-# UNITSKIP= say otherwise.
+# and never on a customer's Mac, nor the read of the workflows and of how
+# the video endings are named, which are the same on every machine. RACE= and UNITSKIP= say otherwise.
 #
 # UNITSHARD=1/3 runs a third of the tests, by the first letters of their
 # names, which is how CI spreads them over three machines, and 1/1 all of
@@ -478,9 +476,9 @@ test: lint interface unit fuzz walks
 # kept in UNITJSON, for a closer look.
 ifeq ($(UNAME),Darwin)
 RACE ?=
-UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/cmd/framefairy-release $(LINTPKGS)
-# TEMPORARY, taken out before merge: when go test exits, and what still runs then, #686.
-UNITWRAP := $(if $(CI),sh -c '"$$@"; s=$$?; echo "go test exited" >&2; ps -ax -o pid -o ppid -o etime -o command >&2; exit $$s' _)
+UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser $(LINTPKGS)
+# TEMPORARY, taken out before merge: when go test exits, what its test cache does, and what each test read, #686.
+UNITWRAP := $(if $(CI),sh -c 'd=$$(mktemp -d); g=$$1; shift; t=$$1; shift; GOTMPDIR=$$d GODEBUG=gocachetest=1 $$g $$t -work "$$@"; s=$$?; echo "go test exited" >&2; for f in $$(find "$$d" -name testlog.txt); do echo "$$f $$(wc -l < $$f) $$(cut -d" " -f1 < $$f | sort | uniq -c | tr "\n" " ")" >&2; done; exit $$s' _)
 else
 RACE ?= -race
 UNITSKIP ?= $(LINTPKGS)
