@@ -131,11 +131,15 @@
     // How far apart two of those heights are, for the grid shown while
     // the captions are dragged.
     captionStep?: number;
-    oncrop?: (at: number, left: number) => Promise<void>;
-    onresetcrop?: (at: number) => Promise<void>;
+    // Every change made in the video preview names the clip it was made
+    // on, by its key, the way the clip timeline does. A save that read the
+    // clip chosen when it went out put a crop or a word on the next clip
+    // when another was chosen in between, see #880.
+    oncrop?: (key: string, at: number, left: number) => Promise<void>;
+    onresetcrop?: (key: string, at: number) => Promise<void>;
     // Puts a keyframe back at a moment with its crop, the way the clip
     // timeline puts one, for the marks a reset took away.
-    oncropmark?: (from: number, to: number, x: number, glide?: boolean) => Promise<void>;
+    oncropmark?: (key: string, from: number, to: number, x: number, glide?: boolean) => Promise<void>;
     // Puts the captions at a distance from the bottom of a 1080x1920
     // frame. There is one place for every clip of every episode, so this
     // saves a setting rather than editing the clip.
@@ -143,11 +147,11 @@
     // Corrects one word of the episode, by the moment it was spoken. The
     // captions in the video preview are where words are corrected, so this
     // is the one hand that reaches out of the picture.
-    onword?: (start: number, text: string) => Promise<void>;
+    onword?: (key: string, start: number, text: string) => Promise<void>;
     // Removes one word from this clip's captions alone, by the moment it
     // was spoken and which of the words a correction made of it it is, or
     // all of it with null. Every other clip still shows it.
-    onremoveword?: (start: number, part: number | null) => Promise<void>;
+    onremoveword?: (key: string, start: number, part: number | null) => Promise<void>;
     // True while this clip is being rendered. What is being written into a
     // file cannot be changed while it is written, so its words are only
     // there to read until it is done, the way they were while they were
@@ -833,6 +837,8 @@
   // the episode it is, the whole of that word, and the piece of it drawn
   // here. The last two differ only for a word that was split in two.
   let fixing = $state<{
+    // The clip the word is corrected in, which the correction goes to.
+    key: string;
     at: number;
     said: number;
     part: number | null;
@@ -1214,11 +1220,11 @@
     word: { start: number; text: string },
     said: Heard | null,
   ) {
-    if (!said || !correctable) return;
+    if (!said || !correctable || !clip) return;
     frozen = time;
     frozenDrawn = drawn;
     if (!paused) toggle();
-    fixing = { at: word.start, said: said.start, part: said.part, whole: said.text, piece: word.text, pad: sides(node) };
+    fixing = { key: clip.key, at: word.start, said: said.start, part: said.part, whole: said.text, piece: word.text, pad: sides(node) };
     // The caret is already where the hand put it. It is only moved when
     // what is drawn here is half of the word being corrected: a word split
     // in two is drawn in two halves, and correcting either hands back the
@@ -1250,14 +1256,15 @@
   // Removing one of the words a correction made removes that word and
   // keeps the others. It took the whole heard word, so removing a word
   // typed in after another took the other with it.
-  async function removeWord(said: Heard) {
+  async function removeWord(said: Heard, on = clip?.key) {
+    if (!on) return;
     // The frame goes with the word, since there is nothing left to frame.
     keyed = null;
     walked = 0;
     const key = goneKey(said);
     gone = new Set([...gone, key]);
     try {
-      await onremoveword?.(said.start, said.part);
+      await onremoveword?.(on, said.start, said.part);
     } catch {
       // The workspace says what went wrong, and the word comes back.
       const back = new Set(gone);
@@ -1290,7 +1297,7 @@
     // the word is never drawn empty while it leaves.
     if (!text) {
       node.textContent = word.text;
-      if (was.whole && said) removeWord(said);
+      if (was.whole && said) removeWord(said, was.key);
       return;
     }
     if (text === was.whole) {
@@ -1299,7 +1306,7 @@
     }
     savingWord = was.at;
     try {
-      await onword?.(was.said, said ? withPart(said, text) : text);
+      await onword?.(was.key, was.said, said ? withPart(said, text) : text);
       // What comes back is the engine's answer, drawn by the template.
       // Until it lands the word keeps what was typed, so the correction is
       // never shown coming undone and going in again.
@@ -1704,6 +1711,7 @@
     let moved = false;
     // Off a keyframe a drag moves nothing, and is still no click.
     const movable = cropMovable;
+    const on = clip.key;
     const move = (e: PointerEvent) => {
       if (Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved || !movable) return;
@@ -1720,7 +1728,7 @@
       }
       savingCrop = true;
       try {
-        await oncrop(cropMoment(), dragLeft);
+        await oncrop(on, cropMoment(), dragLeft);
         undoCrop = null;
       } finally {
         dragLeft = null;
@@ -1741,7 +1749,7 @@
     const marked = clip.cropMarks ?? [];
     savingCrop = true;
     try {
-      await onresetcrop(at);
+      await onresetcrop(clip.key, at);
       const still = clip?.cropMarks ?? [];
       const marks = marked.filter((m) => !still.some((k) => k.at === m.at));
       if (had !== null || marks.length) undoCrop = { key: clip!.key, turn, at, left: had, marks };
@@ -1755,8 +1763,8 @@
     if (!back || !oncrop) return;
     savingCrop = true;
     try {
-      if (back.left !== null) await oncrop(back.at, back.left);
-      for (const m of back.marks) await oncropmark?.(-1, m.at, m.x, !!m.glide);
+      if (back.left !== null) await oncrop(back.key, back.at, back.left);
+      for (const m of back.marks) await oncropmark?.(back.key, -1, m.at, m.x, !!m.glide);
       undoCrop = null;
     } finally {
       savingCrop = false;

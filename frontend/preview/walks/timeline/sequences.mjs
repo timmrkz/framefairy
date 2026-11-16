@@ -426,8 +426,10 @@ export default [
     // with the crop, and Put the crop back brought back the crop alone,
     // so what the keyframes did was lost to one click. Each comes back
     // with its crop and its kind. Where the crop glides is the engine's,
-    // see the walk of S above.
-    name: "two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back",
+    // see the walk of S above. They come back on the clip they were taken
+    // from when another clip is chosen while they are on their way, found
+    // by the review of #880.
+    name: "two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back, to their own clip",
     steps: [
       ["added", 30, "25"],
       ["glide at", 0.2],
@@ -453,6 +455,8 @@ export default [
       ["keyframe key", ["g", "none"]],
       ["keyframes", 1],
       ["glides", 0],
+      ["glide at", 0.5],
+      ["crop back then next clip"],
     ],
   },
   {

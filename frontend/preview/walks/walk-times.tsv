@@ -46,7 +46,7 @@
  11	sequences.mjs SEQUENCE=a thumbnail and a keyframe on the playhead's frame stand centred on its line
  11	sequences.mjs SEQUENCE=after Cancel the window moves, and Search looks where it was moved
  11	sequences.mjs SEQUENCE=the walks' video has words that share a frame
- 11	sequences.mjs SEQUENCE=two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back
+ 11	sequences.mjs SEQUENCE=two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back, to their own clip
  10	sequences.mjs SEQUENCE=Moving the cursor up while dictating keeps it in view, and the words coming in leave the field where it is
  10	sequences.mjs SEQUENCE=The settings say each thing once, in one way
  10	sequences.mjs SEQUENCE=While dictating, the cursor after the words is the field's own, and ArrowDown there moves nothing
