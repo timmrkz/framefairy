@@ -36,6 +36,21 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
     }
   });
 
+  test("a card is known by the clip it becomes, on its way and stopped", () => {
+    // Issue #777: a card had the key of its job and changed it when it was
+    // written, so whatever kept something by its key lost it then.
+    const search = job({ id: "s", step: "fitting", underway: [{ n: 2, start: 900, end: 925, step: "fitting", clip: "clips.json/02" }] });
+    const hand = job({ id: "h", kind: "clip", step: "waiting", underway: [{ n: 1, start: 1000, end: 1000, step: "waiting", clip: "clips-hand.json/h03" }] });
+    const stopped = job({ id: "x", kind: "clip", state: "stopped", underway: [{ n: 1, start: 1100, end: 1100, step: "stopped", clip: "clips-hand.json/h04" }] });
+    const unnamed = job({ id: "u", underway: [{ n: 1, start: 1200, end: 1225, step: "framing" }] });
+    expect(arriving([search, hand, stopped, unnamed], never, nothing).map((r) => r.key)).toEqual([
+      "clips.json/02",
+      "clips-hand.json/h03",
+      "clips-hand.json/h04",
+      "u/1",
+    ]);
+  });
+
   test("a clip made by hand where nothing is heard yet says how far the hearing is", () => {
     const hearing = job({
       kind: "clip",

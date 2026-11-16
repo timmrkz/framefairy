@@ -107,10 +107,18 @@ export const steps = {
       await letHeld(page);
     }
     // Until the card chosen is a clip the engine has written, the one
-    // made, which is not the one chosen before.
+    // made, which is not the one chosen before, and the clip list shows
+    // it as a clip. A card has its clip's name from the start, #777, so
+    // the name alone does not say it was written, nor that the list has
+    // read it.
     const chosenCard = async () => {
       const card = (await overlay(page)).card;
-      return card && card !== was && (await ask(page, "Clips", path)).some((c) => c.key === card) ? card : "";
+      if (!card || card === was) return "";
+      const shown = await page.evaluate(
+        (key) => [...document.querySelectorAll("aside ol li[data-key]")].some((li) => li.dataset.key === key && !li.classList.contains("next")),
+        card,
+      );
+      return shown && (await ask(page, "Clips", path)).some((c) => c.key === card) ? card : "";
     };
     let written;
     if (late) {

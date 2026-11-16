@@ -1698,20 +1698,20 @@ export const steps = {
     await page.evaluate(() => document.body.focus());
     await page.keyboard.press("i");
     // The card the clip made by hand comes in, and the job it is on
-    // the way from, read off its key.
+    // the way from, the one that has it on the way under its key.
     const key = await seenUntil(
       page,
       url,
       () => page.evaluate((was) => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key).find((k) => k.includes("/") && !was.includes(k)) ?? null, before),
       (k) => !!k,
     );
-    const job = key && (await ask(page, "Jobs")).find((j) => j.id === key.split("/")[0]);
+    const job = key && (await ask(page, "Jobs")).find((j) => j.underway?.some((u) => u.clip === key));
     if (!job || job.kind !== "clip" || job.episode !== path) {
       walk.wrong = key ? `the card that came, ${key}, is not of a clip made by hand` : "I made no clip on a part not heard yet";
       return;
     }
     walk.handJob = job.id;
-    const card = page.locator(`li[data-key^="${walk.handJob}/"]`);
+    const card = page.locator(`li[data-key="${key}"]`);
     const cancel = page.locator(".listhead button.search", { hasText: "Cancel" });
     // Once the interface has heard the job's news.
     await caughtUp(page, url, [job]);
@@ -1728,7 +1728,7 @@ export const steps = {
       const going = async () => ["running", "queued"].includes((await ask(page, "Jobs")).find((j) => j.id === walk.handJob)?.state);
       while ((await going()) && (await onePiece(page, url, path)));
     }
-    await pageUntil(page, (k) => document.querySelector(`li[data-key^="${k}/"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", walk.handJob);
+    await pageUntil(page, (k) => document.querySelector(`li[data-key="${k}"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", key);
     await watch.step("wait", s);
   },
   // ["heard part", [share, seconds]]
@@ -1962,14 +1962,14 @@ export const steps = {
     // said. Both are read straight away, well inside the toast's own
     // time.
     await caughtUp(page, url, [job]);
-    const said = await page.evaluate((id) => {
-      const li = document.querySelector(`li[data-key^="${id}/"]`);
+    const said = await page.evaluate((key) => {
+      const li = document.querySelector(`li[data-key="${key}"]`);
       return {
         failed: !!li?.matches(".stopped.failed"),
         title: li?.querySelector(".title")?.textContent.trim() ?? "",
         meta: li?.querySelector(".meta")?.textContent.trim() ?? "",
       };
-    }, job.id);
+    }, job.underway?.[0]?.clip ?? "");
     const toast = await toastSays(page);
     const report = await page.locator(".toast:not([inert]) button.report").count();
     const where = clock(job.underway?.[0]?.start ?? at);
@@ -1989,8 +1989,9 @@ export const steps = {
   //                    Go side forgets the work, and the card goes
   async "remove stopped"(walk, arg, s) {
     const { page, removeTime, watch } = walk;
-    const card = page.locator(`li[data-key^="${walk.handJob}/"]`).first();
-    const key = await card.getAttribute("data-key");
+    // The card of the clip made by hand is known by the clip it becomes.
+    const key = (await ask(page, "Jobs")).find((j) => j.id === walk.handJob)?.underway?.[0]?.clip ?? "";
+    const card = page.locator(`li[data-key="${key}"]`);
     const stateOf = async () => (await ask(page, "Jobs")).find((j) => j.id === walk.handJob)?.state;
     await card.hover();
     if (!(await card.locator("button.drop").count())) {
@@ -2166,8 +2167,11 @@ export const steps = {
   async "no hand card"(walk) {
     const { page } = walk;
     const path = await episodeOn(page);
-    const hand = (await ask(page, "Jobs")).filter((j) => j.kind === "clip" && j.episode === path).map((j) => j.id);
-    const left = await page.evaluate((ids) => [...document.querySelectorAll("li[data-key]")].filter((li) => ids.includes(li.dataset.key.split("/")[0])).length, hand);
+    // A card is known by the clip it becomes, which its job has on the way.
+    const hand = (await ask(page, "Jobs"))
+      .filter((j) => j.kind === "clip" && j.episode === path)
+      .flatMap((j) => (j.underway ?? []).map((u) => u.clip ?? `${j.id}/${u.n}`));
+    const left = await page.evaluate((keys) => [...document.querySelectorAll("li[data-key]")].filter((li) => keys.includes(li.dataset.key)).length, hand);
     if (left) walk.wrong = `${left} cards of clips made by hand are in the list`;
   },
   // ["cancel fades"]  presses Cancel on a search, and in the frame of the

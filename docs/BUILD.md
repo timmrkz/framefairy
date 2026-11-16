@@ -139,7 +139,10 @@ whose code it changed, by the filters of the job `changes` in `ci.yml`:
 A push to main starts every job. Inside a Go job Go's own test cache
 picks the packages: CI restores it from main, so `go test ./...` runs
 again only the packages whose code or test files changed since, and says
-`(cached)` for the rest. The walks test the whole app, its Go side too,
+`(cached)` for the rest. The Mac's Go job keeps no results, `-count=1`
+in `make unit`: there the app's and the engine's tests never came from
+the cache, and keeping their results cost 24 s a run, see the Makefile.
+The walks test the whole app, its Go side too,
 so they start for either kind of change, and run whole.
 
 A filter that missed a file would show as a test that passes on its

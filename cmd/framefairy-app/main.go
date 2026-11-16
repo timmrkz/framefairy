@@ -437,6 +437,9 @@ type FrameFairy struct {
 	checkMu  sync.Mutex
 	checking map[string]*check
 	checks   int
+	// naming is held while a clip made by hand is given its id and queued,
+	// so two pressed at once never take the same one, see makeClip.
+	naming sync.Mutex
 	// now is the time of day an edit is timed by, time.Now unless a test
 	// hands in a clock it moves, see clock.
 	now func() time.Time

@@ -229,7 +229,8 @@ export const steps = {
   //                    clip timeline is swiped by hand and the playhead
   //                    pressed and held, the way Tim's log of 9 November
   //                    has it, and the speech let go. Once the card is
-  //                    written as its clip, the clip timeline is where the
+  //                    written as its clip, under the name it had on its
+  //                    way and still chosen, the clip timeline is where the
   //                    hand put it and the playhead under the hand, and it
   //                    follows the hand as it moves on. Laid out afresh,
   //                    the clip jumped back to the middle and the playhead
@@ -281,7 +282,20 @@ export const steps = {
     await settle(page);
     const held = await where();
     await control(url, "/speech?go");
-    const written = await seenUntil(page, url, current, (key) => key !== card && key !== before);
+    // Written, the card is its clip under the name it had on its way,
+    // and still the one chosen.
+    const chosen = () =>
+      page.evaluate((r) => {
+        const li = document.querySelector(r)?.closest("li");
+        return li ? { key: li.dataset.key, next: li.classList.contains("next") } : { key: "", next: false };
+      }, chosenRow);
+    const landed = await seenUntil(page, url, chosen, (c) => !c.next);
+    const written = landed.key;
+    if (written !== card) {
+      walk.wrong = `the card ${card} was written as ${written || "nothing chosen"}`;
+      await page.mouse.up();
+      return;
+    }
     await settle(page);
     const after = await where();
     if (Math.abs(after.x - held.x) > 1 || Math.abs(after.at - held.at) > 0.001) {

@@ -88,6 +88,11 @@ type PlanOptions struct {
 	// clip goes in beside the ones there, and takes the next id after
 	// theirs. The clips made by hand are one such set.
 	Grows bool
+	// ID is the id the one clip of a clip made by hand is written under,
+	// given the moment it is asked for, so its card has the name of the
+	// clip it becomes from the start, see NextHandClipID. Empty, the id
+	// is the next in the set.
+	ID string
 	// IDPrefix begins every id in the clip set. A search of a window uses
 	// t<start>-, see newPlanBuilder, so its clips' files never meet those
 	// of another window's.

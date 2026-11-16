@@ -131,7 +131,7 @@ type planBuilder struct {
 	// log is told it, see Underway, and landed every one written, with
 	// its key.
 	underway []runlog.Underway
-	landed   []runlog.Landed
+	found    int
 
 	// had is how many clips the plan a search carries on held, which
 	// count towards the clips asked for, see PlanOptions.CarryOn, and
@@ -341,7 +341,7 @@ func (b *planBuilder) acceptLocked(entry PlanEntry) {
 		// On its way like any other, being fitted to the length first.
 		first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
 		b.underway = append(b.underway, runlog.Underway{N: card, Start: b.lines[first-1].Start(),
-			End: b.lines[last-1].End(), Title: entry.Title, Step: StepFitting})
+			End: b.lines[last-1].End(), Title: entry.Title, Step: StepFitting, Clip: b.clipKey(b.idOf(card))})
 		b.sayUnderwayLocked()
 		return
 	}
@@ -501,13 +501,12 @@ func repeatNote(entry, earlier PlanEntry) string {
 		earlier.Title, entry.Title)
 }
 
-// queueLocked gives an entry its id and hands it to the framers. The id is
-// its place among the usable clips of the answer, as it always was, after
-// the clips a set that grows already has.
+// queueLocked hands an entry to the framers, under the id of its card,
+// see idOf.
 func (b *planBuilder) queueLocked(entry PlanEntry, card int) {
 	position := len(b.entries) + 1
 	uniqueSlug(b.seen, &entry, position)
-	id := fmt.Sprintf("%s%02d", b.prefix, b.base+position)
+	id := b.idOf(card)
 	b.entries = append(b.entries, entry)
 	b.ids = append(b.ids, id)
 	first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
@@ -528,6 +527,21 @@ func (b *planBuilder) queueLocked(entry PlanEntry, card int) {
 	if b.clock != nil {
 		b.clock.taken()
 	}
+}
+
+// idOf is the id the clip of a card is written under: its place in the
+// answer, after the clips a set that grows already has, or the id a clip
+// made by hand was given when it was asked for. A card has it from the
+// moment it is there, a clip held back to be fitted too, so it is known
+// by the name of the clip it becomes from the start and never changes
+// its name when it is written. A card that is never written, one dropped
+// while it is framed or held when the search stops, leaves its id
+// unused, and the next card still takes its own place.
+func (b *planBuilder) idOf(card int) string {
+	if b.opts.ID != "" {
+		return b.opts.ID
+	}
+	return fmt.Sprintf("%s%02d", b.prefix, b.base+card)
 }
 
 // clipKey is the key a clip of this set has in the app's clip list.
@@ -562,7 +576,7 @@ func (b *planBuilder) takeOffLocked(card int) {
 // sayUnderwayLocked tells the app the clips on the way, how many are
 // written, and whether the answer is whole.
 func (b *planBuilder) sayUnderwayLocked() {
-	b.e.Log.Underway(b.underway, b.landed, b.whole)
+	b.e.Log.Underway(b.underway, b.found, b.whole)
 }
 
 // answerWhole is the answer read to its end, the rest of it taken: every
@@ -953,7 +967,7 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 	// before the clock says it found one more.
 	b.mu.Lock()
 	b.clips = append(b.clips, clip)
-	b.landed = append(b.landed, runlog.Landed{N: card, Clip: b.clipKey(clip.ID)})
+	b.found++
 	b.takeOffLocked(card)
 	b.mu.Unlock()
 	if b.clock != nil {

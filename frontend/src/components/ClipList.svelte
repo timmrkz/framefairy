@@ -155,7 +155,7 @@
   // the search is over, in one step and without sliding, see rows.
   //
   // A place is kept by the row's key, which is the card's and stays the
-  // clip's, see rowOf, and kept until the search is over.
+  // clip's, and kept until the search is over.
   const searching = $derived(carry?.job ?? "");
   const placeOf = new Map<string, number>();
   let placesFor = "";
@@ -183,13 +183,12 @@
   // The clips there are and the clips on the way, in the order they are
   // spoken, which is the order of the range picker and the clip timeline.
   //
-  // A clip on its way and the clip it becomes are one row: the row keeps
-  // the card's key from the moment the card knows which clip it will be,
-  // and the clip takes the row over when the list has it. They were two
-  // rows, one going and one coming, and between the two the list was a
-  // row short for a moment, which the browser answered by pulling a list
-  // that was scrolled down back up, every card jumping at once. The keys
-  // are kept for as long as the list is, so a clip never changes rows.
+  // A clip on its way and the clip it becomes are one row, because a card
+  // has the key of the clip it becomes from the start, and the clip takes
+  // the row over when the list has it. They were two rows, one going and
+  // one coming, and between the two the list was a row short for a
+  // moment, which the browser answered by pulling a list that was
+  // scrolled down back up, every card jumping at once.
   type Row = {
     key: string;
     start: number;
@@ -199,15 +198,11 @@
     // Its place among a running search's rows, see places.
     place?: number;
   };
-  const rowOf = new Map<string, string>();
   const rows = $derived.by((): Row[] => {
-    for (const a of arriving) if (a.clip && !rowOf.has(a.clip)) rowOf.set(a.clip, a.key);
     const here = new Set(clips.map((c) => c.key));
     const all: Row[] = [
-      ...clips.map((clip) => ({ key: rowOf.get(clip.key) ?? clip.key, start: clip.start, clip })),
-      ...arriving
-        .filter((a) => !(a.clip && here.has(a.clip)))
-        .map((a) => ({ key: a.key, start: a.start, arriving: a })),
+      ...clips.map((clip) => ({ key: clip.key, start: clip.start, clip })),
+      ...arriving.filter((a) => !here.has(a.key)).map((a) => ({ key: a.key, start: a.start, arriving: a })),
     ];
     // The running search's rows stand together where its window is, see
     // at, each card and clip in its place and the rows still to come after

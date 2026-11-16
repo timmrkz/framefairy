@@ -57,22 +57,12 @@ type Underway struct {
 	// engine.ArrivingCaptionsView, so the clip is built in front of the person
 	// rather than appearing whole.
 	Pieces [][2]float64 `json:"pieces,omitempty"`
-	// Clip is the key it will have in the clip list once it is written,
-	// its clip set's file name and its id, from the moment it has an id.
-	// The list keeps one row for it from its card to the clip, so a card
-	// becomes its clip in place rather than one row going and another
-	// coming.
+	// Clip is the key it has in the clip list, its clip set's file name
+	// and the id it is written under, from its first card on. The card
+	// and the clip it becomes are one row under one key, so a card
+	// becomes its clip in place, and whatever chose the card has chosen
+	// the clip.
 	Clip string `json:"clip,omitempty"`
-}
-
-// Landed is a clip on its way that was written: which of its job's clips
-// it was, N, and the key it has in the clip list, Clip. A card leaves the
-// list of clips on the way in the event that writes it, and its job says
-// from then on what it became, so whatever chose the card can choose the
-// clip in the same state that no longer shows the card.
-type Landed struct {
-	N    int    `json:"n"`
-	Clip string `json:"clip"`
 }
 
 // Unknown marks a fraction or a remaining time that cannot be given yet.
@@ -105,9 +95,6 @@ type Event struct {
 	Found int `json:"found,omitempty"`
 	// Underway is every clip the job has on the way, on EventUnderway.
 	Underway []Underway `json:"underway,omitempty"`
-	// Landed is every clip the job has written, with its key, on
-	// EventUnderway, the clips Found counts.
-	Landed []Landed `json:"landed,omitempty"`
 	// Whole is, on EventUnderway, that every clip still to come is on the
 	// list: a search's answer is read to its end.
 	Whole bool `json:"whole,omitempty"`

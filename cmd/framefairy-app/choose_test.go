@@ -113,16 +113,17 @@ func TestTheAppChoosesTheClipsASearchFinds(t *testing.T) {
 			{st: stateOf(1, old), want: "old/1"},
 			{pick: "gone/1", st: stateOf(2, old), want: "old/1"},
 		}},
-		{"a card chosen becomes its clip once it is written", []step{
+		{"a card chosen is its clip once it is written", []step{
 			{st: stateOf(1, old), want: "old/1"},
-			{pick: "c1/1", st: stateOf(2, old, Job{ID: "c1", State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobClip},
-				Underway: []runlog.Underway{{N: 1, Clip: "hand/1"}}}), want: "c1/1"},
-			{st: stateOf(3, with("hand/1"), Job{ID: "c1", State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobClip},
+			{pick: "hand/1", st: stateOf(2, old, Job{ID: "c1", State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobClip},
 				Underway: []runlog.Underway{{N: 1, Clip: "hand/1"}}}), want: "hand/1"},
+			{st: stateOf(3, with("hand/1"), Job{ID: "c1", State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobClip}}), want: "hand/1"},
+			{st: stateOf(4, with("hand/1"), Job{ID: "c1", State: JobDone, Result: "hand/1", JobRecord: engine.JobRecord{Kind: engine.JobClip}}), want: "hand/1"},
 		}},
-		{"a card done is its result", []step{
+		{"a card with no clip set is known by its job", []step{
 			{st: stateOf(1, old), want: "old/1"},
-			{pick: "c1/1", st: stateOf(2, with("hand/1"), Job{ID: "c1", State: JobDone, Result: "hand/1", JobRecord: engine.JobRecord{Kind: engine.JobClip}}), want: "hand/1"},
+			{pick: "c1/1", st: stateOf(2, old, Job{ID: "c1", State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobSearch},
+				Underway: []runlog.Underway{{N: 1}}}), want: "c1/1"},
 		}},
 	}
 	for _, c := range cases {
@@ -151,7 +152,7 @@ func TestTheAppChoosesTheClipsASearchFinds(t *testing.T) {
 				if err := s.Playing(ep, st.playing); err != nil {
 					t.Fatal(err)
 				}
-				if got, _ := s.chosenFor(ep, st.st); got != st.want {
+				if got := s.chosenFor(ep, st.st); got != st.want {
 					t.Fatalf("step %d chose %q, not %q", i+1, got, st.want)
 				}
 			}
@@ -168,10 +169,10 @@ func TestAVideoOpensOnTheClipChosenLast(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.forget(eps[0])
-	if got, _ := s.chosenFor(eps[0], stateOf(1, []string{"old/1", "old/2"})); got != "old/2" {
+	if got := s.chosenFor(eps[0], stateOf(1, []string{"old/1", "old/2"})); got != "old/2" {
 		t.Errorf("opened on %q, not on the clip chosen last", got)
 	}
-	if got, _ := s.chosenFor(eps[1], stateOf(1, []string{"old/1", "old/2"})); got != "old/1" {
+	if got := s.chosenFor(eps[1], stateOf(1, []string{"old/1", "old/2"})); got != "old/1" {
 		t.Errorf("opened on %q, not on the first clip", got)
 	}
 	if on := readChosen(s.store.files, eps[1]); on.Clip != "" {
@@ -349,141 +350,51 @@ func TestAPickAnswersWithTheStateAfterIt(t *testing.T) {
 	}
 }
 
-// A card picked after its clip was written, because the answer to the
-// press that made it came late, is answered with the clip chosen, rule 7.
-func TestACardPickedAfterItsClipWasWrittenIsAnsweredWithTheClip(t *testing.T) {
-	svc, mine, _ := anEpisodeWithAPlan(t)
-	ctx := context.Background()
-	if _, err := svc.State(ctx, mine); err != nil {
-		t.Fatal(err)
-	}
-	job := Job{ID: "c1", Episode: mine, State: JobDone, Result: "clips.json/02", JobRecord: engine.JobRecord{Kind: engine.JobClip}}
-	svc.jobs.mu.Lock()
-	svc.jobs.jobs = append(svc.jobs.jobs, &job)
-	svc.jobs.mu.Unlock()
-	st, err := svc.ChooseClip(ctx, mine, "c1/1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st.Chosen != "clips.json/02" {
-		t.Errorf("the card picked after its clip was written was answered with %q chosen, not its clip", st.Chosen)
-	}
-}
-
-// A card on its way is picked by a hand, and a state lands it on its
-// clip. The hand's pick of the card, answered after that state, still
-// leaves the clip chosen, written as the card, in a state read at the
-// rev that landed it and answered after the pick. Before, that state
-// said the card was chosen, which a list that holds its clip leaves
-// out, so for a frame nothing was chosen and the clip timeline dimmed,
-// issue #697.
-func TestACardPickedAgainAfterItLandedStaysItsClip(t *testing.T) {
-	svc, mine, _ := anEpisodeWithAPlan(t)
-	ctx := context.Background()
-	if _, err := svc.State(ctx, mine); err != nil {
-		t.Fatal(err)
-	}
-	job := Job{ID: "c1", Episode: mine, State: JobDone, Result: "clips.json/02", JobRecord: engine.JobRecord{Kind: engine.JobClip}}
-	svc.jobs.mu.Lock()
-	svc.jobs.jobs = append(svc.jobs.jobs, &job)
-	svc.jobs.mu.Unlock()
-	if err := svc.pick(mine, "c1/1"); err != nil {
-		t.Fatal(err)
-	}
-	landed, err := svc.State(ctx, mine)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if landed.Chosen != "clips.json/02" || landed.ChosenCard != "c1/1" {
-		t.Fatalf("the state that landed the card says %q, written as %q", landed.Chosen, landed.ChosenCard)
-	}
-	if err := svc.pick(mine, "c1/1"); err != nil {
-		t.Fatal(err)
-	}
-	if clip, card := svc.chosenFor(mine, landed); clip != "clips.json/02" || card != "c1/1" {
-		t.Errorf("a state at the rev that landed the card, answered after the card was picked again, says %q, written as %q", clip, card)
-	}
-	after, err := svc.State(ctx, mine)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.Chosen != "clips.json/02" || after.ChosenCard != "c1/1" {
-		t.Errorf("the state after the card was picked again says %q, written as %q", after.Chosen, after.ChosenCard)
-	}
-}
-
-// A card on its way is chosen, and its clip is written while its job
-// still runs. The card leaves the job's clips on the way in the news
-// that writes it, and the job is done only a moment later. A state read
-// in between holds the clip and no card, and chooses the clip, written
-// as the card. It said the card was still chosen, which the list no
-// longer showed, so for a frame nothing was chosen and the clip timeline
-// dimmed, the nightly walks of 10 November, issue #782. A search's card
-// a hand picked is written the same way while the search runs on, and
-// becomes its clip the same way.
-func TestACardWrittenWhileItsJobRunsIsItsClipAtOnce(t *testing.T) {
+// A card on its way is known by the key of the clip it becomes, so a
+// card a hand picked is that clip once it is written, in every state from
+// then on, whenever it is read: while its job still runs, after the job
+// is done, and in a state read before the pick and answered after it.
+// Before, the card was renamed when it was written, and each of these
+// states once said a card the list no longer showed was chosen, so for a
+// frame nothing was, issues #697 and #782. A search's card and a clip
+// made by hand are written the same way.
+func TestACardIsItsClipOnceWritten(t *testing.T) {
 	for _, kind := range []string{engine.JobClip, engine.JobSearch} {
 		t.Run(kind, func(t *testing.T) {
 			svc, mine, _ := anEpisodeWithAPlan(t)
 			ctx := context.Background()
-			if _, err := svc.State(ctx, mine); err != nil {
+			older, err := svc.State(ctx, mine)
+			if err != nil {
 				t.Fatal(err)
 			}
+			const key = "clips.json/02"
 			job := &Job{ID: "c1", Episode: mine, State: JobRunning, JobRecord: engine.JobRecord{Kind: kind},
-				Underway: []runlog.Underway{{N: 1, Start: 3, End: 3, Step: engine.StepFraming, Clip: "clips.json/09"}}}
+				Underway: []runlog.Underway{{N: 1, Start: 3, End: 3, Step: engine.StepFraming, Clip: key}}}
 			svc.jobs.mu.Lock()
 			svc.jobs.jobs = append(svc.jobs.jobs, job)
 			svc.jobs.mu.Unlock()
-			if err := svc.pick(mine, "c1/1"); err != nil {
-				t.Fatal(err)
-			}
-			on, err := svc.State(ctx, mine)
+			on, err := svc.ChooseClip(ctx, mine, key)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if on.Chosen != "c1/1" {
+			if on.Chosen != key {
 				t.Fatalf("the card on its way was not chosen, %q was", on.Chosen)
 			}
-			// Written as clips.json/02, which the plan holds: off the list of
-			// clips on the way and landed, in one news, the job still running.
-			svc.jobs.update(job, func(j *Job) {
-				j.Underway, j.Written, j.Landed = nil, 1, []runlog.Landed{{N: 1, Clip: "clips.json/02"}}
-			})
-			written, err := svc.State(ctx, mine)
-			if err != nil {
-				t.Fatal(err)
+			// Written as the clip it was on its way as, which the plan
+			// holds: off the list of clips on the way in one news, the job
+			// still running.
+			svc.jobs.update(job, func(j *Job) { j.Underway, j.Written = nil, 1 })
+			if written, err := svc.State(ctx, mine); err != nil || written.Chosen != key {
+				t.Errorf("once the card was written, its job running, %q was chosen, %v", written.Chosen, err)
 			}
-			if written.Chosen != "clips.json/02" || written.ChosenCard != "c1/1" {
-				t.Errorf("the state read once the card was written, its job running, says %q is chosen, written as %q",
-					written.Chosen, written.ChosenCard)
+			svc.jobs.update(job, func(j *Job) { j.State, j.Result = JobDone, key })
+			if done, err := svc.State(ctx, mine); err != nil || done.Chosen != key {
+				t.Errorf("once its job was done, %q was chosen, %v", done.Chosen, err)
+			}
+			if clip := svc.chosenFor(mine, older); clip != key {
+				t.Errorf("a state from before the card was picked, answered after, says %q", clip)
 			}
 		})
-	}
-}
-
-// A hand picks a card its window still shows after its clip was written,
-// while another clip was chosen, so the card never landed. A state read
-// before the pick and answered after it says the card's clip is chosen,
-// written as the card, and never the card its list has left out.
-func TestACardPickedAfterItsClipWasWrittenIsItsClipInAStateFromBefore(t *testing.T) {
-	svc, mine, _ := anEpisodeWithAPlan(t)
-	ctx := context.Background()
-	job := Job{ID: "c1", Episode: mine, State: JobDone, Result: "clips.json/02", JobRecord: engine.JobRecord{Kind: engine.JobClip}}
-	svc.jobs.mu.Lock()
-	svc.jobs.jobs = append(svc.jobs.jobs, &job)
-	svc.jobs.mu.Unlock()
-	older, err := svc.State(ctx, mine)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.State(ctx, mine); err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.pick(mine, "c1/1"); err != nil {
-		t.Fatal(err)
-	}
-	if clip, card := svc.chosenFor(mine, older); clip != "clips.json/02" || card != "c1/1" {
-		t.Errorf("a state from before the card was picked, answered after, says %q, written as %q", clip, card)
 	}
 }
 
@@ -507,9 +418,12 @@ func TestAStateReadBeforeAClipMadeWithOLeavesItsCardChosen(t *testing.T) {
 	if job.State != JobRunning {
 		t.Fatalf("the clip made with O was not queued: %+v", job)
 	}
-	card := cardKey(job.ID, 1)
-	if clip, was := svc.chosenFor(mine, older); clip != "clips.json/02" || was != "" {
-		t.Errorf("a state read before the clip made with O was queued says %q, written as %q", clip, was)
+	card := job.Underway[0].Clip
+	if card != engine.HandPlanName+"/h01" {
+		t.Errorf("the card of the clip made with O is known as %q, not as the clip it becomes", card)
+	}
+	if clip := svc.chosenFor(mine, older); clip != "clips.json/02" {
+		t.Errorf("a state read before the clip made with O was queued says %q", clip)
 	}
 	now, err := svc.State(ctx, mine)
 	if err != nil {
@@ -531,19 +445,21 @@ func TestAStateReadBeforeAPickLeavesThePickChosen(t *testing.T) {
 	}
 	jobs, rev := svc.jobs.ofVideo(mine)
 	older := stateOf(rev, []string{"clips.json/01", "clips.json/02"}, jobs...)
-	job := Job{ID: "c1", Episode: mine, State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobClip}}
+	const card = engine.HandPlanName + "/h01"
+	job := Job{ID: "c1", Episode: mine, State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobClip},
+		Underway: []runlog.Underway{{N: 1, Clip: card}}}
 	svc.jobs.mu.Lock()
 	svc.jobs.jobs = append(svc.jobs.jobs, &job)
 	svc.jobs.mu.Unlock()
-	if err := svc.pick(mine, "c1/1"); err != nil {
+	if err := svc.pick(mine, card); err != nil {
 		t.Fatal(err)
 	}
-	if clip, _ := svc.chosenFor(mine, older); clip != "clips.json/02" {
+	if clip := svc.chosenFor(mine, older); clip != "clips.json/02" {
 		t.Errorf("a state read before the card was picked says %q", clip)
 	}
 	if now, err := svc.State(ctx, mine); err != nil {
 		t.Fatal(err)
-	} else if now.Chosen != "c1/1" {
+	} else if now.Chosen != card {
 		t.Errorf("the state read after says %q is chosen, not the card picked", now.Chosen)
 	}
 }
@@ -562,7 +478,7 @@ func TestAStateReadBeforeAnUndoLeavesItsClipChosen(t *testing.T) {
 	jobs, rev := svc.jobs.ofVideo(mine)
 	older := stateOf(rev, []string{"clips.json/01"}, jobs...)
 	svc.undone(mine, "clips.json/02")
-	if clip, _ := svc.chosenFor(mine, older); clip != "clips.json/01" {
+	if clip := svc.chosenFor(mine, older); clip != "clips.json/01" {
 		t.Errorf("a state read before the undo, without its clip, says %q", clip)
 	}
 	if now, err := svc.State(ctx, mine); err != nil {

@@ -68,10 +68,9 @@
       start: number;
       end: number;
       rendered: boolean;
-      // A clip on its way, where its card says it lies, and the key that
-      // chooses its card. It keeps its mark when it is written.
+      // A clip on its way, where its card says it lies. It keeps its mark
+      // when it is written, because its card has the key of the clip.
       arriving?: boolean;
-      pick?: string;
     }[];
     selected?: string;
     // The clip under the hand, here, on the clip timeline or in the clip
@@ -436,15 +435,15 @@
     <button
       class="clipmark"
       class:rendered={m.rendered}
-      class:selected={(m.pick ?? m.key) === selected}
-      class:dim={dimmed && (m.pick ?? m.key) === selected}
+      class:selected={m.key === selected}
+      class:dim={dimmed && m.key === selected}
       class:lit={m.key === hovered}
       class:waiting={m.arriving}
       style="left: {on(m.start)}; width: max(calc({on(m.end)} - {on(m.start)}), 4px)"
       aria-label="Clip at {clock(m.start)}"
       {@attach hoverClip(m.key, onhover)}
       onpointerdown={(e) => e.stopPropagation()}
-      onclick={() => onmark?.(m.pick ?? m.key)}
+      onclick={() => onmark?.(m.key)}
     ></button>
   {/each}
   <!-- The ruler, in two layers, and they have to be two.

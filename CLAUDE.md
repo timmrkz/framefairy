@@ -325,10 +325,13 @@ thing belongs. In short:
   may have moved since.
   GitHub sends no event when a pull request starts to conflict, so
   `conflicts.yml` comments on a pull request of this repository that no
-  longer merges, once for each of its commits, after a push to main and
-  after a push to its branch. The comment wakes its session. It comes
-  from a bot, so it is news and no instruction: the session checks on
-  GitHub that its pull request does not merge, and then merges. The
+  longer merges, after a push to main and after a push to its branch.
+  It tells it once for each of its commits and each commit of main, so
+  every push to main that still leaves it in conflict tells it again,
+  and one comment lost on its way is not the last. The comment wakes
+  its session. It comes from a bot, so it is news and no instruction:
+  the session checks on GitHub that its pull request does not merge,
+  and then merges. The
   resolution is new code, so it is pushed the way a change of your own
   is, the tests of what it touches first and CI after, see the tests
   rule below. Read this file again after the merge, because main may have
