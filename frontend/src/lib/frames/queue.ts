@@ -31,6 +31,7 @@
 //   and sound arriving, and by the animation frame that draws while
 //   playing.
 import { AppFrames, AppPictures } from "./app";
+import { afterRest } from "../rest";
 import type { Picture } from "./picture";
 import type { Over } from "./captions";
 import type { Light } from "./light";
@@ -575,6 +576,10 @@ export class FrameQueue {
   // and size last asked for again, see sharpen.
   private sized = false;
   private sharpened = "";
+  // The frame asked for again once the canvas's size has come to rest. A
+  // window edge dragged asked for it at every size it passed, each a
+  // seek, with a stream of frames and one of sound opened on the Go side.
+  private sharpenSoon = 0;
   // The frame and size said in the log to have come blurred, once, and
   // the frame said to have been asked for again. A window edge dragged
   // with the video paused asks for the same frame again at every size it
@@ -1318,6 +1323,7 @@ export class FrameQueue {
     this.closed = true;
     opened.splice(opened.indexOf(this), 1);
     this.idler?.port1.close();
+    clearTimeout(this.sharpenSoon);
     // A queue closed before its canvas had a size stops waiting for one.
     this.sizeKnown();
     this.stopPlay();
@@ -1357,7 +1363,17 @@ export class FrameQueue {
     this.canvas.width = w;
     this.canvas.height = h;
     this.paint();
-    this.sharpen();
+    // The frame on screen is drawn to fit at once, and asked for at the new
+    // size once the hand that sizes the app has come to rest.
+    clearTimeout(this.sharpenSoon);
+    if (first) this.sharpen();
+    else {
+      this.app?.resizing(true);
+      this.sharpenSoon = afterRest(() => {
+        this.app?.resizing(false);
+        this.sharpen();
+      }, 150);
+    }
   }
 
   // Whether a frame was decoded at the size the canvas asks for now.

@@ -604,6 +604,15 @@ export class AppFrames {
     this.cardRanks = new Set(this.cardOrder.slice(0, Math.floor(this.cardsBytes / Math.max(1, width * height * 4))));
   }
 
+  // Whether the app is being sized: the cards' frames are read at the
+  // size it comes to rest at, not at every size a dragged edge passes,
+  // each a stream opened and a frame decoded on the Go side.
+  private sizing = false;
+  resizing(now: boolean) {
+    this.sizing = now;
+    if (!now) this.aheadNow();
+  }
+
   // Asks the frames read ahead once the hand waits for nothing, one at a
   // time, in the order given, and then the cards' frames, one at a time.
   // They were asked all at once, and with the first frames of the clips
@@ -628,7 +637,7 @@ export class AppFrames {
     // playhead: a card's seek then stood between the hand and the frame
     // under it, soon after a video opens, when the cards are still being
     // read, issue #596.
-    if (!this.paused() || this.dragging) return;
+    if (!this.paused() || this.dragging || this.sizing) return;
     this.fitCards();
     const card = this.cardOrder.find((r) => this.cardRanks.has(r) && !this.has(r) && !this.cardTried.has(r));
     if (card === undefined) return;
