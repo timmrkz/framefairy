@@ -344,8 +344,8 @@ const addedFile = "added.json"
 // markAdded writes the mark into the work folder of a video added to the
 // library, and makes the folder where there is none.
 func markAdded(files afero.Fs, video string) error {
-	work := engine.WorkDir(video)
-	if err := files.MkdirAll(work, 0o755); err != nil {
+	work, err := engine.MakeWorkDir(files, video)
+	if err != nil {
 		return err
 	}
 	file, err := fileio.SafeChildIn(files, work, addedFile)

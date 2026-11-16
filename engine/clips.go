@@ -84,6 +84,13 @@ type Clip struct {
 	// change, so a clip that was never changed has none and needs none. Nil
 	// when it is not there or not two numbers in order.
 	Found *[2]float64
+	// PlanID is the training record the clip was proposed in, when it is
+	// another than the plan's. A search carried on with Continue asks the
+	// model again, with a prompt of its own, and adds what it answers to
+	// the plan of the search that stopped. A decision about such a clip
+	// belongs to the answer it came from, see RecordDecision. Empty for
+	// every other clip, whose record is the plan's.
+	PlanID string
 }
 
 // MaxThumbnails is how many pictures one clip may ask for.
@@ -590,6 +597,10 @@ func readClip(entry map[string]any, index int) (Clip, bool, error) {
 		titleText = num.FormatValue(value)
 	}
 	rejected, _ := entry[keyRejected].(bool)
+	planID := ""
+	if value, present := entry[keyPlanID]; present {
+		planID = SanitiseName(num.FormatValue(value), "")
+	}
 	var captionY *float64
 	if value, present := entry[keyCaptionY]; present {
 		if y, ok := num.AsFloat(value); ok && num.IsFinite(y) {
@@ -611,6 +622,7 @@ func readClip(entry map[string]any, index int) (Clip, bool, error) {
 		Title:        runes.Scrub(titleText, 200),
 		Segments:     segments,
 		Rotations:    spans,
+		PlanID:       planID,
 	}, true, nil
 }
 

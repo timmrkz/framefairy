@@ -557,14 +557,17 @@ func RecordDecision(fsys afero.Fs, rec *Records, planPath, clipID, event string,
 		return err
 	}
 	planID, _ := plan.Raw["plan_id"].(string)
-	if planID == "" {
-		return nil
-	}
 	var clip *Clip
 	for i := range clips {
 		if clips[i].ID == clipID {
 			clip = &clips[i]
 		}
+	}
+	if clip != nil && clip.PlanID != "" {
+		planID = clip.PlanID
+	}
+	if planID == "" {
+		return nil
 	}
 	if clip == nil {
 		return renderErr("no clip %s in the plan", clipID)

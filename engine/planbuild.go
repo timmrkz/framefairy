@@ -133,6 +133,17 @@ type planBuilder struct {
 	underway []runlog.Underway
 	landed   []runlog.Landed
 
+	// had is how many clips the plan a search carries on held, which
+	// count towards the clips asked for, see PlanOptions.CarryOn, and
+	// before is those clips as the lines they keep, so a new clip of the
+	// same moment is left out the way a second clip of one answer is.
+	had    int
+	before []PlanEntry
+	// carrying is a search carried on adding to the plan of the one that
+	// stopped. Each clip it adds names the training record of this
+	// answer, because the plan names the record of the answer before.
+	carrying bool
+
 	// writing is held while a clip goes to disk, so two framers finishing
 	// at once write one after the other.
 	writing sync.Mutex
@@ -154,6 +165,23 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 		Max: num.Float(opts.MaxLen), Model: opts.Model, By: opts.By}
 	b.prefix = opts.IDPrefix
 	b.taken = takenLines(lines, opts.Taken)
+	if opts.CarryOn && opts.PlanPath != "" {
+		if _, had, err := LoadClips(e.Files, opts.PlanPath); err == nil {
+			parts := append([]timed.Window(nil), opts.Taken...)
+			for _, c := range had {
+				var its []timed.Window
+				for _, s := range c.Segments {
+					its = append(its, timed.Window{Start: s.Start, End: s.End})
+				}
+				parts = append(parts, its...)
+				b.before = append(b.before, PlanEntry{Slug: c.Slug, Title: c.Title, Keep: takenLines(lines, its)})
+			}
+			b.taken = takenLines(lines, parts)
+			b.had = len(had)
+			b.opts.Grows = true
+			b.carrying = true
+		}
+	}
 	// A second pass over a later part of the episode must not reuse 01..04,
 	// or its clips would overwrite the first pass's output. Seconds, not
 	// minutes, so two windows inside the same minute still differ.
@@ -168,7 +196,7 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 		b.stamp.From, b.stamp.To = &from, &to
 	}
 	// A set that grows numbers on from the clips it has.
-	if opts.Grows && opts.PlanPath != "" {
+	if b.opts.Grows && opts.PlanPath != "" {
 		b.base = lastNumber(e.Files, opts.PlanPath, b.prefix)
 	}
 	for range framers() {
@@ -189,7 +217,7 @@ func (b *planBuilder) take(raw string) {
 		return
 	}
 	b.mu.Lock()
-	if b.closed || len(b.order) >= b.opts.Count {
+	if b.closed || b.fullLocked() {
 		b.mu.Unlock()
 		return
 	}
@@ -207,7 +235,7 @@ func (b *planBuilder) take(raw string) {
 // queued to be framed and written, the same way for every clip.
 func (b *planBuilder) propose(entry PlanEntry) {
 	b.mu.Lock()
-	if b.closed || len(b.order) >= b.opts.Count {
+	if b.closed || b.fullLocked() {
 		b.mu.Unlock()
 		return
 	}
@@ -419,11 +447,15 @@ func takenLines(lines []Line, parts []timed.Window) [][2]int {
 }
 
 // retaken says whether a clip keeps mostly lines a clip was proposed for
-// already, which is the same measure as two clips of one answer keeping
-// the same moment, see sameMomentAs. The model is told to leave those
-// lines, and a clip that keeps them all the same would be a moment the
-// list has, or one that was removed from it.
+// already, or keeps the same moment as a clip the plan carried on had,
+// which is the measure two clips of one answer are held to, see
+// sameMomentAs. The model is told to leave those lines, and a clip that
+// keeps them all the same would be a moment the list has, or one that was
+// removed from it.
 func (b *planBuilder) retaken(entry PlanEntry) bool {
+	if _, same := sameMomentAs(b.before, entry); same {
+		return true
+	}
 	if len(b.taken) == 0 {
 		return false
 	}
@@ -577,7 +609,7 @@ func (b *planBuilder) rest(whole []PlanEntry) {
 	defer b.mu.Unlock()
 	// Every clip asked for was taken as the answer arrived. What follows
 	// is a model that went on writing, and it is not read for repeats.
-	if b.closed || len(b.order) >= b.opts.Count {
+	if b.closed || b.fullLocked() {
 		return
 	}
 	// The clips taken as the answer arrived were checked for repeats in
@@ -612,11 +644,17 @@ func (b *planBuilder) rest(whole []PlanEntry) {
 		}
 	}
 	for _, entry := range whole[taken:] {
-		if len(b.order) >= b.opts.Count {
+		if b.fullLocked() {
 			return
 		}
 		b.acceptLocked(entry)
 	}
+}
+
+// fullLocked says whether every clip asked for is taken, the ones the
+// plan of a search carried on had counted in.
+func (b *planBuilder) fullLocked() bool {
+	return len(b.order)+b.had >= b.opts.Count
 }
 
 func (b *planBuilder) count() int {
@@ -850,6 +888,9 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 		return nil
 	}
 	if path := b.opts.PlanPath; path != "" {
+		if b.carrying {
+			clip.PlanID = b.planID
+		}
 		if b.opts.Grows {
 			set := PlanFile{Source: filepath.Base(b.sourcePath), PlanID: b.planID, PlannedWith: b.stamp}
 			added, err := addClip(b.e.Files, path, set, clip, b.prefix)
@@ -941,15 +982,24 @@ func (b *planBuilder) none() error {
 
 // settle writes the plan's id when it turned out to be another than the one
 // the plan was begun with, which is a reused answer found only once it was
-// whole.
+// whole. A search carried on writes it on the clips it added, and the
+// plan keeps the id of the answer its other clips came from.
 func (b *planBuilder) settle(planID string) error {
 	b.writing.Lock()
 	defer b.writing.Unlock()
 	if planID == "" || planID == b.planID || !b.written || b.gone || b.opts.PlanPath == "" {
 		return nil
 	}
-	err := editPlan(b.e.Files, b.opts.PlanPath, func(top *object, _ []*object) error {
-		top.set(keyPlanID, planID)
+	err := editPlan(b.e.Files, b.opts.PlanPath, func(top *object, clips []*object) error {
+		if !b.carrying {
+			top.set(keyPlanID, planID)
+			return nil
+		}
+		for _, c := range clips {
+			if id, ok := c.get(keyPlanID); ok && id == b.planID {
+				c.set(keyPlanID, planID)
+			}
+		}
 		return nil
 	})
 	if os.IsNotExist(err) {

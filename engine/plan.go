@@ -77,6 +77,13 @@ type PlanOptions struct {
 	// By is who proposes the clips, stamped on the clip set as
 	// planned_with.by: empty for the model, ByHand for I and O.
 	By string
+	// CarryOn adds to the plan at PlanPath, when it is there, the clips
+	// still missing from a search that stopped: the clips in it stay as
+	// they are, edits and all, a clip that keeps mostly their lines is
+	// left out the way a taken one is, and only as many are added as make
+	// up Count with them. What the model is asked is the same as the
+	// first time, so an answer that was saved whole is used again.
+	CarryOn bool
 	// Grows is a clip set that is added to rather than made anew: each
 	// clip goes in beside the ones there, and takes the next id after
 	// theirs. The clips made by hand are one such set.
@@ -138,6 +145,10 @@ type PlanClip struct {
 	Reason   string        `json:"reason"`
 	Keep     [][2]int      `json:"keep"`
 	Segments []PlanSegment `json:"segments"`
+	// PlanID is the training record the clip was proposed in, when it is
+	// another than the plan's: a clip a search carried on added to the
+	// plan of the search that stopped, see Clip.PlanID.
+	PlanID string `json:"plan_id,omitempty"`
 }
 
 // PlanSegment is one segment in clips.json. CropX holds a pixel offset or
@@ -235,7 +246,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	fingerprint := hex.EncodeToString(sum[:])[:16]
 	cachePath := ""
 	if opts.LogDir != "" {
-		if err := e.Files.MkdirAll(opts.LogDir, 0o755); err != nil {
+		if err := MakeDir(e.Files, opts.LogDir); err != nil {
 			return nil, err
 		}
 		cachePath = filepath.Join(opts.LogDir, "reply-"+fingerprint+".json")
@@ -323,9 +334,12 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		if opts.Local != nil {
 			budget = opts.Local.Think
 		}
-		clock := newSearchClock(e.Log, e.Clock, e.Records, opts.Model, opts.Local != nil, runes.Len(prompt), opts.Count, budget)
+		// A search carried on takes only the clips still missing, and the
+		// clock times those.
+		clock := newSearchClock(e.Log, e.Clock, e.Records, opts.Model, opts.Local != nil, runes.Len(prompt),
+			max(opts.Count-build.had, 1), budget)
 		// Set before the clock runs, so nothing reads it while it is set.
-		clock.now.NoFit = !build.fits
+		clock.now.NoFit, clock.now.Had = !build.fits, build.had
 		go clock.run()
 		defer clock.stop()
 		build.clock = clock

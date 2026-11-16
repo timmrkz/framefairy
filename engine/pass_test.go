@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
@@ -139,6 +141,200 @@ func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
 	}
 	if _, err := p.Files.Stat(filepath.Join(p.LogsDir(), "clips-10-30-2.json")); err == nil {
 		t.Error("a search carried on made a second pass")
+	}
+}
+
+// A search stopped after one of its two clips landed, carried on with
+// Continue: the model is asked again, the clip that landed stays as it
+// is, with the title a hand gave it, and the one still missing is added.
+// Continue found nothing more and said the search was done, issue #881.
+func TestASearchCarriedOnAddsTheClipsStillMissing(t *testing.T) {
+	t.Parallel()
+	server, asked := answering(t, clipAnswer(1), clipAnswer(1, 2, 3))
+	p := passProject(t, server.URL)
+	req := PlanRequest{From: 10, To: 30, Count: 2, Min: 1, Max: 30}
+	plan, err := p.Search(context.Background(), req, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, landed, err := LoadClips(p.Files, plan)
+	if err != nil || len(landed) != 1 {
+		t.Fatalf("the search that stopped left %d clips, %v, and this test needs one", len(landed), err)
+	}
+	// Stopped while the model still wrote, its answer was never whole,
+	// so none was kept to be used again.
+	replies, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "reply-*.json"))
+	for _, r := range replies {
+		if err := p.Files.Remove(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := editPlan(p.Files, plan, func(_ *object, clips []*object) error {
+		clips[0].set(keyTitle, "Mine")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	carried := req
+	carried.Pass, carried.CarryOn = 1, true
+	again, err := p.Search(context.Background(), carried, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != plan {
+		t.Errorf("the search carried on wrote %s, not the plan it began, %s", again, plan)
+	}
+	if n := len(asked()); n != 2 {
+		t.Errorf("the model was asked %d times, so Continue did not ask it again", n)
+	}
+	_, clips, err := LoadClips(p.Files, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clips) != 2 {
+		t.Fatalf("the plan holds %d clips after Continue, not the 2 asked for", len(clips))
+	}
+	if clips[0].ID != landed[0].ID || clips[0].Title != "Mine" {
+		t.Errorf("the clip that landed became %s %q, not %s with the title a hand gave it", clips[0].ID, clips[0].Title, landed[0].ID)
+	}
+	if clips[1].Segments[0].Start < landed[0].Segments[len(landed[0].Segments)-1].End {
+		t.Errorf("the clip added keeps the moment of the one that landed: %+v and %+v", clips[1].Segments, landed[0].Segments)
+	}
+}
+
+// A clip of a search carried on that holds a clip which landed before it
+// is the same moment, as two clips of one answer would be, even though
+// most of its own lines are new. It is left out, and the next one taken.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
+func TestASearchCarriedOnLeavesOutAClipHoldingOneThatLanded(t *testing.T) {
+	t.Parallel()
+	server, _ := answering(t, clipAnswer(1), "1 1 2\n3 3 3\n")
+	p := passProject(t, server.URL)
+	req := PlanRequest{From: 0, To: 40, Count: 2, Min: 1, Max: 30}
+	plan, err := p.Search(context.Background(), req, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replies, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "reply-*.json"))
+	for _, r := range replies {
+		if err := p.Files.Remove(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	carried := req
+	carried.Pass, carried.CarryOn = 1, true
+	if _, err := p.Search(context.Background(), carried, Host{}); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, err := LoadClips(p.Files, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clips) != 2 {
+		t.Fatalf("the plan holds %d clips after Continue, not the 2 asked for", len(clips))
+	}
+	landed := clips[0].Segments[0]
+	for _, s := range clips[1].Segments {
+		if s.Start < landed.End && landed.Start < s.End {
+			t.Errorf("the clip added, %+v, holds the one that landed, %+v", clips[1].Segments, landed)
+		}
+	}
+}
+
+// A search stopped once every clip it was asked for had landed, while the
+// model still wrote, has nothing left to find. Continue does not ask the
+// model again, which would cost a paid call or minutes of the machine and
+// throw the whole answer away.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
+func TestASearchCarriedOnWithEveryClipLandedAsksNothing(t *testing.T) {
+	t.Parallel()
+	server, asked := answering(t, clipAnswer(1))
+	p := passProject(t, server.URL)
+	req := PlanRequest{From: 10, To: 30, Count: 1, Min: 1, Max: 30}
+	plan, err := p.Search(context.Background(), req, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replies, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "reply-*.json"))
+	for _, r := range replies {
+		if err := p.Files.Remove(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	carried := req
+	carried.Pass, carried.CarryOn = 1, true
+	again, err := p.Search(context.Background(), carried, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(asked()); n != 1 {
+		t.Errorf("the model was asked %d times, so Continue asked again for a plan that was full", n)
+	}
+	if _, clips, err := LoadClips(p.Files, again); again != plan || err != nil || len(clips) != 1 {
+		t.Errorf("Continue left %s with %d clips, %v, not %s with its one", again, len(clips), err, plan)
+	}
+}
+
+// A clip a search carried on added was proposed in an answer of its own,
+// to a prompt of its own, and a decision about it is recorded against that
+// answer, where it is a candidate. The plan keeps naming the answer its
+// other clips came from, so a decision about one of them still finds it.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
+func TestADecisionOnAClipContinueAddedFindsItsCandidate(t *testing.T) {
+	t.Parallel()
+	server, _ := answering(t, clipAnswer(1), clipAnswer(1, 2))
+	p := passProject(t, server.URL)
+	records := ownRecords(p.engine)
+	req := PlanRequest{From: 10, To: 30, Count: 2, Min: 1, Max: 30}
+	plan, err := p.Search(context.Background(), req, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replies, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "reply-*.json"))
+	for _, r := range replies {
+		if err := p.Files.Remove(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	carried := req
+	carried.Pass, carried.CarryOn = 1, true
+	if _, err := p.Search(context.Background(), carried, Host{}); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, err := LoadClips(p.Files, plan)
+	if err != nil || len(clips) != 2 {
+		t.Fatalf("the plan holds %d clips after Continue, %v, and this test needs 2", len(clips), err)
+	}
+	for _, c := range clips {
+		if err := RecordDecision(p.Files, records, plan, c.ID, DecisionKept, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var decided []DecisionRecord
+	_ = records.readRecords(filepath.Join(records.TrainingDir(), "decisions.jsonl"), func(line []byte) {
+		var d DecisionRecord
+		if json.Unmarshal(line, &d) == nil {
+			decided = append(decided, d)
+		}
+	})
+	if len(decided) != 2 {
+		t.Fatalf("%d decisions were recorded, not one for each clip", len(decided))
+	}
+	for _, d := range decided {
+		rec, ok := records.loadPlanRecord(d.PlanID)
+		found := false
+		for _, c := range rec.Candidates {
+			found = found || c.CID == d.CID
+		}
+		if !ok || !found {
+			t.Errorf("the decision on %s went to %s, where it is no candidate", d.CID, d.PlanID)
+		}
+	}
+	if decided[0].PlanID == decided[1].PlanID {
+		t.Errorf("the clip that landed and the clip Continue added both went to %s, though two answers proposed them", decided[0].PlanID)
 	}
 }
 

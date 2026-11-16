@@ -317,7 +317,7 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 		return err
 	}
 	logs := filepath.Join(WorkDir(source), "logs")
-	if err := e.Files.MkdirAll(logs, 0o755); err != nil {
+	if err := MakeDir(e.Files, logs); err != nil {
 		return err
 	}
 	st := &levelState{end: -1}

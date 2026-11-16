@@ -146,9 +146,13 @@ done is done again:
 - A render called off keeps the shorts it finished.
 
 Continue carries a job on from what it left. Hearing hears what of the
-job's part of the episode is still not heard. Finding asks the model again for the whole window
-and replaces the clips that landed, because an answer cannot be taken up
-halfway. Rendering renders the clips that are not finished yet.
+job's part of the episode is still not heard. Finding asks the model again for the whole window,
+because an answer cannot be taken up halfway, and adds the clips still
+missing to the ones that landed. Those stay as they are, edits and all,
+and a clip of the new answer that keeps mostly their lines is left out.
+An answer that was whole before the search stopped was kept, and is used
+again without asking. Rendering renders the clips that are not finished
+yet.
 
 If using the app shows a pause is missed after all, it is a step that
 stops without being called off, and adding it is small.

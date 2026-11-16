@@ -879,6 +879,122 @@ export const steps = {
     await watch.step("drag edge twice", s);
     await page.evaluate(() => (window.__followWatch = false));
   },
+  // ["trim then next clip"]
+  //                    drags the clip's end 40 px earlier and, while the
+  //                    answer to the last place the hand reached is still
+  //                    on its way, lets go and presses Shift and the down
+  //                    arrow: the trim is saved on the clip it was made on,
+  //                    and the next clip is left as it was
+  async "trim then next clip"(walk, arg, s) {
+    const { page, watch } = walk;
+    // A busy machine answers late, and the save waits for the answer
+    // before it goes out. By then the next clip was chosen, and the trim
+    // was saved on it, which cut it down to a second. Issue #880.
+    //
+    // The walks' video has one clip, so one is made by hand after it, and
+    // the first is chosen again.
+    const path = await episodeOn(page);
+    const have = (await ask(page, "Clips", path)) ?? [];
+    await ask(page, "MakeClip", path, Math.max(0, ...have.map((c) => c.end)) + 30, false);
+    const cards = "aside ol li[data-key]:not(.next)";
+    await pageUntil(page, ({ cards, n }) => document.querySelectorAll(cards).length >= n, { cards, n: have.length + 1 });
+    await settle(page);
+    const first = await page.evaluate((cards) => document.querySelector(cards).dataset.key, cards);
+    await page.locator(`aside ol li[data-key="${first}"] button.pick`).first().click();
+    await watch.step("click", s);
+    const trimmed = watch.at;
+    const pieces = (clips, at) => clips.find((c) => c.plan === at.plan && c.id === at.clip)?.segments.map((p) => [p.start, p.end]);
+    const before = await ask(page, "Clips", trimmed.path);
+    const was = pieces(before, trimmed);
+    const g = await handles(page);
+    const x = middle(g.end);
+    const y = g.end.y + g.end.h / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i < 10; i++) {
+      await page.mouse.move(x - 4 * i, y);
+      await nextPaint(page);
+    }
+    // Every place so far answered, and the last one held on its way.
+    await settle(page);
+    await hold(page, "Shape");
+    await page.mouse.move(x - 40, y);
+    await page.mouse.up();
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press("Shift+ArrowDown");
+    await watch.step("trim then next clip", s);
+    const next = watch.at;
+    if (!next || (next.plan === trimmed.plan && next.clip === trimmed.clip)) {
+      walk.wrong = "Shift and the down arrow chose no other clip";
+      return;
+    }
+    const after = await ask(page, "Clips", trimmed.path);
+    const now = pieces(after, trimmed);
+    if (JSON.stringify(now) === JSON.stringify(was)) {
+      walk.wrong = `the clip whose end was dragged is as it was, ${JSON.stringify(was)}`;
+    }
+    const other = JSON.stringify(pieces(before, next));
+    if (JSON.stringify(pieces(after, next)) !== other) {
+      walk.wrong = `the trim went to the next clip: ${other} became ${JSON.stringify(pieces(after, next))}`;
+    }
+  },
+  // ["crop back then next clip"]
+  //                    takes the crop back to automatic, and while the
+  //                    first of its keyframes put back is on its way,
+  //                    chooses the clip next to it: every keyframe
+  //                    comes back on the clip it was taken from, the next
+  //                    clip gets none, and the first is chosen again
+  async "crop back then next clip"(walk, arg, s) {
+    const { page, watch } = walk;
+    // Put the crop back puts the keyframes back one after the other, and
+    // each went to the clip chosen when it went out. Chosen in between,
+    // the next clip took the rest. Found by the review of #880.
+    //
+    // The walk's video is a clip long, so a second clip is made by hand
+    // near its start, and the key goes the way the list has it.
+    const back = watch.at;
+    const have = (await ask(page, "Clips", back.path)) ?? [];
+    await ask(page, "MakeClip", back.path, 2, false);
+    const cards = "aside ol li[data-key]:not(.next)";
+    await pageUntil(page, ({ cards, n }) => document.querySelectorAll(cards).length >= n, { cards, n: have.length + 1 });
+    await settle(page);
+    const marks = (clips, at) => clips.find((c) => c.plan === at.plan && c.id === at.clip)?.cropMarks ?? [];
+    const before = await ask(page, "Clips", back.path);
+    const key = before.find((c) => c.plan === back.plan && c.id === back.clip)?.key;
+    const order = await page.evaluate((cards) => [...document.querySelectorAll(cards)].map((c) => c.dataset.key), cards);
+    const was = marks(before, back);
+    // A clip made by hand is the clip chosen, so the first is chosen again.
+    await page.locator(`aside ol li[data-key="${key}"] button.pick`).first().click();
+    await watch.step("click", s);
+    if (was.length < 2) {
+      walk.wrong = `the clip has ${was.length} keyframes, and this step needs two to put back`;
+      return;
+    }
+    await page.getByRole("button", { name: "Automatic crop", exact: true }).click();
+    await settle(page);
+    await hold(page, "SetCropMark");
+    await page.getByRole("button", { name: "Put the crop back", exact: true }).click();
+    await settle(page);
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press(order.at(-1) === key ? "Shift+ArrowUp" : "Shift+ArrowDown");
+    await watch.step("crop back then next clip", s);
+    const next = watch.at;
+    await letHeld(page);
+    await settle(page);
+    if (!next || (next.plan === back.plan && next.clip === back.clip)) {
+      walk.wrong = "Shift and an arrow chose no other clip";
+      return;
+    }
+    const after = await ask(page, "Clips", back.path);
+    if (marks(after, back).length !== was.length) {
+      walk.wrong = `the clip the crop was put back on has ${marks(after, back).length} keyframes, not its ${was.length}`;
+    }
+    if (marks(after, next).length) {
+      walk.wrong = `the next clip took ${marks(after, next).length} of the keyframes put back`;
+    }
+    await page.locator(`aside ol li[data-key="${key}"] button.pick`).first().click();
+    await watch.step("click", s);
+  },
   // ["edge then track", which]
   //                    clicks an edge and at once presses the track near
   //                    its right end: the playhead stands where the track

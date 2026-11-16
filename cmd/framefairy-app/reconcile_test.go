@@ -237,6 +237,55 @@ func TestAFolderDeletedInFinderLeavesTheLibraryWithoutTheAppComingToTheFront(t *
 	}
 }
 
+// A folder of videos renamed in Finder while the app was closed. The app
+// opens on the video it left open, Tim clicks it, picks a clip of it and
+// labels it. None of that makes the old folder again: it stood empty but
+// for the work folder in the person's own folder, could not be renamed
+// back, and the video then left the library as one deleted outside the
+// app, issue #882. The video says File not found until it is back.
+func TestAVideoWhoseFolderWasRenamedDoesNotMakeTheFolderAgain(t *testing.T) {
+	t.Parallel()
+	st := memoryStore()
+	season := "/home/tim/videos/Season 1"
+	video := filepath.Join(season, "ep.mp4")
+	if err := afero.WriteFile(st.files, video, []byte("not really a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddEpisodes([]string{video}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &FrameFairy{store: st}
+	svc.jobs = newQueue(st, func(JobUpdate) {}, func(string) {})
+	if err := st.files.Rename(season, "/home/tim/videos/S1"); err != nil {
+		t.Fatal(err)
+	}
+	svc.reconcile(nil)
+
+	if err := svc.OpenEpisode(video); err != nil {
+		t.Errorf("opening the video failed: %v", err)
+	}
+	if _, err := svc.ChooseClip(context.Background(), video, "clips.json/01"); err != nil {
+		t.Errorf("choosing a clip of the video failed: %v", err)
+	}
+	if _, err := svc.SetLabel(video, "Season one", "#942192"); err == nil {
+		t.Error("a label was saved for a video whose folder is not there")
+	}
+	if _, err := st.files.Stat(season); err == nil {
+		t.Errorf("the folder %q that was renamed is there again, made by the app", season)
+	}
+	svc.reconcile(nil)
+	svc.clearing.Wait()
+	if !slices.Contains(st.Episodes(), video) {
+		t.Fatal("the video left the library, instead of saying File not found until its folder is back")
+	}
+	if !svc.Episode(video).Missing {
+		t.Error("the video does not say File not found")
+	}
+	if got := svc.chosenIn(video).get(st.files, video).Clip; got != "clips.json/01" {
+		t.Errorf("the clip chosen is %q, not the one the hand chose", got)
+	}
+}
+
 // On the real disk: the system's own watch on the folders is what is
 // tested, the way Finder's changes reach it.
 func TestAVideoMovedInFinderSaysFileNotFoundAndBackWithoutTheAppComingToTheFront(t *testing.T) {

@@ -27,6 +27,13 @@ import (
 // showed no picture at all. Issue #255.
 func harnessFrames(paths []string) (http.Handler, error) {
 	st := openStoreIn(afero.NewMemMapFs(), "/config")
+	// The videos are on the disk, and their folders are in memory too, so
+	// their work folders can be made there.
+	for _, p := range paths {
+		if err := st.files.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := st.AddEpisodes(paths); err != nil {
 		return nil, err
 	}
