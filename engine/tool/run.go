@@ -94,9 +94,17 @@ func (r Runner) Run(ctx context.Context, cwd string, name string, args ...string
 // Bytes is Run for a program whose output is bytes, a picture or sound,
 // with its exit code.
 func (r Runner) Bytes(ctx context.Context, cwd string, name string, args ...string) ([]byte, int) {
+	return r.BytesOf(ctx, cwd, 0, name, args...)
+}
+
+// BytesOf is Bytes for a program whose output is about size bytes, a
+// picture of a size known before it is drawn, read into room made for it
+// once rather than grown and copied as it comes.
+func (r Runner) BytesOf(ctx context.Context, cwd string, size int, name string, args ...string) ([]byte, int) {
 	cmd := r.Command(ctx, name, args...)
 	cmd.Dir = cwd
 	var stdout bytes.Buffer
+	stdout.Grow(size)
 	out := &CutWriter{w: &stdout}
 	cmd.Stdout = out
 	if err := cmd.Start(); err != nil {

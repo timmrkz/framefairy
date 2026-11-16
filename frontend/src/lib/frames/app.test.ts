@@ -99,6 +99,21 @@ describe("AppFrames", () => {
     app.close();
   });
 
+  // Issue #886: a dragged app edge read the cards' frames again at every
+  // size it passed. They wait until the size comes to rest.
+  test("wait while the app is resized, and are read once its size rests", () => {
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+    const { app } = frames(() => ({ width: 4, height: 2 }));
+    app.paused = () => true;
+    app.resizing(true);
+    app.cards([150]);
+    app.aheadNow();
+    expect(app.stats.ahead).toBe(0);
+    app.resizing(false);
+    expect(app.stats.ahead).toBe(1);
+    app.close();
+  });
+
   // Found by the review of #385: the budget was counted where the cards
   // were given, at the size of that moment, and nowhere when it changed.
   test("keep as many as their budget holds at the size frames are read at", () => {

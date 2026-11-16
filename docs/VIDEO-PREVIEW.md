@@ -335,7 +335,12 @@ closed for standing unused.
   screen. A paused frame that came at another size than the canvas has
   now is asked for again whenever the app is resized, so
   a picture that stands still is always as sharp as the canvas lets it
-  be. Plan row 2.187.
+  be. Plan row 2.187. While an edge of the app is dragged, the frame on
+  screen is drawn to fit at every step. It is asked for at the new size
+  on the first step from rest, and again, with the cards' frames, once
+  the size has stood still for 150 ms.
+  Asked at every step, each was a stream of frames and one of sound
+  opened and closed again on the Go side.
 - **A paused frame** is the frame that holds the playhead. Paused on a
   piece, the play from the playhead is cued, its first frame drawn and
   the frames after it read ahead, the next piece's too. Whether the cue's

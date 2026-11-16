@@ -76,6 +76,10 @@ type Machine struct {
 	captionsOnce  sync.Once
 	measured      *inkCache
 	previewTracks *trackCache
+	// measureTurns is how many frames of measuring are drawn at once on
+	// the machine, by every ask together, see measureBlocks.
+	measureOnce  sync.Once
+	measureTurns chan struct{}
 	// grows wakes whoever waits for a transcript to grow, see
 	// transcriptGrows. The job that hears and the search that reads ahead
 	// share the machine, so the news goes from one to the other.
@@ -234,6 +238,13 @@ func (m *Machine) captions() (*inkCache, *trackCache) {
 		m.previewTracks = newTrackCache()
 	})
 	return m.measured, m.previewTracks
+}
+
+// measuring is the turns of the frames of measuring, measureAtOnce of
+// them for the whole machine.
+func (m *Machine) measuring() chan struct{} {
+	m.measureOnce.Do(func() { m.measureTurns = make(chan struct{}, measureAtOnce) })
+	return m.measureTurns
 }
 
 // toolAsk is what decides what an ffmpeg offers: the ffmpeg, the encoder

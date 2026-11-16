@@ -39,6 +39,45 @@ func TestRecordsComeBackAsWritten(t *testing.T) {
 	}
 }
 
+// A frame is handed to the writer as it is, never copied behind its
+// header first: a frame of 1600 by 900 is 5.8 MB, and the copy made each
+// frame of the video preview cost twice. It still reads back whole.
+func TestAFrameIsWrittenWithoutACopy(t *testing.T) {
+	body := make([]byte, 1600*900*4)
+	body[len(body)-1] = 7
+	var w handedOn
+	if err := Write(&w, Record{Cursor: 2, Kind: Frame, At: 4.5, Body: body}); err != nil {
+		t.Fatal(err)
+	}
+	copied := true
+	for _, p := range w.writes {
+		if len(p) == len(body) && &p[0] == &body[0] {
+			copied = false
+		}
+	}
+	if copied {
+		t.Error("the frame was copied before it was written")
+	}
+	got, err := Read(&w.Buffer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Cursor != 2 || got.Kind != Frame || got.At != 4.5 || !bytes.Equal(got.Body, body) {
+		t.Errorf("the frame came back as cursor %d, kind %d, at %v, %d bytes", got.Cursor, got.Kind, got.At, len(got.Body))
+	}
+}
+
+// handedOn keeps what it was handed, besides writing it.
+type handedOn struct {
+	bytes.Buffer
+	writes [][]byte
+}
+
+func (h *handedOn) Write(p []byte) (int, error) {
+	h.writes = append(h.writes, p)
+	return h.Buffer.Write(p)
+}
+
 // An open says how it got to its place, whether it opened the file, sought
 // or went on, and the light of its picture. A decoder from before HDR,
 // which says only "file", is read as standard video, and a word nobody
