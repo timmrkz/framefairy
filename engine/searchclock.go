@@ -251,6 +251,10 @@ type searchNow struct {
 	// the plan. A clip held back is taken once it is fitted.
 	Named, Held           int
 	Taken, Framed, Landed int
+	// Had is the clips the plan of a search carried on held before it, and
+	// Count is then only the clips still missing, see PlanOptions.CarryOn.
+	// The row counts them in, the way the clip list shows them.
+	Had int
 	// FitOf is the clips the model was asked about again so far, and
 	// FitDone those it has given again.
 	FitOf, FitDone int
@@ -463,12 +467,13 @@ func partLeft(inPart, part, share, counted float64) float64 {
 // left.
 func searchLabel(now searchNow) string {
 	if now.Landed > 0 {
+		found := now.Landed + now.Had
 		switch now.Part {
 		case partWriting:
-			return fmt.Sprintf("%d of %d found", now.Landed, max(now.Count, now.Landed))
+			return fmt.Sprintf("%d of %d found", found, max(now.Count+now.Had, found))
 		case partFitting, partFraming:
 			// The answer is whole, so what it holds is what there will be.
-			return fmt.Sprintf("%d of %d found", now.Landed, max(now.Named, now.Landed))
+			return fmt.Sprintf("%d of %d found", found, max(now.Named+now.Had, found))
 		}
 	}
 	return "Finding clips"

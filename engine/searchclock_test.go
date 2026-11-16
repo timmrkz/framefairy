@@ -624,3 +624,26 @@ func TestTheTimeLeftGoesUpOnlyWhenItStaysUp(t *testing.T) {
 		}
 	}
 }
+
+// The row of a search says how many clips it found of how many there will
+// be. A search carried on counts in the clips the plan held before it, the
+// way the clip list shows them, so with two of five there and one more
+// written it says 3 of 5, never 1 of 5 beside a list of three.
+func TestTheRowOfASearchCountsTheClipsItCarriedOn(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		now  searchNow
+		want string
+	}{
+		{"writing", searchNow{Part: partWriting, Count: 5, Named: 1, Landed: 1}, "1 of 5 found"},
+		{"answer whole", searchNow{Part: partFraming, Count: 5, Named: 3, Landed: 1}, "1 of 3 found"},
+		{"carried on, writing", searchNow{Part: partWriting, Count: 3, Had: 2, Named: 1, Landed: 1}, "3 of 5 found"},
+		{"carried on, answer whole", searchNow{Part: partFraming, Count: 3, Had: 2, Named: 2, Landed: 1}, "3 of 4 found"},
+		{"carried on, none landed yet", searchNow{Part: partWriting, Count: 3, Had: 2}, "Finding clips"},
+	} {
+		if got := searchLabel(c.now); got != c.want {
+			t.Errorf("%s: the row says %q, not %q", c.name, got, c.want)
+		}
+	}
+}

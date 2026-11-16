@@ -334,9 +334,12 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		if opts.Local != nil {
 			budget = opts.Local.Think
 		}
-		clock := newSearchClock(e.Log, e.Clock, e.Records, opts.Model, opts.Local != nil, runes.Len(prompt), opts.Count, budget)
+		// A search carried on takes only the clips still missing, and the
+		// clock times those.
+		clock := newSearchClock(e.Log, e.Clock, e.Records, opts.Model, opts.Local != nil, runes.Len(prompt),
+			max(opts.Count-build.had, 1), budget)
 		// Set before the clock runs, so nothing reads it while it is set.
-		clock.now.NoFit = !build.fits
+		clock.now.NoFit, clock.now.Had = !build.fits, build.had
 		go clock.run()
 		defer clock.stop()
 		build.clock = clock
