@@ -458,7 +458,7 @@ test: lint interface unit fuzz walks
 # In CI on a Mac, go test keeps its work folder, -work, which holds every
 # test program it built, and the runner throws it away with the rest.
 # Removing it is all go test has left to do once the last package has
-# passed, and on CI's Macs go test ran on for 18 to 28 s after that in
+# passed, and on CI's Macs go test ran on for 18 to 29 s after that in
 # every run from 14 to 16 November, against under a second on Linux.
 #
 # UNITSHARD=1/3 runs a third of the tests, by the first letters of their
