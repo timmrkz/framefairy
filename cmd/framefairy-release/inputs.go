@@ -40,8 +40,12 @@ import (
 // shortcuts, which take only the keys they are registered for, and the app
 // registers none, see TestWhatCouldWatchInputIsFound.
 var watching = []string{
-	// Every key and click of every app, with Input Monitoring.
+	// Every key and click of every app, with Input Monitoring. AppKit's
+	// global monitor and Carbon's event monitor are the same reach through
+	// the frameworks the app links anyway. A local monitor, which Wails
+	// uses, sees only what is sent to the app itself.
 	"CGEventTapCreate", "CGEventTapCreateForPid", "CGRequestListenEventAccess",
+	"addGlobalMonitorForEventsMatchingMask", "GetEventMonitorTarget",
 	"IOHIDManagerOpen", "IOHIDDeviceRegisterInputValueCallback",
 	// Other apps' windows and what is typed into them, with Accessibility.
 	"AXIsProcessTrusted", "AXIsProcessTrustedWithOptions", "AXUIElementCreateSystemWide",
