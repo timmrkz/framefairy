@@ -314,11 +314,15 @@ export const steps = {
     const list = await clipList(page);
     if (list?.rows.some((r) => r.what === arg)) walk.wrong = `a row says "${arg}": ${JSON.stringify(list?.rows)}`;
   },
-  // ["no put back"]    no row of the clip list offers a removed clip back
+  // ["no put back"]    no row of the clip list offers a removed clip back.
+  //                    A row on its way out is inert, so its Put it back
+  //                    takes no click and offers nothing. The removed row
+  //                    of a short video folds away as its clip comes
+  //                    again, and the step can look before the fold ends.
   async "no put back"(walk) {
     const { page } = walk;
     const offered = await page.evaluate(
-      () => [...document.querySelectorAll("aside ol button.back")].filter((b) => b.textContent.includes("Put it back")).length,
+      () => [...document.querySelectorAll("aside ol li:not([inert]) button.back")].filter((b) => b.textContent.includes("Put it back")).length,
     );
     if (offered) walk.wrong = `${offered} removed clip(s) are offered back`;
   },
