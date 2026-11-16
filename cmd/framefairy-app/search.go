@@ -204,13 +204,15 @@ func (s *FrameFairy) MakeClip(path string, at float64, backward bool) Job {
 }
 
 // makeClip queues a clip made by hand, carrying on the one the record id
-// is of, if any. click names the press of Continue, if it was one. With
-// choose its card is the clip chosen from the moment the job is queued,
-// before it can run, so every state of the video from then on says the
-// card is chosen, or the clip it was written as, rule 7 in choose.go. The
-// workspace picked the card once the press had its answer, and a busy
-// machine wrote the clip before that pick reached the Go side, so a state
-// came with the card gone and its clip not chosen, issue #697.
+// is of, if any. click names the press of Continue, if it was one. A new
+// one is given the id it is written under before it is queued, see
+// engine.NextHandClipID, so its card has the key of the clip it becomes
+// and keeps it when it is written. With choose its card is the clip
+// chosen from the moment the job is queued, before it can run, so every
+// state of the video from then on says it is chosen. The workspace picked
+// the card once the press had its answer, and a busy machine wrote the
+// clip before that pick reached the Go side, so a state came with the
+// card gone and its clip not chosen, issue #697.
 func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click string, choose bool) Job {
 	label := jobLabel(engine.JobRecord{Kind: engine.JobClip})
 	if !s.store.Known(path) {
@@ -225,18 +227,31 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 		id = carry
 		s.jobs.settle(path, engine.JobClip, id)
 	}
+	s.naming.Lock()
+	defer s.naming.Unlock()
+	if req.ID == "" {
+		var taken []string
+		jobs, _ := s.jobs.ofVideo(path)
+		for _, j := range jobs {
+			if j.Kind == engine.JobClip && j.ClipID != "" {
+				taken = append(taken, j.ClipID)
+			}
+		}
+		req.ID = engine.NextHandClipID(s.store.files, path, taken)
+	}
+	key := req.Key()
 	var picks *picked
 	if choose {
 		picks = s.chosenIn(path)
 		picks.load(s.store.files, path)
 	}
 	job := s.jobs.addSteps(path, engine.JobClip, label, false, func(j *Job) {
-		j.JobRecord.ID, j.At, j.Backward, j.click = id, req.At, req.Backward, click
-		j.Underway = engine.JobRecord{Kind: engine.JobClip, At: req.At, Step: engine.StepWaiting}.Underway()
+		j.JobRecord.ID, j.At, j.Backward, j.ClipID, j.click = id, req.At, req.Backward, req.ID, click
+		j.Underway = engine.JobRecord{Kind: engine.JobClip, At: req.At, ClipID: req.ID, Step: engine.StepWaiting}.Underway()
 		// With the queue's lock held, so the job cannot run before it.
 		// A job the queue refused chooses nothing.
 		if picks != nil && j.State == JobRunning {
-			picks.keep(cardKey(j.ID, 1), s.jobs.nextStampLocked())
+			picks.keep(key, s.jobs.nextStampLocked())
 		}
 	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
 		return p.MakeClip(ctx, id, req, host)
@@ -245,7 +260,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 		if err := picks.save(s.store.files, path); err != nil {
 			theLog.line(zerolog.WarnLevel, "chosen").Str("video", filepath.Base(path)).Err(err).Msg("the clip the app chose could not be kept")
 		}
-		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("clip", cardKey(job.ID, 1)).Str("why", "the clip made by hand was asked for").Msg("the app chose a clip")
+		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("clip", key).Str("why", "the clip made by hand was asked for").Msg("the app chose a clip")
 	}
 	return job
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/rs/zerolog"
 
@@ -33,8 +32,12 @@ import (
 //     first,
 //  5. when the clip chosen is removed, the one beside it, and when it is
 //     put back while that one is still chosen, the clip put back,
-//  6. after an undo or a redo, the clip it changed,
-//  7. when a clip on its way that is chosen, a card, is written, the clip.
+//  6. after an undo or a redo, the clip it changed.
+//
+// A clip on its way, a card, is known by the key of the clip it becomes
+// from the moment it is there, see engine.NextHandClipID and idOf in
+// engine/planbuild.go, so a card chosen is that clip once it is written,
+// with nothing to choose.
 //
 // The first two only while the video is paused, so a picture that is
 // playing never jumps to a clip nobody asked for, and the first two and
@@ -118,29 +121,23 @@ func (s *FrameFairy) searchBegins(path string) {
 }
 
 // chosenFor is the clip chosen in the video whose state st is, read with
-// its jobs and its clips, after the app chose by rules 1, 2, 3, 4 and 7
-// from them, and the card that clip was while it was on its way, if it
-// was one. A state older than the newest it chose from, or than the last
+// its jobs and its clips, after the app chose by rules 1, 2, 3 and 4 from
+// them. A state older than the newest it chose from, or than the last
 // choice of a hand or an undo, chooses nothing, see picked.choseAt. It
 // says what is chosen now when its clips hold it, and otherwise the clip
 // chosen before, so a state never names a clip it does not hold.
-func (s *FrameFairy) chosenFor(path string, st VideoState) (clip, was string) {
+func (s *FrameFairy) chosenFor(path string, st VideoState) (clip string) {
 	p := s.chosenIn(path)
 	var said []string
 	if _, err := p.with(s.store.files, path, func(p *picked) bool {
-		defer func() { clip, was = p.answer(st) }()
+		defer func() { clip = p.answer(st) }()
 		if st.Rev != 0 && st.Rev <= p.decided {
 			return false
 		}
 		p.decided = st.Rev
 		before := p.kept.Clip
-		now := before
-		if landed := landedClip(st, now); landed != "" {
-			p.card, p.became = now, landed
-			now = landed
-			said = append(said, "the clip made by hand was written")
-		}
-		now, said = p.follow(st, now, said)
+		var now string
+		now, said = p.follow(st, before, said)
 		if now != before {
 			p.prior, p.kept.Clip = before, now
 			return true
@@ -161,14 +158,13 @@ func (s *FrameFairy) chosenFor(path string, st VideoState) (clip, was string) {
 	for _, why := range said {
 		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("clip", clip).Str("why", why).Msg("the app chose a clip")
 	}
-	return clip, was
+	return clip
 }
 
-// answer is the clip chosen a state says, and the card it was, with the
-// lock held: the clip chosen, or for a state older than the newest that
-// chose, the clip chosen before when its clips do not hold the one now,
-// and for a card chosen whose clip the state holds, that clip.
-func (p *picked) answer(st VideoState) (string, string) {
+// answer is the clip chosen a state says, with the lock held: the clip
+// chosen, or for a state older than the newest that chose, the clip
+// chosen before when its clips do not hold the one now.
+func (p *picked) answer(st VideoState) string {
 	now := p.kept.Clip
 	if st.Rev != 0 && st.Rev < p.decided && !holdsClip(st.Clips, now) && card(st.Jobs, now) == nil {
 		now = ""
@@ -176,18 +172,7 @@ func (p *picked) answer(st VideoState) (string, string) {
 			now = p.prior
 		}
 	}
-	if now != "" && now == p.became {
-		return now, p.card
-	}
-	// A card whose clip this state holds is that clip, rule 7, whatever
-	// the state was read before: a hand picks a card its window still
-	// shows after its clip was written, and a state answered after the
-	// pick said the card was chosen, which a list that holds its clip
-	// leaves out, so for a frame nothing was chosen, issue #697.
-	if clip := landedClip(st, now); clip != "" {
-		return clip, now
-	}
-	return now, ""
+	return now
 }
 
 // follow chooses for the newest search of the video, rules 1, 2 and 3,
@@ -282,58 +267,19 @@ func holdsClip(clips []ClipEntry, key string) bool {
 	return false
 }
 
-// cardKey is the key of a clip on its way, a card: its job's id and the
-// clip's number, the key the workspace knows the card by, see
-// lib/arriving.ts.
-func cardKey(job string, n int) string {
-	return job + "/" + strconv.Itoa(n)
-}
-
-// card is the job whose clip on its way key is, the job's id and the
-// clip's number, or nil when key is no card.
+// card is the job whose clip on its way key is, or nil when key is no
+// card. A card is known by the key of the clip it becomes, and one that
+// has none, a clip of a run that writes no clip set, by its job's id and
+// its number.
 func card(jobs []Job, key string) *Job {
-	id, n, ok := strings.Cut(key, "/")
-	if !ok {
-		return nil
-	}
-	if _, err := strconv.Atoi(n); err != nil {
-		return nil
-	}
 	for i := range jobs {
-		if jobs[i].ID == id {
-			return &jobs[i]
+		for _, u := range jobs[i].Underway {
+			if u.Clip == key || u.Clip == "" && jobs[i].ID+"/"+strconv.Itoa(u.N) == key {
+				return &jobs[i]
+			}
 		}
 	}
 	return nil
-}
-
-// landedClip is the clip a chosen card was written as, once it is in the
-// clips, rule 7, or nothing. Its job says the key from the moment the
-// clip has one, in Underway, and from the moment it is written, in
-// Landed, which the card leaves Underway for. Its result says it once
-// the job is done. Between the write and the end of the job only Landed
-// said it, and a state read then held the clip, no card and the card
-// still chosen, so for a frame nothing was chosen, issue #781.
-func landedClip(st VideoState, key string) string {
-	j := card(st.Jobs, key)
-	if j == nil {
-		return ""
-	}
-	_, n, _ := strings.Cut(key, "/")
-	for _, u := range j.Underway {
-		if strconv.Itoa(u.N) == n && u.Clip != "" && holdsClip(st.Clips, u.Clip) {
-			return u.Clip
-		}
-	}
-	for _, l := range j.Landed {
-		if strconv.Itoa(l.N) == n && holdsClip(st.Clips, l.Clip) {
-			return l.Clip
-		}
-	}
-	if j.Kind == engine.JobClip && j.State == JobDone && holdsClip(st.Clips, j.Result) {
-		return j.Result
-	}
-	return ""
 }
 
 // removing chooses for a clip removed or put back, rule 5. before is the

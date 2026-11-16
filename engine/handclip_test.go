@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
@@ -52,7 +54,9 @@ func handProject(t *testing.T, source string, log *runlog.Log) *Project {
 // shapes, frames and writes it, into the clip set made by hand, which grows
 // with each one and searched nothing. It is on the way from the moment it
 // is asked for, at the playhead, and then where its sentences are, until
-// it is written.
+// it is written. Its card is known by the name of the clip it becomes
+// from the first, so it is the same clip from the card to the clip
+// written.
 //
 // On the real disk: ffmpeg reads the episode the clip is heard and framed from.
 func TestAClipMadeByHand(t *testing.T) {
@@ -118,6 +122,13 @@ func TestAClipMadeByHand(t *testing.T) {
 	if first := lists[0]; len(first) != 1 || first[0].N != 1 || first[0].Start != 20 || first[0].End != 20 {
 		t.Errorf("first on the way %+v, want the playhead", first)
 	}
+	for _, list := range lists {
+		for _, u := range list {
+			if u.Clip != key {
+				t.Errorf("on the way as %q, and written as %q", u.Clip, key)
+			}
+		}
+	}
 	framing := false
 	for _, list := range lists {
 		if len(list) == 1 && list[0].Step == StepFraming && list[0].N == 1 &&
@@ -157,9 +168,10 @@ func TestAClipMadeByHand(t *testing.T) {
 		t.Errorf("captions on the way %v, written %v %v", arriving, written, err)
 	}
 
-	// O at 60 s ends a clip there and grows it back, into the same set.
-	key, err = p.MakeClip(ctx, "clip-2", ClipRequest{At: 60, Backward: true}, Host{})
-	if err != nil || key != HandPlanName+"/h02" {
+	// O at 60 s ends a clip there and grows it back, into the same set,
+	// under the id it was given when it was asked for.
+	key, err = p.MakeClip(ctx, "clip-2", ClipRequest{At: 60, Backward: true, ID: "h03"}, Host{})
+	if err != nil || key != HandPlanName+"/h03" {
 		t.Fatalf("%q %v", key, err)
 	}
 	view, _ = ReadPlan(disk, p.HandPlanPath())
@@ -245,8 +257,43 @@ func TestAClipMadeByHandCalledOff(t *testing.T) {
 		t.Errorf("last on the way %+v, want it stopped at the playhead", last)
 	}
 	recs := ReadJobs(disk, source)
-	if len(recs) != 1 || recs[0].Kind != JobClip || recs[0].Clip() != (ClipRequest{At: 30}) || recs[0].Step == StepFailed {
+	if len(recs) != 1 || recs[0].Kind != JobClip || recs[0].Clip() != (ClipRequest{At: 30, ID: "h01"}) || recs[0].Step == StepFailed {
 		t.Errorf("records %+v", recs)
+	}
+	// Carried on from its record, its card keeps the name it had.
+	if on := recs[0].Underway(); len(on) != 1 || on[0].Clip != HandPlanName+"/h01" || lists[len(lists)-1][0].Clip != on[0].Clip {
+		t.Errorf("stopped as %+v, read back as %+v, want both %s/h01", lists[len(lists)-1], on, HandPlanName)
+	}
+}
+
+// The id a clip made by hand is given when it is asked for comes after
+// those of the clips made by hand there are and of those still on their
+// way, so two asked for at once never share one.
+func TestNextHandClipID(t *testing.T) {
+	t.Parallel()
+	fs := afero.NewMemMapFs()
+	p := NewProject(NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(fs)), "/v/episode.mp4", DefaultOptions())
+	if got := NextHandClipID(fs, p.Source, nil); got != "h01" {
+		t.Errorf("with no clip made by hand, %q", got)
+	}
+	if got := NextHandClipID(fs, p.Source, []string{"h01", "h04", "t30-02", "hx"}); got != "h05" {
+		t.Errorf("with h01 and h04 on their way, %q", got)
+	}
+	set := PlanFile{Source: "episode.mp4"}
+	for _, id := range []string{"h01", "h02"} {
+		if _, err := addClip(fs, p.HandPlanPath(), set, PlanClip{ID: id, Slug: id,
+			Segments: []PlanSegment{{Start: 1, End: 25, CropX: "center"}}}, handPrefix); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := NextHandClipID(fs, p.Source, []string{"h01"}); got != "h03" {
+		t.Errorf("with h01 and h02 written, %q", got)
+	}
+	// An id taken by the time the clip is written is the next one there.
+	added, err := addClip(fs, p.HandPlanPath(), set, PlanClip{ID: "h02", Slug: "again",
+		Segments: []PlanSegment{{Start: 30, End: 55, CropX: "center"}}}, handPrefix)
+	if err != nil || added.ID != "h03" {
+		t.Errorf("a clip given h02, already there, went in as %q, %v", added.ID, err)
 	}
 }
 

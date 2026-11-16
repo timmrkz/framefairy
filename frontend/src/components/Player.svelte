@@ -558,12 +558,12 @@
   // it stood dimmed over the very moment it was made from. Found by Tim.
   //
   // A clip on its way has no pieces here yet, so the playhead is simply
-  // on it. With from, only where the playhead is on the clip of that key:
-  // a clip on its way that is written comes back under a key of its own,
-  // and the playhead stays on it.
-  export function claim(from?: string) {
+  // on it. With kept, only where the playhead is on it already: a clip on
+  // its way that is written has its pieces now, and the playhead stays on
+  // it, placed among them.
+  export function claim(kept = false) {
     const key = clip?.key ?? making;
-    if (!key || (from !== undefined && placed.clip !== from)) return;
+    if (!key || (kept && placed.clip !== key)) return;
     placed = clip
       ? placeOf(pieces, key, time, 1 / oneFrame, "clip", source.videoStart ?? 0)
       : { place: "clip", clip: key };

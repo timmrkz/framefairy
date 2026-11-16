@@ -579,9 +579,6 @@ export interface VideoState {
   window?: WindowView | null;
   // The key of the clip chosen, by a hand or by the Go side, or nothing.
   chosen?: string;
-  // The card the clip chosen was on its way as, when the app chose it
-  // because that card was written as it.
-  chosenCard?: string;
   // Where I and O can make a clip, see engine.MarkingOf, or none while
   // the video's length is not known.
   marking?: Marking | null;
@@ -715,18 +712,16 @@ export interface Job {
   // the episode.
   from?: number;
   to?: number;
-  // A clip made by hand: the moment I or O was pressed at, and whether it
-  // was O.
+  // A clip made by hand: the moment I or O was pressed at, whether it was
+  // O, and the id it is written under, which its card is known by from
+  // the start, see engine.NextHandClipID.
   at?: number;
   backward?: boolean;
+  clipId?: string;
   // The clips the job has on the way, and how many it has written, from
   // one event, so the two always add up.
   underway?: Underway[];
   written?: number;
-  // Every clip the job has written, and which of its clips it was. The Go
-  // side chooses a written card's clip by it, see landedClip in choose.go,
-  // and the window reads nothing of it.
-  landed?: Landed[];
   // For a search that carries on one that stopped, how many clips that
   // one had written, so it did not find nothing.
   carried?: number;

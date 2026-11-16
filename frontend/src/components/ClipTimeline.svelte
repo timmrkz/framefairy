@@ -255,10 +255,9 @@
       start: number;
       end: number;
       rendered: boolean;
-      // A clip on its way, where its card says it lies, and the key that
-      // chooses its card. It keeps its mark when it is written.
+      // A clip on its way, where its card says it lies. It keeps its mark
+      // when it is written, because its card has the key of the clip.
       arriving?: boolean;
-      pick?: string;
     }[];
     // A mark clicked, which chooses that clip, as on the range picker.
     onmark?: (key: string) => void;
@@ -967,16 +966,16 @@
     load(from, from + span);
   }
 
-  // A card on its way written as its clip is the same clip under a new
-  // key. While the hand is at work on the clip timeline, a view it moved,
-  // the playhead or an edge in its grip, the view stays where it is: laid
-  // out afresh, it moved under a hand already at work, Tim's report of 9
-  // November. Otherwise the clip is fitted as it is written, the way a
-  // clip made is: the card's view was fitted to where the clip was asked
-  // for, and the clip written stood off to one side, his report of 10
-  // November.
-  export function follow(from: string, to: string) {
-    if (viewFor === from && (held || scrubbing || gripping)) viewFor = to;
+  // A card on its way is written as its clip, the same clip under the
+  // same key. While the hand is at work on the clip timeline, a view it
+  // moved, the playhead or an edge in its grip, the view stays where it
+  // is: laid out afresh, it moved under a hand already at work, Tim's
+  // report of 9 November. Otherwise the clip is fitted as it is written,
+  // the way a clip made is: the card's view was fitted to where the clip
+  // was asked for, and the clip written stood off to one side, his report
+  // of 10 November.
+  export function written() {
+    if (!(held || scrubbing || gripping)) fitView();
   }
 
   // Where the timeline sits when nobody has moved it: the clip with a little
@@ -1651,14 +1650,13 @@
       end: number;
       rendered: boolean;
       arriving?: boolean;
-      pick?: string;
     }[] = [];
     for (const m of marks) {
       // The chosen clip is drawn whole, so it has no mark. With none
       // chosen every clip has one: compared to no clip at all, a written
       // clip, which has no card to pick, matched, and with nothing chosen
       // the clip timeline showed no written clip, only the ones on their way.
-      const chosen = !!clip && (m.key === clip.key || m.pick === clip.key);
+      const chosen = !!clip && m.key === clip.key;
       if (chosen || m.end <= view.from || m.start >= view.to) continue;
       const pieces = wholeClip
         ? [
@@ -2199,7 +2197,7 @@
         title="Choose the clip at {clock(m.at)}"
         {@attach hoverClip(m.key, onhover)}
         onpointerdown={(e) => e.stopPropagation()}
-        onclick={() => onmark?.(m.pick ?? m.key)}
+        onclick={() => onmark?.(m.key)}
       ></button>
     {/each}
     <!-- Everything drawn for the chosen clip, its frame, its pieces, its

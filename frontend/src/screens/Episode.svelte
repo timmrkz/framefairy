@@ -1102,11 +1102,11 @@
       .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: c.rendered }));
     const here = new Set(written.map((m) => m.key));
     const coming = onTheWay
-      .filter((a) => !(a.clip && here.has(a.clip)) && !a.away)
+      .filter((a) => !here.has(a.key) && !a.away)
       .map((a) => {
         const first = a.pieces?.[0]?.[0] ?? a.start;
         const last = a.pieces?.[a.pieces.length - 1]?.[1] ?? a.end;
-        return { key: a.clip ?? a.key, start: first, end: last, rendered: false, arriving: true, pick: a.key };
+        return { key: a.key, start: first, end: last, rendered: false, arriving: true };
       });
     return [...written, ...coming];
   });
@@ -1593,12 +1593,10 @@
   // button wears the beam at once, and the clip on its way is chosen, so
   // its card is brought into view with the beam on it and its frame is on
   // the clip timeline, first as long as Shortest from the playhead, then
-  // on its sentences as soon as the engine has them. When it is written,
-  // the chosen card becomes the clip, if nothing else has been chosen
-  // since. Any number can be asked for at once, so the buttons never wait.
-  // A job can be over before its answer comes back to the press, its news
-  // heard first on a busy machine, so the Go side answers the pick of its
-  // card with the clip it was written as, see choose.go, issue #508.
+  // on its sentences as soon as the engine has them. Its card has the key
+  // of the clip it becomes, so when it is written the clip chosen is the
+  // same clip. Any number can be asked for at once, so the buttons never
+  // wait.
   const makingIn = $derived(jobs.isStarting(path, "clips", "in") || handRunning.some((j) => !j.backward));
   const makingOut = $derived(jobs.isStarting(path, "clips", "out") || handRunning.some((j) => !!j.backward));
   async function makeClip(backward: boolean) {
@@ -1607,10 +1605,9 @@
       const at = time;
       const job = await jobs.startJob(path, "clips", () => api.makeClip(path, at, backward), backward ? "out" : "in");
       const now = jobs.list.find((j) => j.id === job.id) ?? job;
-      const key = `${job.id}/1`;
+      const key = now.underway?.[0]?.clip ?? `${job.id}/1`;
       if (now.state !== "failed") {
-        // Its card is chosen, and the Go side makes the clip the one chosen
-        // when it is written, see choose.go.
+        // Its card is chosen, and stays chosen as the clip it becomes.
         session.pick(key, (k) => api.chooseClip(path, k));
       }
       // A failure says why in a toast, which the Go side tells as it
@@ -1638,7 +1635,7 @@
     let from = a.start;
     let to = a.end;
     if (to - from < 0.5) {
-      const job = handWork.find((j) => a.key.startsWith(`${j.id}/`));
+      const job = handWork.find((j) => j.id === a.job);
       from = job?.backward ? Math.max(0, a.start - min) : a.start;
       to = job?.backward ? a.start : Math.min(duration, a.start + min);
     }
@@ -2751,29 +2748,43 @@
   });
 
   // The app chose another clip, see choose.go: a search's first clip or
-  // its earliest, the clip beside one removed or one put back, the clip
-  // an undo changed, or a clip made by hand that was written, whose card
-  // was chosen. It is shown the way a hand's pick is, the playhead on it
-  // while the video is paused. A card that became its clip is the clip
-  // already on screen, written now under its own key: the playhead stays
-  // where it is, see claim in Player.svelte, and the clip timeline where
-  // the hand has it, see follow in ClipTimeline.svelte. Shown as a new
-  // pick, it put the clip in the middle of the clip timeline and the
-  // playhead on its start, under a hand already at work on its edge, Tim's
-  // report of 9 November. Everything else the
-  // video's work changes, the clips a search wrote, how far the video is
-  // heard, the window moved on, comes in the video's state, issue #606:
-  // nothing waits for the work to end and reads the video again.
-  const chose: Chose = (key, before, card) => {
+  // its earliest, the clip beside one removed or one put back, or the
+  // clip an undo changed. It is shown the way a hand's pick is, the
+  // playhead on it while the video is paused. A card chosen that is
+  // written is no other clip, because a card has the key of the clip it
+  // becomes, so nothing is chosen then. Everything else the video's work
+  // changes, the clips a search wrote, how far the video is heard, the
+  // window moved on, comes in the video's state, issue #606: nothing
+  // waits for the work to end and reads the video again.
+  const chose: Chose = (key) => {
     if (!opened) return;
-    if (card && card === before) {
-      player?.claim(before);
-      timeline?.follow(before, key);
-      void tick().then(() => showChosen());
-      return;
-    }
     void show(key, paused);
   };
+  // A card chosen that is written: the playhead stays on it, placed among
+  // its pieces, see claim in Player.svelte, and the clip timeline fits it
+  // unless a hand is at work there, see written in ClipTimeline.svelte.
+  // Its job can say it is written before the state that holds the clip
+  // comes, so the card is followed until the clip is there or another
+  // clip is chosen.
+  let madeKey = "";
+  $effect(() => {
+    const key = making?.key;
+    if (key) {
+      madeKey = key;
+      return;
+    }
+    if (!madeKey || selected !== madeKey) {
+      madeKey = "";
+      return;
+    }
+    if (!current) return;
+    madeKey = "";
+    void tick().then(() => {
+      player?.claim(true);
+      timeline?.written();
+      showChosen();
+    });
+  });
   onMount(() => session.open(chose, onVideoState));
 
   // Playing moves nothing. An editor's timeline follows its playhead while

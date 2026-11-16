@@ -310,7 +310,7 @@ func (b *planBuilder) acceptLocked(entry PlanEntry) {
 		// On its way like any other, being fitted to the length first.
 		first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
 		b.underway = append(b.underway, runlog.Underway{N: card, Start: b.lines[first-1].Start(),
-			End: b.lines[last-1].End(), Title: entry.Title, Step: StepFitting})
+			End: b.lines[last-1].End(), Title: entry.Title, Step: StepFitting, Clip: b.clipKey(b.idOf(card))})
 		b.sayUnderwayLocked()
 		return
 	}
@@ -466,13 +466,12 @@ func repeatNote(entry, earlier PlanEntry) string {
 		earlier.Title, entry.Title)
 }
 
-// queueLocked gives an entry its id and hands it to the framers. The id is
-// its place among the usable clips of the answer, as it always was, after
-// the clips a set that grows already has.
+// queueLocked hands an entry to the framers, under the id of its card,
+// see idOf.
 func (b *planBuilder) queueLocked(entry PlanEntry, card int) {
 	position := len(b.entries) + 1
 	uniqueSlug(b.seen, &entry, position)
-	id := fmt.Sprintf("%s%02d", b.prefix, b.base+position)
+	id := b.idOf(card)
 	b.entries = append(b.entries, entry)
 	b.ids = append(b.ids, id)
 	first, last := entry.Keep[0][0], entry.Keep[len(entry.Keep)-1][1]
@@ -496,6 +495,20 @@ func (b *planBuilder) queueLocked(entry PlanEntry, card int) {
 }
 
 // clipKey is the key a clip of this set has in the app's clip list.
+// idOf is the id the clip of a card is written under: its place in the
+// answer, after the clips a set that grows already has, or the id a clip
+// made by hand was given when it was asked for. A card has it from the
+// moment it is there, a clip held back to be fitted too, so it is known
+// by the name of the clip it becomes from the start and never changes
+// its name when it is written. Every card of an answer is written, a held
+// one once it is fitted, so the ids run on without a gap.
+func (b *planBuilder) idOf(card int) string {
+	if b.opts.ID != "" {
+		return b.opts.ID
+	}
+	return fmt.Sprintf("%s%02d", b.prefix, b.base+card)
+}
+
 func (b *planBuilder) clipKey(id string) string {
 	if b.opts.PlanPath == "" {
 		return ""

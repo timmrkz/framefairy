@@ -8,9 +8,12 @@ import (
 	"math"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine/runes"
 	"framefairy/engine/runlog"
@@ -33,11 +36,46 @@ import (
 // madeOver.
 const HandPlanName = "clips-hand.json"
 
-// ClipRequest is a clip made by hand: the moment I or O was pressed at, and
-// whether it was O, which ends the clip there rather than starting it.
+// ClipRequest is a clip made by hand: the moment I or O was pressed at,
+// whether it was O, which ends the clip there rather than starting it,
+// and the id it is written under, see NextHandClipID.
 type ClipRequest struct {
 	At       float64
 	Backward bool
+	ID       string
+}
+
+// Key is the key the clip has in the clip list, from the moment it is
+// asked for: its card is known by the name of the clip it becomes, so it
+// keeps it when it is written. Empty while it has no id.
+func (r ClipRequest) Key() string {
+	if r.ID == "" {
+		return ""
+	}
+	return HandPlanName + "/" + r.ID
+}
+
+// handPrefix begins the id of every clip made by hand.
+const handPrefix = "h"
+
+// NextHandClipID is the id the next clip made by hand of the episode at
+// source is written under: the one after the highest of the clips made by
+// hand there are and of taken, the ids given to clips made by hand still
+// on their way. A clip has it from the moment it is asked for, so its
+// card is known by the name of the clip it becomes, and nothing changes
+// its name when it is written.
+func NextHandClipID(fsys afero.Fs, source string, taken []string) string {
+	last := lastNumber(fsys, filepath.Join(LogsDir(source), HandPlanName), handPrefix)
+	for _, id := range taken {
+		rest, ok := strings.CutPrefix(id, handPrefix)
+		if !ok {
+			continue
+		}
+		if n, err := strconv.Atoi(rest); err == nil && n > last {
+			last = n
+		}
+	}
+	return fmt.Sprintf("%s%02d", handPrefix, last+1)
 }
 
 // NewClipID is a new id for a clip made by hand.
@@ -70,7 +108,10 @@ func (r ClipRequest) reach(longest, duration float64) timed.Window {
 // playhead, and the builder says it from the moment it has its sentences,
 // so the app shows it arriving the way it shows a search's clips.
 func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, host Host) (key string, err error) {
-	j := p.startJob(JobRecord{ID: id, Kind: JobClip, At: req.At, Backward: req.Backward}, host)
+	if req.ID == "" {
+		req.ID = NextHandClipID(p.engine.Files, p.Source, nil)
+	}
+	j := p.startJob(JobRecord{ID: id, Kind: JobClip, At: req.At, Backward: req.Backward, ClipID: req.ID}, host)
 	defer j.end(&err)
 	log := p.engine.Log
 	// Made, it is on the way no more. Called off or failed, it stays where
@@ -81,9 +122,9 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, host
 		case err == nil:
 			log.Underway(nil, []runlog.Landed{{N: 1, Clip: key}}, true)
 		case errors.Is(err, ErrCancelled):
-			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepStopped}}, nil, true)
+			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepStopped, Clip: req.Key()}}, nil, true)
 		default:
-			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepFailed}}, nil, true)
+			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepFailed, Clip: req.Key()}}, nil, true)
 		}
 	}()
 	// Whatever a job called off runs into on its way out, ffmpeg ended
@@ -97,14 +138,14 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, host
 	// The clip at the playhead, in whatever step the job is in, until the
 	// builder has it.
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
-		log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepWaiting}}, nil, true)
+		log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepWaiting, Clip: req.Key()}}, nil, true)
 		stepCtx, release, err := j.turn(ctx, step)
 		if err == nil {
-			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: step}}, nil, true)
+			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: step, Clip: req.Key()}}, nil, true)
 		}
 		return stepCtx, release, err
 	}
-	log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepWaiting}}, nil, true)
+	log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepWaiting, Clip: req.Key()}}, nil, true)
 	// Called off before it was asked for, it keeps its record and does
 	// nothing else, the way a search does.
 	if ctx.Err() != nil {
@@ -136,7 +177,7 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, host
 	build := p.engine.newPlanBuilder(stepCtx, p.Source, source, lines, nil, PlanOptions{
 		Count: 1, MinLen: o.Min, MaxLen: o.Max, OutW: o.Width, OutH: o.Height,
 		MaxPause: o.MaxPause, KeepPause: o.KeepPause, Recipe: o.Recipe, LogDir: p.LogsDir(),
-		PlanPath: p.HandPlanPath(), By: ByHand, Grows: true, IDPrefix: "h"}, "")
+		PlanPath: p.HandPlanPath(), By: ByHand, Grows: true, IDPrefix: handPrefix, ID: req.ID}, "")
 	defer build.stop()
 	entry, err := handEntry(lines, req, o.Min, o.Max, build.seconds)
 	if err != nil {

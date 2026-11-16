@@ -152,10 +152,12 @@ type JobRecord struct {
 	Preview bool     `json:"preview,omitempty"`
 	Done    []string `json:"done,omitempty"`
 
-	// A clip made by hand: the moment I or O was pressed at, and whether
-	// it was O.
+	// A clip made by hand: the moment I or O was pressed at, whether it
+	// was O, and the id of the clip in the clips made by hand, given when
+	// it was asked for, see NextHandClipID.
 	At       float64 `json:"at,omitempty"`
 	Backward bool    `json:"backward,omitempty"`
+	ClipID   string  `json:"clipId,omitempty"`
 
 	Step  string    `json:"step"`
 	Error string    `json:"error,omitempty"`
@@ -192,7 +194,7 @@ func (r JobRecord) PlanPath(source string, duration float64) string {
 
 // Clip is what a clip made by hand asks for.
 func (r JobRecord) Clip() ClipRequest {
-	return ClipRequest{At: r.At, Backward: r.Backward}
+	return ClipRequest{At: r.At, Backward: r.Backward, ID: r.ClipID}
 }
 
 // Part is the part of the episode a transcription hears, with no end for
@@ -209,7 +211,7 @@ func (r JobRecord) Underway() []runlog.Underway {
 	if r.Kind != JobClip {
 		return nil
 	}
-	return []runlog.Underway{{N: 1, Start: r.At, End: r.At, Step: r.Step}}
+	return []runlog.Underway{{N: 1, Start: r.At, End: r.At, Step: r.Step, Clip: r.Clip().Key()}}
 }
 
 // Render is what a render asks for, less the clips it has finished.

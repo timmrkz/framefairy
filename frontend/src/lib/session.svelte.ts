@@ -16,7 +16,7 @@ import { equal } from "./equal";
 // cmd/framefairy-app/choose.go, in place of before, the clip chosen until
 // then. card is the card the clip was on its way as, when it was chosen
 // because that card was written as it, or nothing.
-export type Chose = (key: string, before: string, card: string) => void;
+export type Chose = (key: string, before: string) => void;
 
 // fn run once ms have passed, and what calls it off.
 export type After = (ms: number, fn: () => void) => () => void;
@@ -157,22 +157,17 @@ export class EpisodeSession {
   }
 
   // The clip a state says is chosen, once no pick is on its way that the
-  // state was read before. A state that says the card picked was written
-  // as its clip is read after the pick, whenever its answer comes: the Go
-  // side had the pick, the card is gone from the state's jobs and its clip
-  // is in its clips, so the clip is chosen with them. Held for the pick's
-  // answer, the card was gone and nothing chosen for as long as the answer
-  // took on a busy machine, issue #697.
+  // state was read before. A card picked has the key of the clip it
+  // becomes, so a state that holds the clip written says it is chosen
+  // under the same key, and nothing changes on screen.
   // Each state that says another clip than the one on screen is logged,
-  // held or taken, with its rev and the card it says the clip was: a walk
-  // saw a card on its way gone for half a second before its clip was
-  // chosen, and nothing said which state had taken it.
+  // held or taken, with its rev: a walk saw a card on its way gone for
+  // half a second before its clip was chosen, and nothing said which
+  // state had taken it.
   private choose(state: VideoState) {
-    const written = !!state.chosenCard && state.chosenCard === this.chosen;
     const now = state.chosen ?? "";
-    const card = state.chosenCard ? `, written as the card ${state.chosenCard}` : "";
-    const says = `the state of rev ${state.rev} says ${now || "no clip"} is chosen${card}`;
-    if (this.picks.holds(state) && !written) {
+    const says = `the state of rev ${state.rev} says ${now || "no clip"} is chosen`;
+    if (this.picks.holds(state)) {
       if (now !== this.chosen) said(`clip list: ${says}, held while the pick of ${this.chosen || "no clip"} is on its way`, { video: this.path });
       return;
     }
@@ -180,7 +175,7 @@ export class EpisodeSession {
     const before = this.chosen;
     said(`clip list: ${says}, in place of ${before || "no clip"}`, { video: this.path });
     this.chosen = now;
-    this.chose(now, before, state.chosenCard ?? "");
+    this.chose(now, before);
   }
 
   // The window a state says, once no move of a hand is on its way that the

@@ -17,7 +17,7 @@ const job = (id: string, kind: string, state: string, seq: number, more: Partial
 function session(jobs = new JobStore()) {
   const heard: string[] = [];
   const here = new EpisodeSession("/v.mp4", jobs);
-  const close = here.open((key: string, before: string, card: string) => heard.push(`chose ${key} ${before || "none"}${card ? ` from ${card}` : ""}`));
+  const close = here.open((key: string, before: string) => heard.push(`chose ${key} ${before || "none"}`));
   return { jobs, heard, session: here, close };
 }
 
@@ -218,49 +218,38 @@ describe("a video's state in its session", () => {
     expect(heard).toEqual(["chose p/a none"]);
   });
 
-  test("draws the clip a card picked was written as, when its answer says so", async () => {
+  test("keeps a card picked chosen as the clip it is written as, with nothing more to choose", async () => {
+    // Issue #697 and #777: O pressed, and its card picked. The Go side had
+    // the pick and wrote the clip, and the state that says so came before
+    // the pick's answer on a busy machine. The card has the key of the
+    // clip it becomes, so the clip written is the one on screen already.
     const { heard, session: here } = session();
-    here.take(state(5, { chosen: "p/a" }));
-    let answer: (s: VideoState) => void = () => {};
-    const picked = here.pick("job/1", () => new Promise((r) => (answer = r)));
-    answer(state(6, { chosen: "hand/h01", chosenCard: "job/1" }));
-    await picked;
-    expect(here.chosen).toBe("hand/h01");
-    expect(heard).toEqual(["chose p/a none", "chose hand/h01 job/1 from job/1"]);
-  });
-
-  test("draws the clip a card picked was written as in the state that says so, before the pick has its answer", async () => {
-    // Issue #697: O pressed, and its card picked. The Go side had the pick
-    // and wrote the clip, and the state that says so came before the
-    // pick's answer on a busy machine. Its clips and its jobs were drawn
-    // but not what it said is chosen, so the card was gone and no card was
-    // chosen until the answer came.
-    const { heard, session: here } = session();
-    const making = job("job", "clip", "running", 3, { underway: [{ n: 1, start: 5, end: 12 }] } as Partial<Job>);
-    const made = job("job", "clip", "done", 4, { result: "hand/h01" });
+    const key = "clips-hand.json/h01";
+    const making = job("job", "clip", "running", 3, { underway: [{ n: 1, start: 5, end: 12, clip: key }] } as Partial<Job>);
+    const made = job("job", "clip", "done", 4, { result: key });
     here.take(state(5, { chosen: "p/a", jobs: [making] }));
     let answer: (s: VideoState) => void = () => {};
-    const picked = here.pick("job/1", () => new Promise((r) => (answer = r)));
-    here.take(state(6, { chosen: "hand/h01", chosenCard: "job/1", clips: [clip("a"), clip("hand/h01")], jobs: [made] }));
-    expect([here.chosen, here.clips.map((c) => c.key)]).toEqual(["hand/h01", ["a", "hand/h01"]]);
-    answer(state(7, { chosen: "hand/h01", chosenCard: "job/1", clips: [clip("a"), clip("hand/h01")], jobs: [made] }));
+    const picked = here.pick(key, () => new Promise((r) => (answer = r)));
+    here.take(state(6, { chosen: key, clips: [clip("a"), clip(key)], jobs: [made] }));
+    expect([here.chosen, here.clips.map((c) => c.key)]).toEqual([key, ["a", key]]);
+    answer(state(7, { chosen: key, clips: [clip("a"), clip(key)], jobs: [made] }));
     await picked;
-    expect([here.chosen, here.rev]).toEqual(["hand/h01", 7]);
-    expect(heard).toEqual(["chose p/a none", "chose hand/h01 job/1 from job/1"]);
+    expect([here.chosen, here.rev]).toEqual([key, 7]);
+    expect(heard).toEqual(["chose p/a none"]);
   });
 
-  test("keeps a card picked on screen while its pick is on its way, when a state says another card was written", async () => {
+  test("keeps a card picked on screen while its pick is on its way, when a state says another clip is chosen", async () => {
     const { heard, session: here } = session();
     here.take(state(5, { chosen: "p/a" }));
     let answer: (s: VideoState) => void = () => {};
-    const picked = here.pick("job/1", () => new Promise((r) => (answer = r)));
+    const picked = here.pick("clips-hand.json/h01", () => new Promise((r) => (answer = r)));
     // Read before the Go side had the pick, while a card picked before it
     // was written.
-    here.take(state(6, { chosen: "hand/h02", chosenCard: "job/2", clips: [clip("a"), clip("hand/h02")] }));
-    expect(here.chosen).toBe("job/1");
-    answer(state(7, { chosen: "job/1", clips: [clip("a"), clip("hand/h02")] }));
+    here.take(state(6, { chosen: "clips-hand.json/h02", clips: [clip("a"), clip("clips-hand.json/h02")] }));
+    expect(here.chosen).toBe("clips-hand.json/h01");
+    answer(state(7, { chosen: "clips-hand.json/h01", clips: [clip("a"), clip("clips-hand.json/h02")] }));
     await picked;
-    expect(here.chosen).toBe("job/1");
+    expect(here.chosen).toBe("clips-hand.json/h01");
     expect(heard).toEqual(["chose p/a none"]);
   });
 

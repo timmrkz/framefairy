@@ -292,14 +292,17 @@ func appendClipLocked(fsys afero.Fs, path string, clip PlanClip) error {
 	return err
 }
 
-// addClip adds a clip to a clip set that grows, numbered after the clips
-// it has, prefix and the next number, and makes the set, as set with this
-// one clip in it, when it is not there yet. The number is taken under the
-// set's lock, so two clips made at the same moment never take the same
-// one. It answers with the clip as it went in.
+// addClip adds a clip to a clip set that grows, under the id it was given
+// when the set does not hold that id yet, and otherwise numbered after the
+// clips it has, prefix and the next number, and makes the set, as set with
+// this one clip in it, when it is not there yet. The id is checked under
+// the set's lock, so two clips made at the same moment never take the
+// same one. It answers with the clip as it went in.
 func addClip(fsys afero.Fs, path string, set PlanFile, clip PlanClip, prefix string) (PlanClip, error) {
 	defer fileio.Lock(fsys, path)()
-	clip.ID = fmt.Sprintf("%s%02d", prefix, lastNumber(fsys, path, prefix)+1)
+	if clip.ID == "" || hasClip(fsys, path, clip.ID) {
+		clip.ID = fmt.Sprintf("%s%02d", prefix, lastNumber(fsys, path, prefix)+1)
+	}
 	if _, err := fsys.Stat(path); !os.IsNotExist(err) {
 		return clip, appendClipLocked(fsys, path, clip)
 	}
@@ -312,6 +315,15 @@ func addClip(fsys afero.Fs, path string, set PlanFile, clip PlanClip, prefix str
 		return clip, err
 	}
 	return clip, replacePlan(fsys, path, body)
+}
+
+// hasClip says whether the clip set at path holds a clip of that id.
+func hasClip(fsys afero.Fs, path, id string) bool {
+	_, clips, err := LoadClips(fsys, path)
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(clips, func(c Clip) bool { return c.ID == id })
 }
 
 func findClip(clips []*object, id string) (*object, error) {
