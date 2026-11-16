@@ -538,3 +538,33 @@ func TestAFailedPublishMarksItsCommit(t *testing.T) {
 		t.Errorf("the last step of publish, %q, is not one that marks the commit when any step before it failed", last.Name)
 	}
 }
+
+// conflicts.yml tells a pull request that still conflicts again once main
+// has moved, so one comment lost on its way to the session that owns the
+// pull request is not the last it hears of it. What it was told is kept
+// in a hidden mark in the comment, and the mark holds both commits, the
+// pull request's and main's, so a new commit of either tells it again and
+// the same two never tell it twice.
+//
+// On the real disk: what is read is the repository's own workflow.
+func TestAConflictIsToldAgainWhenMainMoves(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "conflicts.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var marks []string
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.Contains(line, "mark=") {
+			marks = append(marks, strings.TrimSpace(line))
+		}
+	}
+	if len(marks) != 1 {
+		t.Fatalf("conflicts.yml sets its mark in %d places, want 1: %q", len(marks), marks)
+	}
+	for _, commit := range []string{"$head", "$(git rev-parse HEAD)"} {
+		if !strings.Contains(marks[0], commit) {
+			t.Errorf("the mark %s does not hold %s, so a pull request still in conflict is not told again when that commit is new", marks[0], commit)
+		}
+	}
+}

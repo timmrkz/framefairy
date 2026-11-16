@@ -453,6 +453,14 @@ test: lint interface unit fuzz walks
 # and never on a customer's Mac, nor the read of the workflows and of how
 # the video endings are named, which are the same on every machine. RACE= and UNITSKIP= say otherwise.
 #
+# And in CI on a Mac without Go's test cache, -count=1. To keep a result,
+# go test checks again every file the tests read, and the app's and the
+# engine's tests read files over 200000 times. On CI's Macs that took 24 s
+# after the last test had passed, every run, and on Linux under a second.
+# The two never came from the cache on a Mac in the runs on main from 14
+# to 16 November, since a push that changes Go changes what they build on,
+# and the small packages run again in seconds beside them.
+#
 # UNITSHARD=1/3 runs a third of the tests, by the first letters of their
 # names, which is how CI spreads them over three machines, and 1/1 all of
 # them, for a change that needs one machine. The patterns
@@ -477,6 +485,7 @@ test: lint interface unit fuzz walks
 ifeq ($(UNAME),Darwin)
 RACE ?=
 UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser $(LINTPKGS)
+UNITCOUNT := $(if $(CI),-count=1)
 else
 RACE ?= -race
 UNITSKIP ?= $(LINTPKGS)
@@ -517,7 +526,7 @@ unit: toolchain modules $(FRESH_FRAMES)
 	mkdir -p $(dir $(UNITJSON)) && status=0 && \
 	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" \
 		$(GO) run $(GOTESTSUM) --format standard-quiet --hide-summary skipped --jsonfile $(UNITJSON) --raw-command -- \
-		$(GO) test -json $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') \
+		$(GO) test -json $(RACE) $(UNITCOUNT) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') \
 		$(if $(COVERAGE),$(COVERPKG) -coverprofile='$(COVERDIR)/go-unit$(if $(UNITSHARD),-$(subst /,-of-,$(UNITSHARD))).txt') \
 		-ldflags '$(LDFLAGS)' $$pkgs || status=$$?; \
 	slow=$$($(GO) run $(GOTESTSUM) tool slowest --jsonfile $(UNITJSON) --threshold $(SLOWEST)); \

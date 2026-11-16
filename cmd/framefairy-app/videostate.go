@@ -55,10 +55,6 @@ type VideoState struct {
 	// them and the jobs, so a clip the app chose comes with the state that
 	// holds it.
 	Chosen string `json:"chosen"`
-	// ChosenCard is the card the clip chosen was while it was on its way,
-	// when the app chose the clip because that card was written as it,
-	// rule 7, so a play of the card goes on as a play of the clip.
-	ChosenCard string `json:"chosenCard,omitempty"`
 	// Order is, in a state sent to the window, every clip of the video in
 	// the order of Clips in a state read, by its key and its hash. Clips
 	// then holds only the clips the window was not sent as they are now,
@@ -130,7 +126,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		st.Window = s.windowFor(ctx, path, st, info.Duration)
 		st.Marking = engine.MarkingOf(st.Status.HeardIn(info.Duration), st.Status.Said, info.Duration)
 	}
-	st.Chosen, st.ChosenCard = s.chosenFor(path, st)
+	st.Chosen = s.chosenFor(path, st)
 	s.hearChosen(path, st, info.Duration)
 	return st, nil
 }

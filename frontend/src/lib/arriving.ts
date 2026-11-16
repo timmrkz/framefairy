@@ -8,15 +8,15 @@ import { live, unfinished } from "./flow";
 import { arrivalLine } from "./steps";
 
 export type Arriving = {
-  // The job's id and which of its clips this is, so it keeps its place
-  // while its step and its edges change.
+  // The key of the clip it becomes, which the Go side gives it from the
+  // moment it is there, so it is the same clip from its card to the clip
+  // written and keeps its place while its step and its edges change. A
+  // clip of a run that writes no clip set has none, and is known by its
+  // job's id and which of its clips it is.
   key: string;
   // The job it is on the way from and which of its clips it is.
   job: string;
   n: number;
-  // The key its clip will have in the list, once the engine has given it
-  // an id. The list keeps one row from the card to the clip by it.
-  clip?: string;
   // What of it is kept, once its pauses are cut.
   pieces?: [number, number][];
   // Where it lies, which is where it goes in the list, and where it ends.
@@ -93,7 +93,7 @@ export function arriving(
     const stopped = unfinished(job);
     if (!running && !stopped) continue;
     for (const clip of job.underway ?? []) {
-      const key = `${job.id}/${clip.n}`;
+      const key = clip.clip ?? `${job.id}/${clip.n}`;
       if (stopped) {
         const failed = job.state === "failed";
         out.push({
@@ -130,7 +130,6 @@ export function arriving(
         job: job.id,
         n: clip.n,
         pieces: clip.pieces,
-        clip: clip.clip,
         start: clip.start,
         end: clip.end,
         title: clip.title ?? "",

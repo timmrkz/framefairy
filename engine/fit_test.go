@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -47,9 +48,11 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 	var said bytes.Buffer
 	log := runlog.New(&said, false, false)
 	// The clip held back is on its way from the moment it is named, being
-	// fitted, and keeps its card when it goes to be framed. And once the
-	// answer is whole, the list says so.
+	// fitted, and keeps its card when it goes to be framed, known by the
+	// name of the clip it becomes from the first. And once the answer is
+	// whole, the list says so.
 	var steps []string
+	names := map[string]bool{}
 	whole := false
 	log.SetSink(func(ev runlog.Event) {
 		if ev.Kind != runlog.EventUnderway {
@@ -60,6 +63,7 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 		whole = whole || ev.Whole
 		for _, u := range ev.Underway {
 			steps = append(steps, fmt.Sprintf("%d:%s", u.N, u.Step))
+			names[u.Clip] = true
 		}
 	})
 	e := NewEngine(log, NewMachine(disk))
@@ -100,6 +104,11 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 	if err != nil || len(clips) != 1 {
 		t.Fatalf("clips %v %v", clips, err)
 	}
+	mu.Lock()
+	if key := filepath.Base(path) + "/" + clips[0].ID; len(names) != 1 || !names[key] {
+		t.Errorf("on its way as %v, written as %s", names, key)
+	}
+	mu.Unlock()
 	if n := clips[0].Duration(); n < 20 || n > 30 {
 		t.Errorf("the clip runs %.1f seconds", n)
 	}

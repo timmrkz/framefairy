@@ -139,11 +139,11 @@ func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 }
 
 // A clip made with I or O is the clip chosen from the press, before the
-// workspace picks its card, and once it is written it is the clip it was
-// written as, said with the card it was. So no state of the video between
-// the press and the pick has the card gone and nothing chosen, which a
-// busy machine showed when the clip was written before the pick came,
-// issue #697.
+// workspace picks its card, and its card is known by the name of the
+// clip it becomes, so once it is written the same clip is chosen under
+// the same name. So no state of the video between the press and the pick
+// has the card gone and nothing chosen, which a busy machine showed when
+// the clip was written before the pick came, issue #697.
 //
 // On the real disk: ffmpeg and the episode's decoder read the episode.
 func TestPathAClipMadeByHandIsChosenFromThePress(t *testing.T) {
@@ -156,7 +156,7 @@ func TestPathAClipMadeByHandIsChosenFromThePress(t *testing.T) {
 	in, let := d.speech.hold()
 	j := d.out(ep, 40)
 	<-in
-	card := j.ID + "/1"
+	card := engine.HandPlanName + "/h01"
 	st, err := d.svc.State(ctx, ep)
 	if err != nil {
 		t.Fatal(err)
@@ -173,8 +173,47 @@ func TestPathAClipMadeByHandIsChosenFromThePress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Chosen != done.Result || st.ChosenCard != card {
-		t.Errorf("once the clip %q was written, %q was chosen, from the card %q", done.Result, st.Chosen, st.ChosenCard)
+	if done.Result != card || st.Chosen != card {
+		t.Errorf("the card %q was written as %q, and %q was chosen", card, done.Result, st.Chosen)
+	}
+}
+
+// Two clips made with O at the same moment, each call on a goroutine of
+// its own the way Wails hands them over, are two cards under two names,
+// and each is written under the name its card had. One name twice would
+// be two rows under one key in the clip list, #777.
+//
+// On the real disk: ffmpeg and the episode's decoder read the episode.
+func TestTwoClipsMadeAtOnceHaveTwoNames(t *testing.T) {
+	d := open(t)
+	ep := d.episode("two", minutes5)
+	if _, err := d.svc.store.AddEpisodes([]string{ep}); err != nil {
+		t.Fatal(err)
+	}
+	in, let := d.speech.hold()
+	made := make([]Job, 2)
+	var wg sync.WaitGroup
+	for i := range made {
+		wg.Go(func() { made[i] = d.out(ep, float64(40+120*i)) })
+	}
+	wg.Wait()
+	<-in
+	names := map[string]string{}
+	for _, j := range d.svc.Jobs() {
+		for _, m := range made {
+			if j.ID == m.ID && len(j.Underway) == 1 {
+				names[j.ID] = j.Underway[0].Clip
+			}
+		}
+	}
+	if len(names) != 2 || names[made[0].ID] == "" || names[made[0].ID] == names[made[1].ID] {
+		t.Errorf("two clips made with O at once are on their way as %v", names)
+	}
+	let()
+	for _, m := range made {
+		if done := d.waitFor(m.ID); done.State != JobDone || done.Result != names[m.ID] {
+			t.Errorf("the card %q was written as %+v", names[m.ID], done)
+		}
 	}
 }
 

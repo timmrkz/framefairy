@@ -1898,8 +1898,11 @@ sentence past it for O. The playhead proposes the clip, `handEntry`, from
 the sentence the playhead stands in, grown a line at a time to
 `Shortest`, and hands it to the plan builder's `propose`, the intake the
 model's scanner uses too. The builder shapes, frames and writes it into
-`clips-hand.json`, a set that grows, `PlanOptions.Grows`, whose clips each
-take the next number under the set's lock as they are written. The set
+`clips-hand.json`, a set that grows, `PlanOptions.Grows`. A clip made by
+hand is given its id when it is asked for, `NextHandClipID`, after the
+clips of the set and those still on their way, and is written under it,
+or under the next free number when the set took that id meanwhile, under
+the set's lock. The set
 says it was made by hand, `planned_with.by`, and `madeOver` reads that as
 made over no part of the episode, so it counts as no search of any part.
 Where I and O make a clip at all is `MarkingOf`, from what is heard and
@@ -1910,12 +1913,14 @@ last or first moments of the video. The app sends it in the video's state.
 Every job that makes clips says which it has on the way, `Log.Underway`,
 the whole list each time it changes: the builder from the moment a clip is
 queued to be framed until it is written or let go, and a clip made by hand
-from the moment it is asked for, at the playhead. Each list carries the
-clips the job has written, each with the card it was and the key it was
-written as, `runlog.Landed`, and a clip that is written leaves the list
-in the event that counts it, before the search says it found one more. So
-whatever chose a card knows its clip in the same event that takes the card
-away, see `landedClip` in the app's `choose.go`. The app puts the list on
+from the moment it is asked for, at the playhead. Every clip on the list
+carries the key it will have in the clip list, `Underway.Clip`, from the
+moment it is on it: a search's clip has the id of its place in the answer,
+a clip held back to be fitted too, see `idOf`, and a clip made by hand the
+id it was given. So a card and the clip it becomes have one name, and
+whatever keeps something by a clip's key keeps it when the clip is
+written. A clip that is written leaves the list in the event that counts
+it, before the search says it found one more. The app puts the list on
 the job, and a record gives it back after a restart.
 
 ## The code
