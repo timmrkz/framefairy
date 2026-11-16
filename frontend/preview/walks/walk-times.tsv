@@ -28,7 +28,7 @@
  18	sequences.mjs SEQUENCE=a clip card clicked puts up its clip from what was read while the hand rested
  18	sequences.mjs SEQUENCE=a word corrected in a clip reads corrected in the search of what was said
  17	sequences.mjs SEQUENCE=a cut's edges dragged take the playhead along, the way the clip's edges do, and the edge under the playhead is the edge's to take
- 17	sequences.mjs SEQUENCE=the captions stay over the video preview while the clip's start is dragged later and its end earlier
+ 17	sequences.mjs SEQUENCE=the captions stay over the video preview and inside the clip frame while the clip's start is dragged later and its end earlier
  15	sequences.mjs SEQUENCE=Shift and the arrows skip 5 seconds outside a clip, past where the transcript ends
  15	sequences.mjs SEQUENCE=Shift+Enter and the arrow keys keep the cursor in view in the report
  15	sequences.mjs SEQUENCE=a press on an edge or a mark puts the playhead on it at once

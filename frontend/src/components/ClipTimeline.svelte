@@ -462,10 +462,14 @@
   // moves faster than the answers come, and the ones in between are of
   // places the hand has already left. After the hand lets go the answer
   // stays until the saved clip and its captions come back, which are the
-  // same, so nothing jumps on the way.
+  // same, so nothing jumps on the way. Raw, because the answer is only
+  // ever replaced whole, and held is told from the captions by being the
+  // very same list: kept deep, held was a proxy of it and never the same,
+  // so the answer let go the moment the save came back, and for a frame
+  // the captions as they were stood past the clip as it is, issue #825.
   let hand = $state<Gesture | null>(null);
   let saving = $state(false);
-  let shaped = $state<null | {
+  let shaped = $state.raw<null | {
     pieces: { start: number; end: number; part: number }[];
     framing?: Framing;
     cues: CaptionCue[];
@@ -2322,6 +2326,8 @@
                 <div
                   class="caption"
                   class:showing={laneWordHere(g) !== -2}
+                  class:from-start={Math.abs(part.from - start) < 1e-6}
+                  class:to-end={Math.abs(part.to - end) < 1e-6}
                   class:picked={g.blocks.length === 1 && g.blocks[0].c.first !== undefined && picked === g.blocks[0].c.first}
                   data-first={g.blocks[0].c.first}
                   data-joined={g.blocks.length > 1 ? g.blocks.length : undefined}
@@ -2830,6 +2836,23 @@
     --pop-peak-x: 1.03;
     --pop-peak-y: 1.5;
     animation: pop 0.22s ease-out;
+  }
+
+  /* A block on the clip frame's edge pops from that edge, so it never
+     reaches past the frame or leaves the edge behind, however often a
+     dragged edge passing its words starts the pop again, issue #825. A
+     block on both edges grows only upwards and downwards. */
+  .caption.showing.from-start {
+    transform-origin: left center;
+  }
+
+  .caption.showing.to-end {
+    transform-origin: right center;
+  }
+
+  .caption.showing.from-start.to-end {
+    --pop-from-x: 1;
+    --pop-peak-x: 1;
   }
 
   .caption i {

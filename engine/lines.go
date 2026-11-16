@@ -449,10 +449,11 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 	for k, text := range laid {
 		laidLen[k] = runes.Len(text)
 	}
+	breakBefore, breakAfter, hidden := handEdges(clip, all, allWas)
 	// with is how many characters current takes with the word k added.
 	with := func(k int) int {
 		switch {
-		case laid[k] == "":
+		case laid[k] == "" || hidden[k]:
 			return chars
 		case shown == 0:
 			return laidLen[k]
@@ -477,6 +478,9 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 		current, chars, shown = nil, 0, 0
 	}
 	for k := range all {
+		if len(current) > 0 && breakBefore[k] {
+			closeGroup(false)
+		}
 		if alone != nil && laid[k] != "" && alone(laid[k]) {
 			if len(current) > 0 {
 				closeGroup(false)
@@ -485,11 +489,22 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 			closeGroup(true)
 			continue
 		}
-		if len(current) > 0 && with(k) > maxChars {
+		// The first of the words an end hides still breaks a caption
+		// where its room would, so the caption it is in begins where it
+		// did, and the words after it take none, so it does not lose
+		// them to the next.
+		room := with(k)
+		if hidden[k] && (k == 0 || !hidden[k-1]) && laid[k] != "" {
+			room = chars + 1 + laidLen[k]
+			if shown == 0 {
+				room = laidLen[k]
+			}
+		}
+		if len(current) > 0 && room > maxChars {
 			closeGroup(false)
 		}
 		chars = with(k)
-		if laid[k] != "" {
+		if laid[k] != "" && !hidden[k] {
 			shown++
 		}
 		current = append(current, k)
@@ -497,7 +512,7 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 		pauseNext := !last && allWas[k+1].Start-allWas[k].End >= captionPause
 		sentence := endsWithBreak(laid[k]) &&
 			float64(chars) >= float64(maxChars)*0.55
-		if last || pauseNext || sentence {
+		if last || pauseNext || sentence || breakAfter[k] {
 			closeGroup(false)
 		}
 	}
@@ -705,16 +720,31 @@ func moveCaptions(clip Clip, captions []Caption) []Caption {
 		if i > 0 {
 			low = out[i-1].Start + shortestMoved
 		}
-		high := out[i].End - shortestMoved
+		// Short of the end as it is shown, the end moved by hand included,
+		// so a start put near the end stops there and never pushes the end
+		// on: the end then moved with the start, and went back when the
+		// start was moved away again.
+		end := out[i].End
+		if t := clip.CaptionTimes[wordKey(out[i].Closes)]; t.End != nil && ClipTime(clip, *t.End) < clipLength(clip)-1e-6 {
+			end = max(ClipTime(clip, *t.End), out[i].Start+shortestMoved)
+		}
+		high := end - shortestMoved
 		if high < low {
 			continue
 		}
 		out[i].Start = min(max(at, low), high)
 		out[i].startMoved = true
 	}
+	length := clipLength(clip)
 	for i := range out {
 		if t := clip.CaptionTimes[wordKey(out[i].Closes)]; t.End != nil {
 			at := ClipTime(clip, *t.End)
+			// An end put at the clip's end or past it is the end the
+			// caption has there anyway: the last caption stays up to the
+			// end of the short, see captionAtEnd.
+			if at >= length-1e-6 {
+				at = max(at, out[i].End)
+			}
 			out[i].End = max(at, out[i].Start+shortestMoved)
 			out[i].endMoved = true
 		}
@@ -722,13 +752,46 @@ func moveCaptions(clip Clip, captions []Caption) []Caption {
 			out[i].End = out[i+1].Start
 		}
 	}
-	length := clipLength(clip)
 	for i, c := range out {
 		if c.startMoved || c.endMoved {
 			out[i] = showInTime(c, length)
 		}
 	}
 	return out
+}
+
+// handEdges is where the captions of a clip are moved by hand, among all
+// the words the clip says on its clock and on the episode's, was. A caption
+// whose edge was moved by hand keeps the word it was moved against at that
+// edge, so the edge stays where the hand put it when words typed into a
+// caption before it lay the rest out again: a caption breaks before each
+// word a start is kept by and after each word an end is kept by. The words
+// the edge hides take no room on a line, so the words the caption still
+// shows stay together, the way they were when the edge was moved. The edge
+// used to be lost once its word was laid out in the middle of a caption,
+// and the words the hand had hidden came back, issue #820.
+func handEdges(clip Clip, all, was []timed.Cue) (before, after, hidden []bool) {
+	before, after, hidden = make([]bool, len(all)), make([]bool, len(all)), make([]bool, len(all))
+	if len(clip.CaptionTimes) == 0 {
+		return before, after, hidden
+	}
+	length := clipLength(clip)
+	for k := range all {
+		t, ok := clip.CaptionTimes[wordKey(was[k].Start)]
+		if !ok {
+			continue
+		}
+		before[k] = before[k] || t.Start != nil
+		if t.End != nil {
+			after[k] = true
+			if at := ClipTime(clip, *t.End); at < length-1e-6 {
+				for j := k; j >= 0 && shownMiddle(all[j], length) >= at; j-- {
+					hidden[j] = true
+				}
+			}
+		}
+	}
+	return before, after, hidden
 }
 
 // showInTime is caption c with only the words whose middle lies in the time

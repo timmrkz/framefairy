@@ -5,7 +5,7 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound, xOf } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound, xOf, playhead } from "../bridge.mjs";
 import { clock } from "../../../src/lib/clock.ts";
 import { suggestedCount } from "../../../src/lib/count.ts";
 import { nextCall, onePiece, rate, toastSays, url } from "../common/steps.mjs";
@@ -1885,7 +1885,7 @@ export const steps = {
     for (const share of [0.7, 0.9, 1.1, 1.3]) await page.mouse.move(picker.x + picker.width * share, y, { steps: 2 });
     await page.mouse.up();
     await settle(page);
-    const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+    const at = await playhead(page);
     const said = (await ask(page, "Episode", path))?.said;
     if (!(at > arg - 0.5) || !said || !(said[1] <= at)) {
       walk.wrong = `the playhead is at ${at} s, with words said from ${JSON.stringify(said)}, not after the last word at the end of the video, ${arg} s`;
@@ -1927,7 +1927,7 @@ export const steps = {
     // heard that nothing is said there. The card says Failed with
     // Continue and where it lies, and why only in a toast.
     const path = await episodeOn(page);
-    const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+    const at = await playhead(page);
     const was = new Set((await ask(page, "Jobs")).map((j) => j.id));
     await page.evaluate(() => document.body.focus());
     await page.keyboard.press("i");

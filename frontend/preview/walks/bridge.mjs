@@ -877,6 +877,28 @@ export async function nextPaint(page, n = 1) {
   );
 }
 
+// Waits until the page has handled the input before it, as far as the
+// playhead goes. The playhead follows a hand on the next animation frame,
+// see scrub in lib/scrub.ts and seekSoon in ClipTimeline.svelte, so a
+// frame asked for now comes after theirs, and the microtask after it
+// after what the seek changed is on the page. A walk that read
+// data-playhead straight after a press, a drag or a key read where the
+// playhead had been, and failed now and then, issue #855. While the app's
+// time is held no frame of the app's comes, and the playhead moves on
+// only with runClock, so there is nothing to wait for.
+export async function inputHandled(page) {
+  if (page.__held) return;
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => queueMicrotask(done))));
+}
+
+// Where the playhead is, data-playhead on the video preview, once the page
+// has handled the input before it, see inputHandled. Every walk reads the
+// playhead after an input through this.
+export async function playhead(page) {
+  await inputHandled(page);
+  return page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+}
+
 // Waits for the video preview to show the frame that holds the playhead,
 // by where the app says the frame shown begins, and with captions for
 // that frame to be drawn with its own captions over it, see data-captioned
@@ -1039,7 +1061,10 @@ export async function pressPlay(page) {
 // did not start a play, once the app has settled on the press.
 export async function playFor(page, seconds) {
   const from = await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null);
-  if (!(await pressPlay(page))) return (await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null)) !== from;
+  if (!(await pressPlay(page))) {
+    await inputHandled(page);
+    return (await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null)) !== from;
+  }
   await playUntil(page, { most: seconds, from: Number(from), pause: true });
   return true;
 }
@@ -1274,9 +1299,11 @@ export async function overlay(page) {
 
 // Where the video preview is: the playhead, data-playhead, the moment the
 // frame on its canvas starts at, and whether it plays, which the play
-// button says as it says it to a person.
+// button says as it says it to a person. Read once the page has handled
+// the input before it, see inputHandled.
 export async function preview(page, frame) {
   await reader(page);
+  await inputHandled(page);
   const r = await page.evaluate(() => ({
     at: Number(document.querySelector(".screen").dataset.playhead),
     pictured: window.__pictured(),

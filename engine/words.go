@@ -391,10 +391,18 @@ func (t *Transcript) rekeyCorrections(corrections map[string]string) map[string]
 func (t *Transcript) rekeyRemoved(removed RemovedWords) RemovedWords {
 	out := make(RemovedWords, len(removed))
 	for key := range removed {
-		if i, ok := t.heardIndex(key); ok {
-			key = t.keyAt(i)
+		word, part, ok := splitRemoved(key)
+		if !ok {
+			continue
 		}
-		out[key] = true
+		if i, ok := t.heardIndex(word); ok {
+			word = t.keyAt(i)
+		}
+		if part >= 0 {
+			out[partKey(word, part)] = true
+		} else {
+			out[word] = true
+		}
 	}
 	return out
 }

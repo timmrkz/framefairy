@@ -36,17 +36,26 @@ export default [
     // playhead went with the edge, and the frame on screen, out of the
     // clip by then, was drawn again with no captions. The same held for
     // its end dragged earlier.
-    name: "the captions stay over the video preview while the clip's start is dragged later and its end earlier",
+    //
+    // Issue #825, found by Tim on #812: dragging a clip edge, the caption
+    // blocks on the clip timeline seemed to part from the edge for a
+    // frame, and a block reached past the clip frame. Read on every
+    // animation frame of the drag and of letting go, with the motion the
+    // app has on his Mac.
+    name: "the captions stay over the video preview and inside the clip frame while the clip's start is dragged later and its end earlier",
     steps: [
       ["watch captions"],
       ["drag edge", "start", 40],
       ["captions stayed"],
+      ["captions in the frame"],
       ["watch captions"],
       ["drag edge", "end", -40],
       ["captions stayed"],
+      ["captions in the frame"],
       ["watch captions"],
       ["drag edge", "start", 160],
       ["captions stayed"],
+      ["captions in the frame"],
     ],
   },
   {
