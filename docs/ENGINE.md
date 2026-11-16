@@ -1449,9 +1449,8 @@ has come, a streamed answer that sends nothing for two minutes,
 any answer that broke off. A laptop that changed its Wi-Fi or slept
 halfway through an answer used to wait for the whole answer's 10 minutes,
 four times. The wait for the first piece is still those 10 minutes,
-because OpenAI's reasoning models say nothing while they think. The three
-waits, this one, the local model's and a model's download, are one
-`quietWatch` on the machine's clock, in `engine/clock.go`.
+because OpenAI's reasoning models say nothing while they think. It is the
+local model's `watchStall`, in `engine/local.go`, started at that piece.
 
 **A program that was stopped and does not end is left behind.** ffmpeg on
 CI's virtual Mac once ran eight minutes after it was killed. Every program

@@ -178,9 +178,6 @@ func cloud(t *testing.T, files afero.Fs, answers ...func(w http.ResponseWriter))
 // retries is the machine's clock a test hands the engine for the wait
 // before a request is asked again: up at once, so no test spends the
 // seconds, and kept, so a test checks how long the engine asked to wait.
-// The wait for a quiet answer, cloudQuiet, is never up and not kept:
-// these tests' answers come whole at once, and the test of an answer that
-// goes quiet runs in a bubble.
 type retries struct {
 	mu    sync.Mutex
 	asked []time.Duration
@@ -191,9 +188,6 @@ type retries struct {
 func (r *retries) Now() time.Time { return time.Time{} }
 
 func (r *retries) AfterFunc(d time.Duration, f func()) func() bool {
-	if d == cloudQuiet {
-		return func() bool { return true }
-	}
 	r.mu.Lock()
 	r.asked = append(r.asked, d)
 	asking := r.asking

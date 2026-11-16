@@ -215,17 +215,17 @@ var errQuiet = fmt.Errorf("nothing came for %s seconds", num.Fixed(cloudQuiet.Se
 func (e *Engine) readWatched(body io.Reader, read func(io.Reader, *Listener) (*apiReply, bool, error),
 	listen *Listener, stop func()) (*apiReply, bool, error) {
 	var quiet atomic.Bool
-	var watch *quietWatch
+	var watch *stallWatch
 	watched := readerFunc(func(p []byte) (int, error) {
 		n, err := body.Read(p)
 		if n > 0 {
 			if watch == nil {
-				watch = watchQuiet(e.Clock, cloudQuiet, func() {
+				watch = watchStall(cloudQuiet, func() {
 					quiet.Store(true)
 					stop()
 				})
 			} else {
-				watch.arrived()
+				watch.Reset(cloudQuiet)
 			}
 		}
 		return n, err

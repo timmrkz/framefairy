@@ -3,6 +3,7 @@
 package tool
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -98,10 +99,16 @@ func TestAProgramReadThroughAPipeIsLeftBehindWhenItWillNotStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	read := make(chan []byte, 1)
+	// What it wrote before it hung is read first: a pipe closed under a
+	// read drops what is still in it unread.
+	out := bufio.NewReader(reading.Stdout)
+	if line, err := out.ReadString('\n'); line != "some sound\n" || err != nil {
+		t.Fatalf("read %q, %v, want what it wrote", line, err)
+	}
+	read := make(chan error, 1)
 	go func() {
-		got, _ := io.ReadAll(reading.Stdout)
-		read <- got
+		_, err := io.ReadAll(out)
+		read <- err
 	}()
 	<-hangs
 	cancel()
@@ -111,8 +118,8 @@ func TestAProgramReadThroughAPipeIsLeftBehindWhenItWillNotStop(t *testing.T) {
 		t.Errorf("the runner was asked to wait %v, want LeaveAfter, %v", d, LeaveAfter)
 	}
 	close(up)
-	if got := string(<-read); got != "some sound\n" {
-		t.Errorf("read %q before it was left, want what it wrote", got)
+	if err := <-read; err == nil {
+		t.Error("the read of a program left behind ended as if it had ended itself")
 	}
 	if left, err := reading.Finish(); !left || err != nil {
 		t.Errorf("Finish said left %v, %v, want it left behind", left, err)

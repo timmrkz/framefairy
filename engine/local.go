@@ -260,6 +260,31 @@ const promptBatch = 512
 // second, not measured here.
 const slowestReading = 5.0
 
+// stallWatch calls its function once nothing has been read for a while.
+type stallWatch struct {
+	*time.Timer
+	after time.Duration
+}
+
+func watchStall(after time.Duration, gaveUp func()) *stallWatch {
+	return &stallWatch{Timer: time.AfterFunc(after, gaveUp), after: after}
+}
+
+// reader is r, and every read that brings something starts the wait again.
+func (w *stallWatch) reader(r io.Reader) io.Reader {
+	return readerFunc(func(p []byte) (int, error) {
+		n, err := r.Read(p)
+		if n > 0 {
+			w.Reset(w.after)
+		}
+		return n, err
+	})
+}
+
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
+
 // llamaLink is how a program reaches the llama-servers it starts, kept
 // on its machine, see Machine.llama.
 type llamaLink struct {
@@ -855,7 +880,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	}
 
 	// The ask ends when the search does, and when the server has sent
-	// nothing for localStall, see quietWatch.
+	// nothing for localStall, see watchStall.
 	asking, stop := context.WithCancel(ctx)
 	defer stop()
 	request, err := http.NewRequestWithContext(asking, http.MethodPost,
@@ -869,7 +894,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		return renderErr("the local model stopped answering: nothing came from it for %s seconds, "+
 			"so it was stopped. Press Continue to start it afresh.", num.Fixed(localStall.Seconds(), 0))
 	}
-	watch := watchQuiet(e.Clock, localStall, func() {
+	watch := watchStall(localStall, func() {
 		stalled.Store(true)
 		e.Log.Warn("the local model sent nothing for %s seconds, so it is given up on",
 			num.Fixed(localStall.Seconds(), 0))
@@ -889,7 +914,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		return nil, renderErr("the local model did not answer: %s", runes.Scrub(err.Error(), 200))
 	}
 	defer response.Body.Close()
-	watch.arrived()
+	watch.Reset(localStall)
 	if response.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 		// A refusal is kept to read. An answer is kept in the saved reply,
