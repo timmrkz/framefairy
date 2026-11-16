@@ -832,13 +832,12 @@ func (q *queue) waitEpisode(episode string) bool {
 	return q.stopped(func(j *Job) bool { return j.Episode == episode && (j.State == JobRunning || j.alive) })
 }
 
-// stopped waits, at most stopWait on the machine's clock, until no job
-// that left picks is left, and says whether that happened in time.
+// stopped waits, at most stopWait, until no job that left picks is left,
+// and says whether that happened in time.
 func (q *queue) stopped(left func(*Job) bool) bool {
-	expire := make(chan time.Time, 1)
-	stop := q.store.machine.Clock.AfterFunc(stopWait, func() { expire <- time.Time{} })
-	defer stop()
-	return q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, left) }, expire)
+	timer := time.NewTimer(stopWait)
+	defer timer.Stop()
+	return q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, left) }, timer.C)
 }
 
 // until waits until done holds for the jobs, and says whether it did
