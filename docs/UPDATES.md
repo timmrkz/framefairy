@@ -109,9 +109,11 @@ The Wails we pin ships an updater,
   signature against a public key set when the app is built. A release
   that carries a signature and meets no key is refused, not installed.
 - It unpacks a `.zip` or `.tar.gz` holding exactly one `.app`, refuses
-  paths that escape the archive, swaps the bundle with a helper after the
-  app quits, keeps a backup, and restores it if the new one fails to
-  start.
+  paths that escape the archive, and unpacks it beside the app, so the
+  swap is a rename on one disk. After the app quits, a helper checks the
+  build against the app it replaces, keeps a backup, swaps the bundle,
+  and restores the backup if the new one fails its check or does not
+  start. The app quits only once the helper says it is ready.
 - It can check on a timer, and it has channels.
 - It comes with a window of its own, with release notes, progress and
   Install, Skip, Remind and Cancel. It can also run with no window at all,
@@ -119,9 +121,11 @@ The Wails we pin ships an updater,
   drawn by our own interface, with our own beam and fill.
 
 What it does not do, as far as the source shows: ask for an administrator's
-password, notice an app that macOS has translocated, or download only what
-changed. And it is part of a beta. Every one of those is a test on a real
-Mac with a signed, notarised build before anything is decided for good.
+password, update an app that macOS has translocated or that runs from a
+disk image, or download only what changed. Because it unpacks beside the
+app, an app that may not write to its own folder already fails at the
+download, and the Updates page says to move it to the Applications
+folder.
 
 ### The Mac App Store
 

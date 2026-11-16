@@ -808,8 +808,9 @@ func (c *updating) drop(round int) {
 	unstage(gone)
 }
 
-// unstage removes what an updater unpacked and nobody will install. Only a
-// folder of Wails' own in the folder it unpacks into, beside the app.
+// unstage removes what an updater unpacked and nobody will install: the
+// folder of Wails' own that the updater says it unpacked into, beside the
+// app, and nothing else.
 func unstage(w *updater.Updater) {
 	if w == nil {
 		return
@@ -819,8 +820,7 @@ func unstage(w *updater.Updater) {
 		return
 	}
 	dir := filepath.Dir(p)
-	exe, err := os.Executable()
-	if err != nil || !strings.HasPrefix(filepath.Base(dir), "wails-update-") || filepath.Dir(dir) != stagingFolder(exe) {
+	if !strings.HasPrefix(filepath.Base(dir), "wails-update-") {
 		return
 	}
 	_ = os.RemoveAll(dir)
@@ -976,6 +976,11 @@ func updateProblem(err error, downloading bool) string {
 		return "The new build could not be verified, so it was not used."
 	case has("no space left", "disk full", "disk quota"):
 		return "The new build could not be saved. Check that the disk has room."
+	// Wails unpacks a build beside the app, so an app run from a disk
+	// image, from where macOS moved it to keep it apart, or from a folder
+	// the account may not write to cannot update itself.
+	case has("staging dir"):
+		return "Frame Fairy cannot update itself where it is. Move it to the Applications folder and open it from there."
 	case has("written to the cache", "kept in the cache"):
 		return "The new build could not be saved."
 	case errors.As(err, &netErr), errors.Is(err, context.DeadlineExceeded), has(

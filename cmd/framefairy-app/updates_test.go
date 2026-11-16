@@ -579,6 +579,8 @@ func TestUpdateProblemInWords(t *testing.T) {
 		{"updater: fsync: write /Users/tim/Library/Caches/framefairy/updates/main.zip: no space left on device", true, "The new build could not be saved. Check that the disk has room."},
 		{"the build could not be written to the cache: no space left on device", true, "The new build could not be saved. Check that the disk has room."},
 		{"the build could not be kept in the cache: rename: permission denied", true, "The new build could not be saved."},
+		// Wails' updater, when the app runs where it may not write.
+		{"updater: staging dir: mkdir /Volumes/Frame Fairy/wails-update-123: read-only file system", true, "Frame Fairy cannot update itself where it is. Move it to the Applications folder and open it from there."},
 		// The channel was removed while its build came, the disk is fine.
 		{"the build went from the cache as it arrived", true, "The new build could not be downloaded."},
 		{"the build has no address", true, "The new build could not be downloaded."},
