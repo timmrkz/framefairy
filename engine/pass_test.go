@@ -202,6 +202,46 @@ func TestASearchCarriedOnAddsTheClipsStillMissing(t *testing.T) {
 	}
 }
 
+// A clip of a search carried on that holds a clip which landed before it
+// is the same moment, as two clips of one answer would be, even though
+// most of its own lines are new. It is left out, and the next one taken.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
+func TestASearchCarriedOnLeavesOutAClipHoldingOneThatLanded(t *testing.T) {
+	t.Parallel()
+	server, _ := answering(t, clipAnswer(1), "1 1 2\n3 3 3\n")
+	p := passProject(t, server.URL)
+	req := PlanRequest{From: 0, To: 40, Count: 2, Min: 1, Max: 30}
+	plan, err := p.Search(context.Background(), req, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replies, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "reply-*.json"))
+	for _, r := range replies {
+		if err := p.Files.Remove(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	carried := req
+	carried.Pass, carried.CarryOn = 1, true
+	if _, err := p.Search(context.Background(), carried, Host{}); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, err := LoadClips(p.Files, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clips) != 2 {
+		t.Fatalf("the plan holds %d clips after Continue, not the 2 asked for", len(clips))
+	}
+	landed := clips[0].Segments[0]
+	for _, s := range clips[1].Segments {
+		if s.Start < landed.End && landed.Start < s.End {
+			t.Errorf("the clip added, %+v, holds the one that landed, %+v", clips[1].Segments, landed)
+		}
+	}
+}
+
 // A later pass over the whole episode is a window from its start to its
 // end, so its plan says which.
 func TestPassNames(t *testing.T) {

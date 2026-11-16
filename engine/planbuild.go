@@ -134,8 +134,11 @@ type planBuilder struct {
 	landed   []runlog.Landed
 
 	// had is how many clips the plan a search carries on held, which
-	// count towards the clips asked for, see PlanOptions.CarryOn.
-	had int
+	// count towards the clips asked for, see PlanOptions.CarryOn, and
+	// before is those clips as the lines they keep, so a new clip of the
+	// same moment is left out the way a second clip of one answer is.
+	had    int
+	before []PlanEntry
 
 	// writing is held while a clip goes to disk, so two framers finishing
 	// at once write one after the other.
@@ -162,9 +165,12 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 		if _, had, err := LoadClips(e.Files, opts.PlanPath); err == nil {
 			parts := append([]timed.Window(nil), opts.Taken...)
 			for _, c := range had {
+				var its []timed.Window
 				for _, s := range c.Segments {
-					parts = append(parts, timed.Window{Start: s.Start, End: s.End})
+					its = append(its, timed.Window{Start: s.Start, End: s.End})
 				}
+				parts = append(parts, its...)
+				b.before = append(b.before, PlanEntry{Slug: c.Slug, Title: c.Title, Keep: takenLines(lines, its)})
 			}
 			b.taken = takenLines(lines, parts)
 			b.had = len(had)
@@ -436,11 +442,15 @@ func takenLines(lines []Line, parts []timed.Window) [][2]int {
 }
 
 // retaken says whether a clip keeps mostly lines a clip was proposed for
-// already, which is the same measure as two clips of one answer keeping
-// the same moment, see sameMomentAs. The model is told to leave those
-// lines, and a clip that keeps them all the same would be a moment the
-// list has, or one that was removed from it.
+// already, or keeps the same moment as a clip the plan carried on had,
+// which is the measure two clips of one answer are held to, see
+// sameMomentAs. The model is told to leave those lines, and a clip that
+// keeps them all the same would be a moment the list has, or one that was
+// removed from it.
 func (b *planBuilder) retaken(entry PlanEntry) bool {
+	if _, same := sameMomentAs(b.before, entry); same {
+		return true
+	}
 	if len(b.taken) == 0 {
 		return false
 	}
