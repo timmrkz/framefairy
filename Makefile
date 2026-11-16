@@ -479,6 +479,8 @@ test: lint interface unit fuzz walks
 ifeq ($(UNAME),Darwin)
 RACE ?=
 UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/cmd/framefairy-release $(LINTPKGS)
+# TEMPORARY, taken out before merge: when go test exits, and what still runs then, #686.
+UNITWRAP := $(if $(CI),sh -c '"$$@"; s=$$?; echo "go test exited" >&2; ps -ax -o pid -o ppid -o etime -o command >&2; exit $$s' _)
 else
 RACE ?= -race
 UNITSKIP ?= $(LINTPKGS)
@@ -519,7 +521,7 @@ unit: toolchain modules $(FRESH_FRAMES)
 	mkdir -p $(dir $(UNITJSON)) && status=0 && \
 	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" \
 		$(GO) run $(GOTESTSUM) --format standard-quiet --hide-summary skipped --jsonfile $(UNITJSON) --raw-command -- \
-		$(GO) test -json $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') \
+		$(UNITWRAP) $(GO) test -json $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') \
 		$(if $(COVERAGE),$(COVERPKG) -coverprofile='$(COVERDIR)/go-unit$(if $(UNITSHARD),-$(subst /,-of-,$(UNITSHARD))).txt') \
 		-ldflags '$(LDFLAGS)' $$pkgs || status=$$?; \
 	slow=$$($(GO) run $(GOTESTSUM) tool slowest --jsonfile $(UNITJSON) --threshold $(SLOWEST)); \
