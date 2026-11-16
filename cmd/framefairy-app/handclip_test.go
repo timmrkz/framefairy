@@ -178,6 +178,45 @@ func TestPathAClipMadeByHandIsChosenFromThePress(t *testing.T) {
 	}
 }
 
+// Two clips made with O at the same moment, each call on a goroutine of
+// its own the way Wails hands them over, are two cards under two names,
+// and each is written under the name its card had. One name twice would
+// be two rows under one key in the clip list, #777.
+//
+// On the real disk: ffmpeg and the episode's decoder read the episode.
+func TestTwoClipsMadeAtOnceHaveTwoNames(t *testing.T) {
+	d := open(t)
+	ep := d.episode("two", minutes5)
+	if _, err := d.svc.store.AddEpisodes([]string{ep}); err != nil {
+		t.Fatal(err)
+	}
+	in, let := d.speech.hold()
+	made := make([]Job, 2)
+	var wg sync.WaitGroup
+	for i := range made {
+		wg.Go(func() { made[i] = d.out(ep, float64(40+120*i)) })
+	}
+	wg.Wait()
+	<-in
+	names := map[string]string{}
+	for _, j := range d.svc.Jobs() {
+		for _, m := range made {
+			if j.ID == m.ID && len(j.Underway) == 1 {
+				names[j.ID] = j.Underway[0].Clip
+			}
+		}
+	}
+	if len(names) != 2 || names[made[0].ID] == "" || names[made[0].ID] == names[made[1].ID] {
+		t.Errorf("two clips made with O at once are on their way as %v", names)
+	}
+	let()
+	for _, m := range made {
+		if done := d.waitFor(m.ID); done.State != JobDone || done.Result != names[m.ID] {
+			t.Errorf("the card %q was written as %+v", names[m.ID], done)
+		}
+	}
+}
+
 // An edit to a clip made by hand is undone and redone like an edit to any
 // clip, and a clip made by hand after it, which goes into the same set,
 // is not an edit and does not stand in the way.

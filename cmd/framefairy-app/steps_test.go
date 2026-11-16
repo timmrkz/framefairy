@@ -21,7 +21,9 @@ import (
 // so its next round finds that work stopped and carries it on. A watcher
 // looks at the jobs again after every change, which may be several at
 // once. Two searches of one video stay until one of them is called off or
-// ends, so the watcher sees them, until the drive is over.
+// ends, so the watcher sees them, until the drive is over. Two clips made
+// with O at once are two cards with two names, never one name twice,
+// which would be two rows under one key in the clip list, #777.
 func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 	d := open(t)
 	a := d.add("a", minutes5)
@@ -32,6 +34,7 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 		plan = clips[0].Plan
 	}
 	most, over := 0, false
+	var twice []string
 	watched := make(chan struct{})
 	go func() {
 		defer close(watched)
@@ -46,6 +49,18 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 					}
 				}
 				most = max(most, running)
+				named := map[string]bool{}
+				for _, j := range jobs {
+					if j.Episode != ep || j.Kind != engine.JobClip || !j.going() {
+						continue
+					}
+					for _, u := range j.Underway {
+						if u.Clip != "" && named[u.Clip] {
+							twice = append(twice, u.Clip)
+						}
+						named[u.Clip] = true
+					}
+				}
 			}
 			return over
 		}, nil)
@@ -98,6 +113,9 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 	<-watched
 	if most > 1 {
 		t.Errorf("%d searches of one video at once", most)
+	}
+	if len(twice) > 0 {
+		t.Errorf("two clips made with O on their way under one name: %v", twice)
 	}
 	for _, j := range d.svc.Jobs() {
 		if j.State == JobRunning || j.State == JobQueued {
