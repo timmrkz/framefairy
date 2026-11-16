@@ -740,6 +740,27 @@ export const steps = {
       walk.wrong = `the ${arg} edge went from ${seen[0].toFixed(3)} to ${back.toFixed(3)}, against the hand, which went ${walk.dragPx > 0 ? "right" : "left"}`;
     }
   },
+  // ["captions in the frame"]
+  //                    since "drag edge", on every animation frame from
+  //                    the press until the clip and its captions came back
+  //                    after letting go, no caption block reached past the
+  //                    clip frame, its pop included, issue #825
+  async "captions in the frame"(walk) {
+    const frames = await walk.page.evaluate(() => window.__edgeFrames ?? []);
+    const reach = frames.map((f) => f[3]);
+    const drawn = reach.filter(Number.isFinite);
+    if (!drawn.length) {
+      walk.wrong = "no caption block was on the clip timeline while the edge was dragged, which proves nothing";
+      return;
+    }
+    const worst = Math.max(...drawn);
+    if (worst > CAPTION_REACH) {
+      const at = reach.indexOf(worst);
+      walk.wrong =
+        `a caption block reached ${worst.toFixed(1)} px past the clip frame on animation frame ${at + 1} of ${frames.length}, ` +
+        `with the edge at ${Number(frames[at][0]).toFixed(3)} s`;
+    }
+  },
   // ["moved", which]   since "drag edge", the edge moved by a frame or more
   async moved(walk, arg) {
     const { page } = walk;
@@ -2729,7 +2750,17 @@ function watchEdge(page, label) {
       const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
       const at = edge ? Number(edge.getAttribute("aria-valuenow")) : NaN;
       if (edge) window.__edgeSeen.push(at);
-      window.__edgeFrames.push([at, playhead, shown]);
+      // How far the caption blocks reach past the clip frame, in pixels,
+      // the most of any block on this frame, as drawn, its pop and all.
+      const frame = document.querySelector(".clip-timeline .frames .frame")?.getBoundingClientRect();
+      let past = -Infinity;
+      if (frame) {
+        for (const c of document.querySelectorAll(".clip-timeline .captions .caption")) {
+          const b = c.getBoundingClientRect();
+          past = Math.max(past, frame.left - b.left, b.right - frame.right);
+        }
+      }
+      window.__edgeFrames.push([at, playhead, shown, past]);
       requestAnimationFrame(tick);
     };
     tick();
@@ -2766,6 +2797,10 @@ async function watchCaptions(page) {
     look();
   });
 }
+
+// How far a caption block may reach past the clip frame, in pixels:
+// none. At rest a block stands a pixel inside it, its margin.
+const CAPTION_REACH = 0;
 
 // The cuts between a clip's pieces, each from where a piece ends to where
 // the next starts.

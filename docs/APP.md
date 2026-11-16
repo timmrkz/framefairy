@@ -2003,7 +2003,9 @@ bubble scrolled by those eight pixels.
       the gesture, and saves nothing until the hand lets go. They used to wait for the hand to let go, so a drag showed
       the old captions over the new clip. After letting go they stay until
       the saved clip's captions come back, which are the same, so nothing
-      jumps. Letting go first waits for the engine's answer to where the
+      jumps. For one frame they did not: the answer let go as soon as the
+      clip came back, and the captions as they were stood past the clip
+      frame by the length of the drag. Letting go first waits for the engine's answer to where the
       hand let go, so on a busy machine, where the answers come late, the
       playhead still ends on the edge and not where an earlier answer put
       it, see plan row 2.237.
@@ -2988,7 +2990,11 @@ moved by hand, on the clip timeline.
   known by when it starts, so taking out a word before it is no new word.
   The block popped as a dragged left edge passed the playhead, which a
   click on the block puts at its first word, and a dragged right edge
-  never came near it, so the two edges looked different, found by Tim. A block takes no focus, so no focus ring is left
+  never came near it, so the two edges looked different, found by Tim. A
+  block on the clip frame's edge pops from that edge, so it never reaches
+  past the frame and never leaves the edge behind: popping from its middle,
+  it did both for a moment each time a dragged clip edge passed a word,
+  which Tim saw as the blocks trailing the edge. A block takes no focus, so no focus ring is left
   round one when the keys walk the words on. A click puts the
   playhead a frame into the caption's first word, so the video preview
   shows that word lit, the first caption of a clip included, which is on
