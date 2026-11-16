@@ -1249,8 +1249,9 @@ bubble scrolled by those eight pixels.
     episode's: it is kept in the clip's plan entry, `removed_words`, by
     the moment the word was heard, so the word is gone from this clip's
     captions and its render, and Cmd+Z brings it back. One of the words a
-    correction made, like a word typed in beside another, is taken out of
-    what the correction reads instead, so the words after it close up. The episode still says it, so every other clip
+    correction made, like a word typed in beside another, is removed the
+    same way and keeps its room, so no word moves from one caption to
+    another. The episode still says it, so every other clip
     shows it, a search and the model read it, and a clip removed and made
     again where it was has it, see `RemovedWords` in
     `engine/removedwords.go`. It used to be a correction to nothing in
@@ -2934,7 +2935,15 @@ moved by hand, on the clip timeline.
   `ShapeCaptionTime`: the clip timeline asks it while the hand moves and
   draws its answer, and the caption box in the video preview shows the
   words it leaves. When the edge is let go it is saved where it was
-  drawn, `SetCaptionTime`, and Cmd+Z takes the edge back. The interface
+  drawn, `SetCaptionTime`, and Cmd+Z takes the edge back. The edge is
+  kept by its word, and that word stays at the edge of a caption when
+  words typed before it lay the captions out again, and the words it
+  hides take no room on the line meanwhile, so the words it shows stay
+  together. Typed words used to move the word into the middle of a
+  caption, the edge was lost, and the words it hid came back. An end
+  dragged back out over them, or put back, shows them again, and when
+  they no longer fit beside the words typed in, the captions from it on
+  are laid out the way the words put them. The interface
   once kept a copy of the rule, which drifted from the engine's: an edge
   was drawn in one place and saved in another, and a word the start of
   the clip cut into left the caption box during the drag and came back

@@ -204,6 +204,31 @@ func wordsAwayFrom(v *engine.CaptionsView, from, to float64) string {
 	return strings.Join(out, " ")
 }
 
+// wordsBesides says the words of v that are not caption c's, as text with
+// when each is shown: c's own words, and the words said between its first
+// and its last, which its edges may hide or show, are left out. A word is
+// known by where the episode says it and which of the words a correction
+// made of it it is, since one heard word can be shown in two captions.
+func wordsBesides(v *engine.CaptionsView, c engine.CaptionView) string {
+	type which struct {
+		said float64
+		part int
+	}
+	own := map[which]bool{}
+	for _, w := range wordsOf(&engine.CaptionsView{Captions: []engine.CaptionView{c}}) {
+		own[which{w.said, w.part}] = true
+	}
+	var out []string
+	for _, w := range wordsOf(v) {
+		inside := w.said >= c.First-1e-3 && w.said <= c.Last+1e-3
+		if !math.IsNaN(w.said) && (own[which{w.said, w.part}] || inside) {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s@%.3f-%.3f", w.text, w.start, w.end))
+	}
+	return strings.Join(out, " ")
+}
+
 func spansOf(v *engine.CaptionsView) string {
 	var out []string
 	for _, c := range v.Captions {
@@ -262,8 +287,24 @@ func edgeBroken(c captionEdit, before, after *engine.CaptionsView) string {
 		return fmt.Sprintf("no caption had its %s on the word at %.3f", c.edge, c.word)
 	}
 	cue := before.Captions[at]
-	if wordsAwayFrom(before, cue.First-1e-3, cue.Last+1e-3) != wordsAwayFrom(after, cue.First-1e-3, cue.Last+1e-3) {
+	if wordsBesides(before, cue) != wordsBesides(after, cue) {
 		return "an edge moved changed a word outside its caption"
+	}
+	// An end moved out over the words it hid, or put back, shows them
+	// again. They take no room while hidden, so words typed in meanwhile
+	// can leave too little for them, and the captions from this one on
+	// are then laid out the way the words put them.
+	relaid := slices.IndexFunc(after.Captions, func(a engine.CaptionView) bool { return close3(a.First, cue.First) })
+	if c.edge == "end" && cue.EndMoved && relaid >= 0 && !close3(after.Captions[relaid].Last, cue.Last) {
+		if relaid != at {
+			return fmt.Sprintf("an edge moved moved caption %d", at+1)
+		}
+		for k := range at {
+			if !close3(after.Captions[k].Start, before.Captions[k].Start) || !close3(after.Captions[k].End, before.Captions[k].End) {
+				return fmt.Sprintf("an edge moved moved caption %d before it", k+1)
+			}
+		}
+		return ""
 	}
 	if len(after.Captions) != len(before.Captions) {
 		return fmt.Sprintf("an edge moved left %d captions of %d", len(after.Captions), len(before.Captions))
@@ -333,9 +374,12 @@ func removalBroken(c captionEdit, before, after *engine.CaptionsView) string {
 		}
 		// A caption that stayed up until the next appeared goes when it
 		// would on its own once the next is gone, and leaves the time
-		// empty.
-		lets := b+1 < len(before.Captions) && close3(was.End, before.Captions[b+1].Start) && now.End < was.End &&
+		// empty. That is later when the hand had moved the next one's
+		// start in over it, and the hand's start went with the caption, or
+		// had moved its own end out under the next one.
+		gone := b+1 < len(before.Captions) &&
 			!slices.ContainsFunc(after.Captions, func(a engine.CaptionView) bool { return close3(a.First, before.Captions[b+1].First) })
+		lets := gone && close3(was.End, before.Captions[b+1].Start) && (now.End < was.End || before.Captions[b+1].StartMoved || was.EndMoved)
 		startOK := close3(now.Start, was.Start) || starts && now.Start >= was.Start-1e-3
 		endOK := close3(now.End, was.End) || held || lets || ends && now.End <= was.End+1e-3
 		if !startOK || !endOK {
@@ -365,16 +409,33 @@ func saidIn(c engine.CaptionView) []float64 {
 // video says, some it never does, and two at once.
 var typed = []string{"auf", "dem", "Schulhof", "Typ", "eine", "Arm", "ja", "Kaffee", "zwei Worte"}
 
-// randomWordEdit is an edit of a word of v the caption box makes: a word
-// replaced, a word typed at its end or its start, which puts a word
-// removed back where the video says it, a word cleared, or a word framed
-// and deleted.
-func randomWordEdit(r *rand.Rand, v *engine.CaptionsView) captionEdit {
+// randomCaptionEdit is an edit of the captions of v the app makes: a
+// word replaced, a word typed at its end or its start, which puts a word
+// removed back where the video says it, a word cleared, a word framed and
+// deleted, a caption removed on the clip timeline, or an edge of a caption
+// dragged there, with shift or without, or put back with a double-click.
+func randomCaptionEdit(r *rand.Rand, v *engine.CaptionsView) captionEdit {
 	said := saidWords(v)
 	w := said[r.IntN(len(said))]
 	word := typed[r.IntN(len(typed))]
 	edit := captionEdit{word: w.said, part: -1}
-	switch r.IntN(5) {
+	switch k := r.IntN(8); k {
+	case 5:
+		c := v.Captions[r.IntN(len(v.Captions))]
+		return captionEdit{name: fmt.Sprintf("the caption on %.3f removed", c.First), word: c.First, remove: true}
+	case 6, 7:
+		c := v.Captions[r.IntN(len(v.Captions))]
+		edge, on := "start", c.First
+		if k == 7 {
+			edge, on = "end", c.Last
+		}
+		at := on - 1 + 2*r.Float64()
+		if r.IntN(4) == 0 {
+			at = -1
+		}
+		toWords := r.IntN(2) == 0
+		return captionEdit{name: fmt.Sprintf("the %s of the caption on %.3f moved to %.3f, on words %v", edge, on, at, toWords),
+			word: on, edge: edge, at: at, toWords: toWords}
 	case 0:
 		edit.text = word
 	case 1:
@@ -514,7 +575,7 @@ func TestRandomCaptionEditsKeepTheirRules(t *testing.T) {
 					// edit until one is taken back.
 					step = "nothing to edit"
 				default:
-					c := randomWordEdit(r, now)
+					c := randomCaptionEdit(r, now)
 					step = c.name
 					e.make(c)
 					now = e.view()

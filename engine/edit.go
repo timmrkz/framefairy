@@ -1299,6 +1299,14 @@ func moveCaptionEdge(plan Plan, clip Clip, word float64, edge string,
 		if edge == "end" && i+1 < len(laid) && to > laid[i+1].Start {
 			at = EpisodeTime(framed, laid[i+1].Start)
 		}
+		// An edge stops short of the caption's other edge, so it never
+		// pushes it on, see moveCaptions.
+		if high := min(laid[i].End, clipLength(framed)) - shortestMoved; edge == "start" && to > high {
+			at = EpisodeTime(framed, max(high, laid[i].Start))
+		}
+		if low := laid[i].Start + shortestMoved; edge == "end" && to < low {
+			at = EpisodeTime(framed, low)
+		}
 		out.at = num.RoundTo(at, 3)
 	}
 	times := maps.Clone(clip.CaptionTimes)

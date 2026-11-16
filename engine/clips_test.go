@@ -201,7 +201,7 @@ func FuzzLoadClips(f *testing.F) {
 	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1}],` +
 		` "corrections": {"100": "zwei Worte", "-1": "a", "01": "b", "1e3": "c", "99999999999999": "d",` +
 		` "200": 7, "300": "a\u0007b", "400": " ja", "500": "` + strings.Repeat("x", 61) + `"},` +
-		` "removed_words": ["100", "-1", "01", "1e3", 200, "100/1", null, "99999999999999"]}]}`)
+		` "removed_words": ["100", "-1", "01", "1e3", 200, "100/1", "100/-1", "100/01", "100/60", "100/x", "/1", null, "99999999999999"]}]}`)
 	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1}],` +
 		` "corrections": ["100", "ja"], "removed_words": {"100": true}}]}`)
 	f.Add(`{"clips": []}`)
@@ -243,7 +243,8 @@ func FuzzLoadClips(f *testing.F) {
 				}
 			}
 			for key := range clip.RemovedWords {
-				if !canonicalMillisecond(key) {
+				word, part, ok := splitRemoved(key)
+				if !ok || !canonicalMillisecond(word) || part >= 0 && key != partKey(word, part) {
 					t.Fatalf("a removed word is kept as %q", key)
 				}
 			}
