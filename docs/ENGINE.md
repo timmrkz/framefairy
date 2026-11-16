@@ -1444,13 +1444,15 @@ model, where 2048 made it 17. Before, such a search waited for good, and with it
 every video's transcription, which waits while a local model finds.
 
 **So does an answer from the cloud that goes quiet.** Once its first piece
-has come, a streamed answer that sends nothing for two minutes,
+of thinking or text is heard, a streamed answer that sends nothing for two minutes,
 `cloudQuiet` in `engine/api.go`, is given up on and asked for again like
 any answer that broke off. A laptop that changed its Wi-Fi or slept
 halfway through an answer used to wait for the whole answer's 10 minutes,
 four times. The wait for the first piece is still those 10 minutes,
-because OpenAI's reasoning models say nothing while they think. It is the
-local model's `watchStall`, in `engine/local.go`, started at that piece.
+because OpenAI's reasoning models stream none of their thinking, and a
+chunk sent before it says nothing about how long the quiet after it
+lasts. It is the local model's `watchStall`, in `engine/local.go`,
+started at that piece.
 
 **A program that was stopped and does not end is left behind.** ffmpeg on
 CI's virtual Mac once ran eight minutes after it was killed. Every program

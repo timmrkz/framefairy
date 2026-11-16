@@ -192,54 +192,75 @@ func (e *Engine) waitToRetry(ctx context.Context, d time.Duration) error {
 }
 
 // cloudQuiet is how long a streamed answer from a company may send
-// nothing, once its first piece has come, before it is given up on. A
-// stream speaks all the time while it works: Anthropic's sends every
-// piece of the thinking and the text as it comes, and a ping between
-// them, OpenAI's every piece of the text. One that goes quiet is a
-// connection that went away without closing, a laptop that changed its
-// Wi-Fi or slept, and it used to be waited on until the whole answer's
-// 10 minutes were up, four times, 40 minutes in all.
+// nothing, once its first piece of thinking or text has been heard,
+// before it is given up on. A stream speaks all the time while it works:
+// Anthropic's sends every piece of the thinking and the text as it comes,
+// and a ping between them, OpenAI's every piece of the text. One that
+// goes quiet is a connection that went away without closing, a laptop
+// that changed its Wi-Fi or slept, and it used to be waited on until the
+// whole answer's 10 minutes were up, four times, 40 minutes in all.
 //
-// The wait for the first piece is left to those 10 minutes, because
-// OpenAI's reasoning models think before they send it and say nothing
-// while they do.
+// The wait for the first piece is left to those 10 minutes. OpenAI's
+// reasoning models think before they write and stream none of the
+// thinking, so the bytes that come before, like the chunk that only says
+// who speaks, say nothing about how long the quiet after them may last.
 const cloudQuiet = 2 * time.Minute
 
 // errQuiet is a streamed answer that sent nothing for cloudQuiet.
 var errQuiet = fmt.Errorf("nothing came for %s seconds", num.Fixed(cloudQuiet.Seconds(), 0))
 
 // readWatched reads a streamed answer with read, and once its first
-// piece has come, calls stop when nothing more comes for cloudQuiet,
-// which ends the read with errQuiet. Like any answer that breaks off, it
-// is asked for again when none of it was heard yet.
+// piece of thinking or text is heard, calls stop when nothing more comes
+// for cloudQuiet, which ends the read with errQuiet. Like any answer that
+// breaks off, it is asked for again when none of its text was heard yet.
 func (e *Engine) readWatched(body io.Reader, read func(io.Reader, *Listener) (*apiReply, bool, error),
 	listen *Listener, stop func()) (*apiReply, bool, error) {
 	var quiet atomic.Bool
+	// The watch is started and reset only from read's own goroutine: the
+	// reads below and the pieces it hears between them.
 	var watch *stallWatch
+	heard := func() {
+		if watch == nil {
+			watch = watchStall(cloudQuiet, func() {
+				quiet.Store(true)
+				stop()
+			})
+		}
+	}
+	var own Listener
+	if listen != nil {
+		own = *listen
+	}
+	text, thinking := own.Text, own.Thinking
+	own.Text = func(piece string) {
+		heard()
+		if text != nil {
+			text(piece)
+		}
+	}
+	own.Thinking = func(chars int) {
+		heard()
+		if thinking != nil {
+			thinking(chars)
+		}
+	}
 	watched := readerFunc(func(p []byte) (int, error) {
 		n, err := body.Read(p)
-		if n > 0 {
-			if watch == nil {
-				watch = watchStall(cloudQuiet, func() {
-					quiet.Store(true)
-					stop()
-				})
-			} else {
-				watch.Reset(cloudQuiet)
-			}
+		if n > 0 && watch != nil {
+			watch.Reset(cloudQuiet)
 		}
 		return n, err
 	})
-	data, heard, err := read(watched, listen)
+	data, gotText, err := read(watched, &own)
 	if watch != nil {
 		watch.Stop()
 	}
 	if err != nil && quiet.Load() {
 		e.Log.Warn("the API's answer sent nothing for %s seconds, so it is given up on",
 			num.Fixed(cloudQuiet.Seconds(), 0))
-		return data, heard, errQuiet
+		return data, gotText, errQuiet
 	}
-	return data, heard, err
+	return data, gotText, err
 }
 
 // post sends one request, retried on the errors that are worth retrying.

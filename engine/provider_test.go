@@ -853,3 +853,53 @@ func TestACloudAnswerThatKeepsSendingIsWaitedFor(t *testing.T) {
 		}
 	})
 }
+
+// thinksSilently is an OpenAI answer that says at once who speaks, then
+// thinks for five times cloudQuiet without streaming any of it, and then
+// writes its text, the way a reasoning model may.
+type thinksSilently struct{}
+
+func (thinksSilently) RoundTrip(r *http.Request) (*http.Response, error) {
+	read, write := io.Pipe()
+	go func() {
+		fmt.Fprint(write, "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n")
+		// Called off, the connection closes, the way a real one does.
+		select {
+		case <-time.After(5 * cloudQuiet): //nolint:forbidigo // synctest bubble
+		case <-r.Context().Done():
+			write.CloseWithError(r.Context().Err())
+			return
+		}
+		fmt.Fprint(write, "data: {\"choices\":[{\"delta\":{\"content\":\"{}\"},\"finish_reason\":\"stop\"}]}\n\n")
+		fmt.Fprint(write, "data: [DONE]\n\n")
+		write.Close()
+	}()
+	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}},
+		Body: read, Request: r}, nil
+}
+
+// An answer that thinks without a word for longer than cloudQuiet, after
+// a first chunk that holds no thinking and no text, is waited for: the
+// quiet is only watched from the first piece heard, so an answer that
+// works is not cut and paid for four times.
+//
+// It runs in a bubble, on the bubble's clock.
+func TestACloudAnswerThatThinksBeforeItsFirstPieceIsWaitedFor(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	synctest.Test(t, func(t *testing.T) {
+		network := &askCounted{rest: thinksSilently{}}
+		m := NewMachine(afero.NewMemMapFs())
+		m.network = network
+		e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), m)
+		began := time.Now() //nolint:forbidigo // synctest bubble
+		if _, err := e.CallAPI(context.Background(), "the transcript", "gpt-6-sol", 48000, "", "plan", "", nil); err != nil {
+			t.Fatal(err)
+		}
+		if took := time.Since(began); took != 5*cloudQuiet { //nolint:forbidigo // synctest bubble
+			t.Errorf("the answer took %s on the bubble's clock, want %s", took, 5*cloudQuiet)
+		}
+		if got := network.asked.Load(); got != 1 {
+			t.Errorf("asked %d times, want once", got)
+		}
+	})
+}
