@@ -133,6 +133,10 @@ type planBuilder struct {
 	underway []runlog.Underway
 	landed   []runlog.Landed
 
+	// had is how many clips the plan a search carries on held, which
+	// count towards the clips asked for, see PlanOptions.CarryOn.
+	had int
+
 	// writing is held while a clip goes to disk, so two framers finishing
 	// at once write one after the other.
 	writing sync.Mutex
@@ -154,6 +158,19 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 		Max: num.Float(opts.MaxLen), Model: opts.Model, By: opts.By}
 	b.prefix = opts.IDPrefix
 	b.taken = takenLines(lines, opts.Taken)
+	if opts.CarryOn && opts.PlanPath != "" {
+		if _, had, err := LoadClips(e.Files, opts.PlanPath); err == nil {
+			parts := append([]timed.Window(nil), opts.Taken...)
+			for _, c := range had {
+				for _, s := range c.Segments {
+					parts = append(parts, timed.Window{Start: s.Start, End: s.End})
+				}
+			}
+			b.taken = takenLines(lines, parts)
+			b.had = len(had)
+			b.opts.Grows = true
+		}
+	}
 	// A second pass over a later part of the episode must not reuse 01..04,
 	// or its clips would overwrite the first pass's output. Seconds, not
 	// minutes, so two windows inside the same minute still differ.
@@ -168,7 +185,7 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 		b.stamp.From, b.stamp.To = &from, &to
 	}
 	// A set that grows numbers on from the clips it has.
-	if opts.Grows && opts.PlanPath != "" {
+	if b.opts.Grows && opts.PlanPath != "" {
 		b.base = lastNumber(e.Files, opts.PlanPath, b.prefix)
 	}
 	for range framers() {
@@ -189,7 +206,7 @@ func (b *planBuilder) take(raw string) {
 		return
 	}
 	b.mu.Lock()
-	if b.closed || len(b.order) >= b.opts.Count {
+	if b.closed || b.fullLocked() {
 		b.mu.Unlock()
 		return
 	}
@@ -207,7 +224,7 @@ func (b *planBuilder) take(raw string) {
 // queued to be framed and written, the same way for every clip.
 func (b *planBuilder) propose(entry PlanEntry) {
 	b.mu.Lock()
-	if b.closed || len(b.order) >= b.opts.Count {
+	if b.closed || b.fullLocked() {
 		b.mu.Unlock()
 		return
 	}
@@ -577,7 +594,7 @@ func (b *planBuilder) rest(whole []PlanEntry) {
 	defer b.mu.Unlock()
 	// Every clip asked for was taken as the answer arrived. What follows
 	// is a model that went on writing, and it is not read for repeats.
-	if b.closed || len(b.order) >= b.opts.Count {
+	if b.closed || b.fullLocked() {
 		return
 	}
 	// The clips taken as the answer arrived were checked for repeats in
@@ -612,11 +629,17 @@ func (b *planBuilder) rest(whole []PlanEntry) {
 		}
 	}
 	for _, entry := range whole[taken:] {
-		if len(b.order) >= b.opts.Count {
+		if b.fullLocked() {
 			return
 		}
 		b.acceptLocked(entry)
 	}
+}
+
+// fullLocked says whether every clip asked for is taken, the ones the
+// plan of a search carried on had counted in.
+func (b *planBuilder) fullLocked() bool {
+	return len(b.order)+b.had >= b.opts.Count
 }
 
 func (b *planBuilder) count() int {

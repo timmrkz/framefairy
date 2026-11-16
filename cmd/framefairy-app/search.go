@@ -102,6 +102,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 		// is an older search's, about another window.
 		if rec := engine.ReadSearch(s.store.files, path); rec != nil && stopped.JobRecord.ID != "" {
 			req = rec.Request()
+			req.CarryOn = true
 			carried = s.planned(path, *rec)
 		}
 		if req.Count == 0 {

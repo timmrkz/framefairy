@@ -108,6 +108,9 @@ type Options struct {
 	// Pass is which search of the window this is, see PassName. 0 and 1
 	// are the first.
 	Pass int
+	// CarryOn plans again over a plan that is there, adding to it, see
+	// PlanRequest.CarryOn.
+	CarryOn bool
 	// Next searches the window the app would place on the episode now,
 	// where the fewest searches have been, as the next pass over it, see
 	// Episode.PlaceWindow. --from and --to name a window by hand instead.
@@ -268,7 +271,7 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	}
 	// A model that cannot be loaded fails the run before the transcript
 	// is made for it.
-	if r.opts.ClipsPath == "" && (r.opts.Replan || !fileio.Exists(e.Files, r.planPath)) {
+	if r.plansNow() {
 		if err := r.e.roomBeforeSearch(r.opts, r.span.End-r.span.Start); err != nil {
 			return err
 		}
@@ -284,13 +287,22 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 // for the window, made first when there is none or a new one is asked for.
 func (r *runner) planned(ctx context.Context) (Plan, []Clip, error) {
 	plannedNow := false
-	if r.opts.ClipsPath == "" && (r.opts.Replan || !fileio.Exists(r.e.Files, r.planPath)) {
+	if r.plansNow() {
 		if err := r.plan(ctx); err != nil {
 			return Plan{}, nil, err
 		}
 		plannedNow = true
 	}
 	return r.clips(plannedNow)
+}
+
+// plansNow says whether the run makes its plan: when there is none yet,
+// when a new one is asked for, and when a search that stopped is carried
+// on. A search carried on kept only what it found before it stopped, so
+// Continue found nothing more and said the search was done, issue #881.
+func (r *runner) plansNow() bool {
+	return r.opts.ClipsPath == "" &&
+		(r.opts.Replan || r.opts.CarryOn || !fileio.Exists(r.e.Files, r.planPath))
 }
 
 // finish is the end of a run with its clips: nothing more for a plan asked
@@ -663,6 +675,7 @@ func (r *runner) plan(ctx context.Context) error {
 	asked.Count, asked.Whole, asked.Model, asked.OutW, asked.OutH = count, whole, plannerName(opts), outW, outH
 	asked.LogDir, asked.Window, asked.Fresh, asked.Local = logsDir, window, opts.Replan, local
 	asked.Record, asked.PlanPath, asked.wrote = !opts.NoRecord && !experiment, planPath, opts.wrote
+	asked.CarryOn = opts.CarryOn && !opts.Replan
 	plan, err := e.BuildPlan(ctx, opts.Source, source, lines, asked)
 	if err != nil {
 		return e.planFailed(ctx, err)

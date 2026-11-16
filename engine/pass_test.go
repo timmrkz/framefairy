@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
@@ -139,6 +141,64 @@ func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
 	}
 	if _, err := p.Files.Stat(filepath.Join(p.LogsDir(), "clips-10-30-2.json")); err == nil {
 		t.Error("a search carried on made a second pass")
+	}
+}
+
+// A search stopped after one of its two clips landed, carried on with
+// Continue: the model is asked again, the clip that landed stays as it
+// is, with the title a hand gave it, and the one still missing is added.
+// Continue found nothing more and said the search was done, issue #881.
+func TestASearchCarriedOnAddsTheClipsStillMissing(t *testing.T) {
+	t.Parallel()
+	server, asked := answering(t, clipAnswer(1), clipAnswer(1, 2, 3))
+	p := passProject(t, server.URL)
+	req := PlanRequest{From: 10, To: 30, Count: 2, Min: 1, Max: 30}
+	plan, err := p.Search(context.Background(), req, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, landed, err := LoadClips(p.Files, plan)
+	if err != nil || len(landed) != 1 {
+		t.Fatalf("the search that stopped left %d clips, %v, and this test needs one", len(landed), err)
+	}
+	// Stopped while the model still wrote, its answer was never whole,
+	// so none was kept to be used again.
+	replies, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "reply-*.json"))
+	for _, r := range replies {
+		if err := p.Files.Remove(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := editPlan(p.Files, plan, func(_ *object, clips []*object) error {
+		clips[0].set(keyTitle, "Mine")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	carried := req
+	carried.Pass, carried.CarryOn = 1, true
+	again, err := p.Search(context.Background(), carried, Host{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != plan {
+		t.Errorf("the search carried on wrote %s, not the plan it began, %s", again, plan)
+	}
+	if n := len(asked()); n != 2 {
+		t.Errorf("the model was asked %d times, so Continue did not ask it again", n)
+	}
+	_, clips, err := LoadClips(p.Files, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clips) != 2 {
+		t.Fatalf("the plan holds %d clips after Continue, not the 2 asked for", len(clips))
+	}
+	if clips[0].ID != landed[0].ID || clips[0].Title != "Mine" {
+		t.Errorf("the clip that landed became %s %q, not %s with the title a hand gave it", clips[0].ID, clips[0].Title, landed[0].ID)
+	}
+	if clips[1].Segments[0].Start < landed[0].Segments[len(landed[0].Segments)-1].End {
+		t.Errorf("the clip added keeps the moment of the one that landed: %+v and %+v", clips[1].Segments, landed[0].Segments)
 	}
 }
 

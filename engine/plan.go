@@ -77,6 +77,13 @@ type PlanOptions struct {
 	// By is who proposes the clips, stamped on the clip set as
 	// planned_with.by: empty for the model, ByHand for I and O.
 	By string
+	// CarryOn adds to the plan at PlanPath, when it is there, the clips
+	// still missing from a search that stopped: the clips in it stay as
+	// they are, edits and all, a clip that keeps mostly their lines is
+	// left out the way a taken one is, and only as many are added as make
+	// up Count with them. What the model is asked is the same as the
+	// first time, so an answer that was saved whole is used again.
+	CarryOn bool
 	// Grows is a clip set that is added to rather than made anew: each
 	// clip goes in beside the ones there, and takes the next id after
 	// theirs. The clips made by hand are one such set.
