@@ -809,7 +809,7 @@ func (c *updating) drop(round int) {
 }
 
 // unstage removes what an updater unpacked and nobody will install. Only a
-// folder of Wails' own in the temporary folder, the one it unpacked into.
+// folder of Wails' own in the folder it unpacks into, beside the app.
 func unstage(w *updater.Updater) {
 	if w == nil {
 		return
@@ -819,7 +819,8 @@ func unstage(w *updater.Updater) {
 		return
 	}
 	dir := filepath.Dir(p)
-	if !strings.HasPrefix(filepath.Base(dir), "wails-update-") || filepath.Dir(dir) != filepath.Clean(os.TempDir()) {
+	exe, err := os.Executable()
+	if err != nil || !strings.HasPrefix(filepath.Base(dir), "wails-update-") || filepath.Dir(dir) != stagingFolder(exe) {
 		return
 	}
 	_ = os.RemoveAll(dir)

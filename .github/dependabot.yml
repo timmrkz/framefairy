@@ -4,11 +4,17 @@
 # security updates are on in the settings.
 # See docs/BUILD.md, Keeping up.
 #
-# Left out, because each moves with something Dependabot cannot change:
-# Wails, which is pinned exactly and moves together with @wailsio/runtime,
-# and the speech library, whose native libraries scripts/speech-libs.sh
-# pins by checksum beside the Go module's version. scripts/upstream.sh
-# watches the speech library instead, with ffmpeg and llama.cpp.
+# Wails comes in a pull request of its own, the Go module and
+# @wailsio/runtime together, because the two must be the same version and
+# the build fails when they are not. The group wails below spans Go and
+# npm for that, and the go and interface entries leave both out, so
+# neither ever comes alone. Wails was left out altogether before, and sat
+# on a beta with published security advisories for two months, #843.
+#
+# Left out, because it moves with something Dependabot cannot change: the
+# speech library, whose native libraries scripts/speech-libs.sh pins by
+# checksum beside the Go module's version. scripts/upstream.sh watches it
+# instead, with ffmpeg and llama.cpp.
 #
 # The CI image, .github/ci-image/Dockerfile, starts from images pinned to
 # a digest. Dependabot moves Ubuntu's digest when the tag gets a new build,
@@ -27,7 +33,19 @@
 # version in the comment beside it, # v7.0.2 and never # v7, and Dependabot
 # moves the two together. internal/workflows checks it.
 version: 2
+multi-ecosystem-groups:
+  wails:
+    schedule:
+      interval: weekly
 updates:
+  - package-ecosystem: gomod
+    directory: /
+    patterns: ["github.com/wailsapp/wails/v3"]
+    multi-ecosystem-group: wails
+  - package-ecosystem: npm
+    directory: /frontend
+    patterns: ["@wailsio/runtime"]
+    multi-ecosystem-group: wails
   - package-ecosystem: gomod
     directory: /
     schedule:
@@ -39,6 +57,7 @@ updates:
     allow:
       - dependency-type: all
     ignore:
+      # In the group wails, with its runtime, see the head of this file.
       - dependency-name: github.com/wailsapp/wails/v3
       - dependency-name: github.com/k2-fsa/sherpa-onnx-go*
     groups:
@@ -50,6 +69,7 @@ updates:
     schedule:
       interval: weekly
     ignore:
+      # In the group wails, with the Go module, see the head of this file.
       - dependency-name: "@wailsio/runtime"
       # svelte-check, which checks the interface's types, takes TypeScript
       # 5 or 6 and npm will not install it beside 7. Take this out once a

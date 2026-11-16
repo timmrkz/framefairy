@@ -64,7 +64,13 @@ top of the repository, which builds the interface first, then start <code>bin/fr
 func main() {
 	// Started again to put a new build in place once the app has quit.
 	installIfAsked()
-	go tidyTemp(os.TempDir(), time.Now())
+	go func() {
+		now := time.Now()
+		tidyUpdates(os.TempDir(), now)
+		if exe, err := os.Executable(); err == nil {
+			tidyUpdates(stagingFolder(exe), now)
+		}
+	}()
 	st := appStore()
 	// The fonts installed on the Mac are offered for captions beside ours,
 	// see appStore. Their folders are read once now, so the Font list

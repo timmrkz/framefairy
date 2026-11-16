@@ -587,8 +587,12 @@ scan made once is out of date the week after.
   Dependabot moves the comment with the commit, so a bump shows which
   release it goes to. `internal/workflows` checks both, in `make unit`. With Dependabot security updates on in the repository's
   settings, it opens one at once for a fix to a known vulnerability.
-  Wails and the speech library's Go module are left out, because each
-  moves with a pin Dependabot cannot change. TypeScript stays below 7 until
+  Wails comes in a pull request of its own, the Go module and
+  `@wailsio/runtime` together, through one group that spans Go and npm,
+  because the build fails when the two differ. It was left out before,
+  and sat on a beta with published security advisories for two months,
+  #843. The speech library's Go module is left out, because it moves
+  with a pin Dependabot cannot change. TypeScript stays below 7 until
   svelte-check, which checks the interface's types, accepts 7. An update
   needs no licence notice written, because the build writes the notices
   of the modules and packages it has. It stops only on a licence nobody

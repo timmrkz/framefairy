@@ -777,8 +777,9 @@ messages, pull request text, code comments and chat replies.
   the folder and `go vet ./...` works before the first build. A program built
   without the interface shows a page that says to run make. Never commit
   build output, and that includes `frontend/preview/dist/`.
-- Pin Wails exactly (currently v3.0.0-beta.23) and keep
-  `@wailsio/runtime` in `frontend/package.json` on the same version.
+- Pin Wails exactly in `go.mod` and keep `@wailsio/runtime` in
+  `frontend/package.json` on the same version. Dependabot moves the two
+  together, in one pull request, see Keeping up in docs/BUILD.md.
 
 ## Keeping the tests quick
 

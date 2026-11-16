@@ -3915,7 +3915,7 @@ Homebrew's ffmpeg and llama-server even when it is started from Finder.
 | Interface | `frontend/` | Svelte 5 and TypeScript, no Go |
 | Built interface | `cmd/framefairy-app/dist/app/` | made by make from `frontend/`, embedded into the program, not in git |
 
-The Go side uses Wails v3, pinned to v3.0.0-beta.23. The interface calls the
+The Go side uses Wails v3, pinned to the version `go.mod` names. The interface calls the
 methods of the `FrameFairy` type by name, through the typed wrappers in
 `frontend/src/lib/api.ts`. The type is declared in
 `cmd/framefairy-app/main.go`, and its methods sit in files by what they

@@ -647,8 +647,8 @@ sign it with. That is what makes it possible to start now.
 
 Wails v3 packages from a `build/` folder of per-platform Taskfiles, driven
 by the `wails3` command. We have none of it: no `build/`, no `Taskfile.yml`,
-and `make` calls `go build` directly. The templates in the pinned
-v3.0.0-beta.23 cover an `.app` bundle and, if it were wanted, a universal
+and `make` calls `go build` directly. The templates in Wails v3
+cover an `.app` bundle and, if it were wanted, a universal
 binary for macOS, an NSIS installer for Windows, and AppImage plus deb and
 rpm for Linux, and there is notarisation support in the toolchain. Adopting that layout is the
 cheap path, with one edit: their Windows task sets `CGO_ENABLED=0` and

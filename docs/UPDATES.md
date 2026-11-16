@@ -98,7 +98,7 @@ the same feed.
 
 ### Wails' own updater
 
-The version of Wails we pin, v3.0.0-beta.23, ships an updater,
+The Wails we pin ships an updater,
 `pkg/updater`, reachable as `app.Updater`. Read in the module source:
 
 - It is Go, on every platform, with no bridge.
@@ -693,13 +693,19 @@ unpacked, and never an app that is still running. When it goes wrong, why
 is in `$TMPDIR/framefairy-install-<pid>.log`. When it goes right, it
 leaves no log.
 
-**The app clears what updating left in the temporary folder** when it
-starts. macOS clears that folder by itself only of what has not been
-touched for days, so every app is meant to tidy up after itself. Removed:
-a log of a step on quit that went wrong, after a week, and after a day
-Wails' log of a Relaunch and a build Wails unpacked and never used.
-Wails names those the same for every app made with it, so only the ones
-about Frame Fairy go.
+**Wails unpacks a build beside the app**, in a `wails-update-` folder in
+`/Applications` when the app is there, so moving it into place is a
+rename on one disk. A build that is ready and then replaced by a newer
+one is removed at once.
+
+**The app clears what updating left** when it starts, in the temporary
+folder and in the folder beside the app. macOS clears the temporary
+folder by itself only of what has not been touched for days, and the
+folder beside the app not at all, so every app is meant to tidy up after
+itself. Removed: a log of a step on quit that went wrong, after a week,
+and after a day Wails' log of a Relaunch and a build Wails unpacked and
+never used. Wails names those the same for every app made with it, so
+only the ones about Frame Fairy go.
 
 A build made by `make`, and `make install` and `make run` are, starts out
 following nothing, whatever `updates.json` says. It is a build somebody

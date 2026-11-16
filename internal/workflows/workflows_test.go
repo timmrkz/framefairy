@@ -556,6 +556,36 @@ func TestNoPackageRunsCodeWhenInstalled(t *testing.T) {
 	}
 }
 
+// dependabotConfig is what the tests below read of .github/dependabot.yml.
+type dependabotConfig struct {
+	Groups  map[string]any `yaml:"multi-ecosystem-groups"`
+	Updates []struct {
+		Ecosystem string   `yaml:"package-ecosystem"`
+		Directory string   `yaml:"directory"`
+		Group     string   `yaml:"multi-ecosystem-group"`
+		Patterns  []string `yaml:"patterns"`
+		Allow     []struct {
+			Type string `yaml:"dependency-type"`
+		} `yaml:"allow"`
+		Ignore []struct {
+			Name string `yaml:"dependency-name"`
+		} `yaml:"ignore"`
+	} `yaml:"updates"`
+}
+
+func readDependabot(t *testing.T) dependabotConfig {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "dependabot.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config dependabotConfig
+	if err := yaml.Unmarshal(b, &config); err != nil {
+		t.Fatal(err)
+	}
+	return config
+}
+
 // Dependabot moves every Go module, the ones go.mod marks indirect too.
 // Without allow: dependency-type: all it moves only the modules go.mod
 // requires by name, and golang.org/x/text kept a known flaw for months.
@@ -563,24 +593,9 @@ func TestNoPackageRunsCodeWhenInstalled(t *testing.T) {
 // On the real disk: what is read is the repository's own Dependabot settings.
 func TestDependabotMovesEveryGoModule(t *testing.T) {
 	t.Parallel()
-	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "dependabot.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var config struct {
-		Updates []struct {
-			Ecosystem string `yaml:"package-ecosystem"`
-			Allow     []struct {
-				Type string `yaml:"dependency-type"`
-			} `yaml:"allow"`
-		} `yaml:"updates"`
-	}
-	if err := yaml.Unmarshal(b, &config); err != nil {
-		t.Fatal(err)
-	}
 	found := false
-	for _, u := range config.Updates {
-		if u.Ecosystem != "gomod" {
+	for _, u := range readDependabot(t).Updates {
+		if u.Ecosystem != "gomod" || u.Group != "" {
 			continue
 		}
 		found = true
@@ -593,6 +608,46 @@ func TestDependabotMovesEveryGoModule(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("dependabot.yml has no gomod entry, so this test reads it wrong")
+		t.Fatal("dependabot.yml has no gomod entry of its own, so this test reads it wrong")
+	}
+}
+
+// Dependabot moves Wails, the Go module and @wailsio/runtime together, in
+// one pull request, and never one without the other. The build fails when
+// the two differ, see notices/gen. Wails was left out of Dependabot
+// altogether before, and sat on a beta with published security advisories.
+//
+// On the real disk: what is read is the repository's own Dependabot settings.
+func TestDependabotMovesWailsInOnePullRequest(t *testing.T) {
+	t.Parallel()
+	config := readDependabot(t)
+	wails := map[string]string{"gomod": "github.com/wailsapp/wails/v3", "npm": "@wailsio/runtime"}
+	group := map[string]string{}
+	for _, u := range config.Updates {
+		name, ok := wails[u.Ecosystem]
+		if !ok {
+			continue
+		}
+		if u.Group != "" {
+			for _, p := range u.Patterns {
+				if p == name {
+					group[u.Ecosystem] = u.Group
+				}
+			}
+			continue
+		}
+		ignored := false
+		for _, i := range u.Ignore {
+			ignored = ignored || i.Name == name
+		}
+		if !ignored {
+			t.Errorf("dependabot.yml's %s entry for %s does not ignore %s, so it can come without its other half", u.Ecosystem, u.Directory, name)
+		}
+	}
+	if group["gomod"] == "" || group["npm"] == "" || group["gomod"] != group["npm"] {
+		t.Errorf("dependabot.yml moves Wails in the groups %q for Go and %q for npm, want one multi-ecosystem group for both", group["gomod"], group["npm"])
+	}
+	if _, ok := config.Groups[group["gomod"]]; !ok && group["gomod"] != "" {
+		t.Errorf("dependabot.yml names the group %q, which multi-ecosystem-groups does not define", group["gomod"])
 	}
 }
