@@ -120,11 +120,11 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, host
 	defer func() {
 		switch {
 		case err == nil:
-			log.Underway(nil, []runlog.Landed{{N: 1, Clip: key}}, true)
+			log.Underway(nil, 1, true)
 		case errors.Is(err, ErrCancelled):
-			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepStopped, Clip: req.Key()}}, nil, true)
+			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepStopped, Clip: req.Key()}}, 0, true)
 		default:
-			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepFailed, Clip: req.Key()}}, nil, true)
+			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepFailed, Clip: req.Key()}}, 0, true)
 		}
 	}()
 	// Whatever a job called off runs into on its way out, ffmpeg ended
@@ -138,14 +138,14 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, host
 	// The clip at the playhead, in whatever step the job is in, until the
 	// builder has it.
 	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
-		log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepWaiting, Clip: req.Key()}}, nil, true)
+		log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepWaiting, Clip: req.Key()}}, 0, true)
 		stepCtx, release, err := j.turn(ctx, step)
 		if err == nil {
-			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: step, Clip: req.Key()}}, nil, true)
+			log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: step, Clip: req.Key()}}, 0, true)
 		}
 		return stepCtx, release, err
 	}
-	log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepWaiting, Clip: req.Key()}}, nil, true)
+	log.Underway([]runlog.Underway{{N: 1, Start: req.At, End: req.At, Step: StepWaiting, Clip: req.Key()}}, 0, true)
 	// Called off before it was asked for, it keeps its record and does
 	// nothing else, the way a search does.
 	if ctx.Err() != nil {

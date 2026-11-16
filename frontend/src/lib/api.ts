@@ -621,7 +621,6 @@ export interface EngineEvent {
   // that is all still to come. The job carries the same, see Job.
   underway?: Underway[];
   whole?: boolean;
-  landed?: Landed[];
   duration?: number;
   elapsed: number;
   time: string;
@@ -657,14 +656,6 @@ export type JobStep =
   | "rendering"
   | "failed"
   | "stopped";
-
-// A clip on its way that was written: n, which of its job's clips it
-// was, and clip, the key it has in the clip list. See Landed in
-// engine/runlog/events.go.
-export interface Landed {
-  n: number;
-  clip: string;
-}
 
 // A clip on its way into the list: proposed, by the model or at the
 // playhead with I or O, and not written yet. Every job that makes clips

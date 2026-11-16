@@ -131,7 +131,7 @@ type planBuilder struct {
 	// log is told it, see Underway, and landed every one written, with
 	// its key.
 	underway []runlog.Underway
-	landed   []runlog.Landed
+	found    int
 
 	// writing is held while a clip goes to disk, so two framers finishing
 	// at once write one after the other.
@@ -494,14 +494,14 @@ func (b *planBuilder) queueLocked(entry PlanEntry, card int) {
 	}
 }
 
-// clipKey is the key a clip of this set has in the app's clip list.
 // idOf is the id the clip of a card is written under: its place in the
 // answer, after the clips a set that grows already has, or the id a clip
 // made by hand was given when it was asked for. A card has it from the
 // moment it is there, a clip held back to be fitted too, so it is known
 // by the name of the clip it becomes from the start and never changes
-// its name when it is written. Every card of an answer is written, a held
-// one once it is fitted, so the ids run on without a gap.
+// its name when it is written. A card that is never written, one dropped
+// while it is framed or held when the search stops, leaves its id
+// unused, and the next card still takes its own place.
 func (b *planBuilder) idOf(card int) string {
 	if b.opts.ID != "" {
 		return b.opts.ID
@@ -509,6 +509,7 @@ func (b *planBuilder) idOf(card int) string {
 	return fmt.Sprintf("%s%02d", b.prefix, b.base+card)
 }
 
+// clipKey is the key a clip of this set has in the app's clip list.
 func (b *planBuilder) clipKey(id string) string {
 	if b.opts.PlanPath == "" {
 		return ""
@@ -540,7 +541,7 @@ func (b *planBuilder) takeOffLocked(card int) {
 // sayUnderwayLocked tells the app the clips on the way, how many are
 // written, and whether the answer is whole.
 func (b *planBuilder) sayUnderwayLocked() {
-	b.e.Log.Underway(b.underway, b.landed, b.whole)
+	b.e.Log.Underway(b.underway, b.found, b.whole)
 }
 
 // answerWhole is the answer read to its end, the rest of it taken: every
@@ -921,7 +922,7 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 	// before the clock says it found one more.
 	b.mu.Lock()
 	b.clips = append(b.clips, clip)
-	b.landed = append(b.landed, runlog.Landed{N: card, Clip: b.clipKey(clip.ID)})
+	b.found++
 	b.takeOffLocked(card)
 	b.mu.Unlock()
 	if b.clock != nil {
