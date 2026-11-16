@@ -1378,3 +1378,62 @@ func (q *queue) find(episode, kind string) (Job, bool) {
 	}
 	return Job{}, false
 }
+
+// onCall is a clock that makes a call only when the test says, and tells
+// the test each wait it was asked for.
+type onCall struct {
+	mu    sync.Mutex
+	calls []func()
+	asked chan time.Duration
+}
+
+func (c *onCall) Now() time.Time { return time.Time{} }
+
+func (c *onCall) AfterFunc(d time.Duration, f func()) func() bool {
+	c.mu.Lock()
+	c.calls = append(c.calls, f)
+	c.mu.Unlock()
+	c.asked <- d
+	return func() bool { return false }
+}
+
+// make makes every call asked for so far.
+func (c *onCall) make() {
+	c.mu.Lock()
+	calls := c.calls
+	c.calls = nil
+	c.mu.Unlock()
+	for _, f := range calls {
+		f()
+	}
+}
+
+// A job that will not stop is given stopWait on the machine's clock, the
+// one the walks' bridge hands in, not on the system's.
+func TestAJobThatWillNotStopIsGivenStopWaitOnTheMachinesClock(t *testing.T) {
+	t.Parallel()
+	st := memoryStore()
+	clock := &onCall{asked: make(chan time.Duration, 8)}
+	st.machine.Clock = clock
+	q := newQueue(st, func(JobUpdate) {}, func(string) {})
+	release, started := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	q.add("/eps/d.mp4", "render", "Render", func(ctx context.Context, p *engine.Project) (string, error) {
+		close(started)
+		<-ctx.Done()
+		<-release
+		return "", engine.ErrCancelled
+	})
+	<-started
+	stopped := make(chan bool, 1)
+	go func() { stopped <- q.shutDown() }()
+	for d := range clock.asked {
+		if d == stopWait {
+			break
+		}
+	}
+	clock.make()
+	if <-stopped {
+		t.Error("quitting said a job stopped that never did")
+	}
+}
