@@ -246,7 +246,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	fingerprint := hex.EncodeToString(sum[:])[:16]
 	cachePath := ""
 	if opts.LogDir != "" {
-		if err := e.Files.MkdirAll(opts.LogDir, 0o755); err != nil {
+		if err := MakeDir(e.Files, opts.LogDir); err != nil {
 			return nil, err
 		}
 		cachePath = filepath.Join(opts.LogDir, "reply-"+fingerprint+".json")

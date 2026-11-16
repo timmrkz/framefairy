@@ -15,6 +15,8 @@ import (
 	"framefairy/engine/runes"
 	"framefairy/engine/tool"
 	"framefairy/internal/framewire"
+
+	"github.com/spf13/afero"
 )
 
 // Fade is the audio fade at each cut and at the clip's two ends, in
@@ -681,7 +683,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(captionDir, 0o755); err != nil {
+	if err := MakeDir(afero.NewOsFs(), captionDir); err != nil {
 		return "", err
 	}
 

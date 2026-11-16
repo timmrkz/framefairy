@@ -309,6 +309,7 @@ func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 
 func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
+	videoIn(t, fsys, source)
 	logs := filepath.Join(WorkDir(source), "logs")
 	good := []JobRecord{
 		{ID: SearchID, Kind: JobSearch, To: 60, Count: 12, Min: 20, Max: 30, Step: StepHearing},
@@ -453,6 +454,7 @@ func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
 // numbers it was asked for, so it can be carried on.
 func TestAJobCalledOffByHandSaysSo(t *testing.T) {
 	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
+	videoIn(t, fsys, source)
 	if err := WriteJob(fsys, source, JobRecord{ID: SearchID, Kind: JobSearch, To: 1800, Count: 12, Min: 20,
 		Step: StepHearing, Steps: []StepTime{{Step: StepHearing}}}); err != nil {
 		t.Fatal(err)
@@ -759,6 +761,7 @@ func TestTheEngineAloneSaysWhatStepAJobIsIn(t *testing.T) {
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(fsys))
 	var told []JobRecord
 	p := NewProject(e, "/videos/talk.mp4", DefaultOptions())
+	videoIn(t, fsys, p.Source)
 	steps := func() string {
 		var out []string
 		for _, rec := range told {
@@ -843,6 +846,7 @@ func TestAJobHearsItWaitsFromAnotherGoroutine(t *testing.T) {
 	var mu sync.Mutex
 	var last JobRecord
 	p := NewProject(e, "/videos/talk.mp4", DefaultOptions())
+	videoIn(t, fsys, p.Source)
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	takes := func(_ context.Context, _ string, waits func()) (context.Context, func(), error) {
@@ -865,5 +869,37 @@ func TestAJobHearsItWaitsFromAnotherGoroutine(t *testing.T) {
 	defer mu.Unlock()
 	if len(recs) != 1 || recs[0].Step != last.Step || len(recs[0].Steps) != len(last.Steps) {
 		t.Errorf("the record on disk is %+v, the last one heard %+v", recs, last)
+	}
+}
+
+// videoIn puts a few bytes where a video is, in memory, so the folder it
+// lies in is there and its work folder can be made, see MakeDir.
+func videoIn(t *testing.T, fsys afero.Fs, source string) {
+	t.Helper()
+	if err := afero.WriteFile(fsys, source, []byte("not really a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A video whose folder was renamed or taken away while the app was closed
+// is searched, the way a job of it carried on would be. The search fails,
+// and leaves no folder behind: its record, its logs and its plan are made
+// only beside a video that is there, see MakeDir. The record was written
+// first, and made the folder again under its old name, so it could not be
+// renamed back and the video was taken for one deleted outside the app.
+func TestASearchOfAVideoWhoseFolderIsGoneMakesNoFolder(t *testing.T) {
+	t.Parallel()
+	fsys := afero.NewMemMapFs()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(fsys))
+	source := "/home/tim/videos/Season 1/ep.mp4"
+	if err := fsys.MkdirAll("/home/tim/videos", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := NewProject(e, source, DefaultOptions())
+	if _, err := p.Search(context.Background(), PlanRequest{From: 0, To: 60, Count: 1, Min: 1, Max: 30}, Host{}); err == nil {
+		t.Error("the search of a video whose folder is gone did not fail")
+	}
+	if _, err := fsys.Stat(filepath.Dir(source)); err == nil {
+		t.Errorf("the search made %s again", filepath.Dir(source))
 	}
 }

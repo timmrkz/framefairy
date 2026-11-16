@@ -97,6 +97,9 @@ func TestKnownOnlyAcceptsFilesOfListedEpisodes(t *testing.T) {
 	home := "/home/tim"
 	episode := filepath.Join(home, "ep.mp4")
 	st := memoryStore()
+	if err := afero.WriteFile(st.files, episode, []byte("not really a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := st.AddEpisodes([]string{episode}); err != nil {
 		t.Fatal(err)
 	}

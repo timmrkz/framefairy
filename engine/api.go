@@ -510,7 +510,7 @@ func recordUsage(fsys afero.Fs, logDir string, chars int, data *apiReply, tag st
 	if err != nil {
 		return
 	}
-	_ = fsys.MkdirAll(logDir, 0o755)
+	_ = MakeDir(fsys, logDir)
 	_ = afero.WriteFile(fsys, filepath.Join(logDir, "usage.json"), body, 0o644)
 }
 
@@ -710,7 +710,7 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		heard = &copied
 	}
 	if logDir != "" {
-		if err := e.Files.MkdirAll(logDir, 0o755); err != nil {
+		if err := MakeDir(e.Files, logDir); err != nil {
 			return "", err
 		}
 		// The whole request, not half of it, so the log shows what the model

@@ -244,7 +244,7 @@ func WriteJob(fsys afero.Fs, source string, rec JobRecord) error {
 	if !jobID.MatchString(rec.ID) {
 		return fmt.Errorf("%q is no job id", rec.ID)
 	}
-	if err := fsys.MkdirAll(JobsDir(source), 0o755); err != nil {
+	if err := MakeDir(fsys, JobsDir(source)); err != nil {
 		return err
 	}
 	body, err := json.MarshalIndent(rec, "", "  ")
@@ -931,8 +931,8 @@ func OpenJobLog(source, kind string, at time.Time) (*os.File, error) {
 	if !jobID.MatchString(kind) {
 		return nil, fmt.Errorf("%q is no kind of job", kind)
 	}
-	work := WorkDir(source)
-	if err := os.MkdirAll(work, 0o755); err != nil {
+	work, err := MakeWorkDir(afero.NewOsFs(), source)
+	if err != nil {
 		return nil, err
 	}
 	root, err := os.OpenRoot(work)

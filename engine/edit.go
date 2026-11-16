@@ -213,7 +213,7 @@ func editPlanLocked(fsys afero.Fs, path string, change func(top *object, clips [
 // file, changing it and writing it back.
 func writePlanFile(fsys afero.Fs, path string, body []byte) error {
 	defer fileio.Lock(fsys, path)()
-	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := MakeDir(fsys, filepath.Dir(path)); err != nil {
 		return err
 	}
 	return replacePlan(fsys, path, body)
@@ -308,7 +308,7 @@ func addClip(fsys afero.Fs, path string, set PlanFile, clip PlanClip, prefix str
 	if err != nil {
 		return clip, err
 	}
-	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := MakeDir(fsys, filepath.Dir(path)); err != nil {
 		return clip, err
 	}
 	return clip, replacePlan(fsys, path, body)
