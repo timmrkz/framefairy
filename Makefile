@@ -450,8 +450,16 @@ test: lint interface unit fuzz walks
 # On a Mac without the race detector: the Go code is the same as on
 # Linux, where it runs with it, and it makes the tests 1.7 times slower.
 # And without the licence server's packages, which run on a Linux server
-# and never on a customer's Mac, nor the read of the workflows and of how
-# the video endings are named, which are the same on every machine. RACE= and UNITSKIP= say otherwise.
+# and never on a customer's Mac, nor framefairy-release, which runs only
+# in CI's Linux jobs, nor the read of the workflows and of how the video
+# endings are named, which are the same on every machine. RACE= and
+# UNITSKIP= say otherwise.
+#
+# In CI on a Mac, go test keeps its work folder, -work, which holds every
+# test program it built, and the runner throws it away with the rest.
+# Removing it is all go test has left to do once the last package has
+# passed, and on CI's Macs go test ran on for 18 to 28 s after that in
+# every run from 14 to 16 November, against under a second on Linux.
 #
 # UNITSHARD=1/3 runs a third of the tests, by the first letters of their
 # names, which is how CI spreads them over three machines, and 1/1 all of
@@ -476,7 +484,8 @@ test: lint interface unit fuzz walks
 # kept in UNITJSON, for a closer look.
 ifeq ($(UNAME),Darwin)
 RACE ?=
-UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser $(LINTPKGS)
+UNITSKIP ?= framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser framefairy/cmd/framefairy-release $(LINTPKGS)
+UNITWORK := $(if $(CI),-work)
 else
 RACE ?= -race
 UNITSKIP ?= $(LINTPKGS)
@@ -517,7 +526,7 @@ unit: toolchain modules $(FRESH_FRAMES)
 	mkdir -p $(dir $(UNITJSON)) && status=0 && \
 	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(TEST_FRAMES)" \
 		$(GO) run $(GOTESTSUM) --format standard-quiet --hide-summary skipped --jsonfile $(UNITJSON) --raw-command -- \
-		$(GO) test -json $(RACE) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') \
+		$(GO) test -json $(RACE) $(UNITWORK) -timeout $(UNITTIMEOUT) $(if $(UNITFLAGS),'$(UNITFLAGS)') \
 		$(if $(COVERAGE),$(COVERPKG) -coverprofile='$(COVERDIR)/go-unit$(if $(UNITSHARD),-$(subst /,-of-,$(UNITSHARD))).txt') \
 		-ldflags '$(LDFLAGS)' $$pkgs || status=$$?; \
 	slow=$$($(GO) run $(GOTESTSUM) tool slowest --jsonfile $(UNITJSON) --threshold $(SLOWEST)); \
