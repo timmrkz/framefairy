@@ -81,12 +81,18 @@ const setID = fs.ModeSetuid | fs.ModeSetgid
 // IOKit for the keyboard's own reports, fails until the list is changed on
 // main, in a pull request that says why. A program not on the list fails
 // the same way.
+//
+// The app links CoreServices since Wails 3.1.0: a global shortcut on a
+// letter finds the key that types it in the keyboard layout in use, with
+// UCKeyTranslate and LMGetKbdType. They read the layout's table and see
+// no key that is pressed.
 var linked = map[string][]string{
 	"framefairy-app": {
 		"/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit",
 		"/System/Library/Frameworks/Carbon.framework/Versions/A/Carbon",
 		"/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa",
 		"/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+		"/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices",
 		"/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics",
 		"/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
 		"/System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore",
