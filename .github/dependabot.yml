@@ -32,6 +32,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Every module go.sum holds, the ones marked indirect too. Left to
+    # itself Dependabot moves only the modules go.mod requires by name,
+    # so golang.org/x/text stayed on a version with a known flaw for
+    # months, #844.
+    allow:
+      - dependency-type: all
     ignore:
       - dependency-name: github.com/wailsapp/wails/v3
       - dependency-name: github.com/k2-fsa/sherpa-onnx-go*

@@ -555,3 +555,44 @@ func TestNoPackageRunsCodeWhenInstalled(t *testing.T) {
 		t.Error("frontend/.npmrc does not say ignore-scripts=true, so npm ci runs every package's install script")
 	}
 }
+
+// Dependabot moves every Go module, the ones go.mod marks indirect too.
+// Without allow: dependency-type: all it moves only the modules go.mod
+// requires by name, and golang.org/x/text kept a known flaw for months.
+//
+// On the real disk: what is read is the repository's own Dependabot settings.
+func TestDependabotMovesEveryGoModule(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "dependabot.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Updates []struct {
+			Ecosystem string `yaml:"package-ecosystem"`
+			Allow     []struct {
+				Type string `yaml:"dependency-type"`
+			} `yaml:"allow"`
+		} `yaml:"updates"`
+	}
+	if err := yaml.Unmarshal(b, &config); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, u := range config.Updates {
+		if u.Ecosystem != "gomod" {
+			continue
+		}
+		found = true
+		all := false
+		for _, a := range u.Allow {
+			all = all || a.Type == "all"
+		}
+		if !all {
+			t.Error("dependabot.yml's gomod entry does not allow dependency-type all, so the indirect modules never move")
+		}
+	}
+	if !found {
+		t.Fatal("dependabot.yml has no gomod entry, so this test reads it wrong")
+	}
+}

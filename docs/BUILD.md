@@ -577,7 +577,10 @@ scan made once is out of date the week after.
   Ubuntu image the CI image starts from has a newer build. Minor and patch versions come together, one pull request
   for the Go modules and one for the interface, and a new major version
   comes in a pull request of its own, so a major that breaks the build
-  holds back nothing else. The actions come in one pull request, majors
+  holds back nothing else. The Go modules include the ones `go.mod`
+  marks indirect, `allow: dependency-type: all`, because Dependabot
+  leaves those alone otherwise, and `golang.org/x/text` kept a known
+  flaw for months that way, #844. The actions come in one pull request, majors
   included. Every action is pinned to a commit, because a tag can be
   moved to other code and a commit cannot, and the comment beside it
   names the full version that commit is, `# v7.0.2` and never `# v7`.
