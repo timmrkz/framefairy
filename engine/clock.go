@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"io"
 	"sync"
 	"time"
 )
@@ -61,3 +62,92 @@ func ticking(clock Clock, d time.Duration) (ticks <-chan struct{}, stop func()) 
 		cancel()
 	}
 }
+
+// quietWatch calls gaveUp once nothing has arrived for after on its
+// clock: a connection that went quiet without closing, a server that
+// hangs. Every read through reader that brings bytes, and every call of
+// arrived, puts it back. It keeps one call on the clock at a time, and
+// when that comes early, because something arrived since, it asks again
+// for what is left, so a stream that sends a piece every moment costs no
+// timer a piece.
+type quietWatch struct {
+	clock  Clock
+	after  time.Duration
+	gaveUp func()
+
+	mu      sync.Mutex
+	last    time.Time
+	cancel  func() bool
+	stopped bool
+}
+
+// watchQuiet starts a quietWatch, the time from now on counting as quiet.
+func watchQuiet(clock Clock, after time.Duration, gaveUp func()) *quietWatch {
+	w := &quietWatch{clock: clock, after: after, gaveUp: gaveUp, last: clock.Now()}
+	w.arm(after)
+	return w
+}
+
+// arm asks the clock for a call in d. The clock is never asked while the
+// lock is held, so a clock that calls at once does not wait on it.
+func (w *quietWatch) arm(d time.Duration) {
+	cancel := w.clock.AfterFunc(d, w.check)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stopped {
+		cancel()
+		return
+	}
+	w.cancel = cancel
+}
+
+func (w *quietWatch) check() {
+	w.mu.Lock()
+	if w.stopped {
+		w.mu.Unlock()
+		return
+	}
+	left := w.after - w.clock.Now().Sub(w.last)
+	if left <= 0 {
+		w.stopped = true
+	}
+	w.mu.Unlock()
+	if left > 0 {
+		w.arm(left)
+		return
+	}
+	w.gaveUp()
+}
+
+// arrived puts the watch back: the quiet counts from now.
+func (w *quietWatch) arrived() {
+	now := w.clock.Now()
+	w.mu.Lock()
+	w.last = now
+	w.mu.Unlock()
+}
+
+// Stop ends the watch, and gaveUp is not called from then on.
+func (w *quietWatch) Stop() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.stopped = true
+	if w.cancel != nil {
+		w.cancel()
+	}
+}
+
+// reader is r, and every read that brings something puts the watch back.
+func (w *quietWatch) reader(r io.Reader) io.Reader {
+	return readerFunc(func(p []byte) (int, error) {
+		n, err := r.Read(p)
+		if n > 0 {
+			w.arrived()
+		}
+		return n, err
+	})
+}
+
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(p []byte) (int, error) { return f(p) }

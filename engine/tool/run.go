@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -149,6 +150,73 @@ func (r Runner) Finish(ctx context.Context, cmd *exec.Cmd, outs ...*CutWriter) (
 		out.Cut()
 	}
 	return true, nil
+}
+
+// Reading is a program whose output is read through a pipe while it
+// runs, started by StartReading. A program that was stopped and does not
+// end keeps its pipe open and writes nothing, so a read on it would wait
+// for good: LeaveAfter after its work is called off, the pipe is closed,
+// which ends the read, and the program is left behind.
+type Reading struct {
+	// Stdout is what the program writes, read until it ends or is left.
+	Stdout io.Reader
+
+	r    Runner
+	ctx  context.Context
+	cmd  *exec.Cmd
+	pipe io.Closer
+	outs []*CutWriter
+	read chan struct{}
+	left atomic.Bool
+}
+
+// StartReading starts cmd, made with Command, with its output on a pipe
+// in Stdout. What it writes to outs, its errors, is cut once it is left
+// behind. ctx is the one cmd was made with. Every Reading is ended with
+// Finish once its reads are done.
+func (r Runner) StartReading(ctx context.Context, cmd *exec.Cmd, outs ...*CutWriter) (*Reading, error) {
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	p := &Reading{Stdout: stdout, r: r, ctx: ctx, cmd: cmd, pipe: stdout, outs: outs, read: make(chan struct{})}
+	go p.watch()
+	return p, nil
+}
+
+// watch leaves the program behind once its work was called off and
+// LeaveAfter has passed without its reads coming to an end.
+func (p *Reading) watch() {
+	select {
+	case <-p.read:
+		return
+	case <-p.ctx.Done():
+	}
+	select {
+	case <-p.read:
+		return
+	case <-p.r.Leaving(LeaveAfter):
+	}
+	p.left.Store(true)
+	for _, out := range p.outs {
+		out.Cut()
+	}
+	_ = p.pipe.Close()
+}
+
+// Finish waits for the program to end once its reads are done, the way
+// Runner.Finish does, and says whether it was left behind.
+func (p *Reading) Finish() (left bool, err error) {
+	close(p.read)
+	if p.left.Load() {
+		// Waited for in the background, so it is reaped once it ends.
+		go func() { _ = p.cmd.Wait() }()
+		return true, nil
+	}
+	return p.r.Finish(p.ctx, p.cmd, p.outs...)
 }
 
 // CutWriter passes what is written on to w until it is cut, and drops it

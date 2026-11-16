@@ -237,7 +237,7 @@ func (mc *Machine) download(ctx context.Context, log *runlog.Log, url string, ex
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var quiet atomic.Bool
-	watch := time.AfterFunc(downloadStall, func() {
+	watch := watchQuiet(mc.Clock, downloadStall, func() {
 		quiet.Store(true)
 		cancel()
 	})
@@ -265,7 +265,7 @@ func (mc *Machine) download(ctx context.Context, log *runlog.Log, url string, ex
 		return "", renderErr("could not reach %s: %s", what, err)
 	}
 	defer res.Body.Close()
-	body := watchedReader{res.Body, func() { watch.Reset(downloadStall) }}
+	body := watch.reader(res.Body)
 	switch res.StatusCode {
 	case http.StatusPartialContent:
 		// Carrying on.
@@ -286,7 +286,7 @@ func (mc *Machine) download(ctx context.Context, log *runlog.Log, url string, ex
 			return "", renderErr("%s is %s, more than the %s it should be, so it was not fetched.",
 				what, inMB(have+res.ContentLength), inMB(expect))
 		}
-		body.Reader = io.LimitReader(body.Reader, limit-have+1)
+		body = io.LimitReader(body, limit-have+1)
 	}
 
 	sum := sha256.New()
@@ -341,20 +341,6 @@ func downloadRoom(expect int64) int64 {
 // taken for dead. Long enough for a server that is slow to begin, short
 // enough that nobody sits in front of a bar that no longer moves.
 const downloadStall = time.Minute
-
-// watchedReader calls arrived each time bytes come.
-type watchedReader struct {
-	io.Reader
-	arrived func()
-}
-
-func (r watchedReader) Read(p []byte) (int, error) {
-	n, err := r.Reader.Read(p)
-	if n > 0 {
-		r.arrived()
-	}
-	return n, err
-}
 
 // hashInto feeds the first n bytes of a file to a checksum.
 func hashInto(sum io.Writer, path string, n int64) error {

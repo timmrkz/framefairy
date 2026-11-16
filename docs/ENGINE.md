@@ -1443,6 +1443,24 @@ has to read fewer than 4.3 tokens a second to be taken for a stalled
 model, where 2048 made it 17. Before, such a search waited for good, and with it
 every video's transcription, which waits while a local model finds.
 
+**So does an answer from the cloud that goes quiet.** Once its first piece
+has come, a streamed answer that sends nothing for two minutes,
+`cloudQuiet` in `engine/api.go`, is given up on and asked for again like
+any answer that broke off. A laptop that changed its Wi-Fi or slept
+halfway through an answer used to wait for the whole answer's 10 minutes,
+four times. The wait for the first piece is still those 10 minutes,
+because OpenAI's reasoning models say nothing while they think. The three
+waits, this one, the local model's and a model's download, are one
+`quietWatch` on the machine's clock, in `engine/clock.go`.
+
+**A program that was stopped and does not end is left behind.** ffmpeg on
+CI's virtual Mac once ran eight minutes after it was killed. Every program
+the engine runs is waited for `tool.LeaveAfter` once its work is called
+off, and then left, including one read through a pipe as it runs, the
+loudness, the transcription and the video preview's sound, which
+`Runner.StartReading` starts: the pipe is closed, so the read ends too.
+llama-server is left the same way after it is killed.
+
 **The API is two companies, Anthropic and OpenAI,** in `engine/provider.go`.
 The model asked for says which: a `claude-` model is Anthropic's, a `gpt-`
 model OpenAI's, and a model nobody has heard of is taken to be Anthropic's,

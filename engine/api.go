@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/afero"
@@ -190,6 +191,57 @@ func (e *Engine) waitToRetry(ctx context.Context, d time.Duration) error {
 	}
 }
 
+// cloudQuiet is how long a streamed answer from a company may send
+// nothing, once its first piece has come, before it is given up on. A
+// stream speaks all the time while it works: Anthropic's sends every
+// piece of the thinking and the text as it comes, and a ping between
+// them, OpenAI's every piece of the text. One that goes quiet is a
+// connection that went away without closing, a laptop that changed its
+// Wi-Fi or slept, and it used to be waited on until the whole answer's
+// 10 minutes were up, four times, 40 minutes in all.
+//
+// The wait for the first piece is left to those 10 minutes, because
+// OpenAI's reasoning models think before they send it and say nothing
+// while they do.
+const cloudQuiet = 2 * time.Minute
+
+// errQuiet is a streamed answer that sent nothing for cloudQuiet.
+var errQuiet = fmt.Errorf("nothing came for %s seconds", num.Fixed(cloudQuiet.Seconds(), 0))
+
+// readWatched reads a streamed answer with read, and once its first
+// piece has come, calls stop when nothing more comes for cloudQuiet,
+// which ends the read with errQuiet. Like any answer that breaks off, it
+// is asked for again when none of it was heard yet.
+func (e *Engine) readWatched(body io.Reader, read func(io.Reader, *Listener) (*apiReply, bool, error),
+	listen *Listener, stop func()) (*apiReply, bool, error) {
+	var quiet atomic.Bool
+	var watch *quietWatch
+	watched := readerFunc(func(p []byte) (int, error) {
+		n, err := body.Read(p)
+		if n > 0 {
+			if watch == nil {
+				watch = watchQuiet(e.Clock, cloudQuiet, func() {
+					quiet.Store(true)
+					stop()
+				})
+			} else {
+				watch.arrived()
+			}
+		}
+		return n, err
+	})
+	data, heard, err := read(watched, listen)
+	if watch != nil {
+		watch.Stop()
+	}
+	if err != nil && quiet.Load() {
+		e.Log.Warn("the API's answer sent nothing for %s seconds, so it is given up on",
+			num.Fixed(cloudQuiet.Seconds(), 0))
+		return data, heard, errQuiet
+	}
+	return data, heard, err
+}
+
 // post sends one request, retried on the errors that are worth retrying.
 //
 // A 429 or a 529 is the API asking to be asked again later. Failing on those
@@ -216,9 +268,13 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 		if err != nil {
 			return nil, nil, err
 		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.URL,
+		// The request ends with ctx, and when a streamed answer goes
+		// quiet, see readWatched.
+		asking, stopAsking := context.WithCancel(ctx)
+		request, err := http.NewRequestWithContext(asking, http.MethodPost, p.URL,
 			bytes.NewReader(payload))
 		if err != nil {
+			stopAsking()
 			return nil, nil, err
 		}
 		request.Header.Set("content-type", "application/json")
@@ -226,6 +282,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 
 		response, err := e.companies().Do(request)
 		if err != nil {
+			stopAsking()
 			if ctx.Err() != nil {
 				return nil, nil, ctx.Err()
 			}
@@ -254,8 +311,9 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 			if p.Name == "openai" {
 				read = readOpenAIStream
 			}
-			data, heard, err := read(response.Body, listen)
+			data, heard, err := e.readWatched(response.Body, read, listen, stopAsking)
 			response.Body.Close()
+			stopAsking()
 			if err == nil {
 				body, _ := json.Marshal(data)
 				if logDir != "" {
@@ -291,6 +349,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 		}
 		body, readErr := io.ReadAll(io.LimitReader(response.Body, maxReplyBytes+1))
 		response.Body.Close()
+		stopAsking()
 		if readErr == nil && len(body) > maxReplyBytes {
 			return nil, nil, renderErr("the API's answer was larger than %s, which no answer to this is",
 				inMB(maxReplyBytes))

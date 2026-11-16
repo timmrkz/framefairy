@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // install checks the list and downloads the channel's build, the way the
@@ -333,6 +334,53 @@ func TestADownloadCalledOffStopsWhenTheBuildIsAlreadyThere(t *testing.T) {
 	if got.Len() == len(build) {
 		t.Error("the whole build was read after the download was called off")
 	}
+}
+
+// A download that goes quiet, a connection that went away without
+// closing, is given up on once nothing has come for fetchQuiet, and says
+// so. It used to wait for all of fetchTakes, half an hour, and every later
+// check waited with it.
+func TestADownloadThatGoesQuietIsGivenUpOn(t *testing.T) {
+	t.Parallel()
+	part := make([]byte, 1<<10)
+	quietFor := make(chan time.Time)
+	var asked sync.Map
+	src := &Source{
+		Client: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       io.NopCloser(io.MultiReader(bytes.NewReader(part), untilCalledOff{r.Context()})),
+				Request:    r,
+			}, nil
+		})},
+		Quiet: func(d time.Duration) <-chan time.Time {
+			asked.Store(d, true)
+			return quietFor
+		},
+	}
+	var once sync.Once
+	var got bytes.Buffer
+	err := src.stream(context.Background(), "https://example.invalid/app.zip", 4<<20, writerSink{&got},
+		func(int64) { once.Do(func() { close(quietFor) }) })
+	if err == nil || !strings.Contains(err.Error(), "nothing came for 60 seconds") {
+		t.Fatalf("got %v, want the download given up on as quiet", err)
+	}
+	if got.Len() != len(part) {
+		t.Errorf("kept %d bytes, want the %d that came", got.Len(), len(part))
+	}
+	if _, ok := asked.Load(fetchQuiet); !ok {
+		t.Errorf("the quiet was not waited for as fetchQuiet, %s", fetchQuiet)
+	}
+}
+
+// untilCalledOff is a body that brings nothing until its request is
+// called off.
+type untilCalledOff struct{ ctx context.Context }
+
+func (c untilCalledOff) Read([]byte) (int, error) {
+	<-c.ctx.Done()
+	return 0, c.ctx.Err()
 }
 
 type roundTrip func(*http.Request) (*http.Response, error)
