@@ -573,6 +573,9 @@ type dependabotConfig struct {
 	} `yaml:"updates"`
 }
 
+// readDependabot reads the repository's Dependabot settings.
+//
+// On the real disk: what is read is the repository's own Dependabot settings.
 func readDependabot(t *testing.T) dependabotConfig {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "dependabot.yml"))
