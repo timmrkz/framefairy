@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -9,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
@@ -583,7 +585,7 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 		return nil, false
 	}
 	chain := subtitleChain(template, name)
-	raw, code := e.Runner.Bytes(ctx, tmp, e.FFmpeg, "-hide_banner", "-loglevel", "error",
+	raw, code := e.Runner.BytesOf(ctx, tmp, width*height+bytes.MinRead, e.FFmpeg, "-hide_banner", "-loglevel", "error",
 		"-nostats", "-f", "lavfi",
 		"-i", fmt.Sprintf("color=c=black:s=%dx%d:d=0.04:r=25", width, height),
 		"-filter_complex", "[0:v]"+chain+",format=gray[v]",
@@ -727,38 +729,64 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 }
 
 // measureBlocks measures the blocks at the indexes missing, a frame at a
-// time, into out, and keeps what it measured when keep.
+// time, into out, and keeps what it measured when keep. The frames are
+// drawn side by side, each by an ffmpeg of its own: most of a frame's time
+// is ffmpeg drawing and handing over a picture thousands of pixels tall,
+// and a clip of half a minute took two of them, one after the other, before
+// its captions could show.
 func (e *Engine) measureBlocks(ctx context.Context, blocks []string, missing []int, out []*inkBox,
 	s Style, width, size int, keep bool) bool {
 	measured, _ := e.captions()
+	var batches [][]int
 	for start := 0; start < len(missing); {
 		end, height := start, 0
 		for end < len(missing) {
 			slot := bandSlot(blocks[missing[end]], size)
-			if end > start && height+slot > 15000 {
+			if end > start && height+slot > measureFrameMost {
 				break
 			}
 			height += slot
 			end++
 		}
-		batch := make([]string, 0, end-start)
-		for _, i := range missing[start:end] {
-			batch = append(batch, blocks[i])
-		}
-		boxes, ok := e.measureASS(ctx, batch, s, width, size)
-		if !ok {
-			return false
-		}
-		for k, i := range missing[start:end] {
-			out[i] = boxes[k]
-			if boxes[k] != nil && keep {
-				measured.put(measureKey(blocks[i], s, width, size), boxes[k])
-			}
-		}
+		batches = append(batches, missing[start:end])
 		start = end
 	}
-	return true
+	var failed atomic.Bool
+	var frames sync.WaitGroup
+	room := make(chan struct{}, measureAtOnce)
+	for _, batch := range batches {
+		frames.Go(func() {
+			room <- struct{}{}
+			defer func() { <-room }()
+			texts := make([]string, 0, len(batch))
+			for _, i := range batch {
+				texts = append(texts, blocks[i])
+			}
+			boxes, ok := e.measureASS(ctx, texts, s, width, size)
+			if !ok {
+				failed.Store(true)
+				return
+			}
+			for k, i := range batch {
+				out[i] = boxes[k]
+				if boxes[k] != nil && keep {
+					measured.put(measureKey(blocks[i], s, width, size), boxes[k])
+				}
+			}
+		})
+	}
+	frames.Wait()
+	return !failed.Load()
 }
+
+// measureFrameMost is how tall a frame of measuring is drawn at most, in
+// pixels.
+const measureFrameMost = 15000
+
+// measureAtOnce is how many frames of one measuring are drawn at once. A
+// frame is up to 16 MB of grey held by its ffmpeg and again by us, so a
+// long clip's frames take turns beyond this many rather than all at once.
+const measureAtOnce = 4
 
 // measureKey is what a block's ink depends on.
 // The face is known by the name the caption file asks libass for. For a
