@@ -185,6 +185,11 @@ hand is no steadier on the edge of a cut than on the edge of a clip.
 - **Same answer, same prompt:** a new plan record is only written when the
   answer differs. Starting an episode over and getting the same clips again
   reuses the first record and its `plan_id`.
+- **A search carried on:** Continue asks the model again, with a prompt of
+  its own, and adds what it answers to the plan of the search that
+  stopped. Each clip it adds carries the `plan_id` of that answer, so a
+  decision about it goes to the record it is a candidate of, and the
+  plan's own `plan_id` stays with the clips that were there.
 - **Same prompt, different answers:** the export treats all plans with the
   same `example_key` as one example.
 - **Same clip, proposed again:** within an example, a clip is identified by

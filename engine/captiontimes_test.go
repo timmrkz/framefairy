@@ -144,20 +144,29 @@ func TestACaptionGoesEarlierAndStaysLonger(t *testing.T) {
 	}
 }
 
-// A timing kept against a word that no longer begins a caption, because
-// the captions break elsewhere at another size, is simply not used.
-func TestATimingOnAWordInsideACaptionIsNotUsed(t *testing.T) {
+// A timing kept against a word keeps that word at the edge of a caption,
+// when the captions would break elsewhere, at another size or once words
+// typed before it lay them out again. It used to be left unused there,
+// and the words the hand had hidden came back, issue #820.
+func TestATimingKeepsItsWordAtTheEdge(t *testing.T) {
 	clip := timedClip()
 	natural := Captions(clip, timedWords(), 38, nil)
-	clip.CaptionTimes = map[string]CaptionTime{wordKey(10.7): moved(at(10.9), at(11.0))}
-	got := Captions(clip, timedWords(), 38, nil)
-	if len(got) != len(natural) || len(got) < 2 {
-		t.Fatalf("%d captions with the timing, %d without", len(got), len(natural))
+	if len(natural) != 2 || !near(natural[0].Closes, 11.5) {
+		t.Fatalf("the sentence is not one caption without the timing: %+v", natural)
 	}
-	for i := range got {
-		if !near(got[i].Start, natural[i].Start) || !near(got[i].End, natural[i].End) {
-			t.Errorf("caption %d moved by a word in its middle: %+v", i, got[i])
-		}
+	clip.CaptionTimes = map[string]CaptionTime{wordKey(10.7): moved(nil, at(11.0))}
+	got := Captions(clip, timedWords(), 38, nil)
+	if len(got) != 3 {
+		t.Fatalf("%d captions with the timing, want 3: %+v", len(got), got)
+	}
+	if !near(got[0].Closes, 10.7) || !near(got[0].End, 1.0) || got[0].Text != "Als Kind stand" {
+		t.Errorf("the caption does not end on its word where the hand put it: %+v", got[0])
+	}
+	if !near(got[1].Opens, 11.2) || got[1].Text != "ich dort." {
+		t.Errorf("the words after it are not the next caption: %+v", got[1])
+	}
+	if !near(got[2].Start, natural[1].Start) || !near(got[2].End, natural[1].End) {
+		t.Errorf("the caption after the sentence moved: %+v, was %+v", got[2], natural[1])
 	}
 }
 

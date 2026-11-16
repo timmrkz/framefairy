@@ -21,6 +21,7 @@ import (
 	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/timed"
+	"framefairy/engine/tool"
 )
 
 // ---------------------------------------------------------------------------
@@ -316,7 +317,7 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 		return err
 	}
 	logs := filepath.Join(WorkDir(source), "logs")
-	if err := e.Files.MkdirAll(logs, 0o755); err != nil {
+	if err := MakeDir(e.Files, logs); err != nil {
 		return err
 	}
 	st := &levelState{end: -1}
@@ -367,18 +368,16 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	run, stop := context.WithCancel(ctx)
 	defer stop()
 	cmd := e.Runner.Command(run, e.FFmpeg, audioFrom(source, start, e.pictureStart(ctx, source))...)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
 	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
+	said := tool.NewCutWriter(&stderr)
+	cmd.Stderr = said
+	reading, err := e.Runner.StartReading(run, cmd, said)
+	if err != nil {
 		return renderErr("cannot start %s: %s", e.FFmpeg, err)
 	}
 	n := start
 	moved := false
-	end, readErr := e.readLevels(run, bufio.NewReaderSize(stdout, 1<<20), func(f float32) bool {
+	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		if st.has(n) {
 			return false
 		}
@@ -398,9 +397,13 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 		// stop rather than left to write into a pipe nobody reads.
 		stop()
 	}
-	waitErr := cmd.Wait()
+	left, waitErr := reading.Finish()
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+	if left {
+		// Stopped once enough was read, so what was read stands.
+		e.Log.Warn("ffmpeg %s", tool.LeftBehind)
 	}
 	if readErr != nil && !errors.Is(readErr, context.Canceled) {
 		return readErr
@@ -659,17 +662,15 @@ func (e *Engine) levelsAt(ctx context.Context, source string, start, count int, 
 	run, stop := context.WithCancel(ctx)
 	defer stop()
 	cmd := e.Runner.Command(run, e.FFmpeg, audioFrom(source, start, picture)...)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
 	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
+	said := tool.NewCutWriter(&stderr)
+	cmd.Stderr = said
+	reading, err := e.Runner.StartReading(run, cmd, said)
+	if err != nil {
 		return nil, renderErr("cannot start %s: %s", e.FFmpeg, err)
 	}
 	var frames []float32
-	end, readErr := e.readLevels(run, bufio.NewReaderSize(stdout, 1<<20), func(f float32) bool {
+	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		frames = append(frames, f)
 		return len(frames) < count
 	}, func() bool { return true })
@@ -678,9 +679,13 @@ func (e *Engine) levelsAt(ctx context.Context, source string, start, count int, 
 		// rather than left to write into a pipe nobody reads.
 		stop()
 	}
-	waitErr := cmd.Wait()
+	left, waitErr := reading.Finish()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	if left {
+		// Stopped once enough was read, so what was read stands.
+		e.Log.Warn("ffmpeg %s", tool.LeftBehind)
 	}
 	if readErr != nil {
 		return nil, readErr

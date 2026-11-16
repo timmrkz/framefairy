@@ -213,7 +213,7 @@ func editPlanLocked(fsys afero.Fs, path string, change func(top *object, clips [
 // file, changing it and writing it back.
 func writePlanFile(fsys afero.Fs, path string, body []byte) error {
 	defer fileio.Lock(fsys, path)()
-	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := MakeDir(fsys, filepath.Dir(path)); err != nil {
 		return err
 	}
 	return replacePlan(fsys, path, body)
@@ -308,7 +308,7 @@ func addClip(fsys afero.Fs, path string, set PlanFile, clip PlanClip, prefix str
 	if err != nil {
 		return clip, err
 	}
-	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := MakeDir(fsys, filepath.Dir(path)); err != nil {
 		return clip, err
 	}
 	return clip, replacePlan(fsys, path, body)
@@ -1298,6 +1298,14 @@ func moveCaptionEdge(plan Plan, clip Clip, word float64, edge string,
 		}
 		if edge == "end" && i+1 < len(laid) && to > laid[i+1].Start {
 			at = EpisodeTime(framed, laid[i+1].Start)
+		}
+		// An edge stops short of the caption's other edge, so it never
+		// pushes it on, see moveCaptions.
+		if high := min(laid[i].End, clipLength(framed)) - shortestMoved; edge == "start" && to > high {
+			at = EpisodeTime(framed, max(high, laid[i].Start))
+		}
+		if low := laid[i].Start + shortestMoved; edge == "end" && to < low {
+			at = EpisodeTime(framed, low)
 		}
 		out.at = num.RoundTo(at, 3)
 	}

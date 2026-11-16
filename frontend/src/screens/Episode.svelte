@@ -1835,6 +1835,14 @@
   const removeCaption = (clip: ClipEntry, first: number) =>
     removeWords(clip, () => api.removeCaption(path, clip.plan, clip.id, first));
 
+  // onTheClip saves a change made in the video preview on the clip it was
+  // made on, as it is now, whichever clip is chosen by then. A clip that
+  // is gone takes nothing.
+  function onTheClip(key: string, save: (clip: ClipEntry) => Promise<void>): Promise<void> {
+    const clip = clips.find((c) => c.key === key);
+    return clip ? save(clip) : Promise.resolve();
+  }
+
   async function setCrop(clip: ClipEntry, at: number, left: number) {
     try {
       const updated = await api.setCrop(path, clip.plan, clip.id, at, left);
@@ -3317,12 +3325,12 @@
           {wordFrames}
           drafts={captionDrafts}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
-          oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}
-          onresetcrop={(at) => (current ? resetCrop(current, at) : Promise.resolve())}
-          oncropmark={(from, to, x, glide) => (current ? setCropMark(current, from, to, x, glide) : Promise.resolve())}
+          oncrop={(key, at, left) => onTheClip(key, (c) => setCrop(c, at, left))}
+          onresetcrop={(key, at) => onTheClip(key, (c) => resetCrop(c, at))}
+          oncropmark={(key, from, to, x, glide) => onTheClip(key, (c) => setCropMark(c, from, to, x, glide))}
           oncaptiony={(y) => setCaptionsHeight(y)}
-          onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
-          onremoveword={(start, part) => (current ? removeWord(current, start, part) : Promise.resolve())}
+          onword={(key, start, text) => onTheClip(key, (c) => setWord(c, start, text))}
+          onremoveword={(key, start, part) => onTheClip(key, (c) => removeWord(c, start, part))}
           locked={renderingCurrent}
           oncaptionmoved={(y) => {
             captionsWere = null;
@@ -3533,14 +3541,14 @@
         onahead={readAhead}
         onhold={holdPlayhead}
         dimmed={!onClip}
-        onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
+        onreshape={reshape}
         onwalkclip={walkClip}
         {looping}
         playing={!paused}
         thumbnails={current?.thumbnails ?? []}
-        onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
+        onthumbnail={setThumbnail}
         cropMarks={current?.cropMarks ?? []}
-        oncropmark={(from, to) => (current ? setCropMark(current, from, to, -1) : Promise.resolve())}
+        oncropmark={(clip, from, to) => setCropMark(clip, from, to, -1)}
         {marks}
         {hovered}
         onhover={hoverClip}
@@ -3561,9 +3569,8 @@
                 : "transparent",
             }
           : null}
-        oncaptiontime={(word, edge, at, toWords) =>
-          current ? setCaptionTime(current, word, edge, at, toWords) : Promise.resolve(false)}
-        onremovecaption={(first) => (current ? removeCaption(current, first) : Promise.resolve())}
+        oncaptiontime={setCaptionTime}
+        onremovecaption={removeCaption}
         oncaptionshape={(shape) => (captionShape = shape)}
         onshape={(next) => (reshaped = next)}
       />

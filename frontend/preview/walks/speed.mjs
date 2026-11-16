@@ -30,7 +30,7 @@
 // prints the line each drag ends with in the app's log, see dragged in
 // lib/frames/queue.ts: how long the picture stood, and how its frames
 // came. DRAGS, as left or right,fast, picks some of the three.
-import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead, reload } from "./bridge.mjs";
+import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead, reload, playhead } from "./bridge.mjs";
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 // REST was the same pause in milliseconds, and 250 of them now would be
@@ -131,7 +131,7 @@ try {
       return [s?.streams ?? 0, s?.continued ?? 0, s?.kept ?? 0];
     });
   const press = async (name, key) => {
-    const before = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+    const before = await playhead(page);
     const was = await how();
     await page.keyboard.press(key);
     const [took, captioned] = await page.evaluate((b) => window.__followed(b), before);
@@ -199,7 +199,7 @@ try {
     const g = await handles(page);
     const left = g.start.x + g.start.w;
     const span = g.end.x - left;
-    const before = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+    const before = await playhead(page);
     await page.mouse.move(left + share * span, high(g.track));
     await page.mouse.down();
     await nextPaint(page, 8);

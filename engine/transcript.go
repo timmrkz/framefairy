@@ -459,7 +459,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window timed
 	if e.OpenRecognizer == nil {
 		return nil, renderErr("this build has no speech recogniser")
 	}
-	if err := e.Files.MkdirAll(logsDir, 0o755); err != nil {
+	if err := MakeDir(e.Files, logsDir); err != nil {
 		return nil, err
 	}
 	// On frames, outward, so what is heard lines up with the loudness.

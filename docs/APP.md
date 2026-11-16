@@ -1250,7 +1250,9 @@ bubble scrolled by those eight pixels.
     the moment the word was heard, so the word is gone from this clip's
     captions and its render, and Cmd+Z brings it back. One of the words a
     correction made, like a word typed in beside another, is taken out of
-    what the correction reads instead, so the words after it close up. The episode still says it, so every other clip
+    what the correction reads instead, so the words after it close up the
+    way they moved on when it was typed. Removed with its caption, it
+    keeps its room, so no other caption changes. The episode still says it, so every other clip
     shows it, a search and the model read it, and a clip removed and made
     again where it was has it, see `RemovedWords` in
     `engine/removedwords.go`. It used to be a correction to nothing in
@@ -2003,7 +2005,9 @@ bubble scrolled by those eight pixels.
       the gesture, and saves nothing until the hand lets go. They used to wait for the hand to let go, so a drag showed
       the old captions over the new clip. After letting go they stay until
       the saved clip's captions come back, which are the same, so nothing
-      jumps. Letting go first waits for the engine's answer to where the
+      jumps. For one frame they did not: the answer let go as soon as the
+      clip came back, and the captions as they were stood past the clip
+      frame by the length of the drag. Letting go first waits for the engine's answer to where the
       hand let go, so on a busy machine, where the answers come late, the
       playhead still ends on the edge and not where an earlier answer put
       it, see plan row 2.237.
@@ -2932,7 +2936,15 @@ moved by hand, on the clip timeline.
   `ShapeCaptionTime`: the clip timeline asks it while the hand moves and
   draws its answer, and the caption box in the video preview shows the
   words it leaves. When the edge is let go it is saved where it was
-  drawn, `SetCaptionTime`, and Cmd+Z takes the edge back. The interface
+  drawn, `SetCaptionTime`, and Cmd+Z takes the edge back. The edge is
+  kept by its word, and that word stays at the edge of a caption when
+  words typed before it lay the captions out again, and the words it
+  hides take no room on the line meanwhile, so the words it shows stay
+  together. Typed words used to move the word into the middle of a
+  caption, the edge was lost, and the words it hid came back. An end
+  dragged back out over them, or put back, shows them again, and when
+  they no longer fit beside the words typed in, the captions from it on
+  are laid out the way the words put them. The interface
   once kept a copy of the rule, which drifted from the engine's: an edge
   was drawn in one place and saved in another, and a word the start of
   the clip cut into left the caption box during the drag and came back
@@ -2988,7 +3000,11 @@ moved by hand, on the clip timeline.
   known by when it starts, so taking out a word before it is no new word.
   The block popped as a dragged left edge passed the playhead, which a
   click on the block puts at its first word, and a dragged right edge
-  never came near it, so the two edges looked different, found by Tim. A block takes no focus, so no focus ring is left
+  never came near it, so the two edges looked different, found by Tim. A
+  block on the clip frame's edge pops from that edge, so it never reaches
+  past the frame and never leaves the edge behind: popping from its middle,
+  it did both for a moment each time a dragged clip edge passed a word,
+  which Tim saw as the blocks trailing the edge. A block takes no focus, so no focus ring is left
   round one when the keys walk the words on. A click puts the
   playhead a frame into the caption's first word, so the video preview
   shows that word lit, the first caption of a clip included, which is on

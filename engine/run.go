@@ -108,6 +108,9 @@ type Options struct {
 	// Pass is which search of the window this is, see PassName. 0 and 1
 	// are the first.
 	Pass int
+	// CarryOn plans again over a plan that is there, adding to it, see
+	// PlanRequest.CarryOn.
+	CarryOn bool
 	// Next searches the window the app would place on the episode now,
 	// where the fewest searches have been, as the next pass over it, see
 	// Episode.PlaceWindow. --from and --to name a window by hand instead.
@@ -151,7 +154,48 @@ func DefaultOptions() Options {
 func WorkDir(source string) string {
 	base := filepath.Base(source)
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	return filepath.Join(filepath.Dir(source), stem+".framefairy")
+	return filepath.Join(filepath.Dir(source), stem+workSuffix)
+}
+
+// workSuffix ends the name of every work folder, see WorkDir.
+const workSuffix = ".framefairy"
+
+// ErrNoVideoFolder says the folder a video is in is not there: moved,
+// renamed or on a drive taken out.
+var ErrNoVideoFolder = errors.New("the folder the video is in is not there")
+
+// MakeWorkDir makes the work folder of a video where there is none, and
+// hands back its path. It never makes the folder the video is in. A
+// folder renamed in Finder while the app was closed was made again under
+// its old name, empty but for the work folder, so it could not be renamed
+// back, and the video was then taken for one deleted outside the app,
+// issue #882. A drive taken out would have been the same.
+func MakeWorkDir(fsys afero.Fs, source string) (string, error) {
+	work := WorkDir(source)
+	return work, MakeDir(fsys, work)
+}
+
+// MakeDir makes a folder and the folders above it, the way MkdirAll does,
+// except the folder a work folder lies in: a folder inside a work folder
+// is made only while the folder that holds the work folder is there. It
+// is how every folder of a video's work is made, its jobs, its logs, its
+// captions and its plans, so no writer brings a folder back that was
+// renamed or taken away, see MakeWorkDir. A folder outside any work
+// folder, like the shorts' or one the command line was given, is made as
+// it is.
+func MakeDir(fsys afero.Fs, dir string) error {
+	for d := filepath.Clean(dir); ; d = filepath.Dir(d) {
+		if strings.HasSuffix(filepath.Base(d), workSuffix) {
+			if info, err := fsys.Stat(filepath.Dir(d)); err != nil || !info.IsDir() {
+				return fmt.Errorf("%s: %w", strings.TrimSuffix(filepath.Base(d), workSuffix), ErrNoVideoFolder)
+			}
+			break
+		}
+		if filepath.Dir(d) == d {
+			break
+		}
+	}
+	return fsys.MkdirAll(dir, 0o755)
 }
 
 // EpisodeName is the episode's file name without its extension, the name
@@ -245,7 +289,7 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	}
 	// A model that cannot be loaded fails the run before the transcript
 	// is made for it.
-	if r.opts.ClipsPath == "" && (r.opts.Replan || !fileio.Exists(e.Files, r.planPath)) {
+	if r.plansNow() {
 		if err := r.e.roomBeforeSearch(r.opts, r.span.End-r.span.Start); err != nil {
 			return err
 		}
@@ -261,13 +305,36 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 // for the window, made first when there is none or a new one is asked for.
 func (r *runner) planned(ctx context.Context) (Plan, []Clip, error) {
 	plannedNow := false
-	if r.opts.ClipsPath == "" && (r.opts.Replan || !fileio.Exists(r.e.Files, r.planPath)) {
+	if r.plansNow() {
 		if err := r.plan(ctx); err != nil {
 			return Plan{}, nil, err
 		}
 		plannedNow = true
 	}
 	return r.clips(plannedNow)
+}
+
+// plansNow says whether the run makes its plan: when there is none yet,
+// when a new one is asked for, and when a search that stopped is carried
+// on with clips still missing. A search carried on kept only what it found
+// before it stopped, so Continue found nothing more and said the search
+// was done, issue #881. One whose clips had all landed has nothing to ask
+// the model for, and asking would cost a paid call or minutes of the
+// machine to throw the whole answer away.
+func (r *runner) plansNow() bool {
+	if r.opts.ClipsPath != "" {
+		return false
+	}
+	if r.opts.Replan || !fileio.Exists(r.e.Files, r.planPath) {
+		return true
+	}
+	return r.opts.CarryOn && !r.planHolds()
+}
+
+// planHolds says whether the plan there holds the clips asked for.
+func (r *runner) planHolds() bool {
+	_, clips, err := LoadClips(r.e.Files, r.planPath)
+	return err == nil && len(clips) >= r.opts.Count
 }
 
 // finish is the end of a run with its clips: nothing more for a plan asked
@@ -404,7 +471,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *timed.Window) (
 		return nil, err
 	}
 	captionDir := filepath.Join(work, "captions")
-	if err := e.Files.MkdirAll(work, 0o755); err != nil {
+	if err := MakeDir(e.Files, work); err != nil {
 		return nil, fmt.Errorf("cannot create %s: %w", work, err)
 	}
 
@@ -492,7 +559,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *timed.Window) (
 			if fileio.Exists(e.Files, moved) {
 				continue
 			}
-			if err := e.Files.MkdirAll(logsDir, 0o755); err != nil {
+			if err := MakeDir(e.Files, logsDir); err != nil {
 				continue
 			}
 			if err := e.Files.Rename(old, moved); err == nil {
@@ -646,6 +713,7 @@ func (r *runner) plan(ctx context.Context) error {
 	if whole {
 		asked.Replaces = opts.Removed
 	}
+	asked.CarryOn = opts.CarryOn && !opts.Replan
 	plan, err := e.BuildPlan(ctx, opts.Source, source, lines, asked)
 	if err != nil {
 		return e.planFailed(ctx, err)
@@ -874,7 +942,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 
 	if !opts.DryRun {
 		proof := filepath.Join(logsDir, "proof.txt")
-		_ = e.Files.MkdirAll(logsDir, 0o755)
+		_ = MakeDir(e.Files, logsDir)
 		// The shorts are what ffmpeg writes, so their folder is on the disk.
 		_ = os.MkdirAll(outDir, 0o755)
 		if err := writeProof(e.Files, proof, clips, cueMap); err != nil {

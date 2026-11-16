@@ -27,6 +27,7 @@ import (
 	"framefairy/engine/fileio"
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
+	"framefairy/engine/tool"
 )
 
 // ---------------------------------------------------------------------------
@@ -460,7 +461,15 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int)
 				// so it is killed. Waiting five seconds for it was the app
 				// frozen on Cmd+Q and on removing an episode mid-search.
 				_ = cmd.Process.Kill()
-				<-exited
+				// A killed program ends at once, unless the system will
+				// not let it go, and then it is left behind, see
+				// tool.LeaveAfter: the model host's lock is held here, and
+				// every question to the model would wait on it for good.
+				select {
+				case <-exited:
+				case <-e.Runner.Leaving(tool.LeaveAfter):
+					e.Log.Warn("llama-server %s", tool.LeftBehind)
+				}
 			}
 		}
 		forget.Do(func() {

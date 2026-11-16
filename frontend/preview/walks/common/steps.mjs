@@ -320,7 +320,7 @@ export async function shortOf(page, at) {
 export const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 
 // The steps that look at how the app moves: the caption blocks and the
-// typed word that pop, the bounce over a paused frame, the word that grows
+// typed word that pop, the caption blocks popping inside the clip frame, the bounce over a paused frame, the word that grows
 // as it is opened, the card that shakes and the microphone that grows as
 // it hears. A sequence with none of them asks for less motion, which the
 // app honours by leaving out what it animates, so the settle waits for
@@ -337,6 +337,7 @@ export const moving = new Set([
   "step frame by frame and see nothing pop",
   "refused",
   "microphone moves",
+  "captions in the frame",
 ]);
 
 // STILL=none walks every sequence with the motion, for a failure that

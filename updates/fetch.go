@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,6 +23,14 @@ import (
 
 // fetchTakes is the longest a download may take before it is given up.
 const fetchTakes = 30 * time.Minute
+
+// fetchQuiet is how long a download may bring nothing before it is given
+// up. A connection that went quiet without closing, a laptop that changed
+// its Wi-Fi or slept, used to be waited on for all of fetchTakes, and
+// every later check waited on it with it. Long enough for a server that
+// is slow to begin, the same as a speech model's download, downloadStall
+// in the engine.
+const fetchQuiet = time.Minute
 
 // fetching is one build on its way into the cache.
 type fetching struct {
@@ -161,12 +170,32 @@ func (ws writerSink) write(b []byte) error {
 // a fast machine read the whole build over the loopback before it noticed
 // the download had been called off, and called it arrived.
 func (s *Source) stream(ctx context.Context, where string, total int64, dst sink, progress func(written int64)) error {
+	outer := ctx
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	// The same watch as a speech model's download, downloadStall in the
+	// engine: each read that brings something starts its wait again.
+	var quiet atomic.Bool
+	watch := time.AfterFunc(fetchQuiet, func() {
+		quiet.Store(true)
+		cancel()
+	})
+	defer watch.Stop()
+	stopped := func(err error) error {
+		if quiet.Load() && outer.Err() == nil {
+			return fmt.Errorf("the download stopped: nothing came for %d seconds", int(fetchQuiet.Seconds()))
+		}
+		return fmt.Errorf("the download stopped: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, where, nil)
 	if err != nil {
 		return err
 	}
 	resp, err := s.client().Do(req)
 	if err != nil {
+		if quiet.Load() && outer.Err() == nil {
+			return stopped(err)
+		}
 		return fmt.Errorf("the build could not be downloaded: %w", err)
 	}
 	defer resp.Body.Close()
@@ -179,6 +208,7 @@ func (s *Source) stream(ctx context.Context, where string, total int64, dst sink
 	for {
 		n, rerr := body.Read(buf)
 		if n > 0 {
+			watch.Reset(fetchQuiet)
 			if written+int64(n) > total {
 				return errors.New("the build is larger than the channel list says")
 			}
@@ -189,13 +219,13 @@ func (s *Source) stream(ctx context.Context, where string, total int64, dst sink
 			progress(written)
 		}
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("the download stopped: %w", err)
+			return stopped(err)
 		}
 		if rerr == io.EOF {
 			break
 		}
 		if rerr != nil {
-			return fmt.Errorf("the download stopped: %w", rerr)
+			return stopped(rerr)
 		}
 	}
 	if written != total {

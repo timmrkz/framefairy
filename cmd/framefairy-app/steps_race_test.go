@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"path/filepath"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -326,6 +327,11 @@ func (f *fakeJobs) steps(ep, id, kind string, names []string, rest time.Duration
 	pass := f.passes
 	f.mu.Unlock()
 	t, files := f.t, f.st.files
+	// The video is there, so the folder it lies in is too, and its record
+	// can be written, see engine.MakeDir.
+	if err := files.MkdirAll(filepath.Dir(ep), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	return func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
 		var mu sync.Mutex
 		rec := engine.JobRecord{ID: id, Kind: kind, Step: engine.StepWaiting, Pass: pass}

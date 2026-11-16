@@ -144,6 +144,11 @@ type PlanRequest struct {
 	// one the window has not had yet, which it then keeps in its record,
 	// so a search carried on writes to the plan it began.
 	Pass int
+	// CarryOn is a search that stopped, carried on with Continue: it asks
+	// again even though its plan is there, keeps the clips that landed in
+	// it as they are, and adds the ones still missing, see
+	// PlanOptions.CarryOn.
+	CarryOn bool
 }
 
 // Plan makes candidate clips and returns the plan file's path. A window
@@ -180,7 +185,7 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 func (p *Project) planOptions(req PlanRequest, window *timed.Window) (Options, string) {
 	opts := p.Base
 	opts.PlanOnly = true
-	opts.Replan = req.Replan
+	opts.Replan, opts.CarryOn = req.Replan, req.CarryOn
 	opts.From, opts.To, opts.ClipsPath = "", "", ""
 	if req.Count > 0 {
 		opts.Count = req.Count

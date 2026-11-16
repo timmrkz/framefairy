@@ -36,17 +36,26 @@ export default [
     // playhead went with the edge, and the frame on screen, out of the
     // clip by then, was drawn again with no captions. The same held for
     // its end dragged earlier.
-    name: "the captions stay over the video preview while the clip's start is dragged later and its end earlier",
+    //
+    // Issue #825, found by Tim on #812: dragging a clip edge, the caption
+    // blocks on the clip timeline seemed to part from the edge for a
+    // frame, and a block reached past the clip frame. Read on every
+    // animation frame of the drag and of letting go, with the motion the
+    // app has on his Mac.
+    name: "the captions stay over the video preview and inside the clip frame while the clip's start is dragged later and its end earlier",
     steps: [
       ["watch captions"],
       ["drag edge", "start", 40],
       ["captions stayed"],
+      ["captions in the frame"],
       ["watch captions"],
       ["drag edge", "end", -40],
       ["captions stayed"],
+      ["captions in the frame"],
       ["watch captions"],
       ["drag edge", "start", 160],
       ["captions stayed"],
+      ["captions in the frame"],
     ],
   },
   {
@@ -224,7 +233,12 @@ export default [
   {
     // A click on an edge and at once a press on the track: an answer for
     // the edge that came late put the playhead back on the edge.
-    name: "a press on the track straight after a click on an edge keeps the playhead there",
+    //
+    // Found by a bug hunt on 16 November, issue #880: an end let go and
+    // the next clip chosen with Shift and the down arrow before the
+    // answer to the last place came, and the trim was saved on the next
+    // clip, cut down to a second.
+    name: "a press on the track straight after a click on an edge keeps the playhead there, and an end let go just before the next clip is chosen trims its own clip",
     steps: [
       // The click once asked the engine where the edge went, and on a
       // long episode its answer came after the press. A click that does
@@ -234,6 +248,7 @@ export default [
       ["edge then track", "cut from"],
       ["edge then track", "end"],
       ["edge then track", "start"],
+      ["trim then next clip"],
     ],
   },
   {
@@ -411,8 +426,10 @@ export default [
     // with the crop, and Put the crop back brought back the crop alone,
     // so what the keyframes did was lost to one click. Each comes back
     // with its crop and its kind. Where the crop glides is the engine's,
-    // see the walk of S above.
-    name: "two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back",
+    // see the walk of S above. They come back on the clip they were taken
+    // from when another clip is chosen while they are on their way, found
+    // by the review of #880.
+    name: "two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back, to their own clip",
     steps: [
       ["added", 30, "25"],
       ["glide at", 0.2],
@@ -438,6 +455,8 @@ export default [
       ["keyframe key", ["g", "none"]],
       ["keyframes", 1],
       ["glides", 0],
+      ["glide at", 0.5],
+      ["crop back then next clip"],
     ],
   },
   {

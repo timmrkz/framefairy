@@ -6,7 +6,7 @@
 // the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { ask, holdClock, letClockGo, realFrames, runClock, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside } from "../bridge.mjs";
+import { ask, holdClock, letClockGo, realFrames, runClock, caughtUp, chosen, clickOnTrack, cropFrame, drag, engineState, episodeOn, filmedOnScreen, fromSidebar, handles, high, holdSound, middle, news, nextNews, nextPaint, playUntil, pressPlay, preview, recordFrames, sameLook, sayLook, seekTo, settle, shortFrames, shownOnPlayhead, timeline, xOf, reload, pageUntil, inside, playhead } from "../bridge.mjs";
 import { onePiece, pieceCount, rate, restAhead, shortOf, url } from "../common/steps.mjs";
 import { overlaid, stillFrame } from "../rules.mjs";
 
@@ -780,7 +780,7 @@ export const steps = {
     const state = await engineState(page, watch.at);
     const stop = await recordFrames(page, 1 / (await rate(page)));
     await page.evaluate(() => document.body.focus());
-    const began = (await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead))) || 0;
+    const began = (await playhead(page)) || 0;
     await pressPlay(page);
     // With a key, it is pressed every 0.4 s of the play, counted from
     // where the skip before landed, the way a hand skips ahead while
@@ -810,7 +810,7 @@ export const steps = {
     walk.played = { overlays: (await stop()).overlays, state, fps: await rate(page) };
     // The steps have to have skipped: on the video the playhead went
     // further than the play alone takes it.
-    const ended = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+    const ended = await playhead(page);
     if (key === "Shift+ArrowRight" && where === "before" && ended - began < seconds + 1) {
       walk.wrong = `${key} while playing moved the playhead ${(ended - began).toFixed(2)} s in ${seconds} s of play, no skip ahead`;
     }
@@ -2187,7 +2187,7 @@ async function asPreviewed(page, rate, before) {
       if (grips.some(([a, b]) => x > a && x < b)) break;
       await clickOnTrack(page, x, high(g.track));
       await settle(page);
-      placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+      placed = await playhead(page);
       tried.push(placed.toFixed(4));
       if (placed >= from && placed <= to) break;
       x += ((target - placed) * (x1 - x0)) / Math.max(to - from, 1e-6);

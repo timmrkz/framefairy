@@ -5,7 +5,7 @@
 // showed before it and the step's name. A sequence of any folder can take
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { BITS, ask, caughtUp, chosen, clickOnTrack, control, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, reader, seenUntil, settle, shownOnPlayhead, timeline, xOf } from "../bridge.mjs";
+import { BITS, ask, caughtUp, chosen, clickOnTrack, control, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, reader, seenUntil, settle, shownOnPlayhead, timeline, xOf, playhead, inputHandled } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -577,7 +577,7 @@ export const steps = {
     // two calls to the browser, and on a busy runner either can take a
     // frame or two to arrive, so counted from the watch the same app
     // took 2 frames for the track and 4 for the mark, at random.
-    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const at = () => playhead(page);
     const watchFrames = () =>
       page.evaluate(() => {
         window.__pressed = [];
@@ -740,6 +740,27 @@ export const steps = {
       walk.wrong = `the ${arg} edge went from ${seen[0].toFixed(3)} to ${back.toFixed(3)}, against the hand, which went ${walk.dragPx > 0 ? "right" : "left"}`;
     }
   },
+  // ["captions in the frame"]
+  //                    since "drag edge", on every animation frame from
+  //                    the press until the clip and its captions came back
+  //                    after letting go, no caption block reached past the
+  //                    clip frame, its pop included, issue #825
+  async "captions in the frame"(walk) {
+    const frames = await walk.page.evaluate(() => window.__edgeFrames ?? []);
+    const reach = frames.map((f) => f[3]);
+    const drawn = reach.filter(Number.isFinite);
+    if (!drawn.length) {
+      walk.wrong = "no caption block was on the clip timeline while the edge was dragged, which proves nothing";
+      return;
+    }
+    const worst = Math.max(...drawn);
+    if (worst > CAPTION_REACH) {
+      const at = reach.indexOf(worst);
+      walk.wrong =
+        `a caption block reached ${worst.toFixed(1)} px past the clip frame on animation frame ${at + 1} of ${frames.length}, ` +
+        `with the edge at ${Number(frames[at][0]).toFixed(3)} s`;
+    }
+  },
   // ["moved", which]   since "drag edge", the edge moved by a frame or more
   async moved(walk, arg) {
     const { page } = walk;
@@ -858,6 +879,122 @@ export const steps = {
     await watch.step("drag edge twice", s);
     await page.evaluate(() => (window.__followWatch = false));
   },
+  // ["trim then next clip"]
+  //                    drags the clip's end 40 px earlier and, while the
+  //                    answer to the last place the hand reached is still
+  //                    on its way, lets go and presses Shift and the down
+  //                    arrow: the trim is saved on the clip it was made on,
+  //                    and the next clip is left as it was
+  async "trim then next clip"(walk, arg, s) {
+    const { page, watch } = walk;
+    // A busy machine answers late, and the save waits for the answer
+    // before it goes out. By then the next clip was chosen, and the trim
+    // was saved on it, which cut it down to a second. Issue #880.
+    //
+    // The walks' video has one clip, so one is made by hand after it, and
+    // the first is chosen again.
+    const path = await episodeOn(page);
+    const have = (await ask(page, "Clips", path)) ?? [];
+    await ask(page, "MakeClip", path, Math.max(0, ...have.map((c) => c.end)) + 30, false);
+    const cards = "aside ol li[data-key]:not(.next)";
+    await pageUntil(page, ({ cards, n }) => document.querySelectorAll(cards).length >= n, { cards, n: have.length + 1 });
+    await settle(page);
+    const first = await page.evaluate((cards) => document.querySelector(cards).dataset.key, cards);
+    await page.locator(`aside ol li[data-key="${first}"] button.pick`).first().click();
+    await watch.step("click", s);
+    const trimmed = watch.at;
+    const pieces = (clips, at) => clips.find((c) => c.plan === at.plan && c.id === at.clip)?.segments.map((p) => [p.start, p.end]);
+    const before = await ask(page, "Clips", trimmed.path);
+    const was = pieces(before, trimmed);
+    const g = await handles(page);
+    const x = middle(g.end);
+    const y = g.end.y + g.end.h / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i < 10; i++) {
+      await page.mouse.move(x - 4 * i, y);
+      await nextPaint(page);
+    }
+    // Every place so far answered, and the last one held on its way.
+    await settle(page);
+    await hold(page, "Shape");
+    await page.mouse.move(x - 40, y);
+    await page.mouse.up();
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press("Shift+ArrowDown");
+    await watch.step("trim then next clip", s);
+    const next = watch.at;
+    if (!next || (next.plan === trimmed.plan && next.clip === trimmed.clip)) {
+      walk.wrong = "Shift and the down arrow chose no other clip";
+      return;
+    }
+    const after = await ask(page, "Clips", trimmed.path);
+    const now = pieces(after, trimmed);
+    if (JSON.stringify(now) === JSON.stringify(was)) {
+      walk.wrong = `the clip whose end was dragged is as it was, ${JSON.stringify(was)}`;
+    }
+    const other = JSON.stringify(pieces(before, next));
+    if (JSON.stringify(pieces(after, next)) !== other) {
+      walk.wrong = `the trim went to the next clip: ${other} became ${JSON.stringify(pieces(after, next))}`;
+    }
+  },
+  // ["crop back then next clip"]
+  //                    takes the crop back to automatic, and while the
+  //                    first of its keyframes put back is on its way,
+  //                    chooses the clip next to it: every keyframe
+  //                    comes back on the clip it was taken from, the next
+  //                    clip gets none, and the first is chosen again
+  async "crop back then next clip"(walk, arg, s) {
+    const { page, watch } = walk;
+    // Put the crop back puts the keyframes back one after the other, and
+    // each went to the clip chosen when it went out. Chosen in between,
+    // the next clip took the rest. Found by the review of #880.
+    //
+    // The walk's video is a clip long, so a second clip is made by hand
+    // near its start, and the key goes the way the list has it.
+    const back = watch.at;
+    const have = (await ask(page, "Clips", back.path)) ?? [];
+    await ask(page, "MakeClip", back.path, 2, false);
+    const cards = "aside ol li[data-key]:not(.next)";
+    await pageUntil(page, ({ cards, n }) => document.querySelectorAll(cards).length >= n, { cards, n: have.length + 1 });
+    await settle(page);
+    const marks = (clips, at) => clips.find((c) => c.plan === at.plan && c.id === at.clip)?.cropMarks ?? [];
+    const before = await ask(page, "Clips", back.path);
+    const key = before.find((c) => c.plan === back.plan && c.id === back.clip)?.key;
+    const order = await page.evaluate((cards) => [...document.querySelectorAll(cards)].map((c) => c.dataset.key), cards);
+    const was = marks(before, back);
+    // A clip made by hand is the clip chosen, so the first is chosen again.
+    await page.locator(`aside ol li[data-key="${key}"] button.pick`).first().click();
+    await watch.step("click", s);
+    if (was.length < 2) {
+      walk.wrong = `the clip has ${was.length} keyframes, and this step needs two to put back`;
+      return;
+    }
+    await page.getByRole("button", { name: "Automatic crop", exact: true }).click();
+    await settle(page);
+    await hold(page, "SetCropMark");
+    await page.getByRole("button", { name: "Put the crop back", exact: true }).click();
+    await settle(page);
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press(order.at(-1) === key ? "Shift+ArrowUp" : "Shift+ArrowDown");
+    await watch.step("crop back then next clip", s);
+    const next = watch.at;
+    await letHeld(page);
+    await settle(page);
+    if (!next || (next.plan === back.plan && next.clip === back.clip)) {
+      walk.wrong = "Shift and an arrow chose no other clip";
+      return;
+    }
+    const after = await ask(page, "Clips", back.path);
+    if (marks(after, back).length !== was.length) {
+      walk.wrong = `the clip the crop was put back on has ${marks(after, back).length} keyframes, not its ${was.length}`;
+    }
+    if (marks(after, next).length) {
+      walk.wrong = `the next clip took ${marks(after, next).length} of the keyframes put back`;
+    }
+    await page.locator(`aside ol li[data-key="${key}"] button.pick`).first().click();
+    await watch.step("click", s);
+  },
   // ["edge then track", which]
   //                    clicks an edge and at once presses the track near
   //                    its right end: the playhead stands where the track
@@ -878,7 +1015,7 @@ export const steps = {
     await page.mouse.move(x, high(g.track));
     await page.mouse.down();
     await settle(page);
-    const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const at = await playhead(page);
     const want = await page.evaluate((x) => {
       const b = document.querySelector(".clip-timeline .track").getBoundingClientRect();
       return x - b.left;
@@ -909,7 +1046,7 @@ export const steps = {
       "cut from": segs[0].end - frame,
       "cut to": segs[1]?.start,
     }[arg];
-    const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const at = await playhead(page);
     // Every place the edge stood while it was watched, the playhead
     // stood on that place's frame too, the edge's own frame for "start"
     // and "cut to", the one before for "end" and "cut from", within
@@ -1182,6 +1319,7 @@ export const steps = {
       await nextPaint(page);
     }
     await page.mouse.up();
+    await inputHandled(page);
     const [atLetGo, playingAtLetGo] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
     await holdSound(page, false);
     // Until a second past the old end, or until the play stops, and paused
@@ -1283,6 +1421,7 @@ export const steps = {
       await page.evaluate((m) => window.__menu(m), m);
       await settle(page);
     }
+    await inputHandled(page);
     const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
     await holdSound(page, false);
     const pieces = (await engineState(page, watch.at)).segments;
@@ -1355,6 +1494,7 @@ export const steps = {
     });
     await page.evaluate((m) => window.__menu(m), what);
     await settle(page);
+    await inputHandled(page);
     const [atBack, playingAtBack] = await page.evaluate(() => [Number(document.querySelector(".screen").dataset.playhead), !!document.querySelector('button[aria-label="Pause"]')]);
     await holdSound(page, false);
     const pieces = (await engineState(page, watch.at)).segments;
@@ -2046,7 +2186,7 @@ export const steps = {
     const got = await marks();
     const near = got.find((m) => Math.abs(m.at - want) < 0.5 / src.fps);
     if (got.length <= before) {
-      const at = await page.evaluate(() => document.querySelector(".screen").dataset.playhead);
+      const at = await playhead(page);
       walk.wrong = `S put no keyframe with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
       return;
     }
@@ -2194,7 +2334,7 @@ export const steps = {
     const clip = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
     const fps = await rate(page);
     const want = arg === "start" ? Math.floor((clip.start + 0.001) * fps) : Math.floor((clip.end + 0.001) * fps) - 1;
-    const at = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+    const at = await playhead(page);
     const got = Math.floor((at + 0.001) * fps);
     if (got !== want) walk.wrong = `the playhead is at ${at} s, frame ${got}, not on the clip's ${arg} at frame ${want}, ${clip[arg]} s`;
   },
@@ -2476,7 +2616,7 @@ export const steps = {
     const fps = await rate(page);
     const g = await handles(page);
     const y = high(g.track);
-    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const at = () => playhead(page);
     // The cards' frames read first, which a drag leaves for after it, so
     // the streams counted are the drag's own: on a busy runner the cards
     // were still to come, and their streams were counted too.
@@ -2494,14 +2634,12 @@ export const steps = {
     // moves on: a hand quicker than the frames asks while a stream is
     // still coming, which the app parks, and would open fewer streams than
     // a slow one, issue #596. The playhead follows the hand once an
-    // animation frame, see lib/scrub.ts, so it is waited for, never read
-    // straight after the move. Read straight after, it had not moved yet,
-    // the hand went on by more pixels, and a busy WebKit took several
-    // frames back in one step, which the app rightly opened with a key
-    // frame first, issue #851. Frames are counted the way from is, from
-    // the episode's start. The wait ends once the playhead is on that
-    // frame or past it to the left, so a step that went a frame too far
-    // says so and never hangs.
+    // animation frame, so it is read once the page has handled the move,
+    // see playhead in walks/bridge.mjs. Read straight after, it had not
+    // moved yet, the hand went on by more pixels, and a busy WebKit took
+    // several frames back in one step, which the app rightly opened with a
+    // key frame first, issue #851. Frames are counted the way from is,
+    // from the episode's start.
     let back = 0;
     let off = "";
     while (back < arg) {
@@ -2509,11 +2647,6 @@ export const steps = {
       if (to <= g.start.x + g.start.w) break;
       await page.mouse.move(to, y);
       back++;
-      await pageUntil(
-        page,
-        ([n, fps]) => Math.floor(Number(document.querySelector(".screen").dataset.playhead) * fps + 1e-6) <= n,
-        [from - back, fps],
-      );
       const on = from - Math.floor((await at()) * fps + 1e-6);
       if (on !== back) {
         off = `a step of the hand to frame ${from - back} put the playhead on frame ${from - on}`;
@@ -2556,7 +2689,7 @@ export const steps = {
     // Where the saved transcript ends: the end of its first part.
     const heard = (await ask(page, "Episode", path))?.heard ?? [];
     const edge = Math.max(0, ...heard.filter(([a]) => a < 1).map(([, b]) => b));
-    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const at = () => playhead(page);
     const press = async (key) => {
       const before = await at();
       await page.keyboard.press(key);
@@ -2594,7 +2727,7 @@ export const steps = {
     await clickOnTrack(page, await xOf(page, t.end + 1), high((await handles(page)).track));
     await settle(page);
     await page.evaluate(() => document.body.focus());
-    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const at = () => playhead(page);
     for (const key of [...Array(arg).fill("Shift+ArrowRight"), ...Array(arg).fill("Shift+ArrowLeft")]) {
       const from = await at();
       await page.keyboard.press(key);
@@ -2627,7 +2760,7 @@ export const steps = {
     const middle = (pieces[0].end + pieces[1].start) / 2;
     await clickOnTrack(page, await xOf(page, middle), high((await handles(page)).track));
     await settle(page);
-    const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+    const at = () => playhead(page);
     const from = await at();
     await page.evaluate(() => document.body.focus());
     await page.keyboard.press("Shift+ArrowRight");
@@ -2729,7 +2862,17 @@ function watchEdge(page, label) {
       const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
       const at = edge ? Number(edge.getAttribute("aria-valuenow")) : NaN;
       if (edge) window.__edgeSeen.push(at);
-      window.__edgeFrames.push([at, playhead, shown]);
+      // How far the caption blocks reach past the clip frame, in pixels,
+      // the most of any block on this frame, as drawn, its pop and all.
+      const frame = document.querySelector(".clip-timeline .frames .frame")?.getBoundingClientRect();
+      let past = -Infinity;
+      if (frame) {
+        for (const c of document.querySelectorAll(".clip-timeline .captions .caption")) {
+          const b = c.getBoundingClientRect();
+          past = Math.max(past, frame.left - b.left, b.right - frame.right);
+        }
+      }
+      window.__edgeFrames.push([at, playhead, shown, past]);
       requestAnimationFrame(tick);
     };
     tick();
@@ -2766,6 +2909,10 @@ async function watchCaptions(page) {
     look();
   });
 }
+
+// How far a caption block may reach past the clip frame, in pixels:
+// none. At rest a block stands a pixel inside it, its margin.
+const CAPTION_REACH = 0;
 
 // The cuts between a clip's pieces, each from where a piece ends to where
 // the next starts.

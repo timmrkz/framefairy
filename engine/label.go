@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -99,7 +98,7 @@ func WriteLabel(fsys afero.Fs, source string, l Label) (*Label, error) {
 	if !ok {
 		return nil, errLabelColour
 	}
-	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if _, err := MakeWorkDir(fsys, source); err != nil {
 		return nil, err
 	}
 	body, err := json.MarshalIndent(tidy, "", "  ")

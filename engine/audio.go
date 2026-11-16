@@ -14,6 +14,7 @@ import (
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/timed"
+	"framefairy/engine/tool"
 )
 
 // ---------------------------------------------------------------------------
@@ -450,16 +451,14 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 	reading, stopReading := context.WithCancel(ctx)
 	defer stopReading()
 	cmd := e.Runner.Command(reading, e.FFmpeg, args...)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
 	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
+	said := tool.NewCutWriter(&stderr)
+	cmd.Stderr = said
+	program, err := e.Runner.StartReading(reading, cmd, said)
+	if err != nil {
 		return nil, renderErr("cannot start %s: %s", e.FFmpeg, err)
 	}
-	reader := bufio.NewReaderSize(stdout, 1<<20)
+	reader := bufio.NewReaderSize(program.Stdout, 1<<20)
 
 	t := &Transcript{Start: window.Start}
 	var pending []float32
@@ -658,7 +657,10 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 		// write into a pipe nobody reads.
 		stopReading()
 	}
-	waitErr := cmd.Wait()
+	left, waitErr := program.Finish()
+	if left {
+		e.Log.Warn("ffmpeg %s", tool.LeftBehind)
+	}
 	if reachedEnd && ctx.Err() == nil {
 		waitErr = nil
 	}

@@ -71,16 +71,24 @@ type Record struct {
 	Body   []byte
 }
 
-// Write writes a record in one call, so records written from several
-// goroutines under one lock never interleave.
+// Write writes a record, its header and then its body. Records written
+// from several goroutines never interleave as long as each Write is under
+// one lock, as the episode's decoder writes them. The body is written as
+// it is: a frame is 5.8 MB at 1600 by 900, and copying it behind a header
+// made every frame cost twice.
 func Write(w io.Writer, r Record) error {
-	buf := make([]byte, HeaderSize+len(r.Body))
-	binary.LittleEndian.PutUint32(buf[0:], r.Cursor)
-	buf[4] = r.Kind
-	binary.LittleEndian.PutUint64(buf[5:], math.Float64bits(r.At))
-	binary.LittleEndian.PutUint32(buf[13:], uint32(len(r.Body)))
-	copy(buf[HeaderSize:], r.Body)
-	_, err := w.Write(buf)
+	var head [HeaderSize]byte
+	binary.LittleEndian.PutUint32(head[0:], r.Cursor)
+	head[4] = r.Kind
+	binary.LittleEndian.PutUint64(head[5:], math.Float64bits(r.At))
+	binary.LittleEndian.PutUint32(head[13:], uint32(len(r.Body)))
+	if _, err := w.Write(head[:]); err != nil {
+		return err
+	}
+	if len(r.Body) == 0 {
+		return nil
+	}
+	_, err := w.Write(r.Body)
 	return err
 }
 
