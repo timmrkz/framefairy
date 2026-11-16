@@ -185,7 +185,7 @@ func (s EpisodeStatus) HeardIn(duration float64) [][2]float64 {
 // Episode.Plans.
 func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus {
 	fsys, source := ep.m.Files, ep.source
-	st := EpisodeStatus{Source: source, Name: filepath.Base(source)}
+	st := EpisodeStatus{Source: source, Name: filepath.Base(source), Heard: [][2]float64{}}
 	info, err := fsys.Stat(source)
 	if err != nil {
 		st.Missing = true
@@ -198,7 +198,7 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 	whole := filepath.Join(logs, TranscriptName(nil))
 	if t, err := ep.heardSoFar(asrModelDir, silenceDB); err == nil {
 		// Copies, so nothing the status is handed on to changes what is held.
-		st.Transcribed, st.Heard = t.done, slices.Clone(t.heard)
+		st.Transcribed, st.Heard = t.done, append([][2]float64{}, t.heard...)
 		if said := t.said; said != nil {
 			span := *said
 			st.Said = &span

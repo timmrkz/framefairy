@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"framefairy/engine/runes"
+	"framefairy/engine/tool"
 )
 
 // SoundChunk is how many sample frames, one sample of every channel each,
@@ -40,15 +41,14 @@ func (e *Engine) PreviewSound(ctx context.Context, path string, from float64, ra
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := e.Runner.Command(ctx, e.FFmpeg, soundFrom(path, from, e.pictureStart(ctx, path), rate, channels)...)
-	out, err := cmd.StdoutPipe()
+	var said bytes.Buffer
+	saying := tool.NewCutWriter(&said)
+	cmd.Stderr = saying
+	program, err := e.Runner.StartReading(ctx, cmd, saying)
 	if err != nil {
 		return err
 	}
-	var said bytes.Buffer
-	cmd.Stderr = &said
-	if err := cmd.Start(); err != nil {
-		return err
-	}
+	out := program.Stdout
 	chunk := make([]byte, SoundChunk*channels*4)
 	var failed error
 	for n := 0; ; n++ {
@@ -69,8 +69,13 @@ func (e *Engine) PreviewSound(ctx context.Context, path string, from float64, ra
 		}
 	}
 	cancel()
+	// Read to its end, which a program that was stopped and will not end
+	// never brings: LeaveAfter on, the pipe is closed, and it is left.
 	_, _ = io.Copy(io.Discard, out)
-	waited := cmd.Wait()
+	left, waited := program.Finish()
+	if left {
+		e.Log.Warn("ffmpeg %s", tool.LeftBehind)
+	}
 	if failed != nil {
 		return failed
 	}

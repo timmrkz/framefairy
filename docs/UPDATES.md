@@ -633,6 +633,10 @@ with its newest build, so one fetch is the whole check:
    the build is whole. It used to count from nothing again, and Tim saw
    the fill run back towards empty just before the end, then jump to
    full (#334).
+   A download that brings nothing for a minute, `fetchQuiet`, is given
+   up on and says so, a connection that went away without closing. It
+   used to wait for the whole half hour a download may take, and every
+   check after waited on it.
    A build is never downloaded twice at once. A kept build is used only
    while it still hashes to what the list says, and the updater checks it
    again, checksum and signature, as it checks a download.

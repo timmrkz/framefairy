@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/spf13/afero"
@@ -763,4 +764,142 @@ func TestAVideoThatIsGoneSaysWhere(t *testing.T) {
 	if _, err := e.prepare(context.Background(), opts, nil); err == nil || err.Error() != want {
 		t.Errorf("a run of a gone video: %v", err)
 	}
+}
+
+// askCounted counts the requests it passes on.
+type askCounted struct {
+	asked atomic.Int32
+	rest  http.RoundTripper
+}
+
+func (c *askCounted) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.asked.Add(1)
+	return c.rest.RoundTrip(r)
+}
+
+// thinksThenQuiet is a Claude answer that starts, thinks a little and
+// then sends nothing more, the way one does whose Wi-Fi went away.
+const thinksThenQuiet = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10}}}\n\n" +
+	"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\"}}\n\n" +
+	"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hmm\"}}\n\n"
+
+// A cloud answer that goes quiet is given up on once nothing has come for
+// cloudQuiet, and asked for again like any answer that broke off before
+// a word of it was heard. Before, each try waited for the whole answer's
+// 10 minutes, 40 minutes and 14 seconds in all.
+//
+// It runs in a bubble, with cloudQuiet as the app has it, on the bubble's
+// clock.
+func TestACloudAnswerThatGoesQuietIsGivenUpOn(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+	synctest.Test(t, func(t *testing.T) {
+		network := &askCounted{rest: stopsAfter(thinksThenQuiet)}
+		m := NewMachine(afero.NewMemMapFs())
+		m.network = network
+		e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), m)
+		began := time.Now() //nolint:forbidigo // synctest bubble
+		_, err := e.CallAPI(context.Background(), "the transcript", "claude-opus-5-5", 48000, "", "plan", "", nil)
+		took := time.Since(began) //nolint:forbidigo // synctest bubble
+		if err == nil || !strings.Contains(err.Error(), "nothing came for 120 seconds") {
+			t.Fatalf("err = %v, want it to say the answer went quiet", err)
+		}
+		if got := network.asked.Load(); got != maxAttempts {
+			t.Errorf("asked %d times, want %d", got, maxAttempts)
+		}
+		// Four quiet answers, and the waits of 2, 4 and 8 s between them.
+		if want := maxAttempts*cloudQuiet + 14*time.Second; took != want {
+			t.Errorf("gave up after %s on the bubble's clock, want %s", took, want)
+		}
+	})
+}
+
+// slowCloud is a Claude answer that sends a piece of its text every
+// cloudQuiet/2, ten pieces in all, so it takes five times cloudQuiet.
+type slowCloud struct{}
+
+func (slowCloud) RoundTrip(r *http.Request) (*http.Response, error) {
+	read, write := io.Pipe()
+	go func() {
+		fmt.Fprint(write, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10}}}\n\n")
+		fmt.Fprint(write, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n")
+		for i := range 10 {
+			time.Sleep(cloudQuiet / 2) //nolint:forbidigo // synctest bubble
+			fmt.Fprintf(write, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"%d\"}}\n\n", i)
+		}
+		fmt.Fprint(write, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n")
+		fmt.Fprint(write, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+		write.Close()
+	}()
+	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}},
+		Body: read, Request: r}, nil
+}
+
+// A cloud answer that takes longer than cloudQuiet, but keeps sending, is
+// waited for to its end.
+//
+// It runs in a bubble, on the bubble's clock.
+func TestACloudAnswerThatKeepsSendingIsWaitedFor(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+	synctest.Test(t, func(t *testing.T) {
+		m := NewMachine(afero.NewMemMapFs())
+		m.network = slowCloud{}
+		e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), m)
+		began := time.Now() //nolint:forbidigo // synctest bubble
+		if _, err := e.CallAPI(context.Background(), "the transcript", "claude-opus-5-5", 48000, "", "plan", "", nil); err != nil {
+			t.Fatal(err)
+		}
+		if took := time.Since(began); took != 5*cloudQuiet { //nolint:forbidigo // synctest bubble
+			t.Errorf("the answer took %s on the bubble's clock, want %s", took, 5*cloudQuiet)
+		}
+	})
+}
+
+// thinksSilently is an OpenAI answer that says at once who speaks, then
+// thinks for five times cloudQuiet without streaming any of it, and then
+// writes its text, the way a reasoning model may.
+type thinksSilently struct{}
+
+func (thinksSilently) RoundTrip(r *http.Request) (*http.Response, error) {
+	read, write := io.Pipe()
+	go func() {
+		fmt.Fprint(write, "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n")
+		// Called off, the connection closes, the way a real one does.
+		select {
+		case <-time.After(5 * cloudQuiet): //nolint:forbidigo // synctest bubble
+		case <-r.Context().Done():
+			write.CloseWithError(r.Context().Err())
+			return
+		}
+		fmt.Fprint(write, "data: {\"choices\":[{\"delta\":{\"content\":\"{}\"},\"finish_reason\":\"stop\"}]}\n\n")
+		fmt.Fprint(write, "data: [DONE]\n\n")
+		write.Close()
+	}()
+	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}},
+		Body: read, Request: r}, nil
+}
+
+// An answer that thinks without a word for longer than cloudQuiet, after
+// a first chunk that holds no thinking and no text, is waited for: the
+// quiet is only watched from the first piece heard, so an answer that
+// works is not cut and paid for four times.
+//
+// It runs in a bubble, on the bubble's clock.
+func TestACloudAnswerThatThinksBeforeItsFirstPieceIsWaitedFor(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	synctest.Test(t, func(t *testing.T) {
+		network := &askCounted{rest: thinksSilently{}}
+		m := NewMachine(afero.NewMemMapFs())
+		m.network = network
+		e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), m)
+		began := time.Now() //nolint:forbidigo // synctest bubble
+		if _, err := e.CallAPI(context.Background(), "the transcript", "gpt-6-sol", 48000, "", "plan", "", nil); err != nil {
+			t.Fatal(err)
+		}
+		if took := time.Since(began); took != 5*cloudQuiet { //nolint:forbidigo // synctest bubble
+			t.Errorf("the answer took %s on the bubble's clock, want %s", took, 5*cloudQuiet)
+		}
+		if got := network.asked.Load(); got != 1 {
+			t.Errorf("asked %d times, want once", got)
+		}
+	})
 }

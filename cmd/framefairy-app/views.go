@@ -145,7 +145,7 @@ type Framing struct {
 // engine.MarksOnFrames.
 func (s *FrameFairy) framingOf(info engine.SourceInfo, segments []engine.SegmentView, marks []engine.CropMarkView) Framing {
 	f := Framing{Segments: make([]engine.SegmentView, len(segments)), CropMarks: info.MarksOnFrames(marks),
-		Glides: []engine.GlideSpan{}}
+		CropLefts: make([]int, 0, len(segments)), Glides: []engine.GlideSpan{}}
 	for i, seg := range segments {
 		f.Segments[i] = seg
 		f.Segments[i].Marks = info.MarksOnFrames(seg.Marks)
