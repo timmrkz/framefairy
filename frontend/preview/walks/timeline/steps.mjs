@@ -890,6 +890,18 @@ export const steps = {
     // A busy machine answers late, and the save waits for the answer
     // before it goes out. By then the next clip was chosen, and the trim
     // was saved on it, which cut it down to a second. Issue #880.
+    //
+    // The walks' video has one clip, so one is made by hand after it, and
+    // the first is chosen again.
+    const path = await episodeOn(page);
+    const have = (await ask(page, "Clips", path)) ?? [];
+    await ask(page, "MakeClip", path, Math.max(0, ...have.map((c) => c.end)) + 30, false);
+    const cards = "aside ol li[data-key]:not(.next)";
+    await pageUntil(page, ({ cards, n }) => document.querySelectorAll(cards).length >= n, { cards, n: have.length + 1 });
+    await settle(page);
+    const first = await page.evaluate((cards) => document.querySelector(cards).dataset.key, cards);
+    await page.locator(`aside ol li[data-key="${first}"] button.pick`).first().click();
+    await watch.step("click", s);
     const trimmed = watch.at;
     const pieces = (clips, at) => clips.find((c) => c.plan === at.plan && c.id === at.clip)?.segments.map((p) => [p.start, p.end]);
     const before = await ask(page, "Clips", trimmed.path);

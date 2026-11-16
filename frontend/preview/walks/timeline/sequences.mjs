@@ -233,7 +233,12 @@ export default [
   {
     // A click on an edge and at once a press on the track: an answer for
     // the edge that came late put the playhead back on the edge.
-    name: "a press on the track straight after a click on an edge keeps the playhead there",
+    //
+    // Found by a bug hunt on 16 November, issue #880: an end let go and
+    // the next clip chosen with Shift and the down arrow before the
+    // answer to the last place came, and the trim was saved on the next
+    // clip, cut down to a second.
+    name: "a press on the track straight after a click on an edge keeps the playhead there, and an end let go just before the next clip is chosen trims its own clip",
     steps: [
       // The click once asked the engine where the edge went, and on a
       // long episode its answer came after the press. A click that does
@@ -243,6 +248,7 @@ export default [
       ["edge then track", "cut from"],
       ["edge then track", "end"],
       ["edge then track", "start"],
+      ["trim then next clip"],
     ],
   },
   {
@@ -507,16 +513,11 @@ export default [
     // clip" broke, because the hand let go of the clip's start before the
     // engine's answer to where it was let go had come, and the playhead
     // stayed on a frame the trim had cut away.
-    //
-    // Found by a bug hunt on 16 November, issue #880: an end let go and
-    // the next clip chosen with Shift and the down arrow before the
-    // answer came, and the trim was saved on the next clip.
-    name: "an edge let go before the engine answers leaves the playhead on the edge, and the trim on its clip when the next clip is chosen at once",
+    name: "an edge let go before the engine answers leaves the playhead on the edge",
     steps: [
       ["answers late"],
       ["trim", "start", 160],
       ["playhead on", "start"],
-      ["trim then next clip"],
     ],
   },
   {

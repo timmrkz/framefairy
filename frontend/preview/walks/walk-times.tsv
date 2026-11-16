@@ -188,11 +188,11 @@
   3	sequences.mjs SEQUENCE=a double-click on a caption cuts a part out there
   3	sequences.mjs SEQUENCE=a play moves the playhead once a frame of the video
   3	sequences.mjs SEQUENCE=a playhead dragged far shows the key frame on the way and the frame under the hand once it rests, and a click shows no key frame
-  3	sequences.mjs SEQUENCE=a press on the track straight after a click on an edge keeps the playhead there
+  3	sequences.mjs SEQUENCE=a press on the track straight after a click on an edge keeps the playhead there, and an end let go just before the next clip is chosen trims its own clip
   3	sequences.mjs SEQUENCE=a pull request in conflict with main says so in the list and can still be followed
   3	sequences.mjs SEQUENCE=a swipe along the clip timeline draws the waveform again on the same canvas
   3	sequences.mjs SEQUENCE=a word opened in the caption box stays where libass draws it
-  3	sequences.mjs SEQUENCE=an edge let go before the engine answers leaves the playhead on the edge, and the trim on its clip when the next clip is chosen at once
+  3	sequences.mjs SEQUENCE=an edge let go before the engine answers leaves the playhead on the edge
   3	sequences.mjs SEQUENCE=the clip count follows the window as its length is dragged
   3	sequences.mjs SEQUENCE=the workspace fits the app from its smallest size to a large screen, nothing cut off and no strip of nothing
   2	sequences.mjs SEQUENCE=Acknowledgements keeps its words in from the edges of its cards
