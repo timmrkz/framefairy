@@ -416,17 +416,24 @@ describe("the picture standing still", () => {
       const { q, inside } = standing();
       inside.report();
       q.resize(1280, 720);
+      vi.advanceTimersByTime(150);
       const seeks: number[] = [];
       const real = q.seek.bind(q);
       q.seek = (at: number) => {
         seeks.push(at);
         real(at);
       };
+      // The first step from rest asks at once, the steps after it do not.
       for (let w = 1290; w <= 1500; w += 10) q.resize(w, (w * 9) / 16);
-      expect(seeks).toEqual([]);
+      expect(seeks.length).toBe(1);
       expect(q.standing).toBe(false);
       vi.advanceTimersByTime(150);
-      expect(seeks.length).toBe(1);
+      expect(seeks.length).toBe(2);
+      // A single step from rest asks at once, and not again at rest.
+      q.resize(1280, 720);
+      expect(seeks.length).toBe(3);
+      vi.advanceTimersByTime(150);
+      expect(seeks.length).toBe(3);
     } finally {
       vi.unstubAllGlobals();
       vi.useRealTimers();

@@ -1363,17 +1363,20 @@ export class FrameQueue {
     this.canvas.width = w;
     this.canvas.height = h;
     this.paint();
-    // The frame on screen is drawn to fit at once, and asked for at the new
-    // size once the hand that sizes the app has come to rest.
+    // The frame on screen is drawn to fit at once. It is asked for at the
+    // new size at once when the size was at rest, so one step costs no
+    // wait, and again once the hand that sizes the app has come to rest,
+    // not at every size a dragged edge passes.
+    const resting = this.sharpenSoon === 0;
     clearTimeout(this.sharpenSoon);
-    if (first) this.sharpen();
-    else {
-      this.app?.resizing(true);
-      this.sharpenSoon = afterRest(() => {
-        this.app?.resizing(false);
-        this.sharpen();
-      }, 150);
-    }
+    if (first || resting) this.sharpen();
+    if (first) return;
+    this.app?.resizing(true);
+    this.sharpenSoon = afterRest(() => {
+      this.sharpenSoon = 0;
+      this.app?.resizing(false);
+      this.sharpen();
+    }, 150);
   }
 
   // Whether a frame was decoded at the size the canvas asks for now.
