@@ -69,6 +69,45 @@ export const steps = {
     else if (after.kept) walk.wrong = `${arg} still has the keyboard after Escape`;
     else if (after.lit.length) walk.wrong = `${arg}: a ring is left on ${after.lit.join(", ")} after Escape`;
   },
+  // ["a pick lets go", selector]
+  //                    clicks the list selector names, picks the next row
+  //                    with the keyboard, then types the first letter of
+  //                    another row and presses the space bar, and sees
+  //                    the pick stay, the list stay shut and the
+  //                    keyboard let go of
+  async "a pick lets go"(walk, arg) {
+    const { page } = walk;
+    const control = page.locator(arg).first();
+    await control.click();
+    await settle(page);
+    const rows = (await page.locator(".pick-list .pick-row .what").allTextContents()).map((r) => r.trim());
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await settle(page);
+    const picked = (await control.textContent()).trim();
+    const other = rows.find((r) => r && r !== picked && /^[a-z]/i.test(r));
+    if (!other) {
+      walk.wrong = `${arg}: no other row to type the first letter of, among ${rows.join(", ")}`;
+      return;
+    }
+    await page.keyboard.press(other[0].toLowerCase());
+    await settle(page);
+    const typed = (await control.textContent()).trim();
+    const wasPlaying = await page.evaluate(() => !!document.querySelector("button[aria-label='Pause']"));
+    await page.keyboard.press("Space");
+    await settle(page);
+    const after = await control.evaluate((el) => ({
+      open: document.querySelectorAll(".pick-list").length,
+      kept: document.activeElement === el,
+      playing: !!document.querySelector("button[aria-label='Pause']"),
+    }));
+    // The space bar went to the workspace and played, so it pauses again.
+    if (after.playing !== wasPlaying) await page.keyboard.press("Space");
+    await settle(page);
+    if (typed !== picked) walk.wrong = `${arg}: typing ${other[0].toLowerCase()} after the pick changed it from ${picked} to ${typed}`;
+    else if (after.open) walk.wrong = `${arg}: the space bar opened the list after the pick`;
+    else if (after.kept) walk.wrong = `${arg} still has the keyboard after the pick`;
+  },
   // ["field reads", selector, text]
   //                    the field selector names holds text
   async "field reads"(walk, arg) {

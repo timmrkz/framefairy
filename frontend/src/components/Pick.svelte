@@ -241,20 +241,22 @@
     if (row) list.scrollTop = row.offsetTop - (list.clientHeight - row.offsetHeight) / 2;
   }
 
-  // Escape closes the list and lets go of the keyboard, so nothing is left
-  // lit and the space bar plays again. The two kinds of list closed
-  // differently: a list to search has the keyboard in its field and gave
-  // it back to the trigger by script, which the webview leaves unlit,
-  // while a plain list never takes it from the trigger, so the Escape was
-  // a key pressed on the trigger and lit its ring, issue #370. A field
+  // A list that closes lets go of the keyboard, however it closed, so
+  // nothing is left lit and the workspace has its keys again. Escape did
+  // this alone at first, issue #370: a plain list never takes the keyboard
+  // from its trigger, and a list to search gives it back to the trigger
+  // as it closes. A trigger left holding it after a pick took the letters
+  // typed next as a pick of its own, so R changed the caption face, and
+  // the space bar opened the list instead of playing, issue #876. A field
   // lets go on Escape the same way, see escapeLetsGo.
   let button = $state<HTMLButtonElement>();
   let escaped = false;
   function letGo() {
-    if (!escaped) return;
+    const how = escaped ? "Escape closed" : "closed";
     escaped = false;
-    if (document.activeElement === button) button?.blur();
-    said(`pick: Escape closed ${label} and let go of it`);
+    if (document.activeElement !== button) return;
+    button?.blur();
+    said(`pick: ${how} ${label} and let go of it`);
   }
 
   // A press anywhere else closes the list at once and leaves the keyboard
@@ -371,7 +373,7 @@
         align={edge}
         onEscapeKeydown={() => (escaped = true)}
         onCloseAutoFocus={(e) => {
-          if (stayAway(e) || !escaped) return;
+          if (stayAway(e)) return;
           e.preventDefault();
           letGo();
         }}

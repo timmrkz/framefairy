@@ -120,6 +120,16 @@ export default [
     ],
   },
   {
+    // Issue #876. After a face was picked from the Style list with the
+    // keyboard, R changed the caption face again and the space bar opened
+    // the list. A list that closes lets go of the keyboard, every list.
+    name: "A list lets go of the keyboard once a row is picked from it",
+    steps: [
+      ["a pick lets go", "#caption-style"],
+      ["a pick lets go", "#caption-font"],
+    ],
+  },
+  {
     // Tim had the pointer on the sidebar and swiped up for Mission Control,
     // and saw the sidebar open and close over and over until he clicked
     // back into the app.

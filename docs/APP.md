@@ -1215,6 +1215,10 @@ bubble scrolled by those eight pixels.
     Escape, while the list of fonts did not, and Escape did nothing in a
     field. Whatever takes Escape for itself, a word being corrected or the
     report while it listens, keeps it.
+  - **A list lets go of the keyboard however it closes**, with a row
+    picked as well as with Escape, issue #876. A trigger left holding it
+    took the next letter as a pick from the shut list, so R changed the
+    caption face, and the space bar opened the list instead of playing.
   - **A button pressed with the pointer keeps no keyboard**, the way a
     button on the Mac does not, see `letButtonGo` in `App.svelte`. In
     Chromium, on Windows and in the preview, a clicked button kept it, and
