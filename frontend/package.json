@@ -11,25 +11,25 @@
     "lint": "eslint \"preview/walks/**/*.mjs\" \"preview/*.mjs\" \"src/**/*.ts\""
   },
   "dependencies": {
-    "@lucide/svelte": "1.71.0",
+    "@lucide/svelte": "1.73.0",
     "@wailsio/runtime": "3.1.0",
-    "bits-ui": "^2.20.6"
+    "bits-ui": "^2.21.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
-    "@tsconfig/svelte": "^5.0.8",
+    "@tsconfig/svelte": "^5.0.9",
     "@typescript-eslint/parser": "8.72.2",
     "@vitest/coverage-v8": "5.1.0",
     "audit-ci": "7.1.0",
-    "eslint": "10.14.0",
+    "eslint": "10.15.0",
     "eslint-plugin-playwright": "2.12.2",
     "globals": "17.14.0",
     "monocart-coverage-reports": "3.2.1",
-    "playwright": "1.65.0",
+    "playwright": "1.65.1",
     "svelte": "^5.57.3",
     "svelte-check": "^4.7.8",
     "typescript": "^6.0.3",
-    "vite": "^8.3.7",
+    "vite": "^8.3.8",
     "vitest": "^5.0.5"
   },
   "overrides": {
