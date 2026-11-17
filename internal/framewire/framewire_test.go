@@ -24,7 +24,7 @@ func TestRecordsComeBackAsWritten(t *testing.T) {
 		}
 	}
 	for i, want := range in {
-		got, err := Read(&b)
+		got, err := Read(&b, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -34,7 +34,7 @@ func TestRecordsComeBackAsWritten(t *testing.T) {
 	}
 	huge := make([]byte, HeaderSize)
 	huge[13], huge[14], huge[15], huge[16] = 0xff, 0xff, 0xff, 0x7f
-	if _, err := Read(bytes.NewReader(huge)); err == nil {
+	if _, err := Read(bytes.NewReader(huge), nil); err == nil {
 		t.Error("a record of 2 GB was read")
 	}
 }
@@ -58,7 +58,7 @@ func TestAFrameIsWrittenWithoutACopy(t *testing.T) {
 	if copied {
 		t.Error("the frame was copied before it was written")
 	}
-	got, err := Read(&w.Buffer)
+	got, err := Read(&w.Buffer, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

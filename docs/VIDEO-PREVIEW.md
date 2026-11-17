@@ -309,6 +309,12 @@ closed for standing unused.
 
 - Starts and stops the episode's decoder, and passes its frames and sound
   on through the routes above.
+- **A play makes no new memory for its frames here either.** A frame is
+  read into a buffer kept from a frame before, `framewire.Pool`, and
+  whoever writes it to the page, or drops it, gives the buffer back,
+  `engine.EpisodeFrames.Give`. A new buffer for each frame was about
+  165 MB a second for Go to clean up after, and reading a frame of 1600
+  by 900 into one kept is about 80 % faster.
 - **The frames of a clip are the render's frames.** A request for a piece
   is made by the same function that cuts the piece in the render, `cutOf`
   and `byTimes` in `engine/render.go`, so a file with uneven frames shows

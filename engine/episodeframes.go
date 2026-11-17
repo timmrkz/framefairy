@@ -80,7 +80,10 @@ type EpisodeFrames struct {
 	finishing map[uint32]place
 	finished  *sync.Cond
 	answers   map[uint32]chan framewire.Record
-	used      time.Time
+	// The bodies of frames nobody reads any more, for the next frames the
+	// decoder sends, see Give.
+	pool *framewire.Pool
+	used time.Time
 	// When the picture starts, which says how the sound is read, see
 	// soundSeek, found once.
 	picture      float64
@@ -138,7 +141,22 @@ func (m *Machine) EpisodeFrames(program, path string) *EpisodeFrames {
 // machine's to say.
 func newEpisodeFrames(program, path string) *EpisodeFrames {
 	return &EpisodeFrames{program: program, path: path, answers: map[uint32]chan framewire.Record{},
-		placed: map[uint32]place{}, finishing: map[uint32]place{}, used: time.Now(), captionsTurn: make(chan struct{}, 1)}
+		placed: map[uint32]place{}, finishing: map[uint32]place{}, pool: framewire.NewPool(framesKept),
+		used: time.Now(), captionsTurn: make(chan struct{}, 1)}
+}
+
+// framesKept is how many bytes of frames nobody reads a decoder keeps for
+// the frames after them: about 9 of 7 MB, a frame of the video preview on
+// a Mac's screen, which is more than the frames a play has on their way
+// at once, see ahead.
+const framesKept = 64 << 20
+
+// Give hands back a frame or a chunk of sound that Stream or Sound handed
+// over, once nothing reads it any more, so the decoder reads the next one
+// into it rather than into new memory. Only whoever reads it last gives it
+// back, and only once.
+func (f *EpisodeFrames) Give(frame []byte) {
+	f.pool.Give(frame)
 }
 
 // cursorsKept is how many cursors of picture a decoder keeps open for the
@@ -277,7 +295,7 @@ func (f *EpisodeFrames) start() error {
 	go func() {
 		r := bufio.NewReaderSize(out, 1<<20)
 		for {
-			rec, err := framewire.Read(r)
+			rec, err := framewire.Read(r, f.pool)
 			if err != nil {
 				break
 			}
@@ -292,6 +310,8 @@ func (f *EpisodeFrames) start() error {
 			f.mu.Unlock()
 			if ch != nil {
 				ch <- rec
+			} else if rec.Kind == framewire.Frame {
+				f.pool.Give(rec.Body)
 			}
 		}
 		<-saidAll
@@ -484,7 +504,8 @@ func (f *EpisodeFrames) Light() framewire.Light {
 // its short, see SourceInfo.Grid, from the one that holds the moment from
 // on, scaled to width by height in colours as framewire.Picture makes them
 // for the episode's Light, each with the moment of the grid it is for and
-// in a buffer of its own. It runs until got says no more, the context
+// in a buffer of its own, which got may keep, or give back with Give once
+// nothing reads it. It runs until got says no more, the context
 // ends or the grid does. skip, where it is not nil, says the moment before
 // which no frame is wanted any more, read each time the next frames are
 // asked of the decoder, which lets the frames before it go unscaled: a jump
@@ -515,7 +536,8 @@ func (f *EpisodeFrames) Stream(ctx context.Context, grid framewire.Grid, from fl
 // Sound hands over the sound of the episode from the moment from on, as
 // 32-bit float samples at rate in so many channels, the channels of one
 // moment side by side, little endian, in chunks of SoundChunk moments,
-// each with the moment it starts at and in a buffer of its own, the way
+// each with the moment it starts at and in a buffer of its own, which got
+// may keep or give back with Give, the way
 // PreviewSound does with the ffmpeg program: read by the same rule, see
 // soundSeek, so the video preview hears the sound the render and the
 // transcript are made of. e finds where the picture starts, once.
@@ -607,6 +629,9 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 				select {
 				case rec := <-ch:
 					stood(rec)
+					if rec.Kind == framewire.Frame {
+						f.pool.Give(rec.Body)
+					}
 					pending = rec.Kind == framewire.Frame || rec.Kind == framewire.Opened
 					failed = failed || rec.Kind == framewire.Failed || rec.Kind == framewire.Hung
 				case <-gone:
@@ -758,6 +783,9 @@ func (f *EpisodeFrames) Close() {
 		_ = cmd.Process.Kill()
 		<-gone
 	}
+	// A decoder that closed keeps no memory for frames: it closes once
+	// nothing has been asked of it for a while.
+	f.pool.Clear()
 }
 
 // captionsCursor is the decoder's cursor of captions: the caption file it
