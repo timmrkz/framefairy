@@ -9,9 +9,11 @@
     // crafted pattern like +(*a), issue #910. No fixed release exists
     // yet. Only the build and test tools bring it, vite, vitest,
     // svelte-check and the ESLint parser, which only match the patterns
-    // our own config names, and none of them ships in the app. Let
-    // through by these paths alone, so picomatch brought in by anything
-    // else still fails.
+    // in our config and the tools' own, and none of them ships in the
+    // app. Let through by these paths alone, so picomatch brought in by
+    // anything else still fails. audit-ci matches a path exactly.
+    // picomatch> and vite>picomatch> are how it writes vitest reached a
+    // second time, so a package that ships gets a path with its own name.
     "GHSA-fc5q-39xc-vjpf|picomatch>",
     "GHSA-fc5q-39xc-vjpf|vite>picomatch>",
     "GHSA-fc5q-39xc-vjpf|@sveltejs/vite-plugin-svelte>vite>picomatch",
