@@ -949,8 +949,9 @@ An episode that is not kept is built the moment it is picked, and the
 parts of that are started together rather than one after another. The
 episode's decoder is asked for as the workspace starts to build,
 `holdAhead` in `lib/frames/queue.ts`, rather than once the workspace
-knows what the episode is. The clip timeline asks for its words and its waveform
-once the episode has answered, and never twice for the same view. The
+knows what the episode is. The clip timeline asks for the episode's
+loudness, the whole of it, and for the words of its view once the
+episode has answered, and never twice for the same view. The
 engine holds the transcripts of the last ten videos read, each by its
 `engine.Episode`, and reads one once however many calls ask for it at
 the same moment, and again only once a file of it changed: a workspace opening asked for the same transcript up to
@@ -2124,9 +2125,8 @@ bubble scrolled by those eight pixels.
       read every hundredth of a second and no finer, so a second of it on
       a retina screen is a hundred readings across eight hundred pixels:
       squared off, that is eight pixels of one height, a cliff, and eight
-      more. The engine says how fine its measurement was by never
-      answering with more parts than it read, and the timeline joins them
-      rather than squaring them off. It invents no detail, it stops
+      more. The clip timeline holds every reading, and joins them rather
+      than squaring them off. It invents no detail, it stops
       pretending each hundredth of a second was flat.
     - The times sit at the top of both tracks, in the same quiet grey, a
       step above the lines around them and below the waveform inside them.
@@ -2205,9 +2205,18 @@ bubble scrolled by those eight pixels.
       back in view. A double-click on the track never did: one was meant
       to, and it went nowhere for the reason above. Its info bubble says
       only what the track itself does, a line each, and leaves the row
-      under it to its own titles. The words and the waveform of the whole episode
-      are read once and kept, so swiping does not wait for a file to be
+      under it to its own titles. The words of the whole episode are
+      read once and kept, so swiping does not wait for a file to be
       read again.
+    - **The waveform is there in the frame the hand moves it.** The
+      clip timeline holds the whole loudness of the video, every reading
+      and the loudest of every two, four, eight and so on for zooming
+      out, a byte each, and draws every view from it, so a swipe or a
+      pinch asks the Go side for nothing, however fast it goes, `Loudness`
+      in `cmd/framefairy-app/media.go` and `frontend/src/lib/loudness.ts`.
+      It asked the Go side for each view and drew empty track until the
+      answer came, Tim's report of 17 November, issue #909. See
+      [the decision record](decisions/2026-11-18-the-window-holds-the-loudness.md).
     - **Every clip is on it, not only the chosen one.** The other clips
       are the same marks the range picker draws, across the middle of the
       track where the captions run, in the app's colour and green once
@@ -2251,12 +2260,12 @@ bubble scrolled by those eight pixels.
   decoded and a reading every 10 ms, the same readings the transcription
   takes. Audio decodes at a few hundred times real time, so an hour is
   measured in seconds, and the waveform fills in as it goes, first where
-  the clip timeline looks. Every time the clip timeline asks for the
-  waveform it says what it shows, and the measuring goes there next: a
+  the clip timeline looks. Every time the clip timeline's view comes to
+  rest it says what it shows, `Look`, and the measuring goes there next: a
   playhead put near the end of a four hour episode has its waveform
   within a second rather than after everything before it. The clip
-  timeline reads its view again while what it read had a gap in it and
-  more has been measured. An episode added before this was there is measured the first time
+  timeline reads the loudness again, whole, each time the video's state
+  says more is measured. An episode added before this was there is measured the first time
   it is opened. It is not a job: nobody starts it or waits for it. At most two episodes are measured at a time.
 - **Before the first transcription** there are no words. That is where
   every episode starts, so the captions band simply waits. The words

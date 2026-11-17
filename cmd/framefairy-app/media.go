@@ -119,44 +119,46 @@ func (s *FrameFairy) frames(ctx context.Context, path string) engine.SourceInfo 
 	return info
 }
 
-// Waveform returns the loudest level in each of buckets pieces of a part
-// of the episode, from its loudness measured on its own or from its
-// transcript, whichever reaches further. An episode not measured yet has no
-// waveform yet, which is an empty answer and not a failure.
+// Loudness is the loudness of an episode as far as it is measured, for the
+// clip timeline to keep and draw every view from, see engine.Loudness. It
+// is the loudness measured on its own laid over the transcript's, which
+// are the same frames from the same samples, so the waveform has whatever
+// either has measured: the measuring runs ahead of the transcription, and
+// a transcript made before it existed is there before it has run. An
+// episode not measured yet has no readings, which is not a failure.
 //
-// Peaks never answers with more buckets than it measured, so the interface
-// is told how fine the measurement was and can draw that finely and no
-// finer.
-func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]float32, error) {
+// The window asks once when the episode opens and again whenever its
+// state says more is measured or heard, never while the view moves.
+func (s *FrameFairy) Loudness(path string) ([]byte, error) {
 	if !s.store.Known(path) {
 		return nil, errNotInLibrary
 	}
 	// An episode shown is an episode measured: one added before the
 	// loudness had a job of its own is measured the first time it is
-	// opened. What the clip timeline asks for is what it shows, and the
-	// measuring goes there first.
-	s.levels.look(path, from, to)
+	// opened.
 	s.levels.start(path)
 	t, err := s.transcript(path)
 	if err != nil && !errors.Is(err, engine.ErrNoTranscript) {
 		return nil, err
 	}
-	// The loudness measured on its own and the transcription's are the
-	// same frames from the same samples, so the waveform has whatever
-	// either has measured. The measuring runs ahead of the transcription,
-	// and a transcript made before it existed is there before it has run.
 	var levels engine.Levels
 	if s.levels != nil {
 		levels = s.levels.read(path)
 	} else {
 		levels = engine.ReadLevels(s.store.files, path)
 	}
-	t = levels.Over(t)
-	if t == nil {
-		return []float32{}, nil
+	return engine.Loudness(levels.Over(t)), nil
+}
+
+// Look says what the clip timeline of an episode shows, from and to in
+// seconds, so its loudness is measured there first. The window says it
+// when the view comes to rest and waits for nothing: what it draws, it
+// already has.
+func (s *FrameFairy) Look(path string, from, to float64) error {
+	if !s.store.Known(path) {
+		return errNotInLibrary
 	}
-	if to <= from {
-		to = t.Duration()
-	}
-	return t.Peaks(from, to, min(max(buckets, 1), 4000)), nil
+	s.levels.look(path, from, to)
+	s.levels.start(path)
+	return nil
 }

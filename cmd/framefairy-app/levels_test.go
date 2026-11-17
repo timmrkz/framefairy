@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"sync"
@@ -101,26 +102,28 @@ func TestAMeasuringThatGoesWrongIsInTheAppsLog(t *testing.T) {
 }
 
 // An episode has a waveform before anything has heard a word of it: asking
-// for the waveform is enough to have it measured, and it arrives whole.
+// for its loudness is enough to have it measured, and it arrives whole.
 func TestTheWaveformComesBeforeTheTranscript(t *testing.T) {
 	s, paths, told := levelsLibrary(t, 1)
 	path := paths[0]
-	if _, err := s.Waveform(path, 0, 20, 200); err != nil {
+	if _, err := s.Loudness(path); err != nil {
 		t.Fatal(err)
 	}
 	measured(t, s, path)
-	peaks, err := s.Waveform(path, 0, 20, 200)
+	got, err := s.Loudness(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A reading of -40 dB is 100 steps of half a decibel up from -90.
+	n := int(binary.LittleEndian.Uint32(got))
 	loud := 0
-	for _, p := range peaks {
-		if p > -40 {
+	for _, b := range got[4 : 4+n] {
+		if b > 100 {
 			loud++
 		}
 	}
-	if len(peaks) != 200 || loud < 190 {
-		t.Errorf("%d buckets, %d of them the tone", len(peaks), loud)
+	if n < 1990 || loud < n*95/100 {
+		t.Errorf("%d readings, %d of them the tone", n, loud)
 	}
 	// The interface is told after the waveform is written, and before the
 	// measuring says it has ended, so it has been told by now.
@@ -133,7 +136,7 @@ func TestTheWaveformComesBeforeTheTranscript(t *testing.T) {
 }
 
 // Everything the app can do to the measuring, all at once, while it runs:
-// ask for waveforms, start, stop, remove an episode with its work, read,
+// look and ask for the loudness, start, stop, remove an episode with its work, read,
 // and quit. Nothing races, nothing is left running, and a removed
 // episode's work folder is not written back.
 //
@@ -150,7 +153,8 @@ func TestMeasuringUnderEverythingAtOnce(t *testing.T) {
 				case 0:
 					s.levels.start(path)
 				case 1:
-					_, _ = s.Waveform(path, 0, 20, 100)
+					_ = s.Look(path, 0, 20)
+					_, _ = s.Loudness(path)
 				case 2:
 					s.levels.read(path)
 					_ = s.Episode(path)
@@ -194,12 +198,12 @@ func TestMeasuringUnderEverythingAtOnce(t *testing.T) {
 	}
 }
 
-// What the clip timeline asks the waveform of is where the measuring goes
-// first, and a removed episode is forgotten.
-func TestTheWaveformAskedForIsMeasuredFirst(t *testing.T) {
+// Where the clip timeline looks is where the measuring goes first, and a
+// removed episode is forgotten.
+func TestWhereTheClipTimelineLooksIsMeasuredFirst(t *testing.T) {
 	s, paths, _ := levelsLibrary(t, 1)
 	path := paths[0]
-	if _, err := s.Waveform(path, 12, 15, 100); err != nil {
+	if err := s.Look(path, 12, 15); err != nil {
 		t.Fatal(err)
 	}
 	if from, to := s.levels.lookingAt(path); from != 12 || to != 15 {

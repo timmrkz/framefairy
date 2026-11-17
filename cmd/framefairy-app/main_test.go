@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -138,9 +139,9 @@ func TestAnEpisodeWithoutATranscriptReadsEmpty(t *testing.T) {
 	svc, eps := memoryLibrary(t, "ep.mp4")
 	source := eps[0]
 
-	peaks, err := svc.Waveform(source, 0, 60, 100)
-	if err != nil || len(peaks) != 0 {
-		t.Errorf("waveform got %d peaks, %v", len(peaks), err)
+	loud, err := svc.Loudness(source)
+	if err != nil || len(loud) != 4 || binary.LittleEndian.Uint32(loud) != 0 {
+		t.Errorf("loudness got %v, %v", loud, err)
 	}
 	words, err := svc.Words(source, 0, 60)
 	if err != nil || words == nil || len(words) != 0 {

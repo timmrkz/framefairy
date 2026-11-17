@@ -1072,8 +1072,11 @@ export const api = {
     call<ClipEntry>("Reshape", path, plan, clip, g, playhead),
   fonts: () => call<CaptionFont[]>("Fonts"),
   captionStart: () => call<CaptionStart>("CaptionStart"),
-  waveform: (path: string, from: number, to: number, buckets: number) =>
-    call<number[]>("Waveform", path, from, to, buckets),
+  // The whole loudness of a video as far as it is measured, as base64,
+  // see lib/loudness.ts. The clip timeline draws every view from it.
+  loudness: (path: string) => call<string>("Loudness", path),
+  // Where the clip timeline looks, so the loudness is measured there first.
+  look: (path: string, from: number, to: number) => call<void>("Look", path, from, to),
   render: (path: string, req: RenderRequest) => call<Job>("Render", path, req),
   // Search: looks for clips in a window, hearing the episode that far first.
   // click names the press, so a Cancel pressed after it stops it whichever

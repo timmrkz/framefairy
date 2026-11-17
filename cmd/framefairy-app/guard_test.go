@@ -70,8 +70,11 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Sentences(other); err == nil {
 		t.Error("Sentences answered for a file that is not in the library")
 	}
-	if _, err := svc.Waveform(other, 0, 10, 100); err == nil {
-		t.Error("Waveform answered for a file that is not in the library")
+	if _, err := svc.Loudness(other); err == nil {
+		t.Error("Loudness answered for a file that is not in the library")
+	}
+	if err := svc.Look(other, 0, 10); err == nil {
+		t.Error("Look took a file that is not in the library")
 	}
 	if _, err := svc.Coverage(ctx, other); err == nil {
 		t.Error("Coverage answered for a file that is not in the library")

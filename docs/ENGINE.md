@@ -211,6 +211,12 @@ ran from the start with no gaps and is measured again. `Levels.Over` lays
 these over the transcript's readings, so the waveform has whatever either
 has measured. They are the same numbers where both exist.
 
+`Loudness` turns them into what the clip timeline keeps and draws every
+view from: a byte a reading, -90 to 0 dB in half decibels, and after
+them the loudest of every two, four, eight and so on, for zooming out,
+about as long again. Two hours are 1.4 MB, made in about 5 ms. See
+[the decision record](decisions/2026-11-18-the-window-holds-the-loudness.md).
+
 ## How words get their timing
 
 The recogniser gives every word a start and a duration, on an 80 ms grid. It
@@ -1999,10 +2005,11 @@ macOS keychain of `engine/keys_darwin.go`, in the frames decoder of
   doc.go        what the engine is, and its version
   project.go    one episode driven step by step, as the app does it:
                 the same steps as Run, with the window as numbers
-  episode.go    status, waveform, silences and plan views for the app,
+  episode.go    status, silences and plan views for the app,
                 and the note that an episode has been searched once
   levels.go     the loudness of the whole episode, measured on its own in
-                seconds, which is the waveform before the transcription
+                seconds, which is the waveform before the transcription,
+                and as the bytes the clip timeline keeps
   edit.go       plan edits that keep the file as it was written: keep or
                 reject, trimming, correcting words, the caption look, moving
                 the crop and the caption line by hand and back, and letting

@@ -424,49 +424,6 @@ func (t *Transcript) Duration() float64 {
 	return float64(len(t.Frames)) * timed.FrameSeconds
 }
 
-// Peaks gives the loudest reading in each of buckets equal parts of a
-// part, in dB, for drawing a waveform at any zoom. Parts outside the
-// transcript are silent at -90 dB.
-//
-// It never gives more parts than it measured. Loudness is read every
-// FrameSeconds and no finer, so five buckets inside one reading are five
-// copies of that reading, and whoever draws them cannot tell that from
-// five readings that happen to agree: a line drawn between them comes out
-// flat where the sound was rising. Answering with what there is says how
-// fine the measurement was, so the drawing can be as fine as the truth and
-// no finer.
-func (t *Transcript) Peaks(from, to float64, buckets int) []float32 {
-	if to > from {
-		buckets = min(buckets, max(int(math.Ceil((to-from)/timed.FrameSeconds)), 1))
-	}
-	out := make([]float32, max(buckets, 0))
-	if buckets <= 0 || to <= from {
-		return out
-	}
-	step := (to - from) / float64(buckets)
-	for i := range out {
-		first := int(math.Floor((from + float64(i)*step - t.Start) / timed.FrameSeconds))
-		// A hair off the end before rounding up. A bucket exactly one
-		// reading wide works out to a boundary like 7.000000000000001, and
-		// rounding that up takes in the reading after it: every part came
-		// back as the louder of itself and its neighbour, which fattens a
-		// waveform and fills in the dips between words. The hair is far
-		// smaller than any real boundary and far larger than the error.
-		last := int(math.Ceil((from+float64(i+1)*step-t.Start)/timed.FrameSeconds - 1e-9))
-		peak := float32(-90)
-		if last <= 0 || first >= len(t.Frames) {
-			out[i] = peak
-			continue
-		}
-		first, last = max(first, 0), min(max(last, first+1), len(t.Frames))
-		for k := first; k < last; k++ {
-			peak = max(peak, t.Frames[k])
-		}
-		out[i] = peak
-	}
-	return out
-}
-
 // Silences are the parts quieter than the floor that last at least
 // minimum seconds. Dragging a cut snaps to them.
 func (t *Transcript) Silences(minimum float64) []timed.Span {

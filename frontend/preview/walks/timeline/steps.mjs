@@ -1983,11 +1983,22 @@ export const steps = {
     }
   },
   // ["swipe keeps the canvas", n]
-  //                    swipes along the clip timeline n times with two
-  //                    fingers, and the waveform's canvas is never made new
-  //                    on the way, only drawn again
+  //                    once the whole video is measured, swipes along the
+  //                    clip timeline with two fingers, n steps one way and
+  //                    twice as many back, each an eighth of the view or so,
+  //                    which is several views each way. After every step
+  //                    the waveform is painted in every column of the
+  //                    canvas, the canvas is never made new, only drawn
+  //                    again, and nothing asks the Go side for the loudness
+  //                    while the hand moves: what is drawn is in hand
   async "swipe keeps the canvas"(walk, arg) {
     const { page } = walk;
+    const path = await episodeOn(page);
+    for (let seen = await news(page, "video"); !(await ask(page, "Episode", path))?.measuredAll; ) {
+      seen = await nextNews(page, seen, "video");
+    }
+    await caughtUp(page, url);
+    await settle(page);
     await page.evaluate(() => {
       const canvas = document.querySelector(".clip-timeline canvas");
       window.__madeNew = 0;
@@ -2005,12 +2016,33 @@ export const steps = {
         });
       }
     });
+    const from = await page.evaluate(() => window.__calls.length);
     const line = await page.locator(".clip-timeline").boundingBox();
     await page.mouse.move(line.x + line.width / 2, line.y + line.height * 0.3);
-    for (let i = 0; i < arg; i++) await page.mouse.wheel(i % 2 ? -40 : 40, 0);
+    for (let i = 0; i < 3 * arg && !walk.wrong; i++) {
+      await page.mouse.wheel(i < arg ? 120 : -120, 0);
+      await nextPaint(page, 1);
+      // A column with a pixel painted is the waveform there, a pixel
+      // being -90 dB. The bridge's video has sound from its first second
+      // to its last, so every column of a view inside it has a reading.
+      const read = await page.evaluate(() => {
+        const c = document.querySelector(".clip-timeline .track canvas");
+        const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        let bare = 0;
+        for (let x = 0; x < c.width; x++) {
+          let painted = false;
+          for (let y = 0; y < c.height && !painted; y++) painted = d[(y * c.width + x) * 4 + 3] > 0;
+          if (!painted) bare++;
+        }
+        return { bare, width: c.width };
+      });
+      if (read.bare > 2) walk.wrong = `step ${i + 1} of the swipe left ${read.bare} of the ${read.width} columns of the waveform bare`;
+    }
+    const asked = await page.evaluate((from) => window.__calls.slice(from).filter((c) => c.name === "Loudness").length, from);
+    if (asked && !walk.wrong) walk.wrong = `the clip timeline asked the Go side for the loudness ${asked} times while the hand swiped`;
     await settle(page);
     const made = await page.evaluate(() => window.__madeNew);
-    if (made) walk.wrong = `the waveform's canvas was made new ${made} times in ${arg} swipes`;
+    if (made && !walk.wrong) walk.wrong = `the waveform's canvas was made new ${made} times in ${3 * arg} swipes`;
   },
   // ["rotate at", share]
   //                    puts the playhead in the clip, this share of the

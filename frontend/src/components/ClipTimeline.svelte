@@ -75,6 +75,7 @@
   import Info from "./Info.svelte";
   import { rotationAt } from "../lib/rotate";
   import { afterRest } from "../lib/rest";
+  import { columnLevels, readLoudness, silent } from "../lib/loudness";
 
   let {
     path,
@@ -133,8 +134,7 @@
     // How much of the loudness is measured, which is the waveform, and
     // which parts, from and to. It is measured on its own from the moment
     // the episode is added, ahead of the transcript and where this
-    // timeline looks first, so a view with a gap in it is taken again as
-    // it grows.
+    // timeline looks first, and the loudness is read again as it grows.
     measured?: number;
     measuredParts?: [number, number][];
     time: number;
@@ -285,7 +285,7 @@
     // and in how many pieces, and whether an edit is still on its way to
     // disk.
     numbers?: ClipNumbers;
-    // Whether the first reading of the words and the waveform has come
+    // Whether the first reading of the words and the loudness has come
     // back, so the track has something of the episode on it. The workspace
     // is not put in front of the person before, see ready in Episode.svelte.
     drawn?: boolean;
@@ -330,23 +330,19 @@
   let inPage = $state(false);
   let view = $state({ from: 0, to: 1 });
   let words = $state.raw<Word[]>([]);
-  let peaks = $state.raw<number[]>([]);
+  // The whole loudness of the video as far as it is measured, which every
+  // view is drawn from, see lib/loudness.ts. A swipe or a pinch asks the
+  // Go side for nothing: the waveform is drawn in the same frame as the
+  // hand moves, however fast it moves and however slow Go is.
+  let loudness = $state.raw(silent);
   let viewFor = "";
-  // Whether a view has been read yet. It is state, because the effects
-  // that read the view again as the waveform and the words grow return
-  // early until it is true, and an effect that returned having read
-  // nothing else never runs again. While the workspace was still opening,
-  // that was the effect that grows the waveform, so an episode just added
-  // showed none until its first clip was chosen.
+  // Whether a view has been read yet. It is state, because the effect
+  // that reads the view again as the words grow returns early until it
+  // is true, and an effect that returned having read nothing else never
+  // runs again.
   let loaded = $state(false);
-  // How much of the view the transcript had heard when it was read, how
-  // much of the loudness was measured, and whether all of what was read.
+  // How much of the view the transcript had heard when it was read.
   let loadedHeard = $state(-1);
-  let loadedMeasured = $state(0);
-  let loadedWhole = $state(false);
-  // The part the words and the waveform were read for. It is wider than
-  // the view, so a swipe has somewhere to go before anything is read again.
-  let data = $state({ from: 0, to: 1 });
   // True while the view is where a hand put it. Until it is let go of, the
   // clip and the playhead stop pulling it back.
   let held = $state(false);
@@ -861,19 +857,18 @@
     await reshape({ kind: "join", edge: "", index: 0, from: (cut.from + cut.to) / 2, to: 0, toWords: false });
   }
 
-  // A view is read with as much again either side of it, so swiping along
-  // the episode moves through what is already in hand. The waveform is drawn
-  // by time, so what is read and what is shown need not line up.
+  // The words of a view are read with as much again either side of it, for
+  // snapping an edge to, and the Go side is told where the view is, so the
+  // loudness is measured there first. Neither is on the path of a frame:
+  // the waveform is drawn from the loudness in hand.
   //
-  // What is drawn and the part it was read for are set in the same
-  // breath, or the old readings would be drawn against the new part for
-  // as long as the reading takes, which looks like the waveform jumping
-  // about. A reading that comes back after a newer one is dropped.
+  // A reading that comes back after a newer one is dropped.
   let latest = 0;
   // What the reading on its way was asked for. The same view asked for
   // again before it is back is that reading: an episode opening asked for
-  // the clip's view twice over, and each read the words and the waveform.
+  // the clip's view twice over.
   let reading = "";
+  let wordsRead = false;
 
   async function load(from: number, to: number) {
     view = { from, to };
@@ -882,12 +877,6 @@
     const shown = Math.max(to - from, 0.001);
     const whole = Math.max(duration, to);
     const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
-    loadedMeasured = measured;
-    loadedWhole = measuredParts.some(
-      ([a, b]) => a <= outer.from + 0.02 && b >= Math.min(outer.to, duration) - 0.02,
-    );
-    const wide = (outer.to - outer.from) / shown;
-    const buckets = Math.min(4000, Math.max(100, Math.round((width || 900) * wide)));
     // The words are wanted around the playhead, for snapping an edge to
     // them. Zoomed out to a four hour episode that would be forty thousand
     // of them for every swipe, so they are asked for by the ten minutes
@@ -897,29 +886,69 @@
       from: Math.max(outer.from, middle - spoken / 2),
       to: Math.min(outer.to, middle + spoken / 2),
     };
-    const ask = `${said.from}|${said.to}|${outer.from}|${outer.to}|${buckets}`;
+    const ask = `${said.from}|${said.to}|${outer.from}|${outer.to}`;
     if (ask === reading) return;
     reading = ask;
+    void api.look(path, outer.from, outer.to).catch(() => {});
     const mine = ++latest;
     try {
-      const [w, p] = await Promise.all([
-        api.words(path, said.from, said.to),
-        api.waveform(path, outer.from, outer.to, buckets),
-      ]);
+      const w = await api.words(path, said.from, said.to);
       if (mine !== latest) return;
       words = w ?? [];
-      peaks = p ?? [];
-      data = outer;
     } catch {
       if (mine !== latest) return;
       words = [];
-      peaks = [];
-      data = outer;
     } finally {
       if (mine === latest) reading = "";
     }
-    drawn = true;
+    wordsRead = true;
+    drawn = loudnessRead;
   }
+
+  // The loudness is read whole when the video opens, and again when its
+  // state says more of it is measured or heard, never while the view
+  // moves. One reading is out at a time, and what grew while it was out
+  // is read once it is back.
+  let loudnessRead = false;
+  let loudnessFor = "";
+  let loudnessAgain = false;
+  let loudnessOut = false;
+
+  async function readLoudnessNow() {
+    if (loudnessOut) {
+      loudnessAgain = true;
+      return;
+    }
+    loudnessOut = true;
+    const asked = path;
+    try {
+      const got = readLoudness(await api.loudness(asked));
+      if (asked === path) loudness = got;
+    } catch {
+      // Not measured, or the video is gone: the waveform it had stays,
+      // and the state says why elsewhere.
+    } finally {
+      loudnessOut = false;
+    }
+    loudnessRead = true;
+    drawn = wordsRead;
+    if (loudnessAgain) {
+      loudnessAgain = false;
+      void readLoudnessNow();
+    }
+  }
+
+  // What the loudness was read for: the video, how much of it was
+  // measured and how much of it heard, since the transcript's loudness
+  // lies under the parts not measured yet. Once all of it is measured
+  // what is heard adds nothing.
+  $effect(() => {
+    const whole = measuredParts.some(([a, b]) => a <= 0.02 && b >= duration - 0.02);
+    const key = `${path}|${measured.toFixed(2)}|${whole ? "whole" : heardIn(heard, 0, duration).toFixed(1)}`;
+    if (key === loudnessFor) return;
+    loudnessFor = key;
+    untrack(() => void readLoudnessNow());
+  });
 
   // Brings a moment into the view without changing how much of the episode
   // the view shows. How close the timeline stands is the hand's: a pinch
@@ -1122,8 +1151,10 @@
     if (times.length) onahead(times);
   });
 
-  // Reading takes a call each, so it waits until the fingers come to rest.
-  // Where the view stood when they began is kept until then, for the log.
+  // Reading the words and telling the Go side where the view is wait until
+  // the fingers come to rest. The waveform does not: it is drawn from what
+  // is in hand. Where the view stood when they began is kept until then,
+  // for the log.
   let settle = 0;
   let swipedFrom: { from: number; to: number } | null = null;
 
@@ -1317,17 +1348,12 @@
     turnPage(t, back);
   }
 
-  // A new episode's waveform arrives in seconds and its words as it is
-  // heard, both piece by piece, so a view read before either reached it is
-  // read again: the words when the transcript grows past where it stood,
-  // the waveform when more is measured and what was read had a gap in it.
-  // The waveform is measured where this timeline looks first, so a view
-  // it jumped to fills in before the rest.
+  // A new episode's words arrive as it is heard, piece by piece, so a
+  // view read before they reached it is read again when the transcript
+  // grows past where it stood.
   $effect(() => {
     if (!loaded) return;
-    const more = heardIn(heard, view.from, view.to) > loadedHeard + 0.5;
-    const grew = measured > loadedMeasured + 0.05 && !loadedWhole;
-    if (more || grew) load(view.from, view.to);
+    if (heardIn(heard, view.from, view.to) > loadedHeard + 0.5) load(view.from, view.to);
   });
 
   // The waveform, drawn the way an editor draws one: one column of the
@@ -1346,7 +1372,7 @@
   // came out brighter than their neighbours. Nothing here is ever drawn
   // between two pixels, so there is nothing left to shimmer.
   $effect(() => {
-    void peaks;
+    void loudness;
     void width;
     void view;
     // Drawn again as the track comes back into the page, and not drawn
@@ -1365,52 +1391,10 @@
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("--wave").trim();
 
-    // The level to draw in each column, in decibels. Nothing at all where
-    // no reading falls, so a column past the end of the transcript stays
-    // empty rather than reading as silence.
-    const loudest = new Float32Array(w).fill(-Infinity);
-    const step = (data.to - data.from) / Math.max(peaks.length, 1);
-    const scale = w / span;
-    // How many columns one reading has to itself.
-    const each = step * scale;
-    if (each > 1.5) {
-      // Zoomed in past the measurement. Loudness is measured every ten
-      // milliseconds and that is all there is, so a second of it on a
-      // retina screen is a hundred readings across eight hundred pixels:
-      // eight pixels of exactly one height, then a step, then eight more.
-      // That is what made the track look like a display with too few
-      // pixels, and no amount of asking for more buckets can fix it,
-      // because there is nothing finer to ask for.
-      //
-      // So the outline runs between the readings rather than standing
-      // still at each one. It invents no detail: it is the same readings,
-      // joined instead of squared off, which is what every editor draws
-      // once the zoom passes what it measured.
-      for (let x = 0; x < w; x++) {
-        // Where this column sits between two readings, taking a reading to
-        // stand at the middle of the ten milliseconds it measured.
-        const at = (view.from + x / scale - data.from) / step - 0.5;
-        const i = Math.floor(at);
-        if (i < -1 || i >= peaks.length) continue;
-        const a = peaks[Math.max(i, 0)];
-        const b = peaks[Math.min(i + 1, peaks.length - 1)];
-        loudest[x] = a + (b - a) * (at - i);
-      }
-    } else {
-      // Zoomed out, where several readings fall in one column. The loudest
-      // of them wins, which is what a waveform is for: a peak that was
-      // averaged away is a peak nobody can see.
-      for (let i = 0; i < peaks.length; i++) {
-        const at = data.from + i * step;
-        const first = Math.floor((at - view.from) * scale);
-        if (first >= w) break;
-        const last = Math.max(first, Math.ceil((at + step - view.from) * scale) - 1);
-        if (last < 0) continue;
-        for (let x = Math.max(first, 0); x <= Math.min(last, w - 1); x++) {
-          if (peaks[i] > loudest[x]) loudest[x] = peaks[i];
-        }
-      }
-    }
+    // The level to draw in each column, in decibels, see columnLevels.
+    // Nothing at all where no reading falls, so a column past what is
+    // measured stays empty rather than reading as silence.
+    const loudest = columnLevels(loudness, view.from, view.to, w);
 
     const pad = Math.round(2 * ratio);
     const room = Math.max(1, h - 2 * pad);
