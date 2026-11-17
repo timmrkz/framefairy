@@ -1575,6 +1575,68 @@ export const steps = {
     await settle(page);
     await watch.step("swipe", s);
   },
+  // ["swipe while playing"]
+  //                    fits the view to the chosen clip with its card,
+  //                    puts the playhead a third of the way along it,
+  //                    plays, and swipes the view later by the width of
+  //                    the track, so the playhead is left out of it. The
+  //                    view stays where the swipe put it while the play
+  //                    runs on. It was turned straight back to the
+  //                    playhead, Tim's report of 17 November, #900
+  async "swipe while playing"(walk, arg, s) {
+    const { page, watch } = walk;
+    await page.locator("aside ol li[data-key] button.pick.current").click();
+    await settle(page);
+    const g = await handles(page);
+    const from = g.start.x + g.start.w;
+    await clickOnTrack(page, from + (g.end.x - from) / 3, high(g.track));
+    await settle(page);
+    const frameX = () => page.evaluate(() => document.querySelector(".clip-timeline .span.frame").getBoundingClientRect().left);
+    await page.evaluate(() => document.body.focus());
+    // The sound held, so the play stands on its first frame while the
+    // hand swipes, and the playhead is where it was put when it does.
+    await holdSound(page, true);
+    await page.keyboard.press("Space");
+    await settle(page);
+    if (await page.evaluate(() => !!document.querySelector('button[aria-label="Play"]'))) {
+      await holdSound(page, false);
+      walk.wrong = "the space bar started no play";
+      return;
+    }
+    const before = await frameX();
+    await page.mouse.move(g.track.x + g.track.w / 2, high(g.track));
+    await page.mouse.wheel(g.track.w, 0);
+    await nextPaint(page);
+    await settle(page);
+    const swiped = await frameX();
+    const away = await page.evaluate(() => !document.querySelector(".clip-timeline .playhead"));
+    await page.evaluate(() => {
+      window.__frameXs = [];
+      window.__frameXWatch = true;
+      const tick = () => {
+        if (!window.__frameXWatch) return;
+        window.__frameXs.push(document.querySelector(".clip-timeline .span.frame").getBoundingClientRect().left);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await holdSound(page, false);
+    const ran = await playUntil(page, { most: 0.5 });
+    await pageUntil(page, () => window.__frameXs.length >= 30 || !document.querySelector('button[aria-label="Pause"]'));
+    const xs = await page.evaluate(() => {
+      window.__frameXWatch = false;
+      return window.__frameXs;
+    });
+    await playUntil(page, { most: 0, pause: true });
+    await settle(page);
+    await watch.step("swipe while playing", s);
+    const moved = xs.find((x) => Math.abs(x - swiped) > 0.5);
+    if (before - swiped < g.track.w / 2) walk.wrong = `a swipe of ${Math.round(g.track.w)} px while it played moved the clip's frame from ${before.toFixed(1)} px to ${swiped.toFixed(1)} px: the view went back to the playhead`;
+    else if (!away) walk.wrong = "the swipe left the playhead in the view, so the walk proves nothing";
+    else if (!ran.playing) walk.wrong = `the play ended at ${ran.at.toFixed(3)} s, so the walk proves nothing`;
+    else if (xs.length < 2) walk.wrong = `the view was read on ${xs.length} animation frames while it played, which proves nothing`;
+    else if (moved !== undefined) walk.wrong = `the view swiped away from the playing playhead was turned back to it: the clip's frame moved from ${swiped.toFixed(1)} px to ${moved.toFixed(1)} px`;
+  },
   // ["cut switch", n]  double-clicks on the clip timeline on the camera
   //                    switch of the video added with "add cameras", which
   //                    cuts a part out across it. n is 1, the one switch

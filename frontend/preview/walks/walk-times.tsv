@@ -119,6 +119,7 @@
   6	sequences.mjs SEQUENCE=an end pulled in while the clip plays, undone and redone, stops at the new end
   6	sequences.mjs SEQUENCE=an episode opens on its clip, with no frame of its start on the way
   6	sequences.mjs SEQUENCE=the crop frame at either side of the picture is drawn whole, with the shade into its corners
+  6	sequences.mjs SEQUENCE=a swipe goes on after a click put the playhead under the hand, and stays where it put the view while the clip plays
   5	sequences.mjs SEQUENCE=A click in the words being heard puts the cursor there while dictating
   5	sequences.mjs SEQUENCE=After Attach while dictating, the field has the focus again and Tab goes to Report
   5	sequences.mjs SEQUENCE=After typing at the end of a dictation, what is said next pushes the cursor along
@@ -167,7 +168,6 @@
   4	sequences.mjs SEQUENCE=a pull request followed that closed says closed in the list and in the line under it
   4	sequences.mjs SEQUENCE=a render cut off by the app closing can be removed, and is forgotten
   4	sequences.mjs SEQUENCE=a search that failed says so, and Continue tries again
-  4	sequences.mjs SEQUENCE=a swipe goes on after a click put the playhead under the hand
   4	sequences.mjs SEQUENCE=a word removed with delete or saved empty leaves the caption box, and undo and redo show it
   4	sequences.mjs SEQUENCE=a word typed in beside another is a word of its own, removed alone
   4	sequences.mjs SEQUENCE=an end dragged back past the playing playhead plays on into the video

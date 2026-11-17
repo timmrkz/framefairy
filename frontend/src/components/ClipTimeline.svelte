@@ -395,6 +395,10 @@
     if (!playing) workedOn = false;
     else if (gripping) workedOn = true;
   });
+  // Whether a swipe or a pinch during this play moved the view, so the
+  // play turns no page until its playhead is in the view again, see the
+  // page turn below. Not state: only the page turn reads it, as time moves.
+  let lookedAway = false;
 
   // One seek a frame while an edge is dragged, for the playhead that goes
   // with it, the same pace the playhead itself is dragged at.
@@ -1159,6 +1163,7 @@
     if (!zooming && Math.abs(along) < 0.5) return;
     event.preventDefault();
     held = true;
+    if (playing) lookedAway = true;
     if (zooming) {
       const at = timeAt(event.clientX);
       const share = Math.min(Math.max((at - view.from) / span, 0), 1);
@@ -1263,12 +1268,26 @@
   // actions move the view while they work on the clip. A page turned under
   // a dragged edge moved the edge by almost a whole view, found by Tim. A
   // new play turns pages again.
+  //
+  // A swipe or a pinch during a play that leaves the playhead out of the
+  // view leaves the view where the hand put it. The play turns pages again
+  // once its playhead is in the view, clear of its last twentieth: when it
+  // walks into a view swiped ahead of it, after the crosshair, or in a new
+  // play. A swipe was turned straight back to the playhead, Tim's report
+  // of 17 November: "if I scroll somewhere else, I should not be pulled
+  // back to the playhead position."
   const PAGE_EDGE = 0.05;
   $effect(() => {
-    if (!playing || !loaded || workedOn) return;
+    if (!playing) {
+      lookedAway = false;
+      return;
+    }
+    if (!loaded || workedOn) return;
     const t = time;
     const shown = view.to - view.from;
-    if (t >= view.from && t < view.to - shown * PAGE_EDGE) return;
+    const inSight = t >= view.from && t < view.to - shown * PAGE_EDGE;
+    if (inSight) lookedAway = false;
+    if (inSight || lookedAway) return;
     untrack(() => turnPage(t, false));
   });
 
