@@ -136,7 +136,7 @@ type Machine struct {
 // calls it once, in main, on the machine it hands every Engine.
 func (m *Machine) UseSystem() {
 	m.Fonts.UseMachine()
-	m.keys, m.oldKeys = systemKeys(), legacyKeys()
+	m.keys, m.oldKeys = systemKeys(), remembered(legacyKeys())
 	m.network = http.DefaultTransport
 	m.useMedia(SystemMedia(runtime.GOOS))
 	m.useFaces()

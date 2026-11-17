@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -57,6 +58,64 @@ func (noKeys) hint(string) string                         { return "" }
 func (noKeys) get(context.Context, string) (string, bool) { return "", false }
 func (noKeys) set(string, string, string) error           { return errNoKeychain }
 func (noKeys) remove(string)                              {}
+
+// rememberedKeys is the store of the first keys, which nothing writes any
+// more, with what it said of each item remembered: the settings and the
+// setup ask whether a key is there every time they are read, and the Mac
+// answered each question for the old items by starting the security
+// command. Only this app takes an item out of it, see remove, so what it
+// said stays true until then, or until a read finds the item gone.
+type rememberedKeys struct {
+	store keyStore
+	mu    sync.Mutex
+	there map[string]bool
+}
+
+func remembered(store keyStore) *rememberedKeys {
+	return &rememberedKeys{store: store, there: map[string]bool{}}
+}
+
+func (r *rememberedKeys) has(item string) bool {
+	r.mu.Lock()
+	there, known := r.there[item]
+	r.mu.Unlock()
+	if known {
+		return there
+	}
+	there = r.store.has(item)
+	r.mu.Lock()
+	r.there[item] = there
+	r.mu.Unlock()
+	return there
+}
+
+func (r *rememberedKeys) hint(item string) string { return r.store.hint(item) }
+
+// get reads the secret. An item that is not there after all, taken out
+// in Keychain Access while the app ran, is asked about again next time.
+func (r *rememberedKeys) get(ctx context.Context, item string) (string, bool) {
+	secret, ok := r.store.get(ctx, item)
+	if !ok {
+		r.mu.Lock()
+		delete(r.there, item)
+		r.mu.Unlock()
+	}
+	return secret, ok
+}
+
+func (r *rememberedKeys) set(item, secret, hint string) error {
+	r.mu.Lock()
+	delete(r.there, item)
+	r.mu.Unlock()
+	return r.store.set(item, secret, hint)
+}
+
+func (r *rememberedKeys) remove(item string) {
+	r.store.remove(item)
+	r.mu.Lock()
+	r.there[item] = false
+	r.mu.Unlock()
+}
 
 // keyStore is where m keeps keys, and oldStore where the first ones
 // were, see Machine. A machine handed no keychain keeps none.
