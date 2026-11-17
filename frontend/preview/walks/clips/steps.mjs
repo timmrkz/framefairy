@@ -957,7 +957,7 @@ export const steps = {
     await watch.step("put back", s);
   },
   // ["remove the chosen while playing", where]
-  //                    clicks the clip timeline "before" the clip chosen,
+  //                    clicks the clip timeline "after" the clip chosen,
   //                    which puts the playhead on the video, or "in" it,
   //                    which puts it on the clip, plays, removes the clip
   //                    chosen with its bin while it plays and puts it back.
@@ -982,15 +982,17 @@ export const steps = {
     }
     const g = await handles(page);
     const from = g.start.x + g.start.w;
-    if (arg === "before" && g.start.x - g.track.x < 40) {
-      walk.wrong = "there is no room on the clip timeline before the clip";
+    const right = g.track.x + g.track.w;
+    const end = g.end.x + g.end.w;
+    if (arg === "after" && right - end < 40) {
+      walk.wrong = "there is no room on the clip timeline after the clip";
       return;
     }
-    await clickOnTrack(page, arg === "before" ? (g.track.x + g.start.x) / 2 : from + 0.2 * (g.end.x - from), high(g.track));
+    await clickOnTrack(page, arg === "after" ? (end + right) / 2 : from + 0.2 * (g.end.x - from), high(g.track));
     await settle(page);
     const dimmed = () => page.evaluate(() => !!document.querySelector(".clip-timeline .chosen.dim"));
-    if ((await dimmed()) !== (arg === "before")) {
-      walk.wrong = `the click ${arg} the clip left the playhead ${arg === "before" ? "on the clip" : "on the video"}`;
+    if ((await dimmed()) !== (arg === "after")) {
+      walk.wrong = `the click ${arg} the clip left the playhead ${arg === "after" ? "on the clip" : "on the video"}`;
       return;
     }
     await page.evaluate(() => document.body.focus());
@@ -1023,9 +1025,9 @@ export const steps = {
     const frame = 1 / (await rate(page));
     if (on !== beside) walk.wrong = `removing ${was} while it played left ${on || "nothing"} chosen, not ${beside}`;
     else if (!removed.playing) walk.wrong = `the play stopped at ${removed.at.toFixed(3)} when the clip chosen was removed`;
-    else if (arg === "before" && (removed.starts !== starts || Math.abs(removed.at - at) > frame)) {
+    else if (arg === "after" && (removed.starts !== starts || Math.abs(removed.at - at) > frame)) {
       walk.wrong = `the play of the video went from ${at.toFixed(3)} to ${removed.at.toFixed(3)}, started ${removed.starts - starts} times, when the clip chosen was removed, not on where it was`;
-    } else if (arg === "before" && !removed.dim) walk.wrong = "the play of the video turned into a play of the clip chosen instead";
+    } else if (arg === "after" && !removed.dim) walk.wrong = "the play of the video turned into a play of the clip chosen instead";
     else if (arg === "in" && (Math.abs(removed.at - next.start) > frame || removed.dim)) {
       walk.wrong = `the play of the clip removed went to ${removed.at.toFixed(3)}${removed.dim ? " on the video" : ""}, not to the start of ${beside} at ${next.start.toFixed(3)}`;
     }
@@ -1039,7 +1041,7 @@ export const steps = {
     const again = await chosenKey();
     if (again !== was) walk.wrong = `${again || "nothing"} is chosen after ${was} was put back, not ${was} again`;
     else if (!back.playing) walk.wrong = `the play stopped at ${back.at.toFixed(3)} when the clip was put back`;
-    else if (arg === "before" && (back.starts !== starts || Math.abs(back.at - at) > frame)) {
+    else if (arg === "after" && (back.starts !== starts || Math.abs(back.at - at) > frame)) {
       walk.wrong = `the play of the video went from ${at.toFixed(3)} to ${back.at.toFixed(3)}, started ${back.starts - starts} times, when the clip was put back, not on where it was`;
     } else if (arg === "in" && Math.abs(back.at - at) > frame) {
       walk.wrong = `put back, the play went to ${back.at.toFixed(3)}, not back to ${at.toFixed(3)} where it was when the clip was removed`;
