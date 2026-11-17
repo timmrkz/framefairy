@@ -211,7 +211,7 @@ func (s *FrameFairy) letGoIfRemoved(ep string) bool {
 		Msg("the video's folder was deleted outside the app, so the video leaves the library")
 	s.jobs.closeEpisode(ep)
 	s.jobs.forgetEpisode(ep)
-	s.levels.stop(ep)
+	s.levels.closeEpisode(ep)
 	s.forget(ep)
 	s.clearMu.Lock()
 	if s.quitting {

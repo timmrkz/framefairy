@@ -27,13 +27,21 @@ type measuring struct {
 	machine *engine.Machine
 	notify  func(episode string)
 
+	// measure is what measures one episode, engine.MeasureLevels in the
+	// app. A test hands in its own, so it decides when a measuring writes.
+	measure func(ctx context.Context, path string, focus func() (float64, float64), progress func(float64)) error
+
 	mu      sync.Mutex
 	running map[string]*measure
 	// Where the clip timeline of each episode looks, which is measured
 	// first, see look.
 	looking map[string][2]float64
-	slots   chan struct{}
-	closed  bool
+	// The episodes being removed, which start no measuring, see
+	// closeEpisode. Counted, because two removals of one episode can
+	// overlap.
+	shut   map[string]int
+	slots  chan struct{}
+	closed bool
 	// What was read last, kept while its files stay as they were, because
 	// the timeline asks for the waveform on every swipe.
 	kept   engine.Levels
@@ -46,12 +54,17 @@ type measure struct {
 }
 
 func newMeasuring(machine *engine.Machine, notify func(string)) *measuring {
-	return &measuring{machine: machine, notify: notify,
-		running: map[string]*measure{}, looking: map[string][2]float64{}, slots: make(chan struct{}, 2)}
+	m := &measuring{machine: machine, notify: notify, running: map[string]*measure{},
+		looking: map[string][2]float64{}, shut: map[string]int{}, slots: make(chan struct{}, 2)}
+	m.measure = func(ctx context.Context, path string, focus func() (float64, float64), progress func(float64)) error {
+		return engine.NewEngine(engineLog("levels", path), m.machine).MeasureLevels(ctx, path, focus, progress)
+	}
+	return m
 }
 
-// start measures an episode unless it is measured already or being
-// measured. It is cheap to call as often as the waveform is asked for.
+// start measures an episode unless it is measured already, being
+// measured or being removed. It is cheap to call as often as the waveform
+// is asked for.
 // Like every method here it does nothing on a nil measuring, which is what
 // a test that builds the service by hand has.
 func (m *measuring) start(path string) {
@@ -59,7 +72,7 @@ func (m *measuring) start(path string) {
 		return
 	}
 	m.mu.Lock()
-	if m.closed || m.running[path] != nil {
+	if !m.mayStartLocked(path) {
 		m.mu.Unlock()
 		return
 	}
@@ -69,13 +82,17 @@ func (m *measuring) start(path string) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closed || m.running[path] != nil {
+	if !m.mayStartLocked(path) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	run := &measure{stop: cancel, done: make(chan struct{})}
 	m.running[path] = run
 	go m.run(ctx, path, run)
+}
+
+func (m *measuring) mayStartLocked(path string) bool {
+	return !m.closed && m.shut[path] == 0 && m.running[path] == nil
 }
 
 func (m *measuring) run(ctx context.Context, path string, run *measure) {
@@ -100,11 +117,10 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 	case <-ctx.Done():
 		return
 	}
-	e := engine.NewEngine(engineLog("levels", path), m.machine)
 	// The interface is told twice a second at most, which is as often as
 	// the engine writes what it has.
 	var told time.Time
-	err := e.MeasureLevels(ctx, path, func() (float64, float64) { return m.lookingAt(path) }, func(float64) {
+	err := m.measure(ctx, path, func() (float64, float64) { return m.lookingAt(path) }, func(float64) {
 		if time.Since(told) >= 500*time.Millisecond {
 			told = time.Now()
 			m.notify(path)
@@ -134,21 +150,48 @@ func (m *measuring) lookingAt(path string) (float64, float64) {
 	return at[0], at[1]
 }
 
-// stop ends the measuring of an episode and waits until it has, so its
-// work folder can be deleted without anything writing it back.
-func (m *measuring) stop(path string) {
+// closeEpisode ends the measuring of an episode, waits until it has, and
+// starts none for it until reopen is called or the episode is added again,
+// so its work folder can be deleted without anything writing it back. The
+// waveform is still asked for while a removal waits for the episode's jobs,
+// and a measuring it started again made the work folder again after the
+// folder was deleted.
+//
+// It is the measuring's side of the queue's closeEpisode, called with it.
+func (m *measuring) closeEpisode(path string) (reopen func()) {
+	if m == nil {
+		return func() {}
+	}
+	m.mu.Lock()
+	m.shut[path]++
+	run := m.running[path]
+	delete(m.looking, path)
+	m.mu.Unlock()
+	if run != nil {
+		run.stop()
+		<-run.done
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			m.mu.Lock()
+			if m.shut[path]--; m.shut[path] <= 0 {
+				delete(m.shut, path)
+			}
+			m.mu.Unlock()
+		})
+	}
+}
+
+// openEpisode lets an episode be measured again, when it is added again
+// after a removal.
+func (m *measuring) openEpisode(path string) {
 	if m == nil {
 		return
 	}
 	m.mu.Lock()
-	run := m.running[path]
-	delete(m.looking, path)
+	delete(m.shut, path)
 	m.mu.Unlock()
-	if run == nil {
-		return
-	}
-	run.stop()
-	<-run.done
 }
 
 // shutDown ends every measuring and starts no other.

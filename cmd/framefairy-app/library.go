@@ -102,6 +102,7 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	added, err := s.store.AddEpisodes(videos)
 	for _, v := range added {
 		s.jobs.openEpisode(v)
+		s.levels.openEpisode(v)
 		// A video added again whose work folder was kept picks up where it
 		// left off, so what its records say stopped says so again, the way
 		// it does when the app starts.
@@ -320,14 +321,17 @@ func (s *FrameFairy) removeEpisode(path string, deleteWork bool) error {
 	// It stays closed once it is gone, and opens again only if it stays in
 	// the library or when it is added again.
 	reopen := s.jobs.closeEpisode(path)
-	// The loudness stops being measured before anything is deleted, so
-	// nothing writes the work folder back. An episode that stays in the
-	// library is measured again the next time its waveform is asked for.
-	s.levels.stop(path)
+	// The loudness stops being measured before anything is deleted, and
+	// starts again on nothing the waveform asks for while the removal
+	// waits, so nothing writes the work folder back. An episode that stays
+	// in the library is measured again the next time its waveform is asked
+	// for.
+	reopenLevels := s.levels.closeEpisode(path)
 	removed := false
 	defer func() {
 		if !removed {
 			reopen()
+			reopenLevels()
 		}
 	}()
 	if deleteWork {
