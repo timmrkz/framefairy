@@ -1906,15 +1906,18 @@ export const steps = {
     const made = await page.evaluate(() => window.__madeNew);
     if (made) walk.wrong = `the waveform's canvas was made new ${made} times in ${arg} swipes`;
   },
-  // ["swipe far"]     swipes along the clip timeline with two fingers to
-  //                    the end of the episode and back to its start, a
-  //                    twelfth of the clip timeline at a time, with the
-  //                    app's time held, so the hand never comes to rest.
-  //                    Every step has to land on waveform already in hand,
-  //                    across the whole clip timeline, before the reading
-  //                    it starts has come back. Tim swiped twice its width
-  //                    and saw empty track until his hand stopped, issue
-  //                    #909: the waveform was only read once it rested.
+  // ["swipe far"]      zooms the clip timeline in to a fifth of what it
+  //                    shows, then swipes on with two fingers a view and
+  //                    a quarter, a twelfth at a time, with every reading
+  //                    of the waveform held until the swipe is done, and
+  //                    the same back. The app's time is held, so the hand
+  //                    never rests. What was read ahead has to carry the
+  //                    whole swipe while the Go side answers late: every
+  //                    column of the clip timeline painted after every
+  //                    step, and a reading asked on the way. Tim swiped
+  //                    twice its width and saw empty track until his hand
+  //                    stopped, issue #909: the waveform was only read
+  //                    once the hand rested.
   async "swipe far"(walk) {
     const { page } = walk;
     const path = await episodeOn(page);
@@ -1938,32 +1941,40 @@ export const steps = {
         }
         return { none, width: c.width };
       });
-    // Where the view is: its first time on the ruler and where it stands.
-    const shown = () =>
-      page.evaluate(() => {
-        const t = document.querySelector(".clip-timeline .num.time");
-        return t ? `${t.textContent} ${t.style.left}` : "";
-      });
+    const late = [];
+    const holdWaveform = (route) => {
+      const body = route.request().postDataJSON?.() ?? {};
+      if (!String(body.name ?? "").endsWith("Waveform")) return route.fallback();
+      late.push(route);
+    };
     await holdClock(page);
     try {
-      let steps = 0;
+      // Closer, so a view and a quarter either way stays inside the video.
+      await page.keyboard.down("Control");
+      await page.mouse.wheel(0, -160);
+      await page.keyboard.up("Control");
+      await settle(page);
       for (const way of [1, -1]) {
-        // Until the clip timeline stops moving, at the end of the episode
-        // and back at its start.
-        for (let was = await shown(), moved = true; moved && !walk.wrong; steps++) {
-          await page.mouse.wheel((way * line.width) / 12, 0);
-          const read = await empty();
-          if (!read) walk.wrong = "the clip timeline has no canvas";
-          else if (read.none) {
-            walk.wrong = `${steps + 1} twelfths of a swipe ${way > 0 ? "on" : "back"}, ${read.none} of the clip timeline's ${read.width} columns had no waveform`;
+        // A twelfth first, so the reading for a swipe this way lands.
+        await page.mouse.wheel((way * line.width) / 12, 0);
+        await settle(page);
+        await page.route("**/call", holdWaveform);
+        try {
+          for (let i = 1; i <= 15 && !walk.wrong; i++) {
+            await page.mouse.wheel((way * line.width) / 12, 0);
+            const read = await empty();
+            if (!read) walk.wrong = "the clip timeline has no canvas";
+            else if (read.none) {
+              walk.wrong = `${i} twelfths of a swipe ${way > 0 ? "on" : "back"} with the waveform's answers late, ${read.none} of the clip timeline's ${read.width} columns had no waveform`;
+            }
           }
-          await settle(page);
-          const now = await shown();
-          moved = now !== was;
-          was = now;
+          if (!walk.wrong && !late.length) walk.wrong = `a swipe ${way > 0 ? "on" : "back"} of a view and a quarter asked for no waveform on the way`;
+        } finally {
+          await page.unroute("**/call", holdWaveform);
+          for (const route of late.splice(0)) await route.fallback();
         }
+        await settle(page);
       }
-      if (!walk.wrong && steps < 30) walk.wrong = `the swipe went only ${steps} twelfths of the clip timeline, too short to leave what was read before it`;
     } finally {
       await letClockGo(page);
     }

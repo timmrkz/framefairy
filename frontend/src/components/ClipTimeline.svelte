@@ -912,16 +912,19 @@
   // up. While the hand swipes one way, half a view of that is moved from
   // behind the view to ahead of it, where the swipe is going, and a swipe
   // back turns it round. It is read as the hand moves the view, not once
-  // the hand rests:
-  // read only at rest, a swipe longer than what was in hand ran on into
-  // empty track, and the waveform came in a moment after the hand
-  // stopped. Tim saw it, issue #909.
+  // the hand rests: read only at rest, a swipe longer than what was in
+  // hand ran on into empty track, and the waveform came in a moment after
+  // the hand stopped. Tim saw it, issue #909.
   //
-  // One reading is on its way at a time. One asked for meanwhile is asked
-  // for once that one lands, for the view as it is by then, so a swipe
-  // keeps a reading on its way and draws each as it lands, in order.
-  let waveOut = false;
-  let waveAgain = false;
+  // A reading goes out as soon as the view has moved a quarter of itself
+  // from where the newest reading asked for put it, whether or not the
+  // readings before have landed. Waiting for the one out doubled the wait
+  // on a fast swipe. Each reading is drawn as it lands, unless a newer one
+  // is drawn already.
+  let waveAsked = 0;
+  let waveShown = 0;
+  // The part the newest reading was asked for, landed or not.
+  let waveFor = { from: 0, to: 1 };
   // The way the hand last swiped, on into the episode or back, and nought
   // for a view put somewhere by anything else.
   let heading = 0;
@@ -934,54 +937,43 @@
   }
 
   async function readWave() {
-    const asked = path;
     const shown = Math.max(view.to - view.from, 0.001);
     const whole = Math.max(duration, view.to);
     const [before, after] = sides();
     const outer = { from: Math.max(0, view.from - before * shown), to: Math.min(whole, view.to + after * shown) };
-    // Said for a reading put off as well as for one asked now, since it
-    // is asked once the one out lands. Left as it was, the effect that
-    // reads the waveform again as more is measured found it still short,
-    // asked again, moved the view, and ran again, without end.
+    waveFor = outer;
     loadedMeasured = measured;
     loadedWhole = measuredParts.some(
       ([a, b]) => a <= outer.from + 0.02 && b >= Math.min(outer.to, duration) - 0.02,
     );
-    if (waveOut) {
-      waveAgain = true;
-      return;
-    }
-    waveOut = true;
-    waveAgain = false;
     const wide = (outer.to - outer.from) / shown;
     const buckets = Math.min(4000, Math.max(100, Math.round((width || 900) * wide)));
+    const mine = ++waveAsked;
     let peaks: number[] = [];
     try {
-      peaks = (await api.waveform(asked, outer.from, outer.to, buckets)) ?? [];
+      peaks = (await api.waveform(path, outer.from, outer.to, buckets)) ?? [];
     } catch {
       peaks = [];
     }
-    waveOut = false;
-    if (asked === path) {
-      wave = { ...outer, peaks };
-      waveCame = true;
-      drawn = wordsCame && waveCame;
-    }
-    if (waveAgain || asked !== path || waveShort()) readWave();
+    if (mine < waveShown) return;
+    waveShown = mine;
+    wave = { ...outer, peaks };
+    waveCame = true;
+    drawn = wordsCame && waveCame;
   }
 
   // Whether the view has moved a quarter of itself from where it stood in
-  // the waveform in hand, toward an edge the episode goes on past, so the
-  // next reading has most of what is ahead to land in before the swipe
-  // reaches empty track. Or whether it has been zoomed in so far that the
-  // readings in hand are too coarse for it.
+  // the newest reading asked for, toward an edge the episode goes on past,
+  // so the next reading has most of what is ahead to land in before the
+  // swipe reaches empty track. Or whether it has been zoomed in so far
+  // that the readings are too coarse for it.
   function waveShort(): boolean {
     const shown = Math.max(view.to - view.from, 0.001);
     const whole = Math.max(duration, shown);
     const [before, after] = sides();
-    if (wave.from > 0.001 && view.from - wave.from < (before - 0.25) * shown) return true;
-    if (wave.to < whole - 0.001 && wave.to - view.to < (after - 0.25) * shown) return true;
-    return wave.to - wave.from > shown * 4;
+    if (waveFor.from > 0.001 && view.from - waveFor.from < (before - 0.25) * shown) return true;
+    if (waveFor.to < whole - 0.001 && waveFor.to - view.to < (after - 0.25) * shown) return true;
+    return waveFor.to - waveFor.from > shown * 4;
   }
 
   // Brings a moment into the view without changing how much of the episode
