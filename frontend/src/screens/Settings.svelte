@@ -59,6 +59,7 @@
   import { Install } from "../lib/install.svelte";
   import Swatches from "../components/Swatches.svelte";
   import { afterRest } from "../lib/rest";
+  import { toasts } from "../lib/toast.svelte";
 
   let settings = $state<Settings | null>(null);
   let checks = $state<Check[] | null>(null);
@@ -134,20 +135,37 @@
   // went once, and it put back whatever the Go side had changed since the
   // page last read the settings.
   async function save(text: string) {
-    if (!settings || text === lastSaved) return;
-    const before: Record<string, unknown> = lastSaved ? JSON.parse(lastSaved) : {};
-    const after: Record<string, unknown> = JSON.parse(text);
-    lastSaved = text;
+    const changed = changes(text);
+    if (!changed) return;
     problem = "";
-    const changed = Object.fromEntries(
-      Object.entries(after).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(before[key])),
-    );
     try {
       await api.saveSettings(changed);
       await Promise.all([readTraining(), readModels(), check()]);
     } catch (err) {
       problem = errorText(err);
     }
+  }
+
+  // What changed since the last save, taken as saved, or nothing.
+  function changes(text: string): Record<string, unknown> | null {
+    if (!settings || text === lastSaved) return null;
+    const before: Record<string, unknown> = lastSaved ? JSON.parse(lastSaved) : {};
+    const after: Record<string, unknown> = JSON.parse(text);
+    lastSaved = text;
+    return Object.fromEntries(Object.entries(after).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(before[key])));
+  }
+
+  // A change still waiting for the hand to rest goes at once when the page
+  // goes, by the sidebar or with the app closing, or it was lost: a folder
+  // typed and Updates clicked within the wait was never saved. Nothing is
+  // read back, since nothing is left on screen to show it.
+  function saveNow() {
+    clearTimeout(saveTimer);
+    if (!settings) return;
+    const changed = changes(JSON.stringify($state.snapshot(settings)));
+    // The page and its line for a problem are gone, so a refusal is a
+    // toast.
+    if (changed) api.saveSettings(changed).catch((err) => toasts.say("settings", errorText(err), { report: true }));
   }
 
   // Taking the settings as the Go side has them, without that counting as
@@ -664,12 +682,14 @@
     const noLog = onAppLog((st) => (appLog = st));
     readLog();
     api.watchAppLog(true).catch(() => {});
+    window.addEventListener("pagehide", saveNow);
     return () => {
       noLink();
       noSetup();
       noLog();
       api.watchAppLog(false).catch(() => {});
-      clearTimeout(saveTimer);
+      window.removeEventListener("pagehide", saveNow);
+      saveNow();
       if (nav.hold === hold) nav.hold = null;
     };
   });

@@ -3287,7 +3287,8 @@ line under them, and at its end the one thing to do about it. The card and
 its rows are `.card` in `app.css`, shared by both pages. Everything saves
 as it is changed, the way System Settings does on the Mac, so there is no
 **Save** button and nothing to forget to press. A field saves a moment
-after the typing stops.
+after the typing stops, or at once when the page is left or the app
+closes before that moment, issue #879, see `saveNow` in `Settings.svelte`.
 
 **What is in the way is said where it is put right**, not in a list of
 its own. A missing API key is said on the row where the key goes, a
