@@ -10,6 +10,7 @@
   // card says so in its place, because the search cannot look there.
   import { clock, type ClipEntry, type Sentence } from "../lib/api";
   import { found } from "../lib/match";
+  import { equal } from "../lib/equal";
   import { hoverClip } from "../lib/hover";
   import { between, copies, joined, pick, type Picked } from "../lib/copy";
   import { asleep } from "../lib/keys";
@@ -363,7 +364,10 @@
   // that only share their letters, found in the review of #367.
   // A card that shows what it showed keeps the row it had, so Svelte
   // leaves it alone: a letter that bolds the same words, or a state of
-  // the video that changed no card, touched every card of the list.
+  // the video that changed no card, touched every card of the list. A
+  // sentence read again is a new object with the same words, so it is
+  // compared by what it holds: by the object, every read of the cards
+  // touched every card, issue #895.
   let rowsWere = new Map<string, Row>();
   const rows = $derived.by(() => {
     const out: Row[] = [];
@@ -376,7 +380,7 @@
         const key = `s${s.start}|${s.clip ?? ""}`;
         const clip = clipOf(s);
         const old = was.get(key);
-        out.push(old && "sentence" in old && old.sentence === s && old.clip === clip && sameBold(old.bold, bold) ? old : { key, at: s.start, sentence: s, bold, clip });
+        out.push(old && "sentence" in old && equal(old.sentence, s) && old.clip === clip && sameBold(old.bold, bold) ? old : { key, at: s.start, sentence: s, bold, clip });
       }
       if (out.length || !typed.trim()) break;
     }

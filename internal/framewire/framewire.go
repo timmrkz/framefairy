@@ -218,8 +218,10 @@ func Quarter(left float64) int {
 const MaxBody = 7680 * 4320 * 4
 
 // Read reads the next record. The body is a buffer of its own, which the
-// caller may keep.
-func Read(r io.Reader) (Record, error) {
+// caller may keep. The body of a frame is taken from pool where it keeps
+// one of its size, and whoever reads the frame last may give it back
+// there, see Pool.
+func Read(r io.Reader, pool *Pool) (Record, error) {
 	var head [HeaderSize]byte
 	if _, err := io.ReadFull(r, head[:]); err != nil {
 		return Record{}, err
@@ -236,8 +238,14 @@ func Read(r io.Reader) (Record, error) {
 	if rec.Kind > Hung {
 		return Record{}, errors.New("a record of a kind nobody writes")
 	}
-	rec.Body = make([]byte, size)
+	if rec.Kind == Frame {
+		rec.Body = pool.take(int(size))
+	}
+	if rec.Body == nil {
+		rec.Body = make([]byte, size)
+	}
 	if _, err := io.ReadFull(r, rec.Body); err != nil {
+		pool.Give(rec.Body)
 		return Record{}, err
 	}
 	return rec, nil

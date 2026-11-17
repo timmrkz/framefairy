@@ -1308,8 +1308,9 @@ scaled, and cropped again to the pixel of the short in 4:4:4,
 order Go takes it, `cropRun.expr`, so a slow glide moves on every frame
 and does not stutter. The video
 preview is sent the same, each piece's first frame and every frame its
-crop moves on after, `CropSteps`, a step a frame through a glide, with the
-clip, and only looks up the step for the frame it
+crop moves on after, `CropSteps`, a step a frame through a glide, its
+left edge to a hundredth of a pixel, which the short's whole pixels never
+show, with the clip, and only looks up the step for the frame it
 shows, in `lib/keyframes.ts`. The clip timeline is sent where each glide
 runs, `Glides`, and only draws it. A crop placed by hand
 on a mark's frame moves that mark, and in a piece the marks steer it is
