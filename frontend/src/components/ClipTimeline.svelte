@@ -934,21 +934,25 @@
   }
 
   async function readWave() {
+    const asked = path;
+    const shown = Math.max(view.to - view.from, 0.001);
+    const whole = Math.max(duration, view.to);
+    const [before, after] = sides();
+    const outer = { from: Math.max(0, view.from - before * shown), to: Math.min(whole, view.to + after * shown) };
+    // Said for a reading put off as well as for one asked now, since it
+    // is asked once the one out lands. Left as it was, the effect that
+    // reads the waveform again as more is measured found it still short,
+    // asked again, moved the view, and ran again, without end.
+    loadedMeasured = measured;
+    loadedWhole = measuredParts.some(
+      ([a, b]) => a <= outer.from + 0.02 && b >= Math.min(outer.to, duration) - 0.02,
+    );
     if (waveOut) {
       waveAgain = true;
       return;
     }
     waveOut = true;
     waveAgain = false;
-    const asked = path;
-    const shown = Math.max(view.to - view.from, 0.001);
-    const whole = Math.max(duration, view.to);
-    const [before, after] = sides();
-    const outer = { from: Math.max(0, view.from - before * shown), to: Math.min(whole, view.to + after * shown) };
-    loadedMeasured = measured;
-    loadedWhole = measuredParts.some(
-      ([a, b]) => a <= outer.from + 0.02 && b >= Math.min(outer.to, duration) - 0.02,
-    );
     const wide = (outer.to - outer.from) / shown;
     const buckets = Math.min(4000, Math.max(100, Math.round((width || 900) * wide)));
     let peaks: number[] = [];
