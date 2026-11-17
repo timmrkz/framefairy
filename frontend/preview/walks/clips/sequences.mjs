@@ -28,6 +28,12 @@ export default [
       // it back takes the remove back as it was, chosen, and the playhead
       // stays.
       ["put back the chosen"],
+      // Tim removed the clip he had watched while the video played on
+      // past it, to go on watching, and the play jumped to the next
+      // clip's start. A play of the clip removed goes on from the next
+      // clip, a play of the video where it is. Issue #901.
+      ["remove the chosen while playing", "before"],
+      ["remove the chosen while playing", "in"],
     ],
   },
   {
