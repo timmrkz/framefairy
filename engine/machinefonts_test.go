@@ -620,20 +620,20 @@ func TestAReadAskedForWhileOneRunsTakesThatOne(t *testing.T) {
 			"Narrow.ttf": namedFace(t, "Anton", "Test Narrow"),
 			"Pair.ttc":   collection(tinyFace("Tiny", 400), tinyFace("Tiny Heavy", 900)),
 		})
-		disk := countOpenings(fsys)
-		disk.first, disk.hold = make(chan struct{}), make(chan struct{})
+		counted := countOpenings(fsys)
+		counted.first, counted.hold = make(chan struct{}), make(chan struct{})
 		fonts := new(Fonts)
-		fonts.Use(disk, dirs)
+		fonts.Use(counted, dirs)
 		var wg sync.WaitGroup
 		wg.Go(fonts.Refresh)
-		<-disk.first
+		<-counted.first
 		var offered int
 		wg.Go(func() { offered = len(fonts.Caption()) })
 		wg.Go(fonts.Refresh)
 		synctest.Wait()
-		close(disk.hold)
+		close(counted.hold)
 		wg.Wait()
-		if want := map[string]int{"/fonts/a/Narrow.ttf": 1, "/fonts/a/Pair.ttc": 1}; !maps.Equal(disk.times(), want) {
+		if want := map[string]int{"/fonts/a/Narrow.ttf": 1, "/fonts/a/Pair.ttc": 1}; !maps.Equal(counted.times(), want) {
 			t.Errorf("the font files were not opened once each")
 		}
 		if offered != 6 {
@@ -652,18 +652,18 @@ func TestAReadOpensOnlyTheFontFilesThatChanged(t *testing.T) {
 		"Narrow.ttf": namedFace(t, "Anton", "Test Narrow"),
 		"Pair.ttc":   collection(tinyFace("Tiny", 400), tinyFace("Tiny Heavy", 900)),
 	})
-	disk := countOpenings(fsys)
+	counted := countOpenings(fsys)
 	fonts := new(Fonts)
-	fonts.Use(disk, dirs)
+	fonts.Use(counted, dirs)
 	fonts.scan()
 	if _, ok := fonts.TextWidth("Test Narrow", "Jahre", 96); !ok {
 		t.Fatal("Test Narrow was not measured")
 	}
-	disk.times()
+	counted.times()
 
 	gen := fonts.generation()
 	fonts.scan()
-	if opened := disk.times(); len(opened) != 0 {
+	if opened := counted.times(); len(opened) != 0 {
 		t.Errorf("unchanged, the files %v were opened again", opened)
 	}
 	if fonts.generation() != gen {
@@ -680,7 +680,7 @@ func TestAReadOpensOnlyTheFontFilesThatChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	fonts.scan()
-	if opened, want := disk.times(), map[string]int{"/fonts/a/Wide.ttf": 1}; !maps.Equal(opened, want) {
+	if opened, want := counted.times(), map[string]int{"/fonts/a/Wide.ttf": 1}; !maps.Equal(opened, want) {
 		t.Errorf("with a font installed, %v were opened, want %v", opened, want)
 	}
 	if fonts.generation() == gen {
@@ -694,7 +694,7 @@ func TestAReadOpensOnlyTheFontFilesThatChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	fonts.scan()
-	if opened := disk.times(); len(opened) != 0 {
+	if opened := counted.times(); len(opened) != 0 {
 		t.Errorf("with a font taken out, %v were opened", opened)
 	}
 	if got, want := fontNames(fonts.Caption()), []string{"Inter Black", "Anton", "Archivo Black", "Test Narrow", "Test Wide"}; !slices.Equal(got, want) {
