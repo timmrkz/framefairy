@@ -67,14 +67,18 @@ type machineFace struct {
 // offers the bundled faces alone. A nil Fonts offers them too, without
 // keeping what it measured, for a caller that has no machine.
 type Fonts struct {
-	// reading is held while the folders are read, so a second caller
-	// waits for the one reading rather than reading them all again.
-	reading sync.Mutex
-	mu      sync.Mutex
-	fsys    afero.Fs
-	dirs    []string
+	mu   sync.Mutex
+	fsys afero.Fs
+	dirs []string
+	// reading is closed when the read of the folders under way ends, and
+	// nil while none is, so a second caller waits for that read and takes
+	// what it found rather than reading them all again.
+	reading chan struct{}
 	faces   []machineFace
 	byName  map[string]int
+	// files is what each font file held when it was read, so a read of
+	// the folders opens only the files that are new or changed since.
+	files   map[string]fontFile
 	scanned time.Time
 	// metrics is what was read of each face, which Fonts forgets
 	// whenever it reads the folders again, see face.
@@ -91,7 +95,7 @@ func (f *Fonts) UseMachine() { f.Use(disk, FontFolders()) }
 func (f *Fonts) Use(fsys afero.Fs, dirs []string) {
 	f.mu.Lock()
 	f.fsys, f.dirs = fsys, dirs
-	f.faces, f.byName, f.scanned = nil, nil, time.Time{}
+	f.faces, f.byName, f.files, f.scanned = nil, nil, nil, time.Time{}
 	f.mu.Unlock()
 	f.metrics.forget()
 }
@@ -137,7 +141,11 @@ func FontFolders() []string {
 
 // Refresh reads the font folders again, so a font installed while the
 // app runs is offered the next time the list is opened. It reads them at
-// most once a second, however often it is asked.
+// most once a second, however often it is asked, a Refresh asked while
+// they are being read takes what that read finds, and only a font file
+// that is new or changed is opened. The app reads them as it starts, the
+// window asks for the list in the middle of it, and each video opened
+// asks again, and every one of those read every font of the Mac.
 func (f *Fonts) Refresh() {
 	if f == nil {
 		return
@@ -150,25 +158,44 @@ func (f *Fonts) Refresh() {
 	}
 }
 
-// scan reads every font folder and keeps what it found.
+// scan reads every font folder and keeps what it found, or waits for the
+// read under way and takes what that one found.
 func (f *Fonts) scan() {
-	f.reading.Lock()
-	defer f.reading.Unlock()
 	f.mu.Lock()
-	fsys, dirs := f.fsys, f.dirs
+	if under := f.reading; under != nil {
+		f.mu.Unlock()
+		<-under
+		return
+	}
+	done := make(chan struct{})
+	f.reading = done
+	fsys, dirs, known := f.fsys, f.dirs, f.files
 	f.mu.Unlock()
+	// Whatever happens to the read, the callers waiting for it go on.
+	defer func() {
+		f.mu.Lock()
+		f.reading = nil
+		f.mu.Unlock()
+		close(done)
+	}()
 	var faces []machineFace
+	var files map[string]fontFile
+	changed := true
 	if fsys != nil {
-		faces = findFaces(fsys, dirs)
+		faces, files, changed = findFaces(fsys, dirs, known)
 	}
 	byName := make(map[string]int, len(faces))
 	for i, face := range faces {
 		byName[face.font.Name] = i
 	}
 	f.mu.Lock()
-	f.faces, f.byName, f.scanned = faces, byName, time.Now()
+	f.faces, f.byName, f.files, f.scanned = faces, byName, files, time.Now()
 	f.mu.Unlock()
-	f.metrics.forget()
+	// What was read of a face is kept by its name, which may be another
+	// file now, so it goes only when a file did.
+	if changed {
+		f.metrics.forget()
+	}
 }
 
 // all is every face of the machine, read the first time it is asked for.
@@ -180,14 +207,7 @@ func (f *Fonts) all() []machineFace {
 	ready := !f.scanned.IsZero()
 	f.mu.Unlock()
 	if !ready {
-		f.reading.Lock()
-		f.mu.Lock()
-		ready = !f.scanned.IsZero()
-		f.mu.Unlock()
-		f.reading.Unlock()
-		if !ready {
-			f.scan()
-		}
+		f.scan()
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -221,20 +241,29 @@ const (
 	fontFileMost    = 512 << 20
 )
 
-// findFaces reads the faces in the font files under dirs. A name found
-// twice is the first one's, in the order of dirs, and a name a bundled
-// face has stays the bundled face's.
-func findFaces(fsys afero.Fs, dirs []string) []machineFace {
-	var faces []machineFace
+// fontFile is what a font file held when it was read, known by its size
+// and the time it was last changed.
+type fontFile struct {
+	size  int64
+	mod   int64
+	faces []sfntFace
+}
+
+// findFaces reads the faces in the font files under dirs, and says
+// whether any file is new, changed or gone since known, whose files of
+// the same size and time are not opened again. A name found twice is the
+// first one's, in the order of dirs, and a name a bundled face has stays
+// the bundled face's.
+func findFaces(fsys afero.Fs, dirs []string, known map[string]fontFile) (faces []machineFace, files map[string]fontFile, changed bool) {
+	files = map[string]fontFile{}
 	seen := map[string]bool{}
 	for _, font := range captionFonts {
 		seen[strings.ToLower(font.Name)] = true
 	}
-	files := 0
 	for _, dir := range dirs {
 		root := filepath.Clean(dir)
 		_ = afero.Walk(fsys, root, func(path string, info fs.FileInfo, err error) error {
-			if err != nil || files >= fontFilesMost {
+			if err != nil || len(files) >= fontFilesMost {
 				return nil
 			}
 			if info.IsDir() {
@@ -251,13 +280,13 @@ func findFaces(fsys afero.Fs, dirs []string) []machineFace {
 			if !info.Mode().IsRegular() || info.Size() > fontFileMost {
 				return nil
 			}
-			files++
-			file, err := fsys.Open(path)
-			if err != nil {
-				return nil
+			read, ok := known[path]
+			if !ok || read.size != info.Size() || read.mod != info.ModTime().UnixNano() {
+				changed = true
+				read = fontFile{size: info.Size(), mod: info.ModTime().UnixNano(), faces: readFile(fsys, path, info.Size())}
 			}
-			defer file.Close()
-			for _, face := range readSafely(file, info.Size()) {
+			files[path] = read
+			for _, face := range read.faces {
 				key := strings.ToLower(face.name)
 				if seen[key] {
 					continue
@@ -279,7 +308,18 @@ func findFaces(fsys afero.Fs, dirs []string) []machineFace {
 	slices.SortStableFunc(faces, func(a, b machineFace) int {
 		return strings.Compare(strings.ToLower(a.font.Name), strings.ToLower(b.font.Name))
 	})
-	return faces
+	return faces, files, changed || len(files) != len(known)
+}
+
+// readFile reads the faces of the font file at path, and none of one that
+// cannot be opened.
+func readFile(fsys afero.Fs, path string, size int64) []sfntFace {
+	file, err := fsys.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+	return readSafely(file, size)
 }
 
 // readSafely reads the faces of a font file, and none of one whose reading

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/spf13/afero"
@@ -124,7 +126,7 @@ func TestAFontThatPanicsIsLeftOut(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	faces := findFaces(tripping{fsys}, []string{"/fonts"})
+	faces, _, _ := findFaces(tripping{fsys}, []string{"/fonts"}, nil)
 	if len(faces) != 1 || faces[0].font.Name != "Test Good" {
 		t.Errorf("found %v, want the good font alone", faces)
 	}
@@ -567,5 +569,128 @@ func TestTheFacesAreCountedByWhereTheyComeFrom(t *testing.T) {
 	}
 	if all := len(fonts.Caption()); bundled+machine != all {
 		t.Errorf("counted %d in all, the list offers %d", bundled+machine, all)
+	}
+}
+
+// openings is a disk that counts how often each font file is opened, and
+// holds the first opening until hold is closed, when hold is not nil.
+type openings struct {
+	afero.Fs
+	mu     sync.Mutex
+	opened map[string]int
+	first  chan struct{}
+	hold   chan struct{}
+}
+
+func countOpenings(fsys afero.Fs) *openings {
+	return &openings{Fs: fsys, opened: map[string]int{}}
+}
+
+func (o *openings) Open(name string) (afero.File, error) {
+	if filepath.Ext(name) == "" {
+		return o.Fs.Open(name)
+	}
+	o.mu.Lock()
+	o.opened[name]++
+	first := o.opened[name] == 1 && len(o.opened) == 1
+	o.mu.Unlock()
+	if first && o.hold != nil {
+		close(o.first)
+		<-o.hold
+	}
+	return o.Fs.Open(name)
+}
+
+// times is how often each font file was opened, and forgets it.
+func (o *openings) times() map[string]int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := o.opened
+	o.opened = map[string]int{}
+	return out
+}
+
+// The app reads the font folders as it starts, and the window asks for
+// the list while that read runs. The second ask takes what the first
+// read finds, and no font file is opened twice. It read every font of
+// the Mac a second time.
+func TestAReadAskedForWhileOneRunsTakesThatOne(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fsys, dirs := fontFolders(t, map[string][]byte{
+			"Narrow.ttf": namedFace(t, "Anton", "Test Narrow"),
+			"Pair.ttc":   collection(tinyFace("Tiny", 400), tinyFace("Tiny Heavy", 900)),
+		})
+		disk := countOpenings(fsys)
+		disk.first, disk.hold = make(chan struct{}), make(chan struct{})
+		fonts := new(Fonts)
+		fonts.Use(disk, dirs)
+		var wg sync.WaitGroup
+		wg.Go(fonts.Refresh)
+		<-disk.first
+		var offered int
+		wg.Go(func() { offered = len(fonts.Caption()) })
+		wg.Go(fonts.Refresh)
+		synctest.Wait()
+		close(disk.hold)
+		wg.Wait()
+		if want := map[string]int{"/fonts/a/Narrow.ttf": 1, "/fonts/a/Pair.ttc": 1}; !maps.Equal(disk.times(), want) {
+			t.Errorf("the font files were not opened once each")
+		}
+		if offered != 6 {
+			t.Errorf("the list asked for during the read offers %d faces, want 6", offered)
+		}
+	})
+}
+
+// Each video opened reads the font folders again, so a font installed
+// while the app runs is offered. Only a font file that is new or changed
+// is opened, a face whose file stayed is still measured from what was
+// read of it, and a font taken out is no longer offered.
+func TestAReadOpensOnlyTheFontFilesThatChanged(t *testing.T) {
+	t.Parallel()
+	fsys, dirs := fontFolders(t, map[string][]byte{
+		"Narrow.ttf": namedFace(t, "Anton", "Test Narrow"),
+		"Pair.ttc":   collection(tinyFace("Tiny", 400), tinyFace("Tiny Heavy", 900)),
+	})
+	disk := countOpenings(fsys)
+	fonts := new(Fonts)
+	fonts.Use(disk, dirs)
+	fonts.scan()
+	if _, ok := fonts.TextWidth("Test Narrow", "Jahre", 96); !ok {
+		t.Fatal("Test Narrow was not measured")
+	}
+	disk.times()
+
+	fonts.scan()
+	if opened := disk.times(); len(opened) != 0 {
+		t.Errorf("unchanged, the files %v were opened again", opened)
+	}
+	fonts.metrics.mu.Lock()
+	kept := len(fonts.metrics.faces)
+	fonts.metrics.mu.Unlock()
+	if kept == 0 {
+		t.Error("unchanged, what was measured of the faces was forgotten")
+	}
+
+	if err := afero.WriteFile(fsys, "/fonts/a/Wide.ttf", namedFace(t, "Archivo Black", "Test Wide"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fonts.scan()
+	if opened, want := disk.times(), map[string]int{"/fonts/a/Wide.ttf": 1}; !maps.Equal(opened, want) {
+		t.Errorf("with a font installed, %v were opened, want %v", opened, want)
+	}
+	if got, want := fontNames(fonts.Caption()), []string{"Inter Black", "Anton", "Archivo Black", "Test Narrow", "Test Wide", "Tiny", "Tiny Heavy"}; !slices.Equal(got, want) {
+		t.Errorf("offered %v, want %v", got, want)
+	}
+
+	if err := fsys.Remove("/fonts/a/Pair.ttc"); err != nil {
+		t.Fatal(err)
+	}
+	fonts.scan()
+	if opened := disk.times(); len(opened) != 0 {
+		t.Errorf("with a font taken out, %v were opened", opened)
+	}
+	if got, want := fontNames(fonts.Caption()), []string{"Inter Black", "Anton", "Archivo Black", "Test Narrow", "Test Wide"}; !slices.Equal(got, want) {
+		t.Errorf("offered %v, want %v", got, want)
 	}
 }
