@@ -5,6 +5,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"weak"
 
 	"framefairy/engine/runes"
 	"framefairy/engine/timed"
@@ -105,7 +107,19 @@ type ClipSaid struct {
 // already. The key of each is its ID. The plan was read a second time for
 // the cards, every time they were read, and a clip set removed between the
 // two reads failed the whole list, found in the review of the search.
+//
+// What it laid out is kept with the plan's read, by the transcript and the
+// look, so the cards asked for again after an edit lay out only the plan
+// the edit changed: one corrected word laid out every clip of every plan.
+// The slice is the caller's, the captions in it are shared and only read.
 func (s PlanSummary) Said(t *Transcript, look *Look) []ClipSaid {
+	key, keep := look.key()
+	keep = keep && s.said != nil
+	if keep {
+		if out, ok := s.said.get(t, key); ok {
+			return out
+		}
+	}
 	out := make([]ClipSaid, 0, len(s.clips))
 	for _, c := range s.clips {
 		if c.Rejected || len(c.Segments) == 0 {
@@ -113,7 +127,37 @@ func (s PlanSummary) Said(t *Transcript, look *Look) []ClipSaid {
 		}
 		out = append(out, ClipSaid{Key: c.ID, Clip: c, Captions: captionsView(s.plan, c, t, look).Captions})
 	}
-	return out
+	if keep {
+		s.said.set(t, key, out)
+	}
+	return slices.Clip(out)
+}
+
+// keptSaid is the last Said of one read of a plan, with the transcript and
+// the key of the look it was laid out in, see Look.key. The transcript is
+// held weakly: every plan read is kept, and a transcript is megabytes the
+// Episode lets go of on its own, see keptTranscripts.
+type keptSaid struct {
+	mu   sync.Mutex
+	t    weak.Pointer[Transcript]
+	look string
+	said []ClipSaid
+}
+
+// get is what was laid out in t and look, as a slice of the caller's.
+func (k *keptSaid) get(t *Transcript, look string) ([]ClipSaid, bool) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.said == nil || k.t != weak.Make(t) || k.look != look {
+		return nil, false
+	}
+	return slices.Clone(k.said), true
+}
+
+func (k *keptSaid) set(t *Transcript, look string, said []ClipSaid) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.t, k.look, k.said = weak.Make(t), look, slices.Clone(said)
 }
 
 // SaidCards is the transcript as cards to read and search, see Sentences,

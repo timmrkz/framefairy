@@ -4,9 +4,13 @@ import (
 	"cmp"
 	"fmt"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"weak"
 
 	"framefairy/engine/timed"
 
@@ -199,5 +203,144 @@ func TestACaptionCardReadsWholeWords(t *testing.T) {
 	card, ok := captionCard(ClipSaid{Key: "01", Clip: clip}, caption)
 	if !ok || card.Text != "Ich Judostyle hab gesagt" || card.Start != 10 || card.End != 12.8 {
 		t.Errorf("the card is %+v, %v", card, ok)
+	}
+}
+
+// The transcript search asks for its cards again after every edit, and
+// lays out the captions of each plan only when the plan, the transcript,
+// the look or the faces changed since: one corrected word laid out every
+// clip of every plan of the video.
+func TestTheCaptionsOfAPlanAreLaidOutAgainOnlyWhenWhatTheyAreMadeOfChanged(t *testing.T) {
+	t.Parallel()
+	fsys, path := editablePlanPath(t)
+	tr := editableTranscript()
+	summary, err := summaryOf(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fonts := new(Fonts)
+	look := &Look{Style: map[string]any{"font": "Anton", "size": 80.0}, Fonts: fonts}
+	first := summary.Said(tr, look)
+	if len(first) != 2 || len(first[0].Captions) == 0 {
+		t.Fatalf("laid out %d clips", len(first))
+	}
+	laidOut := func(said []ClipSaid) bool {
+		return &said[0].Captions[0] != &first[0].Captions[0]
+	}
+
+	again := summary.Said(tr, &Look{Style: map[string]any{"size": 80.0, "font": "Anton"}, Fonts: fonts})
+	if laidOut(again) {
+		t.Error("the same plan, transcript and look were laid out again")
+	}
+	again[0].Key = "elsewhere/01"
+	if summary.Said(tr, look)[0].Key != "01" {
+		t.Error("a key changed by one caller reached the next")
+	}
+
+	for _, c := range []struct {
+		name string
+		said func() []ClipSaid
+	}{
+		{"another look", func() []ClipSaid {
+			return summary.Said(tr, &Look{Style: map[string]any{"font": "Anton", "size": 60.0}, Fonts: fonts})
+		}},
+		{"another video", func() []ClipSaid {
+			return summary.Said(tr, &Look{Style: look.Style, Fonts: fonts, Source: SourceInfo{Width: 1080, Height: 1920}})
+		}},
+		{"the transcript read again", func() []ClipSaid { return summary.Said(editableTranscript(), look) }},
+		{"the faces changed", func() []ClipSaid {
+			fonts.Use(afero.NewMemMapFs(), nil)
+			return summary.Said(tr, look)
+		}},
+	} {
+		if !laidOut(c.said()) {
+			t.Errorf("%s: the captions were not laid out again", c.name)
+		}
+		first = summary.Said(tr, look)
+	}
+}
+
+// The window asks for the cards from several calls at once, in looks
+// that differ, while the faces are read again.
+func TestTheCaptionsOfAPlanAreLaidOutFromSeveralCallsAtOnce(t *testing.T) {
+	t.Parallel()
+	fsys, path := editablePlanPath(t)
+	tr := editableTranscript()
+	summary, err := summaryOf(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fonts := new(Fonts)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			look := &Look{Style: map[string]any{"size": float64(60 + 10*(i%2))}, Fonts: fonts}
+			for range 10 {
+				said := summary.Said(tr, look)
+				if len(said) != 2 {
+					t.Errorf("laid out %d clips", len(said))
+				}
+				said[0].Key = "taken"
+			}
+		})
+	}
+	wg.Go(func() { fonts.Use(afero.NewMemMapFs(), nil) })
+	wg.Wait()
+}
+
+// Every plan read is kept, and the captions laid out with it, while a
+// transcript is megabytes the Episode lets go of after the last ten
+// videos. The captions kept do not keep their transcript.
+func TestTheCaptionsKeptDoNotKeepTheirTranscript(t *testing.T) {
+	t.Parallel()
+	fsys, path := editablePlanPath(t)
+	summary, err := summaryOf(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := editableTranscript()
+	gone := weak.Make(tr)
+	if len(summary.Said(tr, nil)) != 2 {
+		t.Fatal("the clips were not laid out")
+	}
+	tr = nil
+	runtime.GC()
+	if gone.Value() != nil {
+		t.Error("the transcript is kept alive by the captions laid out in it")
+	}
+	runtime.KeepAlive(summary)
+}
+
+// The captions kept for the cards are known by the key of their look, so
+// everything a look holds is in its key: a look that differs in any of
+// its fields lays out again. A field added to Look and left out of its
+// key would hand out stale cards, so a new field fails here first.
+func TestEveryFieldOfALookIsInItsKey(t *testing.T) {
+	t.Parallel()
+	if n := reflect.TypeFor[Look]().NumField(); n != 3 {
+		t.Fatalf("Look has %d fields, and this test and Look.key know 3", n)
+	}
+	fonts := new(Fonts)
+	base := Look{Style: map[string]any{"font": "Anton"}, Source: SourceInfo{Width: 1920, Height: 1080}, Fonts: fonts}
+	key := func(l Look) string {
+		k, ok := l.key()
+		if !ok {
+			t.Fatal("no key")
+		}
+		return k
+	}
+	was := key(base)
+	for name, other := range map[string]Look{
+		"Style":  {Style: map[string]any{"font": "Inter"}, Source: base.Source, Fonts: fonts},
+		"Source": {Style: base.Style, Source: SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1}, Fonts: fonts},
+		"Fonts":  {Style: base.Style, Source: base.Source, Fonts: new(Fonts)},
+	} {
+		if key(other) == was {
+			t.Errorf("a look with another %s has the same key", name)
+		}
+	}
+	fonts.Use(afero.NewMemMapFs(), nil)
+	if key(base) == was {
+		t.Error("the look's faces read again with a change have the same key")
 	}
 }

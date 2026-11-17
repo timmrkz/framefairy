@@ -9,9 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"framefairy/engine/runes"
 	"framefairy/engine/runlog"
-	"framefairy/engine/tool"
 )
 
 // The language models somebody can install, and installing one.
@@ -366,12 +364,9 @@ func (m LanguageModel) FitsIn(total int64) Fit {
 func MachineMemory() int64 {
 	switch runtime.GOOS {
 	case "darwin":
-		res := tool.Runner{}.Run(context.Background(), "", "sysctl", "-n", "hw.memsize")
-		if res.Code == 0 {
-			if n, err := strconv.ParseInt(runes.Trim(res.Stdout), 10, 64); err == nil {
-				return n
-			}
-		}
+		// Asked of the kernel itself: the sysctl command it was asked
+		// through was a program started for every read of the setup.
+		return systemMemory()
 	case "linux":
 		return memTotal("/proc/meminfo")
 	}

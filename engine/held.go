@@ -35,7 +35,9 @@ type Episode struct {
 	// the machine's held as well. Every plan of every video asked about is
 	// kept, about ten times its file in memory: 11 KB for a plan of 24
 	// clips, 97 KB for one from before the clips kept no words, measured
-	// once. A video's plans go when it leaves the library, see Forget.
+	// once. Once the transcript search asked for its cards, about 7.5 KB a
+	// clip more, its captions laid out, see PlanSummary.Said, measured once
+	// on 80 clips. A video's plans go when it leaves the library, see Forget.
 	plans map[string]*planSlot
 }
 
