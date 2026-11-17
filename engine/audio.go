@@ -262,15 +262,6 @@ func isPunctuation(s string) bool {
 	return true
 }
 
-// holdOn is the furthest a word's end is moved on to follow its sound:
-// the most the recogniser can have cut it short by, a last piece of four
-// 80 ms steps and one step more. It is no further because the end of a
-// word is also where a pause begins, and pauses decide where a clip cuts
-// dead air and where a caption breaks. Under music or room noise loud
-// enough to count as sound, an end that followed the sound without a
-// limit would run on through every pause.
-const holdOn = 0.4
-
 // SnapWords moves each word onto the sound it belongs to.
 //
 // The recogniser works on an 80 ms grid and folds silence into the words
@@ -364,26 +355,26 @@ func SnapWords(words []timed.Cue, frames []float32, start, floor float64) []time
 		// steps, however long the sound is held, so a word before a pause
 		// ended while it was still being said. Its caption went early and
 		// its block on the clip timeline stopped short of its own waveform.
-		// The sound is followed to where it stops, never into the next word
-		// and never more than holdOn past the recogniser's end.
+		// A word lasts as long as its sound: the sound is followed to where
+		// it stops, however long that is, never into the next word. It was
+		// followed for 0.4 s at most, and a word whose sound went on a
+		// moment longer kept the recogniser's end. Tim dragged a clip's
+		// start into the sound of such a word and its caption went, with
+		// the word still to be heard in the waveform.
 		//
 		// Only when it does stop. Sound that runs on without a break into
 		// the next word is as likely that word's beginning as this word's
 		// end, and then the recogniser's end stands. Taken for this word,
 		// "ich." at the end of a sentence ran on into the "Also" that
 		// began a clip, and the clip's captions began with a word its
-		// sound did not hold. Sound that never stops within holdOn, music
-		// or room noise, is left alone the same way.
+		// sound did not hold. Sound that never stops before the next word,
+		// music or room noise, is left alone the same way.
 		end = math.Max(end, begin)
-		reach := end + holdOn
-		if next < reach {
-			reach = next
-		}
 		g := frameAt(end)
-		for loud(g) && timeAt(g+1) <= reach+1e-9 {
+		for loud(g) && timeAt(g+1) <= next+1e-9 {
 			g++
 		}
-		if !loud(g) {
+		if !loud(g) && g < len(frames) {
 			end = math.Max(end, timeAt(g))
 		}
 		begin = math.Max(begin, low)
