@@ -174,47 +174,6 @@ func keptCrop(x *int) int {
 	return *x
 }
 
-// CoverageView says how many searches have read each part of an episode.
-// It decides nothing about where a search may go: any window can be
-// searched, as often as anyone likes.
-type CoverageView struct {
-	// Passes is the whole episode in parts, each with how many searches
-	// have read it, see engine.SearchPasses. Search goes by it.
-	Passes []PassView `json:"passes"`
-}
-
-// PassView is a part of an episode and how many searches have read it.
-type PassView struct {
-	From  float64 `json:"from"`
-	To    float64 `json:"to"`
-	Times int     `json:"times"`
-}
-
-// Coverage gives the episode in parts by how many searches have read
-// each, see CoverageView.
-// The workspace reads it in the state of the video, see State, and calls
-// it no more. The walks and the tests ask it.
-func (s *FrameFairy) Coverage(ctx context.Context, path string) (CoverageView, error) {
-	if !s.store.Known(path) {
-		return CoverageView{}, errNotInLibrary
-	}
-	info, err := s.probe(ctx, path)
-	if err != nil {
-		return CoverageView{}, err
-	}
-	return coverageOf(s.plansOf(path), info.Duration), nil
-}
-
-// coverageOf is how often each part of an episode this long was searched
-// by the searches that made these plans.
-func coverageOf(plans []engine.PlanSummary, duration float64) CoverageView {
-	out := CoverageView{Passes: []PassView{}}
-	for _, p := range engine.SearchPasses(plans, duration) {
-		out.Passes = append(out.Passes, PassView{From: p.Start, To: p.End, Times: p.Times})
-	}
-	return out
-}
-
 // Captions gives the captions of one clip, on the clip's own clock and in
 // the look the render draws them in, so the interface can lay them over the
 // picture while the clip plays.

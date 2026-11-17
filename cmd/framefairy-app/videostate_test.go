@@ -306,17 +306,10 @@ func TestPathAStateIsNewerThanItsJobsAndAnEditBeforeIt(t *testing.T) {
 			t.Errorf("the job %s is at %d, the state that holds it at %d", j.ID, j.Seq, before.Rev)
 		}
 	}
-	// What the state holds is what the clip list and the coverage say.
+	// What the state holds is what the clip list says.
 	clips := d.clips(ep)
 	if len(before.Clips) == 0 || len(before.Clips) != len(clips) {
 		t.Fatalf("the state holds %d clips, the list %d", len(before.Clips), len(clips))
-	}
-	coverage, err := d.svc.Coverage(ctx, ep)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(before.Coverage.Passes, coverage.Passes) {
-		t.Errorf("the state says %v was searched, the coverage %v", before.Coverage.Passes, coverage.Passes)
 	}
 	if before.Status.Source != ep || before.Status.Missing {
 		t.Errorf("the state's status is of %q, missing %v", before.Status.Source, before.Status.Missing)

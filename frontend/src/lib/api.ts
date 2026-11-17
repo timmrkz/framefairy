@@ -501,13 +501,9 @@ export interface WindowView extends KeptWindow {
   // The range picker leaves the window out: the whole video is being
   // transcribed, which is about all of it and not about the window.
   hidden?: boolean;
-}
-
-// How many searches have read each part of an episode. Any window can be
-// searched, as often as anyone likes, so this only says where Search goes.
-export interface CoverageView {
-  // The whole episode in parts, each with how many searches have read it.
-  passes: { from: number; to: number; times: number }[];
+  // A search has read some of the window before, so Search looks there
+  // again and keeps the clips there are.
+  searched?: boolean;
 }
 
 export interface SourceView {
@@ -569,7 +565,6 @@ export interface VideoState {
   rev: number;
   status: EpisodeStatus;
   clips: ClipEntry[];
-  coverage: CoverageView;
   jobs: Job[];
   // The video's first search is on its way: the video was just added, its
   // picture is being checked, and the Go side asks for the search once it

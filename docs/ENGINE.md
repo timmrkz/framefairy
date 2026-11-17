@@ -1779,7 +1779,9 @@ of a half hour and in proportion to the square root of other windows,
 unless `--count` says. Both are in `engine/suggest.go`, with
 their cases in `engine/suggest_test.go`. The app sends what
 they come to for the video's window, with the window's limits, see
-`Options.Limits` in `engine/limits.go`.
+`Options.Limits` in `engine/limits.go`, and whether a search has read
+some of it before, `Searched` in `engine/windows.go`, which the title of
+Search says.
 
 A run reports how fast the model read and wrote, for instance
 `read 38,210 tok at 850 tok/s`. Loading a 14 GB model takes a while, so when

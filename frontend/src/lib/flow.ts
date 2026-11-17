@@ -50,18 +50,6 @@ export function gapsIn(parts: Parts, from: number, to: number): Parts {
   return out;
 }
 
-// The episode in parts, each with how many searches have read it, from
-// its start to its end, the parts nobody has searched too, see
-// SearchPasses in engine/windows.go.
-export type Passes = { from: number; to: number; times: number }[];
-
-// How many searches have read any of from..to, the most of them.
-export function timesIn(passes: Passes, from: number, to: number): number {
-  let most = 0;
-  for (const p of passes) if (p.to > from + 0.5 && p.from < to - 0.5) most = Math.max(most, p.times);
-  return most;
-}
-
 // A run of asks where only the newest answer counts.
 //
 // Several asks can be in the air at once, the clip list read again while

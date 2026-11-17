@@ -73,9 +73,6 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Waveform(other, 0, 10, 100); err == nil {
 		t.Error("Waveform answered for a file that is not in the library")
 	}
-	if _, err := svc.Coverage(ctx, other); err == nil {
-		t.Error("Coverage answered for a file that is not in the library")
-	}
 	if _, err := svc.State(ctx, other); err == nil {
 		t.Error("State answered for a file that is not in the library")
 	}

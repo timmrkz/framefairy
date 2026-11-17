@@ -49,7 +49,6 @@
     inEpisode,
     endInEpisode,
     Newest,
-    timesIn,
     frameAt,
     frameMiddle,
     live as going,
@@ -165,8 +164,6 @@
   let click = "";
   let clicks = 0;
   let time = $state(0);
-  // Where the model has already looked. A window is only drawn outside it.
-  const coverage = $derived(session.coverage);
   // The clip chosen, by a hand or by the app, which the Go side decides
   // and sends in the video's state, see choose.go. A hand's pick shows at
   // once, see EpisodeSession.pick.
@@ -1086,10 +1083,10 @@
             // after them says what became of the rest.
             stopped || foundNothing ? 1 : 0),
   );
-  // Whether the window has been searched before, all of it or a part.
-  // Search then looks there again, for moments its searches did not bring,
-  // and every clip there is stays.
-  const searchedBefore = $derived(timesIn(coverage.passes, from, to) > 0);
+  // Whether the window has been searched before, all of it or a part, as
+  // the Go side says in the video's state. Search then looks there again,
+  // for moments its searches did not bring, and every clip there is stays.
+  const searchedBefore = $derived(!!win?.searched);
   // A clip taken out leaves the track at once. Its row stays a moment
   // longer, but that row is what became of it, not a clip.
   //
