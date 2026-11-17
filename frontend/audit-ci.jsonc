@@ -5,11 +5,20 @@
   // through here by number, each with why. See docs/BUILD.md, Keeping up.
   "low": true,
   "allowlist": [
-    // deepmerge's mergeObject() lets the prototype of what it returns be
-    // poisoned, issue #579. Only the Svelte build plugin uses it, which
-    // never ships in the app, and no fixed deepmerge exists yet. Let
-    // through by that path alone, so deepmerge brought in by anything
-    // else still fails.
-    "GHSA-gcqx-w48m-w2h4|@sveltejs/vite-plugin-svelte>deepmerge"
+    // picomatch through 4.0.7, the newest, takes exponential time on a
+    // crafted pattern like +(*a), issue #910. No fixed release exists
+    // yet. Only the build and test tools bring it, vite, vitest,
+    // svelte-check and the ESLint parser, which only match the patterns
+    // in our config and the tools' own, and none of them ships in the
+    // app. Let through by these paths alone, so picomatch brought in by
+    // anything else still fails. audit-ci matches a path exactly.
+    // picomatch> and vite>picomatch> are how it writes vitest reached a
+    // second time, so a package that ships gets a path with its own name.
+    "GHSA-fc5q-39xc-vjpf|picomatch>",
+    "GHSA-fc5q-39xc-vjpf|vite>picomatch>",
+    "GHSA-fc5q-39xc-vjpf|@sveltejs/vite-plugin-svelte>vite>picomatch",
+    "GHSA-fc5q-39xc-vjpf|@vitest/coverage-v8>vitest>tinyglobby>picomatch>",
+    "GHSA-fc5q-39xc-vjpf|svelte-check>fdir>picomatch",
+    "GHSA-fc5q-39xc-vjpf|@typescript-eslint/parser>@typescript-eslint/typescript-estree>tinyglobby>picomatch"
   ]
 }

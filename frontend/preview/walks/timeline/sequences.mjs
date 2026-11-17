@@ -274,11 +274,13 @@ export default [
     // Tim swiped along the clip timeline with two fingers, clicked to put
     // the playhead where he was, and could not swipe on from there. The
     // playhead was then under the hand, and it was the one thing the
-    // swipe did not go through.
-    name: "a swipe goes on after a click put the playhead under the hand",
+    // swipe did not go through. And a swipe while it plays leaves the
+    // view where the hand put it, #900.
+    name: "a swipe goes on after a click put the playhead under the hand, and stays where it put the view while the clip plays",
     steps: [
       ["swipe after click", 0.3, 60],
       ["swipe after click", 0.5, -60],
+      ["swipe while playing"],
     ],
   },
   {
