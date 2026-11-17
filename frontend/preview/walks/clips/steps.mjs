@@ -960,6 +960,106 @@ export const steps = {
     else if (Math.abs(now - at) > 1e-3) walk.wrong = `the playhead went from ${at.toFixed(3)} to ${now.toFixed(3)} when the clip was put back`;
     await watch.step("put back", s);
   },
+  // ["remove the chosen while playing", where]
+  //                    clicks the clip timeline "after" the clip chosen,
+  //                    which puts the playhead on the video, or "in" it,
+  //                    which puts it on the clip, plays, removes the clip
+  //                    chosen with its bin while it plays and puts it back.
+  //                    A play of the video goes on where it is the whole
+  //                    time, never started again, issue #901. A play of
+  //                    the clip goes on from the start of the clip chosen
+  //                    in its place, and put back, from where it was
+  async "remove the chosen while playing"(walk, arg, s) {
+    const { page, watch } = walk;
+    const path = await episodeOn(page);
+    const chosenKey = () =>
+      page.evaluate(() => document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? "");
+    const was = await chosenKey();
+    const list = await page.evaluate(() =>
+      [...document.querySelectorAll("aside ol li[data-key]")].filter((li) => li.querySelector("button.pick")).map((li) => li.dataset.key),
+    );
+    const i = list.indexOf(was);
+    const beside = list[i + 1] ?? list[i - 1];
+    if (i < 0 || !beside) {
+      walk.wrong = `the step needs a clip chosen and one beside it, ${was || "none"} is chosen of ${list.length}`;
+      return;
+    }
+    const g = await handles(page);
+    const from = g.start.x + g.start.w;
+    const right = g.track.x + g.track.w;
+    const end = g.end.x + g.end.w;
+    if (arg === "after" && right - end < 40) {
+      walk.wrong = "there is no room on the clip timeline after the clip";
+      return;
+    }
+    await clickOnTrack(page, arg === "after" ? (end + right) / 2 : from + 0.2 * (g.end.x - from), high(g.track));
+    await settle(page);
+    const dimmed = () => page.evaluate(() => !!document.querySelector(".clip-timeline .chosen.dim"));
+    if ((await dimmed()) !== (arg === "after")) {
+      walk.wrong = `the click ${arg} the clip left the playhead ${arg === "after" ? "on the clip" : "on the video"}`;
+      return;
+    }
+    await page.evaluate(() => document.body.focus());
+    if (!(await pressPlay(page))) {
+      walk.wrong = "the space bar started no play";
+      return;
+    }
+    // Half a second of the play, then held where it is while the hand
+    // removes the clip and puts it back, see holdSound, so a jump the
+    // app makes is the only way the playhead moves.
+    if (!(await playUntil(page, { most: 0.5, hold: true })).playing) {
+      walk.wrong = "the play stopped before the hand came";
+      return;
+    }
+    const at = Number(await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead));
+    const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
+    const read = () =>
+      page.evaluate(() => ({
+        at: Number(document.querySelector(".screen")?.dataset.playhead),
+        playing: !!document.querySelector('button[aria-label="Pause"]'),
+        dim: !!document.querySelector(".clip-timeline .chosen.dim"),
+        starts: window.__frameQueue.stats.starts,
+      }));
+    await page.hover(`aside ol li[data-key="${was}"]`);
+    await page.locator(`aside ol li[data-key="${was}"] button.drop`).click();
+    await settle(page);
+    const removed = await read();
+    const next = (await ask(page, "Clips", path)).find((c) => c.key === beside);
+    const on = await chosenKey();
+    const frame = 1 / (await rate(page));
+    if (on !== beside) walk.wrong = `removing ${was} while it played left ${on || "nothing"} chosen, not ${beside}`;
+    else if (!removed.playing) walk.wrong = `the play stopped at ${removed.at.toFixed(3)} when the clip chosen was removed`;
+    else if (arg === "after" && (removed.starts !== starts || Math.abs(removed.at - at) > frame)) {
+      walk.wrong = `the play of the video went from ${at.toFixed(3)} to ${removed.at.toFixed(3)}, started ${removed.starts - starts} times, when the clip chosen was removed, not on where it was`;
+    } else if (arg === "after" && !removed.dim) walk.wrong = "the play of the video turned into a play of the clip chosen instead";
+    else if (arg === "in" && (Math.abs(removed.at - next.start) > frame || removed.dim)) {
+      walk.wrong = `the play of the clip removed went to ${removed.at.toFixed(3)}${removed.dim ? " on the video" : ""}, not to the start of ${beside} at ${next.start.toFixed(3)}`;
+    }
+    if (walk.wrong) {
+      await holdSound(page, false);
+      return;
+    }
+    await page.locator(`aside ol li[data-key="${was}"] button.back`, { hasText: "Put it back" }).click();
+    await settle(page);
+    const back = await read();
+    const again = await chosenKey();
+    if (again !== was) walk.wrong = `${again || "nothing"} is chosen after ${was} was put back, not ${was} again`;
+    else if (!back.playing) walk.wrong = `the play stopped at ${back.at.toFixed(3)} when the clip was put back`;
+    else if (arg === "after" && (back.starts !== starts || Math.abs(back.at - at) > frame)) {
+      walk.wrong = `the play of the video went from ${at.toFixed(3)} to ${back.at.toFixed(3)}, started ${back.starts - starts} times, when the clip was put back, not on where it was`;
+    } else if (arg === "in" && Math.abs(back.at - at) > frame) {
+      walk.wrong = `put back, the play went to ${back.at.toFixed(3)}, not back to ${at.toFixed(3)} where it was when the clip was removed`;
+    }
+    await holdSound(page, false);
+    await page.evaluate(() => {
+      if (document.querySelector('button[aria-label="Play"]')) return;
+      const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+      document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+      document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+    });
+    await settle(page);
+    await watch.step("put back", s);
+  },
   // ["pick rested cards", n]
   //                    the same clips, then clicks the cards in turn n
   //                    times, each after the hand rested, and checks each

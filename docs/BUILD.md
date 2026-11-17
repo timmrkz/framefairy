@@ -610,8 +610,8 @@ scan made once is out of date the week after.
   Dependabot keeps it current like the rest. It fails on every warning, low ones too, in what ships and
   in the build tools, but for those `frontend/audit-ci.jsonc` lets through
   by number and by the path it comes in on, each with why: a warning with
-  no fix yet in a tool that never ships, like deepmerge through the Svelte
-  build plugin in #579. A warning that has a fix the package bringing it
+  no fix yet in a tool that never ships, like picomatch through vite,
+  vitest and the other build tools in #910. A warning that has a fix the package bringing it
   does not accept yet is fixed instead, by pinning the fixed version in
   `overrides` in `frontend/package.json`, like minimatch 11 under ESLint,
   and the pin is taken out once that package accepts the fix. Either

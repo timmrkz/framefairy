@@ -1390,20 +1390,31 @@
     // state read after the remove says.
     const at = time;
     const chosen = selected === clip.key;
+    // Whether the play is a play of the clip removed, read before the
+    // remove, because the clip chosen instead leaves the playhead outside
+    // it.
+    const played = chosen && !paused && onClip;
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
       putClip(updated);
       await refreshClips();
-      // Playing, the play goes on from the clip chosen instead, which the
-      // hand asked for by removing the one it played.
+      // A play of the clip removed goes on from the clip chosen instead,
+      // which the hand asked for by removing the one it played. A play of
+      // the video goes on where it is: Tim removed the clip he had
+      // watched while the video played on past it, to go on watching, and
+      // the play jumped to the next clip's start, issue #901.
       const then = chosen ? selected : "";
-      if (then && !paused) {
+      if (then && played && !paused) {
         const next = clips.find((c) => c.key === then);
         if (next) player?.seek(next.start, "clip");
       }
+      // Where the playhead goes back to when the clip is put back, only
+      // when the remove moved it: paused, the clip chosen instead is shown
+      // with the playhead on it, see chose.
+      const back = played || paused ? at : undefined;
       removed = {
         ...removed,
-        [updated.key]: { clip: updated, until: Date.now() + secondThoughts * 1000, chosen, then, at },
+        [updated.key]: { clip: updated, until: Date.now() + secondThoughts * 1000, chosen, then, at: back },
       };
     } catch (err) {
       oops(errorText(err));
@@ -1416,7 +1427,8 @@
   // the play to its start. Found by Tim. Only a clip that was the one
   // chosen when it was removed is chosen again, and only while the clip
   // its remove chose instead is still the one chosen, with the playhead
-  // back where it was when it was removed.
+  // back where it was when it was removed, if the remove moved it. A play
+  // of the video the remove left alone, the put back leaves alone too.
   async function putClipBack(key: string) {
     const was = removed[key];
     if (!was) return;

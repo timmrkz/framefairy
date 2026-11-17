@@ -1699,12 +1699,16 @@ bubble scrolled by those eight pixels.
       a search a hand worked during, see Clips arrive one at a time:
       removing the chosen clip chooses the next in the list, or the one before it when it
       was the last, the way Finder and Mail move on from what was
-      deleted. It used to leave nothing chosen, Tim found.
+      deleted. It used to leave nothing chosen, Tim found. A play of
+      the clip removed goes on from the start of the clip chosen in its
+      place. A play of the video goes on where it is, because the hand
+      that removed the clip it watched before is still watching. It
+      jumped to the next clip's start, Tim found, issue #901.
       Putting a clip back takes back the remove and nothing more: the
       clip chosen stays chosen and a play goes on where it is. Only the
       clip that was itself the one chosen when it was removed is chosen
       again, while the clip chosen in its place is still chosen, and the
-      playhead goes back to where it was. Putting back used to choose the clip put back
+      playhead goes back to where it was, if the remove moved it. Putting back used to choose the clip put back
       and play it from its start, away from the clip being watched, Tim
       found. The clip stays in the plan with everything done to it, and
       a render of the whole plan leaves it out.
@@ -2172,7 +2176,12 @@ bubble scrolled by those eight pixels.
       takes it back. **Once the hand takes hold of an edge, a cut or a
       caption while it plays, that play turns no page**, even after the
       hand lets go, so a page never turns under a drag and moves the edge
-      with it. A new play turns pages again. **The keys keep it in sight the same way:** an arrow,
+      with it. A new play turns pages again. **A swipe or a pinch while
+      it plays that leaves the playhead out of the view leaves the view
+      where the hand put it**: the play turns pages again once its
+      playhead is in the view, when it walks into a view swiped ahead of
+      it, after the crosshair, or in a new play. A swipe was turned
+      straight back to the playhead, #900. **The keys keep it in sight the same way:** an arrow,
       or Shift and an arrow, that lands in the last twentieth of the view
       the way it goes, or out of the view, turns the page there, to the
       left as to the right. A skip of 5 s left the view behind, #677.
