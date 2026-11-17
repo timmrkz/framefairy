@@ -12,6 +12,7 @@ require (
 	github.com/speedata/hyphenation v1.0.5
 	github.com/spf13/afero v1.15.0
 	github.com/wailsapp/wails/v3 v3.1.0
+	golang.org/x/sys v0.50.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -27,7 +28,6 @@ require (
 	github.com/k2-fsa/sherpa-onnx-go-windows/v2 v2.0.1 // indirect
 	github.com/mattn/go-colorable v0.1.16 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
-	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/term v0.48.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 )

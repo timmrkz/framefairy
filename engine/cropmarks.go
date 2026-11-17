@@ -861,8 +861,8 @@ func (s SourceInfo) cropFilters(seg Segment, cropW, cropH, cropY, width, outW, o
 // CropStep is the left edge of a piece's crop from a frame of the video
 // on, until the next step, on the picture. Frame counts the video's frames
 // the way the video preview counts the frame it shows, see frameAt in
-// lib/flow.ts. A glide is a step on each of its frames, and not on a whole
-// pixel.
+// lib/flow.ts. A glide is a step on each of its frames, to a hundredth of
+// a pixel, see stepEdge.
 type CropStep struct {
 	Frame int64   `json:"frame"`
 	X     float64 `json:"x"`
@@ -898,7 +898,7 @@ func (s SourceInfo) CropSteps(v SegmentView, cropW, width int) []CropStep {
 		return out
 	}
 	for k := first; k < end; k++ {
-		if x := r.at(k); len(out) == 0 || out[len(out)-1].X != x {
+		if x := stepEdge(r.at(k)); len(out) == 0 || out[len(out)-1].X != x {
 			out = append(out, CropStep{Frame: k, X: x})
 		}
 	}
@@ -906,6 +906,16 @@ func (s SourceInfo) CropSteps(v SegmentView, cropW, width int) []CropStep {
 		return nil
 	}
 	return out
+}
+
+// stepEdge is the left edge of a gliding crop as the video preview is
+// sent it, to a hundredth of a pixel of the video. The render crops on
+// whole pixels of the short, so a hundredth is never seen, and written in
+// full a glide was a step of 18 digits on every frame: 17.6 KB of every
+// clip that glides, written and hashed with each state of its video,
+// issue #893.
+func stepEdge(x float64) float64 {
+	return math.Round(x*100) / 100
 }
 
 // segmentOf is a piece as the window is sent it, with its keyframes.

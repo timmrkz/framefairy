@@ -144,7 +144,8 @@ func TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy(t *testing.T) {
 	}
 
 	// A glide is a step on every frame it moves, each where the render
-	// has it.
+	// has it, to a hundredth of a pixel: written in full, a glide was 18
+	// digits on every frame of every state of the video, issue #893.
 	for _, i := range []int{4, 5} {
 		view.Marks[i].Glide = true
 		seg.Marks[i].Glide = true
@@ -152,8 +153,13 @@ func TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy(t *testing.T) {
 	steps := source.CropSteps(view, 152, 480)
 	run = source.runOf(seg, 152, 480)
 	for k := int64(10); k < 75; k++ {
-		if x, render := sentOn(steps, k), run.at(k); x != render {
+		if x, render := sentOn(steps, k), run.at(k); math.Abs(x-render) > 0.005 {
 			t.Errorf("gliding, on frame %d the video preview is sent %v, the render crops at %v", k, x, render)
+		}
+	}
+	for _, step := range steps {
+		if _, decimals, _ := strings.Cut(strconv.FormatFloat(step.X, 'f', -1, 64), "."); len(decimals) > 2 {
+			t.Errorf("gliding, on frame %d the video preview is sent %v, finer than a hundredth of a pixel", step.Frame, step.X)
 		}
 	}
 	if len(steps) < len(want)+8 {

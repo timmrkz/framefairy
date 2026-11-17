@@ -109,6 +109,8 @@ type preview struct {
 	// float64, said by its newest pull. The decoder lets the frames before
 	// it go unscaled, see engine.EpisodeFrames.Stream. Nil for sound.
 	skip *atomic.Uint64
+	// Takes back a frame once nothing reads it, see start.
+	give func([]byte)
 }
 
 type atomicTime struct {
@@ -192,6 +194,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	var times *engine.PreviewTimes
 	var light func() framewire.Light
 	var skip *atomic.Uint64
+	var give func([]byte)
 	if r.URL.Path == "/frames/sound" {
 		rate, _ := strconv.Atoi(q.Get("rate"))
 		channels, _ := strconv.Atoi(q.Get("ch"))
@@ -200,6 +203,9 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		dec, err := p.decoder(st.machine, path)
+		if err == nil {
+			give = dec.Give
+		}
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
 			if err != nil {
 				return err
@@ -229,7 +235,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 		skipped := func() float64 { return math.Float64frombits(skip.Load()) }
 		dec, err := p.decoder(st.machine, path)
 		if err == nil {
-			light = dec.Light
+			light, give = dec.Light, dec.Give
 		}
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
 			if err != nil {
@@ -242,7 +248,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	if r.URL.Path == "/frames/sound" {
 		kind = "sound"
 	}
-	id := p.start(kind, times, light, skip, run)
+	id := p.start(kind, times, light, skip, give, run)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
@@ -251,13 +257,19 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 // page has pulled it before it decodes the next, so the channel holds one.
 // Streams of sound and of frames are counted apart, so that seeks of a
 // play, each with a sound stream of its own, never close the frames the
-// video preview is drawing, nor frames the sound.
-func (p *previews) start(kind string, times *engine.PreviewTimes, light func() framewire.Light, skip *atomic.Uint64, run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
+// video preview is drawing, nor frames the sound. give, where it is not
+// nil, takes back a frame once it is written to the page or dropped, for
+// the decoder to read a later one into, see engine.EpisodeFrames.Give.
+func (p *previews) start(kind string, times *engine.PreviewTimes, light func() framewire.Light, skip *atomic.Uint64,
+	give func([]byte), run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
 	var raw [16]byte
 	_, _ = rand.Read(raw[:])
 	id := hex.EncodeToString(raw[:])
 	ctx, stop := context.WithCancel(context.Background())
-	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{}), times: times, light: light, skip: skip}
+	if give == nil {
+		give = func([]byte) {}
+	}
+	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{}), times: times, light: light, skip: skip, give: give}
 	s.pulled.set(time.Now())
 	p.mu.Lock()
 	if p.open == nil {
@@ -290,17 +302,15 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 	go func() {
 		defer close(s.done)
 		err := streamSafely(ctx, run, func(at float64, frame []byte) error {
-			// A frame is handed over in a buffer of its own, see
-			// engine.EpisodeFrames.Stream, and kept as it is. Sound comes in one
-			// buffer read into again and again, so it is copied.
-			if kind == "sound" {
-				frame = append([]byte(nil), frame...)
-			}
+			// A frame or a chunk of sound is handed over in a buffer of its
+			// own, see engine.EpisodeFrames.Stream, and kept as it is until
+			// it is written to the page, see writeFrames, or dropped here.
 			f := previewFrame{at: at, data: frame}
 			select {
 			case s.frames <- f:
 				return nil
 			case <-ctx.Done():
+				s.give(frame)
 				return ctx.Err()
 			}
 		})
@@ -396,6 +406,11 @@ func (p *previews) release(path string) {
 		p.held[path]--
 	} else {
 		delete(p.held, path)
+		// Its workspace is asleep, so no play is coming: the decoder
+		// keeps running for a while, the frames it kept need not.
+		if d := p.decoders[path]; d != nil {
+			d.LetFramesGo()
+		}
 	}
 	theLog.line(zerolog.DebugLevel, "files").Str("video", filepath.Base(path)).Int("held", p.held[path]).Msg("the decoder is let go")
 	p.spare()
@@ -511,7 +526,15 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	head := make([]byte, 8)
+	// A frame is given back once it is written, or could not be: the
+	// window's end of the answer copies what it is given before Write
+	// returns, so nothing reads the frame after. Wails does so in Write of
+	// internal/assetserver/webview/responsewriter_darwin_shared.go, with
+	// NSData's dataWithBytes, and its Linux and Windows writers copy too.
+	// No test can see it, so an update of Wails checks it, see Keeping up
+	// in docs/BUILD.md.
 	put := func(f previewFrame) bool {
+		defer s.give(f.data)
 		binary.LittleEndian.PutUint64(head, math.Float64bits(f.at))
 		if _, err := w.Write(head); err != nil {
 			return false
@@ -531,6 +554,7 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 		select {
 		case f := <-s.frames:
 			if f.at < skip {
+				s.give(f.data)
 				continue
 			}
 			// The first frame of a stream says where its time went, in

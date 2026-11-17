@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -438,7 +439,7 @@ func gridOf(t *testing.T, path string) string {
 func TestAStreamThatPanicsFailsItselfNotTheApp(t *testing.T) {
 	// Reaping already, so no reaper of its own outlives the test.
 	p := &previews{reaping: true}
-	id := p.start("frames", nil, nil, nil, func(context.Context, func(float64, []byte) error) error {
+	id := p.start("frames", nil, nil, nil, nil, func(context.Context, func(float64, []byte) error) error {
 		panic("a frame nobody read before")
 	})
 	s := p.get(id)
@@ -477,7 +478,7 @@ func TestAPullThatPanicsAfterItsAnswerBeganIsCutShort(t *testing.T) {
 	svc := &FrameFairy{}
 	// Reaping already, so no reaper of its own outlives the test.
 	svc.previews.reaping = true
-	id := svc.previews.start("frames", nil, nil, nil, func(_ context.Context, got func(float64, []byte) error) error {
+	id := svc.previews.start("frames", nil, nil, nil, nil, func(_ context.Context, got func(float64, []byte) error) error {
 		return got(1.5, []byte("a frame"))
 	})
 	t.Cleanup(func() { svc.previews.close(id) })
@@ -502,4 +503,56 @@ func (b *breaksOnSecondWrite) Write(p []byte) (int, error) {
 		panic("the window went away")
 	}
 	return b.ResponseRecorder.Write(p)
+}
+
+// Every frame a stream hands over is given back to its decoder once,
+// when it is written to the page, when a pull's skip drops it, or when
+// the stream stops with it in hand, so the decoder reads a later frame
+// into it rather than into new memory, issue #898. A frame given back
+// twice would be read into while the page still had it.
+func TestEveryFrameIsGivenBackOnceNothingReadsIt(t *testing.T) {
+	var given [][]byte
+	var mu sync.Mutex
+	give := func(b []byte) {
+		mu.Lock()
+		given = append(given, b)
+		mu.Unlock()
+	}
+	frames := [][]byte{[]byte("dropped"), []byte("second"), []byte("third"), []byte("in hand")}
+	svc := &FrameFairy{}
+	// Reaping already, so no reaper of its own outlives the test.
+	svc.previews.reaping = true
+	id := svc.previews.start("frames", nil, nil, nil, give, func(_ context.Context, got func(float64, []byte) error) error {
+		for i, f := range frames {
+			if err := got(float64(i+1), f); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	s := svc.previews.get(id)
+	pull := func(skip string) string {
+		w := httptest.NewRecorder()
+		svc.serveFrames(w, httptest.NewRequest(http.MethodGet, "/frames/read?n=1&skip="+skip+"&id="+id, nil))
+		return w.Body.String()[8:]
+	}
+	if got := pull("1.5"); got != "second" {
+		t.Fatalf("the first pull, from 1.5 on, wrote %q, want second", got)
+	}
+	if got := pull("0"); got != "third" {
+		t.Fatalf("the second pull wrote %q, want third", got)
+	}
+	// The stream holds the fourth frame, which nobody pulls, and stops.
+	svc.previews.close(id)
+	<-s.done
+	mu.Lock()
+	defer mu.Unlock()
+	if len(given) != len(frames) {
+		t.Fatalf("%d frames were given back, want each of the %d once", len(given), len(frames))
+	}
+	for i, f := range frames {
+		if &given[i][0] != &f[0] {
+			t.Errorf("frame %d given back was %q, want %q", i, given[i], f)
+		}
+	}
 }

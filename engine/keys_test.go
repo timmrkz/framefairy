@@ -425,3 +425,93 @@ func TestAKeyBeingCheckedFollowsNoRedirect(t *testing.T) {
 		t.Errorf("a redirect took the key to another host: %q", leaked)
 	}
 }
+
+// askedKeys is the old keychain, counting how often it is asked whether
+// an item is there, which on a Mac starts the security command.
+type askedKeys struct {
+	*memKeys
+	asked atomic.Int32
+}
+
+func (a *askedKeys) has(item string) bool {
+	a.asked.Add(1)
+	return a.memKeys.has(item)
+}
+
+// The settings and the setup ask whether each company's key is there
+// every time they are read, and on a Mac each question to the old
+// keychain started a program. It is asked once for each item, and a key
+// moved out of it is no longer said to be there.
+func TestTheOldKeychainIsAskedOnceForEachItem(t *testing.T) {
+	m, _, _ := keychains(t, nil, nil)
+	p, _ := ProviderNamed("anthropic")
+	old := &askedKeys{memKeys: newMemKeys(map[string]string{p.Keychain: "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"})}
+	m.oldKeys = remembered(old)
+	for range 5 {
+		if m.KeySource(p) != KeyInKeychain {
+			t.Fatal("the old key is not found")
+		}
+	}
+	if n := old.asked.Load(); n != 1 {
+		t.Errorf("the old keychain was asked %d times", n)
+	}
+	if _, err := m.ReadAPIKey(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+	// Moved into the new keychain, the old item is gone, and the key is
+	// still there, in the new one.
+	if m.oldStore().has(p.Keychain) {
+		t.Error("the old item is still said to be there")
+	}
+	if m.KeySource(p) != KeyInKeychain {
+		t.Error("the key moved is not found")
+	}
+}
+
+// An old item taken out in Keychain Access while the app runs is said to
+// be there until a read misses it, and from then on it is not.
+func TestAnOldItemTakenOutElsewhereIsForgottenOnTheReadThatMissesIt(t *testing.T) {
+	m, _, _ := keychains(t, nil, nil)
+	p, _ := ProviderNamed("anthropic")
+	old := newMemKeys(map[string]string{p.Keychain: "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"})
+	m.oldKeys = remembered(old)
+	if m.KeySource(p) != KeyInKeychain {
+		t.Fatal("the old key is not found")
+	}
+	old.remove(p.Keychain)
+	if _, err := m.ReadAPIKey(t.Context(), p); err == nil {
+		t.Fatal("a key was read from an empty keychain")
+	}
+	if got := m.KeySource(p); got != "" {
+		t.Errorf("the key taken out is still said to be in the %q", got)
+	}
+}
+
+// The window asks for the setup and the settings from several calls at
+// once, while a key is saved or taken off.
+func TestTheOldKeychainIsAskedFromSeveralCallsAtOnce(t *testing.T) {
+	m, _, _ := keychains(t, nil, nil)
+	anthropic, _ := ProviderNamed("anthropic")
+	openai, _ := ProviderNamed("openai")
+	m.oldKeys = remembered(newMemKeys(map[string]string{
+		anthropic.Keychain: "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789",
+		openai.Keychain:    "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789",
+	}))
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			m.KeySource(anthropic)
+			m.KeySource(openai)
+			m.KeyHint(openai)
+		})
+	}
+	wg.Go(func() { _, _ = m.ReadAPIKey(t.Context(), anthropic) })
+	wg.Go(func() { _ = m.StoreAPIKey(openai, "") })
+	wg.Wait()
+	if got := m.KeySource(anthropic); got != KeyInKeychain {
+		t.Errorf("the key moved is in the %q", got)
+	}
+	if got := m.KeySource(openai); got != "" {
+		t.Errorf("the key taken off is in the %q", got)
+	}
+}

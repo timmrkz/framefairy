@@ -689,3 +689,39 @@ func TestAWordRemovedWithItsCaptionStaysRemoved(t *testing.T) {
 		}
 	}
 }
+
+// A word corrected in the caption box while the transcript search is open
+// reads corrected in its card the next time the cards are asked for,
+// because the plan it changed is laid out again, and only that plan.
+func TestAWordCorrectedWithTheSearchOpenReadsCorrectedInItsCard(t *testing.T) {
+	e := newCaptionEditor(t)
+	cards := func() string {
+		t.Helper()
+		cards, err := e.svc.Sentences(e.mine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var texts []string
+		for _, c := range cards {
+			texts = append(texts, c.Clip+" "+c.Text)
+		}
+		return strings.Join(texts, " | ")
+	}
+	before := cards()
+	if !strings.Contains(before, "Schulhof") {
+		t.Fatalf("no card reads Schulhof: %s", before)
+	}
+	at := -1.0
+	for _, w := range captionedWords() {
+		if w[2] == "Schulhof" {
+			at = w[0].(float64)
+		}
+	}
+	if _, err := e.svc.SetWord(context.Background(), e.mine, e.plan, "01", at, "Pausenhof"); err != nil {
+		t.Fatal(err)
+	}
+	after := cards()
+	if strings.Contains(after, "Schulhof") || !strings.Contains(after, "clips.json/01") || !strings.Contains(after, "Pausenhof") {
+		t.Errorf("after the correction the cards read %s", after)
+	}
+}

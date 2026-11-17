@@ -94,6 +94,7 @@
   import { markOn } from "../lib/keyframes";
   import { toasts } from "../lib/toast.svelte";
   import { afterRest } from "../lib/rest";
+  import { captionsAlone, piecesOf, type CaptionsRead } from "../lib/cards";
   import { atOnce, onTick, type Headline } from "../lib/headline";
 
   let {
@@ -433,27 +434,29 @@
   let saidList = $state<{ walk: (step: 1 | -1) => void; unpick: () => boolean }>();
   const savedKey = $derived(saved.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}`).join(","));
   // The parts every clip keeps, whose captions are cards of their own, so
-  // the cards are read again when a clip changes, see engine.SaidCards.
+  // the cards are read again when a clip changes, see piecesOf.
   const cutsKey = $derived(
     clips
       .filter((c) => !c.rejected)
-      .map((c) => `${c.key}:${(c.segments.length ? c.segments : [c]).map((p) => `${p.start.toFixed(2)}-${p.end.toFixed(2)}`).join(" ")}`)
+      .map((c) => `${c.key}:${piecesOf(c)}`)
       .join(","),
   );
   // How many times the captions of a clip changed while it stayed the
-  // clip they are of: a word corrected or removed, a caption moved, the
-  // look of every caption changed. The cards of what was said are those
-  // captions, so they are read again. A clip chosen anew is not a change.
+  // clip they are of and kept its pieces, see captionsAlone. The cards of
+  // what was said are those captions, so they are read again. A clip
+  // chosen anew is not a change.
   let captionsChanged = $state(0);
-  const captionsRead = new Map<string, string>();
+  const captionsRead = new Map<string, CaptionsRead>();
   $effect(() => {
     const view = captions;
     const key = captionsOf;
     if (!view || !key) return;
     const words = (view.captions ?? []).map((c) => `${c.start.toFixed(2)} ${c.lines.map((l) => l.words.map((w) => w.text).join(" ")).join(" ")}`).join("|");
+    const clip = untrack(() => clips.find((c) => c.key === key));
+    const now = { words, pieces: clip ? piecesOf(clip) : "" };
     const was = captionsRead.get(key);
-    captionsRead.set(key, words);
-    if (was !== undefined && was !== words) untrack(() => captionsChanged++);
+    captionsRead.set(key, now);
+    if (captionsAlone(was, now)) untrack(() => captionsChanged++);
   });
   // They are read as soon as the video opens and kept, so the transcript
   // button shows them in the frame it is pressed, and read again whenever
