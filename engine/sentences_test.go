@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -308,4 +309,38 @@ func TestTheCaptionsKeptDoNotKeepTheirTranscript(t *testing.T) {
 		t.Error("the transcript is kept alive by the captions laid out in it")
 	}
 	runtime.KeepAlive(summary)
+}
+
+// The captions kept for the cards are known by the key of their look, so
+// everything a look holds is in its key: a look that differs in any of
+// its fields lays out again. A field added to Look and left out of its
+// key would hand out stale cards, so a new field fails here first.
+func TestEveryFieldOfALookIsInItsKey(t *testing.T) {
+	t.Parallel()
+	if n := reflect.TypeFor[Look]().NumField(); n != 3 {
+		t.Fatalf("Look has %d fields, and this test and Look.key know 3", n)
+	}
+	fonts := new(Fonts)
+	base := Look{Style: map[string]any{"font": "Anton"}, Source: SourceInfo{Width: 1920, Height: 1080}, Fonts: fonts}
+	key := func(l Look) string {
+		k, ok := l.key()
+		if !ok {
+			t.Fatal("no key")
+		}
+		return k
+	}
+	was := key(base)
+	for name, other := range map[string]Look{
+		"Style":  {Style: map[string]any{"font": "Inter"}, Source: base.Source, Fonts: fonts},
+		"Source": {Style: base.Style, Source: SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1}, Fonts: fonts},
+		"Fonts":  {Style: base.Style, Source: base.Source, Fonts: new(Fonts)},
+	} {
+		if key(other) == was {
+			t.Errorf("a look with another %s has the same key", name)
+		}
+	}
+	fonts.Use(afero.NewMemMapFs(), nil)
+	if key(base) == was {
+		t.Error("the look's faces read again with a change have the same key")
+	}
 }

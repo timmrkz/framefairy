@@ -64,7 +64,9 @@ func (noKeys) remove(string)                              {}
 // setup ask whether a key is there every time they are read, and the Mac
 // answered each question for the old items by starting the security
 // command. Only this app takes an item out of it, see remove, so what it
-// said stays true until then, or until a read finds the item gone.
+// said stays true until then, or until a read finds the item gone. mu is
+// held while the store is asked or changed, so a key removed while the
+// store is first asked about it is never remembered as there.
 type rememberedKeys struct {
 	store keyStore
 	mu    sync.Mutex
@@ -77,15 +79,12 @@ func remembered(store keyStore) *rememberedKeys {
 
 func (r *rememberedKeys) has(item string) bool {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	there, known := r.there[item]
-	r.mu.Unlock()
-	if known {
-		return there
+	if !known {
+		there = r.store.has(item)
+		r.there[item] = there
 	}
-	there = r.store.has(item)
-	r.mu.Lock()
-	r.there[item] = there
-	r.mu.Unlock()
 	return there
 }
 
@@ -93,6 +92,7 @@ func (r *rememberedKeys) hint(item string) string { return r.store.hint(item) }
 
 // get reads the secret. An item that is not there after all, taken out
 // in Keychain Access while the app ran, is asked about again next time.
+// It holds no lock, since reading a secret may wait on a person.
 func (r *rememberedKeys) get(ctx context.Context, item string) (string, bool) {
 	secret, ok := r.store.get(ctx, item)
 	if !ok {
@@ -105,16 +105,16 @@ func (r *rememberedKeys) get(ctx context.Context, item string) (string, bool) {
 
 func (r *rememberedKeys) set(item, secret, hint string) error {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	delete(r.there, item)
-	r.mu.Unlock()
 	return r.store.set(item, secret, hint)
 }
 
 func (r *rememberedKeys) remove(item string) {
-	r.store.remove(item)
 	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.store.remove(item)
 	r.there[item] = false
-	r.mu.Unlock()
 }
 
 // keyStore is where m keeps keys, and oldStore where the first ones
