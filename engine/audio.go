@@ -357,10 +357,17 @@ func SnapWords(words []timed.Cue, frames []float32, start, floor float64) []time
 		// its block on the clip timeline stopped short of its own waveform.
 		// A word lasts as long as its sound: the sound is followed to where
 		// it stops, however long that is, never into the next word. It was
-		// followed for 0.4 s at most, and a word whose sound went on a
-		// moment longer kept the recogniser's end. Tim dragged a clip's
-		// start into the sound of such a word and its caption went, with
-		// the word still to be heard in the waveform.
+		// followed for 0.4 s at most, and a word whose sound went on longer
+		// kept the recogniser's end. Tim dragged a clip's start into the
+		// sound of such a word and its caption went, with the word still
+		// to be heard in the waveform.
+		//
+		// The sound stops where a quiet begins that lasts, as long as a
+		// word's start needs, or that runs to the next word or to the end
+		// of what was heard. A quiet frame alone is a breath inside the
+		// sound, or room noise dipping under the floor for a moment, and
+		// noise that dipped once would otherwise carry a word over the
+		// whole pause after it.
 		//
 		// Only when it does stop. Sound that runs on without a break into
 		// the next word is as likely that word's beginning as this word's
@@ -370,12 +377,25 @@ func SnapWords(words []timed.Cue, frames []float32, start, floor float64) []time
 		// sound did not hold. Sound that never stops before the next word,
 		// music or room noise, is left alone the same way.
 		end = math.Max(end, begin)
-		g := frameAt(end)
-		for loud(g) && timeAt(g+1) <= next+1e-9 {
-			g++
+		// The frames before the next word, the first that is not.
+		until := len(frames)
+		if !math.IsInf(next, 1) {
+			until = max(0, min(until, int(math.Ceil((next-start)/timed.FrameSeconds-1e-9))))
 		}
-		if !loud(g) && g < len(frames) {
-			end = math.Max(end, timeAt(g))
+		for g := frameAt(end); g < until; {
+			if loud(g) {
+				g++
+				continue
+			}
+			q := g
+			for q < until && q-g < pauseFrames && !loud(q) {
+				q++
+			}
+			if q-g >= pauseFrames || q == until {
+				end = math.Max(end, timeAt(g))
+				break
+			}
+			g = q
 		}
 		begin = math.Max(begin, low)
 		if next > begin+0.02 {

@@ -231,13 +231,17 @@ word lasts as long as its sound. Sound that runs on into the next word is left
 to that word: it is the next word said early, not this one held. In Tim's
 episode "ich." ended a sentence and "Also," followed with no pause, and a
 word end that followed the sound gave "Also"'s first sound to "ich.", so a
-clip starting at "Also" opened its captions with "ich.". Sound that never
-stops before the next word, music or room noise, leaves the recogniser's
-end the same way. The sound was followed for 0.4 s at most until November
-2026. Tim dragged a clip's start into a word whose sound went on 0.42 s past
-the recogniser's end, still to be heard in the waveform, and the clip no
-longer said the word, so its caption went. A single quiet frame
-at a word start is left alone, because many words begin softly.
+clip starting at "Also" opened its captions with "ich.". The sound stops
+where a quiet begins that lasts 150 ms, as long as a word's start needs, or
+that runs to the next word. A shorter quiet is a breath inside the word, or
+room noise dipping under the floor for a moment, and taken as the end it
+would carry the word over the whole pause after it whenever the noise
+dipped once. Sound that never stops before the next word, music or room
+noise, leaves the recogniser's end the same way. The sound was followed for
+0.4 s at most until November 2026. Tim dragged a clip's start into a word
+whose sound went on longer than that, still to be heard in the waveform,
+and the clip no longer said the word, so its caption went. A single quiet
+frame at a word start is left alone, because many words begin softly.
 
 A word that ended early was more than a caption that went early. A clip's
 pieces keep 0.1 s of air after their last word, so the render cut off the
@@ -592,7 +596,8 @@ The recogniser's word timings are moved onto the sound when a transcript
 is read, `SnapWords` in `engine/audio.go`. A word ends where its last
 sound does, when 120 ms or more of silence follow it before the
 recogniser's end, and when its sound goes on past that end and stops
-before the next word starts, however long after. A silence with more of the word after it is not the
+before the next word starts, however long after, with a quiet of 150 ms
+or one that runs to the next word. A silence with more of the word after it is not the
 end: the recogniser hears a compound, or words said as one, as one word,
 and "sweet-grundschulliebe" used to be cut off at the breath before
 "liebe", which then had no caption and was never lit. The raw timings are

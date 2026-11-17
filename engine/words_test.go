@@ -98,22 +98,26 @@ func TestSnapWords(t *testing.T) {
 // word. Sound that runs on into the next word, or to the end of what was
 // heard, leaves the recogniser's end.
 func TestSnapWordsFollowsAWordToTheEndOfItsSound(t *testing.T) {
-	sound := frames(10, timed.Span{Start: 1.00, End: 1.75}, timed.Span{Start: 2.00, End: 2.40},
-		timed.Span{Start: 3.00, End: 6.20}, timed.Span{Start: 6.50, End: 6.95},
-		timed.Span{Start: 7.20, End: 7.72}, timed.Span{Start: 7.78, End: 8.22}, timed.Span{Start: 9.00, End: 10.00})
+	sound := frames(10, timed.Span{Start: 1.00, End: 1.75}, timed.Span{Start: 2.00, End: 2.30},
+		timed.Span{Start: 2.35, End: 2.50}, timed.Span{Start: 3.00, End: 6.20}, timed.Span{Start: 6.50, End: 6.95},
+		timed.Span{Start: 7.20, End: 7.80}, timed.Span{Start: 8.20, End: 8.82}, timed.Span{Start: 8.83, End: 10.00})
 	got := SnapWords([]timed.Cue{
 		{Start: 1.00, End: 1.40, Text: "held"},  // said until 1.75, a pause follows
-		{Start: 2.00, End: 2.10, Text: "zwei"},  // said until 2.40, ended at 2.10
+		{Start: 2.00, End: 2.10, Text: "zwei"},  // said until 2.50, with a breath at 2.30
 		{Start: 3.00, End: 3.20, Text: "drei"},  // the sound goes on into the next word
 		{Start: 3.50, End: 3.70, Text: "vier"},  // and on for 2.5 s after it, then stops
 		{Start: 6.50, End: 6.60, Text: "fuenf"}, // said until 6.95
-		// Tim's report of 17 November: said until 7.72, 0.42 s past the
-		// recogniser's end, then a breath and more sound with no word.
+		// Like Tim's report of 17 November, made up: the sound goes on
+		// for more than 0.4 s past the recogniser's end, then stops.
 		{Start: 7.21, End: 7.30, Text: "Genau."},
+		// Room noise just over the floor, under it for one frame at 8.82,
+		// and on into the next word, so the sound never stops.
+		{Start: 8.20, End: 8.40, Text: "neun"},
 		{Start: 9.00, End: 9.20, Text: "und"}, // sound to the end of what was heard
 	}, sound, 0, -40)
-	want := []timed.Span{{Start: 1.00, End: 1.75}, {Start: 2.00, End: 2.40}, {Start: 3.00, End: 3.20},
-		{Start: 3.50, End: 6.20}, {Start: 6.50, End: 6.95}, {Start: 7.20, End: 7.72}, {Start: 9.00, End: 9.20}}
+	want := []timed.Span{{Start: 1.00, End: 1.75}, {Start: 2.00, End: 2.50}, {Start: 3.00, End: 3.20},
+		{Start: 3.50, End: 6.20}, {Start: 6.50, End: 6.95}, {Start: 7.20, End: 7.80}, {Start: 8.20, End: 8.40},
+		{Start: 9.00, End: 9.20}}
 	for i, w := range want {
 		if !near(got[i].Start, w.Start) || !near(got[i].End, w.End) {
 			t.Errorf("%s = %.2f-%.2f, want %.2f-%.2f", got[i].Text, got[i].Start, got[i].End, w.Start, w.End)
@@ -124,11 +128,12 @@ func TestSnapWordsFollowsAWordToTheEndOfItsSound(t *testing.T) {
 // A clip whose start is dragged into the sound of a word still says the
 // word, and shows its caption, for as long as its sound is heard after
 // the start. Tim dragged the start of a clip into "Genau.", whose sound
-// ran on 0.42 s past the recogniser's end, and the caption went while the
-// word could still be heard. Report of 17 November, 58:37.
+// ran on more than 0.4 s past the recogniser's end, and the caption went
+// while the word could still be heard. Report of 17 November, 58:37. The
+// times here are made up to stand for it.
 func TestAClipStartInTheSoundOfAWordKeepsItsCaption(t *testing.T) {
 	t.Parallel()
-	sound := frames(10, timed.Span{Start: 7.20, End: 7.72}, timed.Span{Start: 7.78, End: 8.22}, timed.Span{Start: 9.00, End: 9.60})
+	sound := frames(10, timed.Span{Start: 7.20, End: 7.80}, timed.Span{Start: 9.00, End: 9.60})
 	floor := -40.0
 	tr := fromStored([]timed.Cue{{Start: 7.21, End: 7.30, Text: "Genau."}, {Start: 9.00, End: 9.20, Text: "und"},
 		{Start: 9.25, End: 9.55, Text: "dann"}}, sound, 0, 0, &floor)
