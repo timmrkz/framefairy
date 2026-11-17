@@ -3063,7 +3063,9 @@ editor.
   than change them. Where a render put a short is written in the clip set,
   but it is no edit: an undo neither takes it back nor stops at it. Moving the playhead, choosing a clip and zooming are
   not edits. The settings are not in it, apart from the caption height,
-  which is moved in the workspace like everything else here.
+  which is moved in the workspace like everything else here. The height
+  is one for every video, and an undo puts back the height this video's
+  step moved from, even when another video has moved it since.
 - **The playhead goes back with the edge it moved.** Dragging an edge or a
   cut on the clip timeline takes the playhead along, so the hand moved
   both, and taking the edge back puts the playhead back where it stood
@@ -3085,8 +3087,10 @@ editor.
   an edit never makes a clip. A clip that has been
   changed again since by something the history does not know about, a
   search over the same part above all, is not written over: the undo
-  says it cannot be taken back, and the history of the episode starts
-  again from there.
+  says it cannot be taken back, and the undos behind it are given up,
+  since they may rest on it. The redo stays, because each step checks its
+  own clips when it is taken, and a redo that cannot be taken gives up
+  only the redos behind it the same way.
 
 The engine side is `engine/undo.go`, the app side
 `cmd/framefairy-app/history.go`, and the menu `cmd/framefairy-app/menu.go`.
