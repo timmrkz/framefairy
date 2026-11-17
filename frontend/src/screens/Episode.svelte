@@ -1397,8 +1397,28 @@
     // remove, because the clip chosen instead leaves the playhead outside
     // it.
     const played = chosen && !paused && onClip;
+    // The row is the removed clip's from the frame Remove is pressed, and
+    // keeps its place while the Go side answers. It went in only after the
+    // answer and a second read, and in between the list no longer showed
+    // a clip removed that it did not know as one, so the row began to
+    // fold and then sprang back open as the row to put it back, issue
+    // #878. It is written again with the answer, in the same frame the
+    // clip comes back removed, because a list read meanwhile drops a row
+    // whose clip is not removed yet, see keepRemovedTrue.
+    const row = (c: ClipEntry, then = ""): Removed => ({
+      clip: c,
+      until: removed[clip.key]?.until ?? Date.now() + secondThoughts * 1000,
+      chosen,
+      then,
+      // Where the playhead goes back to when the clip is put back, only
+      // when the remove moved it: paused, the clip chosen instead is shown
+      // with the playhead on it, see chose.
+      at: played || paused ? at : undefined,
+    });
+    removed = { ...removed, [clip.key]: row(clip) };
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
+      removed = { ...removed, [updated.key]: row(updated) };
       putClip(updated);
       await refreshClips();
       // A play of the clip removed goes on from the clip chosen instead,
@@ -1411,15 +1431,12 @@
         const next = clips.find((c) => c.key === then);
         if (next) player?.seek(next.start, "clip");
       }
-      // Where the playhead goes back to when the clip is put back, only
-      // when the remove moved it: paused, the clip chosen instead is shown
-      // with the playhead on it, see chose.
-      const back = played || paused ? at : undefined;
-      removed = {
-        ...removed,
-        [updated.key]: { clip: updated, until: Date.now() + secondThoughts * 1000, chosen, then, at: back },
-      };
+      // The clip chosen in its place, now that the Go side has chosen it.
+      if (updated.key in removed) removed = { ...removed, [updated.key]: row(updated, then) };
     } catch (err) {
+      // Not removed after all, so the row is the clip's again.
+      const { [clip.key]: _, ...rest } = removed;
+      removed = rest;
       oops(errorText(err));
     }
   }
