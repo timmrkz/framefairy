@@ -1173,7 +1173,10 @@ and the fonts Font Book downloads, and take every face that has outlines, the
 letters and digits of a caption, and a name a style line can hold. A name that
 starts with a dot is one of macOS's own interface faces and is left out. A
 face of a collection, a `.ttc` that holds a family in one file, is a face of
-its own, under its full name, the one Font Book shows.
+its own, under its full name, the one Font Book shows. The app reads the
+folders as it starts and again as each video opens, so a font installed
+while it runs is offered. A read asked for while one runs takes that one,
+and a later read opens only the font files that are new or changed since.
 
 The app offers them the way Pages does, in two lists: Font holds the
 families and Style the faces of the one picked. Every face says its family
