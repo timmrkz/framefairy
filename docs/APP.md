@@ -1215,6 +1215,10 @@ bubble scrolled by those eight pixels.
     Escape, while the list of fonts did not, and Escape did nothing in a
     field. Whatever takes Escape for itself, a word being corrected or the
     report while it listens, keeps it.
+  - **A list lets go of the keyboard however it closes**, with a row
+    picked as well as with Escape, issue #876. A trigger left holding it
+    took the next letter as a pick from the shut list, so R changed the
+    caption face, and the space bar opened the list instead of playing.
   - **A button pressed with the pointer keeps no keyboard**, the way a
     button on the Mac does not, see `letButtonGo` in `App.svelte`. In
     Chromium, on Windows and in the preview, a clicked button kept it, and
@@ -3066,7 +3070,9 @@ editor.
   than change them. Where a render put a short is written in the clip set,
   but it is no edit: an undo neither takes it back nor stops at it. Moving the playhead, choosing a clip and zooming are
   not edits. The settings are not in it, apart from the caption height,
-  which is moved in the workspace like everything else here.
+  which is moved in the workspace like everything else here. The height
+  is one for every video, and an undo puts back the height this video's
+  step moved from, even when another video has moved it since.
 - **The playhead goes back with the edge it moved.** Dragging an edge or a
   cut on the clip timeline takes the playhead along, so the hand moved
   both, and taking the edge back puts the playhead back where it stood
@@ -3088,8 +3094,10 @@ editor.
   an edit never makes a clip. A clip that has been
   changed again since by something the history does not know about, a
   search over the same part above all, is not written over: the undo
-  says it cannot be taken back, and the history of the episode starts
-  again from there.
+  says it cannot be taken back, and the undos behind it are given up,
+  since they may rest on it. The redo stays, because each step checks its
+  own clips when it is taken, and a redo that cannot be taken gives up
+  only the redos behind it the same way.
 
 The engine side is `engine/undo.go`, the app side
 `cmd/framefairy-app/history.go`, and the menu `cmd/framefairy-app/menu.go`.
@@ -3282,7 +3290,8 @@ line under them, and at its end the one thing to do about it. The card and
 its rows are `.card` in `app.css`, shared by both pages. Everything saves
 as it is changed, the way System Settings does on the Mac, so there is no
 **Save** button and nothing to forget to press. A field saves a moment
-after the typing stops.
+after the typing stops, or at once when the page is left or the app
+closes before that moment, issue #879, see `saveNow` in `Settings.svelte`.
 
 **What is in the way is said where it is put right**, not in a list of
 its own. A missing API key is said on the row where the key goes, a

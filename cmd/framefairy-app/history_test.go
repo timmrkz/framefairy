@@ -93,6 +93,84 @@ func TestTheCaptionHeightIsTakenBack(t *testing.T) {
 	}
 }
 
+// The caption height is one setting for every video, yet each move of it
+// is a step of the video it was moved in. A move in another video since is
+// no reason to refuse the undo in this one, nor to throw its redo away.
+func TestTheCaptionHeightMovedInAnotherVideoIsStillTakenBack(t *testing.T) {
+	svc, eps := memoryLibrary(t, "a.mp4", "b.mp4")
+	a, b := eps[0], eps[1]
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	plan := filepath.Join(engine.LogsDir(a), "clips.json")
+	if err := afero.WriteFile(svc.store.files, plan, []byte(historyPlan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := svc.SetCaptionsHeight(a, 600); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = svc.RemoveClip(ctx, a, plan, "02", true)
+	if !removed(t, svc, plan, "02") {
+		t.Fatal("the clip was not removed")
+	}
+	if err := svc.SetCaptionsHeight(b, 1000); err != nil {
+		t.Fatal(err)
+	}
+
+	if done, err := svc.Undo(a); err != nil || !done.Done || removed(t, svc, plan, "02") {
+		t.Fatalf("first undo in A %+v %v did not bring the clip back", done, err)
+	}
+	if done, err := svc.Undo(a); err != nil || !done.Done {
+		t.Fatalf("second undo in A %+v %v was refused", done, err)
+	}
+	if got := svc.store.Settings().CaptionY; got != engine.DefaultCaptionY {
+		t.Errorf("height %v after the second undo in A, want %v, where it was before A moved it", got, engine.DefaultCaptionY)
+	}
+	if done, err := svc.Redo(a); err != nil || !done.Done {
+		t.Fatalf("first redo in A %+v %v", done, err)
+	}
+	if got := svc.store.Settings().CaptionY; got != 600 {
+		t.Errorf("height %v after the redo in A, want 600, where A moved it", got)
+	}
+	if done, err := svc.Redo(a); err != nil || !done.Done || !removed(t, svc, plan, "02") {
+		t.Errorf("second redo in A %+v %v did not remove the clip again", done, err)
+	}
+}
+
+// An undo that cannot be taken, because its clip was changed since by
+// something the history does not know about, gives up the undos behind
+// it. The redo it did not touch is still there.
+func TestAnUndoThatCannotBeTakenKeepsTheRedo(t *testing.T) {
+	svc, mine, plan := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	_, _ = svc.RemoveClip(ctx, mine, plan, "02", true)
+	_, _ = svc.RemoveClip(ctx, mine, plan, "01", true)
+	if !removed(t, svc, plan, "01") || !removed(t, svc, plan, "02") {
+		t.Fatal("the clips were not removed")
+	}
+	if done, err := svc.Undo(mine); err != nil || !done.Done || removed(t, svc, plan, "01") {
+		t.Fatalf("undo %+v %v did not bring clip 01 back", done, err)
+	}
+	// Clip 02 changes outside the history, the way a search can change it.
+	if err := engine.SetCaptionY(svc.store.files, plan, "02", 300); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Undo(mine); err == nil {
+		t.Fatal("the undo of clip 02 wrote over what changed since")
+	}
+	if !removed(t, svc, plan, "02") {
+		t.Error("a refused undo brought clip 02 back")
+	}
+	if done, err := svc.Redo(mine); err != nil || !done.Done || !removed(t, svc, plan, "01") {
+		t.Errorf("redo %+v %v did not remove clip 01 again", done, err)
+	}
+	if done, err := svc.Undo(mine); err != nil || !done.Done || removed(t, svc, plan, "01") {
+		t.Errorf("undo of the redone removal %+v %v", done, err)
+	}
+	if done, err := svc.Undo(mine); err != nil || done.Done {
+		t.Errorf("undo past the refused step %+v %v, want nothing left", done, err)
+	}
+}
+
 // A new edit after an undo is a new branch, and what was undone is gone
 // for good, the way every editor does it.
 func TestANewEditForgetsWhatWasUndone(t *testing.T) {

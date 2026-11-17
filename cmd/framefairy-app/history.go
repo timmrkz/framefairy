@@ -180,15 +180,6 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 			}
 		}
 	}
-	if st.captionY != nil {
-		want := st.captionY[1]
-		if !back {
-			want = st.captionY[0]
-		}
-		if s.store.Settings().CaptionY != want {
-			return Undone{}, s.lost(h)
-		}
-	}
 	var shown engine.ClipRef
 	if st.change != nil {
 		var err error
@@ -198,12 +189,16 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 			shown, err = st.change.Redo()
 		}
 		if errors.Is(err, engine.ErrChangedSince) {
-			return Undone{}, s.lost(h)
+			return Undone{}, lost(from)
 		}
 		if err != nil {
 			return Undone{}, err
 		}
 	}
+	// The caption height is one setting for every video, so another video
+	// may have moved it since. It is put back all the same: it is one
+	// number that nothing else rests on, and it is what the hand moved in
+	// this video, so it is what the undo here shows.
 	if st.captionY != nil {
 		y := st.captionY[0]
 		if !back {
@@ -253,10 +248,12 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 
 // lost is a step that cannot be taken, because what it would put back was
 // changed since by something the history does not know about, a search
-// over the same part above all. Everything before it may rest on it, so
-// the history of the episode starts again from here.
-func (s *FrameFairy) lost(h *history) error {
-	h.undo, h.redo = nil, nil
+// over the same part above all. Every step behind it in the same list may
+// rest on it, so that list starts again from here. The other list stays:
+// each of its steps checks its own clips when it is taken, so an undo
+// that cannot be taken leaves the redo there, and a redo the undo.
+func lost(steps *[]step) error {
+	*steps = nil
 	return errors.New("this has changed since, so it cannot be taken back")
 }
 

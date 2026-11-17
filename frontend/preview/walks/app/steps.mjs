@@ -4,7 +4,7 @@
 // walk so far, the step's argument, what the caption box showed before it
 // and the step's name. A sequence of any folder can take it. Below them the
 // helpers only these steps use. See docs/TESTING.md.
-import { ask, chosen, control, engineState, fromSidebar, handles, high, nextPaint, pageUntil, seekTo, seenUntil, settle, sidebarStill, reload, xOf } from "../bridge.mjs";
+import { ask, chosen, control, engineState, fromSidebar, handles, high, holdClock, letClockGo, nextPaint, pageUntil, seekTo, seenUntil, settle, sidebarStill, reload, xOf } from "../bridge.mjs";
 import { beamsOff, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -286,6 +286,24 @@ export const steps = {
     else if (closed.pressed !== "false" || closed.title !== "Keep the sidebar open" || closed.icon !== hovered.icon) walk.wrong = `once closed, the button says ${JSON.stringify({ pressed: closed.pressed, title: closed.title })}, not that it keeps it`;
     await page.mouse.move(750, 400);
     await sidebarStill(page);
+  },
+  // ["leave at once", [selector, text]]
+  //                    on the settings, puts text in the field selector
+  //                    names and clicks Updates in the sidebar before the
+  //                    wait for the hand to rest is over, with the app's
+  //                    time held so it cannot be
+  async "leave at once"(walk, [selector, text]) {
+    const { page } = walk;
+    await page.mouse.move(20, 500);
+    await sidebarStill(page);
+    await holdClock(page);
+    await page.locator(selector).fill(text);
+    await page.locator("aside").getByText("Updates", { exact: true }).first().click();
+    await letClockGo(page);
+    await page.mouse.move(750, 400);
+    await sidebarStill(page);
+    await page.locator(".card.finding").waitFor({ state: "detached" });
+    await settle(page);
   },
   // ["settings"]       opens the settings from the sidebar, and remembers
   //                    the models they name

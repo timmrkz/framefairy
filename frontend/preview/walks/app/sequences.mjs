@@ -120,6 +120,38 @@ export default [
     ],
   },
   {
+    // Issue #879. A folder typed into Training data folder and Updates
+    // clicked within the wait for the hand to rest was never saved, and
+    // the field was empty on coming back. Clearing it the same way is
+    // saved too, and leaves the walk's library as it found it.
+    name: "A setting changed just before leaving the settings is saved",
+    steps: [
+      ["settings"],
+      ["button", "Advanced"],
+      ["leave at once", ["label.item:has-text('Training data folder') input", "~/walk-training"]],
+      ["settings"],
+      ["button", "Advanced"],
+      ["field reads", ["label.item:has-text('Training data folder') input", "~/walk-training"]],
+      ["leave at once", ["label.item:has-text('Training data folder') input", ""]],
+      ["settings"],
+      ["button", "Advanced"],
+      ["field reads", ["label.item:has-text('Training data folder') input", ""]],
+    ],
+  },
+  {
+    // Issue #876. After a face was picked from the Style list with the
+    // keyboard, R changed the caption face again and the space bar opened
+    // the list. A list that closes lets go of the keyboard, every list.
+    name: "A list lets go of the keyboard once a row is picked from it",
+    // The family picked first has two faces, Regular and Heavy, so the H
+    // typed after Regular would pick Heavy from a list that kept the
+    // keyboard.
+    steps: [
+      ["a pick lets go", ["#caption-font", "Bridge Sans"]],
+      ["a pick lets go", ["#caption-style", "Regular"]],
+    ],
+  },
+  {
     // Tim had the pointer on the sidebar and swiped up for Mission Control,
     // and saw the sidebar open and close over and over until he clicked
     // back into the app.
