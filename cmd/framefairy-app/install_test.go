@@ -160,6 +160,19 @@ func TestBundleOf(t *testing.T) {
 	}
 }
 
+// Wails unpacks a build beside what it replaces, so the app looks for
+// what it left there: beside the .app, or beside a program in no .app.
+func TestStagingFolder(t *testing.T) {
+	for exe, want := range map[string]string{
+		"/Applications/Frame Fairy.app/Contents/MacOS/framefairy-app": "/Applications",
+		"/Users/tim/framefairy/bin/framefairy-app":                    "/Users/tim/framefairy/bin",
+	} {
+		if got := stagingFolder(exe); got != filepath.FromSlash(want) {
+			t.Errorf("%s: got %q", exe, got)
+		}
+	}
+}
+
 // Quitting with a build ready starts the step, once, for the app it runs
 // from. With nothing ready, or after Relaunch, it starts nothing.
 func TestQuittingWithABuildReadyInstallsIt(t *testing.T) {
@@ -196,8 +209,8 @@ func TestQuittingWithABuildReadyInstallsIt(t *testing.T) {
 	}
 }
 
-// When the app starts, it removes what updating left in the temporary
-// folder once it is old, and only what is Frame Fairy's.
+// When the app starts, it removes what updating left in a folder once it
+// is old, and only what is Frame Fairy's.
 //
 // On the real disk: what is tested is the age the system gives a file.
 func TestOldLeftoversAreRemoved(t *testing.T) {
@@ -232,7 +245,7 @@ func TestOldLeftoversAreRemoved(t *testing.T) {
 		unpacked("wails-update-8", "Other.app", 9*day),
 		put("something-else.log", "", 30*day),
 	}
-	tidyTemp(dir, now)
+	tidyUpdates(dir, now)
 	for _, p := range gone {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Errorf("%s is still there", filepath.Base(p))

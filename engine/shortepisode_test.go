@@ -4,7 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine/runlog"
 )
@@ -72,7 +78,8 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	server := fakeModel(t, &asked)
 	defer server.Close()
 
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	watch := &renameWatch{Fs: disk}
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(watch))
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	ownRecords(e)
 	base := DefaultOptions()
@@ -108,9 +115,26 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	}
 	removal := ChangeBetween(before, snapshotAt(disk, p.LogsDir()))
 
+	// The moment the clip made again goes to disk, the removed one is
+	// gone already. The app reads the plans while a search runs, and a
+	// read between the two showed the episode as a clip and as a removed
+	// one to put back.
+	var both atomic.Bool
+	watch.hear(func(to string) {
+		if to == first || !strings.HasPrefix(filepath.Base(to), "clips") {
+			return
+		}
+		if _, clips, _ := LoadClips(disk, first); len(clips) != 0 {
+			both.Store(true)
+		}
+	})
 	plan, err := p.Search(ctx, req, Host{})
 	if err != nil {
 		t.Fatalf("search after the clip was removed: %v %s", err, p.LastError())
+	}
+	watch.hear(nil)
+	if both.Load() {
+		t.Errorf("the clip made again was written while the removed one was still in its plan")
 	}
 	_, clips, err = LoadClips(disk, plan)
 	if err != nil {
@@ -151,4 +175,30 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	if listed != 1 {
 		t.Errorf("%d clips in the list, want the one", listed)
 	}
+}
+
+// renameWatch is a file system that tells a test of each file moved into
+// place, before it is there. A plan is written beside itself and moved
+// onto its name, see replacePlan, so a move is the moment a reader of the
+// plans sees it.
+type renameWatch struct {
+	afero.Fs
+	mu sync.Mutex
+	on func(to string)
+}
+
+func (w *renameWatch) hear(on func(to string)) {
+	w.mu.Lock()
+	w.on = on
+	w.mu.Unlock()
+}
+
+func (w *renameWatch) Rename(from, to string) error {
+	w.mu.Lock()
+	on := w.on
+	w.mu.Unlock()
+	if on != nil {
+		on(to)
+	}
+	return w.Fs.Rename(from, to)
 }

@@ -208,8 +208,7 @@ export const Events = {
 
 // What the runtime does with a file dragged from the system over the app,
 // which a browser cannot be handed: on macOS and Linux the Go side calls
-// these, see window.ts in @wailsio/runtime 3.0.0-beta.23, the version the
-// app pins. A drag starts with handleDragEnter, and handleDragOver lights
+// these, see window.ts in the @wailsio/runtime the app pins. A drag starts with handleDragEnter, and handleDragOver lights
 // nothing before it. While a file is held over a drop target, the nearest
 // element marked data-file-drop-target wears file-drop-target-active, and
 // a drop that lands on one goes to the Go side, which adds what it can,

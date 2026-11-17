@@ -580,15 +580,22 @@ scan made once is out of date the week after.
   Ubuntu image the CI image starts from has a newer build. Minor and patch versions come together, one pull request
   for the Go modules and one for the interface, and a new major version
   comes in a pull request of its own, so a major that breaks the build
-  holds back nothing else. The actions come in one pull request, majors
+  holds back nothing else. The Go modules include the ones `go.mod`
+  marks indirect, `allow: dependency-type: all`, because Dependabot
+  leaves those alone otherwise, and `golang.org/x/text` kept a known
+  flaw for months that way, #844. The actions come in one pull request, majors
   included. Every action is pinned to a commit, because a tag can be
   moved to other code and a commit cannot, and the comment beside it
   names the full version that commit is, `# v7.0.2` and never `# v7`.
   Dependabot moves the comment with the commit, so a bump shows which
   release it goes to. `internal/workflows` checks both, in `make unit`. With Dependabot security updates on in the repository's
   settings, it opens one at once for a fix to a known vulnerability.
-  Wails and the speech library's Go module are left out, because each
-  moves with a pin Dependabot cannot change. TypeScript stays below 7 until
+  Wails comes in a pull request of its own, the Go module and
+  `@wailsio/runtime` together, through one group that spans Go and npm,
+  because the build fails when the two differ. It was left out before,
+  and sat on a beta with published security advisories for two months,
+  #843. The speech library's Go module is left out, because it moves
+  with a pin Dependabot cannot change. TypeScript stays below 7 until
   svelte-check, which checks the interface's types, accepts 7. An update
   needs no licence notice written, because the build writes the notices
   of the modules and packages it has. It stops only on a licence nobody
@@ -609,6 +616,14 @@ scan made once is out of date the week after.
   `overrides` in `frontend/package.json`, like minimatch 11 under ESLint,
   and the pin is taken out once that package accepts the fix. Either
   failing is a red check.
+- **No install scripts.** `frontend/.npmrc` says `ignore-scripts=true`,
+  so no package of the interface runs code of its own while it is
+  installed, in make, in CI or by hand. A hijacked release that runs on
+  install is how the npm worms of 2026 spread, and it would run on Tim's
+  Mac and in a session that can push before anybody had read it. None of
+  our packages needs its script. `npm run` still runs the scripts in
+  `package.json`, only their `pre` and `post` steps are skipped.
+  `internal/workflows` fails when the setting is gone.
 - **The tools we build ourselves**, and the pins Dependabot cannot move,
   which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
   four libraries it is built with, llama.cpp, the speech library and Node
