@@ -64,7 +64,6 @@ top of the repository, which builds the interface first, then start <code>bin/fr
 func main() {
 	// Started again to put a new build in place once the app has quit.
 	installIfAsked()
-	go tidyTemp(os.TempDir(), time.Now())
 	st := appStore()
 	// The fonts installed on the Mac are offered for captions beside ours,
 	// see appStore. Their folders are read once now, so the Font list
@@ -143,6 +142,16 @@ func main() {
 	})
 	svc.app = app
 	svc.leave = leave
+	// Only once Wails is up: started for a Relaunch, this program puts the
+	// build in place inside application.New and never gets here, so it
+	// never removes the build it is about to install.
+	go func() {
+		now := time.Now()
+		tidyUpdates(os.TempDir(), now)
+		if exe, err := os.Executable(); err == nil {
+			tidyUpdates(stagingFolder(exe), now)
+		}
+	}()
 	// A framefairy:// link, from a browser, a mail or any other app, when
 	// the app is started by it and when it is already running.
 	app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl, func(e *application.ApplicationEvent) {

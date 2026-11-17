@@ -149,6 +149,9 @@ type planBuilder struct {
 	writing sync.Mutex
 	written bool
 	gone    bool
+	// replaced is set once the removed clips the first clip is again are
+	// out of their plans, see dropReplacedLocked. Held by writing.
+	replaced bool
 }
 
 func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source SourceInfo,
@@ -902,6 +905,7 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 		return nil
 	}
 	if path := b.opts.PlanPath; path != "" {
+		b.dropReplacedLocked()
 		if b.carrying {
 			clip.PlanID = b.planID
 		}
@@ -970,6 +974,21 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 		b.clock.landed()
 	}
 	return nil
+}
+
+// dropReplacedLocked takes the removed clips the first clip written is
+// again out of their plans, once, before that clip goes to disk. The
+// caller holds writing.
+func (b *planBuilder) dropReplacedLocked() {
+	if b.replaced {
+		return
+	}
+	b.replaced = true
+	for _, c := range b.opts.Replaces {
+		if err := DropRemoved(b.e.Files, c.Plan, c.ID); err != nil {
+			b.e.Log.Warn("could not take out the clip %s that was removed: %s", c.ID, err)
+		}
+	}
 }
 
 // none writes the plan with no clips in it, for a search that found

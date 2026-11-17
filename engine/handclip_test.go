@@ -272,6 +272,10 @@ func TestAClipMadeByHandCalledOff(t *testing.T) {
 func TestNextHandClipID(t *testing.T) {
 	t.Parallel()
 	fs := afero.NewMemMapFs()
+	// A work folder is only made beside a video whose folder is there.
+	if err := fs.MkdirAll("/v", 0o755); err != nil {
+		t.Fatal(err)
+	}
 	p := NewProject(NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(fs)), "/v/episode.mp4", DefaultOptions())
 	if got := NextHandClipID(fs, p.Source, nil); got != "h01" {
 		t.Errorf("with no clip made by hand, %q", got)

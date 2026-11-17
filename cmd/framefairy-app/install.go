@@ -190,15 +190,28 @@ func bundleOf(exe string) string {
 	return ""
 }
 
-// What updating leaves in the temporary folder, and how long it may stay
-// there. macOS clears the folder by itself only of what has not been
-// touched for days, so the app clears its own when it starts: the log of
-// a step on quit that went wrong, kept a week so it can still be sent,
-// Wails' log of a Relaunch, and a build Wails unpacked and never used,
-// because a download was cut off or the app ended before it went in.
-// Wails names those the same for every app made with it, so only the ones
-// about Frame Fairy are ours to remove.
-func tidyTemp(dir string, now time.Time) {
+// stagingFolder is the folder Wails' updater unpacks a build in: the one
+// the app lies in, so that putting the build in place is a rename on one
+// disk. Wails finds it the same way, from the .app the program runs from,
+// or from the program when it runs from none.
+func stagingFolder(exe string) string {
+	target := bundleOf(exe)
+	if target == "" {
+		target = exe
+	}
+	return filepath.Dir(filepath.Clean(target))
+}
+
+// What updating leaves behind, and how long it may stay. The app clears
+// its own when it starts, in the temporary folder, which macOS clears by
+// itself only of what has not been touched for days, and in the folder
+// beside the app, which nobody else clears: the log of a step on quit
+// that went wrong, kept a week so it can still be sent, Wails' log of a
+// Relaunch, and a build Wails unpacked and never used, because a download
+// was cut off or the app ended before it went in. Wails names those the
+// same for every app made with it, so only the ones about Frame Fairy are
+// ours to remove.
+func tidyUpdates(dir string, now time.Time) {
 	old := func(name string, after time.Duration) bool {
 		info, err := os.Lstat(name)
 		return err == nil && now.Sub(info.ModTime()) >= after
