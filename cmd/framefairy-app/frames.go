@@ -406,6 +406,11 @@ func (p *previews) release(path string) {
 		p.held[path]--
 	} else {
 		delete(p.held, path)
+		// Its workspace is asleep, so no play is coming: the decoder
+		// keeps running for a while, the frames it kept need not.
+		if d := p.decoders[path]; d != nil {
+			d.LetFramesGo()
+		}
 	}
 	theLog.line(zerolog.DebugLevel, "files").Str("video", filepath.Base(path)).Int("held", p.held[path]).Msg("the decoder is let go")
 	p.spare()
@@ -523,7 +528,11 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 	head := make([]byte, 8)
 	// A frame is given back once it is written, or could not be: the
 	// window's end of the answer copies what it is given before Write
-	// returns, so nothing reads the frame after.
+	// returns, so nothing reads the frame after. Wails does so in Write of
+	// internal/assetserver/webview/responsewriter_darwin_shared.go, with
+	// NSData's dataWithBytes, and its Linux and Windows writers copy too.
+	// No test can see it, so an update of Wails checks it, see Keeping up
+	// in docs/BUILD.md.
 	put := func(f previewFrame) bool {
 		defer s.give(f.data)
 		binary.LittleEndian.PutUint64(head, math.Float64bits(f.at))

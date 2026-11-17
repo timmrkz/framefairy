@@ -592,7 +592,11 @@ scan made once is out of date the week after.
   settings, it opens one at once for a fix to a known vulnerability.
   Wails comes in a pull request of its own, the Go module and
   `@wailsio/runtime` together, through one group that spans Go and npm,
-  because the build fails when the two differ. It was left out before,
+  because the build fails when the two differ. Its pull request checks
+  that the window's end of an answer still copies the bytes it is given
+  before `Write` returns, `responsewriter_*.go` in Wails's
+  `internal/assetserver/webview`: the app gives a frame's buffer back
+  for the next frame right after, see `writeFrames`. It was left out before,
   and sat on a beta with published security advisories for two months,
   #843. The speech library's Go module is left out, because it moves
   with a pin Dependabot cannot change. TypeScript stays below 7 until

@@ -151,6 +151,13 @@ func newEpisodeFrames(program, path string) *EpisodeFrames {
 // at once, see ahead.
 const framesKept = 64 << 20
 
+// LetFramesGo lets go of the frames kept for the next ones, once no play
+// of the video is coming: a decoder stays open a while after its
+// workspace went to sleep, and several videos each kept up to framesKept.
+func (f *EpisodeFrames) LetFramesGo() {
+	f.pool.Clear()
+}
+
 // Give hands back a frame or a chunk of sound that Stream or Sound handed
 // over, once nothing reads it any more, so the decoder reads the next one
 // into it rather than into new memory. Only whoever reads it last gives it
@@ -783,9 +790,8 @@ func (f *EpisodeFrames) Close() {
 		_ = cmd.Process.Kill()
 		<-gone
 	}
-	// A decoder that closed keeps no memory for frames: it closes once
-	// nothing has been asked of it for a while.
-	f.pool.Clear()
+	// A decoder that closed keeps no memory for frames.
+	f.LetFramesGo()
 }
 
 // captionsCursor is the decoder's cursor of captions: the caption file it
