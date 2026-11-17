@@ -2172,7 +2172,12 @@ bubble scrolled by those eight pixels.
       takes it back. **Once the hand takes hold of an edge, a cut or a
       caption while it plays, that play turns no page**, even after the
       hand lets go, so a page never turns under a drag and moves the edge
-      with it. A new play turns pages again. **The keys keep it in sight the same way:** an arrow,
+      with it. A new play turns pages again. **A swipe or a pinch while
+      it plays that leaves the playhead out of the view leaves the view
+      where the hand put it**: the play turns pages again once its
+      playhead is in the view, when it walks into a view swiped ahead of
+      it, after the crosshair, or in a new play. A swipe was turned
+      straight back to the playhead, #900. **The keys keep it in sight the same way:** an arrow,
       or Shift and an arrow, that lands in the last twentieth of the view
       the way it goes, or out of the view, turns the page there, to the
       left as to the right. A skip of 5 s left the view behind, #677.
