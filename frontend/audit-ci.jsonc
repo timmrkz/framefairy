@@ -10,6 +10,19 @@
     // never ships in the app, and no fixed deepmerge exists yet. Let
     // through by that path alone, so deepmerge brought in by anything
     // else still fails.
-    "GHSA-gcqx-w48m-w2h4|@sveltejs/vite-plugin-svelte>deepmerge"
+    "GHSA-gcqx-w48m-w2h4|@sveltejs/vite-plugin-svelte>deepmerge",
+    // picomatch through 4.0.7, the newest, takes exponential time on a
+    // crafted pattern like +(*a), issue #910. No fixed release exists
+    // yet. Only the build and test tools bring it, vite, vitest,
+    // svelte-check and the ESLint parser, which only match the patterns
+    // our own config names, and none of them ships in the app. Let
+    // through by these paths alone, so picomatch brought in by anything
+    // else still fails.
+    "GHSA-fc5q-39xc-vjpf|picomatch>",
+    "GHSA-fc5q-39xc-vjpf|vite>picomatch>",
+    "GHSA-fc5q-39xc-vjpf|@sveltejs/vite-plugin-svelte>vite>picomatch",
+    "GHSA-fc5q-39xc-vjpf|@vitest/coverage-v8>vitest>tinyglobby>picomatch>",
+    "GHSA-fc5q-39xc-vjpf|svelte-check>fdir>picomatch",
+    "GHSA-fc5q-39xc-vjpf|@typescript-eslint/parser>@typescript-eslint/typescript-estree>tinyglobby>picomatch"
   ]
 }
