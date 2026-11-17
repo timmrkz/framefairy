@@ -79,6 +79,8 @@ type PlanSummary struct {
 	clips   []Clip
 	data    []byte
 	ordered func() ([]*object, error)
+	// said is what Said laid out last, kept with the read, see Said.
+	said *keptSaid
 }
 
 // orderedClips are the clips of the plan in its own order, the way an
@@ -304,7 +306,8 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 	}
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
 		Modified: info.ModTime(), plan: plan, clips: clips, data: data,
-		ordered: sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) })}
+		ordered: sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) }),
+		said:    &keptSaid{}}
 	made := plan.PlannedWith()
 	if v, ok := num.AsFloat(made[keyFrom]); ok {
 		s.From = v
@@ -1115,6 +1118,20 @@ type Look struct {
 	// box measures a face of the machine the way the short draws it.
 	// Empty, the bundled ones alone, which only a test wants.
 	Fonts *Fonts
+}
+
+// key says what l lays captions out by, the style, the video and the
+// faces as they were read last, so two looks with the same key lay out
+// the same. false when it cannot be said, and then nothing is kept.
+func (l *Look) key() (string, bool) {
+	if l == nil {
+		return "", true
+	}
+	style, err := json.Marshal(l.Style)
+	if err != nil {
+		return "", false
+	}
+	return fmt.Sprintf("%s\x00%+v\x00%p\x00%d", style, l.Source, l.Fonts, l.Fonts.generation()), true
 }
 
 // fonts are the faces of l, the bundled ones when l has none.

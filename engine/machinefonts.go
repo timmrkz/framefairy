@@ -80,6 +80,9 @@ type Fonts struct {
 	// the folders opens only the files that are new or changed since.
 	files   map[string]fontFile
 	scanned time.Time
+	// gen counts the times the faces offered changed, so what was laid out
+	// in them knows it is stale, see Look.key.
+	gen uint64
 	// metrics is what was read of each face, which Fonts forgets
 	// whenever it reads the folders again, see face.
 	metrics metricsCache
@@ -96,6 +99,7 @@ func (f *Fonts) Use(fsys afero.Fs, dirs []string) {
 	f.mu.Lock()
 	f.fsys, f.dirs = fsys, dirs
 	f.faces, f.byName, f.files, f.scanned = nil, nil, nil, time.Time{}
+	f.gen++
 	f.mu.Unlock()
 	f.metrics.forget()
 }
@@ -190,12 +194,25 @@ func (f *Fonts) scan() {
 	}
 	f.mu.Lock()
 	f.faces, f.byName, f.files, f.scanned = faces, byName, files, time.Now()
+	if changed {
+		f.gen++
+	}
 	f.mu.Unlock()
 	// What was read of a face is kept by its name, which may be another
 	// file now, so it goes only when a file did.
 	if changed {
 		f.metrics.forget()
 	}
+}
+
+// generation is how many times the faces offered changed, see gen.
+func (f *Fonts) generation() uint64 {
+	if f == nil {
+		return 0
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.gen
 }
 
 // all is every face of the machine, read the first time it is asked for.

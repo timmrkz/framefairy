@@ -2323,6 +2323,9 @@ found is a place in the video, and I and O make a clip there.
   and never runs more than 12. Cards of twenty seconds and more were too
   much to read as one place, found by Tim. A sentence card is also cut at
   every edge of what a clip keeps, so it never holds a word a clip shows.
+  The cards are asked for again after every edit while the field is open,
+  and the engine lays out again only the captions of a clip set that
+  changed, see `PlanSummary.Said`.
 - **The clips stand out.** A card of a clip wears the chosen clip's
   accent edge, the clip's name next to its time and its words a step
   below white. The edge is one and the same in both lists, `.clip-edge`

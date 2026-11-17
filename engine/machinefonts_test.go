@@ -661,9 +661,13 @@ func TestAReadOpensOnlyTheFontFilesThatChanged(t *testing.T) {
 	}
 	disk.times()
 
+	gen := fonts.generation()
 	fonts.scan()
 	if opened := disk.times(); len(opened) != 0 {
 		t.Errorf("unchanged, the files %v were opened again", opened)
+	}
+	if fonts.generation() != gen {
+		t.Error("unchanged, the captions laid out in the faces are taken for stale")
 	}
 	fonts.metrics.mu.Lock()
 	kept := len(fonts.metrics.faces)
@@ -678,6 +682,9 @@ func TestAReadOpensOnlyTheFontFilesThatChanged(t *testing.T) {
 	fonts.scan()
 	if opened, want := disk.times(), map[string]int{"/fonts/a/Wide.ttf": 1}; !maps.Equal(opened, want) {
 		t.Errorf("with a font installed, %v were opened, want %v", opened, want)
+	}
+	if fonts.generation() == gen {
+		t.Error("with a font installed, the captions laid out in the faces are not taken for stale")
 	}
 	if got, want := fontNames(fonts.Caption()), []string{"Inter Black", "Anton", "Archivo Black", "Test Narrow", "Test Wide", "Tiny", "Tiny Heavy"}; !slices.Equal(got, want) {
 		t.Errorf("offered %v, want %v", got, want)

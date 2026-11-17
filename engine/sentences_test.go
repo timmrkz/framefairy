@@ -4,9 +4,12 @@ import (
 	"cmp"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"weak"
 
 	"framefairy/engine/timed"
 
@@ -200,4 +203,109 @@ func TestACaptionCardReadsWholeWords(t *testing.T) {
 	if !ok || card.Text != "Ich Judostyle hab gesagt" || card.Start != 10 || card.End != 12.8 {
 		t.Errorf("the card is %+v, %v", card, ok)
 	}
+}
+
+// The transcript search asks for its cards again after every edit, and
+// lays out the captions of each plan only when the plan, the transcript,
+// the look or the faces changed since: one corrected word laid out every
+// clip of every plan of the video.
+func TestTheCaptionsOfAPlanAreLaidOutAgainOnlyWhenWhatTheyAreMadeOfChanged(t *testing.T) {
+	t.Parallel()
+	fsys, path := editablePlanPath(t)
+	tr := editableTranscript()
+	summary, err := summaryOf(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fonts := new(Fonts)
+	look := &Look{Style: map[string]any{"font": "Anton", "size": 80.0}, Fonts: fonts}
+	first := summary.Said(tr, look)
+	if len(first) != 2 || len(first[0].Captions) == 0 {
+		t.Fatalf("laid out %d clips", len(first))
+	}
+	laidOut := func(said []ClipSaid) bool {
+		return &said[0].Captions[0] != &first[0].Captions[0]
+	}
+
+	again := summary.Said(tr, &Look{Style: map[string]any{"size": 80.0, "font": "Anton"}, Fonts: fonts})
+	if laidOut(again) {
+		t.Error("the same plan, transcript and look were laid out again")
+	}
+	again[0].Key = "elsewhere/01"
+	if summary.Said(tr, look)[0].Key != "01" {
+		t.Error("a key changed by one caller reached the next")
+	}
+
+	for _, c := range []struct {
+		name string
+		said func() []ClipSaid
+	}{
+		{"another look", func() []ClipSaid {
+			return summary.Said(tr, &Look{Style: map[string]any{"font": "Anton", "size": 60.0}, Fonts: fonts})
+		}},
+		{"another video", func() []ClipSaid {
+			return summary.Said(tr, &Look{Style: look.Style, Fonts: fonts, Source: SourceInfo{Width: 1080, Height: 1920}})
+		}},
+		{"the transcript read again", func() []ClipSaid { return summary.Said(editableTranscript(), look) }},
+		{"the faces changed", func() []ClipSaid {
+			fonts.Use(afero.NewMemMapFs(), nil)
+			return summary.Said(tr, look)
+		}},
+	} {
+		if !laidOut(c.said()) {
+			t.Errorf("%s: the captions were not laid out again", c.name)
+		}
+		first = summary.Said(tr, look)
+	}
+}
+
+// The window asks for the cards from several calls at once, in looks
+// that differ, while the faces are read again.
+func TestTheCaptionsOfAPlanAreLaidOutFromSeveralCallsAtOnce(t *testing.T) {
+	t.Parallel()
+	fsys, path := editablePlanPath(t)
+	tr := editableTranscript()
+	summary, err := summaryOf(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fonts := new(Fonts)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			look := &Look{Style: map[string]any{"size": float64(60 + 10*(i%2))}, Fonts: fonts}
+			for range 10 {
+				said := summary.Said(tr, look)
+				if len(said) != 2 {
+					t.Errorf("laid out %d clips", len(said))
+				}
+				said[0].Key = "taken"
+			}
+		})
+	}
+	wg.Go(func() { fonts.Use(afero.NewMemMapFs(), nil) })
+	wg.Wait()
+}
+
+// Every plan read is kept, and the captions laid out with it, while a
+// transcript is megabytes the Episode lets go of after the last ten
+// videos. The captions kept do not keep their transcript.
+func TestTheCaptionsKeptDoNotKeepTheirTranscript(t *testing.T) {
+	t.Parallel()
+	fsys, path := editablePlanPath(t)
+	summary, err := summaryOf(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := editableTranscript()
+	gone := weak.Make(tr)
+	if len(summary.Said(tr, nil)) != 2 {
+		t.Fatal("the clips were not laid out")
+	}
+	tr = nil
+	runtime.GC()
+	if gone.Value() != nil {
+		t.Error("the transcript is kept alive by the captions laid out in it")
+	}
+	runtime.KeepAlive(summary)
 }
