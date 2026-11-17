@@ -286,8 +286,12 @@ export default [
     // on every step, which throws its pixels away and makes it new, twice
     // the clip timeline's pixels on a Mac, with nothing changed in size.
     // Plan row 2.242.
-    name: "a swipe along the clip timeline draws the waveform again on the same canvas",
-    steps: [["swipe keeps the canvas", 12]],
+    //
+    // Tim swiped twice the clip timeline's width at a time and the
+    // waveform lagged behind until his hand stopped, issue #909. It has to
+    // be in hand all the way along a swipe that never rests.
+    name: "a swipe along the clip timeline draws the waveform again on the same canvas, and has it all the way along a long swipe",
+    steps: [["swipe keeps the canvas", 12], ["swipe far"]],
   },
   {
     // Found by Tim on #188: dragging the playhead back over the cut before

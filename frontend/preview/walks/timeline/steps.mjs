@@ -5,7 +5,7 @@
 // showed before it and the step's name. A sequence of any folder can take
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
-import { BITS, ask, caughtUp, chosen, clickOnTrack, control, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, reader, seenUntil, settle, shownOnPlayhead, timeline, xOf, playhead, inputHandled } from "../bridge.mjs";
+import { BITS, ask, caughtUp, chosen, clickOnTrack, control, drag, engineState, episodeOn, handles, high, hold, holdClock, holdSound, inside, letClockGo, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, reader, seenUntil, settle, shownOnPlayhead, timeline, xOf, playhead, inputHandled } from "../bridge.mjs";
 import { pieceCount, rate, url } from "../common/steps.mjs";
 
 export const steps = {
@@ -1905,6 +1905,68 @@ export const steps = {
     await settle(page);
     const made = await page.evaluate(() => window.__madeNew);
     if (made) walk.wrong = `the waveform's canvas was made new ${made} times in ${arg} swipes`;
+  },
+  // ["swipe far"]     swipes along the clip timeline with two fingers to
+  //                    the end of the episode and back to its start, a
+  //                    twelfth of the clip timeline at a time, with the
+  //                    app's time held, so the hand never comes to rest.
+  //                    Every step has to land on waveform already in hand,
+  //                    across the whole clip timeline, before the reading
+  //                    it starts has come back. Tim swiped twice its width
+  //                    and saw empty track until his hand stopped, issue
+  //                    #909: the waveform was only read once it rested.
+  async "swipe far"(walk) {
+    const { page } = walk;
+    const path = await episodeOn(page);
+    for (let seen = await news(page, "video"); !(await ask(page, "Episode", path))?.measuredAll; ) {
+      seen = await nextNews(page, seen, "video");
+    }
+    await caughtUp(page, url);
+    const line = await page.locator(".clip-timeline .track").boundingBox();
+    await page.mouse.move(line.x + line.width / 2, line.y + line.height * 0.3);
+    // Columns of the canvas with nothing painted in its middle rows. A
+    // reading of silence is still a pixel high, so only track with no
+    // reading at all is empty.
+    const empty = () =>
+      page.evaluate(() => {
+        const c = document.querySelector(".clip-timeline .track canvas");
+        if (!c?.width || !c.height) return null;
+        const d = c.getContext("2d").getImageData(0, Math.floor(c.height / 2) - 1, c.width, 3).data;
+        let none = 0;
+        for (let x = 0; x < c.width; x++) {
+          if (!(d[x * 4 + 3] || d[(c.width + x) * 4 + 3] || d[(2 * c.width + x) * 4 + 3])) none++;
+        }
+        return { none, width: c.width };
+      });
+    // Where the view is: its first time on the ruler and where it stands.
+    const shown = () =>
+      page.evaluate(() => {
+        const t = document.querySelector(".clip-timeline .num.time");
+        return t ? `${t.textContent} ${t.style.left}` : "";
+      });
+    await holdClock(page);
+    try {
+      let steps = 0;
+      for (const way of [1, -1]) {
+        // Until the clip timeline stops moving, at the end of the episode
+        // and back at its start.
+        for (let was = await shown(), moved = true; moved && !walk.wrong; steps++) {
+          await page.mouse.wheel((way * line.width) / 12, 0);
+          const read = await empty();
+          if (!read) walk.wrong = "the clip timeline has no canvas";
+          else if (read.none) {
+            walk.wrong = `${steps + 1} twelfths of a swipe ${way > 0 ? "on" : "back"}, ${read.none} of the clip timeline's ${read.width} columns had no waveform`;
+          }
+          await settle(page);
+          const now = await shown();
+          moved = now !== was;
+          was = now;
+        }
+      }
+      if (!walk.wrong && steps < 30) walk.wrong = `the swipe went only ${steps} twelfths of the clip timeline, too short to leave what was read before it`;
+    } finally {
+      await letClockGo(page);
+    }
   },
   // ["rotate at", share]
   //                    puts the playhead in the clip, this share of the

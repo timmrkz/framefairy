@@ -330,7 +330,6 @@
   let inPage = $state(false);
   let view = $state({ from: 0, to: 1 });
   let words = $state.raw<Word[]>([]);
-  let peaks = $state.raw<number[]>([]);
   let viewFor = "";
   // Whether a view has been read yet. It is state, because the effects
   // that read the view again as the waveform and the words grow return
@@ -344,9 +343,10 @@
   let loadedHeard = $state(-1);
   let loadedMeasured = $state(0);
   let loadedWhole = $state(false);
-  // The part the words and the waveform were read for. It is wider than
-  // the view, so a swipe has somewhere to go before anything is read again.
-  let data = $state({ from: 0, to: 1 });
+  // The waveform in hand: the part of the episode it was read for and its
+  // readings, set together, see readWave. The part is wider than the view,
+  // so a swipe has somewhere to go while the next reading is on its way.
+  let wave = $state.raw<{ from: number; to: number; peaks: number[] }>({ from: 0, to: 1, peaks: [] });
   // True while the view is where a hand put it. Until it is let go of, the
   // clip and the playhead stop pulling it back.
   let held = $state(false);
@@ -857,33 +857,29 @@
     await reshape({ kind: "join", edge: "", index: 0, from: (cut.from + cut.to) / 2, to: 0, toWords: false });
   }
 
-  // A view is read with as much again either side of it, so swiping along
-  // the episode moves through what is already in hand. The waveform is drawn
-  // by time, so what is read and what is shown need not line up.
-  //
-  // What is drawn and the part it was read for are set in the same
-  // breath, or the old readings would be drawn against the new part for
-  // as long as the reading takes, which looks like the waveform jumping
-  // about. A reading that comes back after a newer one is dropped.
+  // The words are read for the view when it comes to rest. They are for
+  // snapping an edge and for the keys, and nothing is drawn from them, so
+  // they wait for the hand. A reading that comes back after a newer one is
+  // dropped.
   let latest = 0;
   // What the reading on its way was asked for. The same view asked for
   // again before it is back is that reading: an episode opening asked for
-  // the clip's view twice over, and each read the words and the waveform.
+  // the clip's view twice over, and each read the words.
   let reading = "";
+  // Whether the words and the waveform have each come back once, which
+  // is when the track has something of the episode on it, see drawn.
+  let wordsCame = false;
+  let waveCame = false;
 
   async function load(from: number, to: number) {
     view = { from, to };
+    heading = 0;
     loaded = true;
     loadedHeard = heardIn(heard, from, to);
+    readWave();
     const shown = Math.max(to - from, 0.001);
     const whole = Math.max(duration, to);
     const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
-    loadedMeasured = measured;
-    loadedWhole = measuredParts.some(
-      ([a, b]) => a <= outer.from + 0.02 && b >= Math.min(outer.to, duration) - 0.02,
-    );
-    const wide = (outer.to - outer.from) / shown;
-    const buckets = Math.min(4000, Math.max(100, Math.round((width || 900) * wide)));
     // The words are wanted around the playhead, for snapping an edge to
     // them. Zoomed out to a four hour episode that would be forty thousand
     // of them for every swipe, so they are asked for by the ten minutes
@@ -893,28 +889,95 @@
       from: Math.max(outer.from, middle - spoken / 2),
       to: Math.min(outer.to, middle + spoken / 2),
     };
-    const ask = `${said.from}|${said.to}|${outer.from}|${outer.to}|${buckets}`;
+    const ask = `${said.from}|${said.to}`;
     if (ask === reading) return;
     reading = ask;
     const mine = ++latest;
     try {
-      const [w, p] = await Promise.all([
-        api.words(path, said.from, said.to),
-        api.waveform(path, outer.from, outer.to, buckets),
-      ]);
+      const w = await api.words(path, said.from, said.to);
       if (mine !== latest) return;
       words = w ?? [];
-      peaks = p ?? [];
-      data = outer;
     } catch {
       if (mine !== latest) return;
       words = [];
-      peaks = [];
-      data = outer;
     } finally {
       if (mine === latest) reading = "";
     }
-    drawn = true;
+    wordsCame = true;
+    drawn = wordsCame && waveCame;
+  }
+
+  // The waveform is read for the view and as much again either side of
+  // it, and drawn by time, so what is read and what is shown need not line
+  // up. While the hand swipes one way, half a view of that is moved from
+  // behind the view to ahead of it, where the swipe is going, and a swipe
+  // back turns it round. It is read as the hand moves the view, not once
+  // the hand rests:
+  // read only at rest, a swipe longer than what was in hand ran on into
+  // empty track, and the waveform came in a moment after the hand
+  // stopped. Tim saw it, issue #909.
+  //
+  // One reading is on its way at a time. One asked for meanwhile is asked
+  // for once that one lands, for the view as it is by then, so a swipe
+  // keeps a reading on its way and draws each as it lands, in order.
+  let waveOut = false;
+  let waveAgain = false;
+  // The way the hand last swiped, on into the episode or back, and nought
+  // for a view put somewhere by anything else.
+  let heading = 0;
+
+  // How many views of the waveform are read before the view and after it.
+  function sides(): [number, number] {
+    if (heading > 0) return [0.5, 1.5];
+    if (heading < 0) return [1.5, 0.5];
+    return [1, 1];
+  }
+
+  async function readWave() {
+    if (waveOut) {
+      waveAgain = true;
+      return;
+    }
+    waveOut = true;
+    waveAgain = false;
+    const asked = path;
+    const shown = Math.max(view.to - view.from, 0.001);
+    const whole = Math.max(duration, view.to);
+    const [before, after] = sides();
+    const outer = { from: Math.max(0, view.from - before * shown), to: Math.min(whole, view.to + after * shown) };
+    loadedMeasured = measured;
+    loadedWhole = measuredParts.some(
+      ([a, b]) => a <= outer.from + 0.02 && b >= Math.min(outer.to, duration) - 0.02,
+    );
+    const wide = (outer.to - outer.from) / shown;
+    const buckets = Math.min(4000, Math.max(100, Math.round((width || 900) * wide)));
+    let peaks: number[] = [];
+    try {
+      peaks = (await api.waveform(asked, outer.from, outer.to, buckets)) ?? [];
+    } catch {
+      peaks = [];
+    }
+    waveOut = false;
+    if (asked === path) {
+      wave = { ...outer, peaks };
+      waveCame = true;
+      drawn = wordsCame && waveCame;
+    }
+    if (waveAgain || asked !== path || waveShort()) readWave();
+  }
+
+  // Whether the view has moved a quarter of itself from where it stood in
+  // the waveform in hand, toward an edge the episode goes on past, so the
+  // next reading has most of what is ahead to land in before the swipe
+  // reaches empty track. Or whether it has been zoomed in so far that the
+  // readings in hand are too coarse for it.
+  function waveShort(): boolean {
+    const shown = Math.max(view.to - view.from, 0.001);
+    const whole = Math.max(duration, shown);
+    const [before, after] = sides();
+    if (wave.from > 0.001 && view.from - wave.from < (before - 0.25) * shown) return true;
+    if (wave.to < whole - 0.001 && wave.to - view.to < (after - 0.25) * shown) return true;
+    return wave.to - wave.from > shown * 4;
   }
 
   // Brings a moment into the view without changing how much of the episode
@@ -1175,6 +1238,8 @@
       const shift = (along / Math.max(width, 1)) * span;
       showing(view.from + shift, view.to + shift);
     }
+    heading = zooming ? 0 : Math.sign(along);
+    if (waveShort()) readWave();
     readSoon(zooming ? "pinched" : "swiped");
   }
 
@@ -1327,7 +1392,7 @@
   // came out brighter than their neighbours. Nothing here is ever drawn
   // between two pixels, so there is nothing left to shimmer.
   $effect(() => {
-    void peaks;
+    void wave;
     void width;
     void view;
     // Drawn again as the track comes back into the page, and not drawn
@@ -1350,7 +1415,8 @@
     // no reading falls, so a column past the end of the transcript stays
     // empty rather than reading as silence.
     const loudest = new Float32Array(w).fill(-Infinity);
-    const step = (data.to - data.from) / Math.max(peaks.length, 1);
+    const { from: readFrom, to: readTo, peaks } = wave;
+    const step = (readTo - readFrom) / Math.max(peaks.length, 1);
     const scale = w / span;
     // How many columns one reading has to itself.
     const each = step * scale;
@@ -1370,7 +1436,7 @@
       for (let x = 0; x < w; x++) {
         // Where this column sits between two readings, taking a reading to
         // stand at the middle of the ten milliseconds it measured.
-        const at = (view.from + x / scale - data.from) / step - 0.5;
+        const at = (view.from + x / scale - readFrom) / step - 0.5;
         const i = Math.floor(at);
         if (i < -1 || i >= peaks.length) continue;
         const a = peaks[Math.max(i, 0)];
@@ -1382,7 +1448,7 @@
       // of them wins, which is what a waveform is for: a peak that was
       // averaged away is a peak nobody can see.
       for (let i = 0; i < peaks.length; i++) {
-        const at = data.from + i * step;
+        const at = readFrom + i * step;
         const first = Math.floor((at - view.from) * scale);
         if (first >= w) break;
         const last = Math.max(first, Math.ceil((at + step - view.from) * scale) - 1);
