@@ -15,6 +15,7 @@
   import { between, copies, joined, pick, type Picked } from "../lib/copy";
   import { asleep } from "../lib/keys";
   import { said } from "../lib/said";
+  import { Stack } from "../lib/stack.svelte";
   import { onMount, tick, untrack } from "svelte";
 
   let {
@@ -75,29 +76,37 @@
 
   let list: HTMLOListElement;
 
-  // The card that stays where it stands as cards come in, see below.
-  let anchor: { key: string; top: number; typed: string } | null = null;
-
   // The column the cards scroll in, which is the clip list's.
   function scroller(): HTMLElement | null {
     return list?.closest<HTMLElement>(".scroll") ?? null;
   }
 
-  // The anchor put back where it stood. It runs before the effects that
-  // move the list, so they move it from where the hand left it.
+  // Only the cards in view and a screen either side are built, and the
+  // rest are stood in for by their heights, see lib/stack.svelte.ts. The
+  // search of a video of four hours built, restyled and laid out over a
+  // thousand cards on opening, on its first letter and on being cleared,
+  // a fifth to a third of a second each, issue #894. Every place the list
+  // is turned to below is read from the heights, so nothing lays out the
+  // whole list.
+  const stack = new Stack(() => keys);
+  onMount(() => {
+    const box = scroller();
+    if (box) return stack.attach(list, box);
+  });
+
+  // Cards that come in above the ones in view, as the transcript grows
+  // over the part the playhead stands in, and cards laid out at another
+  // height than they were stood in for by, leave the ones in view where
+  // they stand. WebKit keeps no anchor of its own, so the card of the
+  // playhead was pushed out at the foot while it stayed the same card, and
+  // nothing brought it back. The card kept is the card of the playhead
+  // when it is in view, or else the first card in view, taken as the hand
+  // scrolls, see the scroll below. A new search is a new list and keeps
+  // nothing. It runs before the effects that move the list, so they move
+  // it from where the hand left it.
   $effect(() => {
-    void rows;
-    untrack(() => {
-      const was = anchor;
-      anchor = null;
-      if (!was || was.typed !== typed) return;
-      const card = list?.querySelector<HTMLElement>(`li[data-row="${CSS.escape(was.key)}"]`);
-      const box = scroller();
-      if (card && box) {
-        box.scrollTop += card.getBoundingClientRect().top - was.top;
-        atTop = false;
-      }
-    });
+    void stack.placed;
+    untrack(() => stack.hold(typed));
   });
 
   // What is typed is a new list, read from its top. A list scrolled half
@@ -115,7 +124,10 @@
   onMount(() => {
     const box = scroller();
     if (!box) return;
-    const heard = () => (atTop = box.scrollTop === 0);
+    const heard = () => {
+      atTop = box.scrollTop === 0;
+      stack.scrolled(typed, followed ?? null);
+    };
     box.addEventListener("scroll", heard, { passive: true });
     return () => box.removeEventListener("scroll", heard);
   });
@@ -127,7 +139,8 @@
     // A new list picks nothing of the one before.
     picked = null;
     if (now.trim() || !was.trim()) {
-      if (!atTop) scroller()?.scrollTo({ top: 0 });
+      if (!atTop) stack.toStart(now);
+      else stack.scrolled(now, null);
       atTop = true;
       return;
     }
@@ -200,7 +213,7 @@
     followed = key;
     // The search opens at the playhead, or at its top.
     if (!key && (was === undefined || always)) {
-      scroller()?.scrollTo({ top: 0 });
+      stack.toStart(typed);
       atTop = true;
     }
     if (!key || (key === was && !always && !put)) return;
@@ -297,22 +310,10 @@
     });
   }
 
-  // Whether the card of a row is in view, inside the veil the list fades
-  // its ends with.
-  function shows(key: string): { card: HTMLElement; box: HTMLElement; veil: number; above: number; below: number } | null {
-    layOutChanged();
-    const card = list?.querySelector<HTMLElement>(`li[data-row="${CSS.escape(key)}"]`);
-    const box = scroller();
-    if (!card || !box) return null;
-    const veil = parseFloat(getComputedStyle(list).paddingTop) || 0;
-    const r = card.getBoundingClientRect();
-    const v = box.getBoundingClientRect();
-    return { card, box, veil, above: v.top + veil - r.top, below: r.bottom - (v.bottom - veil) };
-  }
-
-  // The page turned to the card of a row, unless it is in view.
+  // The page turned to the card of a row, unless it is in view, inside
+  // the veil the list fades its ends with.
   function turnTo(key: string) {
-    const at = shows(key);
+    const at = stack.shows(key);
     if (at && at.above <= 0.5 && at.below <= 0.5) return;
     toTop(key);
   }
@@ -323,27 +324,21 @@
   // was brought just into view, and went on standing at the foot as the
   // walk went down, found by Tim.
   function pageTo(key: string, step: 1 | -1) {
-    const at = shows(key);
+    const at = stack.shows(key);
     if (!at || (at.above <= 0.5 && at.below <= 0.5)) return;
     if (step > 0) toTop(key);
     else {
-      at.box.scrollTop += at.below;
+      stack.toFoot(key, typed);
       atTop = false;
     }
   }
 
-  // The card of a row, at the top of the list. Where it is
-  // is read once and never laid out from: every card above it is laid out
-  // at its own height, so the place is exact, and the card stands where
-  // the first card of the list stands, under the veil the list fades its
-  // ends with.
+  // The card of a row, at the top of the list, where the first card of
+  // the list stands, under the veil the list fades its ends with. Where it
+  // is comes from the heights of the cards above it, and the card stays
+  // there as they are built and laid out, see lib/stack.svelte.ts.
   function toTop(key: string) {
-    layOutChanged();
-    const card = list?.querySelector<HTMLElement>(`li[data-row="${CSS.escape(key)}"]`);
-    const box = scroller();
-    if (!card || !box) return;
-    const head = list.firstElementChild as HTMLElement;
-    box.scrollTo({ top: card.getBoundingClientRect().top - head.getBoundingClientRect().top });
+    stack.toTop(key, typed);
     atTop = false;
   }
 
@@ -394,6 +389,9 @@
     return out;
   });
 
+  const keys = $derived(rows.map((r) => r.key));
+  const built = $derived(rows.slice(stack.built[0], stack.built[1] + 1));
+
   function sameBold(a: [number, number][], b: [number, number][]): boolean {
     return a.length === b.length && a.every(([from, to], i) => from === b[i][0] && to === b[i][1]);
   }
@@ -429,111 +427,9 @@
     }),
   );
 
-  // Cards that come in above the ones in view, as the transcript grows
-  // over the part the playhead stands in, leave the ones in view where
-  // they stand. WebKit keeps no anchor of its own, so the card of the
-  // playhead was pushed out at the foot while it stayed the same card,
-  // and nothing brought it back. The anchor is the card of the playhead
-  // when it is in view, or else the first card in view. A new search is
-  // a new list and keeps nothing.
-  $effect.pre(() => {
-    void rows;
-    const now = typed;
-    anchor = untrack(() => {
-      // A letter typed is a new list, read from its top, see above. The
-      // list on screen is still the one before it, so it is measured for
-      // nothing: every card laid out once more for each letter, and the
-      // anchor taken from the new search, so it was put back too.
-      if (now !== typedWas) return null;
-      const box = scroller();
-      if (!box || !list) return null;
-      const v = box.getBoundingClientRect();
-      const shown = (li: HTMLElement) => {
-        const r = li.getBoundingClientRect();
-        return r.bottom > v.top && r.top < v.bottom;
-      };
-      const mine = followed ? list.querySelector<HTMLElement>(`li[data-row="${CSS.escape(followed)}"]`) : null;
-      const card = mine && shown(mine) ? mine : [...list.querySelectorAll<HTMLElement>("li[data-row]")].find(shown);
-      return card ? { key: card.dataset.row!, top: card.getBoundingClientRect().top, typed } : null;
-    });
-  });
-
   const answered = $derived(rows.filter((r) => "sentence" in r).length);
   $effect(() => {
     matches = answered;
-  });
-
-  // A card may be passed over while it is out of view in a search, so
-  // typing does not lay out a video's every card again, issue #806. The
-  // browser then takes the height it last laid the card out at, so a card
-  // is laid out whole in the frame it comes in, before it may be passed
-  // over, see .kept. A card never laid out was taken at a guessed height,
-  // and a card walked to landed off where it should stand, found by Tim.
-  const coming = new Set<HTMLElement>();
-  const laying = new Set<HTMLElement>();
-  let frame = 0;
-  function settle(li: HTMLElement) {
-    li.classList.remove("kept");
-    laying.delete(li);
-    coming.add(li);
-    frame ||= requestAnimationFrame(step);
-  }
-  // Each frame, the cards laid out in the frame before are kept, and the
-  // cards come in since are laid out in this one.
-  function step() {
-    for (const li of laying) li.classList.add("kept");
-    laying.clear();
-    for (const li of coming) laying.add(li);
-    coming.clear();
-    frame = laying.size ? requestAnimationFrame(step) : 0;
-  }
-  // A card passed over keeps the height it was laid out at, though its
-  // words or the list's width changed since: a letter typed makes them
-  // bold, and cards laid out before that stood the card walked to 18 px
-  // off in WebKit, which has no scroll anchoring to hide it. So before a
-  // card is walked to, the whole list is laid out once, for all the
-  // letters typed and the widths dragged through since, and neither
-  // typing nor a drag of the app's edge lays out a card out of view,
-  // see .whole. Taking .kept off every card for it made a drag of the
-  // edge 80 % slower, all of it in style.
-  let changed = false;
-  $effect(() => {
-    void rows;
-    void typed;
-    changed = true;
-  });
-  let wholeFrame = 0;
-  function layOutChanged() {
-    if (!changed || !list) return;
-    changed = false;
-    list.classList.add("whole");
-    // Off again once a frame has laid it out, which is when the browser
-    // keeps the height it laid each card out at.
-    cancelAnimationFrame(wholeFrame);
-    wholeFrame = requestAnimationFrame(() => (wholeFrame = requestAnimationFrame(() => list?.classList.remove("whole"))));
-  }
-  function laidOut(li: HTMLElement) {
-    settle(li);
-    return () => {
-      coming.delete(li);
-      laying.delete(li);
-    };
-  }
-  // The width is only read, to know the cards are to be laid out again
-  // before the next card walked to.
-  onMount(() => {
-    let width = -1;
-    const resized = new ResizeObserver(([e]) => {
-      const now = e.borderBoxSize[0].inlineSize;
-      if (width >= 0 && now !== width) changed = true;
-      width = now;
-    });
-    resized.observe(list);
-    return () => {
-      resized.disconnect();
-      cancelAnimationFrame(frame);
-      cancelAnimationFrame(wholeFrame);
-    };
   });
 
   // The sentence in pieces, bold where it answers what was typed.
@@ -550,14 +446,19 @@
   }
 </script>
 
-<ol class="said" class:searching={!!typed.trim()} bind:this={list} data-followed={followed}>
+<ol class="said" bind:this={list} data-followed={followed}>
   {#if failed}
-    <li class="none failed" title={failed}>The transcript could not be read</li>
+    <li class="none failed" title={failed} {@attach (el) => stack.head(el)}>The transcript could not be read</li>
   {/if}
-  {#each rows as row (row.key)}
+  {#each built as row, i (row.key)}
+    {@const over = i === 0 && stack.over ? `${stack.over}px` : undefined}
+    {@const under = i === built.length - 1 && stack.under ? `${stack.under}px` : undefined}
     {#if "hole" in row}
       {@const index = unheard.indexOf(row.hole)}
       <li
+        style:margin-top={over}
+        style:margin-bottom={under}
+        {@attach stack.card(row.key)}
         class="hole"
         class:lit={index === unheardLit}
         class:current={row.key === current}
@@ -579,7 +480,9 @@
         data-at={row.sentence.start}
         data-row={row.key}
         data-clip={row.clip?.key}
-        {@attach laidOut}
+        style:margin-top={over}
+        style:margin-bottom={under}
+        {@attach stack.card(row.key)}
         {@attach row.clip ? hoverClip(row.clip.key, onhover) : undefined}
       >
         <button class="pick" class:inclip={!!row.clip} class:clip-edge={!!row.clip} class:current={row.key === current} class:picked={pickedKeys.has(row.key)} title="Put the playhead here. Shift-click picks every card from the current one to here, and Copy copies their words" onclick={(e) => {
@@ -626,6 +529,10 @@
     display: flex;
     flex-direction: column;
     gap: var(--gap);
+    /* The list keeps the card in view where it stands itself, in every
+       browser alike, see lib/stack.svelte.ts. Chromium's own anchoring
+       would move it a second time. */
+    overflow-anchor: none;
   }
 
   li {
@@ -634,19 +541,6 @@
     border-radius: var(--radius-m);
     background: var(--ink-1);
     box-shadow: inset 0 0 0 1px var(--ink-3);
-    contain-intrinsic-size: auto var(--card-h);
-    /* Laid out whole, every card, though only a few are in view, unless
-       a search is typed, see .kept. Cards out of view laid out at a
-       guessed height put the place a clip is gone to off once they were
-       laid out, and WebKit keeps no anchor that would have made up for
-       it, found by Tim. So the height a card was last laid out at is
-       kept, auto here, and a card is passed over only once it has one. */
-  }
-
-  /* In a search, a card out of view that has been laid out is passed
-     over, so a letter typed lays out only the cards in view. */
-  ol.searching:not(:global(.whole)) li:global(.kept) {
-    content-visibility: auto;
   }
 
   /* The space between two cards belongs to them, the half above to the
