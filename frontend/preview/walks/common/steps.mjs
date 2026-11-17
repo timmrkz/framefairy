@@ -69,30 +69,39 @@ export const steps = {
     else if (after.kept) walk.wrong = `${arg} still has the keyboard after Escape`;
     else if (after.lit.length) walk.wrong = `${arg}: a ring is left on ${after.lit.join(", ")} after Escape`;
   },
-  // ["a pick lets go", selector]
-  //                    clicks the list selector names, picks the next row
-  //                    with the keyboard, then types the first letter of
-  //                    another row and presses the space bar, and sees
-  //                    the pick stay, the list stay shut and the
-  //                    keyboard let go of
-  async "a pick lets go"(walk, arg) {
+  // ["a pick lets go", [selector, row]]
+  //                    clicks the list selector names, types row and
+  //                    presses Return, which picks it with the keyboard,
+  //                    then types the first letter of another row and
+  //                    presses the space bar, and sees the pick stay, the
+  //                    list stay shut and the keyboard let go of. The
+  //                    letter is one the workspace takes no key for, so
+  //                    a list that let go leaves nothing changed
+  async "a pick lets go"(walk, [selector, row]) {
     const { page } = walk;
-    const control = page.locator(arg).first();
+    const control = page.locator(selector).first();
+    // What the trigger shows, without the longest row it keeps room for.
+    const shown = async () => (await control.locator(".said > span:not(.room)").textContent()).trim();
     await control.click();
     await settle(page);
     const rows = (await page.locator(".pick-list .pick-row .what").allTextContents()).map((r) => r.trim());
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.type(row);
     await page.keyboard.press("Enter");
     await settle(page);
-    const picked = (await control.textContent()).trim();
-    const other = rows.find((r) => r && r !== picked && /^[a-z]/i.test(r));
+    const picked = await shown();
+    if (picked !== row) {
+      walk.wrong = `${selector}: typing ${row} and Return picked ${picked}`;
+      return;
+    }
+    // I, O, L, R, S and G are the workspace's own keys.
+    const other = rows.find((r) => r !== picked && /^[a-z]/i.test(r) && !/^[iolrsg]/i.test(r));
     if (!other) {
-      walk.wrong = `${arg}: no other row to type the first letter of, among ${rows.join(", ")}`;
+      walk.wrong = `${selector}: no other row starts with a letter the workspace leaves alone, among ${rows.join(", ")}`;
       return;
     }
     await page.keyboard.press(other[0].toLowerCase());
     await settle(page);
-    const typed = (await control.textContent()).trim();
+    const typed = await shown();
     const wasPlaying = await page.evaluate(() => !!document.querySelector("button[aria-label='Pause']"));
     await page.keyboard.press("Space");
     await settle(page);
@@ -104,9 +113,9 @@ export const steps = {
     // The space bar went to the workspace and played, so it pauses again.
     if (after.playing !== wasPlaying) await page.keyboard.press("Space");
     await settle(page);
-    if (typed !== picked) walk.wrong = `${arg}: typing ${other[0].toLowerCase()} after the pick changed it from ${picked} to ${typed}`;
-    else if (after.open) walk.wrong = `${arg}: the space bar opened the list after the pick`;
-    else if (after.kept) walk.wrong = `${arg} still has the keyboard after the pick`;
+    if (typed !== picked) walk.wrong = `${selector}: typing ${other[0].toLowerCase()} after the pick changed it from ${picked} to ${typed}`;
+    else if (after.open) walk.wrong = `${selector}: the space bar opened the list after the pick`;
+    else if (after.kept) walk.wrong = `${selector} still has the keyboard after the pick`;
   },
   // ["field reads", selector, text]
   //                    the field selector names holds text

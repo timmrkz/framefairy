@@ -143,9 +143,12 @@ export default [
     // keyboard, R changed the caption face again and the space bar opened
     // the list. A list that closes lets go of the keyboard, every list.
     name: "A list lets go of the keyboard once a row is picked from it",
+    // The family picked first has two faces, Regular and Heavy, so the H
+    // typed after Regular would pick Heavy from a list that kept the
+    // keyboard.
     steps: [
-      ["a pick lets go", "#caption-style"],
-      ["a pick lets go", "#caption-font"],
+      ["a pick lets go", ["#caption-font", "Bridge Sans"]],
+      ["a pick lets go", ["#caption-style", "Regular"]],
     ],
   },
   {
