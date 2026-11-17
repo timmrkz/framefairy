@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"reflect"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -749,5 +750,50 @@ func TestAVideoWithNoClipsIsSentAnEmptyOrder(t *testing.T) {
 	}
 	if read := keys(VideoState{Video: "v.mp4", Clips: []ClipEntry{}}); read["order"] != nil {
 		t.Errorf("a state read has the order %s, want none", read["order"])
+	}
+}
+
+// A clip's hash, which says the window already has the clip, changes
+// with every step of its crop: its frame, its edge, and which piece it
+// is on, and a piece with no steps is not one with none yet. The steps
+// are hashed as numbers rather than written as JSON, issue #893, and a
+// window kept a clip whose glide it never got when two differed and
+// hashed the same.
+func TestAClipsHashChangesWithEveryStepOfItsCrop(t *testing.T) {
+	clip := func(steps ...[]engine.CropStep) ClipEntry {
+		return ClipEntry{ClipView: engine.ClipView{ID: "a", Start: 1}, Key: "p.json/a", CropSteps: steps}
+	}
+	glide := []engine.CropStep{{Frame: 30, X: 100}, {Frame: 31, X: 100.5}, {Frame: 32, X: 101.25}}
+	was := clipHash(clip(glide, nil))
+	if again := clipHash(clip([]engine.CropStep{{Frame: 30, X: 100}, {Frame: 31, X: 100.5}, {Frame: 32, X: 101.25}}, nil)); again != was {
+		t.Errorf("the same clip hashed as %s and %s", was, again)
+	}
+	for _, c := range []struct {
+		name string
+		clip ClipEntry
+	}{
+		{"an edge moved a hundredth", clip([]engine.CropStep{{Frame: 30, X: 100}, {Frame: 31, X: 100.51}, {Frame: 32, X: 101.25}}, nil)},
+		{"a step on another frame", clip([]engine.CropStep{{Frame: 30, X: 100}, {Frame: 31, X: 100.5}, {Frame: 33, X: 101.25}}, nil)},
+		{"the last step gone", clip(glide[:2], nil)},
+		{"the steps on the second piece", clip(nil, glide)},
+		{"a step moved to the second piece", clip(glide[:2], glide[2:])},
+		{"no steps on the second piece rather than none yet", clip(glide, []engine.CropStep{})},
+		{"one piece", clip(glide)},
+		{"no steps at all", clip()},
+		{"the clip moved", ClipEntry{ClipView: engine.ClipView{ID: "a", Start: 2}, Key: "p.json/a", CropSteps: [][]engine.CropStep{glide, nil}}},
+	} {
+		if h := clipHash(c.clip); h == was {
+			t.Errorf("%s: the clip hashed the same as before, %s", c.name, h)
+		}
+	}
+	// Every other field of a clip is in its hash because it is written as
+	// JSON. A step's fields are hashed by name, so a field added to a step
+	// is a field clipHash has to hash too.
+	var fields []string
+	for f := range reflect.TypeFor[engine.CropStep]().Fields() {
+		fields = append(fields, f.Name)
+	}
+	if !slices.Equal(fields, []string{"Frame", "X"}) {
+		t.Errorf("a crop step holds %v, and clipHash hashes Frame and X of it alone", fields)
 	}
 }
