@@ -139,9 +139,8 @@ func TestAnEpisodeWithoutATranscriptReadsEmpty(t *testing.T) {
 	svc, eps := memoryLibrary(t, "ep.mp4")
 	source := eps[0]
 
-	loud, err := svc.Loudness(source)
-	if err != nil || len(loud) != 4 || binary.LittleEndian.Uint32(loud) != 0 {
-		t.Errorf("loudness got %v, %v", loud, err)
+	if loud := askLoudness(t, svc, source); len(loud) != 8 || binary.LittleEndian.Uint32(loud) != 0 {
+		t.Errorf("loudness got %v", loud)
 	}
 	words, err := svc.Words(source, 0, 60)
 	if err != nil || words == nil || len(words) != 0 {

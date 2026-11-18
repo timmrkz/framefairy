@@ -2016,7 +2016,11 @@ export const steps = {
         });
       }
     });
-    const from = await page.evaluate(() => window.__calls.length);
+    const asked = [];
+    const listen = (r) => {
+      if (new URL(r.url()).pathname === "/frames/levels") asked.push(r.url());
+    };
+    page.on("request", listen);
     const line = await page.locator(".clip-timeline").boundingBox();
     await page.mouse.move(line.x + line.width / 2, line.y + line.height * 0.3);
     for (let i = 0; i < 3 * arg && !walk.wrong; i++) {
@@ -2038,8 +2042,8 @@ export const steps = {
       });
       if (read.bare > 2) walk.wrong = `step ${i + 1} of the swipe left ${read.bare} of the ${read.width} columns of the waveform bare`;
     }
-    const asked = await page.evaluate((from) => window.__calls.slice(from).filter((c) => c.name === "Loudness").length, from);
-    if (asked && !walk.wrong) walk.wrong = `the clip timeline asked the Go side for the loudness ${asked} times while the hand swiped`;
+    page.off("request", listen);
+    if (asked.length && !walk.wrong) walk.wrong = `the clip timeline asked the Go side for the loudness ${asked.length} times while the hand swiped`;
     await settle(page);
     const made = await page.evaluate(() => window.__madeNew);
     if (made && !walk.wrong) walk.wrong = `the waveform's canvas was made new ${made} times in ${3 * arg} swipes`;

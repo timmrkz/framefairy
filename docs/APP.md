@@ -2212,8 +2212,10 @@ bubble scrolled by those eight pixels.
       clip timeline holds the whole loudness of the video, every reading
       and the loudest of every two, four, eight and so on for zooming
       out, a byte each, and draws every view from it, so a swipe or a
-      pinch asks the Go side for nothing, however fast it goes, `Loudness`
-      in `cmd/framefairy-app/media.go` and `frontend/src/lib/loudness.ts`.
+      pinch asks the Go side for nothing, however fast it goes,
+      `/frames/levels` in `cmd/framefairy-app/media.go` and
+      `frontend/src/lib/loudness.ts`. It reads the loudness again, whole,
+      when the stamp `loudness` in the video's state changes.
       It asked the Go side for each view and drew empty track until the
       answer came, Tim's report of 17 November, issue #909. See
       [the decision record](decisions/2026-11-18-the-window-holds-the-loudness.md).
@@ -2265,7 +2267,7 @@ bubble scrolled by those eight pixels.
   playhead put near the end of a four hour episode has its waveform
   within a second rather than after everything before it. The clip
   timeline reads the loudness again, whole, each time the video's state
-  says more is measured. An episode added before this was there is measured the first time
+  says it changed. An episode added before this was there is measured the first time
   it is opened. It is not a job: nobody starts it or waits for it. At most two episodes are measured at a time.
 - **Before the first transcription** there are no words. That is where
   every episode starts, so the captions band simply waits. The words

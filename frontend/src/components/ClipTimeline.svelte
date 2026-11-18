@@ -75,15 +75,14 @@
   import Info from "./Info.svelte";
   import { rotationAt } from "../lib/rotate";
   import { afterRest } from "../lib/rest";
-  import { columnLevels, readLoudness, silent } from "../lib/loudness";
+  import { columnLevels, HeldLoudness, silent } from "../lib/loudness";
 
   let {
     path,
     clip,
     duration,
     heard = [[0, duration]],
-    measured = 0,
-    measuredParts = [],
+    loudnessStamp = "",
     time,
     shown = NaN,
     locked = false,
@@ -131,12 +130,10 @@
     // What the transcript has heard, in parts. The words arrive with it,
     // so the view is taken again as more of it is heard.
     heard?: Parts;
-    // How much of the loudness is measured, which is the waveform, and
-    // which parts, from and to. It is measured on its own from the moment
-    // the episode is added, ahead of the transcript and where this
-    // timeline looks first, and the loudness is read again as it grows.
-    measured?: number;
-    measuredParts?: [number, number][];
+    // Go's stamp of the video's loudness, which is the waveform: it
+    // changes whenever the loudness does, as it is measured and heard, and
+    // the loudness is read again then, see EpisodeStatus.loudness.
+    loudnessStamp?: string;
     time: number;
     // Where the frame on the video preview begins, the frame a mark lights
     // for, which at the end of a clip played through is its last frame
@@ -905,49 +902,18 @@
     drawn = loudnessRead;
   }
 
-  // The loudness is read whole when the video opens, and again when its
-  // state says more of it is measured or heard, never while the view
-  // moves. One reading is out at a time, and what grew while it was out
-  // is read once it is back.
+  // The loudness is read whole when the video opens, and again whenever
+  // Go's stamp of it changes, never while the view moves. A clip timeline
+  // out of the page reads nothing until it is back, see HeldLoudness.
   let loudnessRead = false;
-  let loudnessFor = "";
-  let loudnessAgain = false;
-  let loudnessOut = false;
-
-  async function readLoudnessNow() {
-    if (loudnessOut) {
-      loudnessAgain = true;
-      return;
-    }
-    loudnessOut = true;
-    const asked = path;
-    try {
-      const got = readLoudness(await api.loudness(asked));
-      if (asked === path) loudness = got;
-    } catch {
-      // Not measured, or the video is gone: the waveform it had stays,
-      // and the state says why elsewhere.
-    } finally {
-      loudnessOut = false;
-    }
+  const holding = new HeldLoudness((of, got) => {
+    if (of !== path) return;
+    loudness = got;
     loudnessRead = true;
     drawn = wordsRead;
-    if (loudnessAgain) {
-      loudnessAgain = false;
-      void readLoudnessNow();
-    }
-  }
-
-  // What the loudness was read for: the video, how much of it was
-  // measured and how much of it heard, since the transcript's loudness
-  // lies under the parts not measured yet. Once all of it is measured
-  // what is heard adds nothing.
+  });
   $effect(() => {
-    const whole = measuredParts.some(([a, b]) => a <= 0.02 && b >= duration - 0.02);
-    const key = `${path}|${measured.toFixed(2)}|${whole ? "whole" : heardIn(heard, 0, duration).toFixed(1)}`;
-    if (key === loudnessFor) return;
-    loudnessFor = key;
-    untrack(() => void readLoudnessNow());
+    holding.want(path, loudnessStamp, inPage);
   });
 
   // Brings a moment into the view without changing how much of the episode

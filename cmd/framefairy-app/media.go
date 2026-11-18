@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync"
 
 	"framefairy/engine"
@@ -119,20 +120,15 @@ func (s *FrameFairy) frames(ctx context.Context, path string) engine.SourceInfo 
 	return info
 }
 
-// Loudness is the loudness of an episode as far as it is measured, for the
-// clip timeline to keep and draw every view from, see engine.Loudness. It
-// is the loudness measured on its own laid over the transcript's, which
-// are the same frames from the same samples, so the waveform has whatever
-// either has measured: the measuring runs ahead of the transcription, and
-// a transcript made before it existed is there before it has run. An
-// episode not measured yet has no readings, which is not a failure.
-//
-// The window asks once when the episode opens and again whenever its
-// state says more is measured or heard, never while the view moves.
-func (s *FrameFairy) Loudness(path string) ([]byte, error) {
-	if !s.store.Known(path) {
-		return nil, errNotInLibrary
-	}
+// loudness is the loudness of an episode as far as it is measured, for
+// the clip timeline to keep and draw every view from, see engine.Loudness
+// and /frames/levels. It is the loudness measured on its own laid over
+// the transcript's, which are the same frames from the same samples, so
+// the waveform has whatever either has measured: the measuring runs ahead
+// of the transcription, and a transcript made before it existed is there
+// before it has run. An episode not measured yet has no readings, which
+// is not a failure.
+func (s *FrameFairy) loudness(path string) ([]byte, error) {
 	// An episode shown is an episode measured: one added before the
 	// loudness had a job of its own is measured the first time it is
 	// opened.
@@ -148,6 +144,30 @@ func (s *FrameFairy) Loudness(path string) ([]byte, error) {
 		levels = engine.ReadLevels(s.store.files, path)
 	}
 	return engine.Loudness(levels.Over(t)), nil
+}
+
+// serveLoudness answers /frames/levels?path=<episode> with the bytes of
+// its loudness, plain, beside the frames and the sound it is drawn with.
+// A call would carry them as base64 in JSON, a third more, which the
+// window then turns back into bytes on its main thread. The window asks
+// when the episode opens and whenever its state's Loudness changes, never
+// while the view moves.
+func (s *FrameFairy) serveLoudness(w http.ResponseWriter, r *http.Request) {
+	// Known rather than episodeFile: the loudness is read from the work
+	// folder, through the store's files, never from the video itself.
+	path := r.URL.Query().Get("path")
+	if !s.store.Known(path) {
+		http.NotFound(w, r)
+		return
+	}
+	body, err := s.loudness(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(body)
 }
 
 // Look says what the clip timeline of an episode shows, from and to in

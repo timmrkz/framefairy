@@ -195,6 +195,9 @@ export interface EpisodeStatus {
   measured?: number;
   measuredParts?: [number, number][] | null;
   measuredAll?: boolean;
+  // Changes whenever the loudness does, which is when the clip timeline
+  // reads it again, see lib/loudness.ts and engine.EpisodeStatus.
+  loudness?: string;
   transcriptStale: boolean;
   plans: PlanSummary[] | null;
   rendered: number;
@@ -1072,9 +1075,6 @@ export const api = {
     call<ClipEntry>("Reshape", path, plan, clip, g, playhead),
   fonts: () => call<CaptionFont[]>("Fonts"),
   captionStart: () => call<CaptionStart>("CaptionStart"),
-  // The whole loudness of a video as far as it is measured, as base64,
-  // see lib/loudness.ts. The clip timeline draws every view from it.
-  loudness: (path: string) => call<string>("Loudness", path),
   // Where the clip timeline looks, so the loudness is measured there first.
   look: (path: string, from: number, to: number) => call<void>("Look", path, from, to),
   render: (path: string, req: RenderRequest) => call<Job>("Render", path, req),

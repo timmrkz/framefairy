@@ -586,6 +586,58 @@ function stubLoudness(): Uint8Array {
   }
   return (loudnessMade = out);
 }
+// The stamp Go sends with the status, EpisodeStatus.loudness: what is
+// measured, and what is heard while not all of it is.
+function loudnessStamp(): string {
+  const parts = measuredParts();
+  const all = parts.reduce((sum, [a, b]) => sum + b - a, 0) >= fullLength - 0.01;
+  return JSON.stringify(all ? parts : [parts, location.search.includes("transcribing") ? 1200 : fullLength]);
+}
+// The whole loudness as far as it is measured, from the loudness measured
+// on its own or from the transcript where only that has heard, in the
+// bytes engine.Loudness sends on /frames/levels, which the harness's own
+// Go side cannot measure: it is answered here, see the fetch below.
+function loudnessBytes(): Uint8Array {
+  const parts = measuredParts();
+  const heardTo = location.search.includes("transcribing") ? 1200 : fullLength;
+  const known = (t: number) => t <= heardTo || parts.some(([a, b]) => t >= a && t < b);
+  const all = stubLoudness();
+  let count = 0;
+  for (let i = all.length - 1; i >= 0; i--) {
+    if (known(i * 0.01)) {
+      count = i + 1;
+      break;
+    }
+  }
+  const levels = [all.slice(0, count)];
+  for (let i = 0; i < count; i++) if (!known(i * 0.01)) levels[0][i] = 0;
+  while (levels[levels.length - 1].length > 1) {
+    const below = levels[levels.length - 1];
+    const next = new Uint8Array(Math.ceil(below.length / 2));
+    for (let i = 0; i < next.length; i++) next[i] = Math.max(below[2 * i], below[2 * i + 1] ?? 0);
+    levels.push(next);
+  }
+  const bytes = new Uint8Array(8 + (count ? levels.reduce((sum, l) => sum + l.length, 0) : 0));
+  const head = new DataView(bytes.buffer);
+  head.setUint32(0, count, true);
+  head.setUint16(4, 10000, true);
+  head.setInt8(6, -90);
+  head.setUint8(7, 2);
+  let at = 8;
+  for (const level of count ? levels : []) {
+    bytes.set(level, at);
+    at += level.length;
+  }
+  return bytes;
+}
+// /frames/levels is the one route under /frames/ the stub answers, since
+// the loudness it measures lives here. Every other goes to the Go side.
+const fetchOfThePage = window.fetch.bind(window);
+window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+  if (url.pathname !== "/frames/levels") return fetchOfThePage(input, init);
+  return late("Loudness", Promise.resolve(new Response(loudnessBytes())));
+};
 function measuredParts(): [number, number][] {
   if (location.search.includes("unmeasured")) return [];
   if (!location.search.includes("measuring")) return [[0, fullLength]];
@@ -1393,7 +1445,7 @@ const Answers = {
       case "State":
         return videoState(String(args[0]));
       case "Episode":
-        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
+        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, loudness: loudnessStamp(), transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
       // Search. A probe reads what was asked for on window.__searches.
       case "Search": {
         const req = args[1] as { From: number; To: number; Count?: number };
@@ -1944,40 +1996,6 @@ const Answers = {
         levelsAdvance();
         levelFocus = [Number(args[1]) || 0, Number(args[2]) || 0];
         return Promise.resolve(null);
-      }
-      case "Loudness": {
-        // The whole loudness as far as it is measured, from the loudness
-        // measured on its own or from the transcript where only that has
-        // heard, in the bytes engine.Loudness sends, as base64.
-        const parts = measuredParts();
-        const heardTo = location.search.includes("transcribing") ? 1200 : 14423;
-        const known = (t: number) => t <= heardTo || parts.some(([a, b]) => t >= a && t < b);
-        const all = stubLoudness();
-        let count = 0;
-        for (let i = all.length - 1; i >= 0; i--) {
-          if (known(i * 0.01)) {
-            count = i + 1;
-            break;
-          }
-        }
-        const levels = [all.slice(0, count)];
-        for (let i = 0; i < count; i++) if (!known(i * 0.01)) levels[0][i] = 0;
-        while (levels[levels.length - 1].length > 1) {
-          const below = levels[levels.length - 1];
-          const next = new Uint8Array(Math.ceil(below.length / 2));
-          for (let i = 0; i < next.length; i++) next[i] = Math.max(below[2 * i], below[2 * i + 1] ?? 0);
-          levels.push(next);
-        }
-        const bytes = new Uint8Array(4 + (count ? levels.reduce((sum, l) => sum + l.length, 0) : 0));
-        new DataView(bytes.buffer).setUint32(0, count, true);
-        let at = 4;
-        for (const level of count ? levels : []) {
-          bytes.set(level, at);
-          at += level.length;
-        }
-        let text = "";
-        for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-        return Promise.resolve(btoa(text));
       }
       // What a gesture makes of a clip, and saving it. The engine works this
       // out in engine/shape.go. This is a small stand-in with the same

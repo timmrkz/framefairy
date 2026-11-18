@@ -214,7 +214,10 @@ has measured. They are the same numbers where both exist.
 `Loudness` turns them into what the clip timeline keeps and draws every
 view from: a byte a reading, -90 to 0 dB in half decibels, and after
 them the loudest of every two, four, eight and so on, for zooming out,
-about as long again. Two hours are 1.4 MB, made in about 5 ms. See
+about as long again, after a head that says how to read them. Two hours
+are 1.4 MB, made in about 2 ms. `EpisodeStatus.Loudness` is a stamp that
+changes whenever these bytes would, which tells the window to read them
+again. See
 [the decision record](decisions/2026-11-18-the-window-holds-the-loudness.md).
 
 ## How words get their timing

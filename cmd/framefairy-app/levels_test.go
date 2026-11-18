@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/binary"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -101,23 +104,30 @@ func TestAMeasuringThatGoesWrongIsInTheAppsLog(t *testing.T) {
 	})
 }
 
+// askLoudness asks /frames/levels for an episode's loudness, the way the
+// clip timeline does.
+func askLoudness(t *testing.T, s *FrameFairy, path string) []byte {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.serveFrames(rec, httptest.NewRequest("GET", "/frames/levels?path="+url.QueryEscape(path), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the loudness was answered with %d: %s", rec.Code, rec.Body)
+	}
+	return rec.Body.Bytes()
+}
+
 // An episode has a waveform before anything has heard a word of it: asking
 // for its loudness is enough to have it measured, and it arrives whole.
 func TestTheWaveformComesBeforeTheTranscript(t *testing.T) {
 	s, paths, told := levelsLibrary(t, 1)
 	path := paths[0]
-	if _, err := s.Loudness(path); err != nil {
-		t.Fatal(err)
-	}
+	askLoudness(t, s, path)
 	measured(t, s, path)
-	got, err := s.Loudness(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := askLoudness(t, s, path)
 	// A reading of -40 dB is 100 steps of half a decibel up from -90.
 	n := int(binary.LittleEndian.Uint32(got))
 	loud := 0
-	for _, b := range got[4 : 4+n] {
+	for _, b := range got[8 : 8+n] {
 		if b > 100 {
 			loud++
 		}
@@ -154,7 +164,8 @@ func TestMeasuringUnderEverythingAtOnce(t *testing.T) {
 					s.levels.start(path)
 				case 1:
 					_ = s.Look(path, 0, 20)
-					_, _ = s.Loudness(path)
+					rec := httptest.NewRecorder()
+					s.serveFrames(rec, httptest.NewRequest("GET", "/frames/levels?path="+url.QueryEscape(path), nil))
 				case 2:
 					s.levels.read(path)
 					_ = s.Episode(path)

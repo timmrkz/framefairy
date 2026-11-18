@@ -107,61 +107,102 @@ a swipe, and no call to Go while it swipes.
 Every simulation but 3 ends with the loudness in the window's memory
 before the hand moves, sent by Go, and nothing on a frame's path asking
 Go. Kept from 2: the levels for zooming out, made by Go. Kept from 4: the
-window reads the loudness again when the state says more is measured,
-and only then. Kept from 5: two small functions, each tested alone.
-Dropped: tiles drawn by Go, which keep the round trip.
+window reads the loudness again when the state says it changed, and only
+then. Kept from 5: two small functions, each tested alone. Dropped:
+tiles drawn by Go, which keep the round trip.
 
 What stays a question for the window is only where the view is, and that
 is the hand's, not a rule. Go still wants to know where the clip
 timeline looks, to measure there first, so the window tells it the view
-when it moves, a call that waits for nothing.
+when it comes to rest, a call that waits for nothing.
+
+## Weighed after the review
+
+The review of the first version found that simulations 1, 2, 4 and 5 are
+one design seen four ways, and that three choices were made without
+being weighed. They are weighed here.
+
+**Who says when to read again.** The first version read the loudness
+again when `measured` grew, or `heard` grew while not all was measured.
+That is `Levels.Over`'s rule, which loudness lies under which, copied
+into the window. Go now says it: the status carries `loudness`, a stamp
+that changes whenever what `engine.Loudness` gives would, and the window
+reads again when the stamp changes, `HeldLoudness` in
+`frontend/src/lib/loudness.ts`.
+
+**Only what grew.** Go could send the parts measured since the last
+reading, and the window lay them into what it holds. That is fewer bytes
+while a video is measured, but the window would then keep the parts,
+merge them, and make the levels for zooming out again, which is the
+engine's work done in the window, and two copies of what is measured to
+keep in step. The whole is at most 2.9 MB for four hours, read about
+twice a second for the seconds a video is measured. Dropped.
+
+**A binding or a route.** The first version sent the bytes through a
+binding, which Wails carries as base64 in JSON, a third more, turned
+back into bytes on the window's main thread, about 11 ms for four hours.
+A route beside the frames, `/frames/levels`, carries them plain, and the
+window takes the answer as it is, with no copy. Taken. The preview
+harness's stand-in for Go answers the route itself, since the loudness
+it measures lives there.
+
+**How the two sides keep one format.** The head of the bytes says how
+long a reading is, the floor and how many steps make a decibel, so the
+window keeps no copy of any of them. What is left is the layout, and the
+window takes bytes that do not add up to exactly it as no loudness at
+all. A walk draws what the real Go side sends and fails on a waveform
+that is not there, so the two cannot drift apart unseen. A shared file
+of cases for both sides was not taken: it is a second copy to keep in
+step, not a check.
 
 ## The decision
 
 ```
 the window     ClipTimeline.svelte  draws every view from the loudness it holds
-               lib/loudness.ts      the bytes and a view to a level per column
-                    |  Loudness(path)          (when the video opens, and
-                    |                          when its state says more is
-                    |                          measured or heard)
-                    |  Look(path, from, to)    (the view at rest, for the
-                    |                          measuring, waits for nothing)
-the app's Go   media.go             Loudness and Look
+               lib/loudness.ts      the bytes and a view to a level per
+                                    column, and HeldLoudness, which reads
+                                    them when Go's stamp changes
+                    |  GET /frames/levels?path=  (when the video opens, and
+                    |                            when the status's loudness
+                    |                            stamp changes)
+                    |  Look(path, from, to)      (the view at rest, for the
+                    |                            measuring, waits for nothing)
+the app's Go   media.go             /frames/levels and Look
                levels.go            the measuring, told where the view is
 the engine     engine/levels.go     Loudness: the readings and the levels
                                     for zooming out, as bytes
+               engine/episode.go    the stamp of the loudness in the status
 ```
 
-The bytes: the number of readings as four bytes, little end first, then
-a reading of -90 to 0 dB as 0 to 180, half a decibel a step, from the
-start of the video, then the levels for zooming out one after another,
-each the loudest of two of the one under it, down to a level of one. A
-part not measured yet is -90, as `Levels.Over` already gives it, and
-past the furthest part measured there is no reading, so the clip
-timeline draws nothing there.
-
-How it crosses, changed from simulation 1 while building it: a binding,
-`Loudness`, rather than a route beside the frames. A binding is checked
-by name and arguments like every call, in `bindings_test.go`, is said in
-the log when it is slow, and is answered by the preview harness's
-stand-in for Go, which keeps the measuring that grows while a probe
-looks. Wails sends a `[]byte` as base64, a third more: two hours are
-1.9 MB of text, which the window turns back into bytes in about 5 ms,
-timed in Node in a cloud session, once when the video opens and about
-twice a second while it is measured. Go makes the bytes in about 5 ms
-for two hours, `BenchmarkLoudnessTwoHours`.
+The bytes: a head of eight, the number of readings as four bytes and how
+long one is in microseconds as two, little end first, the floor in dB as
+a signed byte and the steps in a decibel as one. Then a reading of -90
+to 0 dB as 0 to 180, half a decibel a step, from the start of the video,
+then the levels for zooming out one after another, each the loudest of
+two of the one under it, down to a level of one. A part not measured yet
+is -90, as `Levels.Over` already gives it, and past the furthest part
+measured there is no reading, so the clip timeline draws nothing there.
 
 ## What follows
 
-It costs a call, an encoder and a module, and the `Waveform` binding,
-`Transcript.Peaks`, its JSON answers and the fetch policy in
-`ClipTimeline.svelte` go. A
-video opened costs one read of about 1.4 MB for two hours from the local
-disk, and again about twice a second while it is measured.
+It costs a route, an encoder, a stamp and a module, and the `Waveform`
+binding, `Transcript.Peaks`, its JSON answers and the fetch policy in
+`ClipTimeline.svelte` go.
+
+Opening a video costs more than it did. It read the waveform of three
+views, 3000 numbers as 33 KB of JSON, and now reads the whole loudness,
+1.4 MB for two hours and 2.9 MB for four. Measured in a cloud session,
+5 runs of a Go benchmark and 10 fetches in Chromium over the loopback:
+Go made the answer in 0.16 ms and now in 2.0 ms for two hours and 4.2 ms
+for four, and Chromium fetched it in 2.2 ms and now in 8.1 ms and 14.4
+ms. While a video is measured that read comes again about twice a
+second, off the window's main thread. How long WebKit on a Mac takes to
+carry 2.9 MB through Wails was not measured.
 
 It buys a swipe and a pinch that never wait, at any speed and however
 slow Go is, and a window that asks nothing while the hand moves.
 
 It was wrong if the bytes take long enough to arrive that a video opens
-with no waveform for longer than it does today, or if drawing a frame
-from memory costs more than the frames budget in WebKit on the Mac.
+with no waveform for noticeably longer than it does today, or if drawing
+a frame from memory costs more than the frame's budget in WebKit on the
+Mac.

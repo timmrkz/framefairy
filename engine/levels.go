@@ -133,6 +133,8 @@ const (
 	loudnessFloor = -90
 	loudnessSteps = 2
 	loudnessTop   = -loudnessFloor * loudnessSteps
+	// loudnessHead is how long the head of the bytes is.
+	loudnessHead = 8
 )
 
 // Loudness is the loudness of an episode for the clip timeline, which
@@ -140,14 +142,17 @@ const (
 // pinch asks the Go side for nothing, see
 // docs/decisions/2026-11-18-the-window-holds-the-loudness.md.
 //
-// It is the number of readings as four bytes, little end first, then a
-// byte for every reading from the start of the episode, see loudnessTop,
-// then the levels for zooming out, one after another: each is the loudest
-// of every two of the one before it, a last one alone kept as it is, down
-// to a level of one. Together they are about as long again as the
-// readings, two hours of them 1.4 MB, and a column of the clip timeline
-// zoomed out to a whole four hour video is then a few of them rather than
-// the thousands of readings it covers.
+// The head says how to read the rest, so the window keeps no copy of how
+// loud a step is: the number of readings as four bytes and how long one
+// is in microseconds as two, both little end first, then the floor in dB
+// as a signed byte and how many steps make a decibel. Then a byte for
+// every reading from the start of the episode, then the levels for
+// zooming out, one after another: each is the loudest of every two of
+// the one before it, a last one alone kept as it is, down to a level of
+// one. Together they are about as long again as the readings, two hours
+// of them 1.4 MB, and a column of the clip timeline zoomed out to a whole
+// four hour video is then a few of them rather than the thousands of
+// readings it covers.
 //
 // A transcript that starts after the start of the episode is silent
 // before it, and one that is nil has no readings.
@@ -159,7 +164,7 @@ func Loudness(t *Transcript) []byte {
 		lead = max(int(math.Round(t.Start/timed.FrameSeconds)), 0)
 	}
 	n := lead + len(frames)
-	size := 4
+	size := loudnessHead
 	for k := n; k > 0; k = (k + 1) / 2 {
 		size += k
 		if k == 1 {
@@ -168,11 +173,15 @@ func Loudness(t *Transcript) []byte {
 	}
 	out := make([]byte, size)
 	binary.LittleEndian.PutUint32(out, uint32(n))
-	level := out[4 : 4+n]
+	binary.LittleEndian.PutUint16(out[4:], uint16(math.Round(timed.FrameSeconds*1e6)))
+	floor := int8(loudnessFloor)
+	out[6] = byte(floor)
+	out[7] = loudnessSteps
+	level := out[loudnessHead : loudnessHead+n]
 	for i, f := range frames {
 		level[lead+i] = loudnessByte(f)
 	}
-	at := 4 + n
+	at := loudnessHead + n
 	for len(level) > 1 {
 		next := out[at : at+(len(level)+1)/2]
 		for i := range next {
@@ -187,13 +196,20 @@ func Loudness(t *Transcript) []byte {
 	return out
 }
 
-// loudnessByte is a reading in dB as Loudness keeps it.
+// loudnessByte is a reading in dB as Loudness keeps it, rounded to the
+// nearest step. A reading that is no number is silence: the comparison
+// that keeps it at the floor is false for NaN too. It is worked out for
+// every reading of a video each time the window reads the loudness, so it
+// is plain arithmetic rather than math.Round and math.IsNaN.
 func loudnessByte(db float32) byte {
-	if math.IsNaN(float64(db)) {
+	step := (float64(db) - loudnessFloor) * loudnessSteps
+	if !(step > 0) {
 		return 0
 	}
-	step := math.Round((float64(db) - loudnessFloor) * loudnessSteps)
-	return byte(min(max(step, 0), loudnessTop))
+	if step >= loudnessTop {
+		return loudnessTop
+	}
+	return byte(step + 0.5)
 }
 
 // LevelsFiles are the files the loudness of an episode is read from.

@@ -150,9 +150,15 @@ type EpisodeStatus struct {
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
 	// all of it. It runs ahead of the transcript, where the clip timeline
 	// looks first, see levels.go.
-	Measured        float64       `json:"measured"`
-	MeasuredParts   [][2]float64  `json:"measuredParts"`
-	MeasuredAll     bool          `json:"measuredAll"`
+	Measured      float64      `json:"measured"`
+	MeasuredParts [][2]float64 `json:"measuredParts"`
+	MeasuredAll   bool         `json:"measuredAll"`
+	// Loudness changes whenever what Loudness gives for the episode does:
+	// as more is measured, and as more is heard while the measuring has
+	// not reached the end, since the transcript's loudness lies under the
+	// parts not measured yet, see Levels.Over. The clip timeline reads the
+	// loudness again when it changes, and only then.
+	Loudness        string        `json:"loudness"`
 	TranscriptStale bool          `json:"transcriptStale"`
 	Plans           []PlanSummary `json:"plans"`
 	Rendered        int           `json:"rendered"`
@@ -215,6 +221,7 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 	for _, p := range st.MeasuredParts {
 		st.Measured += p[1] - p[0]
 	}
+	st.Loudness = loudnessStamp(st.MeasuredParts, st.MeasuredAll, st.Heard)
 	st.Plans = ep.Plans()
 	for _, plan := range st.Plans {
 		for _, c := range plan.clips {
@@ -228,6 +235,25 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 	st.EverSearched = ep.everSearched(st.Plans)
 	st.Label = ReadLabel(fsys, source)
 	return st
+}
+
+// loudnessStamp is EpisodeStatus.Loudness: the parts measured, and the
+// parts heard unless every part is measured, which Levels.Over then lays
+// over all of the transcript's.
+func loudnessStamp(measured [][2]float64, all bool, heard [][2]float64) string {
+	var b strings.Builder
+	b.WriteString("measured")
+	for _, p := range measured {
+		fmt.Fprintf(&b, " %.2f-%.2f", p[0], p[1])
+	}
+	if all {
+		return b.String()
+	}
+	b.WriteString(" heard")
+	for _, p := range heard {
+		fmt.Fprintf(&b, " %.2f-%.2f", p[0], p[1])
+	}
+	return b.String()
 }
 
 // saidOf is from the start of the first line to the end of the one that
