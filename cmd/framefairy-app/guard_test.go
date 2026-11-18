@@ -70,8 +70,13 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Sentences(other); err == nil {
 		t.Error("Sentences answered for a file that is not in the library")
 	}
-	if _, err := svc.Waveform(other, 0, 10, 100); err == nil {
-		t.Error("Waveform answered for a file that is not in the library")
+	rec := httptest.NewRecorder()
+	svc.serveFrames(rec, httptest.NewRequest("GET", "/frames/levels?path="+url.QueryEscape(other), nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("/frames/levels answered %d for a file that is not in the library", rec.Code)
+	}
+	if err := svc.Look(other, 0, 10); err == nil {
+		t.Error("Look took a file that is not in the library")
 	}
 	if _, err := svc.State(ctx, other); err == nil {
 		t.Error("State answered for a file that is not in the library")

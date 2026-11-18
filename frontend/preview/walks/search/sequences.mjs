@@ -112,11 +112,17 @@ export default [
   {
     // Found in the review of #682: once Go said how many clips a window
     // suggests, the Target field kept the old number all through a drag
-    // and caught up only when the hand let go. It follows the hand.
+    // and caught up only when the hand let go. It follows the hand. A
+    // number typed into it and Search clicked at once searched for the
+    // number from before on a busy Mac, issue #877.
     name: "the clip count follows the window as its length is dragged",
     steps: [
       ["wait for", "Search"],
       ["count follows drag", "to", -0.3],
+      ["type and search", "fits"],
+      ["wait for", "Search"],
+      ["type and search", "grows"],
+      ["wait for", "Search"],
     ],
   },
   {

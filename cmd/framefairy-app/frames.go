@@ -42,6 +42,7 @@ import (
 //	/frames/sound?path=<episode>&from=<seconds>&rate=<hz>&ch=<channels>  {"id": "..."}
 //	/frames/read?id=<id>&n=<frames>&skip=<seconds>  frames, see writeFrames
 //	/frames/close?id=<id>
+//	/frames/levels?path=<episode>  the loudness, see serveLoudness
 //
 // The sound of every episode comes the same way, from the episode's
 // decoder, see engine.EpisodeFrames.Sound, read by the rule the render and
@@ -154,6 +155,8 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 		s.serveCaptions(w, r)
 	case "/frames/captions/words":
 		s.serveWordFrames(w, r)
+	case "/frames/levels":
+		s.serveLoudness(w, r)
 	case "/frames/close":
 		p.close(q.Get("id"))
 		w.WriteHeader(http.StatusNoContent)

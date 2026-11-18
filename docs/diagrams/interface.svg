@@ -82,10 +82,12 @@
 <text class="c" x="369" y="483">api.ts: every call to Go</text>
 <rect class="chip" x="543" y="468" width="169" height="22" rx="6"/>
 <text class="c" x="551" y="483">frames: the frame queue</text>
-<rect class="chip" x="76" y="496" width="343" height="22" rx="6"/>
-<text class="c" x="84" y="511">rules worth a test: playhead, scrub, glide, ruler</text>
-<rect class="chip" x="425" y="496" width="230" height="22" rx="6"/>
-<text class="c" x="433" y="511">sent.ts: each state made whole</text>
+<rect class="chip" x="76" y="496" width="263" height="22" rx="6"/>
+<text class="c" x="84" y="511">tested: playhead, scrub, glide, ruler</text>
+<rect class="chip" x="345" y="496" width="189" height="22" rx="6"/>
+<text class="c" x="353" y="511">sent.ts: states made whole</text>
+<rect class="chip" x="540" y="496" width="172" height="22" rx="6"/>
+<text class="c" x="548" y="511">loudness: the waveform</text>
 <rect class="tint" x="64" y="552" width="672" height="52" rx="8"/>
 <text class="n" x="76" y="574">the app&#x27;s Go side</text>
 <text class="q" x="76" y="590">reached through the bindings, its events and /frames</text>

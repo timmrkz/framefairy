@@ -746,7 +746,11 @@ export const steps = {
     else if (!(await page.getByRole("button", { name: "Show in folder" }).count())) walk.wrong = "Show in folder is not there";
   },
   // ["remove clip"]    presses the bin of the clip on screen in the clip
-  //                    list, and waits until the Go side has it removed
+  //                    list, and waits until the Go side has it removed.
+  //                    The video's state read after the remove is held,
+  //                    the way a busy machine hands it back late, and the
+  //                    row's height is read on every animation frame: it
+  //                    never folds before it says Put it back, issue #878
   async "remove clip"(walk, arg, s) {
     const { page, watch } = walk;
     const on = await chosen(page);
@@ -755,10 +759,40 @@ export const steps = {
     // a hand.
     const bin = page.locator(`button[aria-label="Remove ${entry.title || entry.slug}"]`);
     await page.hover(`li:has(> button[aria-label="Remove ${entry.title || entry.slug}"])`);
+    await page.evaluate((key) => {
+      const row = () => document.querySelector(`aside ol li[data-key="${key}"]`);
+      const frame = window.__real?.frame ?? ((f) => requestAnimationFrame(f));
+      window.__rowHeights = [];
+      const read = () => {
+        if (!window.__rowHeights) return;
+        const li = row();
+        const back = !!li?.querySelector("button.back");
+        window.__rowHeights.push([li && !li.inert ? li.getBoundingClientRect().height : 0, back]);
+        frame(read);
+      };
+      read();
+    }, entry.key);
+    await hold(page, "State");
     await bin.click();
+    // Everything but the read held has come back: the remove has, and
+    // the row still stands.
     await settle(page);
+    await realFrames(page, 2);
+    await letHeld(page);
+    await settle(page);
+    await realFrames(page, 2);
+    const heights = await page.evaluate(() => {
+      const h = window.__rowHeights;
+      delete window.__rowHeights;
+      return h;
+    });
     const gone = (await ask(page, "Clips", on.path)).some((c) => c.plan === on.plan && c.id === on.clip && c.rejected);
+    const offered = heights.findIndex(([, back]) => back);
+    const folded = heights.slice(0, offered < 0 ? heights.length : offered).find(([h]) => h < heights[0][0] - 0.5);
     if (!gone) walk.wrong = "the bin left the clip in the list";
+    else if (!heights[0][0]) walk.wrong = `the clip list has no row for the clip ${entry.key}`;
+    else if (offered < 0) walk.wrong = "the row of the clip removed never said Put it back";
+    else if (folded) walk.wrong = `the row of the clip removed went from ${heights[0][0]} px to ${folded[0]} px before it said Put it back`;
     walk.removedLast = on;
     await watch.step("remove clip", s);
   },

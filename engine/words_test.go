@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"strings"
 	"testing"
 
@@ -387,5 +388,67 @@ func TestACutThatTakesTheFirstWordShowsTheCaptionWhereItEnds(t *testing.T) {
 	clip := Clip{Segments: []Segment{{Start: 2.8, End: 4.0}, {Start: 4.5, End: 11}}}
 	if cs := Captions(clip, words, 38, nil); !near(EpisodeTime(clip, cs[1].Start), 6.2) {
 		t.Errorf("a caption after a pause appears at %.3f, want with its word at 6.2", EpisodeTime(clip, cs[1].Start))
+	}
+}
+
+// A caption never begins before the one before it goes, because the
+// picture shows one caption at a time. The first word of a caption
+// removed, an "äh" say, with the words left running into a cut: the
+// caption was pulled back to stay up a tenth of a second and began under
+// the one before, and for two frames the two drew over each other, in
+// the video preview and in the short, #874. Too short to read once it
+// begins where the one before goes, it rides with that one.
+func TestACaptionBeginsWhereTheOneBeforeGoes(t *testing.T) {
+	// "drei" removed, and "vier" runs on from it into a cut, 1.75 into
+	// the clip. At 9 characters a line "drei vier" is a caption of its
+	// own.
+	words := []timed.Cue{{Start: 10.0, End: 10.4, Text: "eins"}, {Start: 10.45, End: 10.8, Text: "zwei"},
+		{Start: 10.85, End: 11.18, Text: removedMark + "drei"}, {Start: 11.22, End: 11.5, Text: "vier"},
+		{Start: 12.2, End: 12.4, Text: "fünf"}, {Start: 12.45, End: 12.8, Text: "sechs"}}
+	for _, c := range []struct {
+		name string
+		cut  float64
+		want string
+	}{
+		{"three hundredths of vier left", 11.25, "[0.50-2.20 eins zwei vier fünf] [2.20-2.95 sechs]"},
+		{"eight hundredths left", 11.30, "[0.50-2.25 eins zwei vier fünf] [2.25-3.00 sechs]"},
+		{"thirteen hundredths left", 11.35, "[0.50-1.72 eins zwei] [1.72-2.30 vier fünf] [2.30-3.05 sechs]"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			clip := Clip{Segments: []Segment{{Start: 9.5, End: c.cut}, {Start: 12.0, End: 14}}}
+			var got []string
+			for _, cap := range Captions(clip, words, 9, nil) {
+				got = append(got, fmt.Sprintf("[%.2f-%.2f %s]", cap.Start, cap.End, cap.Text))
+			}
+			if strings.Join(got, " ") != c.want {
+				t.Errorf("captions\n got %s\nwant %s", strings.Join(got, " "), c.want)
+			}
+		})
+	}
+
+	// The same over talk the way people talk, a word in six removed and
+	// cuts anywhere, over 2000 seeds.
+	for seed := range uint64(2000) {
+		r := rand.New(rand.NewPCG(seed, 874))
+		said := randomTalk(r, 40)
+		for i := range said {
+			if r.IntN(6) == 0 && !strings.HasPrefix(said[i].Text, removedMark) {
+				said[i].Text = removedMark + said[i].Text
+			}
+		}
+		var clip Clip
+		at := 0.0
+		for at < 40 {
+			long := 0.5 + r.Float64()*4
+			clip.Segments = append(clip.Segments, Segment{Start: at, End: at + long})
+			at += long + 0.05 + r.Float64()*0.6
+		}
+		cs := Captions(clip, said, 20+r.IntN(20), nil)
+		for i := 1; i < len(cs); i++ {
+			if cs[i].Start < cs[i-1].End-1e-9 {
+				t.Errorf("seed %d: %q begins at %.3f, before %q goes at %.3f",
+					seed, cs[i].Text, cs[i].Start, cs[i-1].Text, cs[i-1].End)
+			}
+		}
 	}
 }

@@ -190,11 +190,25 @@ func (d *desk) start(st *store) {
 		svc.watchTheDisk()
 	}
 	// Whatever is still running when the test ends is stopped before its
-	// folder goes.
+	// folder goes: the checks of videos just added first, since each
+	// starts a first search and a measuring of loudness when it ends, then
+	// the jobs and the measuring. A drop the test did not wait for went on
+	// checking once the test was over, and on CI's Mac its first search
+	// wrote into the folder as it was taken away, "directory not empty".
 	d.t.Cleanup(func() {
 		svc.watch.stop()
 		svc.news.stop()
+		svc.checkMu.Lock()
+		var checking []string
+		for video := range svc.checking {
+			checking = append(checking, video)
+		}
+		svc.checkMu.Unlock()
+		for _, video := range checking {
+			svc.stopCheck(video)
+		}
 		svc.jobs.shutDown()
+		svc.levels.shutDown()
 	})
 	logJobsOnFailure(d.t, svc.jobs)
 	if d.fit != nil {

@@ -619,14 +619,6 @@
     escapeSaying();
   }
 
-  // How far the loudness is measured, which is the waveform. It is measured
-  // on its own from the moment the episode is added, ahead of the
-  // transcript, and the video's state says how far it got as it goes.
-  const measured = $derived(status?.measuredAll ? duration : (status?.measured ?? 0));
-  const measuredParts = $derived<[number, number][]>(
-    status?.measuredAll ? [[0, duration]] : (status?.measuredParts ?? []),
-  );
-
   // What of the audio has been heard, which is not the same as what the
   // saved transcript holds. Saving rewrites the whole transcript, so it
   // happens seconds apart and jumps minutes of audio at a time, while every
@@ -1405,8 +1397,28 @@
     // remove, because the clip chosen instead leaves the playhead outside
     // it.
     const played = chosen && !paused && onClip;
+    // The row is the removed clip's from the frame Remove is pressed, and
+    // keeps its place while the Go side answers. It went in only after the
+    // answer and a second read, and in between the list no longer showed
+    // a clip removed that it did not know as one, so the row began to
+    // fold and then sprang back open as the row to put it back, issue
+    // #878. It is written again with the answer, in the same frame the
+    // clip comes back removed, because a list read meanwhile drops a row
+    // whose clip is not removed yet, see keepRemovedTrue.
+    const row = (c: ClipEntry, then = ""): Removed => ({
+      clip: c,
+      until: removed[clip.key]?.until ?? Date.now() + secondThoughts * 1000,
+      chosen,
+      then,
+      // Where the playhead goes back to when the clip is put back, only
+      // when the remove moved it: paused, the clip chosen instead is shown
+      // with the playhead on it, see chose.
+      at: played || paused ? at : undefined,
+    });
+    removed = { ...removed, [clip.key]: row(clip) };
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
+      removed = { ...removed, [updated.key]: row(updated) };
       putClip(updated);
       await refreshClips();
       // A play of the clip removed goes on from the clip chosen instead,
@@ -1419,15 +1431,12 @@
         const next = clips.find((c) => c.key === then);
         if (next) player?.seek(next.start, "clip");
       }
-      // Where the playhead goes back to when the clip is put back, only
-      // when the remove moved it: paused, the clip chosen instead is shown
-      // with the playhead on it, see chose.
-      const back = played || paused ? at : undefined;
-      removed = {
-        ...removed,
-        [updated.key]: { clip: updated, until: Date.now() + secondThoughts * 1000, chosen, then, at: back },
-      };
+      // The clip chosen in its place, now that the Go side has chosen it.
+      if (updated.key in removed) removed = { ...removed, [updated.key]: row(updated, then) };
     } catch (err) {
+      // Not removed after all, so the row is the clip's again.
+      const { [clip.key]: _, ...rest } = removed;
+      removed = rest;
       oops(errorText(err));
     }
   }
@@ -2617,15 +2626,22 @@
     const target = field === "target" ? (entry === "" ? 0 : Math.max(Math.round(number) || 1, 1)) : typed;
     const shortest = field === "min" && entry !== "" ? number : min;
     const longest = field === "max" && entry !== "" ? number : max;
-    api
-      .setSearch(path, target, shortest, longest, field)
-      .then((state) => {
-        session.take(state);
-        const w = state.window;
-        if (w) input.value = String(field === "target" ? w.count : field === "min" ? w.shortest : w.longest);
-      })
-      .catch((err) => oops(errorText(err)));
+    const kept = api.setSearch(path, target, shortest, longest, field).then((state) => {
+      session.take(state);
+      const w = state.window;
+      if (w) input.value = String(field === "target" ? w.count : field === "min" ? w.shortest : w.longest);
+    });
+    numbersOnTheirWay = kept.catch(() => undefined);
+    kept.catch((err) => oops(errorText(err)));
   }
+
+  // The numbers last typed for a search, on their way to the Go side, and
+  // the state they were answered with taken in. A number typed and Search
+  // pressed at once: the field lets go of the keyboard as the button is
+  // pressed, and the search is asked for only once the number is kept and
+  // the window it may have grown is drawn, so it looks for that number in
+  // that window, issue #877.
+  let numbersOnTheirWay: Promise<unknown> = Promise.resolve();
 
   function newClips() {
     findClips(false);
@@ -2638,23 +2654,16 @@
   }
 
   // Search. The search hears the window first if the episode has not been
-  // heard that far, all of it on the Go side, see docs/JOBS.md.
+  // heard that far, all of it on the Go side, see docs/JOBS.md. It names
+  // the window and nothing more: how many clips and how long are the
+  // numbers the Go side keeps, see asKept in search.go, so none sent
+  // here can be from before the last one typed.
   async function findClips(replan: boolean) {
     const press = begin();
-    await asked(() =>
-      api.search(
-        path,
-        {
-          From: whole ? 0 : from,
-          To: whole ? 0 : to,
-          Count: count,
-          Min: min,
-          Max: max,
-          Replan: replan,
-        },
-        press,
-      ),
-    );
+    await asked(async () => {
+      await numbersOnTheirWay;
+      return api.search(path, { From: whole ? 0 : from, To: whole ? 0 : to, Count: 0, Min: 0, Max: 0, Replan: replan }, press);
+    });
   }
 
   // Search and Continue alike. A click shows at once: the list opens its
@@ -3557,8 +3566,7 @@
         clip={current ?? making}
         {duration}
         heard={saved}
-        {measured}
-        {measuredParts}
+        loudnessStamp={status?.loudness ?? ""}
         {time}
         shown={shownMoment}
         locked={renderingCurrent || (!current && !!making)}

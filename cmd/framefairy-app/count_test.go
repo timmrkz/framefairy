@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -26,6 +27,46 @@ func TestASearchSaysHowManyItWasAskedFor(t *testing.T) {
 			t.Fatalf("the search, %s, says it was asked for %d", j.State, j.Count)
 		}
 	}
+}
+
+// A search asked for with its window alone, the way the workspace asks,
+// looks for the numbers typed last: how many clips and how long. On a
+// busy Mac a Target typed and Search pressed at once searched with the
+// number from before the typing, because the press read it from the
+// state the typing had not answered yet, issue #877. With nothing typed
+// it looks for what the window suggests, the count the workspace shows.
+//
+// Not parallel: open sets HOME for the whole process.
+func TestASearchAsksForTheNumbersTypedLast(t *testing.T) {
+	d := open(t)
+	ep := d.add("a", minutes5)
+	d.idle(ep)
+	ctx := context.Background()
+	st, err := d.svc.State(ctx, ep)
+	if err != nil || st.Window == nil {
+		t.Fatalf("no window to search: %v", err)
+	}
+	w := st.Window
+	if w.Typed != 0 || w.Count < 1 {
+		t.Fatalf("the test needs a window with nothing typed and a count: %+v", w.WindowLimits)
+	}
+	suggested := w.Count
+	job := d.svc.Search(ep, engine.PlanRequest{From: w.From, To: w.To, Replan: true}, "")
+	if job.Count != suggested {
+		t.Errorf("with nothing typed the search looks for %d clips, the window shows %d", job.Count, suggested)
+	}
+	d.idle(ep)
+	if _, err := d.svc.SetSearch(ctx, ep, 2, 11, 24, "target"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.svc.SetSearch(ctx, ep, 2, 11, 24, "min"); err != nil {
+		t.Fatal(err)
+	}
+	job = d.svc.Search(ep, engine.PlanRequest{From: w.From, To: w.To, Replan: true}, "")
+	if job.Count != 2 || job.Min != 11 {
+		t.Errorf("2 clips of 11 s typed, the search looks for %d of %v s", job.Count, job.Min)
+	}
+	d.idle(ep)
 }
 
 // A search the queue will not start says which window it was asked for,
