@@ -441,6 +441,7 @@ func FuzzParse(f *testing.F) {
 	f.Add([]byte(`{"channels":[{"channel":"main","name":"main","version":"0.3.0-main.1","commit":"abc1234","url":"https://example.com/a.zip","size":10,"sha256":"` + strings.Repeat("a", 64) + `","signature":"` + b64(make([]byte, 64)) + `"}]}`))
 	f.Add([]byte(`{"channels":[{"channel":"pr-0"},{"channel":"pr-1","published":"x"}]}`))
 	f.Add([]byte(`{}`))
+	f.Add([]byte(`{"channels":[{"channel":"main","name":"main","version":"0.3.0-main.1","commit":"abc1234","url":"https://example.com/a.zip","parts":"https://example.com/a.parts.json","packed":"https://example.com/a.zip.zst","packedSize":4,"size":10,"sha256":"` + strings.Repeat("a", 64) + `","signature":"` + b64(make([]byte, 64)) + `"}]}`))
 	f.Add([]byte(`{"channels":[{"channel":"pr-3","name":"#3","version":"0.3.0-pr3.abc1234","commit":"abc1234","newest":"def5678","url":"https://example.com/a.zip","size":10,"sha256":"` + strings.Repeat("a", 64) + `","signature":"` + b64(make([]byte, 64)) + `"}]}`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		list, err := Parse(data)
@@ -458,6 +459,9 @@ func FuzzParse(f *testing.F) {
 			seen[b.Channel] = true
 			if b.Newest != "" && (!commitPattern.MatchString(b.Newest) || strings.HasPrefix(b.Newest, b.Commit)) {
 				t.Fatalf("kept %q as a newer commit than %q", b.Newest, b.Commit)
+			}
+			if b.Packed != "" && (b.Packed != PackedURL(b.URL) || b.PackedSize <= 0 || b.PackedSize > packedBound(b.Size)) {
+				t.Fatalf("kept a packed zip %q of %d bytes for %q of %d", b.Packed, b.PackedSize, b.URL, b.Size)
 			}
 			if _, err := Release(b); err != nil {
 				t.Fatal(err)

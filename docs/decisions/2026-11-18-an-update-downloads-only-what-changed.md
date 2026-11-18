@@ -123,17 +123,28 @@ The first simulation, drawn as layers, each using only the ones under it:
 
 ```
 publish.yml           check, pack, sign, publish, one command a step
-cmd/framefairy-release  pack: the stored zip, its parts, its pieces
-                      publish: the zip, the pieces not there yet, the parts, the entry
-                      channels: removes zips, parts and pieces no entry reaches
+cmd/framefairy-release  pack: the stored zip, its parts, its pieces, the zip packed
+                      publish: the pieces not there yet, the zip, the zip packed, the parts, the entry
+                      channels: removes zips, packed zips, parts and pieces no entry reaches
 cmd/framefairy-app    hands Source the running app's folder
-updates/              Parts, Part, Pack, Split, ParseParts, the assembling Download
+updates/              Parts, Part, Pack, Split, ParseParts, the assembling Download,
+                      and the packed zip it falls back to
 Wails' pkg/updater    hashes, checks the signature, unpacks, swaps, as before
 ```
 
 The zip stays at its address, so an app from before this change still
 updates, downloading the stored zip whole once. Whenever the parts are
-missing, wrong or a piece cannot be had, the app downloads that zip too.
+missing, wrong or a piece cannot be had, the app downloads the same zip
+packed with zstd, published beside it, and unpacks it on the way into
+the cache. Only when that fails too does it download the stored zip.
+
+The stored zip is twice the deflated one, because its files cannot be
+deflated if the parts are to name their bytes. A whole download of it
+would have been the one case this change made worse. Packed with zstd
+over a 64 MB window, which reaches across the three copies of ffmpeg's
+libraries, it is a quarter of the stored zip and half the deflated one.
+That is the simulation's second candidate, one packed file, kept as the
+fallback of the first.
 
 ## What follows
 
@@ -144,12 +155,15 @@ missing, wrong or a piece cannot be had, the app downloads that zip too.
   are one shared copy, which is work of its own.
 - A file that changed in the app while an update was put together is
   downloaded as its piece. Only parts that cannot be read or a piece
-  that is gone download the whole zip.
-- What still downloads whole is bigger: the stored zip is 133 MB where
-  the deflated one was 67.5. That is the first update of an app from
-  before this change, once, and the rare update whose parts fail.
-- The kept build in the user's caches is the stored zip, 133 MB where it
+  that is gone download the packed zip, 32.9 MB where the deflated zip
   was 67.5.
-- Every publish uploads the stored zip and only the pieces not there yet.
+- An app from before this change downloads the stored zip once, 136 MB,
+  because it knows neither parts nor the packed zip. Updating to the
+  pull request that brings this change avoids it: that build is still
+  published the old way, deflated.
+- The kept build in the user's caches is the stored zip, 136 MB where it
+  was 67.5.
+- Every publish uploads the stored zip, the packed zip and only the
+  pieces not there yet. Packing them takes about 10 s on four cores.
 - It was wrong if updates still download most of the app: the parts file
   and the pieces of a published build then say which file was not found.

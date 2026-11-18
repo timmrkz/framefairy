@@ -255,7 +255,7 @@ func uploadList(gh gitHub, data []byte, log io.Writer) error {
 }
 
 // removeUnreachable takes away every zip no entry points at, the parts
-// beside it, and every piece no remaining parts name. Not at once: a
+// and the packed zip beside it, and every piece no remaining parts name. Not at once: a
 // publish that runs beside this may have uploaded a zip, parts or pieces
 // whose entry this list has not seen yet, so only a file over an hour old
 // goes. A piece that goes all the same, because a publish found it there
@@ -267,6 +267,7 @@ func removeUnreachable(gh gitHub, l updates.List, now time.Time, log io.Writer) 
 	for _, b := range l.Channels {
 		kept[path.Base(b.URL)] = true
 		kept[updates.PartsName(path.Base(b.URL))] = true
+		kept[updates.PackedName(path.Base(b.URL))] = true
 	}
 	all, err := gh.assets()
 	if err != nil {
@@ -297,7 +298,7 @@ func removeUnreachable(gh gitHub, l updates.List, now time.Time, log io.Writer) 
 	}
 	for _, a := range all {
 		build := strings.HasPrefix(a.name, "app-") &&
-			(strings.HasSuffix(a.name, ".zip") || strings.HasSuffix(a.name, ".parts.json"))
+			(strings.HasSuffix(a.name, ".zip") || strings.HasSuffix(a.name, ".zip.zst") || strings.HasSuffix(a.name, ".parts.json"))
 		piece := known && strings.HasPrefix(a.name, "piece-") && strings.HasSuffix(a.name, ".zst")
 		if !(build && !kept[a.name]) && !(piece && !pieces[a.name]) {
 			continue

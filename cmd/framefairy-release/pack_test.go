@@ -63,8 +63,8 @@ const (
 )
 
 // The first build publishes every piece, the next one only the piece of
-// the file that changed, and each goes up before the zip, the parts and
-// the entry that name it.
+// the file that changed, and each goes up before the zip, the packed zip,
+// the parts and the entry that name it.
 //
 // On the real disk: the release tool reads the packed build from files.
 func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
@@ -89,7 +89,7 @@ func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
 		up = append(up, strings.TrimPrefix(d, "upload "))
 	}
 	slices.Sort(up[:2])
-	want := append(pieces, "app-main-1.zip", "app-main-1.parts.json", "channel-main.json")
+	want := append(pieces, "app-main-1.zip", "app-main-1.zip.zst", "app-main-1.parts.json", "channel-main.json")
 	if !slices.Equal(up, want) {
 		t.Errorf("the first build uploaded\n  %s\nwant\n  %s", strings.Join(up, "\n  "), strings.Join(want, "\n  "))
 	}
@@ -99,7 +99,7 @@ func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	p2 := partsIn(t, second)
-	want = []string{"upload " + pieceOf(t, p2, appProgram), "upload app-main-2.zip", "upload app-main-2.parts.json", "upload channel-main.json"}
+	want = []string{"upload " + pieceOf(t, p2, appProgram), "upload app-main-2.zip", "upload app-main-2.zip.zst", "upload app-main-2.parts.json", "upload channel-main.json"}
 	if !slices.Equal(gh.did, want) {
 		t.Errorf("the second build uploaded\n  %s\nwant\n  %s", strings.Join(gh.did, "\n  "), strings.Join(want, "\n  "))
 	}
@@ -108,7 +108,7 @@ func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
 	}
 }
 
-// What no entry reaches goes after an hour: the zip and parts of a build
+// What no entry reaches goes after an hour: the zip, packed zip and parts of a build
 // that is no longer listed, and every piece no listed build's parts name.
 // A piece still named, or uploaded within the hour, stays.
 //
@@ -124,7 +124,9 @@ func TestPiecesNoBuildNamesGo(t *testing.T) {
 	partsData, _ := os.ReadFile(filepath.Join(listed, partsFile))
 	gh.put("app-main-1.zip", []byte("zip"), old)
 	gh.put("app-main-1.parts.json", partsData, old)
+	gh.put("app-main-1.zip.zst", []byte("zst"), old)
 	gh.put("app-pr-9-1.zip", []byte("zip"), old)
+	gh.put("app-pr-9-1.zip.zst", []byte("zst"), old)
 	gh.put("app-pr-9-1.parts.json", []byte("{}"), old)
 	gh.put(pieceOf(t, p, appProgram), []byte("piece"), old)
 	gh.put(pieceOf(t, p, ffmpegFile), []byte("piece"), old)
@@ -136,12 +138,12 @@ func TestPiecesNoBuildNamesGo(t *testing.T) {
 	if err := removeUnreachable(gh, l, now, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"app-pr-9-1.zip", "app-pr-9-1.parts.json", pieceOf(t, g, appProgram)} {
+	for _, name := range []string{"app-pr-9-1.zip", "app-pr-9-1.zip.zst", "app-pr-9-1.parts.json", pieceOf(t, g, appProgram)} {
 		if _, ok := gh.release[name]; ok {
 			t.Errorf("%s, which no listed build reaches, is still there", name)
 		}
 	}
-	for _, name := range []string{"app-main-1.zip", "app-main-1.parts.json", pieceOf(t, p, appProgram), pieceOf(t, p, ffmpegFile), fresh} {
+	for _, name := range []string{"app-main-1.zip", "app-main-1.zip.zst", "app-main-1.parts.json", pieceOf(t, p, appProgram), pieceOf(t, p, ffmpegFile), fresh} {
 		if _, ok := gh.release[name]; !ok {
 			t.Errorf("%s was taken away", name)
 		}
@@ -185,6 +187,13 @@ func TestASignedBuildSaysWhereItsPartsAre(t *testing.T) {
 	if b.Parts != "https://example.com/dev/app-main-1.parts.json" {
 		t.Errorf("the entry says its parts are at %q", b.Parts)
 	}
+	whole, err := os.ReadFile(filepath.Join(dir, packedWhole))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Packed != "https://example.com/dev/app-main-1.zip.zst" || b.PackedSize != int64(len(whole)) {
+		t.Errorf("the entry says its packed zip is at %q, %d bytes, want %d", b.Packed, b.PackedSize, len(whole))
+	}
 	if err := b.Check(); err != nil {
 		t.Errorf("the app refuses the entry: %v", err)
 	}
@@ -195,5 +204,19 @@ func TestASignedBuildSaysWhereItsPartsAre(t *testing.T) {
 		"https://example.com/dev/app-main-1.zip", filepath.Join(other, partsFile), out)
 	if err == nil {
 		t.Error("a build was signed with the parts of another")
+	}
+
+	// A packed zip of another build is no packed zip of this one.
+	theirs, err := os.ReadFile(filepath.Join(other, packedWhole))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, packedWhole), theirs, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = signBuild(filepath.Join(dir, packedZip), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
+		"https://example.com/dev/app-main-1.zip", filepath.Join(dir, partsFile), out)
+	if err == nil {
+		t.Error("a build was signed with the packed zip of another")
 	}
 }

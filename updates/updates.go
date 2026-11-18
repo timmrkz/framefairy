@@ -109,6 +109,13 @@ type Build struct {
 	// published whole. Not signed: wrong parts make a zip that fails its
 	// signature, and the app then downloads the zip whole.
 	Parts string `json:"parts,omitempty"`
+	// Packed is where the zip is packed with zstd, beside it, and
+	// PackedSize its size, what the app downloads when the parts do not
+	// work, see whole.go. Empty for a build published without it. Not
+	// signed either: a packed zip that unpacks to another zip fails the
+	// signature, and the app then downloads the zip itself.
+	Packed     string `json:"packed,omitempty"`
+	PackedSize int64  `json:"packedSize,omitempty"`
 	// Newest is the channel's newest commit when that is not the one this
 	// build was made from: a push whose build has not come yet. The build
 	// is still the newest there is and can be installed, but it is not
@@ -169,6 +176,10 @@ func (b Build) Check() error {
 	}
 	if b.Size <= 0 || b.Size > MaxBuild {
 		return fmt.Errorf("channel %s has a size of %d bytes", b.Channel, b.Size)
+	}
+	if (b.Packed != "" || b.PackedSize != 0) &&
+		(b.Packed != PackedURL(b.URL) || b.PackedSize <= 0 || b.PackedSize > packedBound(b.Size)) {
+		return fmt.Errorf("channel %s has its packed zip somewhere else than its zip, or of a size it cannot be", b.Channel)
 	}
 	if !sha256Pattern.MatchString(b.SHA256) {
 		return fmt.Errorf("channel %s has no checksum", b.Channel)

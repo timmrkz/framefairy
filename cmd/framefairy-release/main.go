@@ -19,12 +19,16 @@
 //	    the screen or the camera, or ask for administrator rights, see
 //	    inputs.go. The workflow runs it before sign, in a step that does
 //	    not hold the key
-//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-refusal F]
+//	framefairy-release pack -zip F -out D
+//	    write the build again as the zip it is published as, its files
+//	    stored, with its parts, a piece for every file and the zip packed
+//	    with zstd, see pack.go
+//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-refusal F]
 //	    sign a build that check passed with the private half, read from
 //	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list
-//	framefairy-release publish -zip F -as NAME -entry F -channel C -commit X
-//	    upload the build and its entry, and mark a pull request's commit
-//	    Ready to update to
+//	framefairy-release publish -zip F -as NAME -entry F -channel C -commit X [-packed D]
+//	    upload the build and its entry, and what pack wrote beside it,
+//	    and mark a pull request's commit Ready to update to
 //	framefairy-release not-published -commit X -run URL [-refusal F]
 //	    mark a commit whose build was not published, and why
 //	framefairy-release channels
@@ -38,18 +42,24 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"framefairy/updates"
 )
@@ -191,6 +201,24 @@ func sign(args []string) error {
 // signBuild signs the zip and writes its entry. With parts, the entry says
 // where they will be, beside the zip, once they are read as the parts of
 // this zip.
+// unpacksTo says whether a zip packed with zstd unpacks to the zip with
+// this SHA-256.
+func unpacksTo(packed, digest []byte) error {
+	dec, err := zstd.NewReader(bytes.NewReader(packed))
+	if err != nil {
+		return err
+	}
+	defer dec.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, dec); err != nil {
+		return fmt.Errorf("the packed zip does not unpack: %w", err)
+	}
+	if !bytes.Equal(h.Sum(nil), digest) {
+		return errors.New("the packed zip is of another zip")
+	}
+	return nil
+}
+
 func signBuild(zipPath, channel, name, version, commit, where, parts, out string) error {
 	private, public, err := keys()
 	if err != nil {
@@ -224,6 +252,16 @@ func signBuild(zipPath, channel, name, version, commit, where, parts, out string
 			return err
 		}
 		b.Parts = updates.PartsURL(where)
+		// pack leaves the zip packed with zstd beside its parts, and it
+		// goes up only when it unpacks to this very zip.
+		packed, err := os.ReadFile(filepath.Join(filepath.Dir(parts), packedWhole))
+		if err != nil {
+			return err
+		}
+		if err := unpacksTo(packed, digest); err != nil {
+			return err
+		}
+		b.Packed, b.PackedSize = updates.PackedURL(where), int64(len(packed))
 	}
 	b.Claim = updates.SignClaim(private, b)
 	if err := b.Check(); err != nil {

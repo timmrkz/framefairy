@@ -28,6 +28,10 @@ const (
 	partsFile = "parts.json"
 )
 
+// packedWhole is the stored zip packed with zstd, which the app downloads
+// when the parts do not work, see updates/whole.go.
+var packedWhole = updates.PackedName(packedZip)
+
 func packCommand(args []string) error {
 	fs := flag.NewFlagSet("pack", flag.ExitOnError)
 	zipPath := fs.String("zip", "", "the zip the build left")
@@ -89,6 +93,10 @@ func pack(zipPath, out string, log io.Writer) error {
 	}
 	work := make(chan *job)
 	var wg sync.WaitGroup
+	// The whole zip packed is the longest job by far, so it starts first,
+	// beside the pieces.
+	whole := make(chan error, 1)
+	wg.Go(func() { whole <- packWhole(stored, size, out) })
 	for range runtime.NumCPU() {
 		wg.Go(func() {
 			for j := range work {
@@ -104,6 +112,9 @@ func pack(zipPath, out string, log io.Writer) error {
 	}
 	close(work)
 	wg.Wait()
+	if err := <-whole; err != nil {
+		return err
+	}
 	fmt.Fprintf(log, "%-64s %12s %12s\n", "file", "bytes", "packed")
 	var pieces int64
 	for _, j := range jobs {
@@ -121,6 +132,15 @@ func pack(zipPath, out string, log io.Writer) error {
 	}
 	fmt.Fprintf(log, "the zip is %d bytes, an app with none of its files downloads %d\n", size, pieces)
 	return writeJSON(filepath.Join(out, partsFile), p)
+}
+
+// packWhole writes the stored zip, size bytes, packed with zstd to out.
+func packWhole(stored io.ReaderAt, size int64, out string) error {
+	data := make([]byte, size)
+	if _, err := stored.ReadAt(data, 0); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(out, packedWhole), updates.PackZip(data), 0o644)
 }
 
 // packPiece writes the piece of the file a part names, which starts at at

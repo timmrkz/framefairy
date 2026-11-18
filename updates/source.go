@@ -344,7 +344,7 @@ func Release(b Build) (*updater.Release, error) {
 			SignatureAlgo: "ed25519",
 			Signature:     sig,
 		},
-		Metadata: map[string]any{"url": b.URL, "parts": b.Parts, "commit": b.Commit},
+		Metadata: map[string]any{"url": b.URL, "parts": b.Parts, "packed": b.Packed, "packedSize": b.PackedSize, "commit": b.Commit},
 	}, nil
 }
 
@@ -371,8 +371,14 @@ func (s *Source) Download(ctx context.Context, r *updater.Release, dst io.Writer
 	if found, err := s.fromCache(sum, total, dst, report); found {
 		return err
 	}
-	parts, _ := r.Metadata["parts"].(string)
-	if f := s.fetchOf(sum, where, parts, total); f != nil {
+	from := from{whole: where}
+	from.parts, _ = r.Metadata["parts"].(string)
+	from.packed, _ = r.Metadata["packed"].(string)
+	from.packedSize, _ = r.Metadata["packedSize"].(int64)
+	if from.packedSize <= 0 {
+		from.packed = ""
+	}
+	if f := s.fetchOf(sum, from, total); f != nil {
 		return s.await(ctx, f, sum, dst, report)
 	}
 	return s.stream(ctx, where, total, writerSink{dst}, func(written int64) { report(written, total) })

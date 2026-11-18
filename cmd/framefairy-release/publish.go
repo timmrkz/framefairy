@@ -30,7 +30,7 @@ import (
 //
 // A build pack wrote, in the folder packed, also uploads its pieces and
 // its parts: first every piece the release does not hold yet, then the
-// zip, then the parts, then the entry, so nothing an entry names is
+// zip, then the zip packed with zstd, then the parts, then the entry, so nothing an entry names is
 // missing when the app reads it. A piece is named by the SHA-256 of the
 // file it holds, so one that is there already is the same file and stays.
 func publish(gh gitHub, zipPath, zipName, packed, entryPath, channel, commit string) error {
@@ -52,6 +52,13 @@ func publish(gh gitHub, zipPath, zipName, packed, entryPath, channel, commit str
 		return err
 	}
 	if parts != nil {
+		whole, err := os.ReadFile(filepath.Join(packed, packedWhole))
+		if err != nil {
+			return err
+		}
+		if err := gh.upload(updates.PackedName(zipName), whole); err != nil {
+			return err
+		}
 		if err := gh.upload(updates.PartsName(zipName), parts); err != nil {
 			return err
 		}
