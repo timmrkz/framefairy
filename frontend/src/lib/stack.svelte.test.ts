@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { span } from "./stack";
 import { Stack } from "./stack.svelte";
 
 // The column the transcript search scrolls in, the way the browser keeps
@@ -269,5 +270,61 @@ describe("a tall stack building ahead while the app is idle", () => {
     expect(last).toBeLessThan(40);
     p.rest();
     expect(p.stack.built[1]).toBeGreaterThan(100);
+  });
+
+  // Found by the review: the card a search kept in its own list was put
+  // back in the whole list once the idle steps measured the cards they
+  // built, so a search let go of by Escape stood on the wrong card.
+  test("a search let go of keeps the card of the playhead where it stands as cards are built around it", () => {
+    const p = open(mixed(2000));
+    const all = p.keys;
+    p.keys = all.filter((_, i) => i % 3);
+    p.stack.toStart("searched");
+    p.keys = all;
+    p.stack.keep("s0", "");
+    p.build();
+    expect(p.at("s0")).toBe(veil);
+    p.rest();
+    expect(p.at("s0")).toBe(veil);
+  });
+
+  // Found by the review: a list that changed after a scroll inside the
+  // cards built built the cards of the place the last needed cards were
+  // worked out from, and the cards in view were missing for a frame.
+  test("a list that changes by a card after a scroll keeps the cards in view built, and the ones built ahead", () => {
+    const p = open(mixed(2000));
+    p.stack.toTop("s1000", "");
+    p.build();
+    p.rest();
+    p.box.scrollTop += 6 * p.box.clientHeight;
+    p.stack.scrolled("", null);
+    const ahead = p.stack.built;
+    p.height.set("s2000", 58);
+    p.keys = [...p.keys, "s2000"];
+    p.build();
+    const [first, last] = span(p.stack.placed, p.box.scrollTop - veil, p.box.scrollTop - veil + p.box.clientHeight);
+    expect(p.stack.built[0]).toBeLessThanOrEqual(first);
+    expect(p.stack.built[1]).toBeGreaterThanOrEqual(last);
+    expect(p.stack.built).toEqual(ahead);
+  });
+
+  // WebKit has no idle callback, so a step came right after a frame,
+  // in the middle of a scroll, found by the review.
+  test("a step asked for waits while the hand scrolls, and builds once a frame passes without a scroll", () => {
+    const p = open(mixed(2000));
+    p.stack.toTop("s1000", "");
+    p.build();
+    const needed = p.stack.built;
+    expect(p.idle.length).toBe(1);
+    p.box.scrollTop += 100;
+    p.stack.scrolled("", null);
+    p.build();
+    const scrolled = p.stack.built;
+    p.idle.shift()!();
+    expect(p.stack.built).toBe(scrolled);
+    expect(scrolled[1] - scrolled[0]).toBeLessThan(40);
+    expect(p.idle.length).toBe(1);
+    p.rest();
+    expect(p.stack.built[0]).toBeLessThan(needed[0] - 50);
   });
 });

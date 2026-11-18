@@ -2466,7 +2466,7 @@ found is a place in the video, and I and O make a clip there.
   the top of the list, where the first card stands, and choosing it
   again does it again. The cards in view and a column either side are
   built at once, and some twenty columns either side while the app is
-  idle, so opening the list and typing build only what is seen, and a
+  idle and the list is not being scrolled, so opening the list and typing build only what is seen, and a
   scroll moves through cards already built, as through a list built
   whole. The room of the rest is their heights, guessed at the mean,
   to the whole pixel, until a card has been built once, see

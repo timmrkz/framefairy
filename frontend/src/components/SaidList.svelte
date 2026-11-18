@@ -313,11 +313,12 @@
   }
 
   // The page turned to the card of a row, unless it is in view, inside
-  // the veil the list fades its ends with.
+  // the veil the list fades its ends with. A card in view is kept where
+  // it stands.
   function turnTo(key: string) {
     const at = stack.shows(key);
-    if (at && at.above <= 0.5 && at.below <= 0.5) return;
-    toTop(key);
+    if (at && at.above <= 0.5 && at.below <= 0.5) stack.keep(key, typed);
+    else toTop(key);
   }
 
   // The page turned to a card walked to, unless it is in view: walked

@@ -66,6 +66,9 @@ export class Stack {
   #list: HTMLElement | null = null;
   #later: Later;
   #growing = false;
+  // Scrolls heard, so an idle step knows whether the column moved since
+  // it was asked for.
+  #scrolls = 0;
   // The cards built by idle steps, for the list they were built for.
   #grown = $state.raw<{ keys: readonly string[]; range: [number, number] } | null>(null);
   #builtWas: [number, number] | null = null;
@@ -73,11 +76,15 @@ export class Stack {
   // ResizeObserver hears.
   #seenBuilt = new WeakSet<Element>();
 
-  // How far the column is scrolled and how tall it is. Top is where the
-  // cards built were last worked out from, and at where the column
-  // really is, see scrolled.
+  // How far the column is scrolled and how tall it is. At is where the
+  // column really is, the one place that says so. Top is the same number
+  // told to the page, written only when other cards are needed, see
+  // scrolled, so a scroll inside the cards built makes no work.
   top = $state(0);
   #at = 0;
+  // The list the stack was last told of: a new search is a new list, and
+  // a card kept in one is never put back in another.
+  #current: unknown = undefined;
   seen = $state(0);
   // What the list holds over its first card, the line that says the cards
   // could not be read with its gap, and the list's padding, the veil.
@@ -104,8 +111,13 @@ export class Stack {
 
   // The cards that must be built now: the ones in view and a screen over
   // and under it.
+  // They are worked out from where the column really is, also when the
+  // list changed after a scroll top was not told of: from top, the cards
+  // in view of a list that changed were not built for a frame, found by
+  // the review.
   readonly needed: [number, number] = $derived.by(() => {
-    const from = this.top - this.veil - this.lead;
+    void this.top;
+    const from = this.#at - this.veil - this.lead;
     return span(this.placed, from - this.seen, from + 2 * this.seen);
   });
 
@@ -115,16 +127,35 @@ export class Stack {
   // cards as they came into the screen kept either side cost every wheel
   // step a layout of the cards it built, four times the work of the same
   // scroll through a list built whole, found by Tim.
+  //
+  // It hands back the same pair while the cards are the same, kept in
+  // builtWas: a new pair of the same numbers is a change to Svelte, and
+  // everything that reads the cards built would be looked over again.
   readonly built: [number, number] = $derived.by(() => {
     const need = this.needed;
     const g = this.#grown;
+    const range = g && this.#regrown(g);
     let got = need;
-    if (g && same(g.keys, this.placed.keys) && need[0] <= need[1] && g.range[0] <= need[1] + 1 && g.range[1] >= need[0] - 1)
-      got = [Math.min(g.range[0], need[0]), Math.max(g.range[1], need[1])];
+    if (range && need[0] <= need[1] && range[0] <= need[1] + 1 && range[1] >= need[0] - 1)
+      got = [Math.min(range[0], need[0]), Math.max(range[1], need[1])];
     const was = this.#builtWas;
     if (was && was[0] === got[0] && was[1] === got[1]) return was;
     return (this.#builtWas = got);
   });
+
+  // The cards idle steps built, in the list as it is now. A list that
+  // changed by a few cards, a sentence read again, a clip made, a word
+  // corrected, keeps them from its first to its last, so the cards are not
+  // built again. A list that is another list, a search typed or let go
+  // of, keeps none.
+  #regrown(g: { keys: readonly string[]; range: [number, number] }): [number, number] | null {
+    const keys = this.placed.keys;
+    if (same(g.keys, keys)) return g.range;
+    const x = keys.indexOf(g.keys[g.range[0]]);
+    const y = keys.indexOf(g.keys[g.range[1]]);
+    if (x < 0 || y < x || y - x > g.range[1] - g.range[0] + 16) return null;
+    return [x, y];
+  }
 
   // The room of the cards not built, over the first card built and under
   // the last.
@@ -205,6 +236,7 @@ export class Stack {
   // and the list is as tall as the heights say before the card kept is
   // put back, which the column could not scroll to while it was shorter.
   settle(list: unknown) {
+    this.#current = list;
     this.#measureBuilt();
     this.hold(list);
     this.#grow();
@@ -220,9 +252,17 @@ export class Stack {
   #grow() {
     if (this.#growing || !this.#box) return;
     this.#growing = true;
+    const scrolls = this.#scrolls;
     this.#later(() => {
       this.#growing = false;
       if (!this.#box) return;
+      // The column moved since: a hand is scrolling, and the step waits
+      // for a frame it does not scroll in. WebKit, the app's engine on a
+      // Mac, has no idle callback, so the step comes after the next frame
+      // whatever happens, and a trackpad scrolls in every frame of a
+      // fling. A step of 10 to 18 ms in the cloud landed in a scroll in
+      // WebKit, found by the review.
+      if (this.#scrolls !== scrolls) return this.#grow();
       const p = this.placed;
       const [a, b] = this.built;
       if (a > b) return;
@@ -286,11 +326,26 @@ export class Stack {
   scrolled(list: unknown, prefer: string | null) {
     if (!this.#box) return;
     const t = (this.#at = this.#box.scrollTop);
+    this.#scrolls++;
     const from = t - this.veil - this.lead;
     const [need0, need1] = span(this.placed, from - this.seen, from + 2 * this.seen);
     const [b0, b1] = this.built;
     if (need0 <= need1 && (need0 < b0 || need1 > b1)) this.top = t;
     this.#grow();
+    this.keep(prefer, list);
+  }
+
+  // The card of a key kept where it stands as the cards around it change,
+  // when it is in view, or else the first card in view. A card turned to
+  // that was in view already is kept this way, so the list keeps no card
+  // of the list before it: a search let go of by Escape kept the card of
+  // the search, and the next cards measured put that card at the top of
+  // the whole transcript, found by the review.
+  keep(prefer: string | null, list: unknown) {
+    if (!this.#box) return;
+    this.#current = list;
+    const t = this.#at;
+    const from = t - this.veil - this.lead;
     const keys = this.placed.keys;
     const mine = prefer === null ? -1 : keys.indexOf(prefer);
     const at = (i: number) => this.veil + this.lead + this.placed.tops[i] - t;
@@ -305,9 +360,9 @@ export class Stack {
 
   // The card that is to stay where it stands put back there, after cards
   // came in or changed their height. Only in the list it was taken in.
-  hold(list?: unknown) {
+  hold(list: unknown = this.#current) {
     const a = this.#anchor;
-    if (!a || !this.#box || (list !== undefined && a.list !== list)) return;
+    if (!a || !this.#box || a.list !== list) return;
     const i = untrack(() => this.placed.keys.indexOf(a.key));
     if (i < 0) return;
     const at = a.foot ? this.#box.clientHeight - this.veil - untrack(() => this.placed.heights[i]) : a.at;
@@ -340,6 +395,7 @@ export class Stack {
   // as far as the list goes, at its end.
   #toAt(key: string, by: number, list: unknown) {
     if (!this.#box) return;
+    this.#current = list;
     this.#measureBuilt();
     const i = this.placed.keys.indexOf(key);
     if (i < 0) return;
