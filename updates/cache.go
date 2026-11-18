@@ -131,6 +131,24 @@ func (k *keeper) write(b []byte) error {
 	return nil
 }
 
+// restart throws away what was written so far, for a download that starts
+// again from nothing.
+func (k *keeper) restart() error {
+	if k == nil || k.f == nil {
+		return errors.New("the build could not be written to the cache")
+	}
+	k.h.Reset()
+	if err := k.f.Truncate(0); err != nil {
+		k.drop()
+		return err
+	}
+	if _, err := k.f.Seek(0, io.SeekStart); err != nil {
+		k.drop()
+		return err
+	}
+	return nil
+}
+
 // whole says whether what arrived hashes to what the list said.
 func (k *keeper) whole() bool {
 	return k != nil && k.f != nil && hex.EncodeToString(k.h.Sum(nil)) == k.sum

@@ -34,23 +34,38 @@ const fetchQuiet = time.Minute
 
 // fetching is one build on its way into the cache.
 type fetching struct {
+	// total is the size of the build.
 	total int64
 	mu    sync.Mutex
-	got   int64
-	err   error
-	done  chan struct{}
+	// got is how much has been downloaded of of. A build downloaded whole
+	// counts its bytes, one put together from its parts counts the bytes
+	// of the pieces it downloads, since the files the app has take no
+	// time worth showing.
+	got, of int64
+	err     error
+	done    chan struct{}
 }
 
-func (f *fetching) written() int64 {
+func (f *fetching) written() (got, of int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.got
+	return f.got, f.of
+}
+
+func (f *fetching) downloaded(got, of int64) {
+	f.mu.Lock()
+	f.got, f.of = got, of
+	f.mu.Unlock()
 }
 
 // fetchOf is the download of the build with this SHA-256 into the cache,
 // the one already on its way or one begun now. Nil when the cache cannot
 // be written, and the caller downloads it itself.
-func (s *Source) fetchOf(sum, where string, total int64) *fetching {
+//
+// A build with parts is put together from them, see assemble.go, and
+// downloaded whole when that fails for any reason, so parts that are
+// wrong or a piece that is gone cost time and never the update.
+func (s *Source) fetchOf(sum, where, parts string, total int64) *fetching {
 	s.fetchMu.Lock()
 	defer s.fetchMu.Unlock()
 	if f := s.fetches[sum]; f != nil {
@@ -60,7 +75,7 @@ func (s *Source) fetchOf(sum, where string, total int64) *fetching {
 	if k == nil {
 		return nil
 	}
-	f := &fetching{total: total, done: make(chan struct{})}
+	f := &fetching{total: total, of: total, done: make(chan struct{})}
 	if s.fetches == nil {
 		s.fetches = map[string]*fetching{}
 	}
@@ -68,11 +83,26 @@ func (s *Source) fetchOf(sum, where string, total int64) *fetching {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTakes)
 		defer cancel()
-		err := s.stream(ctx, where, total, k, func(written int64) {
-			f.mu.Lock()
-			f.got = written
-			f.mu.Unlock()
-		})
+		err := errNoParts
+		if parts != "" {
+			var done Pieced
+			done, err = s.assemble(ctx, parts, sum, total, k, f.downloaded)
+			if err == nil && !k.whole() {
+				err = errors.New("the build put together from its parts is not the build the list says")
+			}
+			if err == nil {
+				s.tell(done)
+			}
+		}
+		if err != nil {
+			if err != errNoParts {
+				s.tell(Pieced{Err: err})
+			}
+			f.downloaded(0, total)
+			if err = k.restart(); err == nil {
+				err = s.stream(ctx, where, total, k, func(written int64) { f.downloaded(written, total) })
+			}
+		}
 		if err == nil && !k.whole() {
 			err = errors.New("the build did not arrive as the channel list says it is")
 		}
@@ -141,13 +171,14 @@ func (s *Source) await(ctx context.Context, f *fetching, sum string, dst io.Writ
 				return errors.New("the build went from the cache as it arrived")
 			}
 			if err == nil {
-				report(f.total, f.total)
+				_, of := f.written()
+				report(of, of)
 			}
 			return err
 		case <-tick.C:
-			if w := f.written(); w != last {
+			if w, of := f.written(); w != last {
 				last = w
-				report(w, f.total)
+				report(w, of)
 			}
 		}
 	}

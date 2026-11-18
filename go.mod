@@ -8,6 +8,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gen2brain/malgo v0.11.28
 	github.com/k2-fsa/sherpa-onnx-go/v2 v2.0.1
+	github.com/klauspost/compress v1.18.7
 	github.com/rs/zerolog v1.35.1
 	github.com/speedata/hyphenation v1.0.5
 	github.com/spf13/afero v1.15.0

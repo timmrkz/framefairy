@@ -104,6 +104,11 @@ type Build struct {
 	// not install.
 	Claim     string    `json:"claim,omitempty"`
 	Published time.Time `json:"published"`
+	// Parts is where the zip's parts are, beside it, so the app downloads
+	// only the files it does not have, see parts.go. Empty for a build
+	// published whole. Not signed: wrong parts make a zip that fails its
+	// signature, and the app then downloads the zip whole.
+	Parts string `json:"parts,omitempty"`
 	// Newest is the channel's newest commit when that is not the one this
 	// build was made from: a push whose build has not come yet. The build
 	// is still the newest there is and can be installed, but it is not
@@ -158,6 +163,9 @@ func (b Build) Check() error {
 	u, err := url.Parse(b.URL)
 	if err != nil || u.Scheme != "https" || u.Host == "" || !strings.HasSuffix(u.Path, ".zip") {
 		return fmt.Errorf("channel %s is not a zip on https", b.Channel)
+	}
+	if b.Parts != "" && b.Parts != PartsURL(b.URL) {
+		return fmt.Errorf("channel %s has its parts somewhere else than its zip", b.Channel)
 	}
 	if b.Size <= 0 || b.Size > MaxBuild {
 		return fmt.Errorf("channel %s has a size of %d bytes", b.Channel, b.Size)

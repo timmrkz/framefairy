@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"path"
@@ -65,6 +66,13 @@ type Source struct {
 	// read or was not taken, and why. An entry of the build the list has
 	// already, the usual case, is not refused.
 	Refused func(channel string, why error)
+	// App is the folder of the running app, Frame Fairy.app, whose files
+	// a build put together from its parts takes when they are the same,
+	// see assemble.go. Nil downloads every piece.
+	App fs.FS
+	// Pieced is told how a build was put together from its parts, or why
+	// it could not be and was downloaded whole.
+	Pieced func(Pieced)
 
 	// fetches are the builds on their way into the cache, by SHA-256, see
 	// fetch.go.
@@ -336,7 +344,7 @@ func Release(b Build) (*updater.Release, error) {
 			SignatureAlgo: "ed25519",
 			Signature:     sig,
 		},
-		Metadata: map[string]any{"url": b.URL, "commit": b.Commit},
+		Metadata: map[string]any{"url": b.URL, "parts": b.Parts, "commit": b.Commit},
 	}, nil
 }
 
@@ -363,7 +371,8 @@ func (s *Source) Download(ctx context.Context, r *updater.Release, dst io.Writer
 	if found, err := s.fromCache(sum, total, dst, report); found {
 		return err
 	}
-	if f := s.fetchOf(sum, where, total); f != nil {
+	parts, _ := r.Metadata["parts"].(string)
+	if f := s.fetchOf(sum, where, parts, total); f != nil {
 		return s.await(ctx, f, sum, dst, report)
 	}
 	return s.stream(ctx, where, total, writerSink{dst}, func(written int64) { report(written, total) })
