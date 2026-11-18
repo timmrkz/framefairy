@@ -119,7 +119,9 @@ export default [
     steps: [
       ["wait for", "Search"],
       ["count follows drag", "to", -0.3],
-      ["type and search"],
+      ["type and search", "fits"],
+      ["wait for", "Search"],
+      ["type and search", "grows"],
       ["wait for", "Search"],
     ],
   },

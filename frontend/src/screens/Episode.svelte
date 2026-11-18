@@ -2626,21 +2626,21 @@
     const target = field === "target" ? (entry === "" ? 0 : Math.max(Math.round(number) || 1, 1)) : typed;
     const shortest = field === "min" && entry !== "" ? number : min;
     const longest = field === "max" && entry !== "" ? number : max;
-    const kept = api.setSearch(path, target, shortest, longest, field);
+    const kept = api.setSearch(path, target, shortest, longest, field).then((state) => {
+      session.take(state);
+      const w = state.window;
+      if (w) input.value = String(field === "target" ? w.count : field === "min" ? w.shortest : w.longest);
+    });
     numbersOnTheirWay = kept.catch(() => undefined);
-    kept
-      .then((state) => {
-        session.take(state);
-        const w = state.window;
-        if (w) input.value = String(field === "target" ? w.count : field === "min" ? w.shortest : w.longest);
-      })
-      .catch((err) => oops(errorText(err)));
+    kept.catch((err) => oops(errorText(err)));
   }
 
-  // The numbers last typed for a search, on their way to the Go side. A
-  // number typed and Search pressed at once: the field lets go of the
-  // keyboard as the button is pressed, and the search is asked for only
-  // once the number is kept, so it looks for that number, issue #877.
+  // The numbers last typed for a search, on their way to the Go side, and
+  // the state they were answered with taken in. A number typed and Search
+  // pressed at once: the field lets go of the keyboard as the button is
+  // pressed, and the search is asked for only once the number is kept and
+  // the window it may have grown is drawn, so it looks for that number in
+  // that window, issue #877.
   let numbersOnTheirWay: Promise<unknown> = Promise.resolve();
 
   function newClips() {
@@ -2660,10 +2660,9 @@
   // here can be from before the last one typed.
   async function findClips(replan: boolean) {
     const press = begin();
-    const req = { From: whole ? 0 : from, To: whole ? 0 : to, Count: 0, Min: 0, Max: 0, Replan: replan };
     await asked(async () => {
       await numbersOnTheirWay;
-      return api.search(path, req, press);
+      return api.search(path, { From: whole ? 0 : from, To: whole ? 0 : to, Count: 0, Min: 0, Max: 0, Replan: replan }, press);
     });
   }
 
