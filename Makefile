@@ -122,7 +122,10 @@ export CGO_CXXFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN) $(CWARNINGS)
 # keeps the debug information, which a shipped program no longer has, see
 # SHIP_LDFLAGS: without it install_name_tool had no room, and the programs
 # could not find their libraries.
-export CGO_LDFLAGS := -O2 -g -Wl,-headerpad_max_install_names$(if $(filter 1,$(WERROR)), -Wl,-fatal_warnings)
+# The comma in a linker flag would end make's $(if), so the flag is a
+# variable of its own.
+FATAL_LINK := -Wl,-fatal_warnings
+export CGO_LDFLAGS := -O2 -g -Wl,-headerpad_max_install_names $(if $(filter 1,$(WERROR)),$(FATAL_LINK))
 LDFLAGS := -extldflags=-mmacosx-version-min=$(MACOS_MIN)
 # The episode's decoder links ffmpeg's static libraries, and pkg-config
 # names some of them more than once, each library listing what it needs.
