@@ -226,8 +226,10 @@ func TestProjectSteps(t *testing.T) {
 	if d := tr.Duration(); d < 39.5 || d > 40.5 {
 		t.Errorf("transcript lasts %v", d)
 	}
-	if peaks := tr.Peaks(0, 40, 100); len(peaks) != 100 || peaks[50] < -30 {
-		t.Errorf("peaks %v", peaks)
+	// 20 s in, where the fixture speaks, is louder than -30 dB, 120 steps
+	// of half a decibel up from -90.
+	if loud := Loudness(tr); len(loud) < 8+2001 || loud[8+2000] < 120 {
+		t.Errorf("the loudness at 20 s reads %v, want louder than -30 dB", loud[min(8+2000, len(loud)-1)])
 	}
 	if words := tr.WordsBetween(10, 12); len(words) < 2 || words[0].End <= 10 {
 		t.Errorf("words %v", words)

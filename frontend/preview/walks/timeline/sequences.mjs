@@ -287,8 +287,11 @@ export default [
     // A swipe along the clip timeline told the waveform's canvas its size
     // on every step, which throws its pixels away and makes it new, twice
     // the clip timeline's pixels on a Mac, with nothing changed in size.
-    // Plan row 2.242.
-    name: "a swipe along the clip timeline draws the waveform again on the same canvas",
+    // Plan row 2.242. And a swipe of several views ran into empty track
+    // until the hand rested and the Go side answered for the view, Tim's
+    // report of 17 November, issue #909: the window now holds the whole
+    // loudness and asks for none of it while the hand moves.
+    name: "a swipe along the clip timeline draws the whole waveform at every step, on the same canvas",
     steps: [["swipe keeps the canvas", 12]],
   },
   {

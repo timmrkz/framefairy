@@ -43,7 +43,7 @@ type measuring struct {
 	slots  chan struct{}
 	closed bool
 	// What was read last, kept while its files stay as they were, because
-	// the timeline asks for the waveform on every swipe.
+	// a video opened again reads it from here rather than from the disk.
 	kept   engine.Levels
 	keptBy string
 }
@@ -63,7 +63,7 @@ func newMeasuring(machine *engine.Machine, notify func(string)) *measuring {
 }
 
 // start measures an episode unless it is measured already, being
-// measured or being removed. It is cheap to call as often as the waveform
+// measured or being removed. It is cheap to call as often as the loudness
 // is asked for.
 // Like every method here it does nothing on a nil measuring, which is what
 // a test that builds the service by hand has.
@@ -133,7 +133,8 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 }
 
 // look says what the clip timeline of an episode shows, from and to, which
-// its measuring goes to next. It is cheap to call on every swipe.
+// its measuring goes to next. The window says it when the view comes to
+// rest, see Look.
 func (m *measuring) look(path string, from, to float64) {
 	if m == nil {
 		return

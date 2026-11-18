@@ -324,8 +324,8 @@ func measuringBy(s *FrameFairy) *atomic.Int64 {
 }
 
 // A video removed with its files while a job on it takes its time to
-// stop, and its waveform asked for in the meantime, which the clip
-// timeline does on every swipe. The measuring of its loudness must not
+// stop, and its loudness asked for in the meantime, which the clip
+// timeline does when it opens and whenever the loudness grows. The measuring of its loudness must not
 // start again, because it would write the work folder back after the
 // removal deleted it.
 func TestTheWaveformAskedForDuringARemovalMeasuresNothing(t *testing.T) {
@@ -341,7 +341,7 @@ func TestTheWaveformAskedForDuringARemovalMeasuresNothing(t *testing.T) {
 		// The removal now waits for the job, on the bubble's clock, which
 		// stands still while this goroutine runs.
 		synctest.Wait()
-		if _, err := s.Waveform(source, 0, 10, 100); err != nil {
+		if _, err := s.loudness(source); err != nil {
 			t.Fatal(err)
 		}
 		synctest.Wait()
@@ -378,7 +378,7 @@ func TestAVideoThatStaysIsMeasuredAgain(t *testing.T) {
 		if err := s.RemoveEpisode(source, true); err == nil {
 			t.Fatal("the video was removed while a job was still running on it")
 		}
-		if _, err := s.Waveform(source, 0, 10, 100); err != nil {
+		if _, err := s.loudness(source); err != nil {
 			t.Fatal(err)
 		}
 		synctest.Wait()

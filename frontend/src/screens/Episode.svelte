@@ -622,14 +622,6 @@
     escapeSaying();
   }
 
-  // How far the loudness is measured, which is the waveform. It is measured
-  // on its own from the moment the episode is added, ahead of the
-  // transcript, and the video's state says how far it got as it goes.
-  const measured = $derived(status?.measuredAll ? duration : (status?.measured ?? 0));
-  const measuredParts = $derived<[number, number][]>(
-    status?.measuredAll ? [[0, duration]] : (status?.measuredParts ?? []),
-  );
-
   // What of the audio has been heard, which is not the same as what the
   // saved transcript holds. Saving rewrites the whole transcript, so it
   // happens seconds apart and jumps minutes of audio at a time, while every
@@ -3549,8 +3541,7 @@
         clip={current ?? making}
         {duration}
         heard={saved}
-        {measured}
-        {measuredParts}
+        loudnessStamp={status?.loudness ?? ""}
         {time}
         shown={shownMoment}
         locked={renderingCurrent || (!current && !!making)}
