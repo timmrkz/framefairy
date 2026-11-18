@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"runtime/debug"
 )
 
 // Pieced is how one build was put together from its parts.
@@ -36,7 +37,17 @@ func (s *Source) tell(p Pieced) {
 // bytes of the pieces it downloads, and says what it took from where.
 // Whatever goes wrong is an error, and the build is then downloaded whole,
 // see fetchOf.
-func (s *Source) assemble(ctx context.Context, where, sum string, size int64, dst sink, progress func(got, of int64)) (Pieced, error) {
+//
+// It reads bytes nobody has checked yet, the parts and the pieces, so a
+// panic in it is the error of this build and not the end of the app,
+// which would otherwise end at every launch on the same piece and never
+// install the update that fixes it.
+func (s *Source) assemble(ctx context.Context, where, sum string, size int64, dst sink, progress func(got, of int64)) (done Pieced, err error) {
+	defer func() {
+		if caught := recover(); caught != nil {
+			done, err = Pieced{}, fmt.Errorf("putting the build together panicked: %v\n%s", caught, debug.Stack())
+		}
+	}()
 	data, err := s.read(ctx, where)
 	if err != nil {
 		return Pieced{}, fmt.Errorf("the parts: %w", err)
@@ -59,7 +70,6 @@ func (s *Source) assemble(ctx context.Context, where, sum string, size int64, ds
 			of += part.Packed
 		}
 	}
-	done := Pieced{}
 	var got int64
 	progress(0, of)
 	for i, part := range p.Parts {
@@ -67,12 +77,17 @@ func (s *Source) assemble(ctx context.Context, where, sum string, size int64, ds
 			return Pieced{}, err
 		}
 		b := part.Bytes
-		switch {
-		case b != nil:
-		case have[i]:
+		if b == nil && have[i] {
+			// A file that changed in the app since it was looked at is
+			// downloaded as its piece, like any file the app does not have.
 			if b = s.own(part); b == nil {
-				return Pieced{}, fmt.Errorf("%s changed in the running app", part.Name)
+				of += part.Packed
+				progress(got, of)
 			}
+		}
+		switch {
+		case part.Bytes != nil:
+		case b != nil:
 			done.Kept++
 		default:
 			b, err = s.piece(ctx, where, part, func(n int64) { progress(got+n, of) })

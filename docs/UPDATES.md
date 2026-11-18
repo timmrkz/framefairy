@@ -20,9 +20,11 @@ piece named by that SHA-256, once, whichever build holds it. The app puts
 the new zip together from the files it already has with the same bytes
 and the pieces it downloads for the rest, and Wails' updater checks that
 zip against the signature as it checks any. A usual update is the app
-program alone, about 7 MB of the 67.5 the whole zip once weighed. Parts
-that do not work, or a piece that is gone, cost a download of the whole
-zip, never the update. See
+program alone, about 7 MB of the 67.5 the whole zip once weighed. A
+file that changes in the app while the update is put together is
+downloaded as its piece. Parts that do not work, a piece that is gone or
+a panic while the zip is put together cost a download of the whole
+stored zip, 133 MB, never the update. See
 [the decision record](decisions/2026-11-18-an-update-downloads-only-what-changed.md).
 
 That is the same on every platform and in every app that updates itself.

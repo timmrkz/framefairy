@@ -75,7 +75,13 @@ func (s *Source) fetchOf(sum, where, parts string, total int64) *fetching {
 	if k == nil {
 		return nil
 	}
+	// A build put together from its parts knows what it downloads only
+	// once it has looked at the app, and until then says nothing: the fill
+	// first said the size of the whole zip, and then jumped to a tenth.
 	f := &fetching{total: total, of: total, done: make(chan struct{})}
+	if parts != "" {
+		f.of = 0
+	}
 	if s.fetches == nil {
 		s.fetches = map[string]*fetching{}
 	}
@@ -154,7 +160,7 @@ func (s *Source) inFlight(sum string) bool {
 func (s *Source) await(ctx context.Context, f *fetching, sum string, dst io.Writer, report func(written, total int64)) error {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
-	last := int64(-1)
+	lastGot, lastOf := int64(-1), int64(-1)
 	for {
 		select {
 		case <-ctx.Done():
@@ -176,8 +182,8 @@ func (s *Source) await(ctx context.Context, f *fetching, sum string, dst io.Writ
 			}
 			return err
 		case <-tick.C:
-			if w, of := f.written(); w != last {
-				last = w
+			if w, of := f.written(); of > 0 && (w != lastGot || of != lastOf) {
+				lastGot, lastOf = w, of
 				report(w, of)
 			}
 		}

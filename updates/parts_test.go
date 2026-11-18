@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -206,7 +207,8 @@ func TestAnUpdateDownloadsOnlyTheFilesTheAppDoesNotHave(t *testing.T) {
 	list = listFor(t, key, r.server.URL, b)
 	src, told := partsSource(t, r, running(installed...))
 	var progressed, of int64
-	src.Progress = func(w, total int64) { progressed, of = w, total }
+	var sizes []int64
+	src.Progress = func(w, total int64) { progressed, of = w, total; sizes = append(sizes, total) }
 
 	if got := install(t, src, key); got != newApp.body {
 		t.Fatalf("the app installed says %q", got)
@@ -230,6 +232,102 @@ func TestAnUpdateDownloadsOnlyTheFilesTheAppDoesNotHave(t *testing.T) {
 	// The fill is of what was downloaded, and runs to its end.
 	if progressed != appPiece.Packed || of != appPiece.Packed {
 		t.Errorf("the fill ended at %d of %d, want %d of %d", progressed, of, appPiece.Packed, appPiece.Packed)
+	}
+	// It says that size from the start, never the size of the whole zip.
+	for _, size := range sizes {
+		if size != appPiece.Packed {
+			t.Errorf("the fill said it downloads %d bytes, want %d", size, appPiece.Packed)
+		}
+	}
+}
+
+// changing is the app with ffmpeg replaced between the look at what the
+// app has and the moment its bytes are written.
+type changing struct {
+	fstest.MapFS
+	mu    sync.Mutex
+	reads int
+}
+
+func (c *changing) ReadFile(name string) ([]byte, error) {
+	b, err := c.MapFS.ReadFile(name)
+	if name != ffmpeg.name || err != nil {
+		return b, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.reads++; c.reads > 1 {
+		return bytes.ToUpper(b), nil
+	}
+	return b, nil
+}
+
+// A file that changes in the app while the update is put together, an
+// app updated by hand underneath it, is downloaded as its piece, and the
+// update still does not download the whole zip.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
+func TestAFileThatChangesInTheAppIsDownloadedAsItsPiece(t *testing.T) {
+	t.Parallel()
+	key := testKey(t)
+	b := publish(t, dittoZip(t, newApp, ffmpeg, onnx))
+	var list []byte
+	r := serveParts(t, func() []byte { return list }, b)
+	list = listFor(t, key, r.server.URL, b)
+	src, told := partsSource(t, r, nil)
+	src.App = &changing{MapFS: running(installed...)}
+	var progressed, of int64
+	src.Progress = func(w, total int64) { progressed, of = w, total }
+
+	if got := install(t, src, key); got != newApp.body {
+		t.Fatalf("the app installed says %q", got)
+	}
+	ffmpegPiece := b.parts.Parts[partOf(t, b.parts, ffmpeg.name)]
+	if n := r.asks("/dev/" + PieceName(ffmpegPiece.SHA256)); n != 1 {
+		t.Errorf("ffmpeg's piece was asked for %d times, want 1", n)
+	}
+	if n := r.asks("/dev/app.zip"); n != 0 {
+		t.Errorf("the whole zip was downloaded %d times", n)
+	}
+	if len(*told) != 1 || (*told)[0].Kept != 1 || (*told)[0].Fetched != 2 || (*told)[0].Err != nil {
+		t.Errorf("told %+v, want the speech library kept and two files fetched", *told)
+	}
+	want := ffmpegPiece.Packed + b.parts.Parts[partOf(t, b.parts, newApp.name)].Packed
+	if progressed != want || of != want {
+		t.Errorf("the fill ended at %d of %d, want %d of %d", progressed, of, want, want)
+	}
+}
+
+// panicking is an app whose files cannot be looked at without a panic,
+// the way a piece that trips the decoder would.
+type panicking struct{ fstest.MapFS }
+
+func (panicking) Open(string) (fs.File, error)     { panic("a file that cannot be read") }
+func (panicking) Stat(string) (fs.FileInfo, error) { panic("a file that cannot be read") }
+func (panicking) ReadFile(string) ([]byte, error)  { panic("a file that cannot be read") }
+
+// A panic while the build is put together is that build's error: the app
+// downloads it whole and says why, and goes on running.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
+func TestAPanicPuttingTheBuildTogetherDownloadsItWhole(t *testing.T) {
+	t.Parallel()
+	key := testKey(t)
+	b := publish(t, dittoZip(t, newApp, ffmpeg, onnx))
+	var list []byte
+	r := serveParts(t, func() []byte { return list }, b)
+	list = listFor(t, key, r.server.URL, b)
+	src, told := partsSource(t, r, nil)
+	src.App = panicking{}
+
+	if got := install(t, src, key); got != newApp.body {
+		t.Fatalf("the app installed says %q", got)
+	}
+	if n := r.asks("/dev/app.zip"); n != 1 {
+		t.Errorf("the whole zip was downloaded %d times, want 1", n)
+	}
+	if len(*told) != 1 || (*told)[0].Err == nil || !strings.Contains((*told)[0].Err.Error(), "panicked") {
+		t.Errorf("told %+v, want the panic", *told)
 	}
 }
 
@@ -425,6 +523,7 @@ func TestParsePartsRefusesWhatCannotBeTheBuild(t *testing.T) {
 		"empty bytes":      {Size: 14, SHA256: sum, Parts: []Part{{Bytes: []byte{}}, file("Frame Fairy.app/Contents/x", 14)}},
 		"no checksum":      {Size: 14, SHA256: sum, Parts: []Part{{Bytes: []byte("head")}, {Name: "Frame Fairy.app/Contents/x", Size: 10, Packed: 3}}},
 		"no piece":         {Size: 14, SHA256: sum, Parts: []Part{{Bytes: []byte("head")}, {Name: "Frame Fairy.app/Contents/x", Size: 10, SHA256: strings.Repeat("b", 64)}}},
+		"a piece too big":  {Size: 14, SHA256: sum, Parts: []Part{{Bytes: []byte("head")}, {Name: "Frame Fairy.app/Contents/x", Size: 10, SHA256: strings.Repeat("b", 64), Packed: 1 << 30}}},
 		"another build":    {Size: 14, SHA256: strings.Repeat("c", 64), Parts: ok.Parts},
 		"another size":     {Size: 15, SHA256: sum, Parts: ok.Parts},
 	}

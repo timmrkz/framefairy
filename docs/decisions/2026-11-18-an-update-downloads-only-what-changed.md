@@ -140,9 +140,16 @@ missing, wrong or a piece cannot be had, the app downloads that zip too.
 - A usual update downloads the app program, about 7 MB, where it was
   67.5. A change to the decoder adds its own Go part, the libraries are
   its no more. A build made on the Mac, with nothing to take from, gets
-  every piece, about 30 MB.
-- The kept build in the user's caches is the stored zip, about 160 MB
-  where it was 67.
+  every piece, 52.4 MB. About 30 MB comes only once ffmpeg's libraries
+  are one shared copy, which is work of its own.
+- A file that changed in the app while an update was put together is
+  downloaded as its piece. Only parts that cannot be read or a piece
+  that is gone download the whole zip.
+- What still downloads whole is bigger: the stored zip is 133 MB where
+  the deflated one was 67.5. That is the first update of an app from
+  before this change, once, and the rare update whose parts fail.
+- The kept build in the user's caches is the stored zip, 133 MB where it
+  was 67.5.
 - Every publish uploads the stored zip and only the pieces not there yet.
 - It was wrong if updates still download most of the app: the parts file
   and the pieces of a published build then say which file was not found.

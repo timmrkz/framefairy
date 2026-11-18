@@ -115,7 +115,7 @@ func (part Part) check() error {
 	if !sha256Pattern.MatchString(part.SHA256) {
 		return errors.New("it has no checksum")
 	}
-	if part.Size <= 0 || part.Size > MaxBuild || part.Packed <= 0 || part.Packed > MaxBuild {
+	if part.Size <= 0 || part.Size > MaxBuild || part.Packed <= 0 || part.Packed > packedBound(part.Size) {
 		return errors.New("its sizes are not sizes")
 	}
 	if _, ok := inApp(part.Name); !ok {
@@ -235,6 +235,14 @@ func PackPiece(data []byte) []byte {
 		zstd.WithWindowSize(pieceWindow), zstd.WithEncoderConcurrency(1))
 	defer enc.Close()
 	return enc.EncodeAll(data, nil)
+}
+
+// packedBound is the most a file of size bytes takes as its piece: what
+// zstd gives a file it cannot make smaller, its bytes with a header for
+// each block of them, and room to spare. A piece the parts say is bigger
+// is no piece, and nothing that big is held in memory for it.
+func packedBound(size int64) int64 {
+	return size + size>>8 + 1<<10
 }
 
 // pieceWindow is how far back a piece may refer while it is unpacked, the
