@@ -59,7 +59,7 @@ func pack(zipPath, out string, log io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(log, "%-48s %12s %12s\n", "file", "bytes", "packed")
+	fmt.Fprintf(log, "%-64s %12s %12s\n", "file", "bytes", "packed")
 	packed := map[string]int64{}
 	at := int64(0)
 	var pieces int64
@@ -81,7 +81,7 @@ func pack(zipPath, out string, log io.Writer) error {
 			n = int64(len(piece))
 			packed[part.SHA256] = n
 			pieces += n
-			fmt.Fprintf(log, "%-48s %12d %12d\n", part.Name, part.Size, n)
+			fmt.Fprintf(log, "%-64s %12d %12d\n", part.Name, part.Size, n)
 		}
 		p.Parts[i].Packed = n
 		at += part.Size
