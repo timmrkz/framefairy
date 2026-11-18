@@ -284,9 +284,9 @@ func TestTheAppNeverOpensOnAVideoDeletedOutsideIt(t *testing.T) {
 	if err := writeChosen(files, gone, chosen{Opened: 2}); err != nil {
 		t.Fatal(err)
 	}
-	// The app starts: it looks at the disk before the window asks, the
-	// look watchTheDisk takes, here without the watch, which would hear
-	// the real disk under a library in memory.
+	// The app starts: it looks at the disk before the window is
+	// answered, the look lookFirst takes, here without the watch, which
+	// would hear the real disk under a library in memory.
 	svc.reconcile(nil)
 	t.Cleanup(svc.clearing.Wait)
 	if opened := svc.Opened(10); slices.Contains(opened, gone) || !slices.Contains(opened, stays) {
@@ -353,4 +353,64 @@ func TestAMarkThatCannotBeLookedAtKeepsTheVideoAndItsWork(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The first look at the library runs beside the making of the app's
+// window, which waited behind it for 1.6 s on the first start of every
+// new build, issue #888. A call from the window that names a video waits
+// for the look, so a video deleted outside the app while it was closed is
+// gone by the time the call answers, and is never read or written first.
+// The job list and the library wait for it too.
+func TestTheWindowsCallsWaitForTheFirstLook(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		svc, eps := memoryLibrary(t, "PXL_1.mp4", "start.mp4")
+		withJobs(svc)
+		defer svc.jobs.shutDown()
+		svc.store.looked = make(chan struct{})
+		gone, stays := eps[0], eps[1]
+		for _, p := range []string{gone, engine.WorkDir(gone)} {
+			if err := svc.store.files.RemoveAll(p); err != nil {
+				t.Fatal(err)
+			}
+		}
+		known := make(chan [2]bool, 1)
+		go func() { known <- [2]bool{svc.store.Known(gone), svc.store.Known(stays)} }()
+		listed := make(chan int, 1)
+		go func() { listed <- len(svc.Library()) }()
+		jobs := make(chan []Job, 1)
+		go func() { jobs <- svc.Jobs() }()
+		synctest.Wait()
+		if len(known) > 0 || len(listed) > 0 || len(jobs) > 0 {
+			t.Fatal("the window was answered before the first look at the library")
+		}
+
+		svc.lookFirst()
+		if got := <-known; got[0] || !got[1] {
+			t.Errorf("after the first look, the video deleted outside is known %v and the one that stays %v", got[0], got[1])
+		}
+		if n := <-listed; n != 1 {
+			t.Errorf("the library lists %d videos after the first look, want the 1 that stays", n)
+		}
+		<-jobs
+	})
+}
+
+// A first look that goes wrong holds no call for good: the window is
+// answered with what the library holds.
+func TestAFirstLookThatGoesWrongHoldsNoCall(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		svc, eps := memoryLibrary(t, "start.mp4")
+		withJobs(svc)
+		defer svc.jobs.shutDown()
+		svc.store.looked = make(chan struct{})
+		svc.setupNews = func(SetupState) { panic("a setup nobody could send") }
+		known := make(chan bool, 1)
+		go func() { known <- svc.store.Known(eps[0]) }()
+		synctest.Wait()
+
+		svc.lookFirst()
+		if !<-known {
+			t.Error("the video in the library is not known after a first look that went wrong")
+		}
+	})
 }

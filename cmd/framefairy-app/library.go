@@ -25,6 +25,9 @@ import (
 // step with the disk first, see reconcile, so a video whose folder was
 // deleted outside the app is not listed.
 func (s *FrameFairy) Library() []engine.EpisodeStatus {
+	// After the first look, so the library opens with what it let go
+	// gone and what it restored there, see lookFirst.
+	s.store.afterFirstLook()
 	s.reconcile(nil)
 	opts := s.store.Settings().options()
 	out := []engine.EpisodeStatus{}
@@ -89,6 +92,9 @@ func (s *FrameFairy) VideoNames() string { return engine.VideoNames() }
 // and the decoder's first frame took 0.3 to 1.4 s on Tim's Mac, with
 // nothing on screen while they ran, issue #832.
 func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
+	// A video added while the first look runs is weighed against the
+	// library it leaves, see lookFirst.
+	s.store.afterFirstLook()
 	// Which of them have no work folder yet, so a video taken out again
 	// takes the folder this add made with it, and only that one.
 	fresh := map[string]bool{}

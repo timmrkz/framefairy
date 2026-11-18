@@ -4,8 +4,10 @@ import (
 	"context"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -40,8 +42,28 @@ import (
 // look at the whole library, sends the setup and the settings what they
 // show of the models, see tellSetup.
 func (s *FrameFairy) reconcile(changed []string) {
+	s.reconcileTimed(changed, nil)
+}
+
+// lookSteps is how long each step of a look at the whole library took, the
+// models, the videos and the watch, for the first look's line in the log.
+type lookSteps struct {
+	models, videos, watch time.Duration
+}
+
+// reconcileTimed is reconcile, with how long each step took kept in
+// steps, when it is given.
+func (s *FrameFairy) reconcileTimed(changed []string, steps *lookSteps) {
 	s.reconciling.Lock()
 	defer s.reconciling.Unlock()
+	if steps == nil {
+		steps = &lookSteps{}
+	}
+	began := time.Now()
+	took := func(into *time.Duration) {
+		now := time.Now()
+		*into, began = now.Sub(began), now
+	}
 	follow := changed == nil
 	// A model deleted or added outside the app shows in the setup and
 	// the settings at once, and a look at every video looks at the
@@ -54,6 +76,7 @@ func (s *FrameFairy) reconcile(changed []string) {
 		}
 		s.tellSetup()
 	}
+	took(&steps.models)
 	for _, ep := range s.store.Episodes() {
 		if changed != nil && !touches(ep, changed) && !touchesShort(s.shortsOf(ep), changed) {
 			continue
@@ -82,21 +105,53 @@ func (s *FrameFairy) reconcile(changed []string) {
 			follow = true
 		}
 	}
+	took(&steps.videos)
 	if follow {
 		s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
 	}
+	took(&steps.watch)
 }
 
-// watchTheDisk starts the watch on the folders of the videos and takes
-// the first look at every one of them, as the app starts and before the
-// window can ask about any. A video deleted outside the app while it was
-// closed is then let go before anything opens it or writes into its
-// folder: Tim deleted two videos with their folders, an earlier version
-// wrote the chosen clip back into one, and the app opened on it after an
-// update and said it was not in the library.
+// watchTheDisk starts the watch on the folders of the videos. What it
+// watches it learns from the first look, see lookFirst.
 func (s *FrameFairy) watchTheDisk() {
 	s.watch = newWatching(s.reconcile, engine.ModelsDir())
-	s.reconcile(nil)
+}
+
+// lookFirst takes the first look at every video in the library, as the
+// app starts, and then says where the searches and renders that were cut
+// off or failed the last time stopped. It runs beside the making of the
+// app's window, which waited behind it: the first start of a new build
+// showed no window for 1.6 s in the median on Tim's Mac, issue #888. The
+// window's calls that name a video wait for it instead, see store.Known,
+// and so do the job list and the library. A video deleted outside the app
+// while it was closed is then let go before anything opens it or writes
+// into its folder: Tim deleted two videos with their folders, an earlier
+// version wrote the chosen clip back into one, and the app opened on it
+// after an update and said it was not in the library.
+//
+// It closes the store's looked when it is over, whatever happens, so a
+// look that goes wrong holds no call for good. Each step's time is in the
+// log, to see on the Mac where a slow first start goes.
+func (s *FrameFairy) lookFirst() {
+	began := time.Now()
+	defer func() {
+		if caught := recover(); caught != nil {
+			theLog.line(zerolog.ErrorLevel, "files").Str("stack", string(debug.Stack())).
+				Msgf("the first look at the library stopped unexpectedly: %v", caught)
+		}
+		if s.store.looked != nil {
+			close(s.store.looked)
+		}
+	}()
+	var steps lookSteps
+	s.reconcileTimed(nil, &steps)
+	restoring := time.Now()
+	s.restoreJobs(s.store.Episodes())
+	theLog.line(zerolog.InfoLevel, "files").Int("videos", len(s.store.Episodes())).
+		Int64("models_ms", steps.models.Milliseconds()).Int64("videos_ms", steps.videos.Milliseconds()).
+		Int64("watch_ms", steps.watch.Milliseconds()).Int64("jobs_ms", time.Since(restoring).Milliseconds()).
+		Int64("ms", time.Since(began).Milliseconds()).Msg("the first look at the library is over")
 }
 
 // tellSetup sends the window what the setup and the settings show of the

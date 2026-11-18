@@ -158,6 +158,12 @@ type store struct {
 	machine  *engine.Machine
 	settings Settings
 	episodes []string
+	// looked is closed once the first look at the library, as the app
+	// starts, is over, see FrameFairy.lookFirst. Every call that names a
+	// video waits for it in Known, so none reads or writes a video deleted
+	// outside the app while it was closed before the look lets it go. Nil
+	// is a library looked at already, which is what a test has.
+	looked chan struct{}
 	// changed is told when the settings change. It is told under the
 	// store's lock, so it only takes note.
 	changed func()
@@ -453,6 +459,14 @@ func (s *store) clearLetGo(path string) (bool, error) {
 	return true, s.machine.DeleteWork(path)
 }
 
+// afterFirstLook waits until the first look at the library is over, see
+// looked.
+func (s *store) afterFirstLook() {
+	if s.looked != nil {
+		<-s.looked
+	}
+}
+
 // Known reports whether a file belongs to an episode in the library: the
 // episode itself, something in its work folder, or the short of one of its
 // clips wherever it was rendered into. Only those files are served to the
@@ -460,6 +474,7 @@ func (s *store) clearLetGo(path string) (bool, error) {
 // own, by where the path really leads, see engine.Episode.Owns and
 // engine.Episode.IsShort.
 func (s *store) Known(path string) bool {
+	s.afterFirstLook()
 	episodes := s.Episodes()
 	for _, ep := range episodes {
 		if s.machine.Episode(ep).Owns(path) {
