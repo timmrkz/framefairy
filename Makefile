@@ -116,10 +116,13 @@ export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
 export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN) $(CWARNINGS)
 export CGO_CXXFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN) $(CWARNINGS)
 # Go hands CGO_LDFLAGS to the linker of every program with C in it, which
-# on a Mac is every program here.
-ifeq ($(WERROR),1)
-export CGO_LDFLAGS := -O2 -g -Wl,-fatal_warnings
-endif
+# on a Mac is every program here. -headerpad_max_install_names leaves room
+# in the program's header for the paths carry-libs.sh adds, where it looks
+# for the speech libraries. Go leaves that room by itself only while it
+# keeps the debug information, which a shipped program no longer has, see
+# SHIP_LDFLAGS: without it install_name_tool had no room, and the programs
+# could not find their libraries.
+export CGO_LDFLAGS := -O2 -g -Wl,-headerpad_max_install_names$(if $(filter 1,$(WERROR)), -Wl,-fatal_warnings)
 LDFLAGS := -extldflags=-mmacosx-version-min=$(MACOS_MIN)
 # The episode's decoder links ffmpeg's static libraries, and pkg-config
 # names some of them more than once, each library listing what it needs.
