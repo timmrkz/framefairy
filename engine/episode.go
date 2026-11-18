@@ -146,6 +146,10 @@ type EpisodeStatus struct {
 	// where the parts around the playhead are heard the app offers
 	// neither there, see MarkingOf.
 	Said *[2]float64 `json:"said,omitempty"`
+	// Speechless says the whole video is transcribed and nobody speaks in
+	// it: no clip can be found in it, which the clip list says for as long
+	// as it is true, #831.
+	Speechless bool `json:"speechless,omitempty"`
 	// Measured is how many seconds of the loudness are measured, which is
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
 	// all of it. It runs ahead of the transcript, where the clip timeline
@@ -211,6 +215,7 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 			span := *said
 			st.Said = &span
 		}
+		st.Speechless = t.done && t.said == nil
 		if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
 			st.Covered = st.Heard[0][1]
 		}

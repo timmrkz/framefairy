@@ -188,6 +188,9 @@ export interface EpisodeStatus {
   // From the start of the first word heard to the end of the last, absent
   // while no word is.
   said?: [number, number];
+  // The whole video is transcribed and nobody speaks in it, see
+  // engine.EpisodeStatus.
+  speechless?: boolean;
   // How many seconds of the loudness are measured, which is the waveform,
   // which parts, from and to, and whether all of it. It runs ahead of the
   // transcript, from the moment an episode is added, where the clip

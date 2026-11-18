@@ -1594,7 +1594,11 @@ bubble scrolled by those eight pixels.
       there is nothing to carry on. A window nobody speaks in, the
       whole of a video with no speech among them, is what the video is,
       not a failure: its search is done, and its row says **No speech
-      found** the same way, with no toast and no Report, issue #831.
+      found** the same way, with no toast and no Report, issue #831. A
+      video with no sound at all is heard as silence. Once the whole video
+      is transcribed with no word, `EpisodeStatus.Speechless`, the row
+      says **No speech in this video** instead and stays for as long as
+      that is true, since an empty list with no reason looked broken.
     - **A search that stopped before it was done says so** in the row its
       next clip would have appeared in, in the colour of a warning, or in
       the red of an error when it failed, and **Search** becomes

@@ -255,6 +255,11 @@ func TestASearchOfAWindowWithNoSpeechIsDoneWithNothingFound(t *testing.T) {
 	if last := p.LastError(); last != "" {
 		t.Errorf("a search that ended done keeps the error %q", last)
 	}
+	// Only part of the video is heard, so it is not known that nobody
+	// speaks in the rest.
+	if p.engine.Machine.Episode(p.Source).Status(p.Base.ASRModel, nil).Speechless {
+		t.Error("a video heard in part is said to have nobody speak in it")
+	}
 	if got := SearchEnded(ended, true, 0, HeardParts(disk, p.Source, p.Base.ASRModel), 40); got != EndedSilent {
 		t.Errorf("the search is said to have ended %q, not %q", got, EndedSilent)
 	}
@@ -286,6 +291,11 @@ func TestASearchOfAVideoWithNoSoundIsDoneWithNothingFound(t *testing.T) {
 	}
 	if last := p.LastError(); last != "" {
 		t.Errorf("a search that ended done keeps the error %q", last)
+	}
+	// The search heard the whole video, so the video says nobody speaks
+	// in it, and the clip list keeps saying so.
+	if st := p.engine.Machine.Episode(source).Status(p.Base.ASRModel, nil); !st.Transcribed || !st.Speechless {
+		t.Errorf("a video with no sound, heard to its end, is transcribed %v and speechless %v", st.Transcribed, st.Speechless)
 	}
 }
 

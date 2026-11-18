@@ -2024,7 +2024,8 @@ export const steps = {
   },
   // ["no speech"]      on a video with no speech, once its search has
   //                    ended, the search is done, not failed, its row says
-  //                    No speech found, and no toast says it failed
+  //                    No speech found, or No speech in this video once
+  //                    all of it is heard, and no toast says it failed
   async "no speech"(walk) {
     const { page } = walk;
     // Issue #831: a video nobody speaks in failed its search, with a
@@ -2043,9 +2044,13 @@ export const steps = {
       return;
     }
     await caughtUp(page, url, [job]);
+    // Once the whole video is heard with no word, the row says so for as
+    // long as that is true, and otherwise it says the window had none.
+    const speechless = !!(await ask(page, "Library")).find((e) => e.source === path)?.speechless;
+    const says = speechless ? "No speech in this video" : "No speech found";
     const list = await clipList(page);
     const toast = await toastSays(page);
-    if (!list?.rows.some((r) => r.what === "No speech found")) walk.wrong = `no row says No speech found: ${JSON.stringify(list?.rows)}`;
+    if (!list?.rows.some((r) => r.what === says)) walk.wrong = `no row says ${says}: ${JSON.stringify(list?.rows)}`;
     else if (/speech was found/i.test(toast)) walk.wrong = `a toast says the search failed: "${toast}"`;
   },
   // ["remove stopped", how]

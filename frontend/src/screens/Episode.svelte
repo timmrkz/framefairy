@@ -1022,6 +1022,9 @@
     // clips were written had nothing left to write, and its row said
     // Nothing new found, Tim's report of 25 October, 21.40.
     if (last?.state !== "done" || (last.ended !== "nothing" && last.ended !== "silent" && last.ended !== "short")) return null;
+    // A video nobody speaks in at all says so in a row that stays, see
+    // speechless, rather than in one that runs down.
+    if (last.ended === "silent" && status?.speechless) return null;
     const job = last.id;
     if (told[job] === 0) return null;
     const fades = {
@@ -1071,7 +1074,21 @@
   });
   // The news first: with every clip removed, a search that found nothing
   // says so, and the row that stands for an empty list comes after it.
-  const note = $derived(foundNothing ?? emptied);
+  // Nobody speaks anywhere in the video, as the Go side says once all of
+  // it is transcribed. The row says so for as long as that is true, since
+  // an empty list with no reason looked broken, #831. A window with no
+  // speech in a video with speech elsewhere says so once, in foundNothing.
+  const speechless = $derived.by(() => {
+    // A card of a clip made by hand still on its way, or one that failed,
+    // is no clip, so the row stands under it.
+    if (busy || stopped || !status?.speechless || shown.length > 0 || closing.length > 0) return null;
+    return {
+      what: "No speech in this video",
+      left: "Nobody speaks in it",
+      full: "The whole video is transcribed and nobody speaks in it, so there are no clips to find",
+    };
+  });
+  const note = $derived(foundNothing ?? speechless ?? emptied);
   const coming = $derived(
     shown.length +
       onTheWay.length +
@@ -1084,7 +1101,7 @@
           ? count
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
-            stopped || foundNothing ? 1 : 0),
+            stopped || foundNothing || speechless ? 1 : 0),
   );
   // Whether the window has been searched before, all of it or a part, as
   // the Go side says in the video's state. Search then looks there again,
