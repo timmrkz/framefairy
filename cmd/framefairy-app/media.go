@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync"
 
 	"framefairy/engine"
@@ -119,44 +120,65 @@ func (s *FrameFairy) frames(ctx context.Context, path string) engine.SourceInfo 
 	return info
 }
 
-// Waveform returns the loudest level in each of buckets pieces of a part
-// of the episode, from its loudness measured on its own or from its
-// transcript, whichever reaches further. An episode not measured yet has no
-// waveform yet, which is an empty answer and not a failure.
-//
-// Peaks never answers with more buckets than it measured, so the interface
-// is told how fine the measurement was and can draw that finely and no
-// finer.
-func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]float32, error) {
-	if !s.store.Known(path) {
-		return nil, errNotInLibrary
-	}
+// loudness is the loudness of an episode as far as it is measured, for
+// the clip timeline to keep and draw every view from, see engine.Loudness
+// and /frames/levels. It is the loudness measured on its own laid over
+// the transcript's, which are the same frames from the same samples, so
+// the waveform has whatever either has measured: the measuring runs ahead
+// of the transcription, and a transcript made before it existed is there
+// before it has run. An episode not measured yet has no readings, which
+// is not a failure.
+func (s *FrameFairy) loudness(path string) ([]byte, error) {
 	// An episode shown is an episode measured: one added before the
 	// loudness had a job of its own is measured the first time it is
-	// opened. What the clip timeline asks for is what it shows, and the
-	// measuring goes there first.
-	s.levels.look(path, from, to)
+	// opened.
 	s.levels.start(path)
 	t, err := s.transcript(path)
 	if err != nil && !errors.Is(err, engine.ErrNoTranscript) {
 		return nil, err
 	}
-	// The loudness measured on its own and the transcription's are the
-	// same frames from the same samples, so the waveform has whatever
-	// either has measured. The measuring runs ahead of the transcription,
-	// and a transcript made before it existed is there before it has run.
 	var levels engine.Levels
 	if s.levels != nil {
 		levels = s.levels.read(path)
 	} else {
 		levels = engine.ReadLevels(s.store.files, path)
 	}
-	t = levels.Over(t)
-	if t == nil {
-		return []float32{}, nil
+	return engine.Loudness(levels.Over(t)), nil
+}
+
+// serveLoudness answers /frames/levels?path=<episode> with the bytes of
+// its loudness, plain, beside the frames and the sound it is drawn with.
+// A call would carry them as base64 in JSON, a third more, which the
+// window then turns back into bytes on its main thread. The window asks
+// when the episode opens and whenever its state's Loudness changes, never
+// while the view moves.
+func (s *FrameFairy) serveLoudness(w http.ResponseWriter, r *http.Request) {
+	// Known rather than episodeFile: the loudness is read from the work
+	// folder, through the store's files, never from the video itself.
+	path := r.URL.Query().Get("path")
+	if !s.store.Known(path) {
+		http.NotFound(w, r)
+		return
 	}
-	if to <= from {
-		to = t.Duration()
+	body, err := s.loudness(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	return t.Peaks(from, to, min(max(buckets, 1), 4000)), nil
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(body)
+}
+
+// Look says what the clip timeline of an episode shows, from and to in
+// seconds, so its loudness is measured there first. The window says it
+// when the view comes to rest and waits for nothing: what it draws, it
+// already has.
+func (s *FrameFairy) Look(path string, from, to float64) error {
+	if !s.store.Known(path) {
+		return errNotInLibrary
+	}
+	s.levels.look(path, from, to)
+	s.levels.start(path)
+	return nil
 }

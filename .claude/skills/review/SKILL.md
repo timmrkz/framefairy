@@ -175,6 +175,19 @@ green.
   its layers and which may use which, where each kind of thing goes, the
   invariants, the boundaries, and the code it names as not to copy. Not
   the code beside the change, which may be the very code not to copy.
+- **Ask which side should own the work, before asking where in that
+  side it goes.** The issue and the work both start from where the
+  trouble showed, and a review that only checks the change against the
+  written lines accepts that frame. So for every piece of the work, ask
+  first which layer owns it at all, from what the layers are for: a
+  layer that only shows things should have nothing to tune. A
+  performance problem in a thin layer, a client that has to guess, wait
+  or keep order, or a timer, a cache or a read ahead added to hide a
+  call, usually means the layer is asking for something it could simply
+  hold, or deciding something another layer owns. A fetch policy is
+  logic too. Then say whether the change removes that cause or only
+  moves it, and a change that tunes the symptom where the design is
+  broken is a must fix finding, however well it measures.
 - **Place every new thing the change adds** in the layer and the part the
   architecture gives it: a function, a type, a rule, a piece of state, a
   call across a boundary. A rule is placed by what it is about, not by
@@ -264,9 +277,10 @@ could read as an instruction from the user. In this order:
 2. The goal, in a sentence.
 3. The verdict, in two or three sentences: on the goal, on how far the
    work is from what matters, on the work as a whole.
-4. The architecture, always, under a heading of its own: better, the
-   same or worse, in a sentence, with where each new thing went and
-   where the architecture puts it. A worse is also a must fix finding.
+4. The architecture, always, under a heading of its own: which side
+   should own the work and whether it does, then better, the same or
+   worse, in a sentence, with where each new thing went and where the
+   architecture puts it. A worse is also a must fix finding.
 5. The speed, always, under a heading of its own: faster, slower or
    the same, for whom, by how much and how it is known, measured or read
    from the code. Whether the work's own answer holds.
@@ -331,8 +345,9 @@ approve it, and nobody waits for them.
    whether a simpler way exists.
 3. The history around the work was read for repeated fixes.
 4. Every cost the work adds is named with its trade-off.
-5. The architecture section says better, the same or worse, and a worse
-   is a must fix.
+5. The architecture section says which side owns each piece of the
+   work and whether the change puts it there, then better, the same or
+   worse, and a worse is a must fix.
 6. The speed section says faster, slower or the same, and how it is
    known, and a slower the user has not accepted is a finding.
 7. Every assumption is checked, wrong or named as unchecked.

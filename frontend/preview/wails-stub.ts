@@ -567,6 +567,77 @@ function levelsAdvance() {
     budget -= take;
   }
 }
+// The loudness of the whole stub episode, a byte a reading the way
+// engine.Loudness keeps it, made once. Speech, near enough: syllables
+// about four a second inside a slower rise and fall, and a grain on top
+// because loudness is not smooth from one ten milliseconds to the next.
+// The grain is the part that matters. A signal that barely moves between
+// neighbouring readings cannot show a staircase however coarsely it is
+// drawn, so a stub without it says every drawing is fine.
+let loudnessMade: Uint8Array | null = null;
+function stubLoudness(): Uint8Array {
+  if (loudnessMade) return loudnessMade;
+  const out = new Uint8Array(Math.ceil(fullLength / 0.01));
+  for (let i = 0; i < out.length; i++) {
+    const t = i * 0.01;
+    const said = Math.abs(Math.sin(t * 6.3)) * Math.abs(Math.cos(t * 0.7));
+    const grain = Math.abs(Math.sin(t * 997));
+    out[i] = Math.round((30 + 45 * said * (0.55 + 0.45 * grain)) * 2);
+  }
+  return (loudnessMade = out);
+}
+// The stamp Go sends with the status, EpisodeStatus.loudness: what is
+// measured, and what is heard while not all of it is.
+function loudnessStamp(): string {
+  const parts = measuredParts();
+  const all = parts.reduce((sum, [a, b]) => sum + b - a, 0) >= fullLength - 0.01;
+  return JSON.stringify(all ? parts : [parts, location.search.includes("transcribing") ? 1200 : fullLength]);
+}
+// The whole loudness as far as it is measured, from the loudness measured
+// on its own or from the transcript where only that has heard, in the
+// bytes engine.Loudness sends on /frames/levels, which the harness's own
+// Go side cannot measure: it is answered here, see the fetch below.
+function loudnessBytes(): Uint8Array {
+  const parts = measuredParts();
+  const heardTo = location.search.includes("transcribing") ? 1200 : fullLength;
+  const known = (t: number) => t <= heardTo || parts.some(([a, b]) => t >= a && t < b);
+  const all = stubLoudness();
+  let count = 0;
+  for (let i = all.length - 1; i >= 0; i--) {
+    if (known(i * 0.01)) {
+      count = i + 1;
+      break;
+    }
+  }
+  const levels = [all.slice(0, count)];
+  for (let i = 0; i < count; i++) if (!known(i * 0.01)) levels[0][i] = 0;
+  while (levels[levels.length - 1].length > 1) {
+    const below = levels[levels.length - 1];
+    const next = new Uint8Array(Math.ceil(below.length / 2));
+    for (let i = 0; i < next.length; i++) next[i] = Math.max(below[2 * i], below[2 * i + 1] ?? 0);
+    levels.push(next);
+  }
+  const bytes = new Uint8Array(8 + (count ? levels.reduce((sum, l) => sum + l.length, 0) : 0));
+  const head = new DataView(bytes.buffer);
+  head.setUint32(0, count, true);
+  head.setUint16(4, 10000, true);
+  head.setInt8(6, -90);
+  head.setUint8(7, 2);
+  let at = 8;
+  for (const level of count ? levels : []) {
+    bytes.set(level, at);
+    at += level.length;
+  }
+  return bytes;
+}
+// /frames/levels is the one route under /frames/ the stub answers, since
+// the loudness it measures lives here. Every other goes to the Go side.
+const fetchOfThePage = window.fetch.bind(window);
+window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+  if (url.pathname !== "/frames/levels") return fetchOfThePage(input, init);
+  return late("Loudness", Promise.resolve(new Response(loudnessBytes())));
+};
 function measuredParts(): [number, number][] {
   if (location.search.includes("unmeasured")) return [];
   if (!location.search.includes("measuring")) return [[0, fullLength]];
@@ -1374,7 +1445,7 @@ const Answers = {
       case "State":
         return videoState(String(args[0]));
       case "Episode":
-        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
+        return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, loudness: loudnessStamp(), transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
       // Search. A probe reads what was asked for on window.__searches.
       case "Search": {
         const req = args[1] as { From: number; To: number; Count?: number };
@@ -1919,54 +1990,12 @@ const Answers = {
         own[key] = part < 0 ? "" : reads.filter((_, i) => i !== part).join(" ");
         return Promise.resolve(clipOf(String(args[2])));
       }
-      case "Waveform": {
-        const from = Number(args[1]) || 0;
-        const to = Number(args[2]) || 14423;
-        // Never more buckets than there are measurements, the way the Go
-        // side answers. Without this the stub hands back five buckets
-        // carrying the same ten milliseconds and the interface has no way to
-        // know it.
-        const buckets = Math.min(Number(args[3]) || 900, Math.max(Math.ceil((to - from) / 0.01), 1));
-        // The peaks come from the loudness measured on its own, or from the
-        // transcript where only that has heard, the way the Go side
-        // answers. What the waveform is asked for is where the measuring
-        // goes first.
+      case "Look": {
+        // Where the clip timeline looks is where the measuring goes first,
+        // the way the Go side measures, see measuring.look.
         levelsAdvance();
-        levelFocus = [from, to];
-        const parts = measuredParts();
-        const heardTo = location.search.includes("transcribing") ? 1200 : 14423;
-        const known = (t: number) => t <= heardTo || parts.some(([a, b]) => t >= a && t < b);
-        // Loudness is measured every ten milliseconds and no finer, and
-        // a bucket is the loudest measurement that falls in it. That is
-        // timed.FrameSeconds and Transcript.Peaks, and the stub has to do
-        // the same or it cannot be zoomed in past the measurement, which
-        // is the one place the waveform looked like a display with too few
-        // pixels. It used to answer with exactly as many smooth values as
-        // it was asked for, whatever the zoom, so the fault could not
-        // happen here at all.
-        const frame = 0.01;
-        // Speech, near enough: syllables about four a second inside a
-        // slower rise and fall, and a grain on top because loudness is not
-        // smooth from one ten milliseconds to the next. The grain is the
-        // part that matters here. A signal that barely moves between
-        // neighbouring frames cannot show a staircase however coarsely it
-        // is drawn, so a stub without it says every drawing is fine.
-        const loud = (t: number) => {
-          if (!known(t)) return -90;
-          const said = Math.abs(Math.sin(t * 6.3)) * Math.abs(Math.cos(t * 0.7));
-          const grain = Math.abs(Math.sin(t * 997));
-          return -60 + 45 * said * (0.55 + 0.45 * grain);
-        };
-        const step = (to - from) / buckets;
-        return Promise.resolve(
-          Array.from({ length: buckets }, (_, i) => {
-            const first = Math.floor((from + i * step) / frame);
-            const last = Math.max(first + 1, Math.ceil((from + (i + 1) * step) / frame - 1e-9));
-            let peak = -90;
-            for (let k = first; k < last; k++) peak = Math.max(peak, loud(k * frame));
-            return peak;
-          }),
-        );
+        levelFocus = [Number(args[1]) || 0, Number(args[2]) || 0];
+        return Promise.resolve(null);
       }
       // What a gesture makes of a clip, and saving it. The engine works this
       // out in engine/shape.go. This is a small stand-in with the same
