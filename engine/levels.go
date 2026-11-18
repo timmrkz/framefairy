@@ -424,6 +424,17 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 			progress(st.measured())
 		}
 	}
+	if duration, ok := e.soundless(ctx, source); ok {
+		// No sound to measure, so it is silence all through: the clip
+		// timeline draws the video as silent rather than as not measured,
+		// and nothing asks ffmpeg for a sound that is not there, #831.
+		st.end = int(math.Round(duration / timed.FrameSeconds))
+		for n := range st.end {
+			if !st.has(n) {
+				st.put(n, noSoundDB)
+			}
+		}
+	}
 	for {
 		start, ok := st.next(focus())
 		if !ok {

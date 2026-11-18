@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -123,6 +124,28 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	}
 	if got := ReadLevels(disk, source); len(got.Frames) != 0 {
 		t.Error("the levels of the file before were read for the file now")
+	}
+}
+
+// A video with no sound at all is measured as silence to its end, and
+// done, rather than failing on a sound that is not there.
+//
+// On the real disk: ffprobe reads the video.
+func TestMeasureLevelsOfAVideoWithNoSound(t *testing.T) {
+	t.Parallel()
+	ffmpegtest.Need(t)
+	source := fixtures.Copy(t, "picture.mp4", filepath.Join(t.TempDir(), "picture.mp4"))
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	e.FFmpeg = "ffmpeg"
+	if err := e.MeasureLevels(context.Background(), source, nil, nil); err != nil {
+		t.Fatalf("a video with no sound could not be measured: %v", err)
+	}
+	l := ReadLevels(disk, source)
+	if !l.Done || math.Abs(l.To()-10) > 0.05 {
+		t.Fatalf("done %v, %.2f s of 10", l.Done, l.To())
+	}
+	if loudest := slices.Max(l.Frames); loudest > -90 {
+		t.Errorf("a video with no sound is %.1f dB at its loudest", loudest)
 	}
 }
 
