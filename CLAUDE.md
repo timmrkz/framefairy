@@ -479,9 +479,10 @@ messages, pull request text, code comments and chat replies.
   measurement is only ever read, never turned back into a size: a canvas
   being told how many pixels it has is fine, because nothing is laid out
   from the answer. A list too long to build whole is the one exception:
-  `frontend/src/lib/stack.svelte.ts` builds only the cards in view and
-  turns the heights it read into the room of the rest and the scroll
-  that keeps a card where it stands. A new long list uses it, and
+  `frontend/src/lib/stack.svelte.ts` builds the cards in view at once
+  and the ones ahead of them while the app is idle, and turns the
+  heights it read into the room of the rest and the scroll that keeps a
+  card where it stands. A new long list uses it, and
   nothing copies it.
 - **Everything lands on a whole pixel.** A row is a whole number of pixels
   high, an element is as tall as itself and not as tall as the line of

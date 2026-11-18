@@ -9,7 +9,11 @@ import { Stack } from "./stack.svelte";
 // knows once it has read it.
 class Page {
   height: Map<string, number>;
-  keys: string[];
+  keys = $state.raw<string[]>([]);
+  // The cards on the page, one element each, kept while built.
+  #els = new Map<string, { dataset: { row: string }; getBoundingClientRect: () => { height: number } }>();
+  // The work left for when the app is idle, see rest.
+  idle: (() => void)[] = [];
   // The room the stack gave the list when the page was last built.
   tall = 0;
   #top = 0;
@@ -31,10 +35,7 @@ class Page {
   readonly list = {
     querySelectorAll: () => {
       const [first, last] = this.stack.built;
-      return this.keys.slice(first, last + 1).map((row) => ({
-        dataset: { row },
-        getBoundingClientRect: () => ({ height: this.height.get(row)! }),
-      }));
+      return this.keys.slice(first, last + 1).map((row) => this.el(row));
     },
   };
   stack: Stack;
@@ -42,15 +43,53 @@ class Page {
   constructor(heights: number[]) {
     this.keys = heights.map((_, i) => `s${i}`);
     this.height = new Map(this.keys.map((k, i) => [k, heights[i]]));
-    this.stack = new Stack(() => this.keys);
+    this.stack = new Stack(
+      () => this.keys,
+      (work) => this.idle.push(work),
+    );
+  }
+
+  el(row: string) {
+    let el = this.#els.get(row);
+    if (!el) {
+      el = { dataset: { row }, getBoundingClientRect: () => ({ height: this.height.get(row)! }) };
+      this.#els.set(row, el);
+      this.stack.card(row)(el as unknown as Element);
+    }
+    return el;
+  }
+
+  // Cards built changed their height, told the way the ResizeObserver
+  // tells it, after the layout.
+  resized(keys: string[]) {
+    observed.at(-1)!(keys.map((k) => ({ target: this.el(k), borderBoxSize: [{ blockSize: this.height.get(k)! }] })));
+  }
+
+  // The app idle until it has nothing left to do: each idle step that
+  // builds cards has the page built again after it, the way the effect
+  // in SaidList.svelte runs only when the cards built change.
+  rest() {
+    for (let n = 0; n < 100 && this.idle.length; n++) {
+      const was = this.stack.built;
+      this.idle.shift()!();
+      if (this.stack.built !== was) this.build();
+    }
+    expect(this.idle).toEqual([]);
   }
 
   // The page built again from the stack, the list as tall as the stack
   // says with the veil over and under it, and the cards just built read,
-  // the way the effect in SaidList.svelte does after each build.
+  // the way the effect in SaidList.svelte does after each build. The
+  // effect runs again as long as what it read makes the place or the
+  // cards built change.
   build() {
-    this.tall = this.stack.placed.total + 2 * veil;
-    this.stack.settle("");
+    for (let n = 0; n < 10; n++) {
+      const was = JSON.stringify([this.stack.placed.total, this.stack.built, this.box.scrollTop]);
+      this.tall = this.stack.placed.total + 2 * veil;
+      this.stack.settle("");
+      if (JSON.stringify([this.stack.placed.total, this.stack.built, this.box.scrollTop]) === was) return;
+    }
+    throw new Error("the page never settled");
   }
 
   // Where the card of a key stands, from the top of the column: under the
@@ -70,12 +109,18 @@ class Page {
 const veil = 16;
 const gap = 8;
 let page: Page;
+// What each ResizeObserver made hears, the cards' the last of them.
+const observed: ((entries: unknown[]) => void)[] = [];
 
 beforeEach(() => {
   vi.stubGlobal("getComputedStyle", () => ({ rowGap: `${gap}px`, paddingTop: `${veil}px` }));
+  observed.length = 0;
   vi.stubGlobal(
     "ResizeObserver",
     class {
+      constructor(heard: (entries: unknown[]) => void) {
+        observed.push(heard);
+      }
       observe() {}
       unobserve() {}
       disconnect() {}
@@ -142,7 +187,9 @@ describe("a tall stack of cards of different heights", () => {
     const inView = p.keys.find((k) => p.at(k) + p.height.get(k)! > 0)!;
     expect(inView).toBeDefined();
     const was = p.at(inView);
-    for (const k of p.keys.slice(first, first + 5)) p.height.set(k, p.height.get(k)! + 40);
+    const above = p.keys.slice(first, first + 5);
+    for (const k of above) p.height.set(k, p.height.get(k)! + 40);
+    p.resized(above);
     p.build();
     expect(p.at(inView)).toBe(was);
   });
@@ -164,5 +211,63 @@ describe("a tall stack of cards of different heights", () => {
     expect(last - first + 1).toBeLessThan(40);
     expect(first).toBeLessThanOrEqual(100);
     expect(last).toBeGreaterThanOrEqual(100);
+  });
+});
+
+// The cards further away are built while the app is idle, so a scroll
+// moves through cards built already, the way it moves through a list
+// built whole. Building them as they came into the screen kept either
+// side cost every wheel step a layout, found by Tim.
+describe("a tall stack building ahead while the app is idle", () => {
+  test("builds the cards far over and under the ones in view, and a scroll inside them changes nothing", () => {
+    const p = open(mixed(2000));
+    p.stack.toTop("s1000", "");
+    p.build();
+    const needed = p.stack.built;
+    p.rest();
+    const built = p.stack.built;
+    expect(built[0]).toBeLessThan(needed[0] - 50);
+    expect(built[1]).toBeGreaterThan(needed[1] + 50);
+    const top = p.stack.top;
+    p.box.scrollTop += 3 * p.box.clientHeight;
+    p.stack.scrolled("", null);
+    expect(p.stack.top).toBe(top);
+    expect(p.stack.built).toBe(built);
+  });
+
+  test("a scroll past the cards built builds the ones it needs at once", () => {
+    const p = open(mixed(2000));
+    p.rest();
+    p.box.scrollTop = 120000;
+    p.stack.scrolled("", null);
+    p.build();
+    const first = p.keys.find((k) => p.at(k) + p.height.get(k)! > 0);
+    expect(first).toBeDefined();
+    expect(p.at(first!)).toBeLessThan(p.box.clientHeight);
+  });
+
+  test("lets go of the cards far behind", () => {
+    const p = open(mixed(2000));
+    p.rest();
+    p.box.scrollTop = 120000;
+    p.stack.scrolled("", null);
+    p.build();
+    p.rest();
+    const [first, last] = p.stack.built;
+    expect(first).toBeGreaterThan(0);
+    expect(last - first).toBeLessThan(1000);
+  });
+
+  test("a new list builds only the cards seen, and the rest while idle", () => {
+    const p = open(mixed(2000));
+    p.rest();
+    p.keys = p.keys.filter((_, i) => i % 3);
+    p.stack.toStart("e");
+    p.build();
+    const [first, last] = p.stack.built;
+    expect(first).toBe(0);
+    expect(last).toBeLessThan(40);
+    p.rest();
+    expect(p.stack.built[1]).toBeGreaterThan(100);
   });
 });

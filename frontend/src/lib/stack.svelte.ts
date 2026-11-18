@@ -1,5 +1,9 @@
-// A tall list in a scrolled column that builds only the cards in view and
-// a screen either side, issue #894. Where the cards stand is lib/stack.ts.
+// A tall list in a scrolled column that builds the cards in view and a
+// screen either side at once, and the cards further ahead, over and
+// under, while the app is idle, issue #894. A scroll then mostly moves
+// through cards built already, the way it does through a list built
+// whole, and opening the list or typing in its search builds only what
+// is seen. Where the cards stand is lib/stack.ts.
 // This is what keeps it in step with the page: the heights the cards are
 // laid out at, how far the column is scrolled and how tall it is, and the
 // card the hand is looking at, which stays where it stands as cards come
@@ -17,10 +21,40 @@
 // view never stand in the wrong place in a frame that is shown. Nothing
 // in view is sized from them: a card built lays itself out.
 
-import { untrack } from "svelte";
+import { flushSync, untrack } from "svelte";
 import { place, span, type Placed } from "./stack";
 
 export type Shown = { above: number; below: number };
+
+// Work for when the app has nothing else to do: the cards ahead of the
+// ones in view, built a few at a time, see grow. A test hands in its own,
+// so it decides when that work runs.
+export type Later = (work: () => void) => void;
+const whenIdle: Later = (work) => {
+  if (typeof requestIdleCallback === "function") requestIdleCallback(() => work());
+  // WebKit has no idle callback: after the next frame is painted.
+  else requestAnimationFrame(() => setTimeout(work, 0));
+};
+
+// How far ahead of the cards in view, over and under, cards are built
+// when the app is idle, in screens, and how many cards one idle step
+// builds. A scroll of twenty screens finds its cards built, and the
+// cards are built in few steps, since what a step costs beyond its cards,
+// the list looked over and laid out again, is the same however many it
+// builds. Measured on the harness's video of four hours: steps of 64
+// cards cost a scroll a fifth more than steps of 128, and one step of
+// 128 took 10 to 13 ms in the cloud, inside a frame.
+const ahead = 20;
+const step = 128;
+
+// Whether two lists of keys are one list. The keys are made again
+// whenever the rows are, so the same list often comes as a new array.
+function same(a: readonly string[], b: readonly string[]) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
 
 export class Stack {
   #keys: () => readonly string[];
@@ -30,9 +64,20 @@ export class Stack {
   #cards: ResizeObserver | null = null;
   #keyOf = new WeakMap<Element, string>();
   #list: HTMLElement | null = null;
+  #later: Later;
+  #growing = false;
+  // The cards built by idle steps, for the list they were built for.
+  #grown = $state.raw<{ keys: readonly string[]; range: [number, number] } | null>(null);
+  #builtWas: [number, number] | null = null;
+  // The cards on the page read once, whose later heights the
+  // ResizeObserver hears.
+  #seenBuilt = new WeakSet<Element>();
 
-  // How far the column is scrolled and how tall it is.
+  // How far the column is scrolled and how tall it is. Top is where the
+  // cards built were last worked out from, and at where the column
+  // really is, see scrolled.
   top = $state(0);
+  #at = 0;
   seen = $state(0);
   // What the list holds over its first card, the line that says the cards
   // could not be read with its gap, and the list's padding, the veil.
@@ -47,8 +92,9 @@ export class Stack {
   // built.
   #anchor: { key: string; at: number; list: unknown; foot?: boolean } | null = null;
 
-  constructor(keys: () => readonly string[]) {
+  constructor(keys: () => readonly string[], later: Later = whenIdle) {
     this.#keys = keys;
+    this.#later = later;
   }
 
   readonly placed: Placed = $derived.by(() => {
@@ -56,10 +102,28 @@ export class Stack {
     return place(this.#keys(), this.#measured, this.gap);
   });
 
-  // The cards built: the ones in view and a screen over and under it.
-  readonly built: [number, number] = $derived.by(() => {
+  // The cards that must be built now: the ones in view and a screen over
+  // and under it.
+  readonly needed: [number, number] = $derived.by(() => {
     const from = this.top - this.veil - this.lead;
     return span(this.placed, from - this.seen, from + 2 * this.seen);
+  });
+
+  // The cards built: the ones needed, and the ones idle steps built ahead
+  // of them while they reach them. A scroll inside what is built builds
+  // nothing and changes nothing on the page but the scroll. Building
+  // cards as they came into the screen kept either side cost every wheel
+  // step a layout of the cards it built, four times the work of the same
+  // scroll through a list built whole, found by Tim.
+  readonly built: [number, number] = $derived.by(() => {
+    const need = this.needed;
+    const g = this.#grown;
+    let got = need;
+    if (g && same(g.keys, this.placed.keys) && need[0] <= need[1] && g.range[0] <= need[1] + 1 && g.range[1] >= need[0] - 1)
+      got = [Math.min(g.range[0], need[0]), Math.max(g.range[1], need[1])];
+    const was = this.#builtWas;
+    if (was && was[0] === got[0] && was[1] === got[1]) return was;
+    return (this.#builtWas = got);
   });
 
   // The room of the cards not built, over the first card built and under
@@ -79,7 +143,7 @@ export class Stack {
     const style = getComputedStyle(list);
     this.gap = parseFloat(style.rowGap) || 0;
     this.veil = parseFloat(style.paddingTop) || 0;
-    this.top = box.scrollTop;
+    this.top = this.#at = box.scrollTop;
     this.seen = box.clientHeight;
     const column = new ResizeObserver(() => (this.seen = box.clientHeight));
     column.observe(box);
@@ -143,6 +207,45 @@ export class Stack {
   settle(list: unknown) {
     this.#measureBuilt();
     this.hold(list);
+    this.#grow();
+  }
+
+  // One idle step: the cards built grown towards ahead screens over and
+  // under the cards in view, once fewer than half of that are built on
+  // either side, and the ones further than twice that let go. So a hand
+  // scrolling builds cards once in some screens, in one step of its own
+  // between two wheel steps, and every wheel step between finds its
+  // cards built. Each step builds and settles its cards, which asks for
+  // the next.
+  #grow() {
+    if (this.#growing || !this.#box) return;
+    this.#growing = true;
+    this.#later(() => {
+      this.#growing = false;
+      if (!this.#box) return;
+      const p = this.placed;
+      const [a, b] = this.built;
+      if (a > b) return;
+      const from = this.#at - this.veil - this.lead;
+      const reach = (screens: number) => span(p, from - screens * this.seen, from + (screens + 1) * this.seen);
+      const [lo, hi] = reach(ahead);
+      const [nearLo, nearHi] = reach(ahead / 2);
+      const [farLo, farHi] = reach(2 * ahead);
+      let [x, y] = [a, b];
+      if (x > nearLo) x = Math.max(lo, x - step);
+      else if (x < farLo) x = lo;
+      if (y < nearHi) y = Math.min(hi, y + step);
+      else if (y > farHi) y = hi;
+      if (x === a && y === b) return;
+      // Top comes along, so what is needed is worked out from where the
+      // column is and not from where a scroll last needed other cards.
+      // The page is built in this step, not in the frame the hand waits
+      // on. Written before the flush: a write inside flushSync's callback
+      // is not seen by a derived read outside an effect.
+      this.#grown = { keys: p.keys, range: [x, y] };
+      this.top = this.#at;
+      flushSync();
+    });
   }
 
   // The cards built read now, before a place is worked out from the
@@ -157,9 +260,12 @@ export class Stack {
     if (!this.#list) return;
     let changed = false;
     for (const el of this.#list.querySelectorAll<HTMLElement>(":scope > li[data-row]")) {
+      if (this.#seenBuilt.has(el)) continue;
       const key = el.dataset.row!;
       const h = el.getBoundingClientRect().height;
-      if (h === 0 || this.#measured.get(key) === h) continue;
+      if (h === 0) continue;
+      this.#seenBuilt.add(el);
+      if (this.#measured.get(key) === h) continue;
       this.#measured.set(key, h);
       changed = true;
     }
@@ -172,16 +278,26 @@ export class Stack {
   // stay where it stands, the one preferred when it is in view, or else
   // the first card in view. The heights are the ones settle read as the
   // cards were built, so a scroll lays nothing out.
+  //
+  // A scroll that stays inside the cards built is not told to the page at
+  // all: top changes only when other cards are needed. Every scroll told
+  // to the page had Svelte look over everything that reads the cards
+  // built, for each wheel step, which a list built whole never did.
   scrolled(list: unknown, prefer: string | null) {
     if (!this.#box) return;
-    this.top = this.#box.scrollTop;
+    const t = (this.#at = this.#box.scrollTop);
+    const from = t - this.veil - this.lead;
+    const [need0, need1] = span(this.placed, from - this.seen, from + 2 * this.seen);
+    const [b0, b1] = this.built;
+    if (need0 <= need1 && (need0 < b0 || need1 > b1)) this.top = t;
+    this.#grow();
     const keys = this.placed.keys;
     const mine = prefer === null ? -1 : keys.indexOf(prefer);
-    const at = (i: number) => this.veil + this.lead + this.placed.tops[i] - this.top;
+    const at = (i: number) => this.veil + this.lead + this.placed.tops[i] - t;
     const inView = (i: number) => at(i) + this.placed.heights[i] > 0 && at(i) < this.seen;
     let i = mine >= 0 && inView(mine) ? mine : -1;
     if (i < 0) {
-      const [first, last] = span(this.placed, this.top - this.veil - this.lead, this.top - this.veil - this.lead + this.seen);
+      const [first, last] = span(this.placed, from, from + this.seen);
       i = first <= last ? first : -1;
     }
     this.#anchor = i < 0 ? null : { key: keys[i], at: at(i), list };
@@ -198,7 +314,7 @@ export class Stack {
     const want = this.veil + this.lead + untrack(() => this.placed.tops[i]) - at;
     if (Math.abs(want - this.#box.scrollTop) < 0.5) return;
     this.#box.scrollTop = want;
-    this.top = this.#box.scrollTop;
+    this.top = this.#at = this.#box.scrollTop;
   }
 
   // Where the card of a key stands against the column: how far its top is
@@ -228,7 +344,7 @@ export class Stack {
     const i = this.placed.keys.indexOf(key);
     if (i < 0) return;
     this.#box.scrollTop = this.veil + this.lead + this.placed.tops[i] - by;
-    this.top = this.#box.scrollTop;
+    this.top = this.#at = this.#box.scrollTop;
     this.#anchor = { key, at: by, list };
   }
 
@@ -251,7 +367,7 @@ export class Stack {
   toStart(list: unknown) {
     if (!this.#box) return;
     this.#box.scrollTo({ top: 0 });
-    this.top = this.#box.scrollTop;
+    this.top = this.#at = this.#box.scrollTop;
     this.#anchor = null;
     this.scrolled(list, null);
   }

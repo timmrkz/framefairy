@@ -1,6 +1,6 @@
-// Where each card of a tall stack stands, so only the cards in view and a
-// screen either side are built, and the rest are stood in for by their
-// heights, issue #894. The transcript search of a video of four hours has
+// Where each card of a tall stack stands, so only the cards in view and
+// the ones built ahead of them are built, and the rest are stood in for
+// by their heights, issue #894. The transcript search of a video of four hours has
 // over a thousand cards, and building, restyling and laying out every one
 // of them took a fifth to a third of a second on opening the search, on
 // its first letter and on clearing it.
@@ -29,7 +29,9 @@ export const firstGuess = 64;
 export function place(keys: readonly string[], measured: ReadonlyMap<string, number>, gap: number): Placed {
   let sum = 0;
   for (const h of measured.values()) sum += h;
-  const guess = measured.size ? sum / measured.size : firstGuess;
+  // A whole pixel, so the room of the cards not built is too, and the
+  // cards built after it land on whole pixels.
+  const guess = measured.size ? Math.round(sum / measured.size) : firstGuess;
   const tops = new Float64Array(keys.length);
   const heights = new Float64Array(keys.length);
   let at = 0;
