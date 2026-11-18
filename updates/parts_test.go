@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"github.com/wailsapp/wails/v3/pkg/updater"
 	"io"
 	"io/fs"
 	"math/rand/v2"
@@ -351,6 +352,56 @@ func TestAPanicPuttingTheBuildTogetherDownloadsItWhole(t *testing.T) {
 	}
 }
 
+// A build put together from its parts stays in the cache when the list is
+// read again, under the stored zip's checksum, so going back to its
+// channel takes it from there.
+//
+// On the real disk: the updater keeps its builds in a folder on the disk.
+func TestABuildPutTogetherStaysInTheCache(t *testing.T) {
+	t.Parallel()
+	key := testKey(t)
+	b := publish(t, dittoZip(t, newApp, ffmpeg, onnx))
+	var list []byte
+	r := serveParts(t, func() []byte { return list }, b)
+	list = listFor(t, key, r.server.URL, b)
+	src, _ := partsSource(t, r, running(installed...))
+	if got := install(t, src, key); got != newApp.body {
+		t.Fatalf("the app installed says %q", got)
+	}
+	if _, err := src.Fetch(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := install(t, src, key); got != newApp.body {
+		t.Fatalf("the app installed says %q", got)
+	}
+	if n := r.asks("/dev/app.parts.json"); n != 1 {
+		t.Errorf("the parts were read %d times, want once: the kept build went when the list was read", n)
+	}
+}
+
+// A stored zip claimed as another build is not offered, though the zip
+// at the build's address is claimed right: the stored zip is what an app
+// that knows parts installs.
+func TestAStoredZipClaimedAsAnotherBuildIsRefused(t *testing.T) {
+	t.Parallel()
+	key := testKey(t)
+	b := publish(t, dittoZip(t, newApp, ffmpeg, onnx))
+	var list []byte
+	r := serveParts(t, func() []byte { return list }, b)
+	entry := entryFor(t, key, r.server.URL, b)
+	st, _ := entry.AsStored()
+	st.Version = "0.3.0-pr30.0000000"
+	entry.Stored.Claim = SignClaim(key, st)
+	list = listJSON(t, entry)
+	src, _ := partsSource(t, r, running(installed...))
+	src.Key = key.Public().(ed25519.PublicKey)
+
+	if _, err := src.Check(context.Background(), updater.CheckRequest{CurrentVersion: "0.3.0-main.4"}); err == nil {
+		t.Error("a stored zip claimed as another build was offered")
+	}
+}
+
 // An app with little to take from, one made on the Mac or one whose files
 // are not the same, downloads whichever is smaller: the pieces it lacks or
 // the packed zip, and still installs.
@@ -415,6 +466,30 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// A packed zip taken for its size that cannot be had leaves the pieces,
+// and the update still arrives.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
+func TestAPackedZipTakenForItsSizeThatIsGoneLeavesThePieces(t *testing.T) {
+	t.Parallel()
+	libraries := string(chacha8(4096))
+	linked := []appFile{newApp, {"Contents/MacOS/ffmpeg", libraries + "ffmpeg"}, {"Contents/MacOS/ffprobe", libraries + "ffprobe"}}
+	key := testKey(t)
+	b := publish(t, dittoZip(t, linked...))
+	var list []byte
+	r := serveParts(t, func() []byte { return list }, b)
+	list = listFor(t, key, r.server.URL, b)
+	r.set("/dev/app.zip.zst", nil)
+	src, told := partsSource(t, r, running(oldApp))
+
+	if got := install(t, src, key); got != newApp.body {
+		t.Fatalf("the app installed says %q", got)
+	}
+	if len(*told) != 1 || (*told)[0].Fetched != 3 || (*told)[0].Err == nil || !strings.Contains((*told)[0].Err.Error(), "packed zip") {
+		t.Errorf("told %+v, want every piece fetched once the packed zip was gone", *told)
+	}
 }
 
 // Whatever goes wrong with the parts, the update still arrives: the app

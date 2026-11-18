@@ -480,6 +480,10 @@ func pieced(p updates.Pieced) {
 		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int64("bytes", p.Packed).
 			Msg("the build could not be put together from its parts, so it was downloaded packed")
 		return
+	case p.Err != nil && p.Kept+p.Fetched > 0:
+		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int("kept", p.Kept).Int("fetched", p.Fetched).
+			Int64("bytes", p.Bytes).Msg("the packed build could not be downloaded, so it was put together from its pieces")
+		return
 	case p.Err != nil:
 		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Msg("the build could not be downloaded")
 		return

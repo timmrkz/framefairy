@@ -98,43 +98,7 @@ func (s *Source) fetchOf(sum string, from from, total int64) *fetching {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTakes)
 		defer cancel()
-		err := errNoParts
-		if from.parts != "" {
-			var done Pieced
-			cheaper := int64(0)
-			if from.packed != "" {
-				cheaper = from.packedSize
-			}
-			done, err = s.assemble(ctx, from.parts, sum, total, cheaper, k, f.downloaded)
-			if err == nil && !k.whole() {
-				err = errors.New("the build put together from its parts is not the build the list says")
-			}
-			if err == nil {
-				s.tell(done)
-			}
-		}
-		why := err
-		if why == errNoParts || why == errPackedIsSmaller {
-			why = nil
-		}
-		if err != nil && from.packed != "" {
-			f.downloaded(0, from.packedSize)
-			if err = k.restart(); err == nil {
-				err = s.unpackWhole(ctx, from.packed, from.packedSize, total, k, func(got int64) { f.downloaded(got, from.packedSize) })
-			}
-			if err == nil && !k.whole() {
-				err = errors.New("the packed zip unpacks to another build than the list says")
-			}
-			if err != nil {
-				why = errors.Join(why, fmt.Errorf("the packed zip: %w", err))
-			} else {
-				s.tell(Pieced{Packed: from.packedSize, Err: why})
-				why = nil
-			}
-		}
-		if why != nil {
-			s.tell(Pieced{Err: why})
-		}
+		err := s.fetchParts(ctx, from, sum, total, k, f)
 		if err != nil && from.whole != "" {
 			f.downloaded(0, total)
 			if err = k.restart(); err == nil {
@@ -156,6 +120,69 @@ func (s *Source) fetchOf(sum string, from from, total int64) *fetching {
 		close(f.done)
 	}()
 	return f
+}
+
+// fetchParts puts a build with parts together, or downloads its packed
+// zip when that fails or weighs less, into k, and tells how. It is
+// errNoParts for a build without parts, which is downloaded whole.
+func (s *Source) fetchParts(ctx context.Context, from from, sum string, total int64, k *keeper, f *fetching) error {
+	if from.parts == "" {
+		return errNoParts
+	}
+	assembled := func(cheaper int64) (Pieced, error) {
+		if err := k.restart(); err != nil {
+			return Pieced{}, err
+		}
+		done, err := s.assemble(ctx, from.parts, sum, total, cheaper, k, f.downloaded)
+		if err == nil && !k.whole() {
+			err = errors.New("the build put together from its parts is not the build the list says")
+		}
+		return done, err
+	}
+	cheaper := int64(0)
+	if from.packed != "" {
+		cheaper = from.packedSize
+	}
+	done, err := assembled(cheaper)
+	if err == nil {
+		s.tell(done)
+		return nil
+	}
+	// Why the parts did not do, when it was no choice of the smaller.
+	var partsErr error
+	if err != errPackedIsSmaller {
+		partsErr = err
+	}
+	if from.packed == "" {
+		s.tell(Pieced{Err: partsErr})
+		return err
+	}
+	f.downloaded(0, from.packedSize)
+	if err = k.restart(); err == nil {
+		err = s.unpackWhole(ctx, from.packed, from.packedSize, total, k, func(got int64) { f.downloaded(got, from.packedSize) })
+	}
+	if err == nil && !k.whole() {
+		err = errors.New("the packed zip unpacks to another build than the list says")
+	}
+	if err == nil {
+		s.tell(Pieced{Packed: from.packedSize, Err: partsErr})
+		return nil
+	}
+	packedErr := fmt.Errorf("the packed zip: %w", err)
+	// The packed zip was taken for its size and could not be had. The
+	// pieces may still be: a publish replaces a packed zip under its name,
+	// but never a piece.
+	if partsErr == nil {
+		if done, err = assembled(0); err == nil {
+			done.Err = packedErr
+			s.tell(done)
+			return nil
+		}
+		partsErr = err
+	}
+	err = errors.Join(partsErr, packedErr)
+	s.tell(Pieced{Err: err})
+	return err
 }
 
 // Arrived is closed once the build with this SHA-256 that is on its way

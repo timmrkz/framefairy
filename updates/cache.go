@@ -191,7 +191,9 @@ func (s *Source) prune(l List) {
 	}
 	named := map[string]bool{}
 	for _, b := range l.Channels {
-		named[b.SHA256] = true
+		// A build with a stored zip is kept as that zip, see Release.
+		st, _ := b.AsStored()
+		named[b.SHA256], named[st.SHA256] = true, true
 	}
 	entries, err := os.ReadDir(s.Cache)
 	if err != nil {

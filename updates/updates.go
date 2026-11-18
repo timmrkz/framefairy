@@ -196,21 +196,25 @@ func (b Build) Check() error {
 		return fmt.Errorf("channel %s has a size of %d bytes", b.Channel, b.Size)
 	}
 	if st := b.Stored; st != nil && (st.Size <= 0 || st.Size > MaxBuild || !sha256Pattern.MatchString(st.SHA256) ||
-		st.PackedSize <= 0 || st.PackedSize > packedBound(st.Size)) {
-		return fmt.Errorf("channel %s has a stored zip of sizes it cannot have, or no checksum", b.Channel)
+		st.PackedSize <= 0 || st.PackedSize > packedBound(st.Size) || !isSignature(st.Signature) || !isSignature(st.Claim)) {
+		return fmt.Errorf("channel %s has a stored zip of sizes it cannot have, or with no checksum, signature or claim", b.Channel)
 	}
 	if !sha256Pattern.MatchString(b.SHA256) {
 		return fmt.Errorf("channel %s has no checksum", b.Channel)
 	}
-	if sig, err := base64.StdEncoding.DecodeString(b.Signature); err != nil || len(sig) != ed25519.SignatureSize {
+	if !isSignature(b.Signature) {
 		return fmt.Errorf("channel %s has no signature", b.Channel)
 	}
-	if b.Claim != "" {
-		if sig, err := base64.StdEncoding.DecodeString(b.Claim); err != nil || len(sig) != ed25519.SignatureSize {
-			return fmt.Errorf("channel %s has a claim that is no signature", b.Channel)
-		}
+	if b.Claim != "" && !isSignature(b.Claim) {
+		return fmt.Errorf("channel %s has a claim that is no signature", b.Channel)
 	}
 	return nil
+}
+
+// isSignature says whether text is an Ed25519 signature in base64.
+func isSignature(text string) bool {
+	sig, err := base64.StdEncoding.DecodeString(text)
+	return err == nil && len(sig) == ed25519.SignatureSize
 }
 
 // Behind is the channel's newest commit when the build is not made from

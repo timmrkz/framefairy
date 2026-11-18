@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -245,4 +246,64 @@ func TestABuildIsSignedAsTheZipAndAsTheStoredZip(t *testing.T) {
 	if err == nil {
 		t.Error("a build was signed with the packed zip of another")
 	}
+}
+
+// The list leaves out an entry whose own zip is signed right but whose
+// stored zip is not, since an app that knows parts installs the stored
+// zip.
+//
+// On the real disk: the release tool reads the packed build and writes the entry as files.
+func TestTheListLeavesOutABadStoredZip(t *testing.T) {
+	private := release(t)
+	public := private.Public().(ed25519.PublicKey)
+	dir := packed(t, theApp("main"))
+	out := filepath.Join(t.TempDir(), "entry.json")
+	if err := signBuild(built(dir), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
+		"https://example.com/dev/app-main-1.zip", filepath.Join(dir, partsFile), out); err != nil {
+		t.Fatal(err)
+	}
+	good := readBuild(t, out)
+	_, other, _ := ed25519.GenerateKey(rand.Reader)
+	entries := map[string][]byte{"channel-main.json": mustMarshal(t, good)}
+	for name, spoil := range map[string]func(b *updates.Build){
+		// Signed with another key.
+		"pr-1": func(b *updates.Build) {
+			digest, _ := hex.DecodeString(b.Stored.SHA256)
+			b.Stored.Signature = updates.Sign(other, digest)
+		},
+		// Claimed as another build: the stored claim of pr-2's own.
+		"pr-2": func(b *updates.Build) {
+			st, _ := b.AsStored()
+			st.Version = "0.1.0-main.0000000"
+			b.Stored.Claim = updates.SignClaim(private, st)
+		},
+	} {
+		b := readBuild(t, out)
+		b.Channel, b.Name = name, name
+		b.Claim = updates.SignClaim(private, b)
+		st, _ := b.AsStored()
+		b.Stored.Claim = updates.SignClaim(private, st)
+		spoil(&b)
+		entries["channel-"+name+".json"] = mustMarshal(t, b)
+	}
+	l, err := makeList(entries, nil, nil, public, time.Now(), io.Discard) //nolint:forbidigo // when the list says it was written, waits on nothing
+	if err != nil {
+		t.Fatal(err)
+	}
+	var channels []string
+	for _, b := range l.Channels {
+		channels = append(channels, b.Channel)
+	}
+	if strings.Join(channels, " ") != "main" {
+		t.Errorf("the list holds %v, want main alone", channels)
+	}
+}
+
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

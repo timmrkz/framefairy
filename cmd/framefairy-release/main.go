@@ -276,8 +276,9 @@ func signBuild(zipPath, channel, name, version, commit, where, parts, out string
 	return writeJSON(out, b)
 }
 
-// sameApp says whether two zips hold the same files, by name, checksum,
-// size and mode, so the stored zip signed beside a zip is the same app.
+// sameApp says whether two zips hold the same files, by name, size, mode
+// and the SHA-256 of what each holds, so the stored zip signed beside a
+// zip is the app check passed, byte for byte.
 func sameApp(a, b string) error {
 	za, err := zip.OpenReader(a)
 	if err != nil {
@@ -294,11 +295,36 @@ func sameApp(a, b string) error {
 	}
 	for i, f := range za.File {
 		g := zb.File[i]
-		if f.Name != g.Name || f.CRC32 != g.CRC32 || f.UncompressedSize64 != g.UncompressedSize64 || f.Mode() != g.Mode() {
+		if f.Name != g.Name || f.UncompressedSize64 != g.UncompressedSize64 || f.Mode() != g.Mode() {
 			return fmt.Errorf("the stored zip holds %s otherwise than the zip", f.Name)
+		}
+		fs, err := fileSum(f)
+		if err != nil {
+			return err
+		}
+		gs, err := fileSum(g)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(fs, gs) {
+			return fmt.Errorf("the stored zip holds other bytes in %s than the zip", f.Name)
 		}
 	}
 	return nil
+}
+
+// fileSum is the SHA-256 of what a file of a zip holds.
+func fileSum(f *zip.File) ([]byte, error) {
+	r, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return nil, err
+	}
+	return h.Sum(nil), nil
 }
 
 // signStored signs the stored zip pack left in packed as the build b is,
