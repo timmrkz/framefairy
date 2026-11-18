@@ -556,21 +556,21 @@ const levelsLead = int(soundLead / (timed.FrameSeconds * 1_000_000))
 // video from a loud one, and counts only what was measured, #831.
 func TestTheLoudnessSaidOfWhatWasMeasured(t *testing.T) {
 	var none levelState
-	if _, _, ok := none.loudness(); ok {
+	if _, ok := none.loudest(); ok {
 		t.Error("nothing measured, and the loudness is said")
 	}
 	var silent levelState
 	for n := range 4 {
 		silent.put(n, -200)
 	}
-	if loudest, quiet, ok := silent.loudness(); !ok || loudest != -200 || quiet != 1 {
-		t.Errorf("a silent video is said to be %v dB at the loudest, %v of it quiet", loudest, quiet)
+	if loudest, ok := silent.loudest(); !ok || loudest != -200 {
+		t.Errorf("a silent video is said to be %v dB at the loudest, not -200", loudest)
 	}
 	var speech levelState
 	speech.put(0, -70)
 	speech.put(1, -20)
 	speech.put(3, -12)
-	if loudest, quiet, ok := speech.loudness(); !ok || loudest != -12 || math.Abs(quiet-1.0/3) > 1e-9 {
-		t.Errorf("speech is said to be %v dB at the loudest, %v of it quiet, not -12 and a third", loudest, quiet)
+	if loudest, ok := speech.loudest(); !ok || loudest != -12 {
+		t.Errorf("speech is said to be %v dB at the loudest, not -12", loudest)
 	}
 }
