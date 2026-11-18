@@ -29,6 +29,7 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 
 // search is Search, carrying on a search that had written carried clips.
 func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, carried int) Job {
+	req = s.asKept(path, req)
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobSearch, jobLabel(engine.JobRecord{Kind: engine.JobSearch}), notInLibrary, func(j *Job) {
 			j.From, j.To, j.Count, j.Min = req.From, req.To, req.Count, req.Min
@@ -55,6 +56,40 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 		return result, err
 	})
 	return job
+}
+
+// asKept is req with what it leaves out, at 0, taken from what is kept:
+// how many clips, the number typed for a window this long or what the
+// window suggests, the count the workspace shows beside it, and how long
+// they may be. The workspace sends only the window, so a number typed and
+// Search pressed at once never searches with the number from before it:
+// on a busy Mac the press read the numbers from the state before the one
+// the typing answered with, issue #877. A number in req is kept as it is.
+func (s *FrameFairy) asKept(path string, req engine.PlanRequest) engine.PlanRequest {
+	set := s.store.Settings()
+	o := set.options()
+	if req.Min <= 0 {
+		req.Min = o.Min
+	}
+	if req.Max <= 0 {
+		req.Max = o.Max
+	}
+	o.Min, o.Max = req.Min, req.Max
+	if req.Count > 0 || !s.store.Known(path) {
+		return req
+	}
+	info, err := s.probe(context.Background(), path)
+	if err != nil || info.Duration <= 0 {
+		return req
+	}
+	end := req.To
+	if end <= 0 || end > info.Duration {
+		end = info.Duration
+	}
+	length := end - req.From
+	r := s.store.machine.Episode(path).Room(o)
+	req.Count = o.Limits(r, info.Duration, length, set.targetFor(length)).Count
+	return req
 }
 
 // firstLane is the lane a search waits in before its first turn: the
@@ -105,17 +140,8 @@ func (s *FrameFairy) Continue(id, click string) Job {
 			req.CarryOn = true
 			carried = s.planned(path, *rec)
 		}
-		if req.Count == 0 {
-			set := s.store.Settings()
-			req.Min, req.Max = set.Min, set.Max
-			window := req.To - req.From
-			if req.To <= 0 {
-				if info, err := s.probe(context.Background(), path); err == nil {
-					window = info.Duration - req.From
-				}
-			}
-			req.Count = set.targetFor(window)
-		}
+		// A search refused before it had a record asks for what is kept,
+		// see asKept.
 		return s.search(path, req, click, carried)
 	}
 	var carry *engine.JobRecord
@@ -284,19 +310,14 @@ func (s *FrameFairy) firstSearch(ctx context.Context, path, click string) {
 	if !ok {
 		return
 	}
-	set := s.store.Settings()
-	opts := set.options()
-	req := engine.PlanRequest{From: w.From, To: w.To, Min: opts.Min, Max: opts.Max}
+	req := engine.PlanRequest{From: w.From, To: w.To}
 	// A window to the end of the episode is To 0, which is heard to its
 	// end before it is searched.
 	if w.To >= info.Duration-0.05 {
 		req.To = 0
 	}
-	// A target typed for a window this long, or what this window suggests.
-	req.Count = set.targetFor(w.To - w.From)
-	if req.Count == 0 {
-		req.Count = engine.SuggestedCount(w.To-w.From, req.Min, req.Max)
-	}
+	// A target typed for a window this long, or what this window
+	// suggests, see asKept.
 	s.Search(path, req, click)
 }
 

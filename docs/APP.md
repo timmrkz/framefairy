@@ -1420,7 +1420,11 @@ bubble scrolled by those eight pixels.
       longest with it, and the other way round. A window the Go side
       lengthens to hold the clips typed keeps the target typed for it.
       See `SetSearch` in `cmd/framefairy-app/edits.go` and `windowFor` in
-      `cmd/framefairy-app/window.go`. The suggestion used to be a grey placeholder in an empty
+      `cmd/framefairy-app/window.go`. Search sends the window alone, once
+      a number just typed is kept, and the Go side looks for the numbers it
+      keeps, see `asKept` in `cmd/framefairy-app/search.go`: Search sent
+      the numbers it read, and a number typed and searched at once on a
+      busy Mac searched for the one before it. The suggestion used to be a grey placeholder in an empty
       field, and a browser steps an empty number field from zero, so the
       down arrow on a suggested 6 landed on 1. Twelve
       because the model, asked for 8 in half an hour, gave 6: it gives

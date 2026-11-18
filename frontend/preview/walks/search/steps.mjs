@@ -5,7 +5,7 @@
 // caption box showed before it and the step's name. A sequence of any
 // folder can take it. Below them the helpers only these steps use. See
 // docs/TESTING.md.
-import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, holdClock, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound, xOf, playhead } from "../bridge.mjs";
+import { ask, caughtUp, clipList, control, drag, episodeOn, fromSidebar, hold, holdClock, letHeld, letClockGo, letPageTimeGo, news, nextNews, nextPaint, pageUntil, pressHead, realFrames, runClock, seenUntil, settle, holdSound, xOf, playhead } from "../bridge.mjs";
 import { clock } from "../../../src/lib/clock.ts";
 import { suggestedCount } from "../../../src/lib/count.ts";
 import { nextCall, onePiece, rate, toastSays, url } from "../common/steps.mjs";
@@ -173,6 +173,33 @@ export const steps = {
     const says = Number(await field.inputValue());
     if (answer && says !== answer.count) walk.wrong = `let go, the Target field says ${says}, and Go answered ${answer.count}`;
     await watch.step("move window", s);
+  },
+  // ["type and search"] types one clip more than the window suggests into
+  //                    Target and clicks Search at once, with the number
+  //                    held on its way to the Go side the way a busy Mac
+  //                    hands it over late, and the search looks for the
+  //                    number typed, issue #877
+  async "type and search"(walk, arg, s) {
+    const { page, watch } = walk;
+    const path = await episodeOn(page);
+    const w = (await ask(page, "State", path))?.window;
+    const n = w ? w.count + 1 : 0;
+    if (!w || n > w.clipsAtMost) {
+      walk.wrong = `the window has no room for one clip more than it suggests: ${JSON.stringify(w)}`;
+      return;
+    }
+    const field = page.locator("label.setting", { hasText: "Target" }).locator("input");
+    await field.fill(String(n));
+    await hold(page, "SetSearch");
+    // A hand's click: the field lets go of the keyboard as the button is
+    // pressed, and only then is the number sent.
+    await page.locator("aside .listhead button.search").click();
+    await letHeld(page);
+    await settle(page);
+    const last = (await ask(page, "Jobs")).filter((j) => j.episode === path && j.kind === "search").pop();
+    if (!last) walk.wrong = "Search asked for no search";
+    else if (last.count !== n) walk.wrong = `${n} typed into Target and Search clicked at once, the search looks for ${last.count}`;
+    await watch.step("type and search", s);
   },
   // ["searched moved"] the episode's newest search is a new one, not the
   //                    search there was at "move window", and it searched

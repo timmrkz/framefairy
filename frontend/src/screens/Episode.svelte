@@ -2626,8 +2626,9 @@
     const target = field === "target" ? (entry === "" ? 0 : Math.max(Math.round(number) || 1, 1)) : typed;
     const shortest = field === "min" && entry !== "" ? number : min;
     const longest = field === "max" && entry !== "" ? number : max;
-    api
-      .setSearch(path, target, shortest, longest, field)
+    const kept = api.setSearch(path, target, shortest, longest, field);
+    numbersOnTheirWay = kept.catch(() => undefined);
+    kept
       .then((state) => {
         session.take(state);
         const w = state.window;
@@ -2635,6 +2636,12 @@
       })
       .catch((err) => oops(errorText(err)));
   }
+
+  // The numbers last typed for a search, on their way to the Go side. A
+  // number typed and Search pressed at once: the field lets go of the
+  // keyboard as the button is pressed, and the search is asked for only
+  // once the number is kept, so it looks for that number, issue #877.
+  let numbersOnTheirWay: Promise<unknown> = Promise.resolve();
 
   function newClips() {
     findClips(false);
@@ -2647,23 +2654,17 @@
   }
 
   // Search. The search hears the window first if the episode has not been
-  // heard that far, all of it on the Go side, see docs/JOBS.md.
+  // heard that far, all of it on the Go side, see docs/JOBS.md. It names
+  // the window and nothing more: how many clips and how long are the
+  // numbers the Go side keeps, see asKept in search.go, so none sent
+  // here can be from before the last one typed.
   async function findClips(replan: boolean) {
     const press = begin();
-    await asked(() =>
-      api.search(
-        path,
-        {
-          From: whole ? 0 : from,
-          To: whole ? 0 : to,
-          Count: count,
-          Min: min,
-          Max: max,
-          Replan: replan,
-        },
-        press,
-      ),
-    );
+    const req = { From: whole ? 0 : from, To: whole ? 0 : to, Count: 0, Min: 0, Max: 0, Replan: replan };
+    await asked(async () => {
+      await numbersOnTheirWay;
+      return api.search(path, req, press);
+    });
   }
 
   // Search and Continue alike. A click shows at once: the list opens its
