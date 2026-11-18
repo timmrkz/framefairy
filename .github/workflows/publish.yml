@@ -38,8 +38,9 @@
 #    so the Updates page says for the whole of the build that the build it
 #    offers is not the newest.
 # 2. publish, per channel, one after another and never stopped half way,
-#    checks that the commit is its channel's, checks the build, signs the
-#    zip and uploads it with its entry to the release dev, and marks a
+#    checks that the commit is its channel's, packs the build in parts,
+#    checks it, signs the zip and uploads it with its parts, the pieces
+#    the release lacks and its entry to the release dev, and marks a
 #    pull request's commit ready to update to. A build it does not
 #    publish says why on its commit.
 # 3. list, whenever a build ends, however it ended, writes the list again
@@ -148,10 +149,19 @@ jobs:
       # it, so this step does not hold the key: nothing needs it until the
       # reading is done, and a zip made to trip the reader finds no key
       # and no token to take. The step after it signs only a build this one passed.
-      - id: check
+      # The zip the build left deflates every file. Packed again, each
+      # file is stored as it is, and its parts and pieces let the app
+      # download only the files it does not have. The packed zip is what
+      # is checked, signed and published. See docs/UPDATES.md.
+      - id: pack
         if: steps.which.outputs.run == 'true'
+        name: Pack it in parts
+        run: go run ./cmd/framefairy-release pack -zip "$RUNNER_TEMP/build/app.zip" -out "$RUNNER_TEMP/packed"
+
+      - id: check
+        if: steps.pack.outcome == 'success'
         name: Check what it could reach
-        run: go run ./cmd/framefairy-release check -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
+        run: go run ./cmd/framefairy-release check -zip "$RUNNER_TEMP/packed/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
 
       - id: sign
         if: steps.check.outcome == 'success'
@@ -164,7 +174,8 @@ jobs:
           COMMIT: ${{ steps.which.outputs.commit }}
           URL: https://github.com/${{ github.repository }}/releases/download/dev/${{ steps.which.outputs.zip }}
         run: >-
-          go run ./cmd/framefairy-release sign -zip "$RUNNER_TEMP/build/app.zip" -channel "$CHANNEL" -name "$NAME"
+          go run ./cmd/framefairy-release sign -zip "$RUNNER_TEMP/packed/app.zip" -parts "$RUNNER_TEMP/packed/parts.json"
+          -channel "$CHANNEL" -name "$NAME"
           -version "$VERSION" -commit "$COMMIT" -url "$URL" -out "$RUNNER_TEMP/entry.json" -refusal "$RUNNER_TEMP/refused.txt"
 
       # The zip first and its entry after, and a pull request's commit
@@ -177,8 +188,8 @@ jobs:
           ZIP: ${{ steps.which.outputs.zip }}
           CHANNEL: ${{ steps.which.outputs.channel }}
         run: >-
-          go run ./cmd/framefairy-release publish -zip "$RUNNER_TEMP/build/app.zip" -as "$ZIP"
-          -entry "$RUNNER_TEMP/entry.json" -channel "$CHANNEL" -commit "$SHA"
+          go run ./cmd/framefairy-release publish -zip "$RUNNER_TEMP/packed/app.zip" -as "$ZIP"
+          -packed "$RUNNER_TEMP/packed" -entry "$RUNNER_TEMP/entry.json" -channel "$CHANNEL" -commit "$SHA"
 
       # Whatever failed, the refusal of the check or the signer, or any
       # step on the way, says so on the commit that was built, where the

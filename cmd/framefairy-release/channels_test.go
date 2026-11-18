@@ -141,10 +141,10 @@ func TestAPublishedBuildIsMarkedOnceItsEntryIsUp(t *testing.T) {
 		}
 	}
 	gh := &fakeGitHub{}
-	if err := publish(gh, zip, "app-pr-7-v.zip", entry, "pr-7", "c7"); err != nil {
+	if err := publish(gh, zip, "app-pr-7-v.zip", "", entry, "pr-7", "c7"); err != nil {
 		t.Fatal(err)
 	}
-	if err := publish(gh, zip, "app-main-v.zip", entry, "main", "cm"); err != nil {
+	if err := publish(gh, zip, "app-main-v.zip", "", entry, "main", "cm"); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{

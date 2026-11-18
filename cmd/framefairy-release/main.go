@@ -69,6 +69,8 @@ func main() {
 		err = makeKey()
 	case "build-plan", "publish-plan":
 		err = planCommand(os.Args[1], args, gitHubFromEnv())
+	case "pack":
+		err = packCommand(args)
 	case "check":
 		err = check(args)
 	case "sign":
@@ -91,7 +93,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | check | sign | publish | not-published | channels | unstick, see the head of main.go")
+	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick, see the head of main.go")
 	os.Exit(2)
 }
 
@@ -181,12 +183,15 @@ func sign(args []string) error {
 	commit := fs.String("commit", "", "the commit it was built from")
 	where := fs.String("url", "", "where the zip will be downloaded from")
 	out := fs.String("out", "", "where the entry goes")
+	parts := fs.String("parts", "", "the zip's parts, from pack, if it was packed")
 	_ = fs.Parse(args)
-	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *out), os.Stderr)
+	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out), os.Stderr)
 }
 
-// signBuild signs the zip and writes its entry.
-func signBuild(zipPath, channel, name, version, commit, where, out string) error {
+// signBuild signs the zip and writes its entry. With parts, the entry says
+// where they will be, beside the zip, once they are read as the parts of
+// this zip.
+func signBuild(zipPath, channel, name, version, commit, where, parts, out string) error {
 	private, public, err := keys()
 	if err != nil {
 		return err
@@ -210,6 +215,16 @@ func signBuild(zipPath, channel, name, version, commit, where, out string) error
 		Size: size, SHA256: hex.EncodeToString(digest), Signature: updates.Sign(private, digest),
 		Published: time.Now().UTC().Truncate(time.Second),
 	}
+	if parts != "" {
+		data, err := os.ReadFile(parts)
+		if err != nil {
+			return err
+		}
+		if _, err := updates.ParseParts(data, b.Size, b.SHA256); err != nil {
+			return err
+		}
+		b.Parts = updates.PartsURL(where)
+	}
 	b.Claim = updates.SignClaim(private, b)
 	if err := b.Check(); err != nil {
 		return err
@@ -230,8 +245,9 @@ func publishCommand(args []string, gh gitHub) error {
 	entry := fs.String("entry", "", "its entry for the channel list")
 	channel := fs.String("channel", "", "main, or pr- and the pull request's number")
 	commit := fs.String("commit", "", "the whole commit it was built from")
+	packed := fs.String("packed", "", "the folder pack wrote, whose parts and pieces go up too")
 	_ = fs.Parse(args)
-	return publish(gh, *zipPath, *as, *entry, *channel, *commit)
+	return publish(gh, *zipPath, *as, *packed, *entry, *channel, *commit)
 }
 
 func notPublishedCommand(args []string, gh gitHub) error {

@@ -3,10 +3,14 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
+
+	"framefairy/updates"
 )
 
 // publish uploads a signed build and its entry to the release dev, and
@@ -23,7 +27,13 @@ import (
 // #798 and #816 never said they were ready, #839. The app reads the entry
 // of the channel it follows, so the build is there to update to once the
 // entry is up, whenever the list follows.
-func publish(gh gitHub, zipPath, zipName, entryPath, channel, commit string) error {
+//
+// A build pack wrote, in the folder packed, also uploads its pieces and
+// its parts: first every piece the release does not hold yet, then the
+// zip, then the parts, then the entry, so nothing an entry names is
+// missing when the app reads it. A piece is named by the SHA-256 of the
+// file it holds, so one that is there already is the same file and stays.
+func publish(gh gitHub, zipPath, zipName, packed, entryPath, channel, commit string) error {
 	zip, err := os.ReadFile(zipPath)
 	if err != nil {
 		return err
@@ -32,8 +42,19 @@ func publish(gh gitHub, zipPath, zipName, entryPath, channel, commit string) err
 	if err != nil {
 		return err
 	}
+	var parts []byte
+	if packed != "" {
+		if parts, err = uploadPieces(gh, packed); err != nil {
+			return err
+		}
+	}
 	if err := gh.upload(zipName, zip); err != nil {
 		return err
+	}
+	if parts != nil {
+		if err := gh.upload(updates.PartsName(zipName), parts); err != nil {
+			return err
+		}
 	}
 	if err := gh.upload("channel-"+channel+".json", entry); err != nil {
 		return err
@@ -45,6 +66,42 @@ func publish(gh gitHub, zipPath, zipName, entryPath, channel, commit string) err
 		return nil
 	}
 	return gh.setReady(commit, "success", "On the Updates page as "+channel, "")
+}
+
+// uploadPieces uploads every piece of the build pack wrote to packed that
+// the release does not hold yet, and hands back its parts.
+func uploadPieces(gh gitHub, packed string) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(packed, partsFile))
+	if err != nil {
+		return nil, err
+	}
+	var p updates.Parts
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, err
+	}
+	all, err := gh.assets()
+	if err != nil {
+		return nil, err
+	}
+	there := map[string]bool{}
+	for _, a := range all {
+		there[a.name] = true
+	}
+	for _, part := range p.Parts {
+		name := updates.PieceName(part.SHA256)
+		if part.Bytes != nil || there[name] {
+			continue
+		}
+		piece, err := os.ReadFile(filepath.Join(packed, name))
+		if err != nil {
+			return nil, err
+		}
+		if err := gh.upload(name, piece); err != nil {
+			return nil, err
+		}
+		there[name] = true
+	}
+	return data, nil
 }
 
 // notPublished marks a commit whose build was not published, whatever
