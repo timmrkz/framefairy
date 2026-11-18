@@ -1994,8 +1994,10 @@ export const steps = {
       job = (await ask(page, "Jobs")).findLast((j) => j.kind === "search" && j.episode === path);
       if (job && job.state !== "running" && job.state !== "queued") break;
     }
-    if (job.state !== "done" || job.ended !== "silent") {
-      walk.wrong = `the search of a video with no speech is ${job.state}, ended ${job.ended}, not done with no speech`;
+    // The list of jobs says what the search heard, silent, and the
+    // video's state says how it ended, which the row below reads.
+    if (job.state !== "done" || !job.silent) {
+      walk.wrong = `the search of a video with no speech is ${job.state}, silent ${!!job.silent}, not done with no speech`;
       return;
     }
     await caughtUp(page, url, [job]);
