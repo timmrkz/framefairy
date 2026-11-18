@@ -19,6 +19,8 @@ import (
 	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
+	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/standin"
 )
 
@@ -28,7 +30,14 @@ import (
 // On the real disk: ffmpeg reads the episode the search hears.
 func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project, *int32) {
 	t.Helper()
-	source := testEpisode(t, "40")
+	return searchProjectOf(t, testEpisode(t, "40"), rec)
+}
+
+// searchProjectOf is searchProject on the video at source.
+//
+// On the real disk: ffmpeg reads the video the search hears.
+func searchProjectOf(t *testing.T, source string, rec func(string) (Recognizer, error)) (*Project, *int32) {
+	t.Helper()
 	var asked int32
 	server := fakeModel(t, &asked)
 	t.Cleanup(server.Close)
@@ -248,6 +257,35 @@ func TestASearchOfAWindowWithNoSpeechIsDoneWithNothingFound(t *testing.T) {
 	}
 	if got := SearchEnded(ended, true, 0, HeardParts(disk, p.Source, p.Base.ASRModel), 40); got != EndedSilent {
 		t.Errorf("the search is said to have ended %q, not %q", got, EndedSilent)
+	}
+}
+
+// On the real disk: ffprobe reads the video, which has no sound at all.
+func TestASearchOfAVideoWithNoSoundIsDoneWithNothingFound(t *testing.T) {
+	t.Parallel()
+	ffmpegtest.Need(t)
+	body, err := os.ReadFile(fixtures.Path(t, "picture.mp4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "picture.mp4")
+	if err := os.WriteFile(source, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The recogniser that hears a word in every piece: a video with no
+	// sound has nothing for it to hear.
+	p, asked := searchProjectOf(t, source, nil)
+	var ended JobRecord
+	host := Host{Changed: func(rec JobRecord) { ended = rec }}
+	plan, err := p.Search(context.Background(), PlanRequest{From: 0, To: 10, Count: 1, Min: 5}, host)
+	if err != nil {
+		t.Fatalf("a video with no sound failed its search: %v", err)
+	}
+	if plan != "" || *asked != 0 || !ended.Silent {
+		t.Errorf("plan %q, the model asked %d times, the search ended as %+v, not done and silent", plan, *asked, ended)
+	}
+	if last := p.LastError(); last != "" {
+		t.Errorf("a search that ended done keeps the error %q", last)
 	}
 }
 

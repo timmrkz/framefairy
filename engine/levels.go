@@ -731,6 +731,9 @@ const (
 // heard: a slow one could save room noise alone first, and then no pause
 // was found in that video at all.
 func (e *Engine) videoLevel(ctx context.Context, source string, duration float64) (float64, error) {
+	if _, ok := e.soundless(ctx, source); ok {
+		return noSoundDB, nil
+	}
 	picture := e.pictureStart(ctx, source)
 	spots := levelSpotsIn(duration)
 	got := make([][]float32, len(spots))
