@@ -41,6 +41,9 @@ const KEPT_BYTES = 192 << 20;
 // changes, see cards.
 const CARDS_BYTES = 400 << 20;
 const REACH = 1.5;
+// A stream's first frame that takes longer than this to come says where
+// its time went, in the app's log, see Stream.take.
+const LATE_MS = 200;
 // How many streams are kept open: one for each of the queue's two
 // decoders, and one more for a still or a seek while they play.
 const STREAMS = 3;
@@ -59,8 +62,9 @@ const SLOW = 2;
 // seq numbers the asks in the order they were made. place is set on the
 // frame that holds the playhead, a place the hand put it, see frame.
 // ahead is set on a frame read ahead of the hand, see AppFrames.ahead.
-// moved is set on a place the hand dragged the playhead to after the press,
-// the one kind of frame that waits for a stream left behind, see route.
+// rests is set on a place where the hand comes to rest, the press of a
+// hold and the first place asked once it lets go: it never waits for a
+// stream left behind, see route.
 type Waiter = {
   rank: number;
   seq: number;
@@ -70,7 +74,7 @@ type Waiter = {
   ahead?: boolean;
   key?: boolean;
   back?: boolean;
-  moved?: boolean;
+  rests?: boolean;
 };
 
 // Where the time of a stream's first frame went, in milliseconds from when
@@ -337,7 +341,13 @@ class Stream {
 
   private take(got: Got) {
     if (!this.gave && got.frames.length) {
-      this.wentOn = this.owner.opened(performance.now() - this.asked, got.times, this.key).on;
+      const o = this.owner.opened(performance.now() - this.asked, got.times, this.key);
+      this.wentOn = o.on;
+      // Where a first frame that came late spent its time: on the Go side,
+      // or between the Go side having it out and the page having it. A
+      // frame Tim waited for came 950 ms after the Go side had it out, and
+      // the log could not say where that time went.
+      if (o.ms > LATE_MS) this.owner.trace(`the first frame from ${this.owner.ptsOf(this.first).toFixed(3)} s came ${o.ms} ms after it was asked, the Go side had it out after ${o.first} ms`);
       queueMicrotask(() => this.owner.unpark());
     }
     for (const { at, frame } of got.frames) {
@@ -406,6 +416,8 @@ export class AppFrames {
   // Whether the hand holds the playhead, see grip, the places it asked
   // for since it took hold, and the rank of the last of them.
   private dragging = false;
+  // The hand has let go, and the place it let go of is still to be asked.
+  private letGo = false;
   private dragPlaces = 0;
   private lastPlace = -1;
   // The number of the newest ask.
@@ -508,6 +520,7 @@ export class AppFrames {
   // FrameQueue.grip. The cards' frames wait while it holds it, see
   // readNext, and are read on once it lets go.
   grip(held: boolean) {
+    this.letGo = !held && this.dragging;
     this.dragging = held;
     this.dragPlaces = 0;
     this.lastPlace = -1;
@@ -543,13 +556,17 @@ export class AppFrames {
     // Every place but the first of a hold, which is where the press
     // landed: a click outruns nothing, see route.
     const moved = dragged && ++this.dragPlaces > 1;
+    // The hand comes to rest at the press of a hold, and at the first
+    // place asked once it lets go, which the cue there asks for.
+    const rests = place && (dragged ? !moved : this.letGo);
+    if (place && !dragged) this.letGo = false;
     return new Promise((done) => {
       const w: Waiter = {
         rank,
         seq: ++this.asked,
         place,
         back,
-        moved,
+        rests,
         // A step back is not opened with its key frame first: the frame on
         // screen is nearer than the key frame.
         key: moved && !back,
@@ -753,25 +770,24 @@ export class AppFrames {
     }
     let s = this.streams.find((x) => x.width === width && x.height === height && x.reaches(w.rank));
     if (s) this.stats.continued++;
-    else if (w.moved && this.dragging && this.streams.some((x) => x.stale)) {
-      // One new stream on its way at a time while the hand drags. While
-      // one is still coming for a place the hand has already left, a drag
-      // over the clip timeline would start an ffmpeg for every place it
-      // passes, more than anyone can watch and more than the machine can
-      // decode. The newest place waits instead, and goes as soon as that
-      // stream has come, so frames follow the hand as fast as they can be
-      // made and no faster.
+    else if (!w.rests && this.streams.some((x) => x.stale)) {
+      // One new stream on its way at a time. While one is still coming for
+      // a place the hand has already left, a drag over the clip timeline,
+      // an edge dragged while the clip plays or an arrow key held down
+      // would start an ffmpeg for every place it passes, more than anyone
+      // can watch and more than the machine can decode. The newest place
+      // waits instead, and goes as soon as that stream has come, so frames
+      // follow the hand as fast as they can be made and no faster.
       this.parked.push(w);
       this.stats.parked++;
       return;
     } else {
-      // Anything else is where the hand comes to rest: the press, the
-      // place it let go of, a play. It is the frame a person waits for,
-      // and it waited too behind a stream for a place the hand had left,
-      // for that stream's first frame, which nobody wanted any more. A
-      // drag of the range picker let go at 5679 s and its frame came 999
-      // ms later, found by Tim. Those streams are closed now, which also
-      // stops their decoding on the Go side, and the place opens its own.
+      // Where the hand comes to rest, the press or the place it let go
+      // of, is the frame a person waits for. It waited too behind a
+      // stream for a place the hand had left, for that stream's first
+      // frame, which nobody wanted any more. A drag of the range picker
+      // let go at 5679 s and its frame came 999 ms later, found by Tim.
+      // Such a stream is closed now and the place opens its own at once.
       for (const x of this.streams) {
         if (!x.stale) continue;
         this.trace(`a stream on its way to frame ${x.first}, a place the hand has left, is closed for frame ${w.rank}`);

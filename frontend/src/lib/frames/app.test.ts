@@ -191,6 +191,17 @@ function goSide(rate = 25) {
   return { app, asked, pulls, rankOf };
 }
 
+// The streams the page closes on the Go side, as goSide answers the rest.
+function closes(): string[] {
+  const closed: string[] = [];
+  const answer = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string) => {
+    if (url.startsWith("/frames/close")) closed.push(url);
+    return answer(url);
+  });
+  return closed;
+}
+
 describe("a stream asked for a frame while a pull is on its way", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -323,8 +334,7 @@ describe("the place where the hand lets go", () => {
   // came 999 ms after letting go on Tim's Mac.
   test("opens its own stream at once, and closes the one for the place it left", async () => {
     const { app, asked, pulls, rankOf } = goSide();
-    const said: string[] = [];
-    app.trace = (line) => said.push(line);
+    const closed = closes();
     app.grip(true);
     const press = new Set<{ gone?: boolean }>();
     void app.frame(10, 0, press as never, true);
@@ -340,10 +350,33 @@ describe("the place where the hand lets go", () => {
     const under = rankOf(app.frame(150, 0, undefined, true));
     expect(app.stats.parked).toBe(1);
     expect(app.stats.newFor.slice(-2)).toEqual(["10 place dragging", "150 place"]);
-    expect(said).toContain("a stream on its way to frame 10, a place the hand has left, is closed for frame 150");
     await pulls(2);
     asked[1].give([150]);
     expect(await under).toBe(150);
+    // The stream left behind is closed on the Go side once it is open.
+    expect(closed).toHaveLength(1);
+    app.close();
+  });
+
+  // Found by the review of #921: places that come one after another with
+  // no hand on the playhead, an edge dragged while the clip plays or an
+  // arrow key held down, opened a stream each and closed the one before,
+  // a seek on the Go side for every place passed. They wait as a drag's
+  // places do, and so does a place asked after the one the hand let go of.
+  test("is the only place after a drag that does not wait for a stream left behind", async () => {
+    const { app, pulls } = goSide();
+    const closed = closes();
+    app.grip(true);
+    app.grip(false);
+    let withdrawn = new Set<{ gone?: boolean }>();
+    void app.frame(10, 0, withdrawn as never, true);
+    await pulls(1);
+    for (const at of [50, 90, 130, 170]) {
+      for (const w of withdrawn) w.gone = true;
+      withdrawn = new Set();
+      void app.frame(at, 0, withdrawn as never, true);
+    }
+    expect([app.stats.streams, app.stats.parked, closed.length]).toEqual([1, 4, 0]);
     app.close();
   });
 });
