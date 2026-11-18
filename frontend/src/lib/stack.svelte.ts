@@ -29,6 +29,7 @@ export class Stack {
   #box: HTMLElement | null = null;
   #cards: ResizeObserver | null = null;
   #keyOf = new WeakMap<Element, string>();
+  #list: HTMLElement | null = null;
 
   // How far the column is scrolled and how tall it is.
   top = $state(0);
@@ -72,6 +73,7 @@ export class Stack {
   // The gap and the veil come from the stylesheet and are read once.
   attach(list: HTMLElement, box: HTMLElement): () => void {
     this.#box = box;
+    this.#list = list;
     const style = getComputedStyle(list);
     this.gap = parseFloat(style.rowGap) || 0;
     this.veil = parseFloat(style.paddingTop) || 0;
@@ -84,12 +86,12 @@ export class Stack {
       column.disconnect();
       this.#cards?.disconnect();
       this.#cards = null;
-      this.#box = null;
+      this.#box = this.#list = null;
     };
   }
 
   // A card built, measured each time its height changes. Put on the
-  // card's element with {@attach}.
+  // card's element with {@attach}, which carries its key in data-row too.
   card(key: string) {
     return (el: Element) => {
       this.#keyOf.set(el, key);
@@ -122,11 +124,35 @@ export class Stack {
     this.hold();
   }
 
+  // The cards built read now, before a place is worked out from the
+  // heights, so a card built since the last answer of the ResizeObserver
+  // is at the height it is laid out at and not at the guess. The page then
+  // turns from where the cards really stand. It lays out the cards built,
+  // a screen and two more, never the whole list. They are read from the
+  // list, by their key in data-row, since a card just built may not have
+  // been handed to card yet: Svelte runs the effects that turn the page
+  // before the attachments of the cards it built in the same pass.
+  #measureBuilt() {
+    if (!this.#list) return;
+    let changed = false;
+    for (const el of this.#list.querySelectorAll<HTMLElement>(":scope > li[data-row]")) {
+      const key = el.dataset.row!;
+      const h = el.getBoundingClientRect().height;
+      if (h === 0 || this.#measured.get(key) === h) continue;
+      this.#measured.set(key, h);
+      changed = true;
+    }
+    if (!changed) return;
+    this.#heard++;
+    this.hold();
+  }
+
   // The column scrolled by the hand: where it is, and the card that is to
   // stay where it stands, the one preferred when it is in view, or else
   // the first card in view.
   scrolled(list: unknown, prefer: string | null) {
     if (!this.#box) return;
+    this.#measureBuilt();
     this.top = this.#box.scrollTop;
     const keys = this.placed.keys;
     const mine = prefer === null ? -1 : keys.indexOf(prefer);
@@ -156,9 +182,10 @@ export class Stack {
   // Where the card of a key stands against the column: how far its top is
   // over the top of what is in view, and its foot under the foot of it,
   // inside the veil, so both are 0 or less when it is in view. Read from
-  // the heights, so nothing is laid out for it.
+  // the heights, so nothing but the cards built is laid out for it.
   shows(key: string): Shown | null {
     if (!this.#box) return null;
+    this.#measureBuilt();
     const i = this.placed.keys.indexOf(key);
     if (i < 0) return null;
     const top = this.#box.scrollTop;
@@ -170,6 +197,7 @@ export class Stack {
   // what is in view, and stays there.
   #toAt(key: string, by: number, list: unknown) {
     if (!this.#box) return;
+    this.#measureBuilt();
     const i = this.placed.keys.indexOf(key);
     if (i < 0) return;
     this.#box.scrollTop = this.veil + this.lead + this.placed.tops[i] - by;
@@ -185,6 +213,7 @@ export class Stack {
 
   // The card of a key at the foot of the column, over the veil.
   toFoot(key: string, list: unknown) {
+    this.#measureBuilt();
     const i = this.placed.keys.indexOf(key);
     if (i < 0 || !this.#box) return;
     this.#toAt(key, this.#box.clientHeight - this.veil - this.placed.heights[i], list);
