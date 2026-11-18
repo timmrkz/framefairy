@@ -618,17 +618,36 @@ func Captions(clip Clip, said []timed.Cue, maxChars int, alone func(string) bool
 		if trimEnd && !runsOn {
 			end = math.Min(end, math.Max(words[g.last].End, ClipTime(clip, was[g.last].End+captionHold)))
 		}
-		if rides {
-			// Too brief to read on its own, so it rides with the one before.
+		// rideAlong puts the words of g in the caption before, which then
+		// stays up until end.
+		rideAlong := func() {
 			prev := out[len(out)-1]
 			out[len(out)-1] = Caption{Start: prev.Start, End: math.Max(end, prev.End),
 				Text: prev.Text + " " + text(g.words), Words: append(prev.Words, g.words...),
 				Opens: prev.Opens, Closes: allWas[g.lastK].Start,
 				trimStart: prev.trimStart, trimEnd: trimEnd}
+		}
+		if rides {
+			// Too brief to read on its own, so it rides with the one before.
+			rideAlong()
 			continue
 		}
 		if trimStart {
 			start = math.Min(math.Max(start, appears(g.first)), end-shortestMoved)
+			// Never before the caption before it goes: pulled back to stay
+			// shortestMoved long, it began under the one before, and for
+			// two frames before a cut the two drew over each other. Left
+			// shorter than that, it rides with the one before, the way a
+			// caption too brief to read does, and where nothing may ride,
+			// it keeps what is left.
+			if len(out) > 0 && start < out[len(out)-1].End {
+				before := out[len(out)-1].End
+				if end-before < shortestMoved && !g.alone && !lastAlone {
+					rideAlong()
+					continue
+				}
+				start = math.Min(before, end)
+			}
 		}
 		out = append(out, Caption{Start: start, End: end, Text: text(g.words), Words: g.words,
 			Opens: allWas[g.firstK].Start, Closes: allWas[g.lastK].Start,
