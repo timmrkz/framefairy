@@ -103,10 +103,12 @@
   // when it is in view, or else the first card in view, taken as the hand
   // scrolls, see the scroll below. A new search is a new list and keeps
   // nothing. It runs before the effects that move the list, so they move
-  // it from where the hand left it.
+  // it from where the hand left it, and again each time other cards are
+  // built, which it measures first, see settle in lib/stack.svelte.ts.
   $effect(() => {
     void stack.placed;
-    untrack(() => stack.hold(typed));
+    void stack.built;
+    untrack(() => stack.settle(typed));
   });
 
   // What is typed is a new list, read from its top. A list scrolled half

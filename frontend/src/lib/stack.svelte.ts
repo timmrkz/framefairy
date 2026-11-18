@@ -42,8 +42,10 @@ export class Stack {
 
   // The card that stays where it stands, how far under the top of the
   // column, and for which list: a new search is a new list and keeps no
-  // place from the one before.
-  #anchor: { key: string; at: number; list: unknown } | null = null;
+  // place from the one before. A card turned to the foot keeps its foot
+  // over the veil instead, since its height may be a guess until it is
+  // built.
+  #anchor: { key: string; at: number; list: unknown; foot?: boolean } | null = null;
 
   constructor(keys: () => readonly string[]) {
     this.#keys = keys;
@@ -90,13 +92,21 @@ export class Stack {
     };
   }
 
-  // A card built, measured each time its height changes. Put on the
-  // card's element with {@attach}, which carries its key in data-row too.
+  // A card built, measured each time its height changes after it was
+  // built, see settle for its first height. Put on the card's element with
+  // {@attach}, which carries its key in data-row too. It is watched from
+  // the next frame: a card built while the ResizeObserver answers, as the
+  // list turns to the heights it just heard, is at the depth of the cards
+  // it answered for, and the browser leaves it unanswered and logs a loop.
   card(key: string) {
     return (el: Element) => {
       this.#keyOf.set(el, key);
-      this.#cards?.observe(el);
-      return () => this.#cards?.unobserve(el);
+      let gone = false;
+      requestAnimationFrame(() => gone || this.#cards?.observe(el));
+      return () => {
+        gone = true;
+        this.#cards?.unobserve(el);
+      };
     };
   }
 
@@ -124,6 +134,17 @@ export class Stack {
     this.hold();
   }
 
+  // The cards just built, read once they are on the page and before it is
+  // painted, and the card that stays where it stands put back there. Run
+  // from an effect each time the cards built or their places change, so a
+  // card built stands at its own height in the first frame it is seen,
+  // and the list is as tall as the heights say before the card kept is
+  // put back, which the column could not scroll to while it was shorter.
+  settle(list: unknown) {
+    this.#measureBuilt();
+    this.hold(list);
+  }
+
   // The cards built read now, before a place is worked out from the
   // heights, so a card built since the last answer of the ResizeObserver
   // is at the height it is laid out at and not at the guess. The page then
@@ -149,10 +170,10 @@ export class Stack {
 
   // The column scrolled by the hand: where it is, and the card that is to
   // stay where it stands, the one preferred when it is in view, or else
-  // the first card in view.
+  // the first card in view. The heights are the ones settle read as the
+  // cards were built, so a scroll lays nothing out.
   scrolled(list: unknown, prefer: string | null) {
     if (!this.#box) return;
-    this.#measureBuilt();
     this.top = this.#box.scrollTop;
     const keys = this.placed.keys;
     const mine = prefer === null ? -1 : keys.indexOf(prefer);
@@ -173,7 +194,8 @@ export class Stack {
     if (!a || !this.#box || (list !== undefined && a.list !== list)) return;
     const i = untrack(() => this.placed.keys.indexOf(a.key));
     if (i < 0) return;
-    const want = this.veil + this.lead + untrack(() => this.placed.tops[i]) - a.at;
+    const at = a.foot ? this.#box.clientHeight - this.veil - untrack(() => this.placed.heights[i]) : a.at;
+    const want = this.veil + this.lead + untrack(() => this.placed.tops[i]) - at;
     if (Math.abs(want - this.#box.scrollTop) < 0.5) return;
     this.#box.scrollTop = want;
     this.top = this.#box.scrollTop;
@@ -194,7 +216,12 @@ export class Stack {
   }
 
   // The column scrolled so the card of a key stands at by, from the top of
-  // what is in view, and stays there.
+  // what is in view, and stays there. The card is kept at by and not where
+  // the scroll left it: the list on the page is as tall as the heights
+  // said before this turn, and a card far down stood under the foot of a
+  // column that could not yet scroll that far, and was kept there, out of
+  // view. Settle puts it at by once the list is as tall as it is now, or
+  // as far as the list goes, at its end.
   #toAt(key: string, by: number, list: unknown) {
     if (!this.#box) return;
     this.#measureBuilt();
@@ -202,7 +229,7 @@ export class Stack {
     if (i < 0) return;
     this.#box.scrollTop = this.veil + this.lead + this.placed.tops[i] - by;
     this.top = this.#box.scrollTop;
-    this.#anchor = { key, at: this.veil + this.lead + this.placed.tops[i] - this.top, list };
+    this.#anchor = { key, at: by, list };
   }
 
   // The card of a key at the top of the column, where the first card
@@ -217,6 +244,7 @@ export class Stack {
     const i = this.placed.keys.indexOf(key);
     if (i < 0 || !this.#box) return;
     this.#toAt(key, this.#box.clientHeight - this.veil - this.placed.heights[i], list);
+    if (this.#anchor) this.#anchor.foot = true;
   }
 
   // The list at its top, a new list read from its first card.
