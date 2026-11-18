@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -75,6 +76,14 @@ func makeList(entries map[string][]byte, newest map[string]string, conflict map[
 		// One whose claim is there and wrong is no build of ours.
 		if b.Claim != "" {
 			if err := updates.VerifyClaim(public, b); err != nil {
+				fmt.Fprintf(log, "left out %s: %v\n", name, err)
+				continue
+			}
+		}
+		// The stored zip is what an app that knows parts installs, so its
+		// signature and claim are held the same way.
+		if st, ok := b.AsStored(); ok {
+			if err := errors.Join(updates.Verify(public, st), updates.VerifyClaim(public, st)); err != nil {
 				fmt.Fprintf(log, "left out %s: %v\n", name, err)
 				continue
 			}

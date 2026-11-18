@@ -475,9 +475,17 @@ func refusedEntry(channel string, why error) {
 // a report shows what an update downloaded, or why it downloaded the
 // build whole.
 func pieced(p updates.Pieced) {
-	if p.Err != nil {
-		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).
-			Msg("the build could not be put together from its parts, so it is downloaded whole")
+	switch {
+	case p.Err != nil && p.Packed > 0:
+		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int64("bytes", p.Packed).
+			Msg("the build could not be put together from its parts, so it was downloaded packed")
+		return
+	case p.Err != nil:
+		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Msg("the build could not be downloaded")
+		return
+	case p.Packed > 0:
+		theLog.line(zerolog.InfoLevel, "updates").Int64("bytes", p.Packed).
+			Msg("the build was downloaded packed, which weighed less than the pieces the app lacked")
 		return
 	}
 	theLog.line(zerolog.InfoLevel, "updates").Int("kept", p.Kept).Int("fetched", p.Fetched).

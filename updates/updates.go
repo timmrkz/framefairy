@@ -104,18 +104,13 @@ type Build struct {
 	// not install.
 	Claim     string    `json:"claim,omitempty"`
 	Published time.Time `json:"published"`
-	// Parts is where the zip's parts are, beside it, so the app downloads
-	// only the files it does not have, see parts.go. Empty for a build
-	// published whole. Not signed: wrong parts make a zip that fails its
-	// signature, and the app then downloads the zip whole.
-	Parts string `json:"parts,omitempty"`
-	// Packed is where the zip is packed with zstd, beside it, and
-	// PackedSize its size, what the app downloads when the parts do not
-	// work, see whole.go. Empty for a build published without it. Not
-	// signed either: a packed zip that unpacks to another zip fails the
-	// signature, and the app then downloads the zip itself.
-	Packed     string `json:"packed,omitempty"`
-	PackedSize int64  `json:"packedSize,omitempty"`
+	// Stored is the same build as a zip that stores its files as they
+	// are, signed and claimed on its own. An app that knows it installs
+	// that zip, put together from its parts and the files it has, or
+	// downloaded packed with zstd, see parts.go and whole.go. An app from
+	// before it reads only the fields above, and downloads the zip at URL
+	// as it always did. Nil for a build published without parts.
+	Stored *Stored `json:"stored,omitempty"`
 	// Newest is the channel's newest commit when that is not the one this
 	// build was made from: a push whose build has not come yet. The build
 	// is still the newest there is and can be installed, but it is not
@@ -129,6 +124,32 @@ type Build struct {
 	// GitHub runs no CI on such a pull request, so a build that works is
 	// not yet one that was tested. Not signed either.
 	Conflict bool `json:"conflict,omitempty"`
+}
+
+// Stored is a build as the zip that stores its files. Its parts are at
+// PartsURL and the zip packed with zstd at PackedURL of the build's URL,
+// beside the zip there.
+type Stored struct {
+	Size int64 `json:"size"`
+	// SHA256, Signature and Claim are what they are for the build, of
+	// this zip.
+	SHA256    string `json:"sha256"`
+	Signature string `json:"signature"`
+	Claim     string `json:"claim"`
+	// PackedSize is the size of the zip packed with zstd.
+	PackedSize int64 `json:"packedSize"`
+}
+
+// AsStored is the build as the zip that stores its files, with that zip's
+// size, checksum, signature and claim, when it was published with one.
+// That is the zip an app that knows parts installs.
+func (b Build) AsStored() (Build, bool) {
+	if b.Stored == nil {
+		return b, false
+	}
+	s := b
+	s.Size, s.SHA256, s.Signature, s.Claim = b.Stored.Size, b.Stored.SHA256, b.Stored.Signature, b.Stored.Claim
+	return s, true
 }
 
 // List is the channel list.
@@ -171,15 +192,12 @@ func (b Build) Check() error {
 	if err != nil || u.Scheme != "https" || u.Host == "" || !strings.HasSuffix(u.Path, ".zip") {
 		return fmt.Errorf("channel %s is not a zip on https", b.Channel)
 	}
-	if b.Parts != "" && b.Parts != PartsURL(b.URL) {
-		return fmt.Errorf("channel %s has its parts somewhere else than its zip", b.Channel)
-	}
 	if b.Size <= 0 || b.Size > MaxBuild {
 		return fmt.Errorf("channel %s has a size of %d bytes", b.Channel, b.Size)
 	}
-	if (b.Packed != "" || b.PackedSize != 0) &&
-		(b.Packed != PackedURL(b.URL) || b.PackedSize <= 0 || b.PackedSize > packedBound(b.Size)) {
-		return fmt.Errorf("channel %s has its packed zip somewhere else than its zip, or of a size it cannot be", b.Channel)
+	if st := b.Stored; st != nil && (st.Size <= 0 || st.Size > MaxBuild || !sha256Pattern.MatchString(st.SHA256) ||
+		st.PackedSize <= 0 || st.PackedSize > packedBound(st.Size)) {
+		return fmt.Errorf("channel %s has a stored zip of sizes it cannot have, or no checksum", b.Channel)
 	}
 	if !sha256Pattern.MatchString(b.SHA256) {
 		return fmt.Errorf("channel %s has no checksum", b.Channel)

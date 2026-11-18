@@ -28,10 +28,11 @@ import (
 // of the channel it follows, so the build is there to update to once the
 // entry is up, whenever the list follows.
 //
-// A build pack wrote, in the folder packed, also uploads its pieces and
-// its parts: first every piece the release does not hold yet, then the
-// zip, then the zip packed with zstd, then the parts, then the entry, so nothing an entry names is
-// missing when the app reads it. A piece is named by the SHA-256 of the
+// A build pack wrote, in the folder packed, also uploads what an app that
+// knows parts downloads: first every piece the release does not hold yet,
+// then the zip, then the stored zip packed with zstd, then the parts, then
+// the entry, so nothing an entry names is missing when the app reads it.
+// The stored zip itself is never uploaded, see pack.go. A piece is named by the SHA-256 of the
 // file it holds, so one that is there already is the same file and stays.
 func publish(gh gitHub, zipPath, zipName, packed, entryPath, channel, commit string) error {
 	zip, err := os.ReadFile(zipPath)

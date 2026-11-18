@@ -58,8 +58,8 @@ func (f *fetching) downloaded(got, of int64) {
 	f.mu.Unlock()
 }
 
-// from is where a build can be had: its zip, and its parts and its zip
-// packed with zstd when it was published with them.
+// from is where a build can be had: its parts and its zip packed with
+// zstd when it was published with them, and otherwise its zip, whole.
 type from struct {
 	whole, parts, packed string
 	packedSize           int64
@@ -70,9 +70,10 @@ type from struct {
 // be written, and the caller downloads it itself.
 //
 // A build with parts is put together from them, see assemble.go. When
-// that fails for any reason it downloads the zip packed with zstd, see
-// whole.go, and when that fails too, the zip itself. So parts that are
-// wrong or a piece that is gone cost time and never the update.
+// that fails for any reason, or when the pieces it lacks weigh more than
+// the zip packed with zstd, it downloads that, see whole.go. So parts that
+// are wrong or a piece that is gone cost time and never the update. A
+// build without parts is downloaded whole.
 func (s *Source) fetchOf(sum string, from from, total int64) *fetching {
 	s.fetchMu.Lock()
 	defer s.fetchMu.Unlock()
@@ -100,7 +101,11 @@ func (s *Source) fetchOf(sum string, from from, total int64) *fetching {
 		err := errNoParts
 		if from.parts != "" {
 			var done Pieced
-			done, err = s.assemble(ctx, from.parts, sum, total, k, f.downloaded)
+			cheaper := int64(0)
+			if from.packed != "" {
+				cheaper = from.packedSize
+			}
+			done, err = s.assemble(ctx, from.parts, sum, total, cheaper, k, f.downloaded)
 			if err == nil && !k.whole() {
 				err = errors.New("the build put together from its parts is not the build the list says")
 			}
@@ -108,8 +113,9 @@ func (s *Source) fetchOf(sum string, from from, total int64) *fetching {
 				s.tell(done)
 			}
 		}
-		if err != nil && err != errNoParts {
-			s.tell(Pieced{Err: err})
+		why := err
+		if why == errNoParts || why == errPackedIsSmaller {
+			why = nil
 		}
 		if err != nil && from.packed != "" {
 			f.downloaded(0, from.packedSize)
@@ -120,10 +126,16 @@ func (s *Source) fetchOf(sum string, from from, total int64) *fetching {
 				err = errors.New("the packed zip unpacks to another build than the list says")
 			}
 			if err != nil {
-				s.tell(Pieced{Err: fmt.Errorf("the packed zip: %w", err)})
+				why = errors.Join(why, fmt.Errorf("the packed zip: %w", err))
+			} else {
+				s.tell(Pieced{Packed: from.packedSize, Err: why})
+				why = nil
 			}
 		}
-		if err != nil {
+		if why != nil {
+			s.tell(Pieced{Err: why})
+		}
+		if err != nil && from.whole != "" {
 			f.downloaded(0, total)
 			if err = k.restart(); err == nil {
 				err = s.stream(ctx, from.whole, total, k, func(written int64) { f.downloaded(written, total) })

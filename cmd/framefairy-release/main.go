@@ -42,6 +42,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -193,14 +194,11 @@ func sign(args []string) error {
 	commit := fs.String("commit", "", "the commit it was built from")
 	where := fs.String("url", "", "where the zip will be downloaded from")
 	out := fs.String("out", "", "where the entry goes")
-	parts := fs.String("parts", "", "the zip's parts, from pack, if it was packed")
+	parts := fs.String("parts", "", "the parts pack wrote, beside the stored zip and the zip packed, if it was packed")
 	_ = fs.Parse(args)
 	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out), os.Stderr)
 }
 
-// signBuild signs the zip and writes its entry. With parts, the entry says
-// where they will be, beside the zip, once they are read as the parts of
-// this zip.
 // unpacksTo says whether a zip packed with zstd unpacks to the zip with
 // this SHA-256.
 func unpacksTo(packed, digest []byte) error {
@@ -219,6 +217,10 @@ func unpacksTo(packed, digest []byte) error {
 	return nil
 }
 
+// signBuild signs the zip and writes its entry. With parts, it signs the
+// stored zip beside them too, once they are read as its parts and the zip
+// packed beside them unpacks to it, and the entry names it. An app that
+// knows parts installs that zip, and an app from before installs the zip.
 func signBuild(zipPath, channel, name, version, commit, where, parts, out string) error {
 	private, public, err := keys()
 	if err != nil {
@@ -244,24 +246,14 @@ func signBuild(zipPath, channel, name, version, commit, where, parts, out string
 		Published: time.Now().UTC().Truncate(time.Second),
 	}
 	if parts != "" {
-		data, err := os.ReadFile(parts)
+		if err := sameApp(zipPath, filepath.Join(filepath.Dir(parts), storedZip)); err != nil {
+			return err
+		}
+		st, err := signStored(private, b, filepath.Dir(parts), parts)
 		if err != nil {
 			return err
 		}
-		if _, err := updates.ParseParts(data, b.Size, b.SHA256); err != nil {
-			return err
-		}
-		b.Parts = updates.PartsURL(where)
-		// pack leaves the zip packed with zstd beside its parts, and it
-		// goes up only when it unpacks to this very zip.
-		packed, err := os.ReadFile(filepath.Join(filepath.Dir(parts), packedWhole))
-		if err != nil {
-			return err
-		}
-		if err := unpacksTo(packed, digest); err != nil {
-			return err
-		}
-		b.Packed, b.PackedSize = updates.PackedURL(where), int64(len(packed))
+		b.Stored = &st
 	}
 	b.Claim = updates.SignClaim(private, b)
 	if err := b.Check(); err != nil {
@@ -273,7 +265,74 @@ func signBuild(zipPath, channel, name, version, commit, where, parts, out string
 	if err := updates.VerifyClaim(public, b); err != nil {
 		return err
 	}
+	if st, ok := b.AsStored(); ok {
+		if err := updates.Verify(public, st); err != nil {
+			return err
+		}
+		if err := updates.VerifyClaim(public, st); err != nil {
+			return err
+		}
+	}
 	return writeJSON(out, b)
+}
+
+// sameApp says whether two zips hold the same files, by name, checksum,
+// size and mode, so the stored zip signed beside a zip is the same app.
+func sameApp(a, b string) error {
+	za, err := zip.OpenReader(a)
+	if err != nil {
+		return err
+	}
+	defer za.Close()
+	zb, err := zip.OpenReader(b)
+	if err != nil {
+		return err
+	}
+	defer zb.Close()
+	if len(za.File) != len(zb.File) {
+		return errors.New("the stored zip holds other files than the zip")
+	}
+	for i, f := range za.File {
+		g := zb.File[i]
+		if f.Name != g.Name || f.CRC32 != g.CRC32 || f.UncompressedSize64 != g.UncompressedSize64 || f.Mode() != g.Mode() {
+			return fmt.Errorf("the stored zip holds %s otherwise than the zip", f.Name)
+		}
+	}
+	return nil
+}
+
+// signStored signs the stored zip pack left in packed as the build b is,
+// and checks that the parts and the zip packed beside it make that zip.
+func signStored(private ed25519.PrivateKey, b updates.Build, packed, parts string) (updates.Stored, error) {
+	f, err := os.Open(filepath.Join(packed, storedZip))
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	digest, size, err := updates.Digest(f)
+	f.Close()
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	sum := hex.EncodeToString(digest)
+	data, err := os.ReadFile(parts)
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	if _, err := updates.ParseParts(data, size, sum); err != nil {
+		return updates.Stored{}, err
+	}
+	whole, err := os.ReadFile(filepath.Join(packed, packedWhole))
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	if err := unpacksTo(whole, digest); err != nil {
+		return updates.Stored{}, err
+	}
+	b.Size, b.SHA256 = size, sum
+	return updates.Stored{
+		Size: size, SHA256: sum, Signature: updates.Sign(private, digest),
+		Claim: updates.SignClaim(private, b), PackedSize: int64(len(whole)),
+	}, nil
 }
 
 func publishCommand(args []string, gh gitHub) error {

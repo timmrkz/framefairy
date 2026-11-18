@@ -305,18 +305,28 @@ func (s *Source) Check(ctx context.Context, req updater.CheckRequest) (*updater.
 	if !ok || b.Version == req.CurrentVersion {
 		return nil, nil
 	}
+	// A build with a stored zip is installed as that zip, so that is
+	// whose claim says which build it is.
+	installed, _ := b.AsStored()
 	if s.Key != nil {
-		if err := VerifyClaim(s.Key, b); err != nil {
+		if err := VerifyClaim(s.Key, installed); err != nil {
 			return nil, err
 		}
 	}
 	return Release(b)
 }
 
-// Release is a build as Wails' updater takes it.
+// Release is a build as Wails' updater takes it. A build with a stored
+// zip is that zip, put together from its parts or downloaded packed, see
+// fetch.go, and Wails checks that zip's signature.
 func Release(b Build) (*updater.Release, error) {
 	if err := b.Check(); err != nil {
 		return nil, err
+	}
+	meta := map[string]any{"url": b.URL, "commit": b.Commit}
+	if st, ok := b.AsStored(); ok {
+		meta["parts"], meta["packed"], meta["packedSize"] = PartsURL(b.URL), PackedURL(b.URL), b.Stored.PackedSize
+		b = st
 	}
 	digest, err := hex.DecodeString(b.SHA256)
 	if err != nil {
@@ -344,7 +354,7 @@ func Release(b Build) (*updater.Release, error) {
 			SignatureAlgo: "ed25519",
 			Signature:     sig,
 		},
-		Metadata: map[string]any{"url": b.URL, "parts": b.Parts, "packed": b.Packed, "packedSize": b.PackedSize, "commit": b.Commit},
+		Metadata: meta,
 	}, nil
 }
 
@@ -371,15 +381,28 @@ func (s *Source) Download(ctx context.Context, r *updater.Release, dst io.Writer
 	if found, err := s.fromCache(sum, total, dst, report); found {
 		return err
 	}
+	// A build with parts is the stored zip, which is not at its address:
+	// that is the zip an app from before parts downloads.
 	from := from{whole: where}
 	from.parts, _ = r.Metadata["parts"].(string)
 	from.packed, _ = r.Metadata["packed"].(string)
 	from.packedSize, _ = r.Metadata["packedSize"].(int64)
+	if from.parts != "" {
+		from.whole = ""
+	}
 	if from.packedSize <= 0 {
 		from.packed = ""
 	}
 	if f := s.fetchOf(sum, from, total); f != nil {
 		return s.await(ctx, f, sum, dst, report)
+	}
+	// With no cache to put a build together in, it is downloaded straight
+	// to the updater, packed when it is published packed.
+	if from.packed != "" {
+		return s.unpackWhole(ctx, from.packed, from.packedSize, total, writerSink{dst}, func(got int64) { report(got, from.packedSize) })
+	}
+	if from.whole == "" {
+		return errors.New("the build has neither a packed zip nor a zip at its address")
 	}
 	return s.stream(ctx, where, total, writerSink{dst}, func(written int64) { report(written, total) })
 }

@@ -3,10 +3,13 @@ package updates
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -59,14 +62,20 @@ func dittoZip(t *testing.T, files ...appFile) []byte {
 }
 
 // published is a build as the release holds it once published in parts:
-// the stored zip, its parts, a piece for each of its files and the zip
-// packed with zstd.
+// the zip the build left, and of the stored zip its parts, a piece for
+// each of its files and the stored zip packed with zstd. The stored zip
+// itself, zip, is never published.
 type published struct {
+	ditto  []byte
 	zip    []byte
 	parts  Parts
 	pieces map[string][]byte
 	packed []byte
 }
+
+// packer packs every test's pieces: an encoder at the best level takes
+// tens of megabytes to set up.
+var packer = NewPacker()
 
 // publish packs a zip the way the publish workflow does.
 func publish(t *testing.T, ditto []byte) published {
@@ -90,12 +99,12 @@ func publish(t *testing.T, ditto []byte) published {
 			at += int64(len(part.Bytes))
 			continue
 		}
-		piece := PackPiece(stored.Bytes()[at : at+part.Size])
+		piece := packer.Pack(stored.Bytes()[at : at+part.Size])
 		pieces[part.SHA256] = piece
 		p.Parts[i].Packed = int64(len(piece))
 		at += part.Size
 	}
-	return published{zip: stored.Bytes(), parts: p, pieces: pieces, packed: PackZip(stored.Bytes())}
+	return published{ditto: ditto, zip: stored.Bytes(), parts: p, pieces: pieces, packed: packer.Pack(stored.Bytes())}
 }
 
 // releaseOf serves a published build at /dev/app.zip, with its parts and
@@ -110,7 +119,7 @@ type releaseOf struct {
 func serveParts(t *testing.T, list func() []byte, b published) *releaseOf {
 	t.Helper()
 	r := &releaseOf{files: map[string][]byte{}, asked: map[string]int{}}
-	r.files["/dev/app.zip"] = b.zip
+	r.files["/dev/app.zip"] = b.ditto
 	r.files["/dev/app.parts.json"] = mustJSON(t, b.parts)
 	r.files["/dev/app.zip.zst"] = b.packed
 	for sum, piece := range b.pieces {
@@ -191,10 +200,17 @@ func partsSource(t *testing.T, r *releaseOf, app fstest.MapFS) (*Source, *[]Piec
 // listFor is the channel list with the published build as pr-30.
 func listFor(t *testing.T, key ed25519.PrivateKey, srv string, b published) []byte {
 	t.Helper()
-	entry := build(t, key, "pr-30", "0.3.0-pr30.abc1234", srv+"/dev/app.zip", b.zip)
-	entry.Parts = srv + "/dev/app.parts.json"
-	entry.Packed, entry.PackedSize = srv+"/dev/app.zip.zst", int64(len(b.packed))
-	return listJSON(t, entry)
+	return listJSON(t, entryFor(t, key, srv, b))
+}
+
+// entryFor is the published build's entry as pr-30, signed as the zip the
+// build left and as the stored zip.
+func entryFor(t *testing.T, key ed25519.PrivateKey, srv string, b published) Build {
+	t.Helper()
+	entry := build(t, key, "pr-30", "0.3.0-pr30.abc1234", srv+"/dev/app.zip", b.ditto)
+	st := build(t, key, "pr-30", "0.3.0-pr30.abc1234", srv+"/dev/app.zip", b.zip)
+	entry.Stored = &Stored{Size: st.Size, SHA256: st.SHA256, Signature: st.Signature, Claim: st.Claim, PackedSize: int64(len(b.packed))}
+	return entry
 }
 
 // An update of a build whose app program alone changed downloads that
@@ -311,7 +327,7 @@ func (panicking) Stat(string) (fs.FileInfo, error) { panic("a file that cannot b
 func (panicking) ReadFile(string) ([]byte, error)  { panic("a file that cannot be read") }
 
 // A panic while the build is put together is that build's error: the app
-// downloads it whole and says why, and goes on running.
+// downloads the packed zip and says why, and goes on running.
 //
 // On the real disk: an update is a program that is downloaded, kept and run.
 func TestAPanicPuttingTheBuildTogetherDownloadsItWhole(t *testing.T) {
@@ -330,35 +346,75 @@ func TestAPanicPuttingTheBuildTogetherDownloadsItWhole(t *testing.T) {
 	if n, m := r.asks("/dev/app.zip.zst"), r.asks("/dev/app.zip"); n != 1 || m != 0 {
 		t.Errorf("the packed zip was downloaded %d times and the stored zip %d, want 1 and 0", n, m)
 	}
-	if len(*told) != 1 || (*told)[0].Err == nil || !strings.Contains((*told)[0].Err.Error(), "panicked") {
-		t.Errorf("told %+v, want the panic", *told)
+	if len(*told) != 1 || (*told)[0].Packed == 0 || (*told)[0].Err == nil || !strings.Contains((*told)[0].Err.Error(), "panicked") {
+		t.Errorf("told %+v, want the panic and the packed zip", *told)
 	}
 }
 
-// An app with nothing to take from, one made on the Mac or one whose
-// files are not the same, downloads every piece and still installs.
+// An app with little to take from, one made on the Mac or one whose files
+// are not the same, downloads whichever is smaller: the pieces it lacks or
+// the packed zip, and still installs.
 //
 // On the real disk: an update is a program that is downloaded, kept and run.
-func TestAnAppWithNothingToTakeDownloadsEveryPiece(t *testing.T) {
+func TestAnAppWithLittleToTakeDownloadsWhicheverIsSmaller(t *testing.T) {
 	t.Parallel()
-	key := testKey(t)
-	b := publish(t, dittoZip(t, newApp, ffmpeg, onnx))
-	var list []byte
-	r := serveParts(t, func() []byte { return list }, b)
-	list = listFor(t, key, r.server.URL, b)
-	changed := ffmpeg
-	changed.body = strings.ToUpper(changed.body)
-	src, told := partsSource(t, r, running(oldApp, changed))
+	// Three programs with the same libraries linked into each, the way
+	// ffmpeg's are. A piece packs one of them, and the packed zip reaches
+	// across all three, so it is smaller.
+	libraries := string(chacha8(4096))
+	linked := []appFile{newApp, {"Contents/MacOS/ffmpeg", libraries + "ffmpeg"},
+		{"Contents/MacOS/ffprobe", libraries + "ffprobe"}, {"Contents/MacOS/framefairy-frames", libraries + "frames"}}
+	for _, piecesSmaller := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pieces smaller %v", piecesSmaller), func(t *testing.T) {
+			t.Parallel()
+			key := testKey(t)
+			b := publish(t, dittoZip(t, linked...))
+			var pieces int64
+			for _, part := range b.parts.Parts {
+				pieces += part.Packed
+			}
+			if int64(len(b.packed)) >= pieces {
+				t.Fatalf("the packed zip, %d bytes, is no smaller than the pieces, %d", len(b.packed), pieces)
+			}
+			var list []byte
+			r := serveParts(t, func() []byte { return list }, b)
+			entry := entryFor(t, key, r.server.URL, b)
+			if piecesSmaller {
+				// A packed zip the list says is larger than every piece.
+				entry.Stored.PackedSize = pieces + 1
+			}
+			list = listJSON(t, entry)
+			src, told := partsSource(t, r, running(oldApp))
 
-	if got := install(t, src, key); got != newApp.body {
-		t.Fatalf("the app installed says %q", got)
+			if got := install(t, src, key); got != newApp.body {
+				t.Fatalf("the app installed says %q", got)
+			}
+			want := Pieced{Packed: int64(len(b.packed))}
+			if piecesSmaller {
+				want = Pieced{Fetched: 4, Bytes: pieces}
+			}
+			if len(*told) != 1 || (*told)[0] != want {
+				t.Errorf("told %+v, want %+v", *told, want)
+			}
+			if n, m := r.asks("/dev/app.zip.zst"), r.asks("/dev/app.zip"); n != boolInt(!piecesSmaller) || m != 0 {
+				t.Errorf("the packed zip was downloaded %d times and the zip %d", n, m)
+			}
+		})
 	}
-	if len(*told) != 1 || (*told)[0].Kept != 0 || (*told)[0].Fetched != 3 || (*told)[0].Err != nil {
-		t.Errorf("told %+v, want every file fetched", *told)
+}
+
+// chacha8 is n bytes that do not pack, the same every run.
+func chacha8(n int) []byte {
+	b := make([]byte, n)
+	_, _ = rand.NewChaCha8([32]byte{}).Read(b)
+	return b
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
 	}
-	if n := r.asks("/dev/app.zip"); n != 0 {
-		t.Errorf("the whole zip was downloaded %d times", n)
-	}
+	return 0
 }
 
 // Whatever goes wrong with the parts, the update still arrives: the app
@@ -377,7 +433,7 @@ func TestPartsThatDoNotWorkDownloadThePackedZip(t *testing.T) {
 		}, "404"},
 		{"a piece is another file", func(r *releaseOf, b published) {
 			sum := b.parts.Parts[partOf(t, b.parts, newApp.name)].SHA256
-			r.set("/dev/"+PieceName(sum), PackPiece([]byte("pull request 31")))
+			r.set("/dev/"+PieceName(sum), packer.Pack([]byte("pull request 31")))
 		}, "piece"},
 		{"the parts are gone", func(r *releaseOf, _ published) { r.set("/dev/app.parts.json", nil) }, "parts"},
 		{"the parts are of another build", func(r *releaseOf, b published) {
@@ -407,10 +463,10 @@ func TestPartsThatDoNotWorkDownloadThePackedZip(t *testing.T) {
 				t.Fatalf("the app installed says %q", got)
 			}
 			if n, m := r.asks("/dev/app.zip.zst"), r.asks("/dev/app.zip"); n != 1 || m != 0 {
-				t.Errorf("the packed zip was downloaded %d times and the stored zip %d, want 1 and 0", n, m)
+				t.Errorf("the packed zip was downloaded %d times and the zip %d, want 1 and 0", n, m)
 			}
-			if len(*told) != 1 || (*told)[0].Err == nil {
-				t.Fatalf("told %+v, want why the parts did not work", *told)
+			if len(*told) != 1 || (*told)[0].Err == nil || (*told)[0].Packed == 0 {
+				t.Fatalf("told %+v, want why the parts did not work, and the packed zip", *told)
 			}
 			if c.says != "is not the build" && !strings.Contains((*told)[0].Err.Error(), c.says) {
 				t.Errorf("told %q, want it to say %q", (*told)[0].Err, c.says)
@@ -419,13 +475,14 @@ func TestPartsThatDoNotWorkDownloadThePackedZip(t *testing.T) {
 	}
 }
 
-// When the packed zip does not work either, the update still arrives: the
-// app downloads the stored zip itself and says why.
+// When the packed zip does not work either, the update fails and says
+// why. The zip at the build's address is the deflated one, for the apps
+// from before parts, which is not the zip this app installs.
 //
-// On the real disk: an update is a program that is downloaded, kept and run.
-func TestAPackedZipThatDoesNotWorkDownloadsTheStoredZip(t *testing.T) {
+// On the real disk: an update is a program that is downloaded and kept.
+func TestAnUpdateWhosePartsAndPackedZipFailSaysWhy(t *testing.T) {
 	t.Parallel()
-	other := PackZip(publish(t, dittoZip(t, oldApp, ffmpeg, onnx)).zip)
+	other := packer.Pack(publish(t, dittoZip(t, oldApp, ffmpeg, onnx)).zip)
 	cases := map[string]func(b published) []byte{
 		"it is gone":             func(published) []byte { return nil },
 		"it is not zstd":         func(b published) []byte { return bytes.Repeat([]byte{'x'}, len(b.packed)) },
@@ -448,19 +505,38 @@ func TestAPackedZipThatDoesNotWorkDownloadsTheStoredZip(t *testing.T) {
 			}
 			list = listFor(t, key, r.server.URL, b)
 			src, told := partsSource(t, r, running(installed...))
+			u := newUpdater(t, src, "0.3.0-main.4", key)
+			if rel, err := u.Check(context.Background()); err != nil || rel == nil {
+				t.Fatalf("check: %v, %v", rel, err)
+			}
 
-			if got := install(t, src, key); got != newApp.body {
-				t.Fatalf("the app installed says %q", got)
+			if err := u.DownloadAndInstall(context.Background()); err == nil {
+				t.Fatal("a build that could not be had was installed")
 			}
-			if n := r.asks("/dev/app.zip"); n != 1 {
-				t.Errorf("the stored zip was downloaded %d times, want 1", n)
+			if n := r.asks("/dev/app.zip"); n != 0 {
+				t.Errorf("the deflated zip was downloaded %d times", n)
 			}
-			if len(*told) != 2 || (*told)[1].Err == nil || !strings.Contains((*told)[1].Err.Error(), "packed zip") {
-				t.Errorf("told %+v, want why the parts and then the packed zip did not work", *told)
+			if len(*told) != 1 || (*told)[0].Packed != 0 || (*told)[0].Err == nil ||
+				!strings.Contains((*told)[0].Err.Error(), "parts") || !strings.Contains((*told)[0].Err.Error(), "packed zip") {
+				t.Errorf("told %+v, want why the parts and the packed zip did not work", *told)
 			}
 		})
 	}
 }
+
+// A panic while the packed zip is unpacked is that download's error.
+func TestAPanicUnpackingThePackedZipIsItsError(t *testing.T) {
+	t.Parallel()
+	b := publish(t, dittoZip(t, newApp, ffmpeg))
+	err := unpackInto(bytes.NewReader(b.packed), int64(len(b.zip)), panicSink{})
+	if err == nil || !strings.Contains(err.Error(), "panicked") {
+		t.Errorf("unpacking into a sink that panics said %v", err)
+	}
+}
+
+type panicSink struct{}
+
+func (panicSink) write([]byte) error { panic("a disk that cannot be written") }
 
 // A build published whole, as before parts, downloads whole and says
 // nothing went wrong.
@@ -472,7 +548,7 @@ func TestABuildWithoutPartsDownloadsWhole(t *testing.T) {
 	b := publish(t, dittoZip(t, newApp, ffmpeg))
 	var list []byte
 	r := serveParts(t, func() []byte { return list }, b)
-	list = listJSON(t, build(t, key, "pr-30", "0.3.0-pr30.abc1234", r.server.URL+"/dev/app.zip", b.zip))
+	list = listJSON(t, build(t, key, "pr-30", "0.3.0-pr30.abc1234", r.server.URL+"/dev/app.zip", b.ditto))
 	src, told := partsSource(t, r, running(installed...))
 
 	if got := install(t, src, key); got != newApp.body {

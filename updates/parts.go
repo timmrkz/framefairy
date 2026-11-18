@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"runtime"
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
@@ -229,13 +230,26 @@ func Split(r io.ReaderAt, size int64) (Parts, error) {
 	return p, nil
 }
 
-// PackPiece packs a file as its piece.
-func PackPiece(data []byte) []byte {
-	enc, _ := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression),
-		zstd.WithWindowSize(pieceWindow), zstd.WithEncoderConcurrency(1))
-	defer enc.Close()
-	return enc.EncodeAll(data, nil)
+// Packer packs files as pieces, and a build's zip as its packed zip. An
+// encoder at zstd's best level takes tens of megabytes to set up, so one
+// packer packs every file of a build, several at a time.
+type Packer struct{ enc *zstd.Encoder }
+
+// NewPacker is a packer that packs as many files at a time as the machine
+// has cores.
+func NewPacker() Packer {
+	enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression),
+		zstd.WithWindowSize(pieceWindow), zstd.WithEncoderConcurrency(runtime.NumCPU()))
+	if err != nil {
+		// The options are constants, so this is a mistake in them.
+		panic(err)
+	}
+	return Packer{enc}
 }
+
+// Pack packs a file as its piece, or a zip as its packed zip, which
+// unpacks in the same memory.
+func (p Packer) Pack(data []byte) []byte { return p.enc.EncodeAll(data, nil) }
 
 // packedBound is the most a file of size bytes takes as its piece: what
 // zstd gives a file it cannot make smaller, its bytes with a header for

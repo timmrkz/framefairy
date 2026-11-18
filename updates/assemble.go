@@ -16,14 +16,23 @@ type Pieced struct {
 	// were downloaded as pieces, and Bytes what those pieces weighed.
 	Kept, Fetched int
 	Bytes         int64
-	// Err is why the build could not be put together, and was downloaded
-	// whole instead.
-	Err error
+	// Packed is what the zip packed with zstd weighed, when that was
+	// downloaded instead: because the pieces the app lacked weighed more,
+	// or because the build could not be put together, and then Err says
+	// why. Err with no Packed is a build that could not be had either way.
+	Packed int64
+	Err    error
 }
 
 // errNoParts is a build published without parts, which is downloaded
 // whole and is no failure.
 var errNoParts = errors.New("the build has no parts")
+
+// errPackedIsSmaller is a build whose pieces the app lacks weigh more than
+// the zip packed with zstd, which is downloaded instead and is no failure.
+// An app with few of the files, one made on the Mac or one after ffmpeg's
+// libraries changed, downloads less that way.
+var errPackedIsSmaller = errors.New("the packed zip is smaller than the pieces")
 
 func (s *Source) tell(p Pieced) {
 	if s.Pieced != nil {
@@ -42,7 +51,10 @@ func (s *Source) tell(p Pieced) {
 // panic in it is the error of this build and not the end of the app,
 // which would otherwise end at every launch on the same piece and never
 // install the update that fixes it.
-func (s *Source) assemble(ctx context.Context, where, sum string, size int64, dst sink, progress func(got, of int64)) (done Pieced, err error) {
+//
+// With cheaper, the size of the zip packed with zstd, it writes nothing
+// when the pieces it would download weigh more.
+func (s *Source) assemble(ctx context.Context, where, sum string, size, cheaper int64, dst sink, progress func(got, of int64)) (done Pieced, err error) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			done, err = Pieced{}, fmt.Errorf("putting the build together panicked: %v\n%s", caught, debug.Stack())
@@ -69,6 +81,9 @@ func (s *Source) assemble(ctx context.Context, where, sum string, size int64, ds
 		if have[i] = s.own(part) != nil; !have[i] {
 			of += part.Packed
 		}
+	}
+	if cheaper > 0 && of > cheaper {
+		return Pieced{}, errPackedIsSmaller
 	}
 	var got int64
 	progress(0, of)

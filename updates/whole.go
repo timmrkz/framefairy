@@ -10,13 +10,11 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-// The zip a build is published as stores its files as they are, so its
-// parts can name their bytes, see parts.go, and it is twice the size of a
-// zip that deflates them. A build that cannot be put together from its
-// parts would download all of it, so beside it the build publishes the
-// same zip packed with zstd, a quarter of it, and the app downloads that
-// and unpacks it on the way into the cache. Only a build without it, or
-// one whose packed zip fails too, downloads the stored zip itself.
+// The stored zip an app that knows parts installs is twice the size of
+// the deflated zip the build left, and it is never uploaded. A build that
+// cannot be put together from its parts, or whose pieces the app lacks
+// weigh more, is downloaded as the stored zip packed with zstd, a quarter
+// of it, and unpacked on the way into the cache.
 
 // PackedName is the name the zip with this name is published under,
 // packed with zstd.
@@ -24,10 +22,6 @@ func PackedName(zipName string) string { return zipName + ".zst" }
 
 // PackedURL is where the zip at this address is, packed with zstd.
 func PackedURL(zipURL string) string { return PackedName(zipURL) }
-
-// PackZip packs a build's zip the way a piece is packed, so it unpacks in
-// the same memory.
-func PackZip(zip []byte) []byte { return PackPiece(zip) }
 
 // unpackWhole downloads the zip packed with zstd from where, size bytes,
 // and writes it unpacked to dst, total bytes and not one more. It says how

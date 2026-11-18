@@ -1,7 +1,11 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,7 +17,12 @@ import (
 	"framefairy/updates"
 )
 
+// packer packs the builds of every test: an encoder at zstd's best level
+// takes tens of megabytes to set up.
+var packer = updates.NewPacker()
+
 // packed packs an app the way publish.yml does and returns the folder.
+// The zip the build left is beside it, see built.
 //
 // On the real disk: the workflow hands the release tool the build as a file, and it leaves files for the steps after it.
 func packed(t *testing.T, files map[string][]byte) string {
@@ -24,11 +33,14 @@ func packed(t *testing.T, files map[string][]byte) string {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "packed")
-	if err := pack(in, out, io.Discard); err != nil {
+	if err := pack(in, out, packer, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	return out
 }
+
+// built is the zip the build left, which pack read to write packed.
+func built(packed string) string { return filepath.Join(filepath.Dir(packed), "build.zip") }
 
 // partsIn reads what pack wrote of a folder's parts.
 //
@@ -78,7 +90,7 @@ func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
 	}
 	gh := &fakeGitHub{}
 
-	if err := publish(gh, filepath.Join(first, packedZip), "app-main-1.zip", first, entry, "main", "c1"); err != nil {
+	if err := publish(gh, built(first), "app-main-1.zip", first, entry, "main", "c1"); err != nil {
 		t.Fatal(err)
 	}
 	p1 := partsIn(t, first)
@@ -95,7 +107,7 @@ func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
 	}
 
 	gh.did = nil
-	if err := publish(gh, filepath.Join(second, packedZip), "app-main-2.zip", second, entry, "main", "c2"); err != nil {
+	if err := publish(gh, built(second), "app-main-2.zip", second, entry, "main", "c2"); err != nil {
 		t.Fatal(err)
 	}
 	p2 := partsIn(t, second)
@@ -169,38 +181,52 @@ func TestUnreadablePartsKeepEveryPiece(t *testing.T) {
 	}
 }
 
-// A packed build signed with its parts says where they will be, and the
-// app finds it whole: its own check passes and its parts make its zip.
+// A packed build is signed twice: as the zip the build left, which an app
+// from before parts downloads, and as the stored zip, which an app that
+// knows parts puts together or unpacks. Both pass the app's own check.
 //
 // On the real disk: the release tool reads the packed build and writes the entry as files.
-func TestASignedBuildSaysWhereItsPartsAre(t *testing.T) {
-	release(t)
+func TestABuildIsSignedAsTheZipAndAsTheStoredZip(t *testing.T) {
+	private := release(t)
+	public := private.Public().(ed25519.PublicKey)
 	dir := packed(t, theApp("main"))
 	out := filepath.Join(t.TempDir(), "entry.json")
-	err := sign([]string{"-zip", filepath.Join(dir, packedZip), "-parts", filepath.Join(dir, partsFile),
+	err := sign([]string{"-zip", built(dir), "-parts", filepath.Join(dir, partsFile),
 		"-channel", "main", "-name", "main", "-version", "0.1.0-main.abc1234", "-commit", "abc1234def56",
 		"-url", "https://example.com/dev/app-main-1.zip", "-out", out})
 	if err != nil {
 		t.Fatal(err)
 	}
 	b := readBuild(t, out)
-	if b.Parts != "https://example.com/dev/app-main-1.parts.json" {
-		t.Errorf("the entry says its parts are at %q", b.Parts)
+	sumOf := func(path string) string {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := sha256.Sum256(data)
+		return hex.EncodeToString(s[:])
+	}
+	if b.SHA256 != sumOf(built(dir)) {
+		t.Error("the entry's own checksum is not of the zip the build left, which the apps from before download")
 	}
 	whole, err := os.ReadFile(filepath.Join(dir, packedWhole))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.Packed != "https://example.com/dev/app-main-1.zip.zst" || b.PackedSize != int64(len(whole)) {
-		t.Errorf("the entry says its packed zip is at %q, %d bytes, want %d", b.Packed, b.PackedSize, len(whole))
+	if b.Stored == nil || b.Stored.SHA256 != sumOf(filepath.Join(dir, storedZip)) || b.Stored.PackedSize != int64(len(whole)) {
+		t.Fatalf("the entry says the stored zip is %+v", b.Stored)
 	}
 	if err := b.Check(); err != nil {
 		t.Errorf("the app refuses the entry: %v", err)
 	}
+	st, _ := b.AsStored()
+	if err := errors.Join(updates.Verify(public, st), updates.VerifyClaim(public, st)); err != nil {
+		t.Errorf("the stored zip is not signed as the build: %v", err)
+	}
 
 	// Parts of another build are no parts of this one.
 	other := packed(t, theApp("pr-7"))
-	err = signBuild(filepath.Join(dir, packedZip), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
+	err = signBuild(built(dir), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
 		"https://example.com/dev/app-main-1.zip", filepath.Join(other, partsFile), out)
 	if err == nil {
 		t.Error("a build was signed with the parts of another")
@@ -214,7 +240,7 @@ func TestASignedBuildSaysWhereItsPartsAre(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, packedWhole), theirs, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = signBuild(filepath.Join(dir, packedZip), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
+	err = signBuild(built(dir), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
 		"https://example.com/dev/app-main-1.zip", filepath.Join(dir, partsFile), out)
 	if err == nil {
 		t.Error("a build was signed with the packed zip of another")
