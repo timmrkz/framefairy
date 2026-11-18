@@ -313,6 +313,41 @@ describe("a place dragged to, opened with its key frame first", () => {
   });
 });
 
+describe("the place where the hand lets go", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // A press at frame 10 whose stream has not brought its first frame when
+  // the hand moves on to frame 150 and lets go there. The moved place
+  // waits for that stream, one new stream at a time while the hand drags.
+  // The place it lets go of waited too, for a frame nobody wanted, and
+  // came 999 ms after letting go on Tim's Mac.
+  test("opens its own stream at once, and closes the one for the place it left", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    const said: string[] = [];
+    app.trace = (line) => said.push(line);
+    app.grip(true);
+    const press = new Set<{ gone?: boolean }>();
+    void app.frame(10, 0, press as never, true);
+    await pulls(1);
+    // The hand moves on, as a decoder reset withdraws what it asked.
+    for (const w of press) w.gone = true;
+    const move = new Set<{ gone?: boolean }>();
+    void app.frame(150, 0, move as never, true);
+    expect(app.stats.parked).toBe(1);
+    // It lets go there: the cue asks for the same place again.
+    app.grip(false);
+    for (const w of move) w.gone = true;
+    const under = rankOf(app.frame(150, 0, undefined, true));
+    expect(app.stats.parked).toBe(1);
+    expect(app.stats.newFor.slice(-2)).toEqual(["10 place dragging", "150 place"]);
+    expect(said).toContain("a stream on its way to frame 10, a place the hand has left, is closed for frame 150");
+    await pulls(2);
+    asked[1].give([150]);
+    expect(await under).toBe(150);
+    app.close();
+  });
+});
+
 describe("a slow drag to the left", () => {
   afterEach(() => vi.unstubAllGlobals());
 

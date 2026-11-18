@@ -59,7 +59,19 @@ const SLOW = 2;
 // seq numbers the asks in the order they were made. place is set on the
 // frame that holds the playhead, a place the hand put it, see frame.
 // ahead is set on a frame read ahead of the hand, see AppFrames.ahead.
-type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean; place?: boolean; ahead?: boolean; key?: boolean; back?: boolean };
+// moved is set on a place the hand dragged the playhead to after the press,
+// the one kind of frame that waits for a stream left behind, see route.
+type Waiter = {
+  rank: number;
+  seq: number;
+  done: (f: Picture | null) => void;
+  gone?: boolean;
+  place?: boolean;
+  ahead?: boolean;
+  key?: boolean;
+  back?: boolean;
+  moved?: boolean;
+};
 
 // Where the time of a stream's first frame went, in milliseconds from when
 // it was asked for, for a probe to read, see docs/VIDEO-PREVIEW.md, Speed:
@@ -528,16 +540,19 @@ export class AppFrames {
     const dragged = place && this.dragging;
     const back = dragged && this.lastPlace >= 0 && rank < this.lastPlace && this.lastPlace - rank <= SLOW;
     if (dragged) this.lastPlace = rank;
+    // Every place but the first of a hold, which is where the press
+    // landed: a click outruns nothing, see route.
+    const moved = dragged && ++this.dragPlaces > 1;
     return new Promise((done) => {
       const w: Waiter = {
         rank,
         seq: ++this.asked,
         place,
         back,
-        // Every place but the first of a hold, which is where the press
-        // landed: a click outruns nothing, see route. A step back does
-        // not: the frame on screen is nearer than the key frame.
-        key: dragged && ++this.dragPlaces > 1 && !back,
+        moved,
+        // A step back is not opened with its key frame first: the frame on
+        // screen is nearer than the key frame.
+        key: moved && !back,
         done: (f) => {
           asked?.delete(w);
           if (f && w.gone && w.place) this.onPassing?.(rank, f, w.seq);
@@ -738,17 +753,30 @@ export class AppFrames {
     }
     let s = this.streams.find((x) => x.width === width && x.height === height && x.reaches(w.rank));
     if (s) this.stats.continued++;
-    else if (this.streams.some((x) => x.stale)) {
-      // One new stream on its way at a time. While one is still coming for
-      // a place the hand has already left, a drag over the clip timeline
-      // would start an ffmpeg for every place it passes, more than anyone
-      // can watch and more than the machine can decode. The newest place
-      // waits instead, and goes as soon as that stream has come, so frames
-      // follow the hand as fast as they can be made and no faster.
+    else if (w.moved && this.dragging && this.streams.some((x) => x.stale)) {
+      // One new stream on its way at a time while the hand drags. While
+      // one is still coming for a place the hand has already left, a drag
+      // over the clip timeline would start an ffmpeg for every place it
+      // passes, more than anyone can watch and more than the machine can
+      // decode. The newest place waits instead, and goes as soon as that
+      // stream has come, so frames follow the hand as fast as they can be
+      // made and no faster.
       this.parked.push(w);
       this.stats.parked++;
       return;
     } else {
+      // Anything else is where the hand comes to rest: the press, the
+      // place it let go of, a play. It is the frame a person waits for,
+      // and it waited too behind a stream for a place the hand had left,
+      // for that stream's first frame, which nobody wanted any more. A
+      // drag of the range picker let go at 5679 s and its frame came 999
+      // ms later, found by Tim. Those streams are closed now, which also
+      // stops their decoding on the Go side, and the place opens its own.
+      for (const x of this.streams) {
+        if (!x.stale) continue;
+        this.trace(`a stream on its way to frame ${x.first}, a place the hand has left, is closed for frame ${w.rank}`);
+        x.close();
+      }
       // A place the hand drags the playhead to is opened with its key frame
       // first, every place but the one the press landed on, see frame. The
       // key frame takes its own decoding and that of the few frames stored

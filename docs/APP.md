@@ -707,7 +707,11 @@ the queue's decoder is reset for the newer place, and one new stream is
 on its way at a time: while one is still coming for a place left behind,
 the newest place waits and goes as soon as it has come, so a drag over
 the clip timeline shows frames as fast as they can be made and starts no
-ffmpeg for every place it passes. Every move of the hand is a seek, which
+ffmpeg for every place it passes. Only a place the hand drags to waits so.
+Where the hand comes to rest, the press, the place it lets go of or a
+play, the stream left behind is closed and the place opens its own at
+once: it waited too, and a drag of the range picker showed its frame a
+second after letting go. Every move of the hand is a seek, which
 withdraws the frame the seek before asked for, and a frame takes longer to
 come than the hand takes to move. A frame that comes for an ask withdrawn
 on the way is put up while the frame for where the hand is now is still
