@@ -2050,8 +2050,44 @@ export const steps = {
     const says = speechless ? "No speech in this video" : "No speech found";
     const list = await clipList(page);
     const toast = await toastSays(page);
+    const track = await page.evaluate(() => document.querySelector(".track .nosound")?.textContent.trim() ?? "");
     if (!list?.rows.some((r) => r.what === says)) walk.wrong = `no row says ${says}: ${JSON.stringify(list?.rows)}`;
+    else if (track) walk.wrong = `the clip timeline of a video with sound says "${track}"`;
     else if (/speech was found/i.test(toast)) walk.wrong = `a toast says the search failed: "${toast}"`;
+  },
+  // ["no sound", seconds]
+  //                    adds a video of that many seconds with no sound at
+  //                    all, and once its first search has ended and its
+  //                    loudness is measured, the search is done, not
+  //                    failed, the clip list says No speech in this video,
+  //                    the clip timeline says No sound, and no toast says
+  //                    anything failed
+  async "no sound"(walk, arg, s) {
+    const { page, watch } = walk;
+    // Issue #831: a screen recording with the sound off failed its search,
+    // since ffmpeg was asked for a sound that is not there, and its clip
+    // timeline was empty, as if never measured.
+    await control(url, `/pick?seconds=${arg}&sound=none`);
+    const before = new Set((await ask(page, "Library")).map((e) => e.source));
+    await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+    await watch.step("add", s);
+    let job, video;
+    for (let seen = await news(page); ; seen = await nextNews(page, seen)) {
+      video = (await ask(page, "Library")).find((e) => !before.has(e.source));
+      job = video && (await ask(page, "Jobs")).findLast((j) => j.kind === "search" && j.episode === video.source);
+      if (job && job.state !== "running" && job.state !== "queued" && video.measuredAll) break;
+    }
+    if (job.state !== "done" || !job.silent || !video.speechless || !video.silent) {
+      walk.wrong = `a video with no sound: its search is ${job.state}, silent ${!!job.silent}, speechless ${!!video.speechless}, measured silent ${!!video.silent}`;
+      return;
+    }
+    await caughtUp(page, url, [job]);
+    const list = await clipList(page);
+    const toast = await toastSays(page);
+    const track = await page.evaluate(() => document.querySelector(".track .nosound")?.textContent.trim() ?? "");
+    if (!list?.rows.some((r) => r.what === "No speech in this video")) walk.wrong = `no row says No speech in this video: ${JSON.stringify(list?.rows)}`;
+    else if (track !== "No sound") walk.wrong = `the clip timeline of a video with no sound says "${track}", not No sound`;
+    else if (/sound|audio|speech|stream/i.test(toast)) walk.wrong = `a toast says the video with no sound failed: "${toast}"`;
   },
   // ["remove stopped", how]
   //                    the bin on that card is clicked, and it says

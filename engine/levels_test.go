@@ -106,6 +106,9 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	if l.Frames[50] < -30 || l.Frames[250] > -60 {
 		t.Errorf("tone %.1f dB, silence %.1f dB", l.Frames[50], l.Frames[250])
 	}
+	if e.Machine.Episode(source).Status("", nil).Silent {
+		t.Error("a second of tone is said to be silent")
+	}
 
 	// Measured once is measured: a second call reads nothing again.
 	before, _ := os.Stat(filepath.Join(WorkDir(source), "logs", "levels.frames"))
@@ -146,6 +149,9 @@ func TestMeasureLevelsOfAVideoWithNoSound(t *testing.T) {
 	}
 	if loudest := slices.Max(l.Frames); loudest > -90 {
 		t.Errorf("a video with no sound is %.1f dB at its loudest", loudest)
+	}
+	if !e.Machine.Episode(source).Status("", nil).Silent {
+		t.Error("a video with no sound, measured to its end, is not said to be silent")
 	}
 }
 

@@ -83,6 +83,7 @@
     duration,
     heard = [[0, duration]],
     loudnessStamp = "",
+    soundless = false,
     time,
     shown = NaN,
     locked = false,
@@ -134,6 +135,10 @@
     // changes whenever the loudness does, as it is measured and heard, and
     // the loudness is read again then, see EpisodeStatus.loudness.
     loudnessStamp?: string;
+    // The whole video is measured and none of it is loud enough to draw,
+    // as Go says, EpisodeStatus.silent: the flat line alone read as an
+    // empty clip timeline, so the track says No sound over it.
+    soundless?: boolean;
     time: number;
     // Where the frame on the video preview begins, the frame a mark lights
     // for, which at the end of a clip played through is its last frame
@@ -2140,6 +2145,9 @@
     aria-label="The clip timeline"
   >
     <canvas bind:this={canvas}></canvas>
+    {#if soundless}
+      <span class="nosound">No sound</span>
+    {/if}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <span
       class="ask corner"
@@ -2544,6 +2552,26 @@
     inset: 0;
     width: 100%;
     height: 100%;
+  }
+
+  /* Over the flat line of a video with no sound, in the middle of the
+     track, on the track's own colour, so the line stops either side of it
+     and the word reads as what the line means. On a whole pixel, see
+     .clipmark in app.css. */
+  .nosound {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: round(down, calc(50% - 8px), 1px);
+    width: fit-content;
+    height: 16px;
+    margin: 0 auto;
+    padding: 0 6px;
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--faint);
+    background: var(--well);
+    pointer-events: none;
   }
 
   .tick {

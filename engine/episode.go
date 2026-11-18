@@ -157,6 +157,10 @@ type EpisodeStatus struct {
 	Measured      float64      `json:"measured"`
 	MeasuredParts [][2]float64 `json:"measuredParts"`
 	MeasuredAll   bool         `json:"measuredAll"`
+	// Silent says all of the loudness is measured and nothing in it is
+	// loud enough to draw, so the clip timeline says No sound over its
+	// flat line, which on its own read as an empty clip timeline, #831.
+	Silent bool `json:"silent,omitempty"`
 	// Loudness changes whenever what Loudness gives for the episode does:
 	// as more is measured, and as more is heard while the measuring has
 	// not reached the end, since the transcript's loudness lies under the
@@ -222,7 +226,9 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 	} else if errors.Is(err, ErrNoTranscript) && fileio.Exists(fsys, whole) {
 		st.TranscriptStale = true
 	}
-	st.MeasuredParts, st.MeasuredAll = LevelsReach(fsys, source)
+	if file, _, ok := readLevelsFile(fsys, source); ok {
+		st.MeasuredParts, st.MeasuredAll, st.Silent = partSeconds(file.Parts), file.Done, file.silent()
+	}
 	for _, p := range st.MeasuredParts {
 		st.Measured += p[1] - p[0]
 	}

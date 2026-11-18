@@ -1599,6 +1599,10 @@ bubble scrolled by those eight pixels.
       is transcribed with no word, `EpisodeStatus.Speechless`, the row
       says **No speech in this video** instead and stays for as long as
       that is true, since an empty list with no reason looked broken.
+      Its clip timeline draws silence the way editors do, a flat line, and
+      once all of it is measured and none of it is loud enough to draw,
+      `EpisodeStatus.Silent`, it says **No sound** over the line, since the
+      line alone read as an empty clip timeline.
     - **A search that stopped before it was done says so** in the row its
       next clip would have appeared in, in the colour of a warning, or in
       the red of an error when it failed, and **Search** becomes

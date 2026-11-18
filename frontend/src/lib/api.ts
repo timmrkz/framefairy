@@ -198,6 +198,9 @@ export interface EpisodeStatus {
   measured?: number;
   measuredParts?: [number, number][] | null;
   measuredAll?: boolean;
+  // All of the loudness is measured and none of it is loud enough to draw,
+  // see engine.EpisodeStatus.
+  silent?: boolean;
   // Changes whenever the loudness does, which is when the clip timeline
   // reads it again, see lib/loudness.ts and engine.EpisodeStatus.
   loudness?: string;

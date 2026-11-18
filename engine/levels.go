@@ -72,6 +72,15 @@ type levelsFile struct {
 	End int `json:"end,omitempty"`
 	// Done says the parts are the whole audio.
 	Done bool `json:"done"`
+	// Loudest is the loudest frame, in dB, once all of it is measured.
+	Loudest *float32 `json:"loudest,omitempty"`
+}
+
+// silent says the whole audio is measured and none of it is as loud as
+// the loudness the clip timeline is sent can carry, see Loudness: there is
+// nothing to draw but a flat line.
+func (f levelsFile) silent() bool {
+	return f.Done && f.Loudest != nil && *f.Loudest < loudnessFloor
 }
 
 func levelsPaths(logsDir string) (string, string) {
@@ -696,6 +705,9 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 	file := levelsFile{Version: levelsVersion, Source: stamp, Parts: parts, Done: st.done()}
 	if st.end >= 0 {
 		file.End = st.end
+	}
+	if loudest, ok := st.loudest(); ok && file.Done {
+		file.Loudest = &loudest
 	}
 	body, err := json.Marshal(file)
 	if err != nil {

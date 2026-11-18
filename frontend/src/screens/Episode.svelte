@@ -3584,6 +3584,7 @@
         {duration}
         heard={saved}
         loudnessStamp={status?.loudness ?? ""}
+        soundless={!!status?.silent}
         {time}
         shown={shownMoment}
         locked={renderingCurrent || (!current && !!making)}
