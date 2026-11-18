@@ -243,6 +243,9 @@ func TestASearchOfAWindowWithNoSpeechIsDoneWithNothingFound(t *testing.T) {
 	if !ended.Silent || ended.Step != "" {
 		t.Errorf("the search ended as %+v, not done and silent", ended)
 	}
+	if last := p.LastError(); last != "" {
+		t.Errorf("a search that ended done keeps the error %q", last)
+	}
 	if got := SearchEnded(ended, true, 0, HeardParts(disk, p.Source, p.Base.ASRModel), 40); got != EndedSilent {
 		t.Errorf("the search is said to have ended %q, not %q", got, EndedSilent)
 	}
