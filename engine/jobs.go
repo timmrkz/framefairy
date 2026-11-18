@@ -800,14 +800,15 @@ func searchEnd(req PlanRequest, duration float64) float64 {
 	return req.To
 }
 
-// FirstStep is the step a search of req takes first, in the video at
-// source, duration seconds long, whose speech model is asrModelDir:
-// StepHearing while part of its window is not heard yet, the parts
-// Search hears first, see hear, and StepFinding once all of it is. The
-// app queues a search in that step's lane from the press on, so it says
-// what it waits for from the start.
-func FirstStep(fsys afero.Fs, source, asrModelDir string, req PlanRequest, duration float64) string {
-	if len(Unheard(fsys, source, asrModelDir, timed.Window{Start: req.From, End: searchEnd(req, duration)})) > 0 {
+// FirstStep is the step a search of req takes first, in the episode,
+// duration seconds long, heard with the speech model in modelDir:
+// StepHearing while part of its window is not heard yet, the parts Search
+// hears first, see hear, and StepFinding once all of it is. The app
+// queues a search in that step's lane from the press on, so it says what
+// it waits for from the start. What is heard is the episode's, held by
+// its stamp, see Heard, so a press reads no file that did not change.
+func (ep *Episode) FirstStep(modelDir string, silenceDB *float64, req PlanRequest, duration float64) string {
+	if len(gapsIn(ep.Heard(modelDir, silenceDB), timed.Window{Start: req.From, End: searchEnd(req, duration)})) > 0 {
 		return StepHearing
 	}
 	return StepFinding

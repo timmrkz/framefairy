@@ -107,8 +107,8 @@ func (s *FrameFairy) firstLane(path string, req engine.PlanRequest) string {
 	if duration <= 0 {
 		return LaneFinding
 	}
-	model := s.store.Settings().options().ASRModel
-	if engine.FirstStep(s.store.files, path, model, req, duration) == engine.StepHearing {
+	opts := s.store.Settings().options()
+	if s.store.machine.Episode(path).FirstStep(opts.ASRModel, opts.SilenceDB, req, duration) == engine.StepHearing {
 		return LaneHearing
 	}
 	return LaneFinding

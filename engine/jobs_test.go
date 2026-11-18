@@ -73,7 +73,7 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	// The app queues the search in the lane of its first step, the one
 	// the engine says, so the two cannot disagree, #610.
 	first := func(from, to float64) string {
-		return FirstStep(disk, p.Source, p.Base.ASRModel, PlanRequest{From: from, To: to}, 40)
+		return p.engine.Machine.Episode(p.Source).FirstStep(p.Base.ASRModel, nil, PlanRequest{From: from, To: to}, 40)
 	}
 	if got := first(5, 25); got != StepHearing {
 		t.Errorf("a window not heard yet starts with %s", got)
