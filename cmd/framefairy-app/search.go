@@ -8,7 +8,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
-	"framefairy/engine/timed"
 )
 
 // Searches and renders, each one job from the moment it is asked for to
@@ -64,16 +63,17 @@ func (s *FrameFairy) search(path string, req engine.PlanRequest, click string, c
 // carried on said Window 0:00 to 2:00 under Transcribing for that moment,
 // seen once the app heard its own writes, see reconcile.
 func (s *FrameFairy) firstLane(path string, req engine.PlanRequest) string {
-	end := req.To
-	if end <= 0 {
-		info, err := s.probe(context.Background(), path)
-		if err != nil {
-			return LaneFinding
-		}
-		end = info.Duration
+	// A video that cannot be read now is as long as the window says,
+	// which is all the search needs to know of it.
+	duration := req.To
+	if info, err := s.probe(context.Background(), path); err == nil {
+		duration = info.Duration
+	}
+	if duration <= 0 {
+		return LaneFinding
 	}
 	model := s.store.Settings().options().ASRModel
-	if len(engine.Unheard(s.store.files, path, model, timed.Window{Start: req.From, End: end})) > 0 {
+	if engine.FirstStep(s.store.files, path, model, req, duration) == engine.StepHearing {
 		return LaneHearing
 	}
 	return LaneFinding

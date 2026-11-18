@@ -787,10 +787,30 @@ func (p *Project) windowEnd(ctx context.Context, req PlanRequest) (float64, erro
 		}
 		return 0, err
 	}
-	if req.To <= 0 || req.To >= info.Duration-0.05 {
-		return info.Duration, nil
+	return searchEnd(req, info.Duration), nil
+}
+
+// searchEnd is where a search of req ends in a video duration seconds
+// long: its To, or the end of the video for a window with none or one
+// that ends a hair before it.
+func searchEnd(req PlanRequest, duration float64) float64 {
+	if req.To <= 0 || req.To >= duration-0.05 {
+		return duration
 	}
-	return req.To, nil
+	return req.To
+}
+
+// FirstStep is the step a search of req takes first, in the video at
+// source, duration seconds long, whose speech model is asrModelDir:
+// StepHearing while part of its window is not heard yet, the parts
+// Search hears first, see hear, and StepFinding once all of it is. The
+// app queues a search in that step's lane from the press on, so it says
+// what it waits for from the start.
+func FirstStep(fsys afero.Fs, source, asrModelDir string, req PlanRequest, duration float64) string {
+	if len(Unheard(fsys, source, asrModelDir, timed.Window{Start: req.From, End: searchEnd(req, duration)})) > 0 {
+		return StepHearing
+	}
+	return StepFinding
 }
 
 // RenderJob renders clips of a plan, one at a time, and keeps a record of

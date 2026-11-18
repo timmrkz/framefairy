@@ -61,9 +61,25 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 		var once sync.Once
 		return ctx, func() { once.Do(func() { turns = append(turns, "let go of "+step) }) }, nil
 	}
+	// The app queues the search in the lane of its first step, the one
+	// the engine says, so the two cannot disagree, #610.
+	first := func(from, to float64) string {
+		return FirstStep(disk, p.Source, p.Base.ASRModel, PlanRequest{From: from, To: to}, 40)
+	}
+	if got := first(5, 25); got != StepHearing {
+		t.Errorf("a window not heard yet starts with %s", got)
+	}
 	plan, err := p.Search(context.Background(), PlanRequest{From: 5, To: 25, Count: 1, Min: 5}, Host{Turn: turn})
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
+	}
+	for _, c := range []struct {
+		from, to float64
+		want     string
+	}{{5, 25, StepFinding}, {10, 20, StepFinding}, {5, 30, StepHearing}, {0, 25, StepHearing}} {
+		if got := first(c.from, c.to); got != c.want {
+			t.Errorf("with 5 to 25 s heard, a search of %v to %v s starts with %s, not %s", c.from, c.to, got, c.want)
+		}
 	}
 	if filepath.Base(plan) != "clips-5-25.json" || *asked != 1 {
 		t.Errorf("plan %s, the model asked %d times", plan, *asked)
