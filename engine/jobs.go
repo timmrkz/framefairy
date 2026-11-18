@@ -144,6 +144,9 @@ type JobRecord struct {
 	// Pass is which search of its window a search is, so one carried on
 	// writes to the plan it began, see PlanRequest.Pass.
 	Pass int `json:"pass,omitempty"`
+	// Silent is a search done that found no speech in its window, so
+	// nothing to make a clip from, see ErrNoSpeech and EndedSilent.
+	Silent bool `json:"silent,omitempty"`
 
 	// A render: the plan, its clips, empty for all of them, and the clips
 	// finished so far.
@@ -668,7 +671,14 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan 
 		return "", err
 	}
 	defer release()
-	return p.Plan(stepCtx, req)
+	plan, err = p.Plan(stepCtx, req)
+	// A window nobody speaks in is what the video is, not a failure: the
+	// search is done, with nothing found, and says why, #831.
+	if errors.Is(err, ErrNoSpeech) {
+		j.note(func(r *JobRecord) { r.Silent = true })
+		return "", nil
+	}
+	return plan, err
 }
 
 // TranscribeJob hears a part of the episode, wherever the transcript has

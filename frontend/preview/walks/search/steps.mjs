@@ -1980,6 +1980,30 @@ export const steps = {
     else if (!report) walk.wrong = "the toast offers no Report";
     await watch.step("wait", s);
   },
+  // ["no speech"]      on a video with no speech, once its search has
+  //                    ended, the search is done, not failed, its row says
+  //                    No speech found, and no toast says it failed
+  async "no speech"(walk) {
+    const { page } = walk;
+    // Issue #831: a video nobody speaks in failed its search, with a
+    // toast that offered Report, and looked broken. Nothing said is what
+    // the video is, so the search is done and its row says why.
+    const path = await episodeOn(page);
+    let job;
+    for (let seen = await news(page); ; seen = await nextNews(page, seen)) {
+      job = (await ask(page, "Jobs")).findLast((j) => j.kind === "search" && j.episode === path);
+      if (job && job.state !== "running" && job.state !== "queued") break;
+    }
+    if (job.state !== "done" || job.ended !== "silent") {
+      walk.wrong = `the search of a video with no speech is ${job.state}, ended ${job.ended}, not done with no speech`;
+      return;
+    }
+    await caughtUp(page, url, [job]);
+    const list = await clipList(page);
+    const toast = await toastSays(page);
+    if (!list?.rows.some((r) => r.what === "No speech found")) walk.wrong = `no row says No speech found: ${JSON.stringify(list?.rows)}`;
+    else if (/speech was found/i.test(toast)) walk.wrong = `a toast says the search failed: "${toast}"`;
+  },
   // ["remove stopped", how]
   //                    the bin on that card is clicked, and it says
   //                    Removed with Put it back, and its mark leaves the

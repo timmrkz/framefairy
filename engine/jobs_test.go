@@ -199,6 +199,39 @@ func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 	}
 }
 
+// silentRecognizer hears no word, the way a video with no speech is
+// heard.
+type silentRecognizer struct{}
+
+func (silentRecognizer) Recognize([]float32, int) []Token { return nil }
+func (silentRecognizer) Close()                           {}
+
+// A window nobody speaks in is what the video is, not a failure: the
+// search is done with nothing found and its record says why, so the row
+// says it and no toast offers to report it, #831. The model is never
+// asked, since there is nothing to read.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
+func TestASearchOfAWindowWithNoSpeechIsDoneWithNothingFound(t *testing.T) {
+	t.Parallel()
+	p, asked := searchProject(t, func(string) (Recognizer, error) { return silentRecognizer{}, nil })
+	var ended JobRecord
+	host := Host{Changed: func(rec JobRecord) { ended = rec }}
+	plan, err := p.Search(context.Background(), PlanRequest{From: 5, To: 25, Count: 1, Min: 5}, host)
+	if err != nil {
+		t.Fatalf("a window with no speech failed the search: %v", err)
+	}
+	if plan != "" || *asked != 0 {
+		t.Errorf("plan %q, the model asked %d times", plan, *asked)
+	}
+	if !ended.Silent || ended.Step != "" {
+		t.Errorf("the search ended as %+v, not done and silent", ended)
+	}
+	if got := SearchEnded(ended, true, 0, HeardParts(disk, p.Source, p.Base.ASRModel), 40); got != EndedSilent {
+		t.Errorf("the search is said to have ended %q, not %q", got, EndedSilent)
+	}
+}
+
 // On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchThatFailsSaysWhy(t *testing.T) {
 	t.Parallel()

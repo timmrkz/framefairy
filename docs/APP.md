@@ -1586,7 +1586,10 @@ bubble scrolled by those eight pixels.
       that finds nothing says so once, so Search pressed again and again
       says Finding and then this, every time. Its row used to close
       again with nothing said. It is not kept across a restart, since
-      there is nothing to carry on.
+      there is nothing to carry on. A window nobody speaks in, the
+      whole of a video with no speech among them, is what the video is,
+      not a failure: its search is done, and its row says **No speech
+      found** the same way, with no toast and no Report, issue #831.
     - **A search that stopped before it was done says so** in the row its
       next clip would have appeared in, in the colour of a warning, or in
       the red of an error when it failed, and **Search** becomes

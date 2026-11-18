@@ -1029,7 +1029,7 @@
     // counts what the search it carries on wrote: one called off once its
     // clips were written had nothing left to write, and its row said
     // Nothing new found, Tim's report of 25 October, 21.40.
-    if (last?.state !== "done" || (last.ended !== "nothing" && last.ended !== "short")) return null;
+    if (last?.state !== "done" || (last.ended !== "nothing" && last.ended !== "silent" && last.ended !== "short")) return null;
     const job = last.id;
     if (told[job] === 0) return null;
     const fades = {
@@ -1044,6 +1044,17 @@
     const start = last.from ?? 0;
     const end = last.to && last.to > 0 ? last.to : duration;
     const window = `Window ${clock(start)} to ${clock(end)}`;
+    // Nothing said in the window is what the video is, not a failure, so
+    // it is said in the row, with no toast and no Report, #831.
+    if (last.ended === "silent") {
+      return {
+        job,
+        what: "No speech found",
+        left: window,
+        full: `${window}. Nobody speaks in it, so there are no clips to find`,
+        fades,
+      };
+    }
     if (last.ended === "short") {
       return {
         job,

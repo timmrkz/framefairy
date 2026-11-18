@@ -357,7 +357,40 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 	if progress != nil {
 		progress(st.measured())
 	}
+	// Said once it is all measured, so a waveform that looks empty can be
+	// told apart in the log: a video that is silent, or one never
+	// measured, #831.
+	if loudest, quiet, ok := st.loudness(); ok {
+		e.Log.Info("measured the loudness of %.1f s: the loudest %.1f dB, %.0f %% of it under %d dB",
+			st.measured(), loudest, 100*quiet, quietDB)
+	}
 	return nil
+}
+
+// quietDB is how loud a moment is at most to count as quiet in what the
+// log says of the loudness: the foot of the waveform the clip timeline
+// draws.
+const quietDB = -60
+
+// loudness is the loudest of what was measured, in dB, and the share of
+// it under quietDB, or false while nothing is measured.
+func (s *levelState) loudness() (loudest float32, quiet float64, ok bool) {
+	measured, under := 0, 0
+	loudest = float32(math.Inf(-1))
+	for n, f := range s.frames {
+		if !s.got[n] {
+			continue
+		}
+		measured++
+		loudest = max(loudest, f)
+		if f < quietDB {
+			under++
+		}
+	}
+	if measured == 0 {
+		return 0, 0, false
+	}
+	return loudest, float64(under) / float64(measured), true
 }
 
 // measureFrom measures from frame start on, until it reaches a frame

@@ -721,9 +721,9 @@ export interface Job {
   // so it is set aside, see markAside in window.go.
   aside?: boolean;
   // For a search that is over or stopped, how it ended, as the Go side
-  // says it, see engine.SearchEnded: "found", "nothing", "short",
-  // "hearing" or "finding".
-  ended?: "found" | "nothing" | "short" | "hearing" | "finding";
+  // says it, see engine.SearchEnded: "found", "nothing", "silent",
+  // "short", "hearing" or "finding".
+  ended?: "found" | "nothing" | "silent" | "short" | "hearing" | "finding";
   // For work that stopped and was removed, how its removal stands, see
   // removal.go: the moment it is forgotten, in milliseconds since the
   // epoch and 0 while a hand holds its row, then how many seconds are
@@ -741,6 +741,7 @@ export interface Job {
   max?: number;
   replan?: boolean;
   pass?: number;
+  silent?: boolean;
   preview?: boolean;
   done?: string[];
   asked?: string;

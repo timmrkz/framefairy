@@ -696,7 +696,7 @@ func (r *runner) plan(ctx context.Context) error {
 	}
 	lines := searchLines(transcript, opts)
 	if len(lines) == 0 {
-		return errors.New("no speech was found in the audio")
+		return ErrNoSpeech
 	}
 	e.SummariseLines(transcript, lines, span)
 	count := opts.Count

@@ -551,3 +551,26 @@ func TestAFramesFileCutShortIsWrittenWholeAgain(t *testing.T) {
 // and throws away, soundLead in frames. The conversion only compiles while
 // soundLead is a whole number of frames.
 const levelsLead = int(soundLead / (timed.FrameSeconds * 1_000_000))
+
+// What the log says of the loudness once it is measured tells a silent
+// video from a loud one, and counts only what was measured, #831.
+func TestTheLoudnessSaidOfWhatWasMeasured(t *testing.T) {
+	var none levelState
+	if _, _, ok := none.loudness(); ok {
+		t.Error("nothing measured, and the loudness is said")
+	}
+	var silent levelState
+	for n := range 4 {
+		silent.put(n, -200)
+	}
+	if loudest, quiet, ok := silent.loudness(); !ok || loudest != -200 || quiet != 1 {
+		t.Errorf("a silent video is said to be %v dB at the loudest, %v of it quiet", loudest, quiet)
+	}
+	var speech levelState
+	speech.put(0, -70)
+	speech.put(1, -20)
+	speech.put(3, -12)
+	if loudest, quiet, ok := speech.loudness(); !ok || loudest != -12 || math.Abs(quiet-1.0/3) > 1e-9 {
+		t.Errorf("speech is said to be %v dB at the loudest, %v of it quiet, not -12 and a third", loudest, quiet)
+	}
+}
