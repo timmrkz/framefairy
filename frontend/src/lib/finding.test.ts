@@ -1,6 +1,15 @@
 import { describe, expect, test } from "vitest";
-import type { CloudModel, LanguageModel, Provider, SpeechModel } from "./api";
-import { cloudModelIn, cloudValue, finderOptions, finderStanding, holdsTheApp, providerOf, speechOptions } from "./finding";
+import type { CloudModel, LanguageModel, Provider, SpeechModel, Standing } from "./api";
+import {
+  cloudModelIn,
+  cloudValue,
+  finderOptions,
+  finderStanding,
+  holdsTheApp,
+  providerOf,
+  speechOptions,
+  speechStanding,
+} from "./finding";
 
 const anthropic: Provider = { name: "anthropic", title: "Anthropic", env: "ANTHROPIC_API_KEY", keysAt: "platform.claude.com" };
 const openai: Provider = { name: "openai", title: "OpenAI", env: "OPENAI_API_KEY", keysAt: "platform.openai.com" };
@@ -23,9 +32,18 @@ function model(name: string, over: Partial<LanguageModel> = {}): LanguageModel {
     fit: "fits",
     recommended: false,
     inUse: false,
+    standing: { state: "ok", says: "ready" },
     ...over,
   };
 }
+
+// How a choice stands at rest, as the Go side judges it. Which choice
+// stands how is tested there, in standing_test.go, and here only how
+// the settings word it and lay the work in hand over it.
+const cloudOK: Standing = { state: "ok", says: "cloud" };
+const cloudNoKey: Standing = { state: "warn", says: "cloud" };
+const fetch: Standing = { state: "warn", says: "fetch" };
+const ready: Standing = { state: "ok", says: "ready" };
 
 describe("which company a model in the cloud belongs to", () => {
   test("a model the app offers is known by the list", () => {
@@ -96,34 +114,52 @@ describe("the list to choose from", () => {
 });
 
 describe("how the choice stands", () => {
-  const ready = model("gemma", { title: "Gemma", inUse: true, recommended: true });
+  const gemma = model("gemma", { title: "Gemma", inUse: true, recommended: true });
+  const far = model("far", { installed: false, inUse: true, download: 9e9, standing: fetch });
 
-  test("a model in the cloud without its company's key needs one", () => {
-    const s = finderStanding({ planner: "api", provider: openai, hasKey: false });
-    expect(s.state).toBe("warn");
-    expect(s.text).toBe("By OpenAI. A few cents a video.");
-  });
-
-  test("with its key it is ready", () => {
-    expect(finderStanding({ planner: "api", provider: openai, hasKey: true }).state).toBe("ok");
-  });
-
-  test("a model here, chosen and not downloaded, says so and is not ready", () => {
-    const s = finderStanding({
-      planner: "local",
-      provider: anthropic,
-      hasKey: true,
-      inUse: model("far", { installed: false, inUse: true, download: 9e9 }),
+  test("a model in the cloud is said by its company, in the state the Go side judged", () => {
+    expect(finderStanding({ rest: cloudNoKey, provider: openai })).toEqual({
+      text: "By OpenAI. A few cents a video.",
+      tone: "warn",
+      state: "warn",
     });
-    expect(s).toEqual({ text: "Not downloaded yet. 9.0 GB.", tone: "warn", state: "warn" });
+    expect(finderStanding({ rest: cloudOK, provider: openai }).state).toBe("ok");
+  });
+
+  test("a model here not downloaded says its size", () => {
+    expect(finderStanding({ rest: fetch, provider: anthropic, inUse: far })).toEqual({
+      text: "Not downloaded yet. 9.0 GB.",
+      tone: "warn",
+      state: "warn",
+    });
+  });
+
+  test("a model here that is ready says who made it and what it needs", () => {
+    expect(finderStanding({ rest: ready, provider: anthropic, inUse: gemma })).toEqual({
+      text: "By Google. 20 GB of memory.",
+      tone: "",
+      state: "ok",
+    });
+  });
+
+  test("one that cannot run is said the same way, in red", () => {
+    const s = finderStanding({ rest: { state: "err", says: "ready" }, provider: anthropic, inUse: gemma });
+    expect(s).toEqual({ text: "By Google. 20 GB of memory.", tone: "err", state: "err" });
+  });
+
+  test("a problem the Go side found is said in its words", () => {
+    const rest: Standing = { state: "err", says: "problem", detail: "/models/gone.gguf" };
+    expect(finderStanding({ rest, provider: anthropic, inUse: gemma })).toEqual({
+      text: "/models/gone.gguf",
+      tone: "err",
+      state: "err",
+    });
   });
 
   test("while it downloads the line says how far and how long", () => {
-    const far = model("far", { installed: false, inUse: true, download: 9e9 });
     const s = finderStanding({
-      planner: "local",
+      rest: fetch,
       provider: anthropic,
-      hasKey: true,
       inUse: far,
       fetching: far,
       progress: { fraction: 0.5, remaining: 130 },
@@ -133,78 +169,112 @@ describe("how the choice stands", () => {
   });
 
   test("a download that stopped says why", () => {
-    const s = finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: ready, failed: "The download stopped." });
-    expect(s).toMatchObject({ tone: "err", state: "err" });
+    const s = finderStanding({ rest: ready, provider: anthropic, inUse: gemma, failed: "The download stopped." });
+    expect(s).toEqual({ text: "The download stopped.", tone: "err", state: "err" });
   });
 
   test("nothing chosen asks for a choice", () => {
-    expect(finderStanding({ planner: "local", provider: anthropic, hasKey: true }).state).toBe("warn");
-  });
-
-  test("a model that is here is ready, and says who made it and what it needs", () => {
-    const s = finderStanding({ planner: "local", provider: anthropic, hasKey: false, inUse: ready });
-    expect(s).toEqual({ text: "By Google. 20 GB of memory.", tone: "", state: "ok" });
-  });
-
-  test("without llama-server it is not ready, whatever the model", () => {
-    expect(finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: ready, serverMissing: true }).state).toBe("err");
+    expect(finderStanding({ provider: anthropic })).toEqual({
+      text: "Choose a model to find clips with.",
+      tone: "warn",
+      state: "warn",
+    });
   });
 
   test("while a search runs, a choice that works says it is in use and holds nothing", () => {
-    const s = finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: ready, searching: true });
+    const s = finderStanding({ rest: ready, provider: anthropic, inUse: gemma, searching: true });
     expect(s).toEqual({ text: "A search is finding clips with it now.", tone: "", state: "ok", using: true });
     expect(holdsTheApp(s.state, true)).toBe(false);
-    const cloud = finderStanding({ planner: "api", provider: openai, hasKey: true, searching: true });
-    expect(cloud.using).toBe(true);
+    expect(finderStanding({ rest: cloudOK, provider: openai, searching: true }).using).toBe(true);
   });
 
   test("while a search runs, a choice that cannot work still says why", () => {
-    const s = finderStanding({ planner: "api", provider: openai, hasKey: false, searching: true });
+    const s = finderStanding({ rest: cloudNoKey, provider: openai, searching: true });
     expect(s.state).toBe("warn");
     expect(s.using).toBeUndefined();
   });
 
   test("every line is one short line", () => {
     const lines = [
-      finderStanding({ planner: "api", provider: openai, hasKey: false }).text,
-      finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: ready }).text,
-      finderStanding({
-        planner: "local",
-        provider: anthropic,
-        hasKey: true,
-        inUse: model("far", { installed: false, inUse: true }),
-      }).text,
-      finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: ready, searching: true }).text,
+      finderStanding({ rest: cloudNoKey, provider: openai }).text,
+      finderStanding({ rest: ready, provider: anthropic, inUse: gemma }).text,
+      finderStanding({ rest: fetch, provider: anthropic, inUse: far }).text,
+      finderStanding({ rest: ready, provider: anthropic, inUse: gemma, searching: true }).text,
     ];
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(60);
   });
 });
 
-describe("when the settings keep the app where it is", () => {
-  const notHere = finderStanding({
-    planner: "local",
-    provider: anthropic,
-    hasKey: true,
-    inUse: model("far", { installed: false, inUse: true }),
+describe("the line under the speech model", () => {
+  const parakeet: SpeechModel = {
+    name: "parakeet",
+    title: "Parakeet",
+    about: "",
+    maker: "NVIDIA",
+    languages: "25 European languages",
+    download: 487e6,
+    unpacked: 671e6,
+    url: "",
+    recommended: true,
+    installed: true,
+    inUse: true,
+  };
+  const idle = { starting: false, failed: "" };
+  const shown = (path: string) => path.replace("~", "/Users/tim");
+
+  test("a model that is here says who made it and what it hears", () => {
+    expect(speechStanding(parakeet, ready, idle, shown)).toEqual({
+      text: "By NVIDIA. 25 European languages.",
+      tone: "",
+      state: "ok",
+    });
   });
+
+  test("a folder named by hand is said, written out in full", () => {
+    const rest: Standing = { state: "ok", says: "folder", detail: "~/speech" };
+    expect(speechStanding(parakeet, rest, idle, shown).text).toBe("From /Users/tim/speech.");
+  });
+
+  test("what the check found wrong is said in its words", () => {
+    const rest: Standing = { state: "err", says: "problem", detail: "not found in /speech" };
+    expect(speechStanding(parakeet, rest, idle, shown)).toEqual({ text: "not found in /speech", tone: "err", state: "err" });
+  });
+
+  test("a download on its way, then one that stopped, come before how it stands", () => {
+    const running = { progress: { fraction: 0.5, remaining: 10 } };
+    expect(speechStanding(parakeet, fetch, { running, starting: false, failed: "" }, shown).state).toBe("busy");
+    expect(speechStanding(parakeet, fetch, { starting: false, failed: "No room left." }, shown)).toEqual({
+      text: "No room left.",
+      tone: "err",
+      state: "err",
+    });
+  });
+
+  test("with no speech model offered, it says so", () => {
+    expect(speechStanding(undefined, ready, idle, shown).state).toBe("err");
+  });
+});
+
+describe("when the settings keep the app where it is", () => {
+  const notHere = finderStanding({ rest: fetch, provider: anthropic, inUse: model("far", { installed: false, inUse: true }) });
 
   test("a model chosen and not downloaded holds it, the trap Tim walked into", () => {
     expect(holdsTheApp(notHere.state, true)).toBe(true);
   });
 
   test("a model in the cloud without its key holds it", () => {
-    expect(holdsTheApp(finderStanding({ planner: "api", provider: openai, hasKey: false }).state, true)).toBe(true);
+    expect(holdsTheApp(finderStanding({ rest: cloudNoKey, provider: openai }).state, true)).toBe(true);
   });
 
   test("a download on its way holds it too, since the model is no use until it has arrived", () => {
     const far = model("far", { installed: false, inUse: true });
-    const downloading = finderStanding({ planner: "local", provider: anthropic, hasKey: true, inUse: far, fetching: far });
+    const downloading = finderStanding({ rest: fetch, provider: anthropic, inUse: far, fetching: far });
     expect(downloading.state).toBe("busy");
     expect(holdsTheApp(downloading.state, true)).toBe(true);
   });
 
   test("a working choice lets it go", () => {
-    expect(holdsTheApp(finderStanding({ planner: "api", provider: openai, hasKey: true }).state, true)).toBe(false);
+    expect(holdsTheApp(finderStanding({ rest: cloudOK, provider: openai }).state, true)).toBe(false);
   });
 
   test("a page still reading never holds anybody", () => {
@@ -227,6 +297,7 @@ describe("the speech models to choose from", () => {
     url: "",
     recommended: false,
     installed,
+    inUse: false,
   });
 
   test("every one in one group, the biggest first by the size it shows, with its mark", () => {

@@ -5,7 +5,17 @@
 // every state somebody can click their way into: a model in the cloud
 // with and without its company's key, a model here that is chosen and
 // not downloaded, downloading, failed, or ready.
-import { clock, fitNote, memorySize, size, type CloudModel, type LanguageModel, type Provider, type SpeechModel } from "./api";
+import {
+  clock,
+  fitNote,
+  memorySize,
+  size,
+  type CloudModel,
+  type LanguageModel,
+  type Provider,
+  type SpeechModel,
+  type Standing,
+} from "./api";
 
 // The company a model in the cloud belongs to. One the app offers is
 // known by the list. One written in by hand is what the Go side said, and
@@ -116,12 +126,18 @@ export function modelMark(installed: boolean): { icon: string; title: string; fa
     : { icon: "download", title: "Not downloaded yet", faint: true };
 }
 
-// Everything the line under the choice depends on.
+// Everything the line under the choice depends on. How the choice
+// stands at rest is the Go side's to judge, see Standing in
+// cmd/framefairy-app/standing.go: whether a key, a download or a working
+// model is what is in the way. Here it is only worded, and the work in
+// hand is laid over it, the way every place that shows work shows it from
+// its job.
 export interface FinderFacts {
-  planner: "api" | "local";
-  // The company of the model in the cloud, and whether its key is here.
+  // How the choice stands at rest, as the Go side judged it, or none when
+  // nothing is chosen.
+  rest?: Standing;
+  // The company of the model in the cloud.
   provider: Provider;
-  hasKey: boolean;
   // The model here that is chosen, if one is.
   inUse?: LanguageModel;
   // The model being downloaded, and how far it has come.
@@ -129,21 +145,20 @@ export interface FinderFacts {
   progress?: { fraction: number; remaining: number };
   // Why the last download stopped.
   failed?: string;
-  // What the check said about the model file and about llama-server.
-  modelProblem?: string;
-  serverMissing?: boolean;
   // A search is running, so the choice is what it finds with and stays
   // as it is until the search is done.
   searching?: boolean;
 }
 
 export type Tone = "" | "warn" | "err";
-export type Standing = "ok" | "busy" | "warn" | "err";
+// How a line stands, which the mark before it and the frame round the list
+// both show: the Go side's state, or busy while a download runs.
+export type LineState = "ok" | "busy" | "warn" | "err";
 
 // The one line under Find clips with, and how the choice stands, which the
 // mark before it and the frame round the list both show. The line is one
 // line in every state, short enough to fit beside the list and a button.
-export function finderStanding(f: FinderFacts): { text: string; tone: Tone; state: Standing; using?: boolean } {
+export function finderStanding(f: FinderFacts): { text: string; tone: Tone; state: LineState; using?: boolean } {
   const standing = finderAtRest(f);
   // A choice that works is the one a running search finds with. The dot
   // pulses, work running somewhere else, and the line says so rather than
@@ -155,40 +170,67 @@ export function finderStanding(f: FinderFacts): { text: string; tone: Tone; stat
   return standing;
 }
 
-function finderAtRest(f: FinderFacts): { text: string; tone: Tone; state: Standing } {
-  if (f.planner === "api") {
-    return {
-      text: `By ${f.provider.title}. A few cents a video.`,
-      tone: "",
-      state: f.hasKey ? "ok" : "warn",
-    };
-  }
-  if (f.fetching) {
-    const p = f.progress;
-    const total = f.fetching.download;
-    const done = p && p.fraction > 0 ? `${size(p.fraction * total)} of ${size(total)}` : size(total);
-    const left = p && p.remaining > 0 ? `, ${clock(p.remaining)} left` : "";
-    return { text: `Downloading, ${done}${left}`, tone: "", state: "busy" };
-  }
+function finderAtRest(f: FinderFacts): { text: string; tone: Tone; state: LineState } {
+  if (f.fetching) return downloading(f.fetching.download, f.progress);
   if (f.failed) return { text: f.failed, tone: "err", state: "err" };
-  if (!f.inUse) return { text: "Choose a model to find clips with.", tone: "warn", state: "warn" };
-  if (!f.inUse.installed) {
-    return { text: `Not downloaded yet. ${size(f.inUse.download)}.`, tone: "warn", state: "warn" };
-  }
-  if (f.modelProblem) return { text: f.modelProblem, tone: "err", state: "err" };
-  // Only a warning is worth the room, the way the list says it.
-  const { note, warn } = fitNote(f.inUse.fit);
-  return {
-    text: `By ${f.inUse.maker}. ${memorySize(f.inUse.needs)} of memory.${warn ? ` ${note}.` : ""}`,
-    tone: "",
-    state: f.serverMissing ? "err" : "ok",
-  };
+  const rest = f.rest;
+  if (!rest) return { text: "Choose a model to find clips with.", tone: "warn", state: "warn" };
+  return { text: finderWords(rest, f.provider, f.inUse), tone: toneOf(rest.state), state: rest.state };
 }
+
+// The words of how a choice of what finds clips stands.
+function finderWords(rest: Standing, provider: Provider, m?: LanguageModel): string {
+  switch (rest.says) {
+    case "cloud":
+      return `By ${provider.title}. A few cents a video.`;
+    case "fetch":
+      return `Not downloaded yet. ${size(m?.download ?? 0)}.`;
+    case "problem":
+      return rest.detail ?? "";
+  }
+  if (!m) return "";
+  // Only a warning is worth the room, the way the list says it.
+  const { note, warn } = fitNote(m.fit);
+  return `By ${m.maker}. ${memorySize(m.needs)} of memory.${warn ? ` ${note}.` : ""}`;
+}
+
+// The one line under Transcribe with, like the line under Find clips with:
+// the download in hand, then why the last one stopped, then how the
+// speech model stands at rest, as the Go side judged it. shown writes a
+// folder the way the page writes every path.
+export function speechStanding(
+  m: SpeechModel | undefined,
+  rest: Standing,
+  work: { running?: { progress?: { fraction: number; remaining: number } }; starting: boolean; failed: string },
+  shown: (path: string) => string,
+): { text: string; tone: Tone; state: LineState } {
+  if (!m) return { text: "No speech model is offered.", tone: "err", state: "err" };
+  if (work.running || work.starting) return downloading(m.download, work.running?.progress);
+  if (work.failed) return { text: work.failed, tone: "err", state: "err" };
+  const text =
+    rest.says === "problem"
+      ? (rest.detail ?? "")
+      : rest.says === "folder"
+        ? `From ${shown(rest.detail ?? "")}.`
+        : rest.says === "fetch"
+          ? `Not downloaded yet. ${size(m.download)}.`
+          : `By ${m.maker}. ${m.languages}.`;
+  return { text, tone: toneOf(rest.state), state: rest.state };
+}
+
+// A download on its way, in the line of the card it was started from.
+function downloading(total: number, p?: { fraction: number; remaining: number }) {
+  const done = p && p.fraction > 0 ? `${size(p.fraction * total)} of ${size(total)}` : size(total);
+  const left = p && p.remaining > 0 ? `, ${clock(p.remaining)} left` : "";
+  return { text: `Downloading, ${done}${left}`, tone: "" as Tone, state: "busy" as LineState };
+}
+
+const toneOf = (state: LineState): Tone => (state === "ok" ? "" : state === "warn" ? "warn" : "err");
 
 // Whether the settings keep the app where it is: while what finds the clips
 // cannot find any yet, a download on its way included, since a model is no
 // use until the last of it has arrived. Only a page still reading what it
 // has to show never holds anybody.
-export function holdsTheApp(state: Standing, loaded: boolean): boolean {
+export function holdsTheApp(state: LineState, loaded: boolean): boolean {
   return loaded && state !== "ok";
 }

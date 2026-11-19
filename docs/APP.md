@@ -3365,9 +3365,16 @@ by hand under **Advanced**, **Model in the cloud**, belongs to the company
 its name says, `claude-` or `gpt-`, and is in the list too, so the list
 never names nothing.
 
-The decisions behind the row, which company a model belongs to, what the
-list offers, and what the line says and how it stands in every state, are
-in `frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
+How each choice stands at rest, whether a key, a download or a model
+that does not work is in the way, is the Go side's to judge, for every
+model in the list at once, `Standing` in `cmd/framefairy-app/standing.go`,
+sent with the models by `Setup`, so a click on any of them shows how it
+stands in the frame of the click. The speech model in use is judged the
+same way. `standing_test.go` holds each case. The settings only word it,
+and lay the work in hand over it, a download on its way, one that stopped
+and a search that uses the model, the way every place shows work, from
+its job. The wording and which company a model belongs to are in
+`frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
 somebody can click their way into, run by `make interface` and CI.
 
 The line under the choice says what it costs: a few cents a video and

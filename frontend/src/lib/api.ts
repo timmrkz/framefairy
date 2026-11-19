@@ -794,6 +794,19 @@ export interface SpeechModel {
   // The one the app offers when nobody has chosen.
   recommended: boolean;
   installed: boolean;
+  // Whether the app hears with it: the first one installed, or the first
+  // one offered while none is.
+  inUse: boolean;
+}
+
+// How a choice of model stands at rest, as the Go side judges it, see
+// cmd/framefairy-app/standing.go. state is whether it can do its work
+// now, says what the line under the choice says, in the settings' words,
+// and detail the problem or the folder it names.
+export interface Standing {
+  state: "ok" | "warn" | "err";
+  says: "cloud" | "fetch" | "ready" | "folder" | "problem";
+  detail?: string;
 }
 
 // One model that can find clips. A model runs from memory, so what decides
@@ -820,6 +833,8 @@ export interface LanguageModel {
   // Whether clips are found with it: the file named in the settings, or
   // with none named the only one there is.
   inUse: boolean;
+  // How it stands as the one clips are found with.
+  standing: Standing;
 }
 
 // One row of a list of models, as the list draws it. Speech models and
@@ -898,6 +913,10 @@ export interface SetupState {
   // Whether a key can be found for the company of the model named.
   hasKey: boolean;
   hasLocalModel: boolean;
+  // How a model in the cloud stands, by the name of its company, and how
+  // the speech model in use stands.
+  cloudStanding: Record<string, Standing>;
+  speaking: Standing;
   // Whether llama-server can be found. A model without it is a very large
   // file that answers nothing.
   hasServer: boolean;

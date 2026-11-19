@@ -21,7 +21,7 @@
     holdsTheApp,
     modelMark,
     speechOptions,
-    type Standing,
+    speechStanding,
     type Tone,
     providerOf,
   } from "../lib/finding";
@@ -39,6 +39,7 @@
     type LanguageModel,
     type Settings,
     type SpeechModel,
+    type Standing,
     type TrainingStatus,
     type LogStatus,
     type LicenceLink,
@@ -107,12 +108,15 @@
   let providerSaid = $state("anthropic");
   // The key in short, as the Go side read it without the secret.
   let keyHints = $state<Record<string, string>>({});
+  // How each company's model in the cloud stands, and the speech model
+  // in use, as the Go side judged them, see Standing.
+  let cloudStanding = $state<Record<string, Standing>>({});
+  let speaking = $state<Standing>({ state: "ok", says: "ready" });
 
   // The model in the cloud, its company, and whether that company's key is
   // here. Which company decides whose key the row asks for.
   const cloudModel = $derived(settings?.apiModel || cloud[0]?.model || "claude-sonnet-5");
   const provider = $derived(providerOf(cloudModel, cloud, providers, providerSaid));
-  const hasKey = $derived(!!keys[provider.name]);
 
   // Saving as things change. What was last saved, or last read, is kept as
   // text, and a change is only a change when the settings no longer read
@@ -372,6 +376,8 @@
     keys = state.keys ?? {};
     keyHints = state.keyHints ?? {};
     providerSaid = state.provider || "anthropic";
+    cloudStanding = state.cloudStanding ?? {};
+    speaking = state.speaking;
   }
 
   async function modelsChanged() {
@@ -545,7 +551,7 @@
   // models on this machine folded under it. There is one speech model
   // today, so the list holds one, and Tim asked for the two to look and
   // work alike all the same, 2026-10-27.
-  const speechInUse = $derived(speech.find((m) => m.installed) ?? speech[0]);
+  const speechInUse = $derived(speech.find((m) => m.inUse));
   // The biggest first, by the size beside it, see speechOptions.
   const speechList = $derived(speechOptions(speech));
   const speechInstall = new Install("model", () => modelsChanged());
@@ -555,30 +561,20 @@
   }
   // Choosing the speech model in the list is choosing the one the app
   // installs, so a folder named by hand in the settings before, which
-  // there is no field for any more, gives way to it.
-  function pickSpeech() {
-    if (settings) settings.asrModel = "";
+  // there is no field for any more, gives way to it. It is saved at once
+  // and the Go side asked again how the speech model stands, which a
+  // folder named by hand changes.
+  async function pickSpeech() {
+    if (!settings || !settings.asrModel) return;
+    settings.asrModel = "";
+    clearTimeout(saveTimer);
+    await save(JSON.stringify($state.snapshot(settings)));
+    await readModels();
   }
   // The one line under Transcribe with, one line in every state, like the
   // line under Find clips with. A folder named by hand is said, and so is
   // whatever the check found wrong with the model, where it is put right.
-  const speechLine = $derived.by((): { text: string; tone: Tone; state: Standing } => {
-    const m = speechInUse;
-    if (!m) return { text: "No speech model is offered.", tone: "err", state: "err" };
-    const job = speechInstall.running;
-    if (job || speechInstall.starting) {
-      const p = job?.progress;
-      const done = p && p.fraction > 0 ? `${size(p.fraction * m.download)} of ${size(m.download)}` : size(m.download);
-      const left = p && p.remaining > 0 ? `, ${clock(p.remaining)} left` : "";
-      return { text: `Downloading, ${done}${left}`, tone: "", state: "busy" };
-    }
-    if (speechInstall.failed) return { text: speechInstall.failed, tone: "err", state: "err" };
-    const wrong = broken("Speech model")?.detail.split("\n")[0];
-    if (wrong) return { text: wrong, tone: "err", state: "err" };
-    if (settings?.asrModel) return { text: `From ${shown(settings.asrModel)}.`, tone: "", state: "ok" };
-    if (!m.installed) return { text: `Not downloaded yet. ${size(m.download)}.`, tone: "warn", state: "warn" };
-    return { text: `By ${m.maker}. ${m.languages}.`, tone: "", state: "ok" };
-  });
+  const speechLine = $derived(speechStanding(speechInUse, speaking, speechInstall, shown));
   const installedSpeech = $derived(speech.filter((m) => m.installed).map((m) => speechRow(m)));
   const installedSpeechSize = $derived(
     size(speech.filter((m) => m.installed).reduce((sum, m) => sum + m.unpacked, 0)),
@@ -591,17 +587,15 @@
   // button, and what does not fit is for the info mark.
   const finding = $derived(
     finderStanding({
-      planner: settings?.planner === "api" ? "api" : "local",
+      // How the choice stands at rest, the Go side's judgement of the
+      // model in the cloud or the model here that is chosen, looked up
+      // for the choice as it is on screen, so a click shows at once.
+      rest: settings?.planner === "api" ? cloudStanding[provider.name] : inUse?.standing,
       provider,
-      hasKey,
       inUse,
       fetching: fetchingModel,
       progress: llmInstall.running?.progress,
       failed: llmInstall.failed,
-      // The checks are read again once a choice is saved. Until then they
-      // are about the model before, and said one just chosen was missing.
-      modelProblem: choosing ? undefined : broken("Language model")?.detail,
-      serverMissing: !!broken("llama-server"),
       searching,
     }),
   );

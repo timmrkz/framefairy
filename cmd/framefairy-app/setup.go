@@ -31,6 +31,9 @@ import (
 type SpeechModelView struct {
 	engine.SpeechModel
 	Installed bool `json:"installed"`
+	// InUse marks the one the app hears with: the first one installed,
+	// or the first one offered while none is.
+	InUse bool `json:"inUse"`
 }
 
 // LanguageModelView is the same for a model that finds clips, and it says
@@ -51,6 +54,10 @@ type LanguageModelView struct {
 	// InUse marks the one a search runs on: the model file named in the
 	// settings, or with none named the only one there is.
 	InUse bool `json:"inUse"`
+	// Standing is how the model stands as the one clips are found with,
+	// see Standing, so a click on it in the list shows at once whether
+	// it can find clips.
+	Standing Standing `json:"standing"`
 }
 
 // SetupState is what the interface needs to decide whether to ask anything.
@@ -90,6 +97,11 @@ type SetupState struct {
 	HasKey bool `json:"hasKey"`
 	// HasLocalModel is true when a language model is on the machine.
 	HasLocalModel bool `json:"hasLocalModel"`
+	// CloudStanding is how a model in the cloud stands, by the name of
+	// its company, see Standing.
+	CloudStanding map[string]Standing `json:"cloudStanding"`
+	// Speaking is how the speech model in use stands, see Standing.
+	Speaking Standing `json:"speaking"`
 	// HasServer is true when a llama-server can be found and run. A model
 	// without one is fifteen gigabytes that answer nothing, so the interface
 	// says so before the download rather than after it.
@@ -195,7 +207,29 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 		canPlan = state.HasLocalModel && state.HasServer
 	}
 	state.Ready = state.HasSpeech && canPlan
+	s.judge(&state, settings)
 	return state
+}
+
+// judge says how each choice of model stands, see Standing.
+func (s *FrameFairy) judge(state *SetupState, settings Settings) {
+	opts := settings.options()
+	state.CloudStanding = map[string]Standing{}
+	for _, p := range state.Providers {
+		state.CloudStanding[p.Name] = cloudStanding(state.Keys[p.Name] != "")
+	}
+	check := languageCheck(opts)
+	for i, m := range state.Language {
+		state.Language[i].Standing = hereStanding(m.Installed, m.InUse, check, state.HasServer)
+	}
+	inUse := slices.IndexFunc(state.Speech, func(m SpeechModelView) bool { return m.Installed })
+	if inUse < 0 && len(state.Speech) > 0 {
+		inUse = 0
+	}
+	if inUse >= 0 {
+		state.Speech[inUse].InUse = true
+		state.Speaking = speechStanding(speechCheck(opts), settings.ASRModel != "", state.Speech[inUse].Installed)
+	}
 }
 
 // InstallSpeechModel fetches a model and unpacks it, as a job, so it wears
@@ -598,16 +632,7 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 
 	out = append(out, fontsCheck(s.store.machine.Fonts.Counts()))
 
-	asrDir := opts.ASRModel
-	if asrDir == "" {
-		asrDir = engine.DefaultModelDir()
-	}
-	speech := Check{Name: "Speech model", Detail: asrDir}
-	speech.OK = engine.SpeechModelReady(asrDir)
-	if !speech.OK {
-		speech.Detail = "not found in " + asrDir
-	}
-	out = append(out, speech)
+	out = append(out, speechCheck(opts))
 
 	if opts.Planner == "api" {
 		// The key of whichever company the model in the settings belongs to.
@@ -623,6 +648,21 @@ func (s *FrameFairy) CheckSetup(ctx context.Context) []Check {
 
 	out = append(out, toolCheck(ctx, s.store.machine.Tools, "FRAMEFAIRY_LLAMA_SERVER", "llama-server"))
 	return append(out, languageCheck(opts))
+}
+
+// speechCheck says whether the speech model is where the settings say
+// it is, or in the models folder when they name none.
+func speechCheck(opts engine.Options) Check {
+	dir := opts.ASRModel
+	if dir == "" {
+		dir = engine.DefaultModelDir()
+	}
+	speech := Check{Name: "Speech model", Detail: dir}
+	speech.OK = engine.SpeechModelReady(dir)
+	if !speech.OK {
+		speech.Detail = "not found in " + dir
+	}
+	return speech
 }
 
 // fontsCheck says how many faces captions can be written in. Nothing to
