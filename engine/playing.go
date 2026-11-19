@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -244,7 +245,8 @@ func (p *Play) Pictures(ctx context.Context, got func(PlayFrame) error) error {
 				return err
 			}
 		}
-		if err := ctx.Err(); err != nil {
+		// The play stopped ends a run before the ctx made from it hears.
+		if err := cmp.Or(ctx.Err(), p.ctx.Err()); err != nil {
 			return err
 		}
 		if cur.err != nil {
