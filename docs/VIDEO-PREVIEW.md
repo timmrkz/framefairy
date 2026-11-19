@@ -273,6 +273,12 @@ closed for standing unused.
     after the place, decoding nothing: on a fast drag those frames only
     kept the decoder from the next place. Once the hand rests there, or
     a play is cued there, the run reads on with no second seek.
+  - A hand that moves slowly to the right has its run hold four frames
+    past its place, rather than end, for as long as it holds the
+    playhead, and its next places past those are read on from there.
+    Ended, the run left the next place to a seek of its own, and a slow
+    drag to the right stood still now and then for its key frame. The
+    hand letting go ends it, so what is read ahead can start.
   - A hand a frame or two back from the frame on screen goes back
     slowly, and the run opens 15 frames before the place, `lookBack`,
     with no key frame first, so the next steps back find their frames.

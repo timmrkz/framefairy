@@ -43,8 +43,9 @@ type Schedule struct {
 	// Where the newest look of the hand and the newest Ahead stood among
 	// what their window sent, see Sent.
 	lastLook, lastAhead Sent
-	// looks wakes whoever waits whenever a look starts to wait, so a test
-	// goes on once the schedule has it. Only the tests wait on it.
+	// looks wakes whoever waits whenever a look starts to wait or a run
+	// starts to hold, so a test goes on once the schedule has it. Only the
+	// tests wait on it.
 	looks wake.Wake
 }
 
@@ -183,6 +184,23 @@ type lookRun struct {
 	// slowly, see readBehind. It reads ahead of the hand, the way ahead
 	// does, but for the hand, not for an Ahead.
 	behind bool
+	// dragged says the hand the run reads for holds the playhead: once it
+	// has read lookAhead frames past the place, it holds there rather
+	// than end, so the hand's next frames are read on from where it
+	// stands, with no seek, see got.
+	dragged bool
+	// idle is closed while the run holds and once it has ended, see Near.
+	idle    chan struct{}
+	resting bool
+}
+
+// rest says the run reads nothing for now: it holds or has ended. Under
+// the lock.
+func (r *lookRun) rest() {
+	if !r.resting {
+		r.resting = true
+		close(r.idle)
+	}
 }
 
 // passes tells whether a hand moves more than lookSlow frames at a time,
@@ -197,7 +215,7 @@ func passes(l Hand) bool {
 // its grid at its size, not passed, and no further than a few frames past
 // its target, which it reads on to by itself.
 func (r *lookRun) covers(l Hand) bool {
-	return r.grid == l.Grid && r.w == l.W && r.h == l.H && l.Frame >= r.next && l.Frame <= r.target+lookAhead
+	return r.grid == l.Grid && r.w == l.W && r.h == l.H && l.Frame >= r.next && l.Frame <= max(r.target, r.next-1)+lookAhead
 }
 
 // Look answers where the hand is with a frame: the frame of the place, or
@@ -369,7 +387,8 @@ func (s *Schedule) startFor(w *lookWaiter) {
 		from = max(0, l.Frame-1)
 	}
 	ctx, stop := context.WithCancel(context.Background())
-	r := &lookRun{grid: l.Grid, w: l.W, h: l.H, from: from, target: l.Frame, moving: l.Moving, next: from, stop: stop, done: make(chan struct{}), passing: passes(l), ctx: ctx}
+	r := &lookRun{grid: l.Grid, w: l.W, h: l.H, from: from, target: l.Frame, moving: l.Moving, next: from, stop: stop, done: make(chan struct{}), passing: passes(l), ctx: ctx,
+		dragged: l.Moving && !w.back, idle: make(chan struct{})}
 	s.run = r
 	var skip func() float64
 	if key {
@@ -462,6 +481,9 @@ func (s *Schedule) got(r *lookRun, at float64, picture []byte) error {
 		return s.hold(r)
 	}
 	if frame >= last+lookAhead {
+		if r.dragged && r.ctx != nil {
+			return s.hold(r)
+		}
 		s.run = nil
 		return errLookDone
 	}
@@ -478,6 +500,8 @@ func (s *Schedule) got(r *lookRun, at float64, picture []byte) error {
 func (s *Schedule) hold(r *lookRun) error {
 	wake := make(chan struct{})
 	r.wake = wake
+	r.rest()
+	s.looks.WakeLocked()
 	s.mu.Unlock()
 	select {
 	case <-wake:
@@ -487,6 +511,8 @@ func (s *Schedule) hold(r *lookRun) error {
 	if s.run != r || r.ctx.Err() != nil {
 		return errLookDone
 	}
+	r.resting = false
+	r.idle = make(chan struct{})
 	return nil
 }
 
@@ -494,17 +520,19 @@ func (s *Schedule) hold(r *lookRun) error {
 // after its place. Under the lock.
 func (r *lookRun) readOn(l Hand) {
 	r.passing = passes(l)
+	r.dragged = l.Moving
 	if r.wake != nil && !r.passing {
 		close(r.wake)
 		r.wake = nil
 	}
 }
 
-// after tells whether the run stands right after the place of a look, the
+// after tells whether a look goes on from the run's place, and the run
+// stands past it no further than the frames it reads past a place, the
 // way a run that holds does: the frames it reads next are the ones after
-// the place.
+// the look's place.
 func (r *lookRun) after(l Hand) bool {
-	return r.grid == l.Grid && r.w == l.W && r.h == l.H && r.next == l.Frame+1
+	return r.grid == l.Grid && r.w == l.W && r.h == l.H && l.Frame >= r.target && r.next > l.Frame && r.next <= l.Frame+1+lookAhead
 }
 
 // nearerThanShown tells whether a frame on the way to the place of a look is nearer
@@ -530,6 +558,7 @@ func (s *Schedule) ended(r *lookRun, ctx context.Context, err error) {
 	defer s.mu.Unlock()
 	r.finished = true
 	close(r.done)
+	r.rest()
 	if s.run == r {
 		s.run = nil
 	}
@@ -691,6 +720,15 @@ func (s *Schedule) Ahead(ctx context.Context, a Ahead) ([]Seen, error) {
 	if r := s.run; r != nil && r.ahead && !r.behind {
 		s.stopRun()
 	}
+	if r := s.run; r != nil && !a.Held && r.dragged {
+		// The hand let go: a run that holds past its place for the next
+		// frames of a drag ends, and one still reading ends once it has
+		// read the frames past its place.
+		r.dragged = false
+		if r.resting && r.wake != nil {
+			s.stopRun()
+		}
+	}
 	for f := range work.wants {
 		if k, ok := s.kept.peek(keptKey{grid: a.Grid, w: a.W, h: a.H, frame: f}); ok {
 			work.take(a.Grid, a.W, a.H, f, k.at, k.picture)
@@ -744,7 +782,7 @@ func (s *Schedule) readBehind(l Hand) {
 	}
 	from := max(0, b-lookBack)
 	ctx, stop := context.WithCancel(context.Background())
-	r := &lookRun{grid: l.Grid, w: l.W, h: l.H, from: from, target: b - 1, next: from, stop: stop, ahead: true, behind: true, done: make(chan struct{})}
+	r := &lookRun{grid: l.Grid, w: l.W, h: l.H, from: from, target: b - 1, next: from, stop: stop, ahead: true, behind: true, done: make(chan struct{}), idle: make(chan struct{})}
 	s.run = r
 	go func() {
 		err := s.frames.Stream(ctx, r.grid, r.grid.At(from), r.w, r.h, false, nil, func(at float64, picture []byte) error {
@@ -773,7 +811,7 @@ func (s *Schedule) readAhead() {
 			continue
 		}
 		ctx, stop := context.WithCancel(context.Background())
-		r := &lookRun{grid: a.grid, w: a.w, h: a.h, from: read.from, target: read.to, next: read.from, stop: stop, ahead: true, done: make(chan struct{})}
+		r := &lookRun{grid: a.grid, w: a.w, h: a.h, from: read.from, target: read.to, next: read.from, stop: stop, ahead: true, done: make(chan struct{}), idle: make(chan struct{})}
 		s.run = r
 		go func() {
 			err := s.frames.Stream(ctx, r.grid, r.grid.At(r.from), r.w, r.h, false, nil, func(at float64, picture []byte) error {
@@ -797,9 +835,10 @@ func (s *Schedule) Near(ctx context.Context, l Hand, has func(frame int) bool) [
 	from, to := max(0, l.Frame-lookBack), min(l.Grid.Count-1, l.Frame+lookAhead)
 	s.mu.Lock()
 	if r := s.run; r != nil && !r.ahead && r.grid == l.Grid && r.w == l.W && r.h == l.H && r.target >= from && r.target <= to {
+		idle := r.idle
 		s.mu.Unlock()
 		select {
-		case <-r.done:
+		case <-idle:
 		case <-ctx.Done():
 			return nil
 		}

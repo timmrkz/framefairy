@@ -299,8 +299,37 @@ func TestADragShowsTheKeyFramesOnTheWay(t *testing.T) {
 			t.Fatalf("the stream stopped at frame %d, before the frames after the place: %v", f, err)
 		}
 	}
-	if err := now.give(t, 173+lookAhead); !errors.Is(err, errLookDone) {
-		t.Fatalf("the stream read on past the frames after the place: %v", err)
+	// While the hand holds the playhead, the stream holds once it has read
+	// the frames after the place, and the hand's next frame is read on
+	// from there, with no seek. A slow drag to the right once opened a
+	// stream every few frames, and some waited 190 ms for their key frame.
+	parked := make(chan error, 1)
+	go func() { parked <- now.give(t, 173+lookAhead) }()
+	until(s, func() bool { return s.run != nil && s.run.resting })
+	next := 174 + lookAhead
+	step = lookFor(s, move(next, 173+lookAhead))
+	waits(s, move(next, 173+lookAhead))
+	if err := <-parked; err != nil {
+		t.Fatalf("the stream that held after the place ended with %v", err)
+	}
+	_ = now.give(t, next)
+	if got := <-step; got.seen.Frame != next || !got.seen.Exact {
+		t.Fatalf("the step past the frames read got %+v, %v", got.seen, got.err)
+	}
+	for f := next + 1; f < next+lookAhead; f++ {
+		if err := now.give(t, f); err != nil {
+			t.Fatalf("the stream stopped at frame %d, before the frames after the place: %v", f, err)
+		}
+	}
+	go func() { parked <- now.give(t, next+lookAhead) }()
+	until(s, func() bool { return s.run != nil && s.run.resting })
+	// The hand lets go, which the window says with what to read ahead: the
+	// stream ends.
+	if got := <-aheadFor(s, aheadOf(nil, nil)); got.err != nil {
+		t.Fatalf("the Ahead as the hand let go ended with %v", got.err)
+	}
+	if err := <-parked; !errors.Is(err, errLookDone) {
+		t.Fatalf("the stream went on after the hand let go: %v", err)
 	}
 	dec.none(t)
 }
