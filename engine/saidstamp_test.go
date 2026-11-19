@@ -98,7 +98,9 @@ func TestTheStampOfTheCardsStaysForWhatTheyAreNotMadeOf(t *testing.T) {
 	words := []timed.Cue{{Start: 0.5, End: 1.2, Text: "Hallo"}, {Start: 1.4, End: 2.0, Text: "Welt"}}
 	base := &Look{Style: map[string]any{"size": 80.0, "primary": "&H00FFFFFF", "margin_v": 320.0}}
 	in := func(change string) func(string) string {
-		return func(plan string) string { return strings.Replace(plan, `"slug":"clip-01",`, `"slug":"clip-01",`+change, 1) }
+		return func(plan string) string {
+			return strings.Replace(plan, `"slug":"clip-01",`, `"slug":"clip-01",`+change, 1)
+		}
 	}
 	for _, c := range []struct {
 		name    string
