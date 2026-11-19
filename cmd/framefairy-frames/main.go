@@ -265,7 +265,7 @@ func (d *decoder) request(f []string) {
 		if c == nil {
 			return
 		}
-		c.work <- func() { c.open(frame, w, h, grid, key) }
+		c.do(func() { c.open(frame, w, h, grid, key) })
 	case f[0] == "sound" && len(f) == 6:
 		seek, err1 := strconv.ParseFloat(f[2], 64)
 		from, err2 := strconv.ParseFloat(f[3], 64)
@@ -281,7 +281,7 @@ func (d *decoder) request(f []string) {
 		if c == nil {
 			return
 		}
-		c.work <- func() { c.openSound(seek, from, rate, channels) }
+		c.do(func() { c.openSound(seek, from, rate, channels) })
 	case f[0] == "next" && len(f) == 4:
 		n, err1 := strconv.Atoi(f[2])
 		skip, err2 := strconv.ParseFloat(f[3], 64)
@@ -291,10 +291,16 @@ func (d *decoder) request(f []string) {
 			return
 		}
 		if c.sound {
-			c.work <- func() { c.nextSound(min(n, 16)) }
+			c.do(func() { c.nextSound(min(n, 16)) })
 			return
 		}
-		c.work <- func() { c.next(min(n, 16), skip) }
+		c.do(func() { c.next(min(n, 16), skip) })
+	case f[0] == "stop":
+		// Read here, not queued behind the work it ends: the cursor
+		// stops between two frames, see next.
+		if c := d.cursors[id]; c != nil {
+			c.stopTo.Store(c.jobs)
+		}
 	case f[0] == "captions":
 		_, c, ok := framewire.ReadCaptions(f)
 		if !ok {
@@ -482,6 +488,12 @@ type cursor struct {
 	id    uint32
 	sound bool
 	work  chan func()
+	// How many jobs were asked of the cursor, counted by the reader of the
+	// requests, the one that is running now, and the last one a stop
+	// reached: a job up to that one stops between two frames, see do.
+	jobs   uint64
+	job    uint64
+	stopTo atomic.Uint64
 	// Closed when the decoder is made to hang, see hangAfter, which says
 	// at once what chipHang says on the clock.
 	hangs chan struct{}
@@ -562,6 +574,43 @@ type cursor struct {
 	chunks     int
 	soundEnded bool
 }
+
+// do queues a job for the cursor, numbered, so a stop reaches the jobs
+// asked before it and none asked after. Only the reader of the requests
+// calls it.
+func (c *cursor) do(job func()) {
+	c.jobs++
+	n := c.jobs
+	c.work <- func() {
+		c.job = n
+		job()
+	}
+}
+
+// stopped tells whether a stop reached the job the cursor is doing: the
+// page has left the place it asked for, and every frame decoded for it
+// from here on would be thrown away. A stream for a place the hand had
+// left decoded on to its frame, up to 40 frames on Tim's Mac, while the
+// new place waited behind it, issue #924.
+func (c *cursor) stopped() bool {
+	if stopAfter > 0 && !c.sound && c.decodedInOpen >= stopAfter && madeToStop.CompareAndSwap(false, true) {
+		c.stopTo.Store(c.job)
+		c.say("stops as if told to, see FRAMEFAIRY_FRAMES_STOP_AFTER")
+	}
+	return c.stopTo.Load() >= c.job
+}
+
+// stopAfter makes a cursor of picture stop as a stop would, once in the
+// program's life, when the open it is in has decoded that many frames,
+// so a test stops a cursor between two frames of its choosing rather than
+// whenever its request happens to come. Nought, never, unless
+// FRAMEFAIRY_FRAMES_STOP_AFTER says otherwise.
+var stopAfter, _ = strconv.Atoi(os.Getenv("FRAMEFAIRY_FRAMES_STOP_AFTER"))
+
+var madeToStop atomic.Bool
+
+// errStopped ends the work of a job a stop reached.
+var errStopped = errors.New("stopped")
 
 func (c *cursor) run() {
 	for job := range c.work {
@@ -987,6 +1036,18 @@ func (c *cursor) next(n int, skip float64) {
 	began := time.Now()
 	sent := 0
 	for sent < n {
+		if c.stopped() {
+			if c.keyNext {
+				// The key frame asked for first was not handed over. The
+				// frames from it to the frame asked for were let go
+				// unscaled or never decoded, so the key frame's picture
+				// says nothing of them, and the cursor stands at the frame
+				// asked for: a later open before it seeks, see goOn.
+				c.keyNext, c.rank, c.shown = false, max(c.rank, c.wanted), nil
+			}
+			c.say(fmt.Sprintf("stopped after %d frames of %d asked, %d decoded", sent, n, c.decodedInOpen))
+			break
+		}
 		if c.rank >= c.grid.Count {
 			c.say(fmt.Sprintf("the grid ended after %d frames of %d asked", sent, n))
 			c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
@@ -994,6 +1055,9 @@ func (c *cursor) next(n int, skip float64) {
 		}
 		if c.shown == nil || c.rank >= c.until {
 			err := c.advance()
+			if errors.Is(err, errStopped) {
+				continue
+			}
 			if err != nil && !errors.Is(err, astiav.ErrEof) && (c.v.chip || errors.Is(err, errMadeToFail)) {
 				if err = c.toProcessor(err); err == nil {
 					continue
@@ -1048,6 +1112,12 @@ func (c *cursor) next(n int, skip float64) {
 // the render, and before the picture begins its first frame is.
 func (c *cursor) advance() error {
 	for {
+		// Between two frames, where the cursor can take up again from:
+		// what it decoded stays held, and the next open reads on from it
+		// or seeks, see goOn.
+		if c.stopped() {
+			return errStopped
+		}
 		begins, err := c.decode()
 		if errors.Is(err, astiav.ErrEof) {
 			if !c.holding {
