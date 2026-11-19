@@ -28,16 +28,11 @@ export const steps = {
   //                    the press held until the clip is written and the
   //                    app has heard so, the way a busy machine hands it
   //                    back, and the clip made is chosen once it comes
-  // ["make with its pick late", key]
-  //                    the same as made while paused, with the answer to
-  //                    the pick of the card on its way held until the clip
-  //                    is written and the app has heard so and drawn it,
-  //                    the order a busy machine had, issue #697
   async "make while playing"(walk, arg, s, what) {
     const { page, watch } = walk;
     const playing = what === "make while playing";
-    const late = what === "make with its answer late" || what === "make with its pick late";
-    const held = what === "make with its pick late" ? "ChooseClip" : "MakeClip";
+    const late = what === "make with its answer late";
+    const held = "MakeClip";
     const g = await handles(page);
     if (g.start.x - g.track.x < 40) {
       walk.wrong = "there is no room on the clip timeline before the clip";
@@ -128,7 +123,7 @@ export const steps = {
       await settle(page);
       written = await chosenCard();
       if (!written) {
-        walk.wrong = `the clip made was written before ${held === "MakeClip" ? "the press" : "the pick of its card"} had its answer, and it was never chosen`;
+        walk.wrong = "the clip made was written before the press had its answer, and it was never chosen";
         return;
       }
     } else written = await seenUntil(page, url, chosenCard, (card) => !!card);
@@ -1436,7 +1431,6 @@ export const steps = {
 // Steps that take the same body as the step they are walked by.
 steps["make while paused"] = steps["make while playing"];
 steps["make with its answer late"] = steps["make while playing"];
-steps["make with its pick late"] = steps["make while playing"];
 
 // The pictures beside a short, <name>-1.jpg and on, in their order.
 function picturesOf(short) {

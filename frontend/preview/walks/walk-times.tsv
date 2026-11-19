@@ -59,7 +59,7 @@
   9	sequences.mjs SEQUENCE=a caption's edges dragged in over a word and back out stay where they are let go
   9	sequences.mjs SEQUENCE=a click on a thumbnail or a keyframe while a word is open ends the correction, and the captions follow
   9	sequences.mjs SEQUENCE=a clip made by hand that failed says where it lies, and why in a toast
-  9	sequences.mjs SEQUENCE=a clip made with O while the episode plays is not dimmed, nor when it is written before its card's pick has its answer
+  9	sequences.mjs SEQUENCE=a clip made with O while the episode plays is not dimmed
   9	sequences.mjs SEQUENCE=a clip's end dragged past the end of the video stops where the video ends
   9	sequences.mjs SEQUENCE=a keyframe dragged past the clip's edge stops on its first or last frame and stays where it was let go
   9	sequences.mjs SEQUENCE=a step to the word beside finds its frame read while the hand rested
