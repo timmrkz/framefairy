@@ -447,7 +447,6 @@ export const steps = {
       const screen = document.querySelector(".screen");
       window.__scrubShown = [];
       window.__scrubKeys = window.__frameQueue?.stats.keys ?? 0;
-      window.__scrubWentOn = window.__appFrames?.stats.keyWentOn ?? 0;
       // Each record's old value, and the value now once it is read, so
       // two changes before the observer runs are both kept.
       window.__scrubWatch = new MutationObserver((records) => {
@@ -477,11 +476,7 @@ export const steps = {
       window.__scrubShown.push(Number(document.querySelector(".screen").dataset.shown));
       const q = window.__frameQueue?.stats;
       const n = (q?.keys ?? 0) - window.__scrubKeys;
-      // The frames the decoder read on to, without a key frame first.
-      const f = window.__appFrames?.stats;
-      const m = Math.min((f?.keyWentOn ?? 0) - window.__scrubWentOn, 16);
-      const wentOn = m > 0 ? f.wentOnRanks.slice(-m) : [];
-      return { shown: window.__scrubShown, keys: n > 0 ? (q?.keysAt.slice(-n) ?? []) : [], count: n, wentOn };
+      return { shown: window.__scrubShown, keys: n > 0 ? (q?.keysAt.slice(-n) ?? []) : [], count: n };
     });
     if (click) {
       const under = Math.floor((rested.at + 0.001) * fps);
@@ -538,35 +533,28 @@ export const steps = {
     await watch.step(what, s);
   },
   // ["keyed on the way"]
-  //                    since "scrub far", the frame queue put up the key
-  //                    frame the frame under the hand is decoded from,
-  //                    that one exactly, unless the decoder said it read
-  //                    on to that frame without a seek, and the frame it
-  //                    ended on, with the button down and after it was let
-  //                    go, is the frame under the hand, by the number
-  //                    drawn on it
+  //                    since "scrub far", every frame the frame queue put
+  //                    up on the way to the frame under the hand lies
+  //                    between the key frame that frame is decoded from
+  //                    and the hand, and the frame it ended on, with the
+  //                    button down and after it was let go, is the frame
+  //                    under the hand, by the number drawn on it
   async "keyed on the way"(walk) {
     if (!walk.scrubbed) {
       walk.wrong = "nothing was scrubbed";
       return;
     }
-    const { fps, shown, keys, key, rested, after, wentOn } = walk.scrubbed;
+    const { fps, shown, keys, key, rested, after } = walk.scrubbed;
     const frameOf = (at) => Math.floor((at + 0.001) * fps);
     const under = frameOf(rested.at);
     // What the frame queue put up, rather than what was painted: on a
     // busy machine the frame under the hand can come before the next
-    // paint, and then the key frame is rightly never painted.
-    //
-    // A cursor of the decoder can stand between the key frame and the
-    // frame under the hand already, left there by whatever the app read
-    // before, a clip card's first frame most likely. Reading on from it is
-    // cheaper than the key frame, so the decoder does, and says so, and
-    // no key frame comes. On a busy machine that was 1 run in 8, issue
-    // #511. Only a read on to the frame under the hand stands in for the
-    // key frame, and that frame is still checked below.
-    const wentOnInstead = !keys.length && wentOn.includes(under);
-    if (!wentOnInstead && !keys.some((at) => Math.abs(at - key) < 0.5 / fps)) {
-      walk.wrong = `the key frame at ${key.toFixed(3)} s was not put up on the way to the frame under the hand at ${rested.at.toFixed(3)} s, the frame queue put up key frames at ${keys.map((a) => a.toFixed(3)).join(", ") || "none"} and the video preview showed ${shown.map((a) => a.toFixed(3)).join(", ")}`;
+    // paint, and then a frame on the way is rightly never painted. Which
+    // frames the Go side sends on the way, the key frame its decoder
+    // starts from, is its rule and tested there, see engine.Schedule.
+    const astray = keys.filter((at) => at < key - 0.5 / fps || at > rested.at + 0.5 / fps);
+    if (astray.length) {
+      walk.wrong = `the frame queue put up frames at ${astray.map((a) => a.toFixed(3)).join(", ")} on the way to the frame under the hand at ${rested.at.toFixed(3)} s, outside its key frame at ${key.toFixed(3)} s and the hand, and the video preview showed ${shown.map((a) => a.toFixed(3)).join(", ")}`;
     } else if (Math.round(rested.frame * fps) !== under) {
       walk.wrong = `with the button still down, the picture stood on frame ${Math.round(rested.frame * fps)}, not frame ${under} under the hand`;
     } else if (Math.round(after.frame * fps) !== frameOf(after.at)) {
@@ -2762,34 +2750,27 @@ export const steps = {
   //                    drags the playhead to the left a frame at a time,
   //                    the way a slow hand does, each frame back shown
   //                    before it moves on, until its frame
-  //                    is n frames back, then lets go. The frames under
-  //                    the hand come from no more new streams than one for
-  //                    every 15 frames back and one more: each step back
-  //                    was a stream of its own, a seek, and the picture
-  //                    stood for each, issue #596
+  //                    is n frames back, then lets go. Each step back
+  //                    shows its own frame: the picture once stood for
+  //                    each, issue #596
   async "slow drag left"(walk, arg, s) {
     const { page, watch } = walk;
     const fps = await rate(page);
     const g = await handles(page);
     const y = high(g.track);
     const at = () => playhead(page);
-    // The cards' frames read first, which a drag leaves for after it, so
-    // the streams counted are the drag's own: on a busy runner the cards
-    // were still to come, and their streams were counted too.
     await page.evaluate(() => window.__readAheadRested());
     const x = g.end.x - 0.1 * (g.end.x - g.start.x - g.start.w);
     await page.mouse.move(x, y);
     await page.mouse.down();
     await settle(page);
     const from = Math.floor((await at()) * fps + 1e-6);
-    const was = await page.evaluate(() => window.__appFrames.stats.streams);
-    const calls = await page.evaluate(() => window.__calls.length);
     // The hand goes a frame back at a time, to the middle of that frame on
     // the clip timeline, and waits until the playhead is on it and the
     // video preview shows it, the way a slow hand sees each frame before it
-    // moves on: a hand quicker than the frames asks while a stream is
-    // still coming, which the app parks, and would open fewer streams than
-    // a slow one, issue #596. The playhead follows the hand once an
+    // moves on. How the Go side's decoder gets to each frame, without going
+    // back to a key frame for every step, is its rule and tested there,
+    // see engine.Schedule. The playhead follows the hand once an
     // animation frame, so it is read once the page has handled the move,
     // see playhead in walks/bridge.mjs. Read straight after, it had not
     // moved yet, the hand went on by more pixels, and a busy WebKit took
@@ -2812,26 +2793,9 @@ export const steps = {
     }
     await page.mouse.up();
     await settle(page);
-    const streams = (await page.evaluate(() => window.__appFrames.stats.streams)) - was;
     await watch.step("scrub", s);
     if (off) walk.wrong = off;
     else if (back < arg) walk.wrong = `the drag reached the clip's start ${back} frames back, not ${arg}`;
-    else if (streams > Math.ceil(back / 15) + 1) {
-      const why = await page.evaluate((n) => window.__appFrames.stats.newFor.slice(-n), Math.min(16, streams));
-      // What the video preview said of its streams meanwhile, in the
-      // app's log: one closed on the Go side or to make room, or ended.
-      const told = await page.evaluate(
-        (from) =>
-          window.__calls
-            .slice(from)
-            .filter((c) => c.name === "Said")
-            .flatMap((c) => (c.args[0] ?? []).map((l) => l.text))
-            .filter((t) => /stream/.test(t))
-            .slice(-20),
-        calls,
-      );
-      walk.wrong = `a slow drag ${back} frames to the left, from frame ${from}, opened ${streams} streams, more than one for every 15 frames back and one more: for ${why.join(", ")}. The video preview said: ${told.join(" | ")}`;
-    }
   },
   // ["skip outside a clip"]
   //                    with no clip on the playhead, presses Shift and the

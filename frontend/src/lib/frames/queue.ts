@@ -133,7 +133,7 @@ export type Stats = {
   // Plays started, a seek while playing and a new program included. A
   // press of L starts none, see relooped.
   starts: number;
-  // Key frames put up on the way to the frame under a hand that drags the
+  // Frames put up on the way to the frame under a hand that drags the
   // playhead, see passing, and where the last 16 begin, for the walks.
   keys: number;
   keysAt: number[];
@@ -657,9 +657,6 @@ export class FrameQueue {
   // see report and standing.
   private toldFor = -1;
   private shown: { frame: Picture; run: number; rank: number } | null = null;
-  // Whether the frame on screen is a key frame put up on the way to the
-  // frame under the hand, see passing.
-  private shownKey = false;
   // The sound card's time at which the program's sample m0 is played.
   private c0: number | null = null;
   private m0 = 0;
@@ -709,7 +706,7 @@ export class FrameQueue {
     letGo: number;
     waits: number[];
     waitFrom: number;
-    ways: { streams: number; continued: number; kept: number; parked: number; keyFirst: number };
+    ways: { kept: number; looks: number; near: number; overtaken: number };
   } | null = null;
   // The first frame of a cue or a play that is waiting for what lies over
   // it, and the one that has it, each by its ticket and rank, see dressed.
@@ -829,8 +826,9 @@ export class FrameQueue {
       this.fault(`The app could not decode the picture: ${why.replace(/\.$/, "")}.`),
     );
     app.trace = (line) => this.trace(line);
-    app.onPassing = (rank, frame, seq, key) => this.passing(rank, frame, seq, key);
+    app.onPassing = (rank, frame, seq) => this.passing(rank, frame, seq);
     app.paused = () => this.state !== "playing" && this.state !== "starting";
+    app.shownRank = () => this.shown?.rank ?? -1;
     return app;
   }
 
@@ -1176,16 +1174,16 @@ export class FrameQueue {
     const was = d.ways;
     this.trace(
       `a drag of the playhead let go at ${this.at.toFixed(3)} s, after ${behind.length} moves: the frame on screen ${behind[Math.floor(behind.length / 2)]} frames from the playhead on the median and ${behind[behind.length - 1]} at most as the hand moved, ` +
-        `${this.stats.keys - d.keys} key frames put up on the way, the frame under the hand ${Math.round(performance.now() - d.letGo)} ms after letting go, ` +
+        `${this.stats.keys - d.keys} frames put up on the way, the frame under the hand ${Math.round(performance.now() - d.letGo)} ms after letting go, ` +
         `the picture waited ${Math.round(waits[Math.floor(waits.length / 2)] ?? 0)} ms on the median and ${Math.round(waits[waits.length - 1] ?? 0)} ms at most for a new frame, ${waits.filter((w) => w > DRAG_FRAME_MS).length} of ${waits.length} waits over ${DRAG_FRAME_MS} ms, ` +
-        `the frames from ${now.kept - was.kept} kept, ${now.continued - was.continued} streams read on, ${now.streams - was.streams} new streams of which ${now.keyFirst - was.keyFirst} key frame first, ${now.parked - was.parked} places parked`,
+        `the frames from ${now.kept - was.kept} kept, ${now.looks - was.looks} looks, ${now.near - was.near} frames on the way, ${now.overtaken - was.overtaken} looks overtaken`,
     );
   }
 
   // The counts of how AppFrames found its frames, see drag.
   private ways() {
     const s = this.app?.stats;
-    return { streams: s?.streams ?? 0, continued: s?.continued ?? 0, kept: s?.kept ?? 0, parked: s?.parked ?? 0, keyFirst: s?.keyFirst ?? 0 };
+    return { kept: s?.kept ?? 0, looks: s?.looks ?? 0, near: s?.near ?? 0, overtaken: s?.overtaken ?? 0 };
   }
 
   // The moments the hand is likely to step to next while paused, the first
@@ -1477,7 +1475,6 @@ export class FrameQueue {
       this.drag.waitFrom = rank === rankAt(this.video.samples, this.at) ? -1 : now;
     }
     this.shown = { frame, run, rank };
-    this.shownKey = false;
     if (!passing) {
       this.putFor = this.ticket;
       this.shownAsked = this.app?.asked ?? 0;
@@ -1502,12 +1499,11 @@ export class FrameQueue {
   // turned, follows the frame. Tim saw a part rotated in the clip turn
   // with the hand while the frame from before its cut was still up, #188.
   //
-  // A key frame on the way to the frame under the hand comes too, see
-  // AppFrames.route, issue #281. It can be up to two seconds from the
-  // hand, so it is put up only where it is nearer the playhead than the
-  // frame on screen, and once it is up, a frame passing has to be nearer
-  // still. It says nothing of the ask it came for, whose own frame still
-  // comes and replaces it, so a key frame never stays once the hand rests.
+  // The Go side sends a frame on the way to the frame under the hand, the
+  // first its decoder reads there, where it is nearer the hand than the
+  // frame on screen, see engine.Schedule. It says nothing of the ask it
+  // came for, whose own frame still comes and replaces it, so it never
+  // stays once the hand rests.
   //
   // Nor while the frame of the newest gesture waits for what lies over it.
   // A clip card clicked puts up the clip's first frame with its captions,
@@ -1516,29 +1512,17 @@ export class FrameQueue {
   // sentence, the mark's frame came while the clip's waited for its
   // captions, and it went up first, the picture of another moment under
   // the clip's captions, then the clip's own frame.
-  private passing(rank: number, frame: Picture, seq: number, key = false) {
+  private passing(rank: number, frame: Picture, seq: number) {
     if (this.closed || (this.state !== "paused" && this.state !== "cued") || this.putFor === this.ticket) return;
     if (this.dressFor === this.ticket) return;
     if (seq <= this.shownAsked) return;
-    if ((key || this.shownKey) && this.shown && !this.nearer(rank, this.shown.rank)) return;
-    if (!key) this.shownAsked = seq;
     if (this.shown?.rank === rank) return;
     this.stats.open++;
-    if (key) {
-      this.stats.keys++;
-      this.stats.keysAt.push(this.shownAt(rank));
-      if (this.stats.keysAt.length > 16) this.stats.keysAt.shift();
-    }
+    this.stats.keys++;
+    this.stats.keysAt.push(this.shownAt(rank));
+    if (this.stats.keysAt.length > 16) this.stats.keysAt.shift();
     this.put(frame.clone(), -1, rank, true);
-    this.shownKey = key;
     this.report(true, true);
-  }
-
-  // Whether the frame of rank a is nearer the playhead than that of b.
-  private nearer(a: number, b: number): boolean {
-    if (!this.video) return false;
-    const at = rankAt(this.video.samples, this.at);
-    return Math.abs(a - at) < Math.abs(b - at);
   }
 
   // What lies over the frames, the captions: asked for each frame as it

@@ -34,6 +34,9 @@ import (
 // A stream left open is how a paused play goes on at once, and how the
 // next frame is there when the arrow key steps to it.
 //
+//	/frames/look?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&shown=<frame>[&move=1][&follow=1]
+//	                                 the frame for where the hand is, see
+//	                                 serveLook and engine.Schedule
 //	/frames/open?path=<episode>&from=<seconds>&w=<width>&h=<height>&grid=<grid>[&key=1]  {"id": "..."}
 //	                                 the frames of the grid from the one that
 //	                                 holds from: the grid the engine named,
@@ -63,6 +66,9 @@ type previews struct {
 	// nobody holds is closed once it has stood unused.
 	decoders map[string]*engine.EpisodeFrames
 	held     map[string]int
+	// The schedule of each decoder, which decides the frames of the
+	// video preview while it stands still, see serveLook.
+	schedules map[*engine.EpisodeFrames]*engine.Schedule
 	// Started with the first stream, it closes the ones nobody pulls.
 	reaping bool
 	// tracks are the caption views the window was given, and layers
@@ -139,6 +145,8 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/frames/open", "/frames/sound":
 		p.serveOpen(st, w, r)
+	case "/frames/look":
+		p.serveLook(st, w, r)
 	case "/frames/read":
 		stream := p.get(q.Get("id"))
 		if stream == nil {
@@ -254,6 +262,106 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	id := p.start(kind, times, light, skip, give, run)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
+}
+
+// serveLook answers where the hand is on a paused video preview with a
+// frame, see engine.Schedule: frame is the frame of the grid under the
+// hand, move says the hand moves over it, follow that it is one of the
+// frames after the place the hand rests on, and shown is the frame on
+// screen, or -1. The answer is the frame as writeFrames writes one, with
+// X-Frames-Exact where it is the frame of the place and not one on the
+// way. A look a newer one took the place of is answered with no content,
+// and one the decoder failed with X-Frames-Error and no frame.
+func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	path := q.Get("path")
+	if !episodeFile(st, path) {
+		http.NotFound(w, r)
+		return
+	}
+	width, _ := strconv.Atoi(q.Get("w"))
+	height, _ := strconv.Atoi(q.Get("h"))
+	if width < 2 || height < 2 || width > 7680 || height > 4320 {
+		http.Error(w, "a look needs a width and a height", http.StatusBadRequest)
+		return
+	}
+	grid, ok := framewire.ReadGrid(q.Get("grid"))
+	if !ok {
+		http.Error(w, "a look needs the grid of frames it counts on", http.StatusBadRequest)
+		return
+	}
+	frame, err := strconv.Atoi(q.Get("frame"))
+	if err != nil || frame < 0 || frame >= grid.Count {
+		http.Error(w, "a look needs a frame of the grid", http.StatusBadRequest)
+		return
+	}
+	shown, err := strconv.Atoi(q.Get("shown"))
+	if err != nil || shown < 0 || shown >= grid.Count {
+		shown = -1
+	}
+	dec, err := p.decoder(st.machine, path)
+	if err != nil {
+		w.Header().Set("X-Frames-Error", runes.Scrub(err.Error(), 300))
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	seen, err := p.schedule(dec).Look(r.Context(), engine.Hand{Grid: grid, Frame: frame, W: width &^ 1, H: height &^ 1,
+		Moving: q.Get("move") == "1", Follow: q.Get("follow") == "1", Shown: shown})
+	switch {
+	case errors.Is(err, engine.ErrOvertaken):
+		w.WriteHeader(http.StatusNoContent)
+		return
+	case r.Context().Err() != nil:
+		return
+	case err != nil:
+		if !errors.Is(err, engine.ErrFramesClosed) {
+			theLog.line(zerolog.WarnLevel, "files").Str("video", filepath.Base(path)).Int("frame", frame).Err(err).Msg("a look failed")
+		}
+		w.Header().Set("X-Frames-Error", runes.Scrub(err.Error(), 300))
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	if seen.Exact {
+		w.Header().Set("X-Frames-Exact", "1")
+	}
+	if light := dec.Light(); light != framewire.SDR {
+		w.Header().Set("X-Frames-Light", string(light))
+	}
+	head := make([]byte, 8)
+	binary.LittleEndian.PutUint64(head, math.Float64bits(seen.At))
+	if _, err := w.Write(head); err == nil {
+		_, _ = w.Write(seen.Picture)
+	}
+}
+
+// schedule is the schedule of the decoder, made with its first look.
+func (p *previews) schedule(dec *engine.EpisodeFrames) *engine.Schedule {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.schedules == nil {
+		p.schedules = map[*engine.EpisodeFrames]*engine.Schedule{}
+	}
+	s := p.schedules[dec]
+	if s == nil {
+		s = engine.NewSchedule(dec)
+		p.schedules[dec] = s
+	}
+	return s
+}
+
+// closeDecoder closes a decoder and its schedule, on a goroutine of its
+// own, since a decoder takes a moment to stop. Under the lock.
+func (p *previews) closeDecoder(d *engine.EpisodeFrames) {
+	s := p.schedules[d]
+	delete(p.schedules, d)
+	go func() {
+		if s != nil {
+			s.Close()
+		}
+		d.Close()
+	}()
 }
 
 // start runs ffmpeg for a stream. It decodes a frame and waits until the
@@ -445,7 +553,7 @@ func (p *previews) spare() {
 		d := p.decoders[oldest]
 		delete(p.decoders, oldest)
 		theLog.line(zerolog.DebugLevel, "files").Str("video", filepath.Base(oldest)).Int("unheld", free).Msg("the decoder is closed to make room")
-		go d.Close()
+		p.closeDecoder(d)
 	}
 }
 
@@ -500,7 +608,7 @@ func (p *previews) reapOnce(idle time.Duration) bool {
 		if p.held[path] == 0 && d.Idle() > 3*idle {
 			delete(p.decoders, path)
 			theLog.line(zerolog.DebugLevel, "files").Str("video", filepath.Base(path)).Msgf("the decoder is closed, unused for %.0f s", d.Idle().Seconds())
-			go d.Close()
+			p.closeDecoder(d)
 		}
 	}
 	for id, s := range p.open {

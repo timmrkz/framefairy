@@ -66,12 +66,12 @@ export default [
     // A click outruns nothing, so it shows the frame clicked and no key
     // frame before it. The first version of #281 asked for the key frame
     // first for every place a press reached, the place it landed on too,
-    // found by the review of #502. How the frame queue asks for them is
-    // src/lib/frames/app.test.ts, and the decoder's way to a key frame in
+    // found by the review of #502. Which frames the Go side sends on the
+    // way is engine/schedule_test.go, and the decoder's way to a key frame in
     // every codec, HEVC with open GOPs too, is
     // TestTheEpisodesDecoderHandsOverTheKeyFrameFirst. The window never
     // sees the codec, so this walks the walks' own video.
-    name: "a playhead dragged far shows the key frame on the way and the frame under the hand once it rests, and a click shows no key frame",
+    name: "a playhead dragged far shows only frames on the way and the frame under the hand once it rests, and a click shows no key frame",
     steps: [["scrub far"], ["keyed on the way"], ["click far"]],
   },
   {
@@ -616,7 +616,8 @@ export default [
     // Issue #596, found by Tim on 29 October: a slow drag of the playhead
     // stuttered where a fast one did not. To the left, every step back
     // was a stream of its own, a seek, and the picture stood for each.
-    name: "a slow drag of the playhead to the left reads its frames in runs, not a seek a step",
+    // That the Go side reads them in runs is engine/schedule_test.go.
+    name: "a slow drag of the playhead to the left shows every frame it steps back to",
     steps: [["slow drag left", 40]],
   },
   {

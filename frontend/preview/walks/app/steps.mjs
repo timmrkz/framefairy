@@ -829,8 +829,8 @@ export const steps = {
       const at = first + ((last - first) * i) / (arg + 1);
       if (!(await seekTo(page, at, fps))) walk.wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
     }
-    const streams = await page.evaluate(() => window.__appFrames?.stats.streams ?? 0);
-    if (!walk.wrong && !streams) walk.wrong = "the picture did not come from the Go side";
+    const fromGo = await page.evaluate(() => window.__appFrames?.stats.fromGo ?? 0);
+    if (!walk.wrong && !fromGo) walk.wrong = "the picture did not come from the Go side";
     const trouble = await page.evaluate(() => document.querySelector(".screen")?.textContent.trim() ?? "");
     if (!walk.wrong && /decod/i.test(trouble)) walk.wrong = `the video preview says "${trouble}"`;
   },

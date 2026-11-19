@@ -556,3 +556,60 @@ func TestEveryFrameIsGivenBackOnceNothingReadsIt(t *testing.T) {
 		}
 	}
 }
+
+// A paused video preview asks for where the hand is and gets the frame
+// under it, the same frame a stream from there hands over, said to be the
+// frame of the place. A look for a frame the grid does not have, or for a
+// file outside the library, is refused.
+//
+// Not parallel: library sets the environment the store reads.
+func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
+	ffmpegtest.Need(t)
+	needDecoder(t)
+	svc, mine, _ := library(t)
+	fixtures.Copy(t, "small-10s.mp4", mine)
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
+	grid := gridOf(t, mine)
+	ask := func(frame string, more url.Values) *httptest.ResponseRecorder {
+		q := url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {grid}, "frame": {frame}, "shown": {"-1"}}
+		for k, v := range more {
+			q[k] = v
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/look?"+q.Encode(), nil))
+		return rec
+	}
+	look := ask("30", nil)
+	if look.Code != http.StatusOK || look.Header().Get("X-Frames-Exact") != "1" || look.Header().Get("X-Frames-Error") != "" {
+		t.Fatalf("the look answered %d, %v", look.Code, look.Header())
+	}
+	if n := look.Body.Len(); n != 8+32*18*4 {
+		t.Fatalf("the look answered %d bytes, want one frame", n)
+	}
+	g, _ := framewire.ReadGrid(grid)
+	if at := math.Float64frombits(binary.LittleEndian.Uint64(look.Body.Bytes())); math.Abs(at-g.At(30)) > 1e-6 {
+		t.Errorf("the look's frame starts at %.6f s, want %.6f", at, g.At(30))
+	}
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "from": {fmt.Sprint(g.At(30))}, "w": {"32"}, "h": {"18"}, "grid": {grid}}.Encode(), nil))
+	var opened struct{ ID string }
+	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil {
+		t.Fatal(err)
+	}
+	read := httptest.NewRecorder()
+	handler.ServeHTTP(read, httptest.NewRequest("GET", "/frames/read?id="+opened.ID+"&n=1", nil))
+	svc.previews.close(opened.ID)
+	if read.Body.String() != look.Body.String() {
+		t.Error("the look's frame is not the frame a stream from there hands over")
+	}
+
+	if bad := ask(fmt.Sprint(g.Count), nil); bad.Code != http.StatusBadRequest {
+		t.Errorf("a look past the grid answered %d", bad.Code)
+	}
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/look?"+url.Values{"path": {"/elsewhere.mp4"}, "w": {"32"}, "h": {"18"}, "grid": {grid}, "frame": {"1"}}.Encode(), nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("a look at a file outside the library answered %d", rec.Code)
+	}
+}

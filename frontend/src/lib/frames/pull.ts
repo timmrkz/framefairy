@@ -25,6 +25,9 @@ export type Pulled = {
   times: string;
   // How the frames code their brightness, see light.ts.
   light: Light;
+  // A look's frame is the one asked for, not one on the way to it, see
+  // engine.Seen.
+  exact: boolean;
   // Each frame's pixels, see Picture. They are bytes rather than a
   // Picture so they can come from a Worker, see pictures.
   frames: { at: number; data: ArrayBuffer }[];
@@ -43,7 +46,7 @@ export function pictures(got: Pulled, width: number, height: number): { at: numb
 // while there are any of its size, and into a new one after.
 export async function pull(url: string, width: number, height: number, spare: ArrayBuffer[] = []): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
-  if (!res) return { status: 0, end: false, error: "", closed: false, times: "", light: "", frames: [], spare };
+  if (!res) return { status: 0, end: false, error: "", closed: false, times: "", light: "", exact: false, frames: [], spare };
   const out: Pulled = {
     status: res.status,
     end: !!res.headers.get("X-Frames-End"),
@@ -51,6 +54,7 @@ export async function pull(url: string, width: number, height: number, spare: Ar
     closed: !!res.headers.get("X-Frames-Closed"),
     times: res.headers.get("X-Frames-Times") ?? "",
     light: lightOf(res.headers.get("X-Frames-Light")),
+    exact: !!res.headers.get("X-Frames-Exact"),
     frames: [],
     spare: [],
   };

@@ -1,19 +1,17 @@
 // The picture of the episode, decoded on the Go side by the episode's
-// decoder and pulled from it a few frames at a time, see
-// cmd/framefairy-app/frames.go: the frames of the short, on the grid the
-// engine names, see movie.ts. AppPictures answers the calls the frame
-// queue makes of a decoder.
+// decoder, see cmd/framefairy-app/frames.go: the frames of the short, on
+// the grid the engine names, see movie.ts. AppPictures answers the calls
+// the frame queue makes of a decoder.
 //
-// What makes it quick, since every new stream costs moving a cursor of
-// the episode's decoder and decoding from the key frame before:
+// While the video preview stands still, the window says where the hand is
+// and what it does there, a look, and draws the frame it is sent: which
+// frame the decoder makes, what it gives up on and what it keeps is the Go
+// side's, see engine.Schedule and
+// docs/decisions/2026-11-19-go-schedules-the-video-previews-frames.md.
+// A play reads streams of frames, a few at a time.
 //
-// - A stream that will reach a frame soon is waited for rather than a new
-//   one started, so the arrow key stepping on, and a paused play going on,
-//   cost one frame each. The frames on the way are dropped on the Go side
-//   without being sent.
-// - The frames shown last are kept, so stepping back or a still close by
-//   costs nothing.
 // - A frame is decoded at the size of the canvas and no larger.
+// - The frames sent last are kept, as memory to draw from again.
 // - The queue's second decoder asks for the piece after a cut while the
 //   first plays, so a stream for it is open before it is needed.
 import { rankOf, ticks, type VideoTrack } from "./movie";
@@ -24,7 +22,7 @@ import { frames as framePool } from "./pool";
 // A pull with its frames as Pictures.
 type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture }[] };
 
-// How much of the frames shown last is kept, and how far ahead a stream may
+// How much of the frames sent last is kept, and how far ahead a stream may
 // be from a frame wanted of it and still be waited for, in seconds. Further
 // than that, a new stream from the key frame before is quicker. The kept
 // frames are counted, so the room follows the size of the frames: 40 are
@@ -42,35 +40,35 @@ const KEPT_BYTES = 192 << 20;
 const CARDS_BYTES = 400 << 20;
 const REACH = 1.5;
 // How many streams are kept open: one for each of the queue's two
-// decoders, and one more for a still or a seek while they play.
+// decoders, and one more for the frames read ahead.
 const STREAMS = 3;
-// How many frames before a place the hand drags the playhead back to come
-// with it, kept, so the next steps back find their frames there, see
-// frame. One pull's worth with the place, and well inside KEPT_FRAMES.
-// Only for a step back of SLOW frames or fewer: a hand moving faster than
-// that left the frames behind before they would be shown, and a far step
-// is quicker with its key frame first.
-const BACK = 15;
-const SLOW = 2;
 
 // A frame asked for. gone is set when the one who asked no longer wants it,
 // a decoder reset for a newer target, and a stream then neither pulls for
 // it nor opens another stream for it.
 // seq numbers the asks in the order they were made. place is set on the
-// frame that holds the playhead, a place the hand put it, see frame.
-// ahead is set on a frame read ahead of the hand, see AppFrames.ahead.
-type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean; place?: boolean; ahead?: boolean; key?: boolean; back?: boolean };
+// frame that holds the playhead, a place the hand put it, see frame, and
+// moving where the hand moves over it. follows is set on the frames after
+// a place the hand rests on, which a play from there shows first. ahead is
+// set on a frame read ahead of the hand, see AppFrames.ahead.
+type Waiter = {
+  rank: number;
+  seq: number;
+  done: (f: Picture | null) => void;
+  gone?: boolean;
+  place?: boolean;
+  moving?: boolean;
+  follows?: boolean;
+  ahead?: boolean;
+};
 
 // Where the time of a stream's first frame went, in milliseconds from when
 // it was asked for, for a probe to read, see docs/VIDEO-PREVIEW.md, Speed:
 // ms until the interface had it, and on the Go side until the decoder had
 // the request, until it was at the place, until the first frame was out,
 // and whether that meant opening the file or only moving a cursor. on says
-// the cursor read on to the place from where it stood, without a seek. key
-// says the stream was asked for the key frame first, issue #281, so the
-// frame asked for came later than these times say, unless the cursor went
-// on, which hands over no key frame, issue #511.
-export type Opened = { ms: number; started: number; opened: number; first: number; file: boolean; on: boolean; key: boolean };
+// the cursor read on to the place from where it stood, without a seek.
+export type Opened = { ms: number; started: number; opened: number; first: number; file: boolean; on: boolean };
 
 class Stream {
   id: Promise<string | null>;
@@ -80,38 +78,25 @@ class Stream {
   ended = false;
   // Whether it has given a frame yet.
   private gave = false;
-  // Whether the decoder read on to its first frame from where a cursor
-  // stood, rather than seek, see Opened.
-  private wentOn = false;
   // When it was asked for, to count how long its first frame took.
   private asked = performance.now();
   used = performance.now();
   private waiting: Waiter[] = [];
   private pulling = false;
-  // The newest ask for a place it was opened for, its first frame, or 0.
-  private placed = 0;
   // Opened for a frame read ahead of the hand, see AppFrames.ahead.
   aheadOnly = false;
-  // Opened before a place the hand dragged back to: the place, and every
-  // frame from its first to it is handed over, see AppFrames.frame. -1 for
-  // any other stream.
-  runTo = -1;
   // While a pull that skips is on its way, the rank it skips to: the Go
   // side lets every frame before it go unmade, see reaches.
   private skipping = -Infinity;
 
-  // With key, the stream hands over the key frame its decoding starts
-  // from first, and then goes on to first, see AppFrames.route.
   constructor(
     private owner: AppFrames,
     first: number,
     readonly width: number,
     readonly height: number,
-    readonly key = false,
   ) {
     this.first = first;
-    // The key frame comes before first, at a rank only the Go side knows.
-    this.position = key ? -1 : first - 1;
+    this.position = first - 1;
     // The frame's own moment: the Go side starts at the frame of the grid
     // that holds it, which is this one, see movie.ts.
     const from = owner.ptsOf(first);
@@ -120,8 +105,7 @@ class Stream {
     // makes the frames of that grid and no other, so the two never count
     // differently, even for a file written over while the page slept.
     const g = owner.track.grid;
-    if (g) q.set("grid", [g.origin, g.start, g.num, g.den, g.count].join(","));
-    if (key) q.set("key", "1");
+    if (g) q.set("grid", owner.gridText);
     this.id = fetch(`/frames/open?${q}`)
       .then(async (r) => {
         if (r.ok) return r.json();
@@ -135,36 +119,19 @@ class Stream {
       });
   }
 
-  // Still on its way to its first frame for a place nobody wants any more:
-  // a drag went on past it.
-  get stale(): boolean {
-    // A stream opened ahead of the hand holds no place back: the hand's
-    // own frame never waits for one.
-    return !this.aheadOnly && !this.ended && !this.gave && this.waiting.every((w) => w.gone);
-  }
-
   // Whether this stream is the quickest way to the frame: it has not passed
   // it, is not too far behind it, and no pull on its way skips over it. A
   // frame skipped over never came, and once the pull was in it was handed
   // the frame before it, so the video preview showed that frame and said
   // it showed this one, issue #358.
-  //
-  // A run reaches every frame up to the place it was opened for, however
-  // far that is: it reads them all anyway. On a video of 5 frames a second
-  // its 15 frames are 3 s, further than REACH, and the place asked again
-  // while the run was on its way, which a slow drag does at every pixel,
-  // opened a stream of its own when the Go side had brought the run in two
-  // pulls.
   reaches(rank: number): boolean {
     if (this.ended || rank <= this.position || rank < this.first || rank < this.skipping) return false;
-    if (rank <= this.runTo) return true;
     return this.owner.ptsOf(rank) - this.owner.ptsOf(Math.max(this.position, this.first)) <= REACH;
   }
 
   want(w: Waiter) {
     this.used = performance.now();
     if (!w.ahead) this.aheadOnly = false;
-    if (w.place && w.rank === this.first) this.placed = Math.max(this.placed, w.seq);
     this.waiting.push(w);
     void this.pull();
   }
@@ -181,17 +148,7 @@ class Stream {
       for (;;) {
         for (const w of this.waiting) if (w.gone) w.done(null);
         this.waiting = this.waiting.filter((w) => !w.gone);
-        if (!this.waiting.length || this.ended) {
-          if (this.ended || this.gave) return;
-          // Opened for a place the hand has left: once its first frame
-          // comes it lets the newest place go, see unpark. A frame asked
-          // of it meanwhile, the newest place among them, is pulled next:
-          // pull returned at once for it, since this one was pulling.
-          // Returned here, that frame never came, and a walk hung after
-          // a drag of an edge, issue #556.
-          await this.firstFrame(id);
-          continue;
-        }
+        if (!this.waiting.length || this.ended) return;
         // The frames wanted next, one run of them: a frame read ahead
         // further on is read with a skip of its own, after these, so the
         // frames between are never made into pictures.
@@ -199,24 +156,9 @@ class Stream {
         const lowest = ranks[0];
         let highest = lowest;
         for (const r of ranks) if (r <= highest + 1) highest = r;
-        // The key frame first, on its own, see key.
-        const keyNow = this.key && !this.gave;
-        // Frames before the first one wanted are decoded on the Go side
-        // and never made into pictures, but for the one just before it,
-        // which comes too and is kept: the arrow to the left after a jump
-        // asks for it next, and it would cost a seek back to the key
-        // frame. Plan row 2.269.
-        // A run hands over every frame from where it stands, until it has
-        // reached the place it was opened for, however many pulls that
-        // takes: the Go side waits only a moment for each frame after the
-        // first, so on a busy machine a pull brings fewer than asked for,
-        // and a run that stopped there skipped the rest, which the next
-        // steps back then had to seek. Asked again later, past the place,
-        // it skips as any stream does.
-        const run = this.position < this.runTo;
-        const from = run ? Math.min(lowest, this.position + 1) : lowest > this.position + 2 ? lowest - 1 : lowest;
-        const skip = from > this.position + 1 && !keyNow ? this.owner.ptsOf(from) - this.owner.track.frame / 2 : 0;
-        const n = keyNow ? 1 : Math.min(16, Math.max(1, highest - Math.max(this.position, from - 1)));
+        const from = lowest;
+        const skip = from > this.position + 1 ? this.owner.ptsOf(from) - this.owner.track.frame / 2 : 0;
+        const n = Math.min(16, Math.max(1, highest - Math.max(this.position, from - 1)));
         const q = new URLSearchParams({ id, n: String(n) });
         if (skip > 0) q.set("skip", skip.toFixed(6));
         this.skipping = skip > 0 ? from : -Infinity;
@@ -230,30 +172,10 @@ class Stream {
         }
         if (this.over(got, id)) return;
         this.take(got);
-        if (keyNow) this.keyCame(got, id);
       }
     } finally {
       this.pulling = false;
     }
-  }
-
-  // The key frame came, before the frame the hand asked for: it may be put
-  // up while that one is decoded, whether the hand is still there or not,
-  // see onPassing. A decoder that read on to the frame from a cursor
-  // standing after the key frame hands over the frame asked for first,
-  // which is cheaper, and there is no key frame to put up, issue #511.
-  private keyCame(got: Got, id: string) {
-    const last = got.frames[got.frames.length - 1];
-    if (!last) return;
-    const rank = rankOf(this.owner.track.samples, last.at);
-    if (rank < this.first) this.owner.stats.keyCame++;
-    else if (this.wentOn) {
-      this.owner.stats.keyWentOn++;
-      this.owner.stats.wentOnRanks.push(rank);
-      if (this.owner.stats.wentOnRanks.length > 16) this.owner.stats.wentOnRanks.shift();
-      this.owner.trace(`stream ${id.slice(0, 6)}: asked for its key frame first, the decoder read on to frame ${rank} from where a cursor stood, so no key frame came before it`);
-    }
-    if (rank < this.first && this.placed) this.owner.onPassing?.(rank, last.frame, this.placed, true);
   }
 
   // Whether a pull's answer ends this stream: closed or gone on the Go
@@ -294,40 +216,8 @@ class Stream {
     return false;
   }
 
-  // The first frame of a stream nobody waits on any more, read so that the
-  // stream counts as come and the newest place asked for can go next. It
-  // is put up as a place the hand passed only when it is one, see frame.
-  // A frame asked of the stream meanwhile goes where pull's would when the
-  // answer ends the stream: it ended here as the nearest frame, nothing,
-  // when the Go side had closed the stream to make room for newer ones.
-  private async firstFrame(id: string) {
-    const q = new URLSearchParams({ id, n: "1" });
-    const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height);
-    if (this.ended) {
-      for (const { frame } of got.frames) frame.close();
-      return;
-    }
-    if (this.over(got, id)) return;
-    // Nothing came and nothing ended: pull asks again for what waits, and
-    // with nobody waiting the stream is let go.
-    if (!got.frames.length) {
-      if (!this.waiting.length) {
-        this.owner.trace(`stream ${id.slice(0, 6)} brought no first frame, and nobody waits on it`);
-        this.end("");
-      }
-      return;
-    }
-    this.take(got);
-    const { at, frame } = got.frames[got.frames.length - 1];
-    const rank = rankOf(this.owner.track.samples, at);
-    if (this.placed) this.owner.onPassing?.(rank, frame, this.placed, this.key && rank < this.first);
-  }
-
   private take(got: Got) {
-    if (!this.gave && got.frames.length) {
-      this.wentOn = this.owner.opened(performance.now() - this.asked, got.times, this.key).on;
-      queueMicrotask(() => this.owner.unpark());
-    }
+    if (!this.gave && got.frames.length) this.owner.opened(performance.now() - this.asked, got.times);
     for (const { at, frame } of got.frames) {
       const rank = rankOf(this.owner.track.samples, at);
       this.position = Math.max(this.position, rank);
@@ -358,7 +248,6 @@ class Stream {
 
   private end(why: string) {
     this.ended = true;
-    queueMicrotask(() => this.owner.unpark());
     if (why) this.owner.failed(why);
     for (const w of this.waiting) w.done(this.owner.nearest(w.rank));
     this.waiting = [];
@@ -367,7 +256,6 @@ class Stream {
   // Closed with frames still waited for: they go to another stream.
   close() {
     this.ended = true;
-    queueMicrotask(() => this.owner.unpark());
     const again = this.waiting;
     this.waiting = [];
     for (const w of again) this.owner.route(w);
@@ -385,17 +273,17 @@ export class AppFrames {
   private keptBytes = 0;
   // Why the Go side could not decode a frame, for the queue to say.
   trouble = "";
-  // Told of a frame that came for an ask withdrawn on the way, a place a
-  // drag passed, so the queue can put it up while the frame for where the
-  // hand is now is on its way. seq is the ask's. key says it is the key
-  // frame decoding starts from, on the way to the frame asked for. The
-  // frame stays the kept one's.
-  onPassing?: (rank: number, frame: Picture, seq: number, key?: boolean) => void;
-  // Whether the hand holds the playhead, see grip, the places it asked
-  // for since it took hold, and the rank of the last of them.
+  // Told of a frame the Go side sent on the way to the place the hand
+  // moves to, so the queue can put it up while the frame under the hand is
+  // on its way. seq is the ask's. The frame stays the kept one's.
+  onPassing?: (rank: number, frame: Picture, seq: number) => void;
+  // The frame on screen, or -1, which a look says, so the Go side sends a
+  // frame on the way only where it is nearer the hand than that one.
+  shownRank: () => number = () => -1;
+  // Whether the hand holds the playhead, see grip, and the places it
+  // asked for since it took hold.
   private dragging = false;
   private dragPlaces = 0;
-  private lastPlace = -1;
   // The number of the newest ask.
   asked = 0;
   // The frames read ahead of the hand, withdrawn by the hand's next ask.
@@ -420,36 +308,33 @@ export class AppFrames {
   paused: () => boolean = () => true;
   // What the cards' frames may keep, a field for the tests.
   cardsBytes = CARDS_BYTES;
-  // first is the size the first stream was opened at, for the walks.
+  // first is the size the first frame was asked at, for the walks.
   // keptRanks are the ranks of the frames last handed over from the kept
   // ones, for the walks. aheadLost counts the frames the hand asked for
   // that were read ahead and let go of from the kept ones before it did.
-  // keyFirst counts the streams opened with their key frame first, keyCame
-  // those of them that handed it over before the frame asked for, and
-  // keyWentOn those whose decoder read on to that frame instead, see
-  // Stream.keyCame, and wentOnRanks the last 16 frames they read on to.
+  // looks counts the looks sent, near the frames the Go side sent on the
+  // way to a place, overtaken the looks it answered with nothing, a newer
+  // look having taken their place, and fromGo every frame the Go side
+  // sent, by a look or a stream.
   readonly stats = {
     streams: 0,
     continued: 0,
     kept: 0,
     keptRanks: [] as number[],
-    parked: 0,
+    looks: 0,
+    near: 0,
+    overtaken: 0,
+    fromGo: 0,
     ahead: 0,
     aheadLost: 0,
-    keyFirst: 0,
-    keyCame: 0,
-    keyWentOn: 0,
-    wentOnRanks: [] as number[],
-    // The last 16 new streams, each the frame it was opened for and why:
-    // a run before a step back, its key frame first, read ahead, or a
-    // place, for a walk to say how a drag's frames came.
-    newFor: [] as string[],
     opens: [] as Opened[],
     first: "",
   };
   // Every step on the way to a frame, for the app's log, see lib/said.ts.
   trace: (line: string) => void = () => {};
   readonly puller = new Puller((line) => this.trace(line));
+  // The grid as the Go side reads it, see framewire.GridText.
+  readonly gridText: string;
 
   // The episode's decoder on the Go side is held for as long as these
   // frames are open: started now, with the file open and decoders ready,
@@ -461,27 +346,18 @@ export class AppFrames {
     private size: () => { width: number; height: number },
     private onTrouble: (why: string) => void,
   ) {
+    const g = track.grid;
+    this.gridText = g ? [g.origin, g.start, g.num, g.den, g.count].join(",") : "";
     void fetch(`/frames/hold?${new URLSearchParams({ path })}`).catch(() => {});
   }
 
-  // The newest place asked for while a stream was on its way to a place
-  // left behind, see route.
-  // Those a reset has withdrawn since are let go as nothing.
-  private parked: Waiter[] = [];
   private closed = false;
-
-  unpark() {
-    const was = this.parked;
-    this.parked = [];
-    for (const w of was) this.route(w);
-    this.aheadNow();
-  }
 
   // A stream gave its first frame: how long that took here, from asking to
   // having it, and on the Go side, see Opened.
-  opened(ms: number, times: string, key = false): Opened {
+  opened(ms: number, times: string): Opened {
     const [started, open, first, file, on] = times.split(",").map(Number);
-    const o = { ms: Math.round(ms), started: started || 0, opened: open || 0, first: first || 0, file: file === 1, on: on === 1, key };
+    const o = { ms: Math.round(ms), started: started || 0, opened: open || 0, first: first || 0, file: file === 1, on: on === 1 };
     this.stats.opens.push(o);
     if (this.stats.opens.length > 64) this.stats.opens.shift();
     return o;
@@ -498,55 +374,86 @@ export class AppFrames {
   grip(held: boolean) {
     this.dragging = held;
     this.dragPlaces = 0;
-    this.lastPlace = -1;
     if (!held) this.aheadNow();
   }
 
   // The frame of this rank, as a new frame with this timestamp, once it is
-  // there. Null only when nothing near it could be decoded.
+  // there. Null only when nothing near it could be decoded, or when a
+  // newer look took its place.
   // withdrawn, when it is set to true before the frame came, makes it
   // come as null and stops it holding a stream.
   //
   // place says the frame holds the playhead, the frame of a still or the
-  // first of a cue, and only such a frame withdrawn on the way is put up
-  // as a place the hand passed, see onPassing. The frames a cue reads
-  // ahead of it are not: the play from the last frame before a cut reads
-  // the frames after the cut, every step of a drag of the cut's edge
-  // withdrew them, and they were put up between the edge's frames, so the
-  // video preview flickered between the two. Found by Tim on youtube.mp4,
-  // plan row 2.270.
-  //
-  // A drag a frame or two back from the place before is a hand going
-  // slowly to the left. A stream only reads on, so each step back was a stream
-  // of its own, a seek, with its key frame first, which the frame on
-  // screen was nearer than and so never put up. The picture stood for each
-  // step, up to seconds, where a slow drag to the right read on and kept
-  // up, issue #596. Such a place opens its stream BACK frames before it,
-  // with no key frame first, and every frame from there comes and is kept,
-  // so the next BACK steps back find their frames kept.
-  frame(rank: number, timestamp: number, asked?: Set<Waiter>, place = false): Promise<Picture | null> {
+  // first of a cue, and follows that it is one of the frames after such a
+  // place, which a play from there shows first. While the video preview
+  // stands still, each is a look, see look: the Go side decides how the
+  // decoder gets there.
+  frame(rank: number, timestamp: number, asked?: Set<Waiter>, place = false, follows = false): Promise<Picture | null> {
+    const still = this.paused();
     const dragged = place && this.dragging;
-    const back = dragged && this.lastPlace >= 0 && rank < this.lastPlace && this.lastPlace - rank <= SLOW;
-    if (dragged) this.lastPlace = rank;
     return new Promise((done) => {
       const w: Waiter = {
         rank,
         seq: ++this.asked,
-        place,
-        back,
+        place: place && still,
+        follows: follows && still && !place,
         // Every place but the first of a hold, which is where the press
-        // landed: a click outruns nothing, see route. A step back does
-        // not: the frame on screen is nearer than the key frame.
-        key: dragged && ++this.dragPlaces > 1 && !back,
+        // landed: a click moves over nothing.
+        moving: still && dragged && ++this.dragPlaces > 1,
         done: (f) => {
           asked?.delete(w);
-          if (f && w.gone && w.place) this.onPassing?.(rank, f, w.seq);
           done(f && !w.gone ? f.clone(timestamp) : null);
         },
       };
       asked?.add(w);
       this.route(w);
     });
+  }
+
+  // Asks the Go side for where the hand is, see engine.Schedule, and
+  // draws what it sends: the frame of the place, or a frame on the way to
+  // it, put up as a frame passing, after which the place is asked again. A
+  // look a newer one took the place of comes back with nothing.
+  private async look(w: Waiter) {
+    const { width, height } = this.size();
+    this.stats.first ||= `${width}x${height}`;
+    this.stats.looks++;
+    const q = new URLSearchParams({
+      path: this.path,
+      frame: String(w.rank),
+      w: String(width),
+      h: String(height),
+      grid: this.gridText,
+      shown: String(this.shownRank()),
+    });
+    if (w.moving) q.set("move", "1");
+    if (w.follows) q.set("follow", "1");
+    const got = await this.puller.pull(`/frames/look?${q}`, width, height);
+    if (this.closed) {
+      for (const { frame } of got.frames) frame.close();
+      w.done(null);
+      return;
+    }
+    const sent = got.frames[got.frames.length - 1];
+    if (!sent) {
+      if (got.error) {
+        this.trace(`a look at frame ${w.rank} failed: ${got.error}`);
+        this.failed(got.error);
+      } else if (got.status === 204) this.stats.overtaken++;
+      else if (got.status !== 200) this.trace(`a look at frame ${w.rank} answered ${got.status}`);
+      w.done(got.error ? this.nearest(w.rank) : null);
+      return;
+    }
+    const rank = rankOf(this.track.samples, sent.at);
+    this.keep(rank, sent.frame);
+    if (got.exact) {
+      w.done(sent.frame);
+      return;
+    }
+    this.stats.near++;
+    this.onPassing?.(rank, sent.frame, w.seq);
+    if (w.gone) w.done(null);
+    else void this.look(w);
   }
 
   // Reads the frames of these ranks while the hand rests, and keeps them,
@@ -613,6 +520,9 @@ export class AppFrames {
     if (!now) this.aheadNow();
   }
 
+  // The looks of the hand still on their way.
+  private looking = 0;
+
   // Asks the frames read ahead once the hand waits for nothing, one at a
   // time, in the order given, and then the cards' frames, one at a time.
   // They were asked all at once, and with the first frames of the clips
@@ -625,7 +535,7 @@ export class AppFrames {
   }
 
   private readNext() {
-    if (this.aheadOf.size || this.closed || this.parked.length || this.streams.some((s) => s.handWaits)) return;
+    if (this.aheadOf.size || this.closed || this.looking || this.streams.some((s) => s.handWaits)) return;
     const ranks = this.aheadWanted ?? [];
     for (let rank = ranks.shift(); rank !== undefined; rank = ranks.shift()) {
       if (rank < 0 || this.has(rank)) continue;
@@ -721,6 +631,17 @@ export class AppFrames {
       if (this.aheadEvicted.delete(w.rank)) this.stats.aheadLost++;
       this.aheadRead.delete(w.rank);
     }
+    if (w.place || w.follows) {
+      // Where the hand is, and what a play from there shows first: the Go
+      // side's to decide, see look. The looks hold the frames read ahead
+      // back until they are answered.
+      this.looking++;
+      void this.look(w).finally(() => {
+        this.looking--;
+        if (!this.looking) this.aheadNow();
+      });
+      return;
+    }
     const { width, height } = this.size();
     // A kept frame of another size is not this frame: one decoded before
     // the canvas had its size, or before the app grew, stays as blurred as
@@ -738,37 +659,9 @@ export class AppFrames {
     }
     let s = this.streams.find((x) => x.width === width && x.height === height && x.reaches(w.rank));
     if (s) this.stats.continued++;
-    else if (this.streams.some((x) => x.stale)) {
-      // One new stream on its way at a time. While one is still coming for
-      // a place the hand has already left, a drag over the clip timeline
-      // would start an ffmpeg for every place it passes, more than anyone
-      // can watch and more than the machine can decode. The newest place
-      // waits instead, and goes as soon as that stream has come, so frames
-      // follow the hand as fast as they can be made and no faster.
-      this.parked.push(w);
-      this.stats.parked++;
-      return;
-    } else {
-      // A place the hand drags the playhead to is opened with its key frame
-      // first, every place but the one the press landed on, see frame. The
-      // key frame takes its own decoding and that of the few frames stored
-      // next to it, where the frame under the hand takes every frame from
-      // the key frame to it, up to
-      // two seconds of them, which in a 4K video is a quarter of a second
-      // of decoding or more, so while the hand moves faster than the
-      // frames under it can be decoded the picture keeps up with key
-      // frames, the way established players scrub. A stream left behind
-      // by the hand costs its key frame only, and lets the newest place go
-      // the moment it came, see unpark. Where the hand rests, the frame
-      // under it follows from the same stream. Issue #281.
-      const key = !!w.key && !w.ahead;
-      s = new Stream(this, w.back ? Math.max(0, w.rank - BACK) : w.rank, width, height, key);
-      s.runTo = w.back ? w.rank : -1;
-      const why = `${w.rank} ${w.back ? "run" : key ? "key first" : w.ahead ? "ahead" : "place"}${this.dragging ? " dragging" : ""}`;
-      this.stats.newFor.push(why);
-      this.trace(`a new stream for frame ${why} at ${width}x${height}, beside ${this.streams.filter((x) => x !== s).map((x) => x.state).join(", ") || "none"}`);
-      if (this.stats.newFor.length > 16) this.stats.newFor.shift();
-      if (key) this.stats.keyFirst++;
+    else {
+      s = new Stream(this, w.rank, width, height);
+      this.trace(`a new stream for frame ${w.rank}${w.ahead ? " ahead" : ""} at ${width}x${height}, beside ${this.streams.filter((x) => x !== s).map((x) => x.state).join(", ") || "none"}`);
       s.aheadOnly = !!w.ahead;
       this.stats.first ||= `${width}x${height}`;
       this.stats.streams++;
@@ -776,7 +669,7 @@ export class AppFrames {
       this.streams = this.streams.filter((x) => !x.ended);
       while (this.streams.length > STREAMS) {
         // A stream opened only for frames read ahead goes first: the
-        // others are a play's or the hand's.
+        // others are a play's.
         const ahead = this.streams.filter((x) => x.aheadOnly && x !== s);
         const oldest = (ahead.length ? ahead : this.streams).reduce((a, b) => (a.used <= b.used ? a : b));
         this.trace(`a stream at frame ${oldest.position} is closed to make room`);
@@ -788,7 +681,9 @@ export class AppFrames {
   }
 
   keep(rank: number, frame: Picture) {
+    if (!this.closed) this.stats.fromGo++;
     const old = this.kept.get(rank);
+    if (old === frame) return;
     if (old) {
       this.keptBytes -= bytes(old);
       old.close();
@@ -840,8 +735,6 @@ export class AppFrames {
     this.closed = true;
     this.settleRest();
     void fetch(`/frames/release?${new URLSearchParams({ path: this.path })}`).catch(() => {});
-    for (const w of this.parked) w.done(null);
-    this.parked = [];
     this.puller.close();
     for (const s of this.streams) s.close();
     this.streams = [];
@@ -903,7 +796,7 @@ class Puller {
       this.trace(`the frames' worker stopped: ${e.message}, the page reads them now`);
       this.worker = null;
       this.where = "page";
-      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", light: "", frames: [], spare: [] });
+      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", light: "", exact: false, frames: [], spare: [] });
       this.waiting.clear();
     };
     this.worker = w;
@@ -960,6 +853,9 @@ export class AppPictures {
   private flushes: { done: () => void; fail: (e: Error) => void }[] = [];
   // The frames asked of AppFrames and not come yet, withdrawn on a reset.
   private waiting = new Set<Waiter>();
+  // The run began with a place, the frame under the playhead: the frames
+  // fed after it are the ones a play from there shows first.
+  private placed = false;
 
   constructor(
     private frames: AppFrames,
@@ -976,7 +872,9 @@ export class AppPictures {
     if (this.next < 0) this.next = first;
     this.asked++;
     const generation = this.generation;
-    void this.frames.frame(rank, timestamp, this.waiting, place).then((f) => {
+    const follows = this.placed && !place;
+    if (place) this.placed = true;
+    void this.frames.frame(rank, timestamp, this.waiting, place, follows).then((f) => {
       if (generation !== this.generation || this.state !== "configured") {
         f?.close();
         return;
@@ -1026,6 +924,7 @@ export class AppPictures {
     if (this.asked > 0 || !this.flushes.length) return;
     this.putOut(true);
     this.next = -1;
+    this.placed = false;
     const was = this.flushes;
     this.flushes = [];
     for (const f of was) f.done();
@@ -1039,6 +938,7 @@ export class AppPictures {
     this.waiting.clear();
     this.asked = 0;
     this.next = -1;
+    this.placed = false;
     for (const f of this.held.values()) f?.close();
     this.held.clear();
     const was = this.flushes;
