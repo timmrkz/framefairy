@@ -1630,7 +1630,12 @@
       const at = time;
       const job = await jobs.startJob(path, "clips", () => api.makeClip(path, at, backward), backward ? "out" : "in");
       const now = jobs.list.find((j) => j.id === job.id) ?? job;
-      const key = now.underway?.[0]?.clip ?? `${job.id}/1`;
+      // The key the Go side gave the clip as it queued it, in the answer
+      // to the press. Read off the job in the list, it was gone once the
+      // clip was written before the answer came: the card was picked by
+      // a key no card has, and for those frames no card was chosen and
+      // the clip timeline dimmed, #781.
+      const key = job.underway?.[0]?.clip ?? now.underway?.[0]?.clip ?? `${job.id}/1`;
       if (now.state !== "failed") {
         // Its card is chosen, and stays chosen as the clip it becomes.
         session.pick(key, (k) => api.chooseClip(path, k));

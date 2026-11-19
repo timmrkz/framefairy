@@ -176,7 +176,7 @@ export default [
     // for the clip was looked at only when a job changed, and none
     // changed after the answer came.
     name: "a clip made with I is chosen when the answer to the press comes after the clip",
-    steps: [["trim", "start", 300], ["make with its answer late", "i"]],
+    steps: [["trim", "start", 300], ["make with its answer late", "i"], ["made on the clip"]],
   },
   // Where a short goes, its name, a render again over it and a render
   // cut on whole frames are the engine's rules, tested in Go, see
