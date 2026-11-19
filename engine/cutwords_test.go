@@ -34,6 +34,8 @@ func TestTheCaptionsOfAClipCarryTheWordsHeardInItsCuts(t *testing.T) {
 			"eins zwei vier fünf sechs"},
 		{"a cut after the last word", `[{"start": 20.0, "end": 21.6}, {"start": 30.0, "end": 31.0}]`,
 			"sechs"},
+		{"pieces written out of order", `[{"start": 20.0, "end": 21.6}, {"start": 10.0, "end": 10.55}]`,
+			""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			fsys := afero.NewMemMapFs()

@@ -231,13 +231,23 @@ func (s *FrameFairy) heldPlan(path, planPath string) (engine.PlanSummary, error)
 
 // lookOf is captionLook of a plan already in hand.
 func (s *FrameFairy) lookOf(path string, summary engine.PlanSummary) *engine.Look {
+	look, err := s.lookIn(s.unprobed.source(path, s.probe), summary)
+	if err != nil {
+		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
+	}
+	return look
+}
+
+// lookIn is lookOf on the frames of source, a probe already in hand. When
+// the settings' look is not one the render takes, it is the plan's own
+// look, and the error says why.
+func (s *FrameFairy) lookIn(source engine.SourceInfo, summary engine.PlanSummary) (*engine.Look, error) {
 	plan := summary.Plan()
 	style, err := s.store.Settings().options().CaptionLook(plan)
 	if err != nil {
-		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
 		style = plan.CaptionStyle()
 	}
-	return &engine.Look{Style: style, Source: s.unprobed.source(path, s.probe), Fonts: &s.store.machine.Fonts}
+	return &engine.Look{Style: style, Source: source, Fonts: &s.store.machine.Fonts}, err
 }
 
 // failedProbes keeps the videos whose frames could not be read, a video

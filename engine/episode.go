@@ -990,6 +990,11 @@ func cutWords(t *Transcript, segments []Segment) []WordView {
 		last := sort.Search(len(words), func(k int) bool { return words[k].Start >= to })
 		first = max(first-1, next, 0)
 		last = min(last+1, len(words))
+		// Pieces that overlap or run backwards, in a plan written by
+		// hand, have no cut between them.
+		if first >= last {
+			continue
+		}
 		for _, w := range words[first:last] {
 			out = append(out, WordView{Start: w.Start, End: w.End, Text: runes.Scrub(w.Text, 200)})
 		}

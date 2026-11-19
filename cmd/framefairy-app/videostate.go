@@ -125,7 +125,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		}
 	}
 	st.Clips = s.clipsOf(plans, info, st.Status.Heard)
-	st.Cards = s.saidStamp(path, plans)
+	st.Cards = s.saidStamp(path, plans, info)
 	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {
 		st.Window = s.windowFor(ctx, path, st, info.Duration)
