@@ -1040,6 +1040,25 @@ export const steps = {
             : "",
         };
       });
+    // What is wrong with where the whole video's frame ends, or null. It
+    // ends on the line after the part it works on, the way the window of
+    // a search does, however narrow the part has become: a part running
+    // out made it a thick line standing past the part's end, Tim's report
+    // of 19 November, #942. The part it frames is the one whose end is
+    // nearest the frame's.
+    const pastItsEnd = () =>
+      page.evaluate(() => {
+        const part = document.querySelector(".part:not(.going) .window.frame.locked");
+        if (!part) return "while the whole video is transcribed, the range picker frames no part of it";
+        const f = part.getBoundingClientRect();
+        const ends = [...document.querySelectorAll(".unheard")].map((el) => el.getBoundingClientRect());
+        if (!ends.length) return "while the whole video is transcribed, the range picker shows no part not transcribed yet";
+        const p = ends.reduce((a, b) => (Math.abs(b.right - f.right) < Math.abs(a.right - f.right) ? b : a));
+        const over = f.right - p.right;
+        return over > 1.01 || over < 0.99
+          ? `the whole video's frame on the range picker ends ${over.toFixed(1)} px past the part it works on, ${(p.right - p.left).toFixed(1)} px wide, not on the line after it, a frame ${(f.right - f.left).toFixed(1)} px wide`
+          : null;
+      });
     if (arg === "search stops it") {
       // A search asked for while the whole video is transcribed stops
       // the transcription, and it does not start again by itself once
@@ -1187,6 +1206,11 @@ export const steps = {
       if (walk.wrong) return;
       if (!(await left())) {
         walk.wrong = "the whole video was heard before its last piece, with none left to stop on";
+        return;
+      }
+      const past = await pastItsEnd();
+      if (past) {
+        walk.wrong = past;
         return;
       }
       await control(url, "/speech?hold=one");
