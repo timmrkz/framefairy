@@ -237,7 +237,12 @@ closed for standing unused.
   stream for a place the hand has left decodes no further towards it and
   its cursor is free at once. Before, it decoded on from the key frame to
   the frame asked for, up to 40 frames on Tim's Mac, beside the stream
-  for the new place. Issue #924, the first step of
+  for the new place. A stop that comes after the key frame asked for
+  first was decoded, and before it was handed over, leaves the cursor at
+  the frame asked for, since the frames between were let go or never
+  decoded. `FRAMEFAIRY_FRAMES_STOP_AFTER=n` makes a cursor of picture
+  stop as if told to once its open decoded n frames, once in the
+  program's life, for the tests. Issue #924, the first step of
   [the decision record](decisions/2026-11-19-go-schedules-the-video-previews-frames.md)
   that moves the choice of the next frame from the interface to Go.
 - Not built yet: keeping the frames around the playhead it has already
