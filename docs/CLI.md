@@ -47,6 +47,8 @@ Everything lands next to the source, in `episode.framefairy/`:
 episode.framefairy/
 ├── logs/              the record of the run
 │   ├── words.json     the transcript, reused on every later run
+│   ├── probe.json     what ffprobe said of the episode, reused while
+│   │                  neither the episode nor ffprobe changed
 │   ├── clips.json     the plan
 │   ├── proof.txt      what each clip contains, in text
 │   ├── reply-*.json   each answer of the model, reused for the same prompt,

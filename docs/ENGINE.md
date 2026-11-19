@@ -831,6 +831,13 @@ file with no index of its key frames where it is read from, `keyBefore`,
 is kept the same way, by the piece, so a clip rendered again asks
 ffprobe nothing it asked before.
 
+A video's probe outlives the program too: `Probe` writes it to
+`logs/probe.json` in the video's work folder, with the stamps of the
+video and of the ffprobe that answered, and the next start reads it
+from there before it asks ffprobe, `engine/probekept.go`. A file whose
+stamps do not match, or that says what no probe can say, is not read.
+See [decisions/2026-11-19-a-videos-probe-kept-in-its-work-folder.md](decisions/2026-11-19-a-videos-probe-kept-in-its-work-folder.md).
+
 ### Frames at their own times
 
 `cutOf` counts frame k at k over the rate after the picture's first
