@@ -2282,8 +2282,10 @@ bubble scrolled by those eight pixels.
   decoded and a reading every 10 ms, the same readings the transcription
   takes. Audio decodes at a few hundred times real time, so an hour is
   measured in seconds, and the waveform fills in as it goes, first where
-  the clip timeline looks. Every time the clip timeline's view comes to
-  rest it says what it shows, `Look`, and the measuring goes there next: a
+  the clip timeline looks. Every time the clip timeline's view moves,
+  a swipe's every step too, it says what it shows, `Look`, and the
+  measuring goes there next. Once a video is measured a look reads
+  nothing from the disk, so it costs Go a map write: a
   playhead put near the end of a four hour episode has its waveform
   within a second rather than after everything before it. The clip
   timeline reads the loudness again, whole, each time the video's state

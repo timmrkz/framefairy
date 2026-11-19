@@ -172,13 +172,12 @@ func (s *FrameFairy) serveLoudness(w http.ResponseWriter, r *http.Request) {
 
 // Look says what the clip timeline of an episode shows, from and to in
 // seconds, so its loudness is measured there first. The window says it
-// when the view comes to rest and waits for nothing: what it draws, it
+// on every move of the view and waits for nothing: what it draws, it
 // already has.
 func (s *FrameFairy) Look(path string, from, to float64) error {
 	if !s.store.Known(path) {
 		return errNotInLibrary
 	}
 	s.levels.look(path, from, to)
-	s.levels.start(path)
 	return nil
 }

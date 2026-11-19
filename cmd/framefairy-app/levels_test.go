@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -226,5 +228,112 @@ func TestWhereTheClipTimelineLooksIsMeasuredFirst(t *testing.T) {
 	s.levels.closeEpisode(path)
 	if from, to := s.levels.lookingAt(path); from != 0 || to != 0 {
 		t.Errorf("a stopped episode is still looked at, %v to %v", from, to)
+	}
+}
+
+// diskAsked is a disk that counts every question asked of it, a file
+// opened or looked at.
+type diskAsked struct {
+	afero.Fs
+	n atomic.Int64
+}
+
+func (f *diskAsked) Open(name string) (afero.File, error) {
+	f.n.Add(1)
+	return f.Fs.Open(name)
+}
+
+func (f *diskAsked) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	f.n.Add(1)
+	return f.Fs.OpenFile(name, flag, perm)
+}
+
+func (f *diskAsked) Stat(name string) (os.FileInfo, error) {
+	f.n.Add(1)
+	return f.Fs.Stat(name)
+}
+
+// The clip timeline tells Go where it looks on every move of a swipe, about
+// sixty times a second, so a look at a video whose measuring has ended
+// asks the disk nothing and starts nothing. It read the levels file every
+// time, so the window held the call back until the hand rested, issue
+// #937. Opening the video asks the disk again, so a video that lost its
+// levels is measured again, and a look still measures a video it finds
+// unmeasured.
+func TestALookAsksTheDiskNothingOnceAVideoIsMeasured(t *testing.T) {
+	files := &diskAsked{Fs: afero.NewMemMapFs()}
+	m := newMeasuring(engine.NewMachine(files), func(string) {})
+	t.Cleanup(m.shutDown)
+	// Each run waits for the test to say how it ends.
+	ends := make(chan error)
+	var runs atomic.Int64
+	m.measure = func(ctx context.Context, _ string, _ func() (float64, float64), _ func(float64)) error {
+		runs.Add(1)
+		select {
+		case err := <-ends:
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	path := "/home/tim/videos/ep.mp4"
+	runOf := func() *measure {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return m.running[path]
+	}
+	// A swipe of a second, every look a step to the right.
+	swipe := func() {
+		for i := range 60 {
+			m.look(path, float64(i), float64(i)+10)
+		}
+	}
+
+	// The first look finds the video unmeasured and measures it, and the
+	// looks while it runs start nothing more.
+	m.look(path, 0, 10)
+	run := runOf()
+	if run == nil {
+		t.Fatal("a look at a video never measured did not measure it")
+	}
+	swipe()
+	if from, to := m.lookingAt(path); from != 59 || to != 69 {
+		t.Errorf("the measuring looks at %v to %v, the clip timeline at 59 to 69", from, to)
+	}
+	ends <- nil
+	<-run.done
+
+	// Measured: a swipe asks the disk nothing.
+	files.n.Store(0)
+	swipe()
+	if n := files.n.Load(); n != 0 {
+		t.Errorf("a swipe over a measured video asked the disk %d times", n)
+	}
+	if runOf() != nil {
+		t.Error("a swipe over a measured video measured it again")
+	}
+
+	// Opening the video reads the disk, which has no levels for it, so it
+	// is measured again. This run fails, and a swipe does not start it
+	// again, or a video that cannot be measured would start a measuring
+	// on every move of the hand.
+	m.start(path)
+	run = runOf()
+	if run == nil {
+		t.Fatal("opening a video with no levels on the disk did not measure it")
+	}
+	ends <- errors.New("no sound in this video")
+	<-run.done
+	swipe()
+	if n := runs.Load(); n != 2 {
+		t.Errorf("%d measurings ran, want 2: one from the first look and one from opening the video", n)
+	}
+
+	// A removal that failed opens the video again, and a look then
+	// measures it.
+	m.closeEpisode(path)()
+	m.look(path, 0, 10)
+	if runOf() == nil {
+		t.Error("a look after a removal that failed did not measure the video")
 	}
 }
