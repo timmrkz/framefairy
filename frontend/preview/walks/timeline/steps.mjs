@@ -371,11 +371,11 @@ export const steps = {
     const y = box.y + box.h / 2;
     await page.mouse.move(x, y);
     if (walk.dragShift) await page.keyboard.down("Shift");
-    // The sound the paused video preview opens while the edge is dragged.
+    // The plays the paused video preview cues while the edge is dragged.
     // Held under the hand, each place shows its frame alone, so only the
-    // press may cue a play and open its sound, not every move after it.
+    // press may cue a play, not every move after it.
     let sounds = 0;
-    const opened = (r) => new URL(r.url()).pathname === "/frames/sound" && sounds++;
+    const opened = (r) => new URL(r.url()).pathname === "/frames/play" && sounds++;
     page.on("request", opened);
     try {
       await page.mouse.down();
@@ -389,7 +389,7 @@ export const steps = {
     await page.mouse.up();
     if (walk.dragShift) await page.keyboard.up("Shift");
     if (sounds > 1) {
-      walk.wrong = `the paused video preview opened its sound ${sounds} times while the ${which} edge was dragged, not at most once`;
+      walk.wrong = `the paused video preview cued a play ${sounds} times while the ${which} edge was dragged, not at most once`;
       return;
     }
     await watch.step("drag edge", s);

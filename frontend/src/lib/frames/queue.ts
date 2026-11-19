@@ -2,35 +2,34 @@
 // card's clock, so a clip plays through its cuts the way the render does.
 // Every frame and every sample comes from ffmpeg on the Go side, the
 // episode's decoder, see docs/VIDEO-PREVIEW.md. The browser decodes
-// nothing. Everything this file decides is decided in plan.ts, with tests.
-// This is only the glue: asking the Go side for frames and sound on the
-// frames the engine names, see movie.ts, drawing, and scheduling the
-// sound.
+// nothing, and decides nothing about which frames a play shows, where it
+// cuts or how it fades: a play is the Go side's, see play.ts and
+// docs/decisions/2026-11-19-go-plays-the-video-preview.md. What is left
+// here is what a person sees and hears.
 //
 // How it runs, in short:
 //
-// - The sound card's clock drives everything. The sound is decoded ahead,
-//   cut at the sample, and scheduled on the AudioContext at the exact place
-//   on the program it belongs, so the stretches meet without a gap.
-// - A frame is drawn when the sound heard has reached its grid point, on
-//   the animation frame before it is due on screen. The playhead is the
-//   sound heard, through the program, cuts included, reported to whoever
-//   listens on every animation frame, so it moves smoothly and stands in
-//   the frame drawn.
-// - Paused, the frame that holds the playhead is on the canvas, and the
-//   play from there is already prepared, its first frames decoded and its
-//   first sound with them, so the space bar starts it at once rather than
-//   decoding the same frames again. That is the cue.
-// - Two picture decoders take turns: while one plays a piece, the other is
-//   already decoding the next piece from its key frame, closing the frames
-//   before the piece's start unseen, and holds the first few of it. So a
-//   cut never waits for a decoder.
-// - Frames are closed the moment they are replaced or not needed, and each
-//   decoder holds at most a few, so memory stays flat over any length.
-// - Nothing polls. Work is started by the decoders' own events, by frames
-//   and sound arriving, and by the animation frame that draws while
-//   playing.
-import { AppFrames, AppPictures } from "./app";
+// - Paused, the frame that holds the playhead is asked for where the hand
+//   put it, a look, see AppFrames, and drawn. The play from there is then
+//   cued: its first frames and its first sound come while it waits, so
+//   the space bar starts it at once.
+// - Playing, the Go side's frames come a few at a time, each stamped with
+//   where on the play's clock it is drawn, and its sound a second ahead,
+//   cut and faded, scheduled on the AudioContext at the exact place on the
+//   clock it belongs, so the stretches meet without a gap.
+// - The sound card's clock drives everything. A frame is drawn when the
+//   sound heard has reached its place, on the animation frame before it
+//   is due on screen. The playhead is the moment the frame due stands
+//   for, moved on with the sound, reported to whoever listens on every
+//   animation frame, so it moves smoothly and stands in the frame drawn.
+// - The clip changed while it plays is a new play that takes over a
+//   moment ahead of the sound heard, so the picture and the sound go on
+//   with no stop, see changed.
+// - Frames are closed the moment they are replaced or not needed, and a
+//   play holds a few, so memory stays flat over any length.
+// - Nothing polls. Work is started by frames and sound arriving, and by
+//   the animation frame that draws while playing.
+import { AppFrames, type Waiter } from "./app";
 import { afterRest } from "../rest";
 import type { Picture } from "./picture";
 import type { Over } from "./captions";
@@ -38,23 +37,11 @@ import type { Light } from "./light";
 import { screenOf, type Screen } from "./screen";
 import { describeEvenness, Even, type Source } from "./even";
 import { frames as framePool } from "./pool";
-import { rankAt, ticks, type AudioTrack, type Movie, type VideoTrack } from "./movie";
-import {
-  AudioPlan,
-  fade,
-  FADE,
-  heard,
-  Keeper,
-  Program,
-  stillFeed,
-  VideoPlan,
-  type AudioRun,
-  type Need,
-  type Piece,
-  type Run,
-} from "./plan";
+import { rankAt, rankOf, ticks, type AudioTrack, type Movie, type VideoTrack } from "./movie";
+import { FADE, heard } from "./heard";
+import { GoPlay, type Chunk, type Piece, type Shot } from "./play";
 
-export type { Piece } from "./plan";
+export type { Piece } from "./play";
 
 // Where the playhead is and what is on the canvas, told to whoever
 // listens each time either changes, which while playing is every
@@ -146,19 +133,19 @@ export type Stats = {
   errors: string[];
 };
 
-// How many frames a decoder may hold or have on its way for drawing.
+// How many frames of a play may have come and wait to be drawn.
 const DEPTH = 4;
-// How far ahead of the playhead the next piece's decoder starts, seconds.
-const NEXT_AHEAD = 2;
-// How far ahead the plan is worked out, seconds.
-const READ_AHEAD = 4;
-// How much sound is decoded ahead of what is heard, seconds.
+// How much sound is pulled ahead of what is heard, seconds.
 const SOUND_AHEAD = 1;
-// How far ahead the sound is fed while the page's frames stop, behind
+// How far ahead the sound is pulled while the page's frames stop, behind
 // another window, where a timer may run only once a second, see keepOn.
 const SOUND_BEHIND = 3;
-// Sound decoded before a play starts, seconds.
+// Sound pulled before a play starts, seconds.
 const SOUND_FIRST = 0.15;
+// How far ahead of the sound heard a play taking over from the one before
+// starts, seconds: its first frames are kept on the Go side, and its
+// sound has to come before that place is heard, see changed.
+const TAKE_OVER = 0.15;
 // How far ahead of the sound card's clock a play's first sound is put,
 // seconds. The sound card renders a buffer at a time, and a stretch put
 // where it has rendered already starts late and out of step with the
@@ -168,8 +155,6 @@ const SOUND_FIRST = 0.15;
 // margin and not the harness's. Every millisecond here is a millisecond
 // from the press to the picture moving.
 const START_LEAD = 0.025;
-// Samples in one stretch of sound handed to the sound card.
-const CHUNK = 4096;
 // The longest the picture may stand while the hand drags the playhead on,
 // in milliseconds, the mark docs/VIDEO-PREVIEW.md sets, for the log of a
 // drag. Only said, never acted on.
@@ -181,13 +166,6 @@ const DRAG_FRAME_MS = 50;
 // up without it: a picture that stands still because its captions are slow
 // is worse than captions that come a moment after it.
 const DRESS_WAIT = 600;
-
-// A unique timestamp for every sample fed, in the order the samples of
-// its run are shown, so a decoder that orders its output by timestamp
-// orders it right too. Runs are 100 000 seconds apart.
-function stamp(run: number, seconds: number): number {
-  return run * 1e11 + 1e10 + Math.round(seconds * 1e6);
-}
 
 // Starts the episode's decoder on the Go side, ffmpeg with the file open,
 // the moment a workspace starts to open, rather than once the workspace
@@ -202,305 +180,6 @@ export function holdAhead(path: string) {
     .then((res) => (res.ok ? fetch(`/frames/release?${q}`) : null))
     .catch(() => {});
 }
-
-// Sound out of a decoder, the part of AudioData the queue reads.
-type Sound = {
-  timestamp: number;
-  numberOfFrames: number;
-  numberOfChannels: number;
-  sampleRate: number;
-  copyTo(dst: Float32Array, options: { planeIndex: number; format: "f32-planar" }): void;
-  close(): void;
-};
-
-// A sound decoder, ffmpeg's on the Go side or the one for plain sound,
-// which needs none. restart drops everything and waits for the first
-// packet of a run. Each packet comes with where it lies in the track, at,
-// and how long it is, n, in samples.
-interface SoundDecoder {
-  readonly state: string;
-  readonly decodeQueueSize: number;
-  decode(timestamp: number, data: Uint8Array, at: number, n: number): void;
-  flush(): Promise<void>;
-  restart(): void;
-  close(): void;
-}
-
-// The sound of the episode as ffmpeg decodes it, on the Go side, see
-// /frames/sound in cmd/framefairy-app/frames.go: the same sound the render
-// and the transcript are made of, whatever decoder the webview has. The
-// Mac's own decoder of AAC had its own idea of where a file's sound
-// starts, and Tim heard picture and sound out of step in a file from
-// DaVinci Resolve, which keeps the encoder's 44 ms of silence at the
-// front of its sound and holds the picture back by as much.
-//
-// A run of packets is one stream, opened at the first packet's place,
-// and every packet after it is the next n samples of it, the way ffmpeg
-// reads a piece of a render. It answers the way a decoder does, after the
-// call that fed it, so the queue cannot tell it from one. The packets
-// themselves are not needed, only where they lie.
-export class GoSound implements SoundDecoder {
-  state = "configured";
-  // Packets and flushes in the order they came. A flush ends the run of
-  // the packets before it, and the packets after it are another run, read
-  // from a stream of their own where the first of them lies.
-  private waiting: ({ timestamp: number; at: number; n: number } | { done: () => void; fail: (e: Error) => void })[] = [];
-  private stream: GoSoundStream | null = null;
-  private running = false;
-  // Bumped by restart, so a pump that was waiting on the Go side drops
-  // what it brings back.
-  private era = 0;
-  constructor(
-    private path: string,
-    private rate: number,
-    private channels: number,
-    private output: (s: Sound) => void,
-    private error: (what: string) => void,
-    private dequeue: () => void,
-  ) {}
-  get decodeQueueSize() {
-    return this.waiting.filter((w) => "at" in w).length;
-  }
-  decode(timestamp: number, _data: Uint8Array, at: number, n: number) {
-    this.waiting.push({ timestamp, at, n });
-    void this.run();
-  }
-  flush() {
-    return new Promise<void>((done, fail) => {
-      this.waiting.push({ done, fail });
-      void this.run();
-    });
-  }
-  restart() {
-    this.era++;
-    this.running = false;
-    const was = this.waiting;
-    this.waiting = [];
-    this.stream?.close();
-    this.stream = null;
-    for (const w of was) if ("fail" in w) w.fail(new Error("restarted"));
-  }
-  close() {
-    this.restart();
-    this.state = "closed";
-  }
-  private async run() {
-    if (this.running || this.state !== "configured") return;
-    this.running = true;
-    const era = this.era;
-    try {
-      while (this.waiting.length) {
-        const p = this.waiting[0];
-        if (!("at" in p)) {
-          this.waiting.shift();
-          this.stream?.close();
-          this.stream = null;
-          p.done();
-          continue;
-        }
-        this.stream ??= new GoSoundStream(this.path, p.at, this.rate, this.channels);
-        const got = await this.stream.take(p.n);
-        if (era !== this.era) return;
-        this.waiting.shift();
-        if (got.length) {
-          const frames = got.length / this.channels;
-          const channels = this.channels;
-          this.output({
-            timestamp: p.timestamp,
-            numberOfFrames: frames,
-            numberOfChannels: channels,
-            sampleRate: this.rate,
-            copyTo: (dst, o) => {
-              const n = Math.min(frames, dst.length);
-              for (let i = 0; i < n; i++) dst[i] = got[i * channels + o.planeIndex];
-            },
-            close() {},
-          });
-        }
-        this.dequeue();
-        if (era !== this.era) return;
-      }
-    } catch (e) {
-      if (era !== this.era) return;
-      this.error(e instanceof Error ? e.message : String(e));
-      // The stream is dropped with the packet it failed on, and the next
-      // packet opens a stream of its own where it lies. Kept, every packet
-      // after it failed on the same stream, no sound came, and a play
-      // waiting for its first sound never started: the space bar seemed
-      // to do nothing, Tim found.
-      this.stream?.close();
-      this.stream = null;
-      if (this.waiting.length && "at" in this.waiting[0]) this.waiting.shift();
-      this.dequeue();
-    } finally {
-      if (era === this.era) this.running = false;
-    }
-    if (era === this.era && this.waiting.length) void this.run();
-  }
-}
-
-// One stream of sound from the Go side, from a place in the track on, in
-// samples. Sound before the track's start, the priming of AAC that the
-// edit list puts before zero, is silence, as it is to ffmpeg.
-//
-// The Go side closes a stream nobody has read from for 20 seconds, and
-// the least read when too many are open, see previewIdle in
-// cmd/framefairy-app/frames.go, and then answers 404. A pause holds the
-// play and its stream, so a play paused for longer found it gone, and the
-// video preview said the sound had stopped decoding, Tim found. A stream
-// that is gone is opened again where it got to.
-export class GoSoundStream {
-  private id: Promise<string>;
-  private have = new Float32Array(0);
-  private silence: number;
-  private ended = false;
-  // Where the Go side's stream started, and how many moments of it came.
-  private from: number;
-  private came = 0;
-  // Closed by the page: a read still on its way that finds it gone on
-  // the Go side ends it, it never opens it again. Opened again, every
-  // seek of a play left a stream that nobody closed.
-  private closed = false;
-  constructor(
-    private path: string,
-    at: number,
-    private rate: number,
-    private channels: number,
-  ) {
-    this.silence = Math.max(0, -at) * channels;
-    this.from = Math.max(0, at);
-    this.id = this.open(this.from);
-  }
-  private open(at: number): Promise<string> {
-    const q = new URLSearchParams({ path: this.path, from: (at / this.rate).toFixed(9), rate: String(this.rate), ch: String(this.channels) });
-    const id = fetch(`/frames/sound?${q}`).then(async (r) => {
-      if (!r.ok) throw new Error(`the sound could not be read, it answered ${r.status}`);
-      const j = (await r.json()) as { id?: string };
-      if (!j.id) throw new Error("the sound could not be read");
-      return j.id;
-    });
-    id.catch(() => {});
-    return id;
-  }
-  // The next n moments, all channels side by side, or fewer at the end.
-  async take(n: number): Promise<Float32Array> {
-    const want = n * this.channels;
-    const out = new Float32Array(want);
-    let filled = 0;
-    if (this.silence) {
-      const z = Math.min(this.silence, want);
-      this.silence -= z;
-      filled = z;
-    }
-    while (filled < want) {
-      if (!this.have.length) {
-        if (this.ended || this.closed) break;
-        await this.pull();
-        continue;
-      }
-      const k = Math.min(this.have.length, want - filled);
-      out.set(this.have.subarray(0, k), filled);
-      this.have = this.have.subarray(k);
-      filled += k;
-    }
-    return out.subarray(0, filled);
-  }
-  private async pull() {
-    let r = await fetch(`/frames/read?id=${await this.id}&n=16`);
-    if (this.closed) return;
-    if (r.status === 404) {
-      // Closed on the Go side: on again from the moment after the last
-      // that came, once, and a stream that is gone straight away is
-      // a fault.
-      this.id = this.open(this.from + this.came);
-      r = await fetch(`/frames/read?id=${await this.id}&n=16`);
-    }
-    if (!r.ok) throw new Error(`the sound stopped, it answered ${r.status}`);
-    const got = soundChunks(new Uint8Array(await r.arrayBuffer()), this.channels);
-    this.came += got.length / this.channels;
-    if (got.length) {
-      const joined = new Float32Array(this.have.length + got.length);
-      joined.set(this.have);
-      joined.set(got, this.have.length);
-      this.have = joined;
-    }
-    if (r.headers.get("X-Frames-End")) {
-      const why = r.headers.get("X-Frames-Error");
-      if (why) throw new Error(why);
-      this.ended = true;
-    }
-  }
-  close() {
-    this.closed = true;
-    void this.id.then((id) => fetch(`/frames/close?id=${id}`)).catch(() => {});
-  }
-}
-
-const NOTHING = new Uint8Array(0);
-
-// engine.SoundChunk, how many moments of sound the Go side sends at a time.
-export const SOUND_CHUNK = 1024;
-
-// The samples in what the Go side sent for a pull of a sound stream: each
-// chunk the moment it starts at, 8 bytes, then SOUND_CHUNK moments of
-// float samples, the channels side by side, little endian, and the last
-// chunk of a stream maybe shorter. The moments are not needed, a stream
-// being one run read straight on.
-export function soundChunks(body: Uint8Array, channels: number): Float32Array {
-  const whole = 8 + SOUND_CHUNK * channels * 4;
-  let count = 0;
-  for (let off = 0; off + 8 < body.length; off += whole) count += Math.floor((Math.min(off + whole, body.length) - off - 8) / 4);
-  const out = new Float32Array(count);
-  const v = new DataView(body.buffer, body.byteOffset, body.byteLength);
-  let k = 0;
-  for (let off = 0; off + 8 < body.length; off += whole) {
-    const end = Math.min(off + whole, body.length);
-    for (let b = off + 8; b + 4 <= end; b += 4) out[k++] = v.getFloat32(b, true);
-  }
-  return out;
-}
-
-// A picture decoder, AppPictures, whose frames the Go side decodes. It
-// answers the calls of a VideoDecoder, so the queue feeds it the way it fed
-// the browser's. A chunk is fed with its rank and whether it will be drawn.
-interface Pictures {
-  readonly state: string;
-  readonly decodeQueueSize: number;
-  // first is the rank of the first frame the run draws. place says the
-  // frame is the one that holds the playhead, the frame of a still or the
-  // first of a cue, rather than one read ahead of it, see AppFrames.frame.
-  decode(timestamp: number, key: boolean, data: Uint8Array, rank: number, wanted: boolean, first: number, place?: boolean): void;
-  flush(): Promise<void>;
-  // Drops everything, ready for a key frame.
-  reset(): void;
-  close(): void;
-}
-
-// Nothing, for a chunk whose bytes the Go side reads for itself.
-const NO_DATA = new Uint8Array(0);
-
-// A stretch of sound on its way to the sound card: where on the program it
-// goes, in samples, and its samples, one array a channel.
-type Chunk = { out: number; length: number; data: Float32Array<ArrayBuffer>[] };
-
-type Held = { frame: Picture; rank: number };
-
-// One picture decoder and the run it is on.
-type Slot = {
-  decoder: Pictures;
-  run: Run | null;
-  keeper: Keeper | null;
-  next: number;
-  // Fed and not yet out, by timestamp: the rank of each.
-  fed: Map<number, number>;
-  // Of those, how many will be drawn.
-  coming: number;
-  ready: Held[];
-  flushing: boolean;
-  // The rank of the first frame its run draws, so the frames before it are
-  // not counted as coming.
-  firstRank: number;
-};
 
 // Paused with nothing prepared, paused with a cue, starting a play until
 // its first frame and sound are in hand, playing, and stopped at the end
@@ -598,11 +277,10 @@ export class FrameQueue {
   // from a queue before this one, see the constructor.
   private screen: Screen | null = null;
   private known: boolean;
+
   private listeners = new Set<(s: Shown) => void>();
   private video: VideoTrack | null = null;
   private sound: AudioTrack | null = null;
-  private slots: Slot[] = [];
-  private soundDecoder: SoundDecoder | null = null;
   // The Go side's frames, from the episode's decoder: every frame drawn,
   // whatever the file. Null only until the queue is open.
   private app: AppFrames | null = null;
@@ -627,28 +305,25 @@ export class FrameQueue {
   private began: { at: number; drawn: number; late: number; lateSound: number; when: number; even: Even } | null = null;
 
   // What play plays, as it was asked for: pieces, or null for the whole
-  // episode straight on, and whether it loops. The program is made from
-  // it once the length of the episode is known.
+  // episode straight on, and whether it loops.
   private wanted: { pieces: Piece[] | null; loop: boolean } = { pieces: null, loop: false };
   private wantedKey = "";
-  private built: Program | null = null;
   private asked: [Piece[] | null, boolean] | null = null;
 
   private state: State = "paused";
   // Where the playhead is, in the episode.
   private at = 0;
-  // A play under way or cued: its plans and where it stands.
-  private vplan: VideoPlan | null = null;
-  private aplan: AudioPlan | null = null;
-  private k = 0;
+  // The play under way or cued, the Go side's, see play.ts.
+  private goPlay: GoPlay | null = null;
   // Where the play began, in the episode, and the furthest the playhead
-  // has got on the program, so it never goes back while playing.
+  // has got on the play's clock, so it never goes back while playing.
   private startFrom = 0;
   private reached = 0;
-  // The moment of the episode the frame drawn last was drawn for, and
-  // whether the first frame of the play or cue is up.
+  // The frame of the play due last: where on the clock it is drawn and
+  // the moment it stands for, which the playhead moves on from.
+  private due: { at: number; moment: number } | null = null;
+  // The moment of the episode the frame drawn last was drawn for.
   private drawnFor = 0;
-  private firstShown = false;
   // The ticket of the seek or play whose own frame is on the canvas, and
   // the newest ask of the Go side's frames made when it was put up.
   private putFor = -1;
@@ -656,29 +331,22 @@ export class FrameQueue {
   // The ticket of the newest seek, cue or play that has said how it went,
   // see report and standing.
   private toldFor = -1;
-  private shown: { frame: Picture; run: number; rank: number } | null = null;
-  // The sound card's time at which the program's sample m0 is played.
+  // The frame on the canvas: the frame of the grid it is, where it begins
+  // in the episode, and where on the clock of the play under way it was
+  // drawn, -Infinity for one a play did not draw.
+  private shown: { frame: Picture; rank: number; begins: number; at: number } | null = null;
+  // The sound card's time at which the clock's sample m0 is played.
   private c0: number | null = null;
   private m0 = 0;
   // What is on the sound card, with the sound card's time each stretch
   // ends at by itself, see clip.
   private sources = new Map<AudioBufferSourceNode, number>();
   // Where the sound handed to the sound card in this play reaches, in its
-  // seconds.
+  // seconds, and the sound come before the clock started.
   private handedTo = -Infinity;
-  private pending: Chunk | null = null;
   private unscheduled: Chunk[] = [];
-  private soundRun: AudioRun | null = null;
-  private soundNext = 0;
-  private soundRunDone = new Set<number>();
-  // The packets fed and not yet out, in the order they were fed. A sound
-  // decoder puts out one stretch per packet, in order, but it may stamp it
-  // with a time of its own: Chromium counts on from the first packet after
-  // it starts, so the stamp is not a key to look the packet up by.
-  private soundFed: { ts: number; run: AudioRun; j: number; length: number }[] = [];
-  // How far on the program the sound fed so far reaches, in samples.
-  private soundReach = 0;
-  private soundDone = false;
+  // How far on the clock the sound come so far reaches, in samples.
+  private soundTo = 0;
   private frameRequest = 0;
   private suspendTimer = 0;
   // Every play, cue and seek gets a ticket, and work from an older one is
@@ -688,6 +356,8 @@ export class FrameQueue {
   // where it rested are asked only while it still rests there.
   private gestures = 0;
   private aheadKey = "";
+  // The frame a still waits for, withdrawn by a newer seek, see still.
+  private stillAsks = new Set<Waiter>();
   // The playhead is held under the hand, being dragged: each place it
   // passes is shown on its own, with no play cued from it, see grip.
   private gripped = false;
@@ -708,15 +378,16 @@ export class FrameQueue {
     waitFrom: number;
     ways: { kept: number; looks: number; near: number; overtaken: number };
   } | null = null;
-  // The first frame of a cue or a play that is waiting for what lies over
-  // it, and the one that has it, each by its ticket and rank, see dressed.
+  // The first frame of a play that is waiting for what lies over it, and
+  // the one that has it, each by its ticket and where it begins, see
+  // dressed.
   private dressing = "";
   private dressedKey = "";
   // The ticket whose frame is decoded or on its way and waits for what
   // lies over it, see dress, and -1 when none waits. A frame passing is
   // not put up meanwhile, see passing.
   private dressFor = -1;
-  private scratch: Float32Array[] = [];
+
 
   // path is the episode's, and movie what the engine says of it, see
   // movie.ts. woken is a workspace woken again, see sleeping in
@@ -775,12 +446,9 @@ export class FrameQueue {
     const card = this.audio;
     this.trace(`sound card at ${card.sampleRate} Hz${this.sound && card.sampleRate !== this.sound.sampleRate ? `, not the ${this.sound.sampleRate} Hz asked` : ""}, ${card.state}`);
     card.onstatechange = () => this.trace(`sound card ${card.state}`);
-    for (let i = 0; i < 2; i++) this.slots.push(this.makeSlot());
     // A file that cannot be played has said so by now. What can be waits
     // until the canvas has its size, see laidOut.
     await this.laidOut;
-    if (this.closed) throw new Error("closed");
-    if (this.sound) await this.openSound(this.sound);
     if (this.closed) throw new Error("closed");
     this.trace(`ready, ${this.ms()}`);
   }
@@ -788,34 +456,6 @@ export class FrameQueue {
   // How long since the queue was made, for the log.
   private ms(): string {
     return `${Math.round(performance.now() - this.born)} ms after it opened`;
-  }
-
-  // The sound, decoded by ffmpeg on the Go side whatever it is, plain
-  // sound in a MOV too.
-  private async openSound(a: AudioTrack) {
-    const output = (d: Sound) => this.soundOut(d);
-    const dequeue = () => this.pumpSound();
-    this.soundDecoder = new GoSound(this.path, a.sampleRate, Math.min(a.channels, 8), output, (e) => this.fault(`The sound stopped decoding: ${e}.`), dequeue);
-  }
-
-  private makeSlot(): Slot {
-    const slot: Slot = {
-      decoder: null as unknown as Pictures,
-      run: null,
-      keeper: null,
-      next: 0,
-      fed: new Map(),
-      coming: 0,
-      ready: [],
-      flushing: false,
-      firstRank: 0,
-    };
-    slot.decoder = new AppPictures(
-      this.app!,
-      (f) => this.frameOut(slot, f),
-      () => this.pump(),
-    );
-    return slot;
   }
 
   // The Go side's frames for this episode, decoded at the size of the
@@ -843,7 +483,13 @@ export class FrameQueue {
 
   // The sound card's rate is the episode's, where the browser allows it.
   get sampleRate(): number {
-    return this.sound?.sampleRate ?? this.audio.sampleRate;
+    return this.audio?.sampleRate ?? this.sound?.sampleRate ?? 48000;
+  }
+
+  // The channels the Go side mixes the sound to, as many as the episode
+  // has, up to eight.
+  private get channels(): number {
+    return Math.min(this.sound?.channels ?? 2, 8);
   }
 
   listen(fn: (s: Shown) => void): () => void {
@@ -872,10 +518,17 @@ export class FrameQueue {
     return this.sharpened === `${this.shown.rank} ${width} ${height}`;
   }
 
-  private get program(): Program {
-    if (!this.movie) return new Program([], false);
-    this.built ??= new Program(this.wanted.pieces ?? [{ start: 0, end: this.movie.duration }], this.wanted.loop);
-    return this.built;
+  // Where the play under way ends on its clock, Infinity while it loops,
+  // and where one time through it ends, for the walks.
+  get program(): { end: number; length: number; loop: boolean } {
+    const p = this.goPlay;
+    if (!p) return { end: Infinity, length: 0, loop: this.wanted.loop };
+    return { end: p.end, length: p.length + p.shift, loop: p.end === Infinity };
+  }
+
+  // The pieces play plays: the clip's, or the whole episode straight on.
+  private pieces(): Piece[] {
+    return this.wanted.pieces ?? [{ start: 0, end: this.movie?.duration ?? 0 }];
   }
 
   // What play plays: the pieces of a clip, cuts jumped, or null for the
@@ -902,7 +555,7 @@ export class FrameQueue {
     }
     this.asked = null;
     if (!this.want(pieces, loop)) return;
-    if (this.state === "cued" || this.vplan) this.seek(this.at);
+    if (this.state === "cued" || this.goPlay) this.seek(this.at);
   }
 
   // The program asked for while a play ran, for the next play, see
@@ -914,124 +567,110 @@ export class FrameQueue {
   }
 
   // Only the loop switched, with the same pieces, while a play starts or
-  // plays: nothing that plays changes, because the loop says only where
-  // the play ends, program.end. The play works out what follows the
-  // clip's end before it gets there, the next time through with the loop
-  // on, and keeps whatever it has worked out when the loop changes. Its
-  // end is where it stops: the picture at tick, the sound by each stretch
-  // on the sound card stopping there, see clip.
-  //
-  // Started again for the loop, the play threw away what was decoded, and
-  // the picture and the sound stopped for a moment at every press. Kept
-  // going without the end moving, the play stood at the clip's end while
-  // the sound of its start went on for seconds. Both found by Tim.
+  // plays. Switched off, the play ends at the end of the time through the
+  // sound card has played into, see GoPlay.loop: the picture at tick, the
+  // sound by each stretch on the sound card stopping there, see clip.
+  // Switched on, a play that had worked out its end goes on round, which
+  // a play taking over does, see changed. Started again for the loop, the
+  // play threw away what was decoded, and the picture and the sound
+  // stopped for a moment at every press, found by Tim.
   private relooped(pieces: Piece[] | null, loop: boolean): boolean {
     if (this.state !== "playing" && this.state !== "starting") return false;
     const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
     if (JSON.stringify([copy, !loop]) !== this.wantedKey) return false;
-    // A play cut short worked on past its end as it was, see
-    // AudioPlan.rewind, and the loop needs what follows the end, so the
-    // loop is taken in the way any change of the clip is, see changed.
-    if (this.vplan?.cutShort || this.aplan?.cutShort) return false;
-    if (this.vplan && this.built) {
-      if (loop) this.built.loopOn();
-      else this.built.loopOff(Math.max(this.reached, this.sounded()));
-      if (loop) {
-        // A play that had worked out its end works on past it, the sound
-        // too, and a stretch on the sound card stopped at the end plays
-        // to its own end again.
-        this.vplan.relooped();
-        this.aplan?.relooped();
-        this.soundDone = !this.aplan;
-      }
-      for (const src of this.sources.keys()) this.clip(src);
-      this.pump();
-      this.pumpSound();
-    } else {
-      // Not worked out yet: the play starting builds it from what is wanted.
-      this.built = null;
-    }
+    const play = this.goPlay;
+    if (play && loop) return this.changed(pieces, loop) !== "outside";
     this.wanted = { pieces: copy, loop };
     this.wantedKey = JSON.stringify([copy, loop]);
+    // A play still on its way from the Go side is opened again with what
+    // is wanted, see start.
+    if (play) {
+      void play.loop(false, Math.max(this.reached, this.sounded())).then(() => {
+        if (play !== this.goPlay) return;
+        for (const src of this.sources.keys()) this.clip(src);
+      });
+    }
     return true;
   }
 
-  // The clip changed under a running play, by a drag, an undo or a redo:
-  // the play takes it in at once, ahead of the playhead, and goes on with
-  // no stop, Tim's rule on #277 and his report on it. What the play
-  // worked out holds up to the first visit the change reaches, which ends
-  // where its piece ends now, and what comes after it is worked out again
-  // from the new pieces, see Program.spliced. Nothing
-  // already played moves, so the picture and the sound go on from where
-  // they are. Only where the decoders or the sound card were already fed
-  // past where the old and the new clip part, an edit a moment ahead of
-  // the playhead, does the play start again from the playhead, a moment's
-  // stop. A clip edge or a cut dragged while the clip played used to
-  // start the play again at every step, and the picture, the sound and
-  // the playhead stuttered with the hand, so that is the one thing this
-  // never does where it can be helped.
+  // The clip changed under a running play, by a drag, an undo or a redo,
+  // or its loop switched on: a play of the new pieces takes over at once,
+  // a moment ahead of the sound heard, from the moment the play under way
+  // stands at there, and the picture and the sound go on with no stop,
+  // Tim's rule on #277 and his report on it. Its first frames are the ones
+  // the play before decoded and the Go side kept. A clip edge or a cut
+  // dragged while the clip played used to start the play again at every
+  // step, and the picture, the sound and the playhead stuttered with the
+  // hand, so that is the one thing this never does.
   //
   // Says "outside" and changes nothing where the playhead is in none of
   // the new pieces.
   private changed(pieces: Piece[] | null, loop: boolean): "taken" | "outside" | "started" {
     const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
-    const vplan = this.vplan;
-    const before = this.built;
-    if (!vplan || !before || !this.movie) {
-      // Not worked out yet: the play starting builds it from what is wanted.
-      this.want(pieces, loop);
-      return "taken";
-    }
-    const there = before.locate(this.reached);
-    if (!there) return "outside";
-    const program = Program.spliced(before, there.v, there.at, copy ?? [{ start: 0, end: this.movie.duration }], loop);
-    if (!program) return "outside";
-    const visit = program.parting!;
-    const picture = vplan.rewind(program, visit, (run) => {
-      const slot = this.slotOf(run.id);
-      return !slot ? -1 : slot.flushing ? Infinity : slot.next - 1;
-    });
-    const sound = this.aplan && !this.soundDone ? this.aplan.rewind(program, visit, this.soundReach, (run) => this.soundRunDone.has(run.id)) : this.aplan ? null : () => {};
-    if (!picture || !sound) {
-      this.trace(`the clip changed ${(this.soundReach / this.sampleRate - this.reached).toFixed(3)} s ahead of the playhead at ${this.at.toFixed(3)} s, within what was fed, the play starts again there`);
-      this.want(pieces, loop);
-      this.start(this.at);
+    const list = copy ?? [{ start: 0, end: this.movie?.duration ?? 0 }];
+    if (!list.some((p) => this.at >= p.start && this.at < p.end)) return "outside";
+    this.want(pieces, loop);
+    const play = this.goPlay;
+    // Still on its way from the Go side: it is opened again with what is
+    // wanted, see start.
+    if (!play) return "taken";
+    if (this.c0 === null) {
+      // Not playing yet: the play starts again with what is wanted.
+      this.start(this.startFrom, "again");
       return "started";
     }
-    picture();
-    sound();
-    this.built = program;
-    this.wanted = { pieces: copy, loop };
-    this.wantedKey = JSON.stringify([copy, loop]);
-    this.asked = null;
-    vplan.extend(this.reached + READ_AHEAD);
-    this.aplan?.extend(this.reached + READ_AHEAD);
-    for (const src of this.sources.keys()) this.clip(src);
-    this.fadeAtEnd();
-    this.pump();
-    this.pumpSound();
+    void this.takeOver(play, Math.max(this.reached, this.sounded()) + TAKE_OVER, list, loop);
     return "taken";
   }
 
-  // A play cut short ends inside sound fed with no fade there, see
-  // AudioPlan.rewind, so the sound card fades it out at the end, over the
-  // fade a piece's edge has. Any other change takes that fade away. On
-  // with a play paused and played on, the fade is added after the ramp
-  // the sound comes back on, which takes away what was scheduled before.
-  private fadeAtEnd(changed = true) {
-    if (this.c0 === null || !this.aplan) return;
-    const gain = this.out.gain;
-    const now = this.audio.currentTime;
-    if (changed) {
-      gain.cancelScheduledValues(now);
-      gain.setValueAtTime(1, now);
+  // A play of the pieces takes over from the one under way at a place on
+  // its clock, see changed. Where the Go side says the new pieces do not
+  // hold the moment that place stands for, the play goes on as it was,
+  // and the pieces are the next play's.
+  private async takeOver(was: GoPlay, at: number, pieces: Piece[], loop: boolean) {
+    if (!this.app) return;
+    const key = this.wantedKey;
+    const next = await GoPlay.open(
+      this.app,
+      { pieces, loop, at: this.at, rate: this.sampleRate, channels: this.channels, cue: false, after: { play: was, at } },
+      this.previewSize(),
+    );
+    if (typeof next === "string") {
+      this.fault(`The play could not take the change in: ${next.replace(/\.$/, "")}.`);
+      return;
     }
-    const end = this.program.end;
-    if (!this.aplan.cutShort || !Number.isFinite(end)) return;
-    const at = this.c0 + (Math.round(end * this.sampleRate) - this.m0) / this.sampleRate;
-    if (at - FADE <= now + (changed ? 0 : FADE)) return;
-    gain.setValueAtTime(1, at - FADE);
-    gain.linearRampToValueAtTime(0, at);
+    if (!next) {
+      if (was === this.goPlay && key === this.wantedKey) this.asked = [this.wanted.pieces, loop];
+      return;
+    }
+    if (was !== this.goPlay || this.closed || key !== this.wantedKey || this.c0 === null) {
+      next.close();
+      return;
+    }
+    this.trace(`the clip changed while it plays, a play of it takes over at ${next.moment.toFixed(3)} s, ${((at - this.sounded()) * 1000).toFixed(0)} ms ahead of the sound`);
+    // The frames and the sound of the play before from that place on make
+    // way for the new play's.
+    for (const s of was.shots.splice(0)) {
+      if (s.at < at) was.shots.push(s);
+      else this.closeFrame(s.frame);
+    }
+    const stop = this.c0 + (Math.round(at * this.sampleRate) - this.m0) / this.sampleRate;
+    for (const [src, end] of this.sources) {
+      if (end <= stop) continue;
+      try {
+        src.stop(Math.max(stop, this.audio.currentTime));
+      } catch {}
+      this.sources.set(src, stop);
+    }
+    this.handedTo = Math.min(this.handedTo, stop);
+    this.soundTo = Math.min(this.soundTo, Math.round(at * this.sampleRate));
+    // What the play before has come up to that place is drawn first.
+    next.shots.unshift(...was.shots.splice(0));
+    was.close();
+    this.goPlay = next;
+    if (!this.sound) next.soundEnded = true;
+    this.listenTo(next);
+    this.pump();
   }
 
   // The playhead was left outside the clip while the clip plays, by an
@@ -1043,17 +682,10 @@ export class FrameQueue {
     if (this.state !== "playing" && this.state !== "starting") return;
     this.trace(`the playhead was left outside the clip at ${this.at.toFixed(3)} s, the play goes on as a play of the video`);
     if (this.changed(null, false) !== "outside") return;
-    // The playhead in none of the pieces of the program it plays, in a cut
-    // or past its end, which a moment of the episode never is.
+    // The playhead in none of the pieces of the program it plays, past the
+    // episode's end, which a moment of the episode never is.
     this.want(null, false);
     this.start(this.at);
-  }
-
-  // A program a running play took a change into, or switched the loop
-  // of, is that play's alone, see Program.changedWhilePlaying: a new play
-  // or a paused frame builds its own.
-  private unsplice() {
-    if (this.built?.changedWhilePlaying) this.built = null;
   }
 
   // Takes a program as the one play plays, and says whether it is another
@@ -1064,7 +696,6 @@ export class FrameQueue {
     if (key === this.wantedKey) return false;
     this.wantedKey = key;
     this.wanted = { pieces: copy, loop };
-    this.built = null;
     return true;
   }
 
@@ -1104,38 +735,20 @@ export class FrameQueue {
     this.settle(at);
   }
 
-  // A paused playhead: the play from it is cued when its first frame is the
-  // frame that holds the playhead, and the frame is decoded on its own
-  // where it is not, in a cut of the clip or past its end. On the clip's
-  // end itself it is the clip's last frame, the one that holds the moment
-  // a frame before the end, where a play of the clip stops and the short
-  // ends, see end.
-  //
-  // The first frame of the play is the one the play's own plan starts
-  // with, worked out the way the cue works it out. Worked out apart, from
-  // where the playhead lands on the program, a playhead a hair before the
-  // end of a piece was inside it here and in the cut for the plan, which
-  // takes a piece that short as none. So the cue put up the first frame
-  // after the cut. A drag of a cut's left edge leaves the playhead on the
-  // edge just before the piece ends there, at every step, and the video
-  // preview flickered between the edge's frame and the one after the cut.
-  // Found by Tim on youtube.mp4, plan row 2.270.
+
+  // A paused playhead: the frame that holds it is asked for and drawn, see
+  // still, and the play from it is cued once it is up, see cue. On the
+  // clip's end itself it is the clip's last frame, the one that holds the
+  // moment a frame before the end, where a play of the clip stops and the
+  // short ends, see end, and nothing is cued.
   private settle(at: number) {
-    this.unsplice();
     const ticket = this.ticket;
     this.ready.then(
       () => {
         if (ticket !== this.ticket || this.closed) return;
-        const s = this.video!.samples;
-        const program = this.program;
-        const p0 = program.place(at);
-        const plan = new VideoPlan(s, this.video!.frame, program, p0);
-        plan.extend(p0 + this.video!.frame);
-        const first = plan.need(0);
-        const last = program.pieces[program.pieces.length - 1];
-        if (first && first.rank === rankAt(s, at) && !this.gripped) this.start(at, true);
-        else if (last && at === last.end) void this.still(at, Math.max(last.start, at - this.video!.frame));
-        else void this.still(at);
+        const last = this.pieces().reduce<Piece | null>((a, p) => (!a || p.end > a.end ? p : a), null);
+        if (last && at === last.end) void this.still(at, Math.max(last.start, at - this.video!.frame));
+        else void this.still(at, at, !this.gripped);
       },
       // The file could not be read: the seek says so with no frame, so
       // the picture stands, see standing.
@@ -1202,13 +815,7 @@ export class FrameQueue {
       () => {
         if (gesture !== this.gestures || this.closed || !this.app || this.state === "playing" || this.state === "starting") return;
         const s = this.video!.samples;
-        const ranks = times.map((at) => {
-          const p0 = this.program.place(at);
-          const plan = new VideoPlan(s, this.video!.frame, this.program, p0);
-          plan.extend(p0 + this.video!.frame);
-          return plan.need(0)?.rank ?? rankAt(s, at);
-        });
-        this.app.ahead(ranks);
+        this.app.ahead(times.map((at) => rankAt(s, at)));
       },
       () => {},
     );
@@ -1251,29 +858,36 @@ export class FrameQueue {
     const changed = this.takePending();
     // Paused in the middle of a play: the play is all still there, the
     // sound card was only held.
-    if (!changed && this.vplan && this.c0 !== null && this.state === "paused") {
+    if (!changed && this.goPlay && this.c0 !== null && this.state === "paused") {
       clearTimeout(this.suspendTimer);
       this.state = "playing";
+      this.app?.began();
       this.trace(`playing on from ${this.at.toFixed(3)} s`);
       this.began = { at: this.at, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now(), even: new Even() };
       this.ramp(1);
-      this.fadeAtEnd(false);
       this.report();
       this.loop();
       return;
     }
-    // Cued: everything is there but the clock.
-    if (!changed && this.state === "cued") {
+    // Cued: everything is there but the decoder and the clock.
+    if (!changed && this.state === "cued" && this.goPlay) {
       this.state = "starting";
+      this.stats.starts++;
+      this.startFrom = this.at;
+      this.goPlay.go();
       this.report();
+      this.pump();
       this.maybeBegin();
       return;
     }
     let from = this.at;
-    if (this.state === "ended" || (this.movie && this.program.place(from) >= this.program.length)) {
-      from = this.program.pieces[0]?.start ?? 0;
-    }
+    if (this.state === "ended") from = this.firstStart();
     this.start(from);
+  }
+
+  // Where the clip starts, which a play past its end starts from.
+  private firstStart(): number {
+    return Math.min(...this.pieces().map((p) => p.start));
   }
 
   pause() {
@@ -1299,21 +913,19 @@ export class FrameQueue {
   }
 
   // Paused, the picture is the frame that holds the playhead. The playhead
-  // runs up to a frame ahead of the frame drawn for it, and that frame is
-  // nearly always decoded already. Where it is not, the playhead goes back
+  // runs up to a frame ahead of the frame drawn for it, and that frame has
+  // nearly always come already. Where it has not, the playhead goes back
   // to the moment the frame on screen was drawn for.
   private hold() {
-    if (!this.shown || !this.video) return;
-    const want = rankAt(this.video.samples, this.at);
-    if (this.shown.rank === want) return;
-    for (const slot of this.slots) {
-      const i = slot.ready.findIndex((h) => h.rank === want);
-      if (i < 0 || !slot.run) continue;
-      const [h] = slot.ready.splice(i, 1);
-      this.put(h.frame, slot.run.id, h.rank);
+    const play = this.goPlay;
+    if (!this.shown || !play) return;
+    let i = -1;
+    while (i + 1 < play.shots.length && play.shots[i + 1].at <= this.reached) i++;
+    if (i < 0) {
+      if (this.due && this.shown.at !== this.due.at) this.at = this.drawnFor;
       return;
     }
-    this.at = this.drawnFor;
+    this.draw(play, i);
   }
 
   close() {
@@ -1325,14 +937,9 @@ export class FrameQueue {
     // A queue closed before its canvas had a size stops waiting for one.
     this.sizeKnown();
     this.stopPlay();
-    for (const s of this.slots) {
-      this.release(s);
-      s.decoder.close();
-    }
     this.app?.close();
     if (this.shown) this.closeFrame(this.shown.frame);
     this.shown = null;
-    this.soundDecoder?.close();
     if (this.audio && this.audio.state !== "closed") void this.audio.close();
     this.listeners.clear();
     // The buffers kept for the next play are let go of with the video
@@ -1446,7 +1053,7 @@ export class FrameQueue {
     if (!playing) this.app?.aheadNow();
     this.emit({
       at: this.at,
-      frame: this.shown ? this.shownAt(this.shown.rank) : NaN,
+      frame: this.shown ? this.shown.begins : NaN,
       drew,
       playing,
       ended: this.state === "ended",
@@ -1462,8 +1069,10 @@ export class FrameQueue {
   }
 
   // Draws a frame and closes the one it replaces. One passing is put up
-  // on the way to the frame asked for, see passing.
-  private put(frame: Picture, run: number, rank: number, passing = false) {
+  // on the way to the frame asked for, see passing. At is where on the
+  // clock of the play under way it is drawn, -Infinity for one a play did
+  // not draw.
+  private put(frame: Picture, rank: number, begins: number, at: number, passing = false) {
     if (!this.firstTold) {
       this.firstTold = true;
       this.trace(`first frame drawn, frame ${rank} of ${frame.width}x${frame.height}${frame.light ? `, ${frame.light}` : ""}, ${this.ms()}`);
@@ -1474,7 +1083,7 @@ export class FrameQueue {
       if (this.drag.waitFrom >= 0 && this.drag.waits.length < 4096) this.drag.waits.push(now - this.drag.waitFrom);
       this.drag.waitFrom = rank === rankAt(this.video.samples, this.at) ? -1 : now;
     }
-    this.shown = { frame, run, rank };
+    this.shown = { frame, rank, begins, at };
     if (!passing) {
       this.putFor = this.ticket;
       this.shownAsked = this.app?.asked ?? 0;
@@ -1486,6 +1095,7 @@ export class FrameQueue {
     this.paint(true);
     this.stats.drawn++;
   }
+
 
   // A frame that came for a place a paused drag has passed, while the frame
   // for where the hand is now is still on its way: it is put up meanwhile,
@@ -1521,7 +1131,7 @@ export class FrameQueue {
     this.stats.keys++;
     this.stats.keysAt.push(this.shownAt(rank));
     if (this.stats.keysAt.length > 16) this.stats.keysAt.shift();
-    this.put(frame.clone(), -1, rank, true);
+    this.put(frame.clone(), rank, this.shownAt(rank), -Infinity, true);
     this.report(true, true);
   }
 
@@ -1579,7 +1189,7 @@ export class FrameQueue {
   // newest gesture, see over.
   private paint(fresh = false) {
     const s = this.shown;
-    this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(this.shownAt(s.rank), s.frame.light, fresh) : null);
+    this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(s.begins, s.frame.light, fresh) : null);
     this.painted?.(s?.frame ?? null);
   }
 
@@ -1593,14 +1203,14 @@ export class FrameQueue {
     if (!this.closed && this.shown) this.paint();
   }
 
-  // Whether what lies over the frame of rank is here, asked for at once
-  // where it is not: a promise of whether the frame is still wanted once
+  // Whether what lies over the frame that begins at begins is here, asked
+  // for at once where it is not: a promise of whether the frame is still wanted once
   // it is, or once DRESS_WAIT has passed, or null when there is nothing to
   // wait for. Nothing waits while the hand drags the playhead, where each
   // place is passed in a moment and the picture follows the hand.
-  private dress(rank: number): Promise<boolean> | null {
+  private dress(begins: number): Promise<boolean> | null {
     if (this.gripped || !this.over?.ready || !this.video) return null;
-    const came = this.over.ready(this.shownAt(rank));
+    const came = this.over.ready(begins);
     if (!came) return null;
     const ticket = this.ticket;
     const asked = performance.now();
@@ -1614,22 +1224,22 @@ export class FrameQueue {
       const wanted = ticket === this.ticket && !this.closed;
       if (how === "late" && wanted) {
         this.stats.bare++;
-        this.trace(`the captions of frame ${rank} did not come in ${DRESS_WAIT} ms, the frame is put up without them`);
+        this.trace(`the captions of the frame at ${begins.toFixed(3)} s did not come in ${DRESS_WAIT} ms, the frame is put up without them`);
       }
       else if (wanted) this.stats.dressWait = Math.max(this.stats.dressWait, Math.round(performance.now() - asked));
       return wanted;
     });
   }
 
-  // Whether the first frame of the cue or play under way, of rank, may be
+  // Whether the first frame of the cue or play under way, at begins, may be
   // put up: what lies over it is here, or nothing has to be. Asked the
   // first time, it asks for it and puts the frame up through maybeBegin
   // once it comes.
-  private dressed(rank: number): boolean {
-    const key = `${this.ticket} ${rank}`;
+  private dressed(begins: number): boolean {
+    const key = `${this.ticket} ${begins}`;
     if (this.dressedKey === key) return true;
     if (this.dressing === key) return false;
-    const waits = this.dress(rank);
+    const waits = this.dress(begins);
     if (!waits) {
       this.dressedKey = key;
       return true;
@@ -1656,17 +1266,19 @@ export class FrameQueue {
     return ticks(s, rank) / s.timescale;
   }
 
+
   // ---- A paused frame on its own
 
   // The frame drawn is the one that holds the moment it is given, the
-  // playhead unless said otherwise.
+  // playhead unless said otherwise. With cue, the play from the playhead
+  // is cued once the frame is up, see cue.
   //
   // A seek made while it waits for the video to be read is newer, and the
   // still gives way to it. It took a ticket of its own after the wait, which
   // made the newer seek's own stale, and the still then put the playhead
   // back where it had been asked for: a drag that left the playhead on an
   // edge for a moment kept it there, a frame off the edge's frame.
-  private async still(at: number, holds = at) {
+  private async still(at: number, holds = at, cue = false) {
     const asked = this.ticket;
     try {
       await this.ready;
@@ -1680,53 +1292,70 @@ export class FrameQueue {
     const gaveUp = () => {
       if (ticket === this.ticket && !this.closed) this.report();
     };
-    const slot = this.slots[0];
-    this.release(slot);
-    const s = this.video!.samples;
-    const feed = stillFeed(s, holds);
+    // The frame the still before waits for is wanted no more.
+    for (const w of this.stillAsks) w.gone = true;
+    this.stillAsks.clear();
+    const rank = rankAt(this.video!.samples, holds);
+    const begins = this.shownAt(rank);
     // What lies over the frame is asked for as the frame is, so the two
     // come in the time the slower takes, not one after the other.
-    const dressed = this.dress(feed.rank);
-    // Already on screen, at the canvas's size: nothing to decode. What
+    const dressed = this.dress(begins);
+    // Already on screen, at the canvas's size: nothing to ask for. What
     // lies over it may be another clip's still, see over.
-    if (this.shown && this.shown.rank === feed.rank && this.sharp(this.shown.frame)) {
+    if (this.shown && this.shown.rank === rank && this.sharp(this.shown.frame)) {
       if (dressed && !(await dressed)) return gaveUp();
       this.putFor = ticket;
       this.at = at;
       this.paint(true);
       this.report();
+      if (cue) this.cue(at, ticket);
       return;
     }
-    slot.run = { id: -1 - ticket, key: feed.key, last: feed.last, kFirst: 0, kLast: 0, lastRank: feed.rank };
-    slot.firstRank = feed.rank;
-    for (let i = feed.key; i <= feed.last; i++) {
-      if (ticket !== this.ticket || slot.decoder.state !== "configured") return gaveUp();
-      // Every frame is its own key frame, in the order it is shown, see
-      // Samples.
-      const ts = stamp(0, ticks(s, i) / s.timescale);
-      slot.fed.set(ts, i);
-      const holds = i === feed.rank;
-      slot.decoder.decode(ts, true, NO_DATA, i, holds, feed.rank, holds);
+    const frame = await this.app!.frame(rank, Math.round(begins * 1e6), this.stillAsks);
+    if (frame) {
+      this.stats.open++;
+      this.stats.mostOpen = Math.max(this.stats.mostOpen, this.stats.open);
+      this.stats.decoded++;
+      this.over?.coming(begins);
     }
-    try {
-      await slot.decoder.flush();
-    } catch {
+    if (ticket !== this.ticket) {
+      if (frame) this.closeFrame(frame);
+      return;
+    }
+    // The frame waits for what lies over it, and a seek made meanwhile
+    // takes its place.
+    if (dressed && !(await dressed)) {
+      if (frame) this.closeFrame(frame);
       return gaveUp();
     }
-    if (ticket !== this.ticket) return;
-    // The frame waits for what lies over it, and a seek made meanwhile
-    // takes the decoder and closes what it holds.
-    if (dressed && !(await dressed)) return gaveUp();
-    const got = slot.ready.findIndex((h) => h.rank === feed.rank);
-    let drew = false;
-    if (got >= 0) {
-      const [h] = slot.ready.splice(got, 1);
-      this.put(h.frame, -1, h.rank);
-      drew = true;
-    } else this.paint(true);
-    this.release(slot);
+    if (frame) this.put(frame, rank, begins, -Infinity);
+    else this.paint(true);
     this.at = at;
-    this.report(drew);
+    this.report(!!frame);
+    if (cue && frame) this.cue(at, ticket);
+  }
+
+  // The play from a paused playhead, prepared and waiting for the space
+  // bar: its first frames, kept on the Go side by the still, and its
+  // first sound come while it waits, and the Go side's decoder stays the
+  // hand's until it starts, see GoPlay.go. A playhead in a cut of the clip
+  // or past its end starts a play on another frame than the one up, and
+  // cues nothing.
+  private async cue(at: number, ticket: number) {
+    if (!this.app || this.state !== "paused") return;
+    const play = await GoPlay.open(
+      this.app,
+      { pieces: this.pieces(), loop: this.wanted.loop, at, rate: this.sampleRate, channels: this.channels, cue: true },
+      this.previewSize(),
+    );
+    if (!play || typeof play === "string") return;
+    if (ticket !== this.ticket || this.closed || this.state !== "paused" || this.goPlay || play.first !== this.shown?.begins || play.from >= play.end) {
+      play.close();
+      return;
+    }
+    this.state = "cued";
+    this.startFrom = at;
+    this.begin(play);
   }
 
   // ---- Playing
@@ -1735,12 +1364,13 @@ export class FrameQueue {
     this.ticket++;
     cancelAnimationFrame(this.frameRequest);
     clearTimeout(this.suspendTimer);
-    // A stretch stops where the program ends, see clip, so one stopped
-    // after that threw nothing away.
+    // A stretch stops where the play ends, see clip, so one stopped after
+    // that threw nothing away.
     const now = this.sources.size ? this.audio.currentTime : 0;
-    const ends = this.c0 !== null && Number.isFinite(this.program.end) ? this.c0 + (Math.round(this.program.end * this.sampleRate) - this.m0) / this.sampleRate : Infinity;
-    for (const [src, end] of this.sources) {
-      if (Math.min(end, ends) > now) this.stats.soundThrown++;
+    const end = this.goPlay?.end ?? Infinity;
+    const ends = this.c0 !== null && Number.isFinite(end) ? this.c0 + (Math.round(end * this.sampleRate) - this.m0) / this.sampleRate : Infinity;
+    for (const [src, stops] of this.sources) {
+      if (Math.min(stops, ends) > now) this.stats.soundThrown++;
       try {
         src.stop();
       } catch {}
@@ -1748,130 +1378,137 @@ export class FrameQueue {
     }
     this.sources.clear();
     this.handedTo = -Infinity;
-    for (const s of this.slots) this.release(s);
-    this.soundDecoder?.restart();
-    this.soundFed = [];
-    this.soundRunDone.clear();
-    this.soundRun = null;
-    this.pending = null;
+    if (this.goPlay) {
+      for (const s of this.goPlay.shots.splice(0)) this.closeFrame(s.frame);
+      this.goPlay.close();
+      this.goPlay = null;
+    }
     this.unscheduled = [];
-    this.vplan = null;
-    this.aplan = null;
+    this.due = null;
     this.c0 = null;
   }
 
-  // Empties a decoder and lets go of its run.
-  private release(slot: Slot) {
-    for (const h of slot.ready) this.closeFrame(h.frame);
-    slot.ready = [];
-    slot.coming = 0;
-    slot.run = null;
-    slot.keeper = null;
-    // A decoder that was flushed and has nothing on its way is ready for a
-    // key frame as it is. Any other is reset, which drops what it holds.
-    const idle = slot.flushing && slot.fed.size === 0;
-    slot.fed.clear();
-    slot.flushing = false;
-    if (slot.decoder.state === "configured" && !idle) slot.decoder.reset();
-  }
-
-  // A play from a moment of the episode, or with cue, the same play
-  // prepared and waiting for play.
-  private start(from: number, cue = false) {
+  // A play from a moment of the episode. A play started again for what is
+  // wanted now, before anything was heard, is no new start for the
+  // counts.
+  private start(from: number, how: "play" | "again" = "play") {
     this.stopPlay();
-    this.unsplice();
-    if (!cue) this.stats.starts++;
+    if (how === "play") this.stats.starts++;
     const ticket = this.ticket;
-    this.state = cue ? "cued" : "starting";
-    if (!cue) {
-      this.playTold = false;
-      this.trace(`starting a play from ${from.toFixed(3)} s`);
-      const asked = performance.now();
-      // A play that has not started after a while says what it waits for.
-      for (const after of [3, 10])
-        setTimeout(() => {
-          if (ticket === this.ticket && this.state === "starting" && !this.closed)
-            this.trace(`the play from ${from.toFixed(3)} s has not started ${Math.round((performance.now() - asked) / 1000)} s after it was asked: ${this.waitingFor()}`);
-        }, after * 1000);
-    }
-    this.firstShown = false;
+    this.state = "starting";
+    this.playTold = false;
+    this.trace(`starting a play from ${from.toFixed(3)} s`);
+    const asked = performance.now();
+    // A play that has not started after a while says what it waits for.
+    for (const after of [3, 10])
+      setTimeout(() => {
+        if (ticket === this.ticket && this.state === "starting" && !this.closed)
+          this.trace(`the play from ${from.toFixed(3)} s has not started ${Math.round((performance.now() - asked) / 1000)} s after it was asked: ${this.waitingFor()}`);
+      }, after * 1000);
     this.startFrom = from;
     this.at = from;
-    if (!cue) {
-      void this.audio?.resume();
-      this.report();
-    }
+    void this.audio?.resume();
+    // Started again for what is wanted now, it says nothing new.
+    if (how === "play") this.report();
     this.ready.then(
-      () => {
-        if (ticket !== this.ticket || this.closed) return;
-        this.out.gain.cancelScheduledValues(this.audio.currentTime);
-        this.out.gain.setValueAtTime(1, this.audio.currentTime);
-        const p0 = this.program.place(from);
-        if (!this.program.loop && p0 >= this.program.length) {
-          this.state = "ended";
-          this.report();
+      async () => {
+        if (ticket !== this.ticket || this.closed || !this.app) return;
+        const key = this.wantedKey;
+        const play = await GoPlay.open(
+          this.app,
+          { pieces: this.pieces(), loop: this.wanted.loop, at: from, rate: this.sampleRate, channels: this.channels, cue: false },
+          this.previewSize(),
+        );
+        if (ticket !== this.ticket || this.closed) {
+          if (play && typeof play !== "string") play.close();
           return;
         }
-        this.reached = p0;
-        this.vplan = new VideoPlan(this.video!.samples, this.video!.frame, this.program, p0);
-        this.vplan.extend(p0 + READ_AHEAD);
-        if (this.sound && this.soundDecoder) {
-          this.aplan = new AudioPlan(this.sound.samples, this.sound.sampleRate, this.program, p0);
-          this.aplan.extend(p0 + READ_AHEAD);
-          this.m0 = this.aplan.m0;
-          this.soundReach = this.m0;
-          this.soundDone = false;
-        } else {
-          this.m0 = Math.round(p0 * this.sampleRate);
-          this.soundDone = true;
+        // The clip or its loop changed while the Go side opened the play:
+        // it is opened again for what is wanted now.
+        if (key !== this.wantedKey) {
+          if (play && typeof play !== "string") play.close();
+          this.start(from, "again");
+          return;
         }
-        this.k = 0;
-        // What lies over the first frame is asked for as it is decoded.
-        const first = this.vplan.need(0);
-        if (first) this.dressed(first.rank);
-        this.pump();
-        this.pumpSound();
+        if (!play || typeof play === "string") {
+          this.fault(`The play could not start: ${String(play).replace(/^the play could not start: /, "").replace(/\.$/, "")}.`);
+          return;
+        }
+        if (play.from >= play.end) {
+          // Nothing to play from here: a play from past the clip's end
+          // plays the clip from its start.
+          play.close();
+          const first = this.firstStart();
+          if (from !== first) this.start(first, "again");
+          else {
+            this.state = "ended";
+            this.report();
+          }
+          return;
+        }
+        this.begin(play);
       },
       () => {},
     );
   }
 
-  // Puts the first frame of a play or a cue up the moment it is decoded,
-  // and starts the sound card's clock once the first frame and the first
-  // of the sound are in hand and play was asked for.
+  // Takes a play the Go side opened as the one under way or cued, and
+  // asks for its first frames and sound.
+  private begin(play: GoPlay) {
+    this.goPlay = play;
+    this.listenTo(play);
+    if (!this.sound) play.soundEnded = true;
+    this.out.gain.cancelScheduledValues(this.audio.currentTime);
+    this.out.gain.setValueAtTime(1, this.audio.currentTime);
+    this.reached = play.from;
+    this.m0 = Math.round(play.from * this.sampleRate);
+    this.soundTo = this.m0;
+    // What lies over the first frame is asked for as it comes.
+    if (play.first >= 0 && this.state === "starting") this.dressed(play.first);
+    this.pump();
+  }
+
+  // Hears of the frames that came for a play.
+  private listenTo(play: GoPlay) {
+    play.onShots = (came) => {
+      if (play !== this.goPlay || this.closed) return;
+      this.stats.open += came;
+      this.stats.mostOpen = Math.max(this.stats.mostOpen, this.stats.open);
+      this.stats.decoded += came;
+      for (const s of play.shots.slice(-came)) this.over?.coming(s.begins);
+      if (play.trouble && play.picturesEnded) this.fault(`The app could not decode the picture: ${play.trouble.replace(/\.$/, "")}.`);
+      if (this.state === "starting" || this.state === "cued") this.maybeBegin();
+      this.pump();
+    };
+  }
+
+  // Puts the first frame of a play up, and starts the sound card's clock
+  // once the first frame and the first of the sound are in hand and play
+  // was asked for. The first frame is up once due is set: the frame a
+  // cue was made on, which is on screen already, or the play's own first.
   private maybeBegin() {
-    if ((this.state !== "starting" && this.state !== "cued") || !this.vplan) return;
-    const need = this.vplan.need(0);
-    const slot = need ? this.slotOf(need.run) : null;
-    // The frame on screen is the one wanted when it is at the canvas's
-    // size too: a cue asked for again by sharpen has the same run and rank
-    // as the frame it replaces.
-    let frameIn =
-      !need || (!!this.shown && this.shown.run === need.run && this.shown.rank === need.rank && this.sharp(this.shown.frame));
-    // The first frame comes with what lies over it, see dress.
-    if (need && !frameIn && slot?.ready[0]?.rank === need.rank && this.dressed(need.rank)) {
-      const h = slot.ready.shift()!;
-      this.put(h.frame, need.run, h.rank);
-      this.drawnFor = this.vplan.moment(0) ?? this.at;
+    const play = this.goPlay;
+    if ((this.state !== "starting" && this.state !== "cued") || !play) return;
+    let frameIn = this.due !== null;
+    const first = play.shots[0];
+    if (!frameIn && !first) frameIn = play.picturesEnded;
+    else if (!frameIn && this.shown && this.shown.begins === first.begins && this.sharp(this.shown.frame)) {
+      // The frame on screen at the canvas's size is the first, the frame
+      // a cue was made on: it stays, and the one that came is let go.
+      play.shots.shift();
+      this.closeFrame(first.frame);
+      this.shown.at = first.at;
+      this.due = first;
+      this.drawnFor = first.moment;
       frameIn = true;
-      this.firstShown = true;
+    } else if (!frameIn && this.state === "starting" && this.dressed(first.begins)) {
+      // The first frame comes with what lies over it, see dress.
+      this.draw(play, 0);
+      frameIn = true;
       this.report(true);
     }
-    // A cue says once that its frame is on the canvas, drawn now or there
-    // already, the way a still does.
-    if (frameIn && !this.firstShown) {
-      if (need && !this.dressed(need.rank)) return;
-      this.firstShown = true;
-      this.putFor = this.ticket;
-      this.drawnFor = this.vplan.moment(0) ?? this.at;
-      // Drawn again with what lies over it now, which may be another
-      // clip's still, see over.
-      this.paint(true);
-      if (this.state === "cued") this.report();
-    }
     if (this.state === "cued") return;
-    const soundIn =
-      this.soundDone || this.soundReach - this.m0 >= SOUND_FIRST * this.sampleRate || (this.aplan?.finished && this.soundRun === null);
+    const soundIn = play.soundEnded || this.soundTo - this.m0 >= SOUND_FIRST * this.sampleRate;
     if (!frameIn || !soundIn) return;
     if (this.audio.state !== "running") {
       const ticket = this.ticket;
@@ -1890,15 +1527,25 @@ export class FrameQueue {
     const rate = this.audio.sampleRate;
     this.c0 = Math.ceil((this.audio.currentTime + START_LEAD) * rate) / rate;
     this.state = "playing";
+    this.app?.began();
     this.trace(`playing from ${this.startFrom.toFixed(3)} s`);
     this.began = { at: this.startFrom, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now(), even: new Even() };
-    if (this.pending) {
-      this.unscheduled.push(this.pending);
-      this.pending = null;
-    }
     for (const c of this.unscheduled) this.schedule(c);
     this.unscheduled = [];
     this.tick(performance.now());
+  }
+
+  // Draws shot i of the play, the ones before it closed unseen.
+  private draw(play: GoPlay, i: number) {
+    const passed = play.shots.splice(0, i + 1);
+    const s = passed.pop()!;
+    for (const p of passed) {
+      this.stats.unseen++;
+      this.closeFrame(p.frame);
+    }
+    this.put(s.frame, rankOf(this.video!.samples, s.begins), s.begins, s.at);
+    this.due = s;
+    this.drawnFor = s.moment;
   }
 
   // How the play under way went, for the log: how long it ran, how many
@@ -1920,14 +1567,11 @@ export class FrameQueue {
 
   // What a play that has not started waits for, for the log.
   private waitingFor(): string {
-    const need = this.vplan?.need(0);
-    const slot = need ? this.slotOf(need.run) : null;
-    const frameIn = !need || (!!this.shown && this.shown.run === need.run && this.shown.rank === need.rank);
-    const sound = this.soundDone ? "all of it" : `${((this.soundReach - this.m0) / this.sampleRate).toFixed(3)} s of ${SOUND_FIRST} s`;
+    const play = this.goPlay;
+    const sound = !play ? "none" : play.soundEnded ? "all of it" : `${((this.soundTo - this.m0) / this.sampleRate).toFixed(3)} s of ${SOUND_FIRST} s`;
     return [
-      this.vplan ? `first frame ${need ? `${need.rank}, ${frameIn ? "in" : "not in"}` : "none needed"}` : "no plan yet, the video is not read",
-      `decoder ${slot ? `holding ${slot.ready.length} frames, ${slot.coming} coming, ${slot.decoder.decodeQueueSize} asked` : "none on it"}`,
-      `sound ${sound}, its decoder ${this.soundDecoder ? `${this.soundDecoder.state}, ${this.soundDecoder.decodeQueueSize} asked` : "none"}`,
+      play ? `first frame ${play.first >= 0 ? `at ${play.first.toFixed(3)} s, ${play.shots.length} frames come` : "none needed"}` : "no play from the Go side yet",
+      `sound ${sound}`,
       `sound card ${this.audio?.state ?? "not there"}`,
       `trouble "${this.trouble}"`,
       `queue ${JSON.stringify(this.stats)}`,
@@ -1935,7 +1579,7 @@ export class FrameQueue {
     ].join(", ");
   }
 
-  // Where the program is now, from the sound being heard, at the moment a
+  // Where the clock is now, from the sound being heard, at the moment a
   // frame drawn now is on screen, a refresh of the screen from now, see
   // refreshNow in even.ts.
   private position(now: number): number {
@@ -1944,7 +1588,7 @@ export class FrameQueue {
 
   // The same, with where the moment heard came from, for the log.
   private heardOn(now: number): { pos: number; source: Source } {
-    if (this.c0 === null || !this.vplan) return { pos: this.vplan?.p0 ?? 0, source: "plain" };
+    if (this.c0 === null || !this.goPlay) return { pos: this.goPlay?.from ?? 0, source: "plain" };
     const stampNow = this.audio.getOutputTimestamp ? this.audio.getOutputTimestamp() : null;
     const latency = (this.audio.outputLatency || 0) + (this.audio.baseLatency || 0);
     const h = heard(
@@ -1958,14 +1602,14 @@ export class FrameQueue {
     return { pos: this.m0 / this.sampleRate + (h.at - this.c0), source: h.source };
   }
 
-  // How far on the program the sound card has played, heard or about to
+  // How far on the clock the sound card has played, heard or about to
   // be: what it has played can no longer be stopped. The loop switched off
   // ends the play at the end of the time through this is in, not the one
   // the playhead is in. The playhead moves on only with the page's frames,
   // so on a busy machine the sound had crossed the clip's end while the
   // playhead still stood before it, the stop came too late, and a moment
   // of the clip's start was heard after its end. Plan row 2.253.
-  private sounded(): number {
+  sounded(): number {
     if (this.c0 === null) return this.reached;
     return this.m0 / this.sampleRate + (this.audio.currentTime - this.c0);
   }
@@ -2017,62 +1661,48 @@ export class FrameQueue {
   }
 
   private tick(now: number) {
-    if (this.state !== "playing" || !this.vplan) return;
+    const play = this.goPlay;
+    if (this.state !== "playing" || !play) return;
     const begun = performance.now();
-    const plan = this.vplan;
     // Never back: the sound heard only ever moves on, and a stamp that says
     // a hair less than the last one is the clock's jitter.
     const h = this.heardOn(now);
-    const next = this.unshown(plan);
+    const next = this.unshown(play);
     const pos = Math.max(this.playClock(h.pos, next.at, next.ready), this.reached);
     this.reached = pos;
     if (this.behind) this.began?.even.behind();
     else this.began?.even.tick(now, pos, h.source);
-    plan.extend(pos + READ_AHEAD);
-    this.aplan?.extend(pos + READ_AHEAD);
-    // The frame due, but never past a piece's first or last frame without
-    // drawing it: a frame at the edge of a piece can be due for less than a
-    // display frame, and the frame before a cut is the one that says where
-    // the cut is.
-    const k = Math.max(this.k, Math.min(plan.gridAt(pos), plan.nextEdge(this.k)));
-    if (pos >= this.program.end || (plan.finished && k > plan.lastK)) {
+    if (pos >= play.end) {
       this.end();
       return;
     }
-    this.k = k;
+    // The frame due, but never past the first or last frame of a piece
+    // without drawing it: a frame at the edge of a piece can be due for
+    // less than a display frame, and the frame before a cut is the one
+    // that says where the cut is.
+    let due = -1;
+    for (let i = 0; i < play.shots.length && play.shots[i].at <= pos; i++) {
+      due = i;
+      if (play.shots[i].edge) break;
+    }
     let drew = false;
     let put: number | undefined;
-    const need = plan.need(k);
-    if (need) {
-      const slot = this.slotOf(need.run);
-      const onScreen = this.shown && this.shown.run === need.run && this.shown.rank === need.rank;
-      if (!onScreen) {
-        if (slot) {
-          while (slot.ready.length && slot.ready[0].rank < need.rank) {
-            this.closeFrame(slot.ready.shift()!.frame);
-          }
-          if (slot.ready[0]?.rank === need.rank) {
-            const h = slot.ready.shift()!;
-            const putting = performance.now();
-            this.put(h.frame, need.run, h.rank);
-            put = performance.now() - putting;
-            this.drawnFor = plan.moment(k) ?? this.drawnFor;
-            drew = true;
-            this.began?.even.put(now, plan.at(k));
-          } else {
-            this.stats.late++;
-          }
-        } else {
-          this.stats.late++;
-        }
-      }
+    if (due >= 0) {
+      const putting = performance.now();
+      const at = play.shots[due].at;
+      this.draw(play, due);
+      put = performance.now() - putting;
+      drew = true;
+      this.began?.even.put(now, at);
+    } else if (!play.shots.length && !play.picturesEnded && pos >= (this.due?.at ?? play.from) + this.video!.frame) {
+      // The next frame is due by now and has not come.
+      this.stats.late++;
     }
-    const there = this.program.locate(pos);
-    if (there) this.at = there.at;
+    if (this.due) this.at = this.due.moment + Math.max(0, pos - this.due.at);
     const telling = performance.now();
     this.emit({
       at: this.at,
-      frame: this.shown ? this.shownAt(this.shown.rank) : NaN,
+      frame: this.shown ? this.shown.begins : NaN,
       drew,
       playing: true,
       ended: false,
@@ -2080,12 +1710,7 @@ export class FrameQueue {
       trouble: this.trouble,
     });
     const feeding = performance.now();
-    // A run whose frames are all behind the playhead is done with.
-    for (const s of this.slots) if (s.run && s.run.id >= 0 && s.run.kLast < k) this.release(s);
-    plan.forget(k);
-    this.aplan?.forget(Math.round(pos * this.sampleRate));
     this.pump();
-    this.pumpSound();
     const done = performance.now();
     if (!this.behind && this.began) {
       const i = this.began.even.work({ late: begun - now, put, tell: feeding - telling, feed: done - feeding, all: done - begun });
@@ -2094,37 +1719,22 @@ export class FrameQueue {
     this.loop();
   }
 
-  // Where the first frame of the play not on screen yet starts on the
-  // program, see playClock, and whether it is ready: the frame due last, or
-  // the first after the frame on screen. Ready is decoded and waiting with
+  // Where the first frame of the play not on screen yet is drawn on the
+  // clock, see playClock, and whether it is ready: come and waiting with
   // what lies over it here, so a clock that goes on to it at once shows it
   // with its captions, the way the app does, which has the frame's time to
-  // fetch them, and with the sound up to its moment on the sound card, so
-  // a clock that goes on as fast as the frames are decoded never plays
-  // past the sound, which the app's sound card plays as it comes. A layer still on its way is asked for first. A run's
-  // frames only go on, so in a play a frame of the run before the one on
-  // screen is up too. A pause puts up the frame that holds the playhead,
-  // see hold, which can be the one after the frame due, and the frame due
-  // never came then. A frame put up before this play is of another plan,
-  // whose runs are counted from 0 again. A frame no decoder is working on
-  // never comes, so the clock stands on it nowhere, and the play goes by
-  // the sound card's time the way it does in the app. Past what the plan
-  // has worked out, nowhere too.
-  private unshown(plan: VideoPlan): { at: number; ready: () => boolean } {
-    const s = this.shown;
-    const thisPlay = this.putFor === this.ticket;
-    const up = (need: Need | null) =>
-      !need || (s?.run === need.run && (s.rank === need.rank || (thisPlay && s.rank > need.rank)));
-    let k = this.k;
-    if (up(plan.need(k))) do k++; while (plan.need(k) && up(plan.need(k)));
-    const need = plan.need(k);
-    const slot = need && this.slotOf(need.run);
-    const decoded = !!slot && slot.ready.some((h) => h.rank === need.rank);
-    const at = plan.at(k);
-    const onItsWay = decoded || (slot?.decoder.decodeQueueSize ?? 0) > 0;
-    const sounded = () => this.soundDone || !this.aplan || (this.c0 !== null && this.m0 / this.sampleRate + (this.handedTo - this.c0) >= at);
-    const ready = () => decoded && !(this.video && this.over?.ready?.(this.shownAt(need!.rank))) && sounded();
-    return { at: Number.isNaN(at) || !onItsWay ? Infinity : at, ready };
+  // fetch them, and with the sound up to its place on the sound card, so a
+  // clock that goes on as fast as the frames come never plays past the
+  // sound, which the app's sound card plays as it comes. A layer still on
+  // its way is asked for first. A frame still on its way from the Go side
+  // holds the clock where it is, and once the Go side has sent the last,
+  // the play goes by the sound card's time the way it does in the app.
+  private unshown(play: GoPlay): { at: number; ready: () => boolean } {
+    const s = play.shots[0];
+    if (!s) return { at: play.picturesEnded ? Infinity : this.reached, ready: () => false };
+    const sounded = () => play.soundEnded || (this.c0 !== null && this.m0 / this.sampleRate + (this.handedTo - this.c0) >= s.at);
+    const ready = () => !(this.video && this.over?.ready?.(s.begins)) && sounded();
+    return { at: s.at, ready };
   }
 
   // When the page next has nothing to do after an animation frame: a
@@ -2145,269 +1755,51 @@ export class FrameQueue {
     this.idler.port2.postMessage(0);
   }
 
+  // The play reached its end. Stopped at the end, the picture is the last
+  // frame of what played: nearly always it has come, and where it has
+  // not, it is asked for on its own, as a paused frame is.
   private end() {
-    const plan = this.vplan!;
-    const last = this.program.lastPiece;
+    const play = this.goPlay!;
     this.state = "ended";
-    this.at = last ? last.end : this.at;
-    this.k = plan.lastK;
+    let last = -1;
+    while (last + 1 < play.shots.length && play.shots[last + 1].at < play.end) last++;
+    if (last >= 0) this.draw(play, last);
+    if (this.due) this.at = this.due.moment + Math.max(0, play.end - this.due.at);
     this.trace(`played to the end, ${this.at.toFixed(3)} s, ${this.howItWent()}`);
-    this.report();
+    this.report(last >= 0);
     // The sound card is held once the last of the sound has been heard.
     // Anything that plays or seeks after the end clears this first.
     this.suspendTimer = window.setTimeout(() => {
       if (this.state === "ended") void this.audio.suspend();
     }, 300);
-    // Stopped at the end, the picture is the last frame of what played.
-    // The frames are drawn on a grid of frames from where the play began,
-    // so a play that began inside a frame reaches the end with the frame
-    // before the last on screen, and the last never drawn: the playback
-    // walk found it, the frame 24.40 standing on a clip that ended at
-    // 24.72. Nearly always it is decoded already, and where it is not, it
-    // is decoded on its own, as a paused frame is.
-    if (!last || !this.video) return;
-    // The frame that holds the moment a frame before the end, see frameAt
-    // in lib/flow.ts.
-    const holds = Math.max(last.start, last.end - this.video.frame);
-    const want = rankAt(this.video.samples, holds);
-    if (this.shown?.rank === want) return;
-    for (const slot of this.slots) {
-      const i = slot.ready.findIndex((h) => h.rank === want);
-      if (i < 0 || !slot.run) continue;
-      const [h] = slot.ready.splice(i, 1);
-      this.put(h.frame, slot.run.id, h.rank);
-      this.report(true);
-      return;
-    }
-    void this.still(this.at, holds);
+    if (last < 0 && play.picturesEnded === false && this.video) void this.still(this.at, Math.max(0, this.at - this.video.frame));
   }
 
-  private slotOf(run: number): Slot | null {
-    return this.slots.find((s) => s.run?.id === run) ?? null;
-  }
+  // ---- Pulling the pictures and the sound
 
-  // ---- Feeding the picture
-
+  // Asks the Go side for the frames and the sound the play needs next: a
+  // few frames ahead, and the sound a second ahead of what is heard.
   private pump() {
-    const plan = this.vplan;
-    if (!plan || (this.state !== "starting" && this.state !== "playing" && this.state !== "cued")) return;
-    // Put runs on free decoders: the run being drawn, and the next one
-    // once it is close.
-    for (const run of plan.runs) {
-      if (run.kLast < this.k || this.slotOf(run.id)) continue;
-      if (plan.at(run.kFirst) - plan.at(this.k) > NEXT_AHEAD) break;
-      const slot = this.slots[run.id % 2];
-      if (slot.run) break;
-      slot.run = run;
-      slot.keeper = new Keeper(plan, run);
-      slot.next = run.key;
-      slot.firstRank = plan.need(run.kFirst)?.rank ?? 0;
-    }
-    for (const slot of this.slots) this.feed(slot);
-  }
-
-  private feed(slot: Slot) {
-    const run = slot.run;
-    const plan = this.vplan;
-    if (!run || !plan || slot.decoder.state !== "configured") return;
-    const s = this.video!.samples;
-    // The frame that holds the moment the play starts from. Every other
-    // frame is read ahead of it.
-    const first = plan.need(0);
-    while (slot.next <= run.last) {
-      const busy = slot.decoder.decodeQueueSize;
-      const hungry = busy === 0 && slot.ready.length === 0;
-      if (busy >= 3 || (slot.ready.length + slot.coming >= DEPTH && !hungry)) return;
-      const i = slot.next;
-      const ts = stamp(run.id, ticks(s, i) / s.timescale);
-      const rank = i;
-      slot.fed.set(ts, rank);
-      const wanted = rank >= slot.firstRank && rank <= run.lastRank;
-      if (wanted) slot.coming++;
-      const place = wanted && first?.run === run.id && first.rank === rank;
-      slot.decoder.decode(ts, true, NO_DATA, rank, wanted, slot.firstRank, place);
-      slot.next++;
-    }
-    // Everything fed. Once no later piece can carry the run on, the decoder
-    // is flushed so the last frames come out without waiting for more.
-    const closed = plan.finished || plan.runs[plan.runs.length - 1] !== run;
-    if (closed && !slot.flushing) {
-      slot.flushing = true;
-      const ticket = this.ticket;
-      slot.decoder.flush().then(
-        () => {
-          if (ticket === this.ticket) this.maybeBegin();
-        },
-        () => {},
-      );
-    }
-  }
-
-  private frameOut(slot: Slot, frame: Picture) {
-    this.stats.open++;
-    this.stats.mostOpen = Math.max(this.stats.mostOpen, this.stats.open);
-    this.stats.decoded++;
-    const rank = slot.fed.get(frame.timestamp);
-    slot.fed.delete(frame.timestamp);
-    const run = slot.run;
-    if (rank === undefined || !run || this.closed) {
-      this.stats.unseen++;
-      this.closeFrame(frame);
-      return;
-    }
-    if (rank >= slot.firstRank && rank <= run.lastRank) slot.coming = Math.max(0, slot.coming - 1);
-    // A still: kept for still() to pick out.
-    if (run.id < 0) {
-      if (rank === run.lastRank) {
-        slot.ready.push({ frame, rank });
-        this.over?.coming(this.shownAt(rank));
-      }
-      else {
-        this.stats.unseen++;
-        this.closeFrame(frame);
-      }
-      return;
-    }
-    if (!slot.keeper || !slot.keeper.offer(rank)) {
-      this.stats.unseen++;
-      this.closeFrame(frame);
-    } else {
-      slot.ready.push({ frame, rank });
-      this.over?.coming(this.shownAt(rank));
-    }
-    if (this.state === "starting" || this.state === "cued") this.maybeBegin();
-    this.pump();
-  }
-
-  // ---- Feeding the sound
-
-  private pumpSound() {
-    const plan = this.aplan;
-    const dec = this.soundDecoder;
-    if (!plan || !dec || dec.state !== "configured" || this.soundDone) return;
-    if (this.state !== "starting" && this.state !== "playing" && this.state !== "cued") return;
-    const s = this.sound!.samples;
+    const play = this.goPlay;
+    if (!play || (this.state !== "starting" && this.state !== "playing" && this.state !== "cued")) return;
+    play.more(DEPTH);
+    if (play.soundEnded || play.pullingSoundNow) return;
     const rate = this.sampleRate;
     const heard = this.c0 === null ? this.m0 : Math.round(this.position(performance.now()) * rate);
     const ahead = (this.c0 === null ? SOUND_FIRST * 2 : this.behind ? SOUND_BEHIND : SOUND_AHEAD) * rate;
-    for (;;) {
-      if (!this.soundRun) {
-        const next = plan.runs.find((r) => !this.soundRunDone.has(r.id));
-        if (!next) {
-          if (plan.finished) this.finishSound();
-          return;
-        }
-        this.soundRun = next;
-        this.soundNext = next.first;
+    if (this.soundTo - heard >= ahead) return;
+    void play.moreSound().then((chunks) => {
+      if (play !== this.goPlay || this.closed) return;
+      for (const c of chunks) {
+        if (c.out + c.length <= this.soundTo) continue;
+        this.stats.soundDecoded++;
+        this.soundTo = c.out + c.length;
+        this.hand(c);
       }
-      const run = this.soundRun;
-      if (this.soundNext > run.last) {
-        const closed = plan.finished || plan.runs[plan.runs.length - 1] !== run;
-        if (!closed) return;
-        // A cut that is not carried on: what the decoder still holds is
-        // put out before the next run's lead starts.
-        this.soundRunDone.add(run.id);
-        this.soundRun = null;
-        void dec.flush().catch(() => {});
-        continue;
-      }
-      if (this.soundReach - heard >= ahead || dec.decodeQueueSize >= 8) return;
-      const j = this.soundNext;
-      const ts = stamp(run.id, ticks(s, j) / s.timescale);
-      this.soundFed.push({ ts, run, j, length: (s.step / s.timescale) * 1e6 });
-      this.soundNext++;
-      const p = plan.packet(j);
-      for (const sl of plan.slices(run, j, p.n)) this.soundReach = Math.max(this.soundReach, sl.out + (sl.to - sl.from));
-      dec.decode(ts, NOTHING, p.at, p.n);
-    }
-  }
-
-  private finishSound() {
-    if (this.soundDone || !this.soundDecoder) return;
-    this.soundDone = true;
-    const ticket = this.ticket;
-    this.soundDecoder.flush().then(
-      () => {
-        if (ticket !== this.ticket) return;
-        if (this.pending) {
-          this.hand(this.pending);
-          this.pending = null;
-        }
-        this.maybeBegin();
-      },
-      () => {},
-    );
-  }
-
-  private soundOut(d: Sound) {
-    // The decoder says the rate it puts the sound out at. Where that is not
-    // the rate the file said, HE-AAC said only inside its sound above all,
-    // the play starts over at the decoder's rate, before anything is heard.
-    if (this.sound && this.c0 === null && Math.abs(d.sampleRate - this.sound.sampleRate) > 1) {
-      d.close();
-      this.sound.sampleRate = d.sampleRate;
-      this.start(this.startFrom, this.state === "cued");
-      return;
-    }
-    // A packet that came out as nothing is passed over: the stretch is
-    // further on than that packet could be by its stamp, and as near to
-    // the next one as it should be.
-    const q = this.soundFed;
-    while (
-      q.length > 1 &&
-      Math.abs(q[0].ts - d.timestamp) > q[0].length &&
-      Math.abs(q[1].ts - d.timestamp) < Math.abs(q[0].ts - d.timestamp)
-    ) {
-      q.shift();
-    }
-    const fed = q.shift();
-    this.stats.soundDecoded++;
-    if (!fed || !this.aplan) {
-      d.close();
-      return;
-    }
-    const plan = this.aplan;
-    const parts = plan.decoded(fed.run, fed.j, d.numberOfFrames);
-    if (parts.length) {
-      const channels = d.numberOfChannels;
-      const rate = this.sampleRate;
-      for (let c = 0; c < channels; c++) {
-        if (!this.scratch[c] || this.scratch[c].length < d.numberOfFrames) this.scratch[c] = new Float32Array(Math.max(d.numberOfFrames, 4096));
-        d.copyTo(this.scratch[c], { planeIndex: c, format: "f32-planar" });
-      }
-      for (const sl of parts) {
-        let at = sl.from;
-        while (at < sl.to) {
-          const out = sl.out + (at - sl.from);
-          if (this.pending && (this.pending.out + this.pending.length !== out || this.pending.data.length !== channels)) {
-            this.hand(this.pending);
-            this.pending = null;
-          }
-          if (!this.pending) {
-            this.pending = { out, length: 0, data: Array.from({ length: channels }, () => new Float32Array(CHUNK)) };
-          }
-          const p = this.pending;
-          const n = Math.min(sl.to - at, CHUNK - p.length);
-          for (let c = 0; c < channels; c++) {
-            const src = this.scratch[c];
-            const dst = p.data[c];
-            for (let i = 0; i < n; i++) {
-              const m = out + i;
-              dst[p.length + i] = src[at + i] * fade(m, sl.pieceOut, sl.pieceEnd, rate);
-            }
-          }
-          p.length += n;
-          at += n;
-          if (p.length === CHUNK) {
-            this.hand(p);
-            this.pending = null;
-          }
-        }
-      }
-    }
-    d.close();
-    if (this.state === "starting" || this.state === "cued") this.maybeBegin();
-    this.pumpSound();
+      if (play.trouble && play.soundEnded && this.sound) this.fault(`The sound stopped decoding: ${play.trouble.replace(/\.$/, "")}.`);
+      if (this.state === "starting" || this.state === "cued") this.maybeBegin();
+      this.pump();
+    });
   }
 
   // A stretch of sound to the sound card, or kept until the clock starts.
@@ -2449,16 +1841,16 @@ export class FrameQueue {
     this.clip(src);
   }
 
-  // A stretch on the sound card stops where the program ends, or at its
-  // own end while the program loops. The sound ends with the last piece
-  // faded out to nothing at its edge, see fade, so stopped there it stops
-  // in silence, wherever the stretch began. Asked again it moves the stop,
-  // which a source allows until it has stopped, so the loop switched on
-  // and off a dozen times in the last second leaves the sound as it was.
+  // A stretch on the sound card stops where the play ends, or at its own
+  // end while the play loops. The sound ends with the last piece faded out
+  // to nothing at its edge, so stopped there it stops in silence, wherever
+  // the stretch began. Asked again it moves the stop, which a source
+  // allows until it has stopped, so the loop switched on and off a dozen
+  // times in the last second leaves the sound as it was.
   private clip(src: AudioBufferSourceNode) {
     const own = this.sources.get(src);
     if (own === undefined || this.c0 === null) return;
-    const end = this.program.end;
+    const end = this.goPlay?.end ?? Infinity;
     const at = Number.isFinite(end) ? this.c0 + (Math.round(end * this.sampleRate) - this.m0) / this.sampleRate : own;
     try {
       src.stop(Math.max(0, Math.min(at, own)));

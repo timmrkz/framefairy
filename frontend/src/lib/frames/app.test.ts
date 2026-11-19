@@ -1,50 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { AppFrames, AppPictures } from "./app";
+import { AppFrames } from "./app";
 import type { VideoTrack } from "./movie";
 import { Picture } from "./picture";
-
-// Frames that come at once, each knowing its rank. out(n) settles once
-// the decoder has put out n frames, heard from its own output.
-function pictures() {
-  const shown: number[] = [];
-  let waiting: { n: number; done: () => void }[] = [];
-  const frames = {
-    frame: (rank: number) => Promise.resolve({ rank, close() {} } as unknown as Picture),
-  } as unknown as AppFrames;
-  const put = (f: unknown) => {
-    shown.push((f as { rank: number }).rank);
-    const due = waiting.filter((w) => shown.length >= w.n);
-    waiting = waiting.filter((w) => shown.length < w.n);
-    for (const w of due) w.done();
-  };
-  const dec = new AppPictures(frames, put, () => {});
-  const out = (n: number) =>
-    new Promise<number[]>((done) => {
-      if (shown.length >= n) return done(shown);
-      waiting.push({ n, done: () => done(shown) });
-    });
-  return { dec, shown, out };
-}
-
-describe("AppPictures", () => {
-  test("a run fed after a flush starts from its own first frame, lower ranks too", async () => {
-    // The clip's last piece, then its start the next time through a loop,
-    // on the same decoder. The start was held back for good, waiting for
-    // the rank after the last piece's end (2.264).
-    const { dec, shown, out } = pictures();
-    for (const r of [84, 85, 86]) dec.decode(r, false, new Uint8Array(0), r, true, 84);
-    await dec.flush();
-    expect(shown).toEqual([84, 85, 86]);
-    for (const r of [0, 1, 2]) dec.decode(r, false, new Uint8Array(0), r, true, 0);
-    expect(await out(6)).toEqual([84, 85, 86, 0, 1, 2]);
-  });
-
-  test("frames come out in the order they are shown, whatever order they are fed in", async () => {
-    const { dec, out } = pictures();
-    for (const r of [10, 13, 11, 12]) dec.decode(r, false, new Uint8Array(0), r, true, 10);
-    expect(await out(4)).toEqual([10, 11, 12, 13]);
-  });
-});
 
 describe("AppFrames", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -57,6 +14,27 @@ describe("AppFrames", () => {
     let paused = false;
     app.paused = () => paused;
     app.cards([150]);
+    expect(app.stats.ahead).toBe(0);
+    paused = true;
+    app.aheadNow();
+    expect(app.stats.ahead).toBe(1);
+    app.close();
+  });
+
+  // A play asked for holds the reading ahead until it has begun and
+  // stopped, and a play asked for that never began until the hand asks
+  // again.
+  test("wait for a play asked for, and are read once it has played and stopped", () => {
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+    const { app } = frames(() => ({ width: 4, height: 2 }));
+    let paused = true;
+    app.paused = () => paused;
+    app.hold();
+    app.cards([150]);
+    expect(app.stats.ahead).toBe(0);
+    paused = false;
+    app.began();
+    app.aheadNow();
     expect(app.stats.ahead).toBe(0);
     paused = true;
     app.aheadNow();
@@ -106,7 +84,7 @@ describe("AppFrames", () => {
     app.paused = () => true;
     const was = asked;
     app.keep(40, picture(40, 4, 2));
-    const f = await app.frame(40, 0, undefined, true);
+    const f = await app.frame(40, 0);
     expect(f).not.toBe(null);
     expect(asked).toBe(was);
     expect(app.stats.kept).toBe(1);
@@ -192,34 +170,6 @@ function goSide(rate = 25) {
   return { app, asked, pulls, rankOf };
 }
 
-describe("a stream asked for a frame while a pull is on its way", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  // The pull on its way skips to a frame further on, so the frame asked
-  // for in between never comes from it. It was handed the frame before
-  // it that was kept instead, under its own rank, and the video preview
-  // showed the frame before the one it said, issue #358.
-  test("still gets its own frame when the pull skips past it", async () => {
-    const { app, asked, pulls, rankOf } = goSide();
-    const ten = app.frame(10, 0);
-    await pulls(1);
-    asked[0].give([10]);
-    expect(await rankOf(ten)).toBe(10);
-    const twenty = app.frame(20, 0);
-    await pulls(2);
-    expect(asked[1].url).toContain("skip=");
-    const fourteen = app.frame(14, 0);
-    asked[1].give([19, 20]);
-    expect(await rankOf(twenty)).toBe(20);
-    // Either the frame comes as it is, or it is asked of the Go side again.
-    const first = await Promise.race([rankOf(fourteen), pulls(3).then(() => "asked again")]);
-    expect(first).toBe("asked again");
-    asked[2].give([14]);
-    expect(await rankOf(fourteen)).toBe(14);
-    app.close();
-  });
-});
-
 describe("a place while the video preview stands still", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -233,7 +183,7 @@ describe("a place while the video preview stands still", () => {
     app.shownRank = () => 3;
     const passed: number[] = [];
     app.onPassing = (rank) => passed.push(rank);
-    const place = app.frame(40, 0, undefined, true);
+    const place = app.frame(40, 0);
     await pulls(1);
     expect(asked[0].url).toContain("/frames/look?");
     expect(asked[0].url).toContain("frame=40");
@@ -253,9 +203,9 @@ describe("a place while the video preview stands still", () => {
   test("asked twice at once is one look", async () => {
     const { app, asked, pulls, rankOf } = goSide();
     app.paused = () => true;
-    const still = app.frame(40, 0, undefined, true);
+    const still = app.frame(40, 0);
     await pulls(1);
-    const cue = app.frame(40, 0, undefined, true);
+    const cue = app.frame(40, 0);
     asked[0].give([40], "", true);
     expect(await rankOf(still)).toBe(40);
     expect(await rankOf(cue)).toBe(40);
@@ -270,11 +220,11 @@ describe("a place while the video preview stands still", () => {
   test("says where it stands among what the window sent", async () => {
     const { app, asked, pulls } = goSide();
     app.paused = () => true;
-    void app.frame(40, 0, undefined, true);
+    void app.frame(40, 0);
     await pulls(1);
     app.ahead([60]);
     await pulls(2);
-    void app.frame(80, 0, undefined, true);
+    void app.frame(80, 0);
     await pulls(3);
     const sent = asked.map((a) => new URL(a.url, "http://x").searchParams);
     expect(new Set(sent.map((q) => q.get("win"))).size).toBe(1);
@@ -288,7 +238,7 @@ describe("a place while the video preview stands still", () => {
   test("overtaken by a newer one gets nothing", async () => {
     const { app, asked, pulls, rankOf } = goSide();
     app.paused = () => true;
-    const old = app.frame(40, 0, undefined, true);
+    const old = app.frame(40, 0);
     await pulls(1);
     asked[0].overtaken();
     expect(await rankOf(old)).toBe(null);
@@ -315,15 +265,15 @@ describe("the frames read while the hand rests", () => {
     read.give([59, 60, 150]);
     await app.rested();
     const before = asked.length;
-    expect(await rankOf(app.frame(60, 0, undefined, true))).toBe(60);
-    expect(await rankOf(app.frame(150, 0, undefined, true))).toBe(150);
+    expect(await rankOf(app.frame(60, 0))).toBe(60);
+    expect(await rankOf(app.frame(150, 0))).toBe(150);
     expect(asked.length).toBe(before);
     app.ahead([70]);
     await pulls(before + 1);
     expect(new URL(asked[before].url, "http://x").searchParams.get("has")?.split(",")).toContain("150");
     app.cards([]);
     asked[before].give([]);
-    const look = app.frame(150, 0, undefined, true);
+    const look = app.frame(150, 0);
     await pulls(before + 3);
     expect(asked.slice(before).some((a) => a.url.includes("/frames/look?") && a.url.includes("frame=150"))).toBe(true);
     app.close();

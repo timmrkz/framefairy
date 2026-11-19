@@ -1,5 +1,6 @@
 // Reading a pull of frames from the Go side, see cmd/framefairy-app/
-// frames.go: each frame is where it starts, 8 bytes, then the frame in
+// frames.go: each frame is where it starts, 8 bytes, and for a play what
+// more the Go side says of it, 8 bytes each, see servePlay, then the frame in
 // colours, RGBA with 8 bits each and an opaque alpha, which ffmpeg made
 // from the file's tags. Each frame is read straight into a buffer of its
 // own as the answer arrives and kept as it is, so a frame is copied once
@@ -34,21 +35,22 @@ export type Pulled = {
   near: boolean;
   // Each frame's pixels, see Picture. They are bytes rather than a
   // Picture so they can come from a Worker, see pictures.
-  frames: { at: number; data: ArrayBuffer }[];
+  frames: { at: number; data: ArrayBuffer; stamp: number[] }[];
   // The buffers handed to the pull that it had no frame for, to be kept
   // for the next, see pool.ts.
   spare: ArrayBuffer[];
 };
 
 // The frames of a pull as Pictures of width by height.
-export function pictures(got: Pulled, width: number, height: number): { at: number; frame: Picture }[] {
-  return got.frames.map(({ at, data }) => ({ at, frame: new Picture(data, width, height, Math.round(at * 1e6), got.light) }));
+export function pictures(got: Pulled, width: number, height: number): { at: number; frame: Picture; stamp: number[] }[] {
+  return got.frames.map(({ at, data, stamp }) => ({ at, stamp, frame: new Picture(data, width, height, Math.round(at * 1e6), got.light) }));
 }
 
 // The frames are colours ready to draw, see framewire.Picture. Nothing
 // here decides colour. Each frame is read into one of the spare buffers
-// while there are any of its size, and into a new one after.
-export async function pull(url: string, width: number, height: number, spare: ArrayBuffer[] = []): Promise<Pulled> {
+// while there are any of its size, and into a new one after. head is how
+// many bytes come before each frame.
+export async function pull(url: string, width: number, height: number, spare: ArrayBuffer[] = [], head = 8): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
   if (!res) return { status: 0, end: false, error: "", closed: false, times: "", light: "", exact: false, kept: false, near: false, frames: [], spare };
   const out: Pulled = {
@@ -68,7 +70,7 @@ export async function pull(url: string, width: number, height: number, spare: Ar
   const fits = spare.filter((b) => b.byteLength === size);
   out.spare = fits;
   if (!res.ok || !res.body) return out;
-  const head = new Uint8Array(8);
+  const before = new Uint8Array(head);
   let headHas = 0;
   let body: ArrayBuffer | null = null;
   let bodyHas = 0;
@@ -78,12 +80,12 @@ export async function pull(url: string, width: number, height: number, spare: Ar
     if (done) break;
     let at = 0;
     while (at < value.length) {
-      if (headHas < 8) {
-        const n = Math.min(8 - headHas, value.length - at);
-        head.set(value.subarray(at, at + n), headHas);
+      if (headHas < head) {
+        const n = Math.min(head - headHas, value.length - at);
+        before.set(value.subarray(at, at + n), headHas);
         headHas += n;
         at += n;
-        if (headHas === 8) {
+        if (headHas === head) {
           body = fits.pop() ?? new ArrayBuffer(size);
           bodyHas = 0;
         }
@@ -94,8 +96,10 @@ export async function pull(url: string, width: number, height: number, spare: Ar
       bodyHas += n;
       at += n;
       if (bodyHas === size) {
-        const when = new DataView(head.buffer).getFloat64(0, true);
-        out.frames.push({ at: when, data: body! });
+        const v = new DataView(before.buffer);
+        const stamp: number[] = [];
+        for (let i = 8; i + 8 <= head; i += 8) stamp.push(v.getFloat64(i, true));
+        out.frames.push({ at: v.getFloat64(0, true), data: body!, stamp });
         headHas = 0;
         body = null;
       }
