@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { movieOf } from "./movie";
+import { GoPlay } from "./play";
 import { FrameQueue, type Shown } from "./queue";
 
 // The queue without a browser: a canvas that draws nothing, no sound card
@@ -705,11 +706,89 @@ describe("a play the Go side closed", () => {
     expect(shut()).toBe(1);
   });
 
-  test("playing starts again from the playhead", () => {
+  // A stop the person hears, so a walk counts it.
+  test("playing starts again from the playhead, and counts as a start", () => {
     const { inside, shut } = closed("playing");
     expect(inside.state).toBe("starting");
     expect(inside.startFrom).toBe(61);
     expect(shut()).toBe(1);
+    expect((inside as unknown as { stats: { starts: number } }).stats.starts).toBe(1);
+  });
+});
+
+// A clip changed while it plays: the new play was taken at once on the
+// Go side, which stopped the play under way while the window still pulled
+// from it, and the window, told it was closed, started the play again.
+describe("a play taking over from the one under way", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function underWay() {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    type Inside = {
+      app: unknown;
+      goPlay: unknown;
+      state: string;
+      c0: number | null;
+      m0: number;
+      audio: { currentTime: number; sampleRate: number };
+      stats: { starts: number };
+      pump(): void;
+      previewSize(): unknown;
+      takeOver(was: unknown, at: number, pieces: unknown, loop: boolean): Promise<void>;
+    };
+    const inside = q as unknown as Inside;
+    const said: string[] = [];
+    const was = { shots: [], close: () => said.push("old closed") };
+    inside.app = {};
+    inside.goPlay = was;
+    inside.state = "playing";
+    inside.c0 = 0;
+    inside.m0 = 61 * 48000;
+    inside.audio = { currentTime: 0.1, sampleRate: 48000 };
+    inside.pump = () => {};
+    inside.previewSize = () => ({ width: 2, height: 2 });
+    return { inside, was, said };
+  }
+
+  function next(said: string[]) {
+    return { shots: [], moment: 61.25, go: () => said.push("new let go"), close: () => said.push("new closed") } as unknown as GoPlay;
+  }
+
+  test("comes as a cue, and takes the decoder only once it is the one drawn", async () => {
+    const { inside, was, said } = underWay();
+    const asks: { cue: boolean }[] = [];
+    vi.spyOn(GoPlay, "open").mockImplementation(async (_app, ask) => {
+      asks.push(ask);
+      said.push("asked");
+      return next(said);
+    });
+    await inside.takeOver(was, 61.25, [{ start: 60, end: 64 }], false);
+    expect(asks.map((a) => a.cue)).toEqual([true]);
+    expect(said).toEqual(["asked", "new let go", "old closed"]);
+    expect(inside.goPlay).not.toBe(was);
+    expect(inside.stats.starts).toBe(0);
+  });
+
+  test("whose place the sound passed while it was asked for, is asked for again further on", async () => {
+    const { inside, was, said } = underWay();
+    const places: number[] = [];
+    vi.spyOn(GoPlay, "open").mockImplementation(async (_app, ask) => {
+      places.push(ask.after?.at ?? NaN);
+      // The answer came after the sound had passed the first place.
+      if (places.length === 1) inside.audio.currentTime = 0.3;
+      return next(said);
+    });
+    await inside.takeOver(was, 61.25, [{ start: 60, end: 64 }], false);
+    expect(places.length).toBe(2);
+    expect(places[1]).toBeGreaterThan(61.3);
+    expect(said).toEqual(["new closed", "new let go", "old closed"]);
+    expect(inside.stats.starts).toBe(0);
   });
 });
 

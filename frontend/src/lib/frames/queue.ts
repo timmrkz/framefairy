@@ -146,6 +146,9 @@ const SOUND_FIRST = 0.15;
 // starts, seconds: its first frames are kept on the Go side, and its
 // sound has to come before that place is heard, see changed.
 const TAKE_OVER = 0.15;
+// How many times a take over is tried with its place moved on, see
+// takeOver, before the play starts again from the playhead.
+const TAKE_OVER_TRIES = 3;
 // How far ahead of the sound card's clock a play's first sound is put,
 // seconds. The sound card renders a buffer at a time, and a stretch put
 // where it has rendered already starts late and out of step with the
@@ -627,12 +630,17 @@ export class FrameQueue {
   // its clock, see changed. Where the Go side says the new pieces do not
   // hold the moment that place stands for, the play goes on as it was,
   // and the pieces are the next play's.
-  private async takeOver(was: GoPlay, at: number, pieces: Piece[], loop: boolean) {
+  //
+  // The new play comes as a cue and takes the decoder only once it is the
+  // one drawn: taken at once, the Go side stopped the play under way
+  // while the window still pulled from it, and the window, told it was
+  // closed, started the play again, the stop this exists to prevent.
+  private async takeOver(was: GoPlay, at: number, pieces: Piece[], loop: boolean, tries = 1): Promise<void> {
     if (!this.app) return;
     const key = this.wantedKey;
     const next = await GoPlay.open(
       this.app,
-      { pieces, loop, at: this.at, rate: this.sampleRate, channels: this.channels, cue: false, after: { play: was, at } },
+      { pieces, loop, at: this.at, rate: this.sampleRate, channels: this.channels, cue: true, after: { play: was, at } },
       this.previewSize(),
     );
     if (typeof next === "string") {
@@ -645,6 +653,15 @@ export class FrameQueue {
     }
     if (was !== this.goPlay || this.closed || key !== this.wantedKey || this.c0 === null) {
       next.close();
+      return;
+    }
+    // The sound went past the place while the Go side answered: the
+    // place is moved on, a few times, before the play starts again.
+    if (at <= this.sounded()) {
+      next.close();
+      this.trace(`the take over at ${at.toFixed(3)} s came after the sound had passed it, try ${tries}`);
+      if (tries < TAKE_OVER_TRIES) return this.takeOver(was, Math.max(this.reached, this.sounded()) + TAKE_OVER, pieces, loop, tries + 1);
+      this.start(this.at);
       return;
     }
     this.trace(`the clip changed while it plays, a play of it takes over at ${next.moment.toFixed(3)} s, ${((at - this.sounded()) * 1000).toFixed(0)} ms ahead of the sound`);
@@ -666,6 +683,9 @@ export class FrameQueue {
     this.soundTo = Math.min(this.soundTo, Math.round(at * this.sampleRate));
     // What the play before has come up to that place is drawn first.
     next.shots.unshift(...was.shots.splice(0));
+    // The new play takes the decoder before the old one lets it go, so
+    // nothing is read ahead in between.
+    next.go();
     was.close();
     this.goPlay = next;
     if (!this.sound) next.soundEnded = true;
@@ -1495,14 +1515,15 @@ export class FrameQueue {
 
   // The Go side closed the play under way: a play paused or cued and left
   // standing is closed once nobody has pulled from it for a while. One
-  // playing starts again from the playhead, a moment's stop, and one
+  // playing starts again from the playhead, a moment's stop the person
+  // hears, so it counts as a start and a walk sees it, and one
   // paused or cued is dropped, so the space bar starts a play of its own.
   // Cued again, a cue left standing was made again and again for as long
   // as the app stood paused.
   private lost() {
     this.trace(`the play was closed on the Go side, ${this.state} at ${this.at.toFixed(3)} s`);
     if (this.state === "playing" || this.state === "starting") {
-      this.start(this.at, "again");
+      this.start(this.at);
       return;
     }
     if (this.state === "ended") return;
