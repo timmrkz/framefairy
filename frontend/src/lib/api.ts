@@ -466,6 +466,10 @@ export interface CaptionsView {
   // what the hand changed, and this says how they go with the captions
   // the clip timeline holds, see spliced in lib/splice.ts.
   splice?: Splice;
+  // The words heard in the clip's cuts, with the word either side of each
+  // cut, on the episode's clock, which Shift and an arrow walk where the
+  // caption lights nothing. None for a clip without cuts.
+  inCuts?: Word[] | null;
 }
 
 // How the captions of a step of a drag go with the captions held from
@@ -585,6 +589,9 @@ export interface VideoState {
   searchComing?: boolean;
   // The video's window, or none while the video cannot be read.
   window?: WindowView | null;
+  // Go's stamp of the cards of what the video says, the transcript
+  // search's: they are read again when it changes, and only then.
+  cards?: string;
   // The key of the clip chosen, by a hand or by the Go side, or nothing.
   chosen?: string;
   // Where I and O can make a clip, see engine.MarkingOf, or none while
@@ -1159,9 +1166,6 @@ export const api = {
   // first, so it takes effect the moment it is pressed.
   stopClipWork: (path: string, click: string) => call<void>("StopClipWork", path, click),
   makeClip: (path: string, at: number, backward: boolean) => call<Job>("MakeClip", path, at, backward),
-  // The words said in a part of the episode, for walking the playhead
-  // from word to word.
-  words: (path: string, from: number, to: number) => call<Word[] | null>("Words", path, from, to),
   // What the video says, sentence by sentence, as far as it has been
   // heard, for searching it in the clip column.
   sentences: (path: string) => call<Sentence[] | null>("Sentences", path),

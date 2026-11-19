@@ -1859,6 +1859,11 @@ bubble scrolled by those eight pixels.
         quarter of a second elsewhere. Reading the caption makes all three
         right at once, and keeps them right, because whatever lights up is
         what these keys walk.
+      - **In a cut they walk the words heard there**, because the caption
+        lights nothing in a cut. Go sends them with the clip's captions,
+        with the word either side of each cut, `CaptionsView.InCuts`. The
+        clip timeline asked for ten minutes of the transcript after every
+        swipe for them before, #932.
       - **Which word to go to is decided by the word the playhead is in,
         never by how far it is from one.** The playhead is not where it was
         put: the picture answers with the frame it is showing, which can be
@@ -2353,9 +2358,14 @@ found is a place in the video, and I and O make a clip there.
   and never runs more than 12. Cards of twenty seconds and more were too
   much to read as one place, found by Tim. A sentence card is also cut at
   every edge of what a clip keeps, so it never holds a word a clip shows.
-  The cards are asked for again after every edit while the field is open,
-  and the engine lays out again only the captions of a clip set that
-  changed, see `PlanSummary.Said`.
+  The cards are asked for again whenever Go's stamp of them in the video's
+  state changes, `VideoState.Cards` from `Episode.SaidStamp`: the
+  transcript heard more, a clip set was written, by a hand or from outside
+  the app, or the look of its captions changed. While the field is closed
+  nothing is read. The window once decided this itself from the clips it
+  held, and missed a word corrected in a clip set outside the app, #933.
+  The engine lays out again only the captions of a clip set that changed,
+  see `PlanSummary.Said`.
 - **The clips stand out.** A card of a clip wears the chosen clip's
   accent edge, the clip's name next to its time and its words a step
   below white. The edge is one and the same in both lists, `.clip-edge`
@@ -2479,10 +2489,16 @@ found is a place in the video, and I and O make a clip there.
   clip dark for a moment, a flicker found by Tim. A clip chosen on the range picker or the clip timeline leaves
   its first card where it is when it is in view, and otherwise puts it at
   the top of the list, where the first card stands, and choosing it
-  again does it again. Every card is laid out at its own
-  height, never at a height guessed for the cards out of view, because a
-  guess put the place off as soon as the cards around it were laid out,
-  and WebKit keeps no anchor that would have made up for it. The accent
+  again does it again. The cards in view and a column either side are
+  built at once, and some twenty columns either side while the app is
+  idle and the list is not being scrolled, so opening the list and typing build only what is seen, and a
+  scroll moves through cards already built, as through a list built
+  whole. The room of the rest is their heights, guessed at the mean,
+  to the whole pixel, until a card has been built once, see
+  `lib/stack.svelte.ts`. A
+  guess that is off never moves the card in view or a card turned to:
+  the list keeps that card where it stands as the cards around it are
+  laid out, since WebKit keeps no anchor that would. The accent
   edge is the card's button's, so the grey a card takes under the hand
   never covers it.
 - **What was not transcribed is said.** With nothing typed, a part of the

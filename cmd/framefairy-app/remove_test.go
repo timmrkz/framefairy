@@ -307,3 +307,98 @@ func TestAnEpisodeAddedAgainTakesWork(t *testing.T) {
 	// and the removal failed on a folder that was no longer empty.
 	waitForSettled(t, s, source)
 }
+
+// measuringBy gives the service a measuring of the loudness whose every
+// measuring is counted and, until the measuring is stopped, holds, and
+// then writes the work folder the way the engine's does, so one that
+// outlived a removal is seen in the folder.
+func measuringBy(s *FrameFairy) *atomic.Int64 {
+	started := new(atomic.Int64)
+	s.levels = newMeasuring(s.store.machine, func(string) {})
+	s.levels.measure = func(ctx context.Context, path string, _ func() (float64, float64), _ func(float64)) error {
+		started.Add(1)
+		<-ctx.Done()
+		return afero.WriteFile(s.store.files, filepath.Join(engine.WorkDir(path), "logs", "levels.json"), []byte("{}"), 0o644)
+	}
+	return started
+}
+
+// A video removed with its files while a job on it takes its time to
+// stop, and its loudness asked for in the meantime, which the clip
+// timeline does when it opens and whenever the loudness grows. The measuring of its loudness must not
+// start again, because it would write the work folder back after the
+// removal deleted it.
+func TestTheWaveformAskedForDuringARemovalMeasuresNothing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, source, work := anEpisodeWithWork(t)
+		started := measuringBy(s)
+		release := make(chan struct{})
+		s.jobs.add(source, "render", "Render", stubbornJob(release))
+		waitForRunning(t, s, source)
+
+		removed := make(chan error)
+		go func() { removed <- s.RemoveEpisode(source, true) }()
+		// The removal now waits for the job, on the bubble's clock, which
+		// stands still while this goroutine runs.
+		synctest.Wait()
+		if _, err := s.loudness(source); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		close(release)
+		if err := <-removed; err != nil {
+			t.Fatalf("removing the video: %v", err)
+		}
+		// Quitting stops whatever is still measured, which then writes
+		// what it has, the way the engine's measuring does.
+		s.levels.shutDown()
+		if n := started.Load(); n != 0 {
+			t.Errorf("the loudness was measured %d times while the video was being removed", n)
+		}
+		if _, err := s.store.files.Stat(work); !os.IsNotExist(err) {
+			t.Errorf("the work folder is there again after the video was removed with its files: %v", err)
+		}
+	})
+}
+
+// A removal that fails leaves the video in the library, and its waveform
+// is measured again the next time it is asked for. A video removed and
+// added again is measured too.
+func TestAVideoThatStaysIsMeasuredAgain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, source, _ := anEpisodeWithWork(t)
+		started := measuringBy(s)
+		release := make(chan struct{})
+		defer close(release)
+		s.jobs.add(source, "render", "Render", stubbornJob(release))
+		waitForRunning(t, s, source)
+
+		// The job does not stop within the fifteen seconds the removal
+		// gives it, which pass on the bubble's clock in no time.
+		if err := s.RemoveEpisode(source, true); err == nil {
+			t.Fatal("the video was removed while a job was still running on it")
+		}
+		if _, err := s.loudness(source); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if n := started.Load(); n != 1 {
+			t.Errorf("the waveform of a video whose removal failed was measured %d times, not once", n)
+		}
+
+		// Removed for good, so it is measured no more, then added again.
+		s.levels.closeEpisode(source)
+		s.levels.start(source)
+		synctest.Wait()
+		if n := started.Load(); n != 1 {
+			t.Errorf("a removed video was measured again, %d times in all", n)
+		}
+		s.levels.openEpisode(source)
+		s.levels.start(source)
+		synctest.Wait()
+		if n := started.Load(); n != 2 {
+			t.Errorf("a video added again after its removal was measured %d times in all, not twice", n)
+		}
+		s.levels.shutDown()
+	})
+}

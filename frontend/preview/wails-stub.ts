@@ -2060,10 +2060,6 @@ const Answers = {
       }
       case "Sentences":
         return Promise.resolve(sentences());
-      case "Words":
-        if (location.search.includes("transcribing")) return Promise.resolve([]);
-        // What the video says, as it was heard, the way the Go side answers.
-        return Promise.resolve(words(Number(args[1]), Number(args[2])));
       // Removing waits for the episode's work to stop, which takes a
       // moment while a search runs. Every call is counted, so a probe can
       // see whether a second click sent a second removal.

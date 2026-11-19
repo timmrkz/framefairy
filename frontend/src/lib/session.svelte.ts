@@ -58,6 +58,9 @@ export class EpisodeSession {
   // The clip chosen as it will be once one of its parts is rotated a
   // quarter further, from the newest state kept, see Turns.
   turns = $state.raw<Turns>(NO_TURNS);
+  // Go's stamp of the cards of what the video says, from the newest state
+  // kept, see VideoState.cards.
+  cards = $state("");
   // The rev of the newest state kept.
   rev = $state(0);
   // The video's jobs in the newest state kept, the clips on their way
@@ -154,6 +157,7 @@ export class EpisodeSession {
       this.marking = same(this.marking, state.marking ?? null);
       this.heard = same(this.heard, state.heard);
       if (state.turns) this.turns = same(this.turns, state.turns);
+      this.cards = state.cards ?? "";
       this.jobs = state.jobs;
       kept = true;
       this.choose(state);

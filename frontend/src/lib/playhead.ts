@@ -182,9 +182,10 @@ export type ArrowKey = {
   // and its pieces, cuts left out.
   clip: Piece | null;
   pieces: Piece[];
-  // The words the caption lights, and every word heard.
+  // The words the caption lights, and the words heard in the clip's cuts
+  // with the word either side of each, see CaptionsView.inCuts.
   lit: Word[];
-  words: Word[];
+  inCuts: Word[];
   looping: boolean;
 };
 
@@ -201,9 +202,8 @@ export function arrowStep(k: ArrowKey): { to: number; word: boolean } | "clip" |
   // picking a clip walked the transcript and jumped out of the clip.
   if (k.through || !insideClip(k.clip ? [k.clip] : [], k.time, step)) return { to: k.time + sign * SKIP, word: false };
   // In a cut the caption lights nothing, so the words heard there are
-  // walked, and the caption's words arrive a moment after the clip is
-  // chosen, until when the words heard are the ones it will light.
-  const walk = k.lit.length && insideClip(k.pieces, k.time, step) ? k.lit : k.words;
+  // walked, which Go sends with the captions.
+  const walk = k.lit.length && insideClip(k.pieces, k.time, step) ? k.lit : k.inCuts;
   const to = wordStep(walk, k.time, k.back, step);
   if (to !== null) return { to, word: true };
   // Out of words. With loop on, the clip comes round the way a play of it
