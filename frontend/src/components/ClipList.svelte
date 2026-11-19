@@ -3,7 +3,7 @@
   import { clock, type ClipEntry } from "../lib/api";
   import { Carrier, type Away, type OnTheWayCard } from "../lib/arriving";
   import { hoverClip } from "../lib/hover";
-  import { secondThoughts } from "../lib/removed";
+  import { newsShows } from "../lib/removed";
   import Removed from "./Removed.svelte";
 
   import Busy from "./Busy.svelte";
@@ -100,8 +100,9 @@
     // The clips just taken out. Each keeps its place in the list for a
     // moment, showing what happened to it and offering it back, so the rows
     // do not jump out from under the pointer.
-    // With how many seconds of their time each has used.
-    removed?: Record<string, number>;
+    // With how many seconds of their time each has used, of how many in
+    // all, as Go said a clip removed can be put back for.
+    removed?: Record<string, { spent: number; whole: number }>;
     // What became of the clips there were, when every one of them was
     // removed and nothing is on its way: said in the first row still to
     // come, the way a search that stopped says so there, so an empty list
@@ -355,6 +356,7 @@
           <span class="meta muted num">{next.left}</span>
         {:else if g === 0 && stopped?.away}
           <Removed
+            drain={stopped.away.whole}
             spent={stopped.away.spent}
             together={stopped.away.together}
             onputback={stopped.away.onputback}
@@ -376,7 +378,7 @@
         {:else if g === 0 && emptied}
           {#if emptied.fades}
             <Busy
-              drain={secondThoughts}
+              drain={newsShows}
               spent={emptied.fades.spent}
               onend={emptied.fades.onend}
               onresume={emptied.fades.onresume}
@@ -391,6 +393,7 @@
                is the episode's, see Episode, so the range picker drops its
                mark at once and leaving the video takes nothing with it. -->
           <Removed
+            drain={a.away.whole}
             spent={a.away.spent}
             together={a.away.together}
             onputback={a.away.onputback}
@@ -422,7 +425,8 @@
         {/if}
       {:else if clip && clip.key in removed}
         <Removed
-          spent={removed[clip.key]}
+          drain={removed[clip.key].whole}
+          spent={removed[clip.key].spent}
           onputback={() => onputback?.(clip.key)}
           onend={() => onforget?.(clip.key)}
           onresume={(left) => onheld?.(clip.key, left)}

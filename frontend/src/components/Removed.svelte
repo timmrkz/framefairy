@@ -1,10 +1,9 @@
 <script lang="ts">
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
-  import { secondThoughts } from "../lib/removed";
 
   // Something removed, in the place it had, saying so and offering itself
-  // back for secondThoughts seconds, in the one fill the app has, running
+  // back for drain seconds, in the one fill the app has, running
   // down to nothing, see Busy. Then onend, and the place closes. A clip's
   // row in the clip list and a picture's tile in a report wear it, so the
   // two look the same. spent is how many seconds of the time had run when
@@ -20,6 +19,7 @@
   // because an animation starts over whenever its element is shown again,
   // issue #431.
   let {
+    drain,
     spent = 0,
     tile = false,
     together = "",
@@ -28,6 +28,9 @@
     onresume,
     onhold,
   }: {
+    // How many seconds it can be put back for in all: Go's time for a
+    // clip or work removed, VideoState.putBack and JobAway.whole.
+    drain: number;
     spent?: number;
     tile?: boolean;
     together?: string;
@@ -43,7 +46,7 @@
   <span class="what">Removed</span>
   {#if !tile}<span class="grow"></span>{/if}
   <button class="quiet back" onclick={() => onputback?.()}>Put it back</button>
-  <Busy drain={secondThoughts} {spent} {together} {onend} {onresume} {onhold} />
+  <Busy {drain} {spent} {together} {onend} {onresume} {onhold} />
 </div>
 
 <style>

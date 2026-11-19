@@ -591,6 +591,9 @@ export interface VideoState {
   // Go's stamp of the cards of what the video says, the transcript
   // search's: they are read again when it changes, and only then.
   cards?: string;
+  // How many seconds removed work or a removed clip can be put back, see
+  // removalTime in cmd/framefairy-app/removal.go.
+  putBack?: number;
   // The key of the clip chosen, by a hand or by the Go side, or nothing.
   chosen?: string;
   // Where I and O can make a clip, see engine.MarkingOf, or none while

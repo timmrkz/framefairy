@@ -61,7 +61,7 @@
   import { suggestedCount } from "../lib/count";
   import { asleep, asking, keysElsewhere, typing, workspaceKey } from "../lib/keys";
   import {
-    secondThoughts,
+    newsShows,
     setAside,
     setAsideTold,
     spent,
@@ -939,10 +939,12 @@
     const press = pressedAway[job];
     const away = jobs.list.find((j) => j.id === job)?.away;
     if (press === "back" || (!away && press !== "away")) return undefined;
-    const whole = away?.whole ?? secondThoughts;
+    // Before Go answers the press, the time it said in the video's state.
+    const whole = away?.whole ?? session.putBack;
     const left = !away ? whole : away.until ? (away.until - Date.now()) / 1000 : away.left;
     return {
       spent: Math.min(whole, Math.max(0, whole - left)),
+      whole,
       // A search is removed in its row and in each of its cards on the
       // way at once, and the hand on any of them holds them all.
       together: `away ${job}`,
@@ -1046,7 +1048,7 @@
   // The row's time starts the first time it is shown.
   $effect(() => {
     const job = foundNothing?.job;
-    if (job && !(job in told)) told = { ...told, [job]: Date.now() + secondThoughts * 1000 };
+    if (job && !(job in told)) told = { ...told, [job]: Date.now() + newsShows * 1000 };
   });
   // The news first: with every clip removed, a search that found nothing
   // says so, and the row that stands for an empty list comes after it.
@@ -1348,7 +1350,9 @@
   // that put one back leaves it a clip again, not a row to put back.
   const removedRows = $derived(
     Object.fromEntries(
-      clips.filter((c) => c.rejected && c.key in removed).map((c) => [c.key, spent(removed[c.key])]),
+      clips
+        .filter((c) => c.rejected && c.key in removed)
+        .map((c) => [c.key, { spent: spent(removed[c.key]), whole: removed[c.key].whole }]),
     ),
   );
 
@@ -1398,9 +1402,13 @@
     // #878. It is written again with the answer, in the same frame the
     // clip comes back removed, because a list read meanwhile drops a row
     // whose clip is not removed yet, see keepRemovedTrue.
+    // Its time is Go's, the one it said in the video's state, kept with
+    // the row, so a row runs down for as long as it was given.
+    const whole = removed[clip.key]?.whole ?? session.putBack;
     const row = (c: ClipEntry, then = ""): Removed => ({
       clip: c,
-      until: removed[clip.key]?.until ?? Date.now() + secondThoughts * 1000,
+      until: removed[clip.key]?.until ?? Date.now() + whole * 1000,
+      whole,
       chosen,
       then,
       // Where the playhead goes back to when the clip is put back, only
@@ -3800,6 +3808,7 @@
           {#if !inHand && renderLeft && renderAway}
             <span class="renderaway">
               <RemovedRow
+                drain={renderAway.whole}
                 spent={renderAway.spent}
                 together={renderAway.together}
                 onputback={renderAway.onputback}

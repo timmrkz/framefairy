@@ -55,6 +55,10 @@ type VideoState struct {
 	// transcript search's, see Sentences and engine.Episode.SaidStamp.
 	// The window reads them again when it changes, and only then.
 	Cards string `json:"cards"`
+	// PutBack is how many seconds removed work or a removed clip can be
+	// put back, removalTime, so a removed row runs down for as long as Go
+	// keeps the work, and the window keeps no time of its own for it.
+	PutBack float64 `json:"putBack"`
 	// Chosen is the key of the clip chosen, by a hand or by the app, see
 	// choose.go, or nothing. It is read after the clips, and chosen from
 	// them and the jobs, so a clip the app chose comes with the state that
@@ -107,7 +111,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	jobs, rev := s.jobs.ofVideo(path)
 	coming := s.searchComingLocked(path) != ""
 	s.checkMu.Unlock()
-	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.Episode(path)}
+	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.Episode(path), PutBack: removalTime.Seconds()}
 	plans := st.Status.Plans
 	if st.Status.Missing {
 		// A video whose file is gone keeps its clips, see Clips.

@@ -19,9 +19,9 @@ import (
 // timer of its own for each video, see
 // docs/decisions/2026-11-01-every-rule-of-the-workspace-in-go.md.
 
-// removalTime is how long removed work can be put back, the
-// secondThoughts the window draws a removed row for, in
-// frontend/src/lib/removed.ts.
+// removalTime is how long removed work can be put back, and a removed
+// clip's row offers it back, sent to the window in every state as
+// VideoState.PutBack, so the window keeps no copy of it.
 const removalTime = 10 * time.Second
 
 // JobAway is how the removal of a job stands: when it is forgotten, or,

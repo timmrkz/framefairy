@@ -1711,7 +1711,10 @@ bubble scrolled by those eight pixels.
       the first one's way back with it. The ten seconds are the episode's,
       not the screen's: they run on while another episode or page is open,
       and coming back within them finds the row again with the time it has
-      left. Time the pointer held it still is kept too. A list read again,
+      left. Time the pointer held it still is kept too. How long a row
+      offers its clip or work back is the app's Go side's to say, in the
+      video's state, `VideoState.putBack`, the time it keeps removed work
+      for. The window keeps no copy of it. A list read again,
       after a search, a render or an undo, leaves the rows as they are, and
       an undo that puts the clip back makes it a clip again. Leaving the
       episode, or any of those, used to take every way back with it.
@@ -2586,8 +2589,8 @@ another. The same words from the same place while they show come in on
 top again with their time started again, rather than twice. It is
 300 px wide, one width for every toast so a stack reads as one column,
 which Tim found 340 px a little too wide for. A toast about a video shows while that video is on
-screen and waits while another is. Its time, the ten seconds a removed
-clip has to be put back, runs down from the moment it comes, in the
+screen and waits while another is. Its time, ten seconds, the window's
+own, `newsShows` in `lib/removed.ts`, runs down from the moment it comes, in the
 same fill, and stands still while the pointer is on it. Its cross takes it away at
 once. It wears the red of a removed row over the dark of the app, with
 no line round it. The first one waited for the pointer before its time

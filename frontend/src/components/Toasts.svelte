@@ -3,7 +3,7 @@
   import { fade } from "svelte/transition";
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
-  import { secondThoughts } from "../lib/removed";
+  import { newsShows } from "../lib/removed";
   import { toasts, type Toast } from "../lib/toast.svelte";
   import { api } from "../lib/api";
   import { reporting, reportTitle } from "../lib/reporting.svelte";
@@ -57,7 +57,7 @@
       <button class="quiet bin close" aria-label="Close" title="Close" onclick={() => toasts.close(t.id, "closed")}>
         <Icon name="close" />
       </button>
-      <Busy drain={secondThoughts} onend={() => toasts.close(t.id, "ran out")} />
+      <Busy drain={newsShows} onend={() => toasts.close(t.id, "ran out")} />
     </div>
   {/each}
 </div>
