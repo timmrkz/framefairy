@@ -1472,6 +1472,7 @@ export class FrameQueue {
   private listenTo(play: GoPlay) {
     play.onShots = (came) => {
       if (play !== this.goPlay || this.closed) return;
+      if (play.gone) return this.lost();
       this.stats.open += came;
       this.stats.mostOpen = Math.max(this.stats.mostOpen, this.stats.open);
       this.stats.decoded += came;
@@ -1480,6 +1481,24 @@ export class FrameQueue {
       if (this.state === "starting" || this.state === "cued") this.maybeBegin();
       this.pump();
     };
+  }
+
+  // The Go side closed the play under way: a play paused or cued and left
+  // standing is closed once nobody has pulled from it for a while. One
+  // playing starts again from the playhead, a moment's stop, and one
+  // paused or cued is dropped, so the space bar starts a play of its own.
+  // Cued again, a cue left standing was made again and again for as long
+  // as the app stood paused.
+  private lost() {
+    this.trace(`the play was closed on the Go side, ${this.state} at ${this.at.toFixed(3)} s`);
+    if (this.state === "playing" || this.state === "starting") {
+      this.start(this.at, "again");
+      return;
+    }
+    if (this.state === "ended") return;
+    this.stopPlay();
+    this.state = "paused";
+    this.report();
   }
 
   // Puts the first frame of a play up, and starts the sound card's clock
@@ -1790,6 +1809,7 @@ export class FrameQueue {
     if (this.soundTo - heard >= ahead) return;
     void play.moreSound().then((chunks) => {
       if (play !== this.goPlay || this.closed) return;
+      if (play.gone) return this.lost();
       for (const c of chunks) {
         if (c.out + c.length <= this.soundTo) continue;
         this.stats.soundDecoded++;

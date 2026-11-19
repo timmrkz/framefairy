@@ -63,6 +63,10 @@ export class GoPlay {
   readonly shots: Shot[] = [];
   picturesEnded = false;
   soundEnded = false;
+  // The Go side closed the play before its end, left unpulled for a
+  // while, see previewIdle in frames.go, or to make room: nothing more
+  // comes of it.
+  gone = false;
   // Why the Go side stopped, in its words, or nothing.
   trouble = "";
   private pictures: string;
@@ -136,7 +140,10 @@ export class GoPlay {
       for (const { at, frame, stamp } of got.frames) {
         this.shots.push({ at: at + this.shift, moment: stamp[0], begins: stamp[1], edge: stamp[2] === 1, frame });
       }
-      if (got.end || got.status === 404 || got.status === 0) {
+      if (got.closed || got.status === 404) {
+        this.gone = true;
+        this.picturesEnded = true;
+      } else if (got.end || got.status === 0) {
         this.picturesEnded = true;
         if (got.error) this.trouble = got.error;
       }
@@ -166,7 +173,10 @@ export class GoPlay {
       this.trouble = `the sound stopped: ${e instanceof Error ? e.message : String(e)}`;
       return [];
     }
-    if (r.headers.get("X-Frames-End") || r.status === 404) {
+    if (r.headers.get("X-Frames-Closed") || r.status === 404) {
+      this.gone = true;
+      this.soundEnded = true;
+    } else if (r.headers.get("X-Frames-End")) {
       this.soundEnded = true;
       const why = r.headers.get("X-Frames-Error");
       if (why) this.trouble = why;

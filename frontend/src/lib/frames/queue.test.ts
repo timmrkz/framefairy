@@ -675,3 +675,40 @@ describe("the clock a play runs on", () => {
     expect(at(-Infinity, true)).toBe(true);
   });
 });
+
+// The Go side closes a play nobody has pulled from for a while: a cue
+// left standing while the app stood paused, or a play paused for long.
+describe("a play the Go side closed", () => {
+  function closed(state: string) {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const inside = q as unknown as { state: string; goPlay: unknown; at: number; startFrom: number; listenTo(play: unknown): void };
+    let shut = 0;
+    const play = { shots: [] as unknown[], gone: true, onShots: (came: number) => void came, close: () => shut++, more() {} };
+    inside.state = state;
+    inside.at = 61;
+    inside.goPlay = play;
+    inside.listenTo(play);
+    play.onShots(0);
+    return { inside, shut: () => shut };
+  }
+
+  // Cued again, the cue was made again every time it was closed, for as
+  // long as the app stood paused.
+  test("cued is dropped, and the space bar starts a play of its own", () => {
+    const { inside, shut } = closed("cued");
+    expect(inside.state).toBe("paused");
+    expect(inside.goPlay).toBe(null);
+    expect(shut()).toBe(1);
+  });
+
+  test("playing starts again from the playhead", () => {
+    const { inside, shut } = closed("playing");
+    expect(inside.state).toBe("starting");
+    expect(inside.startFrom).toBe(61);
+    expect(shut()).toBe(1);
+  });
+});
