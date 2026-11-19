@@ -513,6 +513,10 @@ export interface WindowView extends KeptWindow {
   // A search has read some of the window before, so Search looks there
   // again and keeps the clips there are.
   searched?: boolean;
+  // How many seconds of the window are heard, and whether all of it is,
+  // as the Go side counts it, so a search of it finds at once.
+  heard: number;
+  heardAll?: boolean;
 }
 
 export interface SourceView {
@@ -586,6 +590,8 @@ export interface VideoState {
   // Where I and O can make a clip, see engine.MarkingOf, or none while
   // the video's length is not known.
   marking?: Marking | null;
+  // What of the video is heard, see HeardView.
+  heard: HeardView;
   // In a state sent, every clip by its key and its hash, while clips
   // holds only those that changed, each with its hash, or kept when not
   // one changed and the state holds neither. A state read by a call
@@ -593,6 +599,17 @@ export interface VideoState {
   // and what hears it never sees these, see onVideoState.
   order?: ClipMark[];
   kept?: boolean;
+}
+
+// What of a video is heard, as the Go side says it, see HeardView in
+// cmd/framefairy-app/videostate.go. saved is what the transcript on disk
+// holds, heard what is heard, saved or still being heard, which only ever
+// grows, and unheard what heard does not hold yet, the parts a search
+// cannot look in.
+export interface HeardView {
+  saved: [number, number][];
+  heard: [number, number][];
+  unheard: [number, number][];
 }
 
 // A clip in a state sent, by its key and its hash, see VideoState.order.

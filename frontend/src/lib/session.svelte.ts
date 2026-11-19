@@ -6,7 +6,7 @@
 // video again. See
 // docs/decisions/2026-10-30-a-videos-state-in-one-session.md and
 // docs/decisions/2026-11-01-every-rule-of-the-workspace-in-go.md.
-import type { ClipEntry, EpisodeStatus, Job, KeptWindow, Marking, VideoState, WindowView } from "./api";
+import type { ClipEntry, EpisodeStatus, HeardView, Job, KeptWindow, Marking, VideoState, WindowView } from "./api";
 import type { JobStore } from "./state.svelte";
 import { said } from "./said";
 import { unchanged } from "./unchanged";
@@ -41,6 +41,9 @@ export class Unanswered extends Error {
   }
 }
 
+// What a video that has not said yet what is heard of it holds: nothing.
+const NOTHING_HEARD: HeardView = { saved: [], heard: [], unheard: [] };
+
 export class EpisodeSession {
   // The video's state, from the newest VideoState kept: null until the
   // first is in.
@@ -48,6 +51,8 @@ export class EpisodeSession {
   clips = $state.raw<ClipEntry[]>([]);
   // Where I and O can make a clip, from the newest state kept.
   marking = $state.raw<Marking | null>(null);
+  // What of the video is heard, from the newest state kept.
+  heard = $state.raw<HeardView>(NOTHING_HEARD);
   // The rev of the newest state kept.
   rev = $state(0);
   // The video's jobs in the newest state kept, the clips on their way
@@ -142,6 +147,7 @@ export class EpisodeSession {
       this.status = same(this.status, state.status);
       this.clips = fresh ? state.clips : unchanged(this.clips, state.clips);
       this.marking = same(this.marking, state.marking ?? null);
+      this.heard = same(this.heard, state.heard);
       this.jobs = state.jobs;
       kept = true;
       this.choose(state);

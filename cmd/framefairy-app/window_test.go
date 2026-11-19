@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -386,5 +387,43 @@ func TestAWindowKeptPastTheEndIsFittedOnce(t *testing.T) {
 	}
 	if kept := keptWindow(svc, source); kept == nil || !sameWindow(*kept, w.KeptWindow) {
 		t.Errorf("the window kept is %+v, the one in the state %+v", kept, w.KeptWindow)
+	}
+}
+
+// The state says what of the video is heard, and how much of its window,
+// as the engine counts it, so the workspace keeps no mark of its own and
+// works out nothing from the parts, #610.
+func TestTheStateSaysWhatIsHeard(t *testing.T) {
+	t.Parallel()
+	svc, eps := memoryLibrary(t, "ep.mp4")
+	source := eps[0]
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	var words [][3]any
+	for at := 0.0; at+1 <= 1200; at += 0.5 {
+		words = append(words, [3]any{at, at + 0.4, fmt.Sprintf("ja%d", len(words))})
+	}
+	heardPartOf(t, svc, source, 1200, 3600, words)
+	svc.probeVideo = lasting(3600)
+	ctx := context.Background()
+	for _, c := range []struct {
+		from, to, heard float64
+		all             bool
+	}{{100, 400, 300, true}, {1000, 1600, 200, false}, {1800, 2100, 0, false}} {
+		if err := svc.chooseWindow(source, c.from, c.to, c.to-c.from, true); err != nil {
+			t.Fatal(err)
+		}
+		st, err := svc.State(ctx, source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := [][2]float64{{0, 1200}}; !reflect.DeepEqual(st.Heard.Saved, want) || !reflect.DeepEqual(st.Heard.Heard, want) {
+			t.Errorf("heard %+v, want saved and heard %v", st.Heard, want)
+		}
+		if want := [][2]float64{{1200, 3600}}; !reflect.DeepEqual(st.Heard.Unheard, want) {
+			t.Errorf("not heard %v, want %v", st.Heard.Unheard, want)
+		}
+		if st.Window == nil || math.Abs(st.Window.Heard-c.heard) > 0.001 || st.Window.HeardAll != c.all {
+			t.Errorf("the window %v–%v s came as %+v, want %v s heard, all %v", c.from, c.to, st.Window, c.heard, c.all)
+		}
 	}
 }

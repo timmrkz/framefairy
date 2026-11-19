@@ -42,9 +42,6 @@
   import { jobs } from "../lib/state.svelte";
   import { EpisodeSession, type Chose } from "../lib/session.svelte";
   import {
-    Heard,
-    covers,
-    heardIn,
     type Parts,
     inEpisode,
     endInEpisode,
@@ -414,8 +411,8 @@
     for (const job of handStopped) jobs.startJob(path, "clips", () => api.continueJob(job.id, press), "hand").catch((err) => oops(errorText(err)));
     void asked(() => api.continueJob(id, press));
   }
-  // What the transcript on disk has heard.
-  const saved = $derived<Parts>(status?.transcribed ? [[0, duration]] : (status?.heard ?? []));
+  // What the transcript on disk has heard, as the Go side says it.
+  const saved = $derived<Parts>(session.heard.saved);
 
   // The search through what was said, in the clip column, #366: whether
   // it is open, what is typed in it, and the sentences it reads, read
@@ -499,23 +496,12 @@
   // same way: a part is lit one way, by the hand or by the keys, found by
   // Tim.
   let unheardOn = $state(-1);
-  // The parts of the video the transcript has not heard yet, which the
-  // search cannot look in. A gap under a second is between two words.
-  // They give way as the work hears, not as it saves, the way the edge of
-  // what is heard moves on the range picker: saving comes minutes of
-  // audio at a time, and the parts went in thirds of a window, found by
-  // Tim. See heard below.
-  const unheard = $derived.by(() => {
-    if (!(duration > 0)) return [] as [number, number][];
-    const out: [number, number][] = [];
-    let at = 0;
-    for (const [a, b] of [...heard].sort((x, y) => x[0] - y[0])) {
-      if (a - at >= 1) out.push([at, a]);
-      at = Math.max(at, b);
-    }
-    if (duration - at >= 1) out.push([at, duration]);
-    return out;
-  });
+  // The parts of the video not heard yet, which the search cannot look
+  // in, as the Go side says them, see HeardView. They give way as the work
+  // hears, not as it saves, the way the edge of what is heard moves on the
+  // range picker: saving comes minutes of audio at a time, and the parts
+  // went in thirds of a window, found by Tim.
+  const unheard = $derived(session.heard.unheard);
   // Stop transcribing pressed and the job not ended yet.
   const wholeStopping = $derived(jobs.isStopping(path, "whole"));
   // The part Transcribe whole video works on, framed on the range picker
@@ -530,7 +516,7 @@
   // by the second review of #458.
   const wholePart = $derived.by((): [number, number] | null => {
     if (!wholeWork || wholeStopping) return null;
-    const edge = wholeHearing && live ? live[1] : -1;
+    const edge = wholeHearing?.progress?.covered ?? -1;
     const gap = (edge >= 0 && unheard.find(([a]) => Math.abs(a - edge) < 0.5)) || unheard[0];
     return gap ?? null;
   });
@@ -620,33 +606,17 @@
   }
 
   // What of the audio has been heard, which is not the same as what the
-  // saved transcript holds. Saving rewrites the whole transcript, so it
-  // happens seconds apart and jumps minutes of audio at a time, while every
-  // chunk the recogniser finishes says where it got to. The range picker
-  // draws this one, so its edge moves with the work. Everything that reads
-  // the transcript keeps to saved, because that is what is on disk.
-  // The mark the edge is drawn from. It only ever grows, because it says
-  // how much of the episode has been read and reading does not unhappen.
-  // Pausing showed that plainly: the live number disappears at the one
-  // moment the saved one is at its most stale, and the edge walked
-  // backwards by however much had not been written down. Heard in flow.ts
-  // holds the rule, with the orderings that break it written out beside it.
-  const mark = new Heard();
-  // What makes the mark meaningless: a transcript that is out of date and
-  // will be read again, or a work folder that is no longer there. Not while
-  // the episode is still loading, when nothing is known yet.
-  const restarted = $derived(!!status && (status.transcriptStale || !status.work));
-  // The part being heard, from where it began to where it has got.
-  const live = $derived.by((): [number, number] | null => {
-    const p = hearing?.progress;
-    if (!p?.covered) return null;
-    return [p.from ?? 0, p.covered];
-  });
-  const heard = $derived(mark.seen(path, saved, live, restarted));
+  // saved transcript holds: every chunk the recogniser finishes says where
+  // it got to, so the range picker's edge moves with the work, and it
+  // never walks back. The Go side keeps it, see engine.Episode.Reached.
+  // Everything that reads the transcript keeps to saved, because that is
+  // what is on disk.
+  const heard = $derived(session.heard.heard);
 
-  // Whether the episode has been heard to the end of the window. A search
-  // of a window not heard yet hears it first, which the title of Search says.
-  const heardWindow = $derived(duration > 0 && to > 0 && covers(heard, from, to));
+  // Whether the episode has been heard to the end of the window, as the
+  // Go side counts it. A search of a window not heard yet hears it first,
+  // which the title of Search says.
+  const heardWindow = $derived(!!win?.heardAll);
   // The range picker carries the transcription: how far it has come is what
   // the track draws anyway, so there is no bar of its own.
   const waitingOnWords = $derived(
@@ -700,7 +670,7 @@
       const fraction = heardWindow ? -1 : 0;
       // Cancel pressed before the Go side answered: the row says so at
       // once, the same as for a search that runs.
-      const left = heardWindow ? windowText : transcribedIn(heard, from, to);
+      const left = heardWindow ? windowText : transcribed;
       if (stopping) return { what: "Stopping", left, fraction, still: true, now: true };
       return { what: heardWindow ? "Finding clips" : "Transcribing", left, fraction, now: true };
     }
@@ -713,7 +683,7 @@
     const start = working.from ?? 0;
     const end = working.to && working.to > 0 ? working.to : duration;
     const hears = working.lane === "hearing" && end > start;
-    const left = line.left || (hears ? transcribedIn(heard, start, end) : windowText);
+    const left = line.left || (hears ? transcribed : windowText);
     // Cancel pressed: the row says so in the same frame, and stands still
     // where it got to, until the search has saved what it did and says it
     // stopped. It went on saying Transcribing for a second after the click.
@@ -723,11 +693,10 @@
     return { ...line, left };
   });
 
-  // How much of a window the parts given cover, as the rows of a search
-  // say it.
-  function transcribedIn(parts: Parts, start: number, end: number): string {
-    return `${clock(heardIn(parts, start, end))} of ${clock(end - start)} transcribed`;
-  }
+  // How much of the window is transcribed, as the rows of a search say
+  // it. A search runs on the video's window, and one stopped holds it,
+  // see searchHolds in window.go, so its window is this one.
+  const transcribed = $derived(`${clock(win?.heard ?? 0)} of ${clock(to - from)} transcribed`);
 
   // What the row says, held long enough to be read, see lib/headline.ts.
   // It keeps its own time, in onMount, because an effect that reads the
@@ -840,7 +809,7 @@
       return {
         ...span,
         what,
-        left: transcribedIn(saved, start, end),
+        left: transcribed,
         full: `${window}. ${how} while the window was transcribed for it. Continue transcribes the rest of it and then finds the clips`,
       };
     }

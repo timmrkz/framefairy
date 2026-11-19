@@ -121,6 +121,18 @@ around the playhead, so `LoadTranscript` is asked for a window and hears
 only what of it is not heard yet, wherever that is. A playhead near the end
 of a four hour episode no longer waits for the hours before it.
 
+What is heard is not only what the file holds. Saving rewrites the whole
+transcript, so it happens seconds apart, while every chunk the recogniser
+finishes says where it got to. The hearing tells the video's `Episode`
+chunk by chunk, `reach`, and `Episode.Reached` joins that with the parts
+on disk. It never shrinks, because reading does not unhappen: what a
+hearing reached and had not saved when it stopped is still heard. Only a
+transcript out of date or a work folder gone starts it over. The app
+sends it in the state of the video, with `HeardOf`, `HeardOver` and
+`NotHeard` for the window and the parts not heard yet, so the range
+picker's edge moves with the work and the workspace counts nothing
+itself. See `engine/reached.go`.
+
 A part is read the way the loudness is, `audioFrom`: ffmpeg seeks before
 the input to a fifth of a second before the frame, and `atrim` cuts at the
 timestamp of the frame. It lands on the sample: read from 4 s on, a tone gated five times a

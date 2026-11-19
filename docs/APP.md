@@ -2535,7 +2535,9 @@ found is a place in the video, and I and O make a clip there.
   hand on a part on the range picker still lights it. Walked to with the keys it lit nothing on the range picker,
   found by Tim. The parts give way as the work hears, from what is heard, not
   from the transcript, which is saved in pieces: a search hearing half an
-  hour took the parts away in thirds, found by Tim. While the work hears
+  hour took the parts away in thirds, found by Tim. What is heard, and
+  what of the window, comes from Go in the state of the video,
+  `VideoState.heard` and `WindowView.heard`, see `engine/reached.go`. While the work hears
   into a part, its dots stand still on the range picker's grid and its
   left edge wipes over them as it goes.
 - **Escape steps back wherever the keyboard is**, unless the keyboard is

@@ -51,7 +51,6 @@
     type GlideSpan,
   } from "../lib/api";
   import {
-    heardIn,
     inClip,
     inEpisode,
     endInEpisode,
@@ -343,8 +342,8 @@
   // is true, and an effect that returned having read nothing else never
   // runs again.
   let loaded = $state(false);
-  // How much of the view the transcript had heard when it was read.
-  let loadedHeard = $state(-1);
+  // What the transcript on disk held when the view was read, see heardKey.
+  let loadedHeard = $state("");
   // True while the view is where a hand put it. Until it is let go of, the
   // clip and the playhead stop pulling it back.
   let held = $state(false);
@@ -875,7 +874,7 @@
   async function load(from: number, to: number) {
     view = { from, to };
     loaded = true;
-    loadedHeard = heardIn(heard, from, to);
+    loadedHeard = heardKey;
     const shown = Math.max(to - from, 0.001);
     const whole = Math.max(duration, to);
     const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
@@ -1319,12 +1318,15 @@
     turnPage(t, back);
   }
 
-  // A new episode's words arrive as it is heard, piece by piece, so a
-  // view read before they reached it is read again when the transcript
-  // grows past where it stood.
+  // A new episode's words arrive as it is heard, piece by piece, so the
+  // view is read again whenever the Go side says the transcript on disk
+  // holds more. It reads the parts the transcript holds as the stamp of
+  // the words, the way the loudness is read again by its stamp, and
+  // works out nothing from them.
+  const heardKey = $derived(heard.map(([a, b]) => `${a}-${b}`).join(","));
   $effect(() => {
     if (!loaded) return;
-    if (heardIn(heard, view.from, view.to) > loadedHeard + 0.5) load(view.from, view.to);
+    if (heardKey !== loadedHeard) load(view.from, view.to);
   });
 
   // The waveform, drawn the way an editor draws one: one column of the
