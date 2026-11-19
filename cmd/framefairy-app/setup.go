@@ -102,6 +102,8 @@ type SetupState struct {
 	CloudStanding map[string]Standing `json:"cloudStanding"`
 	// Speaking is how the speech model in use stands, see Standing.
 	Speaking Standing `json:"speaking"`
+	// checks are what the standings were judged from, see judge.
+	checks choiceChecks
 	// HasServer is true when a llama-server can be found and run. A model
 	// without one is fifteen gigabytes that answer nothing, so the interface
 	// says so before the download rather than after it.
@@ -214,21 +216,38 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 // judge says how each choice of model stands, see Standing.
 func (s *FrameFairy) judge(state *SetupState, settings Settings) {
 	opts := settings.options()
+	state.checks = choiceChecks{language: languageCheck(opts), speech: speechCheck(opts), named: settings.ASRModel != ""}
+	state.judge()
+}
+
+// choiceChecks are what the standings of a setup are judged from beside
+// the models it lists: the checks of the language model and the speech
+// model in use, and whether the speech model's folder is named by hand.
+type choiceChecks struct {
+	language, speech Check
+	named            bool
+}
+
+// judge says how each choice of the setup stands, from the models it
+// lists, its keys, whether llama-server is here and its checks. A setup
+// changed after it was judged is judged again with it.
+func (state *SetupState) judge() {
 	state.CloudStanding = map[string]Standing{}
 	for _, p := range state.Providers {
 		state.CloudStanding[p.Name] = cloudStanding(state.Keys[p.Name] != "")
 	}
-	check := languageCheck(opts)
 	for i, m := range state.Language {
-		state.Language[i].Standing = hereStanding(m.Installed, m.InUse, check, state.HasServer)
+		state.Language[i].Standing = hereStanding(m.Installed, m.InUse, state.checks.language, state.HasServer)
 	}
 	inUse := slices.IndexFunc(state.Speech, func(m SpeechModelView) bool { return m.Installed })
 	if inUse < 0 && len(state.Speech) > 0 {
 		inUse = 0
 	}
+	for i := range state.Speech {
+		state.Speech[i].InUse = i == inUse
+	}
 	if inUse >= 0 {
-		state.Speech[inUse].InUse = true
-		state.Speaking = speechStanding(speechCheck(opts), settings.ASRModel != "", state.Speech[inUse].Installed)
+		state.Speaking = speechStanding(state.checks.speech, state.checks.named, state.Speech[inUse].Installed)
 	}
 }
 

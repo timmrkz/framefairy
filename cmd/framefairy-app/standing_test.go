@@ -85,3 +85,21 @@ func TestSetupSaysHowEachChoiceStands(t *testing.T) {
 		t.Errorf("the speech model that is here stands %+v", state.Speaking)
 	}
 }
+
+// The walks' machine counts its stand-in models as there after Setup
+// judged the real one, so it judges them again: the model in use stands
+// ready, and the settings let the app go. Judged only once, the model in
+// use stood not downloaded, the settings held the app, and every walk
+// that left the settings waited for good.
+func TestTheStandInsStandReady(t *testing.T) {
+	s := emptyMachine(t)
+	state := standInsSetup(s.Setup(context.Background()), nil)
+	for _, m := range state.Language {
+		if m.InUse && m.Standing != (Standing{State: "ok", Says: "ready"}) {
+			t.Errorf("the stand-in in use, %s, stands %+v", m.Name, m.Standing)
+		}
+	}
+	if state.Speaking != (Standing{State: "ok", Says: "ready"}) {
+		t.Errorf("the stand-in speech model stands %+v", state.Speaking)
+	}
+}
