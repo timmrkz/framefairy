@@ -181,6 +181,21 @@ name of its own and then
 renamed into place, so no ask reads half a file. A file that could not be
 made is not remembered, so the next ask tries again.
 
+Between two words a playing clip shows the same captions on frame after
+frame, and libass drew the same layer for each, about every other frame.
+So every layer comes with a tag in the header `X-Caption-Tag`, made from
+all it was asked with but the frame and from the moments of the short
+around the frame over which the caption file starts and ends nothing,
+`CaptionDrawing.Steady`, see `layerTag`. The video preview asks for the
+next frame with the tag of the layer that came last, in `X-Caption-Have`,
+and a frame with the same tag is answered 204 with nothing in it, not
+drawn and not sent. The video preview keeps the layer it has for that
+frame, the same pixels the screen holds already, see `CaptionLayers` in
+`lib/frames/captions.ts`. It is a header of our own rather than HTTP's
+`If-None-Match` and 304, because Wails takes `If-None-Match` off every
+request on Windows, where WebView2 hangs on a 304. See [the decision
+record](decisions/2026-11-19-a-caption-layer-the-page-has-is-not-drawn-again.md).
+
 Until the clip's whole file is there, a frame draws from a file of only
 the captions that show on it, `CaptionDrawing.showing`, measured by its
 own ask and not waited for behind another ask measuring the same words,

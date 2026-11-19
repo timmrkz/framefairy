@@ -860,19 +860,18 @@
   // with the clip's captions, see inCuts, so a view asks for none: it
   // asked for ten minutes of them after every swipe, issue #932.
   //
-  // The same view told again before anything moved is not told twice: an
-  // episode opening asked for the clip's view twice over.
-  let told = "";
-
+  // It is told on every move, a swipe's too, because telling it costs Go
+  // a map write, issue #937.
   function load(from: number, to: number) {
     view = { from, to };
     loaded = true;
+    tell(from, to);
+  }
+
+  function tell(from: number, to: number) {
     const shown = Math.max(to - from, 0.001);
     const whole = Math.max(duration, to);
     const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
-    const ask = `${path}|${outer.from}|${outer.to}`;
-    if (ask === told) return;
-    told = ask;
     void api.look(path, outer.from, outer.to).catch(() => {});
   }
 
@@ -1089,21 +1088,20 @@
     if (times.length) onahead(times);
   });
 
-  // Telling the Go side where the view is waits until the fingers come
-  // to rest, because each call reads the loudness file, issue #937. The
-  // waveform does not: it is drawn from what is in hand. Where the view stood when they began is kept until then,
-  // for the log.
+  // A swipe or a pinch is one line in the log, from where the view stood
+  // when the fingers began to where it stood when they came to rest. The
+  // rest is waited for by the log line alone: Go is told of every move as
+  // it happens, see load.
   let settle = 0;
   let swipedFrom: { from: number; to: number } | null = null;
 
-  function readSoon(how: "swiped" | "pinched") {
+  function logOnRest(how: "swiped" | "pinched") {
     swipedFrom ??= { ...view };
     clearTimeout(settle);
     settle = afterRest(() => {
       const was = swipedFrom;
       swipedFrom = null;
       if (was) said(`clip timeline: ${how} from ${was.from.toFixed(2)}–${was.to.toFixed(2)} s to ${view.from.toFixed(2)}–${view.to.toFixed(2)} s`, { video: path });
-      load(view.from, view.to);
     }, 150);
   }
 
@@ -1149,7 +1147,8 @@
       const shift = (along / Math.max(width, 1)) * span;
       showing(view.from + shift, view.to + shift);
     }
-    readSoon(zooming ? "pinched" : "swiped");
+    tell(view.from, view.to);
+    logOnRest(zooming ? "pinched" : "swiped");
   }
 
   // The edges of the clip as the view last saw them, so it can tell the

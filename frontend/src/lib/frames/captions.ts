@@ -24,6 +24,9 @@
 // After a word step a layer carries the word apart, lift, which the screen
 // lays over the rest scaled by scale round the middle of its box, see
 // Lift.
+// The Go side names a layer by tag, which the next frame's ask brings,
+// and a frame drawn the same is answered with nothing, not drawn again,
+// see layerTag in cmd/framefairy-app/captions.go.
 export type Layer = {
   x: number;
   y: number;
@@ -35,6 +38,7 @@ export type Layer = {
   scale?: number;
   size?: [number, number];
   lift?: { layer: Layer; scale: number };
+  tag?: string;
 };
 
 // How the video preview bounces a word after a word step: so many
@@ -472,10 +476,14 @@ export class CaptionLayers {
   // newer draft or a newer track of the same clip is on its way, so the
   // captions never blink off in between. Another clip's captions never stay.
   private last: Layer | null = null;
-  // For the walks: how many layers were asked for, how many a frame was
-  // drawn with that was not its own yet, how many words bounced, and how
-  // many times the screen drew a bounce.
-  readonly stats = { asked: 0, late: 0, popped: 0, bounced: 0 };
+  // For the walks: how many layers were asked for, how many of them the
+  // Go side said were the layer before, how many a frame was drawn with
+  // that was not its own yet, how many words bounced, and how many times
+  // the screen drew a bounce.
+  readonly stats = { asked: 0, same: 0, late: 0, popped: 0, bounced: 0 };
+  // The layer that came last, with the captions and the size it is of,
+  // whose tag the next ask of the same brings, see Layer.
+  private recent: { kind: string; layer: Layer } | null = null;
   // The frames a bounce is drawn on, see Frames.
   frames: Frames = screenFrames;
   // The word lifted out of the frame paused on, and the frame on screen
@@ -906,6 +914,10 @@ export class CaptionLayers {
     const off = new AbortController();
     this.going.set(key, off);
     this.stats.asked++;
+    // The frame is drawn like the layer that came last, between two
+    // words, and the Go side then says so and sends nothing.
+    const kind = `${keyOf(ask)}\n${size[0]}x${size[1]}`;
+    const had = this.recent?.kind === kind ? this.recent.layer : null;
     const q = new URLSearchParams({
       path: ask.path,
       track: ask.track,
@@ -916,14 +928,19 @@ export class CaptionLayers {
       ...ask.drafts,
     });
     let why = "";
-    void fetch(`/frames/captions?${q}`, { signal: off.signal })
+    void fetch(`/frames/captions?${q}`, { signal: off.signal, headers: had?.tag ? { "X-Caption-Have": had.tag } : {} })
       .then(async (r) => {
+        if (r.status === 204 && had) {
+          this.stats.same++;
+          return had;
+        }
         const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
         if (layer) {
           layer.track = ask.track;
           layer.size = size;
           layer.showing = readShowing(r.headers.get("X-Caption-Showing"));
           layer.scale = readScale(r.headers.get("X-Caption-Scale"));
+          layer.tag = r.headers.get("X-Caption-Tag") ?? undefined;
         } else why = await failure(r);
         return layer;
       })
@@ -939,6 +956,7 @@ export class CaptionLayers {
         if (layer) {
           this.again.delete(key);
           this.kept.set(key, layer);
+          this.recent = { kind, layer };
           // The cards' layers are kept apart from the count, see next.
           let over = this.kept.size - KEPT;
           for (const k of this.kept.keys()) if (this.cards.has(k)) over--;

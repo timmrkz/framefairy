@@ -142,6 +142,80 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	}
 }
 
+// A frame the caption file draws the same as the frame before is answered
+// unchanged by the tag of the layer the video preview has, with nothing
+// in its body: between two words of a playing clip that was
+// every other frame, issue #896. Wherever it is answered so, the layer
+// drawn would have been the layer the video preview has, byte for byte. A
+// tag of another size, track or draft is never the layer of a frame.
+//
+// On the real disk: the decoder is a program of its own and reads the
+// episode and the caption file from there.
+func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
+	svc, mine, view := captionsEpisode(t)
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
+	ask := func(q url.Values, tag string) *httptest.ResponseRecorder {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil)
+		if tag != "" {
+			r.Header.Set("X-Caption-Have", tag)
+		}
+		handler.ServeHTTP(rec, r)
+		if rec.Code != http.StatusOK && rec.Code != http.StatusNoContent {
+			t.Fatalf("at %s the captions answered %d %q", q.Get("at"), rec.Code, rec.Body.String())
+		}
+		return rec
+	}
+	q := url.Values{"path": {mine}, "track": {view.Track}, "w": {"270"}, "h": {"480"}}
+	var had *httptest.ResponseRecorder
+	unchanged, changed := 0, 0
+	for at := 10.0; at < 11.4; at += 0.02 {
+		q.Set("at", fmt.Sprintf("%.2f", at))
+		if had == nil {
+			had = ask(q, "")
+			continue
+		}
+		rec := ask(q, had.Header().Get("X-Caption-Tag"))
+		whole := ask(q, "")
+		if rec.Code == http.StatusNoContent {
+			unchanged++
+			if !bytes.Equal(whole.Body.Bytes(), had.Body.Bytes()) || rec.Body.Len() != 0 {
+				t.Fatalf("at %s the layer was answered unchanged, and libass draws another", q.Get("at"))
+			}
+			continue
+		}
+		changed++
+		had = whole
+	}
+	// The pill pops on each word's first frames and rests on the rest.
+	if unchanged < 20 || changed < 5 {
+		t.Errorf("from 10.0 s to 11.4 s %d frames were answered unchanged and %d drawn anew", unchanged, changed)
+	}
+	q.Set("at", "10.8")
+	tag := ask(q, "").Header().Get("X-Caption-Tag")
+	for name, change := range map[string][2]string{
+		"another size":  {"w", "272"},
+		"another track": {"track", "0123"},
+		"another draft": {"text", "#ff0000"},
+		"a word typed":  {"typing", "0 1"},
+		"a part":        {"part", "rest"},
+	} {
+		other := url.Values{}
+		for k, v := range q {
+			other[k] = v
+		}
+		other.Set(change[0], change[1])
+		rec := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/frames/captions?"+other.Encode(), nil)
+		r.Header.Set("X-Caption-Have", tag)
+		handler.ServeHTTP(rec, r)
+		if rec.Code == http.StatusNoContent {
+			t.Errorf("%s was answered unchanged by the tag of the layer before", name)
+		}
+	}
+}
+
 // The caption box frames each word where libass put it, and asks where
 // that is by the view's track: for every caption its words in order, each
 // inside the short, lower when the captions are drafted lower, none when
