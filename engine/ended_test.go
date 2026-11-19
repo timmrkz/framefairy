@@ -20,6 +20,8 @@ func TestHowASearchEnded(t *testing.T) {
 	}{
 		{"found clips", r, true, 3, all, 3600, EndedFound},
 		{"found nothing new", r, true, 0, all, 3600, EndedNothing},
+		{"nothing said in its window", JobRecord{Kind: JobSearch, From: 600, To: 1200, Min: 20, Silent: true}, true, 0, all, 3600, EndedSilent},
+		{"a video shorter than Shortest with nothing said", JobRecord{Kind: JobSearch, Min: 20, Silent: true}, true, 0, all, 12, EndedSilent},
 		{"a video shorter than Shortest", JobRecord{Kind: JobSearch, Min: 20}, true, 0, all, 12, EndedShort},
 		{"stopped before its window was heard", r, false, 0, [][2]float64{{0, 900}}, 3600, EndedHearing},
 		{"stopped while the clips were found", r, false, 0, all, 3600, EndedFinding},

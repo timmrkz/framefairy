@@ -2867,28 +2867,54 @@ export const steps = {
   },
   // ["shift in a cut"] clicks the clip timeline in the middle of the
   //                    chosen clip's first cut and presses Shift and the
-  //                    right arrow: a cut is inside the clip, so the press
-  //                    walks to the next word, never the 5 s a skip
-  //                    outside a clip goes
+  //                    right arrow, then clicks there again and presses
+  //                    Shift and the left arrow: a cut is inside the clip,
+  //                    so each press lands on the next or the last word
+  //                    heard in the cut, as Go's captions of the clip name
+  //                    them, never the 5 s a skip outside a clip goes, nor
+  //                    the second a press with no words goes
   async "shift in a cut"(walk, arg, s) {
     const { page, watch } = walk;
-    const pieces = (await engineState(page, watch.at)).segments;
+    const state = await engineState(page, watch.at);
+    const pieces = state.segments;
     if (pieces.length < 2) {
       walk.wrong = `the clip has ${pieces.length} piece, so no cut to press in`;
       return;
     }
+    const heard = state.inCuts ?? [];
+    if (!heard.length) {
+      walk.wrong = `Go names no word heard in the cut from ${pieces[0].end.toFixed(3)} to ${pieces[1].start.toFixed(3)} s`;
+      return;
+    }
     const middle = (pieces[0].end + pieces[1].start) / 2;
-    await clickOnTrack(page, await xOf(page, middle), high((await handles(page)).track));
-    await settle(page);
     const at = () => playhead(page);
-    const from = await at();
-    await page.evaluate(() => document.body.focus());
-    await page.keyboard.press("Shift+ArrowRight");
-    await settle(page);
-    await watch.step("press", s, page);
-    const to = await at();
-    if (from < pieces[0].end || from > pieces[1].start) walk.wrong = `the click in the cut from ${pieces[0].end.toFixed(3)} to ${pieces[1].start.toFixed(3)} s put the playhead at ${from.toFixed(3)} s`;
-    else if (!(to > from && to - from < 4.5)) walk.wrong = `Shift and the right arrow in the cut at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not to the next word`;
+    // The word a press from t goes to: forward the next word to begin,
+    // back the word before the one t is in, or the word just said when t
+    // is in the silence after it. The playhead lands inside it, a frame
+    // in, or on the first frame the clip shows of it when the word runs
+    // into the piece after the cut.
+    const wordFrom = (t, back) => {
+      let here = -1;
+      while (here + 1 < heard.length && heard[here + 1].start <= t) here++;
+      if (!back) return heard[here + 1];
+      return here >= 0 && t < heard[here].end ? heard[here - 1] : heard[here];
+    };
+    for (const [key, back] of [["Shift+ArrowRight", false], ["Shift+ArrowLeft", true]]) {
+      await clickOnTrack(page, await xOf(page, middle), high((await handles(page)).track));
+      await settle(page);
+      const from = await at();
+      await page.evaluate(() => document.body.focus());
+      await page.keyboard.press(key);
+      await settle(page);
+      await watch.step("press", s, page);
+      const to = await at();
+      const word = wordFrom(from, back);
+      const words = JSON.stringify(heard.map((w) => [w.start, w.end, w.text]));
+      if (from < pieces[0].end || from > pieces[1].start) walk.wrong = `the click in the cut from ${pieces[0].end.toFixed(3)} to ${pieces[1].start.toFixed(3)} s put the playhead at ${from.toFixed(3)} s`;
+      else if (!word) walk.wrong = `${key} in the cut at ${from.toFixed(3)} s has no word to go to among the words heard there, ${words}`;
+      else if (!(to >= word.start - 0.001 && to < word.end)) walk.wrong = `${key} in the cut at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not into "${word.text}" from ${word.start.toFixed(3)} to ${word.end.toFixed(3)} s, of the words heard there, ${words}`;
+      if (walk.wrong) return;
+    }
   },
 };
 

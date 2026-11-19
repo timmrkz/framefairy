@@ -170,7 +170,9 @@ func TestMeasuringUnderEverythingAtOnce(t *testing.T) {
 					s.levels.read(path)
 					_ = s.Episode(path)
 				case 3:
-					s.levels.stop(path)
+					// Closed and opened again, as a removal that
+					// failed does.
+					s.levels.closeEpisode(path)()
 				}
 			}()
 		}
@@ -221,7 +223,7 @@ func TestWhereTheClipTimelineLooksIsMeasuredFirst(t *testing.T) {
 		t.Errorf("the measuring looks at %v to %v, the clip timeline at 12 to 15", from, to)
 	}
 	measured(t, s, path)
-	s.levels.stop(path)
+	s.levels.closeEpisode(path)
 	if from, to := s.levels.lookingAt(path); from != 0 || to != 0 {
 		t.Errorf("a stopped episode is still looked at, %v to %v", from, to)
 	}

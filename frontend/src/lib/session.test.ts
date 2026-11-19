@@ -34,7 +34,6 @@ describe("a video's state in its session", () => {
     rev,
     status: { source: "/v.mp4", measured: rev } as EpisodeStatus,
     clips: [clip("a")],
-    coverage: { passes: [] },
     jobs: [],
     ...more,
   });

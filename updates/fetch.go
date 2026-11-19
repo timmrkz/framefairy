@@ -34,23 +34,47 @@ const fetchQuiet = time.Minute
 
 // fetching is one build on its way into the cache.
 type fetching struct {
+	// total is the size of the build.
 	total int64
 	mu    sync.Mutex
-	got   int64
-	err   error
-	done  chan struct{}
+	// got is how much has been downloaded of of. A build downloaded whole
+	// counts its bytes, one put together from its parts counts the bytes
+	// of the pieces it downloads, since the files the app has take no
+	// time worth showing.
+	got, of int64
+	err     error
+	done    chan struct{}
 }
 
-func (f *fetching) written() int64 {
+func (f *fetching) written() (got, of int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.got
+	return f.got, f.of
+}
+
+func (f *fetching) downloaded(got, of int64) {
+	f.mu.Lock()
+	f.got, f.of = got, of
+	f.mu.Unlock()
+}
+
+// from is where a build can be had: its parts and its zip packed with
+// zstd when it was published with them, and otherwise its zip, whole.
+type from struct {
+	whole, parts, packed string
+	packedSize           int64
 }
 
 // fetchOf is the download of the build with this SHA-256 into the cache,
 // the one already on its way or one begun now. Nil when the cache cannot
 // be written, and the caller downloads it itself.
-func (s *Source) fetchOf(sum, where string, total int64) *fetching {
+//
+// A build with parts is put together from them, see assemble.go. When
+// that fails for any reason, or when the pieces it lacks weigh more than
+// the zip packed with zstd, it downloads that, see whole.go. So parts that
+// are wrong or a piece that is gone cost time and never the update. A
+// build without parts is downloaded whole.
+func (s *Source) fetchOf(sum string, from from, total int64) *fetching {
 	s.fetchMu.Lock()
 	defer s.fetchMu.Unlock()
 	if f := s.fetches[sum]; f != nil {
@@ -60,7 +84,13 @@ func (s *Source) fetchOf(sum, where string, total int64) *fetching {
 	if k == nil {
 		return nil
 	}
-	f := &fetching{total: total, done: make(chan struct{})}
+	// A build put together from its parts knows what it downloads only
+	// once it has looked at the app, and until then says nothing: the fill
+	// first said the size of the whole zip, and then jumped to a tenth.
+	f := &fetching{total: total, of: total, done: make(chan struct{})}
+	if from.parts != "" {
+		f.of = 0
+	}
 	if s.fetches == nil {
 		s.fetches = map[string]*fetching{}
 	}
@@ -68,11 +98,13 @@ func (s *Source) fetchOf(sum, where string, total int64) *fetching {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTakes)
 		defer cancel()
-		err := s.stream(ctx, where, total, k, func(written int64) {
-			f.mu.Lock()
-			f.got = written
-			f.mu.Unlock()
-		})
+		err := s.fetchParts(ctx, from, sum, total, k, f)
+		if err != nil && from.whole != "" {
+			f.downloaded(0, total)
+			if err = k.restart(); err == nil {
+				err = s.stream(ctx, from.whole, total, k, func(written int64) { f.downloaded(written, total) })
+			}
+		}
 		if err == nil && !k.whole() {
 			err = errors.New("the build did not arrive as the channel list says it is")
 		}
@@ -88,6 +120,69 @@ func (s *Source) fetchOf(sum, where string, total int64) *fetching {
 		close(f.done)
 	}()
 	return f
+}
+
+// fetchParts puts a build with parts together, or downloads its packed
+// zip when that fails or weighs less, into k, and tells how. It is
+// errNoParts for a build without parts, which is downloaded whole.
+func (s *Source) fetchParts(ctx context.Context, from from, sum string, total int64, k *keeper, f *fetching) error {
+	if from.parts == "" {
+		return errNoParts
+	}
+	assembled := func(cheaper int64) (Pieced, error) {
+		if err := k.restart(); err != nil {
+			return Pieced{}, err
+		}
+		done, err := s.assemble(ctx, from.parts, sum, total, cheaper, k, f.downloaded)
+		if err == nil && !k.whole() {
+			err = errors.New("the build put together from its parts is not the build the list says")
+		}
+		return done, err
+	}
+	cheaper := int64(0)
+	if from.packed != "" {
+		cheaper = from.packedSize
+	}
+	done, err := assembled(cheaper)
+	if err == nil {
+		s.tell(done)
+		return nil
+	}
+	// Why the parts did not do, when it was no choice of the smaller.
+	var partsErr error
+	if err != errPackedIsSmaller {
+		partsErr = err
+	}
+	if from.packed == "" {
+		s.tell(Pieced{Err: partsErr})
+		return err
+	}
+	f.downloaded(0, from.packedSize)
+	if err = k.restart(); err == nil {
+		err = s.unpackWhole(ctx, from.packed, from.packedSize, total, k, func(got int64) { f.downloaded(got, from.packedSize) })
+	}
+	if err == nil && !k.whole() {
+		err = errors.New("the packed zip unpacks to another build than the list says")
+	}
+	if err == nil {
+		s.tell(Pieced{Packed: from.packedSize, Err: partsErr})
+		return nil
+	}
+	packedErr := fmt.Errorf("the packed zip: %w", err)
+	// The packed zip was taken for its size and could not be had. The
+	// pieces may still be: a publish replaces a packed zip under its name,
+	// but never a piece.
+	if partsErr == nil {
+		if done, err = assembled(0); err == nil {
+			done.Err = packedErr
+			s.tell(done)
+			return nil
+		}
+		partsErr = err
+	}
+	err = errors.Join(partsErr, packedErr)
+	s.tell(Pieced{Err: err})
+	return err
 }
 
 // Arrived is closed once the build with this SHA-256 that is on its way
@@ -124,7 +219,7 @@ func (s *Source) inFlight(sum string) bool {
 func (s *Source) await(ctx context.Context, f *fetching, sum string, dst io.Writer, report func(written, total int64)) error {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
-	last := int64(-1)
+	lastGot, lastOf := int64(-1), int64(-1)
 	for {
 		select {
 		case <-ctx.Done():
@@ -141,13 +236,14 @@ func (s *Source) await(ctx context.Context, f *fetching, sum string, dst io.Writ
 				return errors.New("the build went from the cache as it arrived")
 			}
 			if err == nil {
-				report(f.total, f.total)
+				_, of := f.written()
+				report(of, of)
 			}
 			return err
 		case <-tick.C:
-			if w := f.written(); w != last {
-				last = w
-				report(w, f.total)
+			if w, of := f.written(); of > 0 && (w != lastGot || of != lastOf) {
+				lastGot, lastOf = w, of
+				report(w, of)
 			}
 		}
 	}

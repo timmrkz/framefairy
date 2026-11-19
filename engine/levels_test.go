@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -105,6 +106,9 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	if l.Frames[50] < -30 || l.Frames[250] > -60 {
 		t.Errorf("tone %.1f dB, silence %.1f dB", l.Frames[50], l.Frames[250])
 	}
+	if e.Machine.Episode(source).Status("", nil).Silent {
+		t.Error("a second of tone is said to be silent")
+	}
 
 	// Measured once is measured: a second call reads nothing again.
 	before, _ := os.Stat(filepath.Join(WorkDir(source), "logs", "levels.frames"))
@@ -123,6 +127,31 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	}
 	if got := ReadLevels(disk, source); len(got.Frames) != 0 {
 		t.Error("the levels of the file before were read for the file now")
+	}
+}
+
+// A video with no sound at all is measured as silence to its end, and
+// done, rather than failing on a sound that is not there.
+//
+// On the real disk: ffprobe reads the video.
+func TestMeasureLevelsOfAVideoWithNoSound(t *testing.T) {
+	t.Parallel()
+	ffmpegtest.Need(t)
+	source := fixtures.Copy(t, "picture.mp4", filepath.Join(t.TempDir(), "picture.mp4"))
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	e.FFmpeg = "ffmpeg"
+	if err := e.MeasureLevels(context.Background(), source, nil, nil); err != nil {
+		t.Fatalf("a video with no sound could not be measured: %v", err)
+	}
+	l := ReadLevels(disk, source)
+	if !l.Done || math.Abs(l.To()-10) > 0.05 {
+		t.Fatalf("done %v, %.2f s of 10", l.Done, l.To())
+	}
+	if loudest := slices.Max(l.Frames); loudest > -90 {
+		t.Errorf("a video with no sound is %.1f dB at its loudest", loudest)
+	}
+	if !e.Machine.Episode(source).Status("", nil).Silent {
+		t.Error("a video with no sound, measured to its end, is not said to be silent")
 	}
 }
 
@@ -551,3 +580,26 @@ func TestAFramesFileCutShortIsWrittenWholeAgain(t *testing.T) {
 // and throws away, soundLead in frames. The conversion only compiles while
 // soundLead is a whole number of frames.
 const levelsLead = int(soundLead / (timed.FrameSeconds * 1_000_000))
+
+// What the log says of the loudness once it is measured tells a silent
+// video from a loud one, and counts only what was measured, #831.
+func TestTheLoudnessSaidOfWhatWasMeasured(t *testing.T) {
+	var none levelState
+	if _, ok := none.loudest(); ok {
+		t.Error("nothing measured, and the loudness is said")
+	}
+	var silent levelState
+	for n := range 4 {
+		silent.put(n, -200)
+	}
+	if loudest, ok := silent.loudest(); !ok || loudest != -200 {
+		t.Errorf("a silent video is said to be %v dB at the loudest, not -200", loudest)
+	}
+	var speech levelState
+	speech.put(0, -70)
+	speech.put(1, -20)
+	speech.put(3, -12)
+	if loudest, ok := speech.loudest(); !ok || loudest != -12 {
+		t.Errorf("speech is said to be %v dB at the loudest, not -12", loudest)
+	}
+}

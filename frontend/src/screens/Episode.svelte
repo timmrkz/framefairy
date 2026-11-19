@@ -49,7 +49,6 @@
     inEpisode,
     endInEpisode,
     Newest,
-    timesIn,
     frameAt,
     frameMiddle,
     live as going,
@@ -94,7 +93,6 @@
   import { markOn } from "../lib/keyframes";
   import { toasts } from "../lib/toast.svelte";
   import { afterRest } from "../lib/rest";
-  import { captionsAlone, piecesOf, type CaptionsRead } from "../lib/cards";
   import { atOnce, onTick, type Headline } from "../lib/headline";
 
   let {
@@ -165,8 +163,6 @@
   let click = "";
   let clicks = 0;
   let time = $state(0);
-  // Where the model has already looked. A window is only drawn outside it.
-  const coverage = $derived(session.coverage);
   // The clip chosen, by a hand or by the app, which the Go side decides
   // and sends in the video's state, see choose.go. A hand's pick shows at
   // once, see EpisodeSession.pick.
@@ -432,36 +428,13 @@
   let sentencesFailed = $state<string | null>(null);
   let sayField = $state<HTMLInputElement>();
   let saidList = $state<{ walk: (step: 1 | -1) => void; unpick: () => boolean }>();
-  const savedKey = $derived(saved.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}`).join(","));
-  // The parts every clip keeps, whose captions are cards of their own, so
-  // the cards are read again when a clip changes, see piecesOf.
-  const cutsKey = $derived(
-    clips
-      .filter((c) => !c.rejected)
-      .map((c) => `${c.key}:${piecesOf(c)}`)
-      .join(","),
-  );
-  // How many times the captions of a clip changed while it stayed the
-  // clip they are of and kept its pieces, see captionsAlone. The cards of
-  // what was said are those captions, so they are read again. A clip
-  // chosen anew is not a change.
-  let captionsChanged = $state(0);
-  const captionsRead = new Map<string, CaptionsRead>();
-  $effect(() => {
-    const view = captions;
-    const key = captionsOf;
-    if (!view || !key) return;
-    const words = (view.captions ?? []).map((c) => `${c.start.toFixed(2)} ${c.lines.map((l) => l.words.map((w) => w.text).join(" ")).join(" ")}`).join("|");
-    const clip = untrack(() => clips.find((c) => c.key === key));
-    const now = { words, pieces: clip ? piecesOf(clip) : "" };
-    const was = captionsRead.get(key);
-    captionsRead.set(key, now);
-    if (captionsAlone(was, now)) untrack(() => captionsChanged++);
-  });
   // They are read as soon as the video opens and kept, so the transcript
   // button shows them in the frame it is pressed, and read again whenever
-  // the transcript hears more. A column left empty until the answer came was
-  // seen as a blink by Tim.
+  // Go's stamp of them in the video's state changes: the transcript heard
+  // more, a clip set was written, by a hand or from outside the app, or
+  // the look of its captions changed. When to read them is Go's to say,
+  // issue #933. A column left empty until the answer came was seen as a
+  // blink by Tim.
   let sentencesAsked = 0;
   let sentencesOf = "";
   // Whether the video's state and its picture are in as the workspace
@@ -472,7 +445,7 @@
   let stateRead = $state(false);
   $effect(() => {
     const of = path;
-    const key = `${savedKey}|${cutsKey}|${captionsChanged}`;
+    const key = session.cards;
     if (!saved.length || !stateRead) return;
     // While the search is closed, what was read stays until it opens.
     if (!saying && sentencesOf.startsWith(`${of}|`)) return;
@@ -1024,7 +997,10 @@
     // counts what the search it carries on wrote: one called off once its
     // clips were written had nothing left to write, and its row said
     // Nothing new found, Tim's report of 25 October, 21.40.
-    if (last?.state !== "done" || (last.ended !== "nothing" && last.ended !== "short")) return null;
+    if (last?.state !== "done" || (last.ended !== "nothing" && last.ended !== "silent" && last.ended !== "short")) return null;
+    // A video nobody speaks in at all says so in a row that stays, see
+    // speechless, rather than in one that runs down.
+    if (last.ended === "silent" && status?.speechless) return null;
     const job = last.id;
     if (told[job] === 0) return null;
     const fades = {
@@ -1039,6 +1015,17 @@
     const start = last.from ?? 0;
     const end = last.to && last.to > 0 ? last.to : duration;
     const window = `Window ${clock(start)} to ${clock(end)}`;
+    // Nothing said in the window is what the video is, not a failure, so
+    // it is said in the row, with no toast and no Report, #831.
+    if (last.ended === "silent") {
+      return {
+        job,
+        what: "No speech found",
+        left: window,
+        full: `${window}. Nobody speaks in it, so there are no clips to find`,
+        fades,
+      };
+    }
     if (last.ended === "short") {
       return {
         job,
@@ -1063,7 +1050,21 @@
   });
   // The news first: with every clip removed, a search that found nothing
   // says so, and the row that stands for an empty list comes after it.
-  const note = $derived(foundNothing ?? emptied);
+  // Nobody speaks anywhere in the video, as the Go side says once all of
+  // it is transcribed. The row says so for as long as that is true, since
+  // an empty list with no reason looked broken, #831. A window with no
+  // speech in a video with speech elsewhere says so once, in foundNothing.
+  const speechless = $derived.by(() => {
+    // A card of a clip made by hand still on its way, or one that failed,
+    // is no clip, so the row stands under it.
+    if (busy || stopped || !status?.speechless || shown.length > 0 || closing.length > 0) return null;
+    return {
+      what: "No speech in this video",
+      left: "Nobody speaks in it",
+      full: "The whole video is transcribed and nobody speaks in it, so there are no clips to find",
+    };
+  });
+  const note = $derived(foundNothing ?? speechless ?? emptied);
   const coming = $derived(
     shown.length +
       onTheWay.length +
@@ -1076,12 +1077,12 @@
           ? count
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
-            stopped || foundNothing ? 1 : 0),
+            stopped || foundNothing || speechless ? 1 : 0),
   );
-  // Whether the window has been searched before, all of it or a part.
-  // Search then looks there again, for moments its searches did not bring,
-  // and every clip there is stays.
-  const searchedBefore = $derived(timesIn(coverage.passes, from, to) > 0);
+  // Whether the window has been searched before, all of it or a part, as
+  // the Go side says in the video's state. Search then looks there again,
+  // for moments its searches did not bring, and every clip there is stays.
+  const searchedBefore = $derived(!!win?.searched);
   // A clip taken out leaves the track at once. Its row stays a moment
   // longer, but that row is what became of it, not a clip.
   //
@@ -3557,8 +3558,8 @@
         waiting={!opened}
         clip={current ?? making}
         {duration}
-        heard={saved}
         loudnessStamp={status?.loudness ?? ""}
+        soundless={!!status?.silent}
         {time}
         shown={shownMoment}
         locked={renderingCurrent || (!current && !!making)}
@@ -3594,6 +3595,7 @@
         captions={captions?.captions ?? []}
         captionTrack={captions?.track}
         captionPieces={captions?.pieces}
+        inCuts={captions?.inCuts ?? []}
         captionLook={shownCaptions
           ? {
               text: shownCaptions.style.primary,

@@ -657,6 +657,7 @@ export const steps = {
     // Tim.
     const inClip = seen.cards.find((c) => c.clip);
     if (inClip) {
+      await bringCard(page, `ol.said li[data-at="${inClip.at}"]`);
       const card = page.locator(`ol.said li[data-at="${inClip.at}"]`);
       await card.hover();
       await watch.step("hover", s);
@@ -714,6 +715,7 @@ export const steps = {
     // The hand on a part not transcribed yet lights it on the range
     // picker too.
     if (!walk.wrong && gaps) {
+      await bringCard(page, "ol.said li.hole");
       await page.locator("ol.said li.hole").first().hover();
       await watch.step("hover", s);
       // Lit the way every card is under the hand, the dashes gone into
@@ -1485,24 +1487,27 @@ export const steps = {
         const [at, clip] = key.slice(1).split("|");
         return sentences.find((x) => String(x.start) === at && (x.clip ?? "") === clip)?.text.trim();
       };
-      const lit = () =>
-        page.evaluate(() => ({
-          keys: [...document.querySelectorAll("ol.said button.pick.picked")].map((b) => b.closest("li").dataset.row),
+      // The cards picked are read from the whole list, which builds only
+      // the cards in view, and their grey from the ones built.
+      const lit = async () => ({
+        keys: (await everyCard(page)).filter((c) => c.picked).map((c) => c.row),
+        ...(await page.evaluate(() => ({
           grey: [...document.querySelectorAll("ol.said button.pick.picked")].map((b) => getComputedStyle(b).backgroundColor),
           current: getComputedStyle(document.querySelector("ol.said button.pick.current") ?? document.body).backgroundColor,
           at: document.querySelector(".screen")?.dataset.playhead,
-        }));
+        }))),
+      });
       // Escape pressed, and what is picked, current and typed after it.
       const unpicked = async () => {
         await page.keyboard.press("Escape");
         await watch.step("press", s);
-        return page.evaluate(() => ({
-          picked: [...document.querySelectorAll("ol.said button.pick.picked")].map((b) => b.closest("li").dataset.row),
-          current: document.querySelector("ol.said button.pick.current")?.closest("li").dataset.row ?? null,
+        const seen = await page.evaluate(() => ({
           open: !!document.querySelector("ol.said"),
           typed: document.querySelector('input[aria-label="Search transcript"]')?.value ?? null,
           at: document.querySelector(".screen")?.dataset.playhead,
         }));
+        const cards = seen.open ? await everyCard(page) : [];
+        return { ...seen, picked: cards.filter((c) => c.picked).map((c) => c.row), current: cards.find((c) => c.current)?.row ?? null };
       };
       const span = await page.evaluate(() => {
         const ol = document.querySelector("ol.said");
@@ -1550,8 +1555,9 @@ export const steps = {
         if (!walk.wrong) {
           await field.fill("e");
           await watch.step("type", s);
-          const answers = await page.evaluate(() => [...document.querySelectorAll("ol.said li[data-row]")].filter((li) => li.querySelector("button.pick")).map((li) => li.dataset.row));
-          const current = await page.evaluate(() => document.querySelector("ol.said button.pick.current")?.closest("li").dataset.row ?? null);
+          const cards = await everyCard(page);
+          const answers = cards.filter((c) => c.row && !c.hole).map((c) => c.row);
+          const current = cards.find((c) => c.current)?.row ?? null;
           if (answers.length < 4) walk.wrong = `only ${answers.length} cards answer e, too few to pick among`;
           else {
             await page.locator(`ol.said li[data-row="${answers[1]}"] button.pick`).click({ modifiers: ["Shift"] });
@@ -1612,10 +1618,8 @@ export const steps = {
     // search, found by Tim.
     await page.keyboard.press("Escape");
     await watch.step("press", s);
-    const cleared = await page.evaluate(() => ({
-      typed: document.querySelector('input[aria-label="Search transcript"]')?.value ?? null,
-      cards: document.querySelectorAll("ol.said li:not(.hole):not(.none)").length,
-    }));
+    const typedNow = await page.evaluate(() => document.querySelector('input[aria-label="Search transcript"]')?.value ?? null);
+    const cleared = { typed: typedNow, cards: typedNow === null ? 0 : (await everyCard(page)).filter((c) => c.row && !c.hole).length };
     if (!walk.wrong && cleared.typed === null) walk.wrong = "the first Escape after typing closed the search, not what was typed";
     else if (!walk.wrong && (cleared.typed !== "" || cleared.cards < sentences.length))
       walk.wrong = `after the first Escape the field holds "${cleared.typed}" over ${cleared.cards} of ${sentences.length} sentences`;
@@ -2021,6 +2025,73 @@ export const steps = {
     else if (!toast.includes("Nothing is said here yet")) walk.wrong = `the toast says "${toast}", not why the clip could not be made`;
     else if (!report) walk.wrong = "the toast offers no Report";
     await watch.step("wait", s);
+  },
+  // ["no speech"]      on a video with no speech, once its search has
+  //                    ended, the search is done, not failed, its row says
+  //                    No speech found, or No speech in this video once
+  //                    all of it is heard, and no toast says it failed
+  async "no speech"(walk) {
+    const { page } = walk;
+    // Issue #831: a video nobody speaks in failed its search, with a
+    // toast that offered Report, and looked broken. Nothing said is what
+    // the video is, so the search is done and its row says why.
+    const path = await episodeOn(page);
+    let job;
+    for (let seen = await news(page); ; seen = await nextNews(page, seen)) {
+      job = (await ask(page, "Jobs")).findLast((j) => j.kind === "search" && j.episode === path);
+      if (job && job.state !== "running" && job.state !== "queued") break;
+    }
+    // The list of jobs says what the search heard, silent, and the
+    // video's state says how it ended, which the row below reads.
+    if (job.state !== "done" || !job.silent) {
+      walk.wrong = `the search of a video with no speech is ${job.state}, silent ${!!job.silent}, not done with no speech`;
+      return;
+    }
+    await caughtUp(page, url, [job]);
+    // Once the whole video is heard with no word, the row says so for as
+    // long as that is true, and otherwise it says the window had none.
+    const speechless = !!(await ask(page, "Library")).find((e) => e.source === path)?.speechless;
+    const says = speechless ? "No speech in this video" : "No speech found";
+    const list = await clipList(page);
+    const toast = await toastSays(page);
+    const track = await page.evaluate(() => document.querySelector(".track .nosound")?.textContent.trim() ?? "");
+    if (!list?.rows.some((r) => r.what === says)) walk.wrong = `no row says ${says}: ${JSON.stringify(list?.rows)}`;
+    else if (track) walk.wrong = `the clip timeline of a video with sound says "${track}"`;
+    else if (/speech was found/i.test(toast)) walk.wrong = `a toast says the search failed: "${toast}"`;
+  },
+  // ["no sound", seconds]
+  //                    adds a video of that many seconds with no sound at
+  //                    all, and once its first search has ended and its
+  //                    loudness is measured, the search is done, not
+  //                    failed, the clip list says No speech in this video,
+  //                    the clip timeline says No sound, and no toast says
+  //                    anything failed
+  async "no sound"(walk, arg, s) {
+    const { page, watch } = walk;
+    // Issue #831: a screen recording with the sound off failed its search,
+    // since ffmpeg was asked for a sound that is not there, and its clip
+    // timeline was empty, as if never measured.
+    await control(url, `/pick?seconds=${arg}&sound=none`);
+    const before = new Set((await ask(page, "Library")).map((e) => e.source));
+    await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+    await watch.step("add", s);
+    let job, video;
+    for (let seen = await news(page); ; seen = await nextNews(page, seen)) {
+      video = (await ask(page, "Library")).find((e) => !before.has(e.source));
+      job = video && (await ask(page, "Jobs")).findLast((j) => j.kind === "search" && j.episode === video.source);
+      if (job && job.state !== "running" && job.state !== "queued" && video.measuredAll) break;
+    }
+    if (job.state !== "done" || !job.silent || !video.speechless || !video.silent) {
+      walk.wrong = `a video with no sound: its search is ${job.state}, silent ${!!job.silent}, speechless ${!!video.speechless}, measured silent ${!!video.silent}`;
+      return;
+    }
+    await caughtUp(page, url, [job]);
+    const list = await clipList(page);
+    const toast = await toastSays(page);
+    const track = await page.evaluate(() => document.querySelector(".track .nosound")?.textContent.trim() ?? "");
+    if (!list?.rows.some((r) => r.what === "No speech in this video")) walk.wrong = `no row says No speech in this video: ${JSON.stringify(list?.rows)}`;
+    else if (track !== "No sound") walk.wrong = `the clip timeline of a video with no sound says "${track}", not No sound`;
+    else if (/sound|audio|speech|stream/i.test(toast)) walk.wrong = `a toast says the video with no sound failed: "${toast}"`;
   },
   // ["remove stopped", how]
   //                    the bin on that card is clicked, and it says
@@ -2604,4 +2675,63 @@ async function openCard(walk, which, s, within = [-Infinity, Infinity]) {
   await watch.step("click", s);
   await settle(page);
   return row;
+}
+
+// Every card of the transcript search, read the way a person reads a long
+// list: scrolled from its top to its foot a column at a time, since only
+// the cards in view and a column either side of it are built, see
+// lib/stack.svelte.ts. A frame after each scroll the cards it brings are
+// built: the list hears the scroll before the frame's callbacks run. The
+// list is put back where it stood.
+async function everyCard(page) {
+  return page.evaluate(async () => {
+    const box = document.querySelector("ol.said").closest(".scroll");
+    const frame = () => new Promise((done) => requestAnimationFrame(done));
+    const was = box.scrollTop;
+    const seen = new Map();
+    box.scrollTop = 0;
+    await frame();
+    for (let n = 0; n < 1000; n++) {
+      for (const li of box.querySelectorAll("ol.said > li")) {
+        seen.set(li.dataset.row ?? li.className, {
+          row: li.dataset.row ?? null,
+          at: li.dataset.at === undefined ? null : Number(li.dataset.at),
+          clip: li.dataset.clip ?? null,
+          hole: li.classList.contains("hole"),
+          none: li.classList.contains("none"),
+          current: !!li.querySelector("button.pick.current"),
+          picked: !!li.querySelector("button.pick.picked"),
+          text: li.querySelector(".text")?.textContent.trim() ?? li.textContent.trim(),
+        });
+      }
+      if (box.scrollTop + box.clientHeight >= box.scrollHeight - 1) break;
+      box.scrollTop += box.clientHeight;
+      await frame();
+    }
+    box.scrollTop = was;
+    await frame();
+    return [...seen.values()];
+  });
+}
+
+// The first card of the transcript search that sel finds brought into the
+// middle of the list, scrolled to from its top the way everyCard reads
+// them, so a hand can be put on it. Only the cards in view and a column
+// either side of it are built.
+async function bringCard(page, sel) {
+  await page.evaluate(async (sel) => {
+    const box = document.querySelector("ol.said").closest(".scroll");
+    const frame = () => new Promise((done) => requestAnimationFrame(done));
+    if (!box.querySelector(sel)) {
+      box.scrollTop = 0;
+      await frame();
+      for (let n = 0; n < 1000 && !box.querySelector(sel); n++) {
+        if (box.scrollTop + box.clientHeight >= box.scrollHeight - 1) break;
+        box.scrollTop += box.clientHeight;
+        await frame();
+      }
+    }
+    box.querySelector(sel)?.scrollIntoView({ block: "center" });
+    await frame();
+  }, sel);
 }

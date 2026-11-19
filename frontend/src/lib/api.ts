@@ -188,6 +188,9 @@ export interface EpisodeStatus {
   // From the start of the first word heard to the end of the last, absent
   // while no word is.
   said?: [number, number];
+  // The whole video is transcribed and nobody speaks in it, see
+  // engine.EpisodeStatus.
+  speechless?: boolean;
   // How many seconds of the loudness are measured, which is the waveform,
   // which parts, from and to, and whether all of it. It runs ahead of the
   // transcript, from the moment an episode is added, where the clip
@@ -195,6 +198,9 @@ export interface EpisodeStatus {
   measured?: number;
   measuredParts?: [number, number][] | null;
   measuredAll?: boolean;
+  // All of the loudness is measured and none of it is loud enough to draw,
+  // see engine.EpisodeStatus.
+  silent?: boolean;
   // Changes whenever the loudness does, which is when the clip timeline
   // reads it again, see lib/loudness.ts and engine.EpisodeStatus.
   loudness?: string;
@@ -460,6 +466,10 @@ export interface CaptionsView {
   // what the hand changed, and this says how they go with the captions
   // the clip timeline holds, see spliced in lib/splice.ts.
   splice?: Splice;
+  // The words heard in the clip's cuts, with the word either side of each
+  // cut, on the episode's clock, which Shift and an arrow walk where the
+  // caption lights nothing. None for a clip without cuts.
+  inCuts?: Word[] | null;
 }
 
 // How the captions of a step of a drag go with the captions held from
@@ -504,13 +514,9 @@ export interface WindowView extends KeptWindow {
   // The range picker leaves the window out: the whole video is being
   // transcribed, which is about all of it and not about the window.
   hidden?: boolean;
-}
-
-// How many searches have read each part of an episode. Any window can be
-// searched, as often as anyone likes, so this only says where Search goes.
-export interface CoverageView {
-  // The whole episode in parts, each with how many searches have read it.
-  passes: { from: number; to: number; times: number }[];
+  // A search has read some of the window before, so Search looks there
+  // again and keeps the clips there are.
+  searched?: boolean;
 }
 
 export interface SourceView {
@@ -572,7 +578,6 @@ export interface VideoState {
   rev: number;
   status: EpisodeStatus;
   clips: ClipEntry[];
-  coverage: CoverageView;
   jobs: Job[];
   // The video's first search is on its way: the video was just added, its
   // picture is being checked, and the Go side asks for the search once it
@@ -580,6 +585,9 @@ export interface VideoState {
   searchComing?: boolean;
   // The video's window, or none while the video cannot be read.
   window?: WindowView | null;
+  // Go's stamp of the cards of what the video says, the transcript
+  // search's: they are read again when it changes, and only then.
+  cards?: string;
   // The key of the clip chosen, by a hand or by the Go side, or nothing.
   chosen?: string;
   // Where I and O can make a clip, see engine.MarkingOf, or none while
@@ -729,9 +737,9 @@ export interface Job {
   // so it is set aside, see markAside in window.go.
   aside?: boolean;
   // For a search that is over or stopped, how it ended, as the Go side
-  // says it, see engine.SearchEnded: "found", "nothing", "short",
-  // "hearing" or "finding".
-  ended?: "found" | "nothing" | "short" | "hearing" | "finding";
+  // says it, see engine.SearchEnded: "found", "nothing", "silent",
+  // "short", "hearing" or "finding".
+  ended?: "found" | "nothing" | "silent" | "short" | "hearing" | "finding";
   // For work that stopped and was removed, how its removal stands, see
   // removal.go: the moment it is forgotten, in milliseconds since the
   // epoch and 0 while a hand holds its row, then how many seconds are
@@ -749,6 +757,7 @@ export interface Job {
   max?: number;
   replan?: boolean;
   pass?: number;
+  silent?: boolean;
   preview?: boolean;
   done?: string[];
   asked?: string;
@@ -1099,9 +1108,6 @@ export const api = {
   // first, so it takes effect the moment it is pressed.
   stopClipWork: (path: string, click: string) => call<void>("StopClipWork", path, click),
   makeClip: (path: string, at: number, backward: boolean) => call<Job>("MakeClip", path, at, backward),
-  // The words said in a part of the episode, for walking the playhead
-  // from word to word.
-  words: (path: string, from: number, to: number) => call<Word[] | null>("Words", path, from, to),
   // What the video says, sentence by sentence, as far as it has been
   // heard, for searching it in the clip column.
   sentences: (path: string) => call<Sentence[] | null>("Sentences", path),

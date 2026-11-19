@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -79,6 +80,9 @@ type PlanSummary struct {
 	clips   []Clip
 	data    []byte
 	ordered func() ([]*object, error)
+	// saidFrom is what the cards of the plan's clips are made of, see
+	// saidFrom, worked out once for each read.
+	saidFrom func() string
 	// said is what Said laid out last, kept with the read, see Said.
 	said *keptSaid
 }
@@ -146,6 +150,10 @@ type EpisodeStatus struct {
 	// where the parts around the playhead are heard the app offers
 	// neither there, see MarkingOf.
 	Said *[2]float64 `json:"said,omitempty"`
+	// Speechless says the whole video is transcribed and nobody speaks in
+	// it: no clip can be found in it, which the clip list says for as long
+	// as it is true, #831.
+	Speechless bool `json:"speechless,omitempty"`
 	// Measured is how many seconds of the loudness are measured, which is
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
 	// all of it. It runs ahead of the transcript, where the clip timeline
@@ -153,6 +161,10 @@ type EpisodeStatus struct {
 	Measured      float64      `json:"measured"`
 	MeasuredParts [][2]float64 `json:"measuredParts"`
 	MeasuredAll   bool         `json:"measuredAll"`
+	// Silent says all of the loudness is measured and nothing in it is
+	// loud enough to draw, so the clip timeline says No sound over its
+	// flat line, which on its own read as an empty clip timeline, #831.
+	Silent bool `json:"silent,omitempty"`
 	// Loudness changes whenever what Loudness gives for the episode does:
 	// as more is measured, and as more is heard while the measuring has
 	// not reached the end, since the transcript's loudness lies under the
@@ -211,13 +223,16 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 			span := *said
 			st.Said = &span
 		}
+		st.Speechless = t.done && t.said == nil
 		if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
 			st.Covered = st.Heard[0][1]
 		}
 	} else if errors.Is(err, ErrNoTranscript) && fileio.Exists(fsys, whole) {
 		st.TranscriptStale = true
 	}
-	st.MeasuredParts, st.MeasuredAll = LevelsReach(fsys, source)
+	if file, _, ok := readLevelsFile(fsys, source); ok {
+		st.MeasuredParts, st.MeasuredAll, st.Silent = partSeconds(file.Parts), file.Done, file.silent()
+	}
 	for _, p := range st.MeasuredParts {
 		st.Measured += p[1] - p[0]
 	}
@@ -332,8 +347,9 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 	}
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
 		Modified: info.ModTime(), plan: plan, clips: clips, data: data,
-		ordered: sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) }),
-		said:    &keptSaid{}}
+		said:     &keptSaid{},
+		ordered:  sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) }),
+		saidFrom: sync.OnceValue(func() string { return saidFrom(clips) })}
 	made := plan.PlannedWith()
 	if v, ok := num.AsFloat(made[keyFrom]); ok {
 		s.From = v
@@ -952,6 +968,41 @@ type CaptionsView struct {
 	// how the rest are taken from the captions of the clip as it was, see
 	// laidNear. Without it, Captions are all of them.
 	Splice *Splice `json:"splice,omitempty"`
+	// InCuts are the words heard in the clip's cuts, with the word either
+	// side of each cut, on the episode's clock and as they were heard,
+	// see cutWords. The caption lights nothing in a cut, so these are what
+	// Shift and an arrow walk there. They come whole on every view, a step
+	// of a drag too, and are none for a clip without cuts. The window
+	// asked for ten minutes of the transcript after every swipe for them,
+	// issue #932.
+	InCuts []WordView `json:"inCuts"`
+}
+
+// cutWords is CaptionsView.InCuts: every word of t that is heard in a cut
+// between two of segments, in part or whole, and the word before and the
+// word after each cut, so a step can reach the clip's words on either
+// side. A word is in it once, however many cuts it touches.
+func cutWords(t *Transcript, segments []Segment) []WordView {
+	out := []WordView{}
+	words := t.Words
+	next := 0
+	for i := 1; i < len(segments); i++ {
+		from, to := segments[i-1].End, segments[i].Start
+		first := sort.Search(len(words), func(k int) bool { return words[k].End > from })
+		last := sort.Search(len(words), func(k int) bool { return words[k].Start >= to })
+		first = max(first-1, next, 0)
+		last = min(last+1, len(words))
+		// Pieces that overlap or run backwards, in a plan written by
+		// hand, have no cut between them.
+		if first >= last {
+			continue
+		}
+		for _, w := range words[first:last] {
+			out = append(out, WordView{Start: w.Start, End: w.End, Text: runes.Scrub(w.Text, 200)})
+		}
+		next = max(next, last)
+	}
+	return out
 }
 
 // CaptionDrawing is what a clip's captions are drawn from, by libass, in
@@ -1117,6 +1168,27 @@ func (l *Look) key() (string, bool) {
 	return fmt.Sprintf("%s\x00%+v\x00%p\x00%d", style, l.Source, l.Fonts, l.Fonts.generation()), true
 }
 
+// lookOnly are the parts of a caption style that change how the captions
+// look and never which words a caption holds or when it shows: the
+// colours and the height. A style that differs only in these lays the
+// captions out the same, so the cards of what was said stay as they were,
+// see layoutKey.
+var lookOnly = []string{"primary", "outline_colour", "back_colour", "highlight_colour", "margin_v"}
+
+// layoutKey is key without lookOnly: two looks with the same layoutKey
+// lay the captions out in the same words at the same times, whatever
+// colour or height they are drawn in.
+func (l *Look) layoutKey() (string, bool) {
+	if l == nil {
+		return "", true
+	}
+	style := maps.Clone(l.Style)
+	for _, k := range lookOnly {
+		delete(style, k)
+	}
+	return (&Look{Style: style, Source: l.Source, Fonts: l.Fonts}).key()
+}
+
 // fonts are the faces of l, the bundled ones when l has none.
 func (l *Look) fonts() *Fonts {
 	if l == nil {
@@ -1199,6 +1271,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 // captionsViewFrom is captionsView for a clip a gesture changed, from was,
 // the drawing of its captions before, see ShapeClipView. was may be nil.
 func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView {
+	heard := t
 	t = t.Of(clip)
 	drawing := look.drawing(was, plan, clip, t)
 	clip, laid := drawing.Clip, drawing.Laid
@@ -1220,6 +1293,7 @@ func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, 
 		HighlightColour: s.HighlightWeb(), Text: s.Text, BoxOn: s.Box,
 	}}
 	view.drawing = drawing
+	view.InCuts = cutWords(heard, clip.Segments)
 	view.Track = view.drawing.name()
 	// Kept, so a step of a drag made from this drawing is named without
 	// going over all of its captions again, see name. Set before the

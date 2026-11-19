@@ -374,8 +374,9 @@ func (s *FrameFairy) Opened(n int) []string {
 		marked bool
 		at     int64
 	}
-	// A video deleted outside the app was let go as the app started,
-	// before the window could ask this, see watchTheDisk.
+	// A video deleted outside the app is let go by the first look, as the
+	// app starts, which this waits for, see lookFirst.
+	s.store.afterFirstLook()
 	var all []seen
 	for _, ep := range s.store.Episodes() {
 		file, err := fileio.SafeChildIn(s.store.files, engine.WorkDir(ep), chosenFile)

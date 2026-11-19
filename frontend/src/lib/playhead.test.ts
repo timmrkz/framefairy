@@ -309,11 +309,13 @@ describe("an arrow key on the clip timeline", () => {
     { start: 10.5, end: 11, text: "Und" },
     { start: 18, end: 18.6, text: "da" },
   ];
-  const words = [
-    { start: 3, end: 3.4, text: "Vorher" },
-    ...lit,
+  // The words heard in the cut, with the word either side of it, the
+  // way Go sends them with the captions.
+  const inCuts = [
+    { start: 10.5, end: 11, text: "Und" },
     { start: 15, end: 15.5, text: "geschnitten" },
-  ].sort((a, b) => a.start - b.start);
+    { start: 18, end: 18.6, text: "da" },
+  ];
   const key = (o: Partial<ArrowKey>): ArrowKey => ({
     time: 12,
     frame,
@@ -323,7 +325,7 @@ describe("an arrow key on the clip timeline", () => {
     clip,
     pieces,
     lit,
-    words,
+    inCuts,
     looping: false,
     ...o,
   });
@@ -361,7 +363,7 @@ describe("an arrow key on the clip timeline", () => {
     expect(arrowStep(key({ shift: true, time: 14.5 }))).toEqual({ to: 15.04, word: true });
   });
 
-  test("with Shift walks the words heard until the caption's words arrive", () => {
+  test("with Shift in a clip whose caption lights no word walks the words heard in its cuts", () => {
     expect(arrowStep(key({ shift: true, time: 12, lit: [] }))).toEqual({ to: 15.04, word: true });
   });
 
@@ -371,8 +373,8 @@ describe("an arrow key on the clip timeline", () => {
     expect(arrowStep(key({ shift: true, time: 19 }))).toBe("clip");
   });
 
-  test("with Shift and no words heard yet steps a second, and past the last word heard goes nowhere", () => {
-    expect(arrowStep(key({ shift: true, time: 12, lit: [], words: [] }))).toEqual({ to: 13, word: false });
-    expect(arrowStep(key({ shift: true, time: 14.5, words: [words[0]] }))).toBeNull();
+  test("with Shift before the captions arrive steps a second, and past the last word heard goes nowhere", () => {
+    expect(arrowStep(key({ shift: true, time: 12, lit: [], inCuts: [] }))).toEqual({ to: 13, word: false });
+    expect(arrowStep(key({ shift: true, time: 14.5, inCuts: [inCuts[0]] }))).toBeNull();
   });
 });

@@ -19,6 +19,8 @@ import (
 	"framefairy/engine/fileio"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
+	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/fixtures"
 	"framefairy/internal/standin"
 )
 
@@ -28,7 +30,14 @@ import (
 // On the real disk: ffmpeg reads the episode the search hears.
 func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project, *int32) {
 	t.Helper()
-	source := testEpisode(t, "40")
+	return searchProjectOf(t, testEpisode(t, "40"), rec)
+}
+
+// searchProjectOf is searchProject on the video at source.
+//
+// On the real disk: ffmpeg reads the video the search hears.
+func searchProjectOf(t *testing.T, source string, rec func(string) (Recognizer, error)) (*Project, *int32) {
+	t.Helper()
 	var asked int32
 	server := fakeModel(t, &asked)
 	t.Cleanup(server.Close)
@@ -61,9 +70,25 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 		var once sync.Once
 		return ctx, func() { once.Do(func() { turns = append(turns, "let go of "+step) }) }, nil
 	}
+	// The app queues the search in the lane of its first step, the one
+	// the engine says, so the two cannot disagree, #610.
+	first := func(from, to float64) string {
+		return p.engine.Machine.Episode(p.Source).FirstStep(p.Base.ASRModel, nil, PlanRequest{From: from, To: to}, 40)
+	}
+	if got := first(5, 25); got != StepHearing {
+		t.Errorf("a window not heard yet starts with %s", got)
+	}
 	plan, err := p.Search(context.Background(), PlanRequest{From: 5, To: 25, Count: 1, Min: 5}, Host{Turn: turn})
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
+	}
+	for _, c := range []struct {
+		from, to float64
+		want     string
+	}{{5, 25, StepFinding}, {10, 20, StepFinding}, {5, 30, StepHearing}, {0, 25, StepHearing}} {
+		if got := first(c.from, c.to); got != c.want {
+			t.Errorf("with 5 to 25 s heard, a search of %v to %v s starts with %s, not %s", c.from, c.to, got, c.want)
+		}
 	}
 	if filepath.Base(plan) != "clips-5-25.json" || *asked != 1 {
 		t.Errorf("plan %s, the model asked %d times", plan, *asked)
@@ -196,6 +221,81 @@ func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 	}
 	if *asked != 0 {
 		t.Error("the model was asked")
+	}
+}
+
+// silentRecognizer hears no word, the way a video with no speech is
+// heard.
+type silentRecognizer struct{}
+
+func (silentRecognizer) Recognize([]float32, int) []Token { return nil }
+func (silentRecognizer) Close()                           {}
+
+// A window nobody speaks in is what the video is, not a failure: the
+// search is done with nothing found and its record says why, so the row
+// says it and no toast offers to report it, #831. The model is never
+// asked, since there is nothing to read.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
+func TestASearchOfAWindowWithNoSpeechIsDoneWithNothingFound(t *testing.T) {
+	t.Parallel()
+	p, asked := searchProject(t, func(string) (Recognizer, error) { return silentRecognizer{}, nil })
+	var ended JobRecord
+	host := Host{Changed: func(rec JobRecord) { ended = rec }}
+	plan, err := p.Search(context.Background(), PlanRequest{From: 5, To: 25, Count: 1, Min: 5}, host)
+	if err != nil {
+		t.Fatalf("a window with no speech failed the search: %v", err)
+	}
+	if plan != "" || *asked != 0 {
+		t.Errorf("plan %q, the model asked %d times", plan, *asked)
+	}
+	if !ended.Silent || ended.Step != "" {
+		t.Errorf("the search ended as %+v, not done and silent", ended)
+	}
+	if last := p.LastError(); last != "" {
+		t.Errorf("a search that ended done keeps the error %q", last)
+	}
+	// Only part of the video is heard, so it is not known that nobody
+	// speaks in the rest.
+	if p.engine.Machine.Episode(p.Source).Status(p.Base.ASRModel, nil).Speechless {
+		t.Error("a video heard in part is said to have nobody speak in it")
+	}
+	if got := SearchEnded(ended, true, 0, HeardParts(disk, p.Source, p.Base.ASRModel), 40); got != EndedSilent {
+		t.Errorf("the search is said to have ended %q, not %q", got, EndedSilent)
+	}
+}
+
+// On the real disk: ffprobe reads the video, which has no sound at all.
+func TestASearchOfAVideoWithNoSoundIsDoneWithNothingFound(t *testing.T) {
+	t.Parallel()
+	ffmpegtest.Need(t)
+	body, err := os.ReadFile(fixtures.Path(t, "picture.mp4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "picture.mp4")
+	if err := os.WriteFile(source, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The recogniser that hears a word in every piece: a video with no
+	// sound has nothing for it to hear.
+	p, asked := searchProjectOf(t, source, nil)
+	var ended JobRecord
+	host := Host{Changed: func(rec JobRecord) { ended = rec }}
+	plan, err := p.Search(context.Background(), PlanRequest{From: 0, To: 10, Count: 1, Min: 5}, host)
+	if err != nil {
+		t.Fatalf("a video with no sound failed its search: %v", err)
+	}
+	if plan != "" || *asked != 0 || !ended.Silent {
+		t.Errorf("plan %q, the model asked %d times, the search ended as %+v, not done and silent", plan, *asked, ended)
+	}
+	if last := p.LastError(); last != "" {
+		t.Errorf("a search that ended done keeps the error %q", last)
+	}
+	// The search heard the whole video, so the video says nobody speaks
+	// in it, and the clip list keeps saying so.
+	if st := p.engine.Machine.Episode(source).Status(p.Base.ASRModel, nil); !st.Transcribed || !st.Speechless {
+		t.Errorf("a video with no sound, heard to its end, is transcribed %v and speechless %v", st.Transcribed, st.Speechless)
 	}
 }
 

@@ -174,47 +174,6 @@ func keptCrop(x *int) int {
 	return *x
 }
 
-// CoverageView says how many searches have read each part of an episode.
-// It decides nothing about where a search may go: any window can be
-// searched, as often as anyone likes.
-type CoverageView struct {
-	// Passes is the whole episode in parts, each with how many searches
-	// have read it, see engine.SearchPasses. Search goes by it.
-	Passes []PassView `json:"passes"`
-}
-
-// PassView is a part of an episode and how many searches have read it.
-type PassView struct {
-	From  float64 `json:"from"`
-	To    float64 `json:"to"`
-	Times int     `json:"times"`
-}
-
-// Coverage gives the episode in parts by how many searches have read
-// each, see CoverageView.
-// The workspace reads it in the state of the video, see State, and calls
-// it no more. The walks and the tests ask it.
-func (s *FrameFairy) Coverage(ctx context.Context, path string) (CoverageView, error) {
-	if !s.store.Known(path) {
-		return CoverageView{}, errNotInLibrary
-	}
-	info, err := s.probe(ctx, path)
-	if err != nil {
-		return CoverageView{}, err
-	}
-	return coverageOf(s.plansOf(path), info.Duration), nil
-}
-
-// coverageOf is how often each part of an episode this long was searched
-// by the searches that made these plans.
-func coverageOf(plans []engine.PlanSummary, duration float64) CoverageView {
-	out := CoverageView{Passes: []PassView{}}
-	for _, p := range engine.SearchPasses(plans, duration) {
-		out.Passes = append(out.Passes, PassView{From: p.Start, To: p.End, Times: p.Times})
-	}
-	return out
-}
-
 // Captions gives the captions of one clip, on the clip's own clock and in
 // the look the render draws them in, so the interface can lay them over the
 // picture while the clip plays.
@@ -272,13 +231,23 @@ func (s *FrameFairy) heldPlan(path, planPath string) (engine.PlanSummary, error)
 
 // lookOf is captionLook of a plan already in hand.
 func (s *FrameFairy) lookOf(path string, summary engine.PlanSummary) *engine.Look {
+	look, err := s.lookIn(s.unprobed.source(path, s.probe), summary)
+	if err != nil {
+		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
+	}
+	return look
+}
+
+// lookIn is lookOf on the frames of source, a probe already in hand. When
+// the settings' look is not one the render takes, it is the plan's own
+// look, and the error says why.
+func (s *FrameFairy) lookIn(source engine.SourceInfo, summary engine.PlanSummary) (*engine.Look, error) {
 	plan := summary.Plan()
 	style, err := s.store.Settings().options().CaptionLook(plan)
 	if err != nil {
-		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
 		style = plan.CaptionStyle()
 	}
-	return &engine.Look{Style: style, Source: s.unprobed.source(path, s.probe), Fonts: &s.store.machine.Fonts}
+	return &engine.Look{Style: style, Source: source, Fonts: &s.store.machine.Fonts}, err
 }
 
 // failedProbes keeps the videos whose frames could not be read, a video

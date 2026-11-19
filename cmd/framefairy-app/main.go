@@ -90,13 +90,13 @@ func main() {
 	go theLog.watch(func(st LogStatus) { appLogEvent.to(svc.tell, st) },
 		func() <-chan time.Time { return time.After(time.Second) })
 	// What changes in the folders of the videos, whoever changed it, is
-	// looked at as it happens, and every video once now, see reconcile.go.
-	// It comes once every field it can reach is set, since the watch hands
-	// a change on from a goroutine of its own from the first look on.
+	// looked at as it happens, see reconcile.go. It comes once every field
+	// it can reach is set, since the watch hands a change on from a
+	// goroutine of its own from the first look on. The first look at every
+	// video waits until the app's window is made, see lookFirst, and every
+	// call that names a video waits for it.
+	st.looked = make(chan struct{})
 	svc.watchTheDisk()
-	// The searches and renders that were cut off or failed the last time
-	// say so where their work was.
-	svc.restoreJobs(st.Episodes())
 	// Nothing the app started outlives it: a model loaded or still loading
 	// is stopped and no other is loaded, and the jobs are stopped, and with
 	// them any ffmpeg they run. On macOS app.Run never returns: Cmd+Q ends
@@ -241,6 +241,10 @@ func main() {
 			svc.reportChrome.Store(watchChrome(svc.tell, w, "report"))
 		})
 	}
+
+	// The first look at the library runs beside the window being made and
+	// its page loading, and the calls that name a video wait for it.
+	go svc.lookFirst()
 
 	// A llama-server the last run left behind, because it crashed or was
 	// killed, is stopped before this run loads a model of its own.

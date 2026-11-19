@@ -514,7 +514,6 @@ var filledWhereBuilt = map[string]bool{
 	"main.ClipEntry.cropLefts":     true,
 	"main.ClipEntry.segments":      true,
 	"main.ClipEntry.thumbnails":    true,
-	"main.CoverageView.passes":     true,
 	"main.Dictation.said":          true,
 	"main.Framing.cropLefts":       true,
 	"main.Framing.cropMarks":       true,

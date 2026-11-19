@@ -707,7 +707,7 @@ func (m *Machine) windowFits(lines []Line, opts PlanOptions) error {
 func (e *Engine) wholeClip(ctx context.Context, sourcePath string, source SourceInfo,
 	lines []Line, opts PlanOptions) (*PlanFile, error) {
 	if len(lines) == 0 {
-		return nil, errors.New("no speech was found in the audio")
+		return nil, ErrNoSpeech
 	}
 	opts.Count = 1
 	// The episode is the one moment there is. A clip of it still in the

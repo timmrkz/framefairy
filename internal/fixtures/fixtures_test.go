@@ -252,18 +252,21 @@ var recipes = map[string][]string{
 	// asks for, the longest for the windows of a long video, 1503 seconds
 	// for a window off the range picker's step. One in HEVC, and two
 	// filmed by two cameras, see cameras.
-	"walk-12s.mp4":             walk("12"),
-	"walk-15s.mp4":             walk("15"),
-	"walk-20s.mp4":             walk("20"),
-	"walk-30s.mp4":             walk("30"),
-	"walk-60s.mp4":             walk("60"),
-	"walk-90s.mp4":             walk("90"),
-	"walk-120s.mp4":            walk("120"),
-	"walk-600s.mp4":            walk("600"),
-	"walk-1200s.mp4":           walk("1200"),
-	"walk-1500s.mp4":           walk("1500"),
-	"walk-1503s.mp4":           walk("1503"),
-	"walk-40s-hevc.mp4":        walkHEVC(walk("40")),
+	"walk-12s.mp4":      walk("12"),
+	"walk-15s.mp4":      walk("15"),
+	"walk-20s.mp4":      walk("20"),
+	"walk-30s.mp4":      walk("30"),
+	"walk-60s.mp4":      walk("60"),
+	"walk-90s.mp4":      walk("90"),
+	"walk-120s.mp4":     walk("120"),
+	"walk-600s.mp4":     walk("600"),
+	"walk-1200s.mp4":    walk("1200"),
+	"walk-1500s.mp4":    walk("1500"),
+	"walk-1503s.mp4":    walk("1503"),
+	"walk-40s-hevc.mp4": walkHEVC(walk("40")),
+	// One with no sound at all, a screen recording made with the sound
+	// off. Copied, so its picture is the one above.
+	"walk-20s-mute.mp4":        {"-i", "@walk-20s.mp4", "-map", "0:v", "-c", "copy"},
 	"cameras-30s-12.mp4":       cameras("30", 12, false),
 	"cameras-120s-60-hevc.mp4": cameras("120", 60, true),
 	"filmed-30s-25.mp4":        filmed("30", "25", ""),

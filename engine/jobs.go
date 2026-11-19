@@ -144,6 +144,9 @@ type JobRecord struct {
 	// Pass is which search of its window a search is, so one carried on
 	// writes to the plan it began, see PlanRequest.Pass.
 	Pass int `json:"pass,omitempty"`
+	// Silent is a search done that found no speech in its window, so
+	// nothing to make a clip from, see ErrNoSpeech and EndedSilent.
+	Silent bool `json:"silent,omitempty"`
 
 	// A render: the plan, its clips, empty for all of them, and the clips
 	// finished so far.
@@ -668,7 +671,14 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, host Host) (plan 
 		return "", err
 	}
 	defer release()
-	return p.Plan(stepCtx, req)
+	plan, err = p.Plan(stepCtx, req)
+	// A window nobody speaks in is what the video is, not a failure: the
+	// search is done, with nothing found, and says why, #831.
+	if errors.Is(err, ErrNoSpeech) {
+		j.note(func(r *JobRecord) { r.Silent = true })
+		return "", nil
+	}
+	return plan, err
 }
 
 // TranscribeJob hears a part of the episode, wherever the transcript has
@@ -777,10 +787,31 @@ func (p *Project) windowEnd(ctx context.Context, req PlanRequest) (float64, erro
 		}
 		return 0, err
 	}
-	if req.To <= 0 || req.To >= info.Duration-0.05 {
-		return info.Duration, nil
+	return searchEnd(req, info.Duration), nil
+}
+
+// searchEnd is where a search of req ends in a video duration seconds
+// long: its To, or the end of the video for a window with none or one
+// that ends a hair before it.
+func searchEnd(req PlanRequest, duration float64) float64 {
+	if req.To <= 0 || req.To >= duration-0.05 {
+		return duration
 	}
-	return req.To, nil
+	return req.To
+}
+
+// FirstStep is the step a search of req takes first, in the episode,
+// duration seconds long, heard with the speech model in modelDir:
+// StepHearing while part of its window is not heard yet, the parts Search
+// hears first, see hear, and StepFinding once all of it is. The app
+// queues a search in that step's lane from the press on, so it says what
+// it waits for from the start. What is heard is the episode's, held by
+// its stamp, see Heard, so a press reads no file that did not change.
+func (ep *Episode) FirstStep(modelDir string, silenceDB *float64, req PlanRequest, duration float64) string {
+	if len(gapsIn(ep.Heard(modelDir, silenceDB), timed.Window{Start: req.From, End: searchEnd(req, duration)})) > 0 {
+		return StepHearing
+	}
+	return StepFinding
 }
 
 // RenderJob renders clips of a plan, one at a time, and keeps a record of

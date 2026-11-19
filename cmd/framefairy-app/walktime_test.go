@@ -237,6 +237,12 @@ func TestTheWalksClockStandsStillWhileHeld(t *testing.T) {
 // others due with it, and leaves the later ones. With nothing set, it
 // waits for a call to be set, the way a search that has just started
 // sets its first report.
+//
+// The call it waits for is set alone. The waiting goroutine wakes the
+// moment a call is set and may run the clock on before the test sets
+// another, so a second call set then was due half a second later than
+// the test meant, and the test failed now and then under the race
+// detector.
 func TestTheWalksClockRunsOnToItsNextCall(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := newWalkTime()
@@ -254,15 +260,20 @@ func TestTheWalksClockRunsOnToItsNextCall(t *testing.T) {
 		}()
 		synctest.Wait()
 		w.AfterFunc(500*time.Millisecond, note("a"))
+		if d := <-ran; d != 500*time.Millisecond || !slices.Equal(seen(), []string{"a"}) {
+			t.Errorf("waiting for a call, the clock ran on %v and made %v, want 500ms and a", d, seen())
+		}
+
 		w.AfterFunc(500*time.Millisecond, note("b"))
-		w.AfterFunc(time.Second, note("c"))
-		if d := <-ran; d != 500*time.Millisecond {
+		w.AfterFunc(500*time.Millisecond, note("c"))
+		w.AfterFunc(time.Second, note("d"))
+		if d, _ := w.next(context.Background()); d != 500*time.Millisecond {
 			t.Errorf("the clock ran on %v to its next call, want 500ms", d)
 		}
-		if got := seen(); len(got) != 2 || !slices.Contains(got, "a") || !slices.Contains(got, "b") {
-			t.Errorf("run on to its next call, the clock made %v, want a and b", got)
+		if got := seen(); len(got) != 3 || !slices.Contains(got, "b") || !slices.Contains(got, "c") {
+			t.Errorf("run on to its next call, the clock made %v, want a, b and c", got)
 		}
-		if d, _ := w.next(context.Background()); d != 500*time.Millisecond || len(seen()) != 3 {
+		if d, _ := w.next(context.Background()); d != 500*time.Millisecond || len(seen()) != 4 {
 			t.Errorf("the next call: ran %v and made %v", d, seen())
 		}
 	})
