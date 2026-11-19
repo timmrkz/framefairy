@@ -309,6 +309,15 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 	}
 }
 
+// LetFramesGo empties the frames the schedule kept, once the video's
+// workspace is asleep: the decoder stays open a while for a video that
+// comes back, and each of those kept up to lookKeptBytes.
+func (s *Schedule) LetFramesGo() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.kept = newKeptFrames(lookKeptBytes)
+}
+
 // Close stops the decoder's work for the hand and answers every look that
 // waits with ErrOvertaken: the video preview has let go of the video.
 func (s *Schedule) Close() {

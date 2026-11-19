@@ -581,6 +581,9 @@ func (p *previews) release(path string) {
 		// keeps running for a while, the frames it kept need not.
 		if d := p.decoders[path]; d != nil {
 			d.LetFramesGo()
+			if s := p.schedules[d]; s != nil {
+				s.LetFramesGo()
+			}
 		}
 	}
 	theLog.line(zerolog.DebugLevel, "files").Str("video", filepath.Base(path)).Int("held", p.held[path]).Msg("the decoder is let go")

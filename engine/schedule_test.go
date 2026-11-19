@@ -641,6 +641,26 @@ func TestTheKeptFramesLetTheOldestGo(t *testing.T) {
 	}
 }
 
+// A video whose workspace went to sleep keeps its decoder a while, and
+// none of the frames it kept: three videos each kept up to lookKeptBytes.
+func TestASleepingVideoKeepsNoFrames(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	click := lookFor(s, rest(48))
+	st := dec.next(t)
+	_ = st.give(t, 47)
+	_ = st.give(t, 48)
+	<-click
+	s.LetFramesGo()
+	s.mu.Lock()
+	kept := s.kept.bytes
+	s.mu.Unlock()
+	if kept != 0 {
+		t.Fatalf("the schedule still keeps %d bytes of frames", kept)
+	}
+}
+
 type readAhead struct {
 	frames []int
 	err    error
