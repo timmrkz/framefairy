@@ -81,6 +81,8 @@ type PlanSummary struct {
 	ordered func() ([]*object, error)
 	// said is what Said laid out last, kept with the read, see Said.
 	said *keptSaid
+	// turns are the clips TurnClip worked out of this read, see keptTurns.
+	turns *keptTurns
 }
 
 // orderedClips are the clips of the plan in its own order, the way an
@@ -344,7 +346,7 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
 		Modified: info.ModTime(), plan: plan, clips: clips, data: data,
 		ordered: sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) }),
-		said:    &keptSaid{}}
+		said:    &keptSaid{}, turns: &keptTurns{}}
 	made := plan.PlannedWith()
 	if v, ok := num.AsFloat(made[keyFrom]); ok {
 		s.From = v

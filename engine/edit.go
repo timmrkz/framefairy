@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/spf13/afero"
 
@@ -563,6 +564,52 @@ func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames Sourc
 // stretch off the frames and left a part in the middle where it takes the
 // crop of a part turned alike.
 func TurnClip(s PlanSummary, clipID string, at float64, frames SourceInfo) (Clip, error) {
+	key := fmt.Sprintf("%s|%v|%d/%d", clipID, at, frames.FPSNum, frames.FPSDen)
+	if clip, ok := s.turns.get(key); ok {
+		return clip, nil
+	}
+	clip, err := turnClip(s, clipID, at, frames)
+	if err == nil {
+		s.turns.set(key, clip)
+	}
+	return clip, err
+}
+
+// keptTurns are the clips TurnClip worked out of one read of a plan, by
+// the clip, the moment and the frames, so a state read four times a
+// second while work runs works each out once, not on every read. They
+// are shared and only read.
+type keptTurns struct {
+	mu    sync.Mutex
+	turns map[string]Clip
+}
+
+// get is the clip kept for key. A summary made without a place to keep
+// turns keeps none.
+func (k *keptTurns) get(key string) (Clip, bool) {
+	if k == nil {
+		return Clip{}, false
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	clip, ok := k.turns[key]
+	return clip, ok
+}
+
+func (k *keptTurns) set(key string, clip Clip) {
+	if k == nil {
+		return
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.turns == nil {
+		k.turns = map[string]Clip{}
+	}
+	k.turns[key] = clip
+}
+
+// turnClip is TurnClip, worked out.
+func turnClip(s PlanSummary, clipID string, at float64, frames SourceInfo) (Clip, error) {
 	clips, err := s.orderedClips()
 	if err != nil {
 		return Clip{}, err
