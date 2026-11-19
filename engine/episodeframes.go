@@ -14,9 +14,27 @@ import (
 	"sync"
 	"time"
 
+	"framefairy/engine/runes"
 	"framefairy/internal/framewire"
 	"framefairy/internal/wake"
 )
+
+// tail keeps the last lines the decoder said that were not about a frame,
+// for the reason when it fails.
+type tail struct {
+	lines []string
+}
+
+func (t *tail) add(line string) {
+	t.lines = append(t.lines, line)
+	if len(t.lines) > 8 {
+		t.lines = t.lines[1:]
+	}
+}
+
+func (t *tail) String() string {
+	return runes.Scrub(strings.Join(t.lines, " "), 400)
+}
 
 // DecoderInfo starts a line the decoder writes only for the log: what it
 // opened and how, what it is doing and how long it took. Only its other
