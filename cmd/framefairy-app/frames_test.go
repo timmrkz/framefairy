@@ -580,7 +580,7 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 		return rec
 	}
 	look := ask("30", nil)
-	if look.Code != http.StatusOK || look.Header().Get("X-Frames-Exact") != "1" || look.Header().Get("X-Frames-Error") != "" {
+	if look.Code != http.StatusOK || look.Header().Get("X-Frames-Exact") != "1" || look.Header().Get("X-Frames-Near") != "1" || look.Header().Get("X-Frames-Error") != "" {
 		t.Fatalf("the look answered %d, %v", look.Code, look.Header())
 	}
 	if n := look.Body.Len(); n != 8+32*18*4 {
@@ -602,6 +602,31 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 	svc.previews.close(opened.ID)
 	if read.Body.String() != look.Body.String() {
 		t.Error("the look's frame is not the frame a stream from there hands over")
+	}
+
+	// The frames the decoder read around the click, which the window does
+	// not hold yet, the one before it held already.
+	near := httptest.NewRecorder()
+	handler.ServeHTTP(near, httptest.NewRequest("GET", "/frames/near?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {grid}, "frame": {"30"}, "has": {"29"}}.Encode(), nil))
+	if n := near.Body.Len(); near.Code != http.StatusOK || n != 4*(8+32*18*4) {
+		t.Errorf("the frames near answered %d with %d bytes, want the 4 frames after the click", near.Code, n)
+	}
+
+	// A frame read ahead is found kept, nothing decoded for it.
+	ahead := httptest.NewRecorder()
+	handler.ServeHTTP(ahead, httptest.NewRequest("GET", "/frames/ahead?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {grid}, "frames": {fmt.Sprint(g.Count / 2)}, "cards": {fmt.Sprint(g.Count-3) + ",x"}}.Encode(), nil))
+	if ahead.Code != http.StatusOK || ahead.Header().Get("X-Frames-Error") != "" {
+		t.Fatalf("reading ahead answered %d, %v", ahead.Code, ahead.Header())
+	}
+	// The frames read ahead come with the answer, for the window to keep:
+	// the word's with the frame before and four after, and the card's.
+	if size := 8 + 32*18*4; ahead.Body.Len() != 7*size {
+		t.Errorf("reading ahead handed over %d bytes, not 7 frames of %d", ahead.Body.Len(), size)
+	}
+	for _, f := range []string{fmt.Sprint(g.Count / 2), fmt.Sprint(g.Count - 3)} {
+		if kept := ask(f, nil); kept.Header().Get("X-Frames-Kept") != "1" || kept.Header().Get("X-Frames-Exact") != "1" {
+			t.Errorf("a look at frame %s read ahead answered %d, %v", f, kept.Code, kept.Header())
+		}
 	}
 
 	if bad := ask(fmt.Sprint(g.Count), nil); bad.Code != http.StatusBadRequest {

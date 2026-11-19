@@ -13,7 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,6 +39,13 @@ import (
 //	/frames/look?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&shown=<frame>[&move=1][&follow=1]
 //	                                 the frame for where the hand is, see
 //	                                 serveLook and engine.Schedule
+//	/frames/near?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&has=<frame>,...
+//	                                 the frames kept around a place the
+//	                                 window does not hold, see serveNear
+//	/frames/ahead?path=<episode>&w=<width>&h=<height>&grid=<grid>&frames=<frame>,...&cards=<frame>,...&has=<frame>,...[&held=1]
+//	                                 what to read while the hand rests,
+//	                                 answered by the frames read that the
+//	                                 window does not hold, see serveAhead
 //	/frames/open?path=<episode>&from=<seconds>&w=<width>&h=<height>&grid=<grid>[&key=1]  {"id": "..."}
 //	                                 the frames of the grid from the one that
 //	                                 holds from: the grid the engine named,
@@ -147,6 +156,10 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 		p.serveOpen(st, w, r)
 	case "/frames/look":
 		p.serveLook(st, w, r)
+	case "/frames/near":
+		p.serveNear(st, w, r)
+	case "/frames/ahead":
+		p.serveAhead(st, w, r)
 	case "/frames/read":
 		stream := p.get(q.Get("id"))
 		if stream == nil {
@@ -270,43 +283,28 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 // frames after the place the hand rests on, and shown is the frame on
 // screen, or -1. The answer is the frame as writeFrames writes one, with
 // X-Frames-Exact where it is the frame of the place and not one on the
-// way. A look a newer one took the place of is answered with no content,
+// way, X-Frames-Kept where nothing was decoded for it, and X-Frames-Near
+// where frames around it are worth asking for, see serveNear. A look a newer one took the place of is answered with no content,
 // and one the decoder failed with X-Frames-Error and no frame.
 func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	path := q.Get("path")
-	if !episodeFile(st, path) {
-		http.NotFound(w, r)
-		return
-	}
-	width, _ := strconv.Atoi(q.Get("w"))
-	height, _ := strconv.Atoi(q.Get("h"))
-	if width < 2 || height < 2 || width > 7680 || height > 4320 {
-		http.Error(w, "a look needs a width and a height", http.StatusBadRequest)
-		return
-	}
-	grid, ok := framewire.ReadGrid(q.Get("grid"))
+	path, hand, ok := handArgs(st, w, r, true)
 	if !ok {
-		http.Error(w, "a look needs the grid of frames it counts on", http.StatusBadRequest)
-		return
-	}
-	frame, err := strconv.Atoi(q.Get("frame"))
-	if err != nil || frame < 0 || frame >= grid.Count {
-		http.Error(w, "a look needs a frame of the grid", http.StatusBadRequest)
 		return
 	}
 	shown, err := strconv.Atoi(q.Get("shown"))
-	if err != nil || shown < 0 || shown >= grid.Count {
+	if err != nil || shown < 0 || shown >= hand.Grid.Count {
 		shown = -1
 	}
+	hand.Shown, hand.Moving, hand.Follow = shown, q.Get("move") == "1", q.Get("follow") == "1"
+	frame := hand.Frame
 	dec, err := p.decoder(st.machine, path)
 	if err != nil {
 		w.Header().Set("X-Frames-Error", runes.Scrub(err.Error(), 300))
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	seen, err := p.schedule(dec).Look(r.Context(), engine.Hand{Grid: grid, Frame: frame, W: width &^ 1, H: height &^ 1,
-		Moving: q.Get("move") == "1", Follow: q.Get("follow") == "1", Shown: shown})
+	seen, err := p.schedule(dec).Look(r.Context(), hand)
 	switch {
 	case errors.Is(err, engine.ErrOvertaken):
 		w.WriteHeader(http.StatusNoContent)
@@ -326,13 +324,133 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) 
 	if seen.Exact {
 		w.Header().Set("X-Frames-Exact", "1")
 	}
+	if seen.Kept {
+		w.Header().Set("X-Frames-Kept", "1")
+	}
+	if seen.Exact && p.schedule(dec).HasNear(hand) {
+		w.Header().Set("X-Frames-Near", "1")
+	}
+	writeSeen(w, dec, []engine.Seen{seen})
+}
+
+// writeSeen writes frames a schedule sent, each as writeFrames writes one.
+func writeSeen(w http.ResponseWriter, dec *engine.EpisodeFrames, seen []engine.Seen) {
 	if light := dec.Light(); light != framewire.SDR {
 		w.Header().Set("X-Frames-Light", string(light))
 	}
 	head := make([]byte, 8)
-	binary.LittleEndian.PutUint64(head, math.Float64bits(seen.At))
-	if _, err := w.Write(head); err == nil {
-		_, _ = w.Write(seen.Picture)
+	for _, f := range seen {
+		binary.LittleEndian.PutUint64(head, math.Float64bits(f.At))
+		if _, err := w.Write(head); err != nil {
+			return
+		}
+		if _, err := w.Write(f.Picture); err != nil {
+			return
+		}
+	}
+}
+
+// handArgs reads the episode, the size, the grid and, with frame, the
+// frame of a request about the hand, and answers a request that names a
+// file outside the library, or a size, grid or frame it cannot have.
+func handArgs(st *store, w http.ResponseWriter, r *http.Request, frame bool) (string, engine.Hand, bool) {
+	q := r.URL.Query()
+	path := q.Get("path")
+	if !episodeFile(st, path) {
+		http.NotFound(w, r)
+		return "", engine.Hand{}, false
+	}
+	width, _ := strconv.Atoi(q.Get("w"))
+	height, _ := strconv.Atoi(q.Get("h"))
+	if width < 2 || height < 2 || width > 7680 || height > 4320 {
+		http.Error(w, "frames need a width and a height", http.StatusBadRequest)
+		return "", engine.Hand{}, false
+	}
+	grid, ok := framewire.ReadGrid(q.Get("grid"))
+	if !ok {
+		http.Error(w, "frames need the grid they count on", http.StatusBadRequest)
+		return "", engine.Hand{}, false
+	}
+	hand := engine.Hand{Grid: grid, W: width &^ 1, H: height &^ 1, Shown: -1}
+	if frame {
+		f, err := strconv.Atoi(q.Get("frame"))
+		if err != nil || f < 0 || f >= grid.Count {
+			http.Error(w, "a look needs a frame of the grid", http.StatusBadRequest)
+			return "", engine.Hand{}, false
+		}
+		hand.Frame = f
+	}
+	return path, hand, true
+}
+
+// frameList reads a list of frames of the grid, "1,2,3", leaving out what
+// is no frame of it, and no more than most.
+func frameList(text string, grid framewire.Grid, most int) []int {
+	var out []int
+	for f := range strings.SplitSeq(text, ",") {
+		n, err := strconv.Atoi(f)
+		if err != nil || n < 0 || n >= grid.Count {
+			continue
+		}
+		if out = append(out, n); len(out) == most {
+			break
+		}
+	}
+	return out
+}
+
+// serveNear answers with the frames kept around a place the hand rests on
+// that the window does not hold, has, once the decoder has read them,
+// each as writeFrames writes one. See engine.Schedule.Near.
+func (p *previews) serveNear(st *store, w http.ResponseWriter, r *http.Request) {
+	path, hand, ok := handArgs(st, w, r, true)
+	if !ok {
+		return
+	}
+	dec, err := p.decoder(st.machine, path)
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	has := frameList(r.URL.Query().Get("has"), hand.Grid, 64)
+	near := p.schedule(dec).Near(r.Context(), hand, func(f int) bool { return slices.Contains(has, f) })
+	if r.Context().Err() != nil {
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	writeSeen(w, dec, near)
+}
+
+// serveAhead hands the schedule what to read while the hand rests, see
+// engine.Ahead, and answers once it is read with the frames the window
+// does not hold, each as writeFrames writes one, with no content when a
+// newer ask took its place, and with X-Frames-Error when the decoder
+// could not be opened.
+func (p *previews) serveAhead(st *store, w http.ResponseWriter, r *http.Request) {
+	path, hand, ok := handArgs(st, w, r, false)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	dec, err := p.decoder(st.machine, path)
+	if err != nil {
+		w.Header().Set("X-Frames-Error", runes.Scrub(err.Error(), 300))
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	seen, err := p.schedule(dec).Ahead(r.Context(), engine.Ahead{Grid: hand.Grid, W: hand.W, H: hand.H,
+		Frames: frameList(q.Get("frames"), hand.Grid, 16), Cards: frameList(q.Get("cards"), hand.Grid, 256),
+		Has: frameList(q.Get("has"), hand.Grid, 512), Held: q.Get("held") == "1"})
+	switch {
+	case errors.Is(err, engine.ErrOvertaken):
+		w.WriteHeader(http.StatusNoContent)
+	case r.Context().Err() != nil:
+	case err != nil:
+		w.Header().Set("X-Frames-Error", runes.Scrub(err.Error(), 300))
+		w.WriteHeader(http.StatusOK)
+	default:
+		writeSeen(w, dec, seen)
 	}
 }
 

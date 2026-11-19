@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"framefairy/internal/framewire"
@@ -23,6 +24,7 @@ type heldDecoder struct {
 type heldStream struct {
 	from   int
 	key    bool
+	skip   func() float64
 	ctx    context.Context
 	frames chan heldFrame
 	ended  chan error
@@ -39,8 +41,8 @@ func newHeldDecoder() *heldDecoder {
 }
 
 func (d *heldDecoder) Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int, key bool,
-	_ func() float64, got func(at float64, frame []byte) error) error {
-	s := &heldStream{from: grid.Holding(from), key: key, ctx: ctx, frames: make(chan heldFrame), ended: make(chan error, 1)}
+	skip func() float64, got func(at float64, frame []byte) error) error {
+	s := &heldStream{from: grid.Holding(from), key: key, skip: skip, ctx: ctx, frames: make(chan heldFrame), ended: make(chan error, 1)}
 	d.opened <- s
 	for {
 		select {
@@ -252,17 +254,51 @@ func TestADragShowsTheKeyFramesOnTheWay(t *testing.T) {
 	// The hand stays: its key frame, then its own frame.
 	again := lookFor(s, move(170, 100))
 	waits(s, move(170, 100))
+	if now.skip == nil || now.skip() > 0 {
+		t.Fatal("the stream would skip its key frame")
+	}
 	_ = now.give(t, 150)
 	if got := <-again; got.seen.Frame != 150 || got.seen.Exact {
 		t.Fatalf("the place got %+v, %v, want its key frame", got.seen, got.err)
 	}
+	// Past the key frame, the frames before the place are not made into
+	// pictures.
+	if at := now.skip(); at != lookGrid.At(170) {
+		t.Fatalf("the stream skips to %v, not to the place at %v", at, lookGrid.At(170))
+	}
+	// The hand went 20 frames at a time, past the frames around each
+	// place, so the stream ends at the place.
 	again = lookFor(s, move(170, 150))
 	waits(s, move(170, 150))
 	if err := now.give(t, 170); !errors.Is(err, errLookDone) {
-		t.Fatalf("a stream for a hand that moves read on past its place: %v", err)
+		t.Fatalf("the stream of a fast hand read on past its place: %v", err)
 	}
 	if got := <-again; got.seen.Frame != 170 || !got.seen.Exact {
 		t.Fatalf("the place got %+v, %v, want its own frame", got.seen, got.err)
+	}
+	// A hand that goes on slowly has its stream read on a little past the
+	// place, so its next frames are found on the way, and a step there
+	// opens no stream.
+	step := lookFor(s, move(172, 170))
+	waits(s, move(172, 170))
+	slow := dec.next(t)
+	_ = slow.give(t, 172)
+	if got := <-step; got.seen.Frame != 172 || !got.seen.Exact {
+		t.Fatalf("the slow step got %+v, %v", got.seen, got.err)
+	}
+	step = lookFor(s, move(173, 172))
+	waits(s, move(173, 172))
+	_ = slow.give(t, 173)
+	if got := <-step; got.seen.Frame != 173 || !got.seen.Exact {
+		t.Fatalf("the step on got %+v, %v", got.seen, got.err)
+	}
+	for f := 174; f < 173+lookAhead; f++ {
+		if err := slow.give(t, f); err != nil {
+			t.Fatalf("the stream stopped at frame %d, before the frames after the place: %v", f, err)
+		}
+	}
+	if err := slow.give(t, 173+lookAhead); !errors.Is(err, errLookDone) {
+		t.Fatalf("the stream read on past the frames after the place: %v", err)
 	}
 	dec.none(t)
 }
@@ -330,9 +366,12 @@ func TestASlowDragBackBringsTheFramesBehindIt(t *testing.T) {
 	if got := <-back; got.seen.Frame != 99 || !got.seen.Exact {
 		t.Fatalf("a step back to the frame kept got %+v, %v", got.seen, got.err)
 	}
+	// The step back to 99 found its frame kept, and the frames before it
+	// are read, see TestASlowDragBackReadsOnBehindTheHand: the next step
+	// back finds its frame on their way.
 	back = lookFor(s, move(97, 99))
 	run := dec.next(t)
-	if run.from != 97-lookBack || run.key {
+	if run.from != 99-lookBack || run.key {
 		t.Fatalf("a slow step back opened a stream from %d, key first %v", run.from, run.key)
 	}
 	for f := run.from; f <= 97; f++ {
@@ -341,12 +380,79 @@ func TestASlowDragBackBringsTheFramesBehindIt(t *testing.T) {
 	if got := <-back; got.seen.Frame != 97 || !got.seen.Exact {
 		t.Fatalf("the step back got %+v, %v", got.seen, got.err)
 	}
-	for f := 96; f > 97-lookBack; f-- {
+	for f := 96; f >= run.from; f-- {
 		if got := <-lookFor(s, move(f, f+1)); got.seen.Frame != f || !got.seen.Exact {
 			t.Fatalf("the step back to %d got %+v, %v", f, got.seen, got.err)
 		}
 	}
+	// The hand is at the first frame read, so the frames before it are
+	// read next.
+	if next := dec.next(t); next.from != run.from-lookBack {
+		t.Fatalf("the frames behind the hand were read from %d", next.from)
+	}
+}
+
+// A hand going on slowly to the left never waits at the end of the frames
+// read behind it: once fewer than lookBack of them are left before it, the
+// ones before those are read while it steps through the ones there are.
+// A slow drag to the left stood still every lookBack frames, and where
+// the hand let go there, the frame came 150 ms later.
+func TestASlowDragBackReadsOnBehindTheHand(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	back := lookFor(s, move(97, 99))
+	run := dec.next(t)
+	for f := run.from; f <= 97; f++ {
+		_ = run.give(t, f)
+	}
+	<-back
+	for f := 98; f < 97+lookAhead; f++ {
+		_ = run.give(t, f)
+	}
+	if err := run.give(t, 97+lookAhead); !errors.Is(err, errLookDone) {
+		t.Fatalf("the step back's stream went on: %v", err)
+	}
+	until(s, func() bool { return s.run == nil })
+	// The first step back finds its frame kept, and the frames before the
+	// ones kept are read.
+	if got := <-lookFor(s, move(96, 97)); got.seen.Frame != 96 || !got.seen.Kept {
+		t.Fatalf("the step back to 96 got %+v, %v", got.seen, got.err)
+	}
+	behind := dec.next(t)
+	if behind.from != 97-2*lookBack || behind.key {
+		t.Fatalf("the frames behind the hand were read from %d, key first %v", behind.from, behind.key)
+	}
+	for f := behind.from; f < 97-lookBack-1; f++ {
+		if err := behind.give(t, f); err != nil {
+			t.Fatalf("the reading behind the hand stopped at %d: %v", f, err)
+		}
+	}
+	if err := behind.give(t, 97-lookBack-1); !errors.Is(err, errLookDone) {
+		t.Fatalf("the reading behind the hand went on past the frames kept: %v", err)
+	}
+	until(s, func() bool { return s.run == nil })
+	// Every step down to there finds its frame kept, and the next frames
+	// behind are read once fewer than lookBack are left.
+	for f := 95; f > 97-lookBack-1; f-- {
+		if got := <-lookFor(s, move(f, f+1)); !got.seen.Kept {
+			t.Fatalf("the step back to %d got %+v, %v", f, got.seen, got.err)
+		}
+	}
 	dec.none(t)
+	f := 97 - lookBack - 1
+	if got := <-lookFor(s, move(f, f+1)); !got.seen.Kept {
+		t.Fatalf("the step back to %d got %+v, %v", f, got.seen, got.err)
+	}
+	next := dec.next(t)
+	if next.from != 97-3*lookBack {
+		t.Fatalf("the next frames behind the hand were read from %d", next.from)
+	}
+	// The hand lets go: it goes back no more, so the reading stops.
+	if got := <-lookFor(s, rest(f)); !got.seen.Kept {
+		t.Fatalf("letting go got %+v, %v", got.seen, got.err)
+	}
+	next.stopped(t)
 }
 
 // The frames a play from the place shows first follow the frame of the
@@ -425,4 +531,249 @@ func TestTheKeptFramesLetTheOldestGo(t *testing.T) {
 			t.Errorf("frame %d was let go of", f)
 		}
 	}
+}
+
+type readAhead struct {
+	frames []int
+	err    error
+}
+
+// aheadFor asks the schedule to read a ahead, answered on the channel
+// with the frames handed over.
+func aheadFor(s *Schedule, a Ahead) chan readAhead {
+	out := make(chan readAhead, 1)
+	go func() {
+		seen, err := s.Ahead(context.Background(), a)
+		got := readAhead{err: err}
+		for _, f := range seen {
+			got.frames = append(got.frames, f.Frame)
+		}
+		out <- got
+	}()
+	return out
+}
+
+func aheadOf(frames, cards []int) Ahead {
+	return Ahead{Grid: lookGrid, W: 4, H: 2, Frames: frames, Cards: cards}
+}
+
+// The frames read ahead wait until the decoder has nothing to do for the
+// hand, and a step or a card clicked then finds its frame kept, nothing
+// decoded for it. The word beside first, then the cards. Issue #383.
+func TestTheFramesAheadAreReadOnceTheHandRestsAndFoundKept(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	click := lookFor(s, rest(10))
+	st := dec.next(t)
+	read := aheadFor(s, aheadOf([]int{50}, []int{200}))
+	until(s, func() bool { return s.ahead != nil })
+	dec.none(t)
+	for f := 9; f <= 10+lookAhead; f++ {
+		_ = st.give(t, f)
+	}
+	if got := <-click; got.seen.Frame != 10 || got.seen.Kept {
+		t.Fatalf("the click got %+v, %v", got.seen, got.err)
+	}
+	// The word's frame comes with the frame before it, where the arrow to
+	// the left steps, and the frames after it, where the arrow to the
+	// right does.
+	// No key frame first: nobody waits to be shown one.
+	word := dec.next(t)
+	if word.from != 49 || word.key {
+		t.Fatalf("the word beside was read from %d, key first %v", word.from, word.key)
+	}
+	for f := 49; f < 50+lookAhead; f++ {
+		if err := word.give(t, f); err != nil {
+			t.Fatalf("the reading stopped at %d: %v", f, err)
+		}
+	}
+	if err := word.give(t, 50+lookAhead); !errors.Is(err, errLookDone) {
+		t.Fatalf("the reading went on past the word's frames: %v", err)
+	}
+	card := dec.next(t)
+	if card.from != 200 {
+		t.Fatalf("the card's frame was read from %d", card.from)
+	}
+	_ = card.give(t, 200)
+	got := <-read
+	if got.err != nil {
+		t.Fatalf("the reading ahead ended with %v", got.err)
+	}
+	if want := []int{49, 50, 51, 52, 53, 54, 200}; !slices.Equal(got.frames, want) {
+		t.Fatalf("the window was handed frames %v, want %v", got.frames, want)
+	}
+	for _, f := range []int{50, 200} {
+		if got := <-lookFor(s, rest(f)); !got.seen.Exact || !got.seen.Kept {
+			t.Errorf("a step to frame %d got %+v, %v, want it kept", f, got.seen, got.err)
+		}
+	}
+	dec.none(t)
+}
+
+// A look of the hand stops the reading ahead between two frames, and the
+// frame it was reading is read once the hand rests again.
+func TestTheHandStopsTheReadingAhead(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	read := aheadFor(s, aheadOf([]int{50}, nil))
+	word := dec.next(t)
+	_ = word.give(t, 40)
+	click := lookFor(s, rest(300))
+	word.stopped(t)
+	st := dec.next(t)
+	if st.from != 299 {
+		t.Fatalf("the click opened a stream from %d", st.from)
+	}
+	for f := 299; f <= 300+lookAhead; f++ {
+		_ = st.give(t, f)
+	}
+	if got := <-click; got.seen.Frame != 300 {
+		t.Fatalf("the click got %+v, %v", got.seen, got.err)
+	}
+	again := dec.next(t)
+	if again.from != 49 {
+		t.Fatalf("the reading ahead went on from %d, not the word's frames", again.from)
+	}
+	for f := 49; f <= 50+lookAhead; f++ {
+		_ = again.give(t, f)
+	}
+	if got := <-read; got.err != nil {
+		t.Fatalf("the reading ahead ended with %v", got.err)
+	}
+}
+
+// While the hand holds the playhead nothing is read ahead: a card's seek
+// stood between the hand and the frame under it, issue #596. Once it lets
+// go, the reading starts.
+func TestNothingIsReadAheadWhileTheHandHoldsThePlayhead(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	held := aheadOf(nil, []int{200})
+	held.Held = true
+	if got := <-aheadFor(s, held); got.err != nil || got.frames != nil {
+		t.Fatalf("the Ahead while held got %v, %v", got.frames, got.err)
+	}
+	dec.none(t)
+	read := aheadFor(s, aheadOf(nil, []int{200}))
+	card := dec.next(t)
+	if card.from != 200 {
+		t.Fatalf("the card's frame was read from %d", card.from)
+	}
+	_ = card.give(t, 200)
+	if got := <-read; got.err != nil {
+		t.Fatalf("the reading ahead ended with %v", got.err)
+	}
+}
+
+// The window holds the frames around the place the hand rests on, the
+// ones it does not have yet, once the run for the place has read them:
+// a step with the arrow keys then shows its frame with no request.
+func TestTheFramesAroundAPlaceGoToTheWindow(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	click := lookFor(s, rest(48))
+	st := dec.next(t)
+	_ = st.give(t, 47)
+	_ = st.give(t, 48)
+	<-click
+	if !s.HasNear(rest(48)) {
+		t.Fatal("the look says no frames are near the click, with its run still reading")
+	}
+	if s.HasNear(rest(300)) {
+		t.Fatal("the look says frames are near a place nothing was read around")
+	}
+	if !s.HasNear(move(48, 50)) {
+		t.Fatal("the look says no frames are near a slow drag's place")
+	}
+	if s.HasNear(move(48, 60)) {
+		t.Fatal("a fast drag would be sent the frames around a place it passes over")
+	}
+	near := make(chan []Seen, 1)
+	go func() { near <- s.Near(context.Background(), rest(48), func(f int) bool { return f == 47 }) }()
+	for f := 49; f <= 48+lookAhead; f++ {
+		_ = st.give(t, f)
+	}
+	var got []int
+	for _, n := range <-near {
+		got = append(got, n.Frame)
+	}
+	if want := []int{49, 50, 51, 52}; !slices.Equal(got, want) {
+		t.Fatalf("the window was handed frames %v, want %v", got, want)
+	}
+}
+
+// A newer Ahead takes the place of the one before, an empty one too, as a
+// play starts: what was being read is stopped, so the play's frames do
+// not wait behind it.
+func TestANewerAheadStopsTheOneBefore(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	read := aheadFor(s, aheadOf([]int{50, 60}, nil))
+	word := dec.next(t)
+	if got := <-aheadFor(s, aheadOf(nil, nil)); got.err != nil {
+		t.Fatalf("an empty Ahead ended with %v", got.err)
+	}
+	if got := <-read; !errors.Is(got.err, ErrOvertaken) {
+		t.Fatalf("the Ahead before got %v", got.err)
+	}
+	word.stopped(t)
+	dec.none(t)
+}
+
+// What the window holds is neither read nor handed over again, and what
+// the schedule kept already is handed over with no decoding.
+func TestTheWindowIsHandedOnlyWhatItLacks(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	click := lookFor(s, rest(50))
+	st := dec.next(t)
+	for f := 49; f <= 50+lookAhead; f++ {
+		_ = st.give(t, f)
+	}
+	<-click
+	a := aheadOf([]int{50}, []int{200, 300})
+	a.Has = []int{51, 300}
+	read := aheadFor(s, a)
+	card := dec.next(t)
+	if card.from != 200 {
+		t.Fatalf("the reading ahead started from %d, not the card the window lacks", card.from)
+	}
+	_ = card.give(t, 200)
+	got := <-read
+	if got.err != nil {
+		t.Fatalf("the reading ahead ended with %v", got.err)
+	}
+	if want := []int{49, 50, 52, 53, 54, 200}; !slices.Equal(got.frames, want) {
+		t.Fatalf("the window was handed frames %v, want %v", got.frames, want)
+	}
+	dec.none(t)
+}
+
+// The frame under the hand and the first frame of the play cued there are
+// asked for at once: the second does not take the first one's place, and
+// both get the frame. One of them came back empty, and the picture stood
+// on the frame after the playhead for good.
+func TestTheSamePlaceAskedTwiceAnswersBoth(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	still := lookFor(s, rest(48))
+	st := dec.next(t)
+	waits(s, rest(48))
+	cue := lookFor(s, rest(48))
+	until(s, func() bool { return len(s.follows) == 1 })
+	_ = st.give(t, 47)
+	_ = st.give(t, 48)
+	for _, got := range []looked{<-still, <-cue} {
+		if got.err != nil || got.seen.Frame != 48 || !got.seen.Exact {
+			t.Fatalf("a look at the place got %+v, %v", got.seen, got.err)
+		}
+	}
+	dec.none(t)
 }

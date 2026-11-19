@@ -1242,7 +1242,7 @@ export class FrameQueue {
     this.trace(`play asked at ${this.at.toFixed(3)} s, ${this.state}, sound card ${this.audio?.state ?? "not there yet"}`);
     if (this.closed || this.state === "playing" || this.state === "starting") return;
     this.gestures++;
-    this.app?.still();
+    this.app?.hold();
     // The sound card starts on the gesture that asked for it, or a browser
     // keeps it silent.
     void this.audio?.resume();

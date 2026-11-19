@@ -11,7 +11,13 @@
 // A play reads streams of frames, a few at a time.
 //
 // - A frame is decoded at the size of the canvas and no larger.
-// - The frames sent last are kept, as memory to draw from again.
+// - The frames sent last are kept, as memory to draw from again, and the
+//   ones the Go side read around the place the hand rests on, so a step
+//   with the arrow keys shows its frame with no request.
+// - What to read while the hand rests, the words beside and the cards, is
+//   handed to the Go side, which reads it when its decoder has nothing to
+//   do for the hand and sends what it read, kept here too, see ahead. The
+//   cards' frames are kept for as long as their cards are there.
 // - The queue's second decoder asks for the piece after a cut while the
 //   first plays, so a stream for it is open before it is needed.
 import { rankOf, ticks, type VideoTrack } from "./movie";
@@ -32,15 +38,9 @@ type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture }[] }
 // with little memory keeps no more than that.
 const KEPT_FRAMES = 40;
 const KEPT_BYTES = 192 << 20;
-// How much the frames of the clips on the cards may keep besides: a frame
-// is its pixels at the size frames are read at, 4 bytes each, about 8 MB
-// at the size of Tim's video preview, so about 48 clips. The likeliest
-// cards are kept first, and the count is made again when that size
-// changes, see cards.
-const CARDS_BYTES = 400 << 20;
 const REACH = 1.5;
 // How many streams are kept open: one for each of the queue's two
-// decoders, and one more for the frames read ahead.
+// decoders, and one more.
 const STREAMS = 3;
 
 // A frame asked for. gone is set when the one who asked no longer wants it,
@@ -49,8 +49,7 @@ const STREAMS = 3;
 // seq numbers the asks in the order they were made. place is set on the
 // frame that holds the playhead, a place the hand put it, see frame, and
 // moving where the hand moves over it. follows is set on the frames after
-// a place the hand rests on, which a play from there shows first. ahead is
-// set on a frame read ahead of the hand, see AppFrames.ahead.
+// a place the hand rests on, which a play from there shows first.
 type Waiter = {
   rank: number;
   seq: number;
@@ -59,7 +58,6 @@ type Waiter = {
   place?: boolean;
   moving?: boolean;
   follows?: boolean;
-  ahead?: boolean;
 };
 
 // Where the time of a stream's first frame went, in milliseconds from when
@@ -83,8 +81,6 @@ class Stream {
   used = performance.now();
   private waiting: Waiter[] = [];
   private pulling = false;
-  // Opened for a frame read ahead of the hand, see AppFrames.ahead.
-  aheadOnly = false;
   // While a pull that skips is on its way, the rank it skips to: the Go
   // side lets every frame before it go unmade, see reaches.
   private skipping = -Infinity;
@@ -131,7 +127,6 @@ class Stream {
 
   want(w: Waiter) {
     this.used = performance.now();
-    if (!w.ahead) this.aheadOnly = false;
     this.waiting.push(w);
     void this.pull();
   }
@@ -232,18 +227,12 @@ class Stream {
       else still.push(w);
     }
     this.waiting = still;
-    if (!this.handWaits) this.owner.aheadNow();
   }
 
   // How it stands, for the app's log: the frames it can give, its size,
   // and whether it ended or skips.
   get state(): string {
     return `${this.first} to ${this.position} at ${this.width}x${this.height}${this.ended ? " ended" : ""}${this.skipping > -Infinity ? ` skipping to ${this.skipping}` : ""}`;
-  }
-
-  // Whether a frame the hand asked for is still to come from this stream.
-  get handWaits(): boolean {
-    return !this.ended && this.waiting.some((w) => !w.ahead && !w.gone);
   }
 
   private end(why: string) {
@@ -286,33 +275,37 @@ export class AppFrames {
   private dragPlaces = 0;
   // The number of the newest ask.
   asked = 0;
-  // The frames read ahead of the hand, withdrawn by the hand's next ask.
-  private aheadOf = new Set<Waiter>();
-  // The ranks to read ahead once the hand waits for nothing, see ahead.
-  private aheadWanted: number[] | null = null;
-  // The ranks read ahead and not yet asked for by the hand, and those of
-  // them the kept frames let go of first, for aheadLost.
-  private aheadRead = new Set<number>();
-  private aheadEvicted = new Set<number>();
-  // The cards' frames, by rank, in the order they are read, those of them
-  // CARDS_BYTES holds at the size frames are read at, which are kept
-  // whatever else comes, and those asked for already, see cards.
+  // What to read while the hand rests, see ahead and cards: the frames of
+  // the words beside, the cards', what was last handed to the Go side,
+  // and the ask still on its way, which settles once the Go side has read
+  // it all, or a newer ask took its place.
+  private aheadWanted: number[] = [];
   private cardOrder: number[] = [];
-  private cardRanks = new Set<number>();
-  private cardTried = new Set<number>();
-  private cardSize = "";
+  // The cards' frames the Go side sent, kept apart from the frames sent
+  // last, for as long as their cards are there.
+  private cardKept = new Map<number, Picture>();
+  private aheadSent = "";
+  private aheadAsk: Promise<void> | null = null;
+  // Whether a play is on its way, which holds the reading ahead until the
+  // video preview stands still again, see hold, and whether it has asked
+  // for a frame since.
+  private playingSoon = false;
+  private played = false;
+  // Whether the app is being sized: the cards' frames are read at the
+  // size it comes to rest at, not at every size a dragged edge passes.
+  private sizing = false;
   // Whether the video preview stands still. A card's frame read during a
   // play is a second decoder seeking in the file the play decodes, so the
-  // cards wait for the pause, the way their captions do, see
+  // reading ahead waits for the pause, the way the captions do, see
   // CaptionLayers.more.
   paused: () => boolean = () => true;
-  // What the cards' frames may keep, a field for the tests.
-  cardsBytes = CARDS_BYTES;
+  // The near frames asked of the Go side, and the place asked for next.
+  private nearAsk = false;
+  private nearNext = -1;
   // first is the size the first frame was asked at, for the walks.
   // keptRanks are the ranks of the frames last handed over from the kept
-  // ones, for the walks. aheadLost counts the frames the hand asked for
-  // that were read ahead and let go of from the kept ones before it did.
-  // looks counts the looks sent, near the frames the Go side sent on the
+  // ones, here or on the Go side, for the walks. ahead counts the frames
+  // handed to the Go side to read ahead. looks counts the looks sent, near the frames the Go side sent on the
   // way to a place, overtaken the looks it answered with nothing, a newer
   // look having taken their place, and fromGo every frame the Go side
   // sent, by a look or a stream.
@@ -326,7 +319,6 @@ export class AppFrames {
     overtaken: 0,
     fromGo: 0,
     ahead: 0,
-    aheadLost: 0,
     opens: [] as Opened[],
     first: "",
   };
@@ -369,12 +361,11 @@ export class AppFrames {
   }
 
   // The hand takes hold of the playhead, or lets go of it, see
-  // FrameQueue.grip. The cards' frames wait while it holds it, see
-  // readNext, and are read on once it lets go.
+  // FrameQueue.grip. Nothing is read ahead while it holds it, see ahead.
   grip(held: boolean) {
     this.dragging = held;
     this.dragPlaces = 0;
-    if (!held) this.aheadNow();
+    this.aheadNow();
   }
 
   // The frame of this rank, as a new frame with this timestamp, once it is
@@ -390,6 +381,7 @@ export class AppFrames {
   // decoder gets there.
   frame(rank: number, timestamp: number, asked?: Set<Waiter>, place = false, follows = false): Promise<Picture | null> {
     const still = this.paused();
+    if (!still) this.played = true;
     const dragged = place && this.dragging;
     return new Promise((done) => {
       const w: Waiter = {
@@ -447,7 +439,9 @@ export class AppFrames {
     const rank = rankOf(this.track.samples, sent.at);
     this.keep(rank, sent.frame);
     if (got.exact) {
+      if (got.kept) this.tookKept(rank);
       w.done(sent.frame);
+      if (got.near) this.near(rank);
       return;
     }
     this.stats.near++;
@@ -456,134 +450,98 @@ export class AppFrames {
     else void this.look(w);
   }
 
-  // Reads the frames of these ranks while the hand rests, and keeps them,
-  // so that a step to one of them finds its frame there: the first frame
-  // of the word after the playhead and of the word before, the words
-  // Shift and an arrow walk to. They come after what the hand asked for
-  // in the stream that reads on to them, and a stream opened for one never
-  // holds up a place the hand asks for. Any newer ask of the hand
-  // withdraws them, see still. Plan row 2.269.
-  //
-  // They are asked only once nothing the hand asked for is still to come.
-  // Asked at once, the frame under the hand came 80 to 120 ms later when a
-  // drag of the playhead let go, measured with speed.mjs: the frames read
-  // ahead competed with it for the decoder and for the streams.
-  //
-  // What was read ahead before is withdrawn without letting the walks go
-  // that wait on rested: they go once the new ranks are in. Let go
-  // between the two, a walk pressed the key for the word beside with its
-  // frame still to come.
+  // The frames of these ranks are read while the hand rests and kept
+  // here: the first frame of the word after the playhead and of the word
+  // before, the words Shift and an arrow walk to, so a step to one of them
+  // finds its frame kept. The Go side reads them once its decoder has
+  // nothing to do for the hand, with the frames beside them, see
+  // engine.Ahead. Each call replaces the ones before.
   ahead(ranks: number[]) {
-    this.withdraw();
-    this.aheadWanted = [...ranks];
+    this.aheadWanted = ranks.filter((r) => r >= 0);
     this.aheadNow();
   }
 
   // The first frames of the clips on the cards, by rank, the likeliest to
-  // be clicked first: each is read once nothing else is wanted, after the
-  // frames the hand asked for and those of the words either side of the
-  // playhead, and kept for as long as its card is there. Plays and steps
-  // never push one out, see keep. Each call replaces the ones before, and
-  // the frames of cards no longer given are kept no longer. Tim asked for
-  // every clip on the cards to be ready to show, issue #383.
-  //
-  // A frame that could not be decoded is not tried again for a new order
-  // alone: the order changes with every card the pointer passes.
+  // be clicked first: read after the words beside, as many as the Go side
+  // says, and kept here for as long as their cards are there. Each call
+  // replaces the ones before. Tim asked for every clip on the cards to be
+  // ready to show, issue #383.
   cards(ranks: number[]) {
-    const order = ranks.filter((r) => r >= 0);
-    const was = new Set(this.cardOrder);
-    if (order.length !== was.size || order.some((r) => !was.has(r))) this.cardTried.clear();
-    this.cardOrder = order;
-    this.cardSize = "";
-    this.fitCards();
+    this.cardOrder = ranks.filter((r) => r >= 0);
+    const on = new Set(this.cardOrder);
+    for (const [r, f] of this.cardKept)
+      if (!on.has(r)) {
+        this.cardKept.delete(r);
+        f.close();
+      }
     this.aheadNow();
   }
 
-  // The cards CARDS_BYTES holds at the size frames are read at now, the
-  // likeliest first. A size of its own tries again the frames that could
-  // not be decoded at the one before.
-  private fitCards() {
-    const { width, height } = this.size();
-    const size = `${width}x${height}`;
-    if (size === this.cardSize) return;
-    if (this.cardSize) this.cardTried.clear();
-    this.cardSize = size;
-    this.cardRanks = new Set(this.cardOrder.slice(0, Math.floor(this.cardsBytes / Math.max(1, width * height * 4))));
-  }
-
-  // Whether the app is being sized: the cards' frames are read at the
-  // size it comes to rest at, not at every size a dragged edge passes,
-  // each a stream opened and a frame decoded on the Go side.
-  private sizing = false;
   resizing(now: boolean) {
     this.sizing = now;
-    if (!now) this.aheadNow();
+    this.aheadNow();
   }
 
-  // The looks of the hand still on their way.
-  private looking = 0;
+  // A play is on its way: nothing is read ahead until the video preview
+  // stands still again, see aheadNow.
+  hold() {
+    this.playingSoon = true;
+    this.played = false;
+    this.aheadNow();
+  }
 
-  // Asks the frames read ahead once the hand waits for nothing, one at a
-  // time, in the order given, and then the cards' frames, one at a time.
-  // They were asked all at once, and with the first frames of the clips
-  // next to the one chosen among them, a click on a card waited for its
-  // frame behind three seeks of the decoder and streams closed and opened
-  // again for the rest, issue #383. The cards wait while it plays.
+  // The hand asks again while the video preview stands still: a play that
+  // was asked for and never started holds nothing any more.
+  still() {
+    if (this.paused()) this.playingSoon = false;
+    this.aheadNow();
+  }
+
+  // Hands the Go side what to read while the hand rests, unless it is
+  // what it has already. While the hand holds the playhead, the app is
+  // sized or a play runs, it is handed over held, which stops the reading.
   aheadNow() {
-    this.readNext();
-    this.settleRest();
-  }
-
-  private readNext() {
-    if (this.aheadOf.size || this.closed || this.looking || this.streams.some((s) => s.handWaits)) return;
-    const ranks = this.aheadWanted ?? [];
-    for (let rank = ranks.shift(); rank !== undefined; rank = ranks.shift()) {
-      if (rank < 0 || this.has(rank)) continue;
-      this.read(rank, false);
-      return;
-    }
-    this.aheadWanted = null;
-    // The cards' frames wait while it plays, and while the hand holds the
-    // playhead: a card's seek then stood between the hand and the frame
-    // under it, soon after a video opens, when the cards are still being
-    // read, issue #596.
-    if (!this.paused() || this.dragging || this.sizing) return;
-    this.fitCards();
-    const card = this.cardOrder.find((r) => this.cardRanks.has(r) && !this.has(r) && !this.cardTried.has(r));
-    if (card === undefined) return;
-    this.cardTried.add(card);
-    this.read(card, true);
-  }
-
-  // Whether the frame of a rank is kept at the size frames are read at.
-  private has(rank: number): boolean {
-    const f = this.kept.get(rank);
+    if (this.closed) return;
+    // A play that ran and stopped lets the reading go on.
+    if (this.playingSoon && this.played && this.paused()) this.playingSoon = false;
+    const held = this.dragging || this.sizing || this.playingSoon || !this.paused();
     const { width, height } = this.size();
-    return !!f && f.width === width && f.height === height;
+    const q = new URLSearchParams({
+      path: this.path,
+      w: String(width),
+      h: String(height),
+      grid: this.gridText,
+      frames: this.aheadWanted.join(","),
+      cards: this.cardOrder.join(","),
+    });
+    if (held) q.set("held", "1");
+    const ask = q.toString();
+    if (ask === this.aheadSent) return;
+    this.aheadSent = ask;
+    if (!held) this.stats.ahead += this.aheadWanted.length + this.cardOrder.length;
+    // What is kept here already is not sent again.
+    q.set("has", this.keptHere(width, height).join(","));
+    const sent = this.puller.pull(`/frames/ahead?${q}`, width, height).then((got) => {
+      const cards = new Set(this.cardOrder);
+      for (const { at, frame } of got.frames) {
+        const rank = rankOf(this.track.samples, at);
+        if (this.closed || frame.width !== this.size().width || frame.height !== this.size().height) frame.close();
+        else if (cards.has(rank)) this.keepCard(rank, frame);
+        else this.keep(rank, frame);
+      }
+      if (got.error) this.trace(`reading ahead failed: ${got.error}`);
+      else if (got.status !== 200 && got.status !== 204 && got.status !== 0) this.trace(`reading ahead answered ${got.status}`);
+    });
+    this.aheadAsk = sent;
+    void sent.then(() => {
+      if (this.aheadAsk === sent) this.aheadAsk = null;
+      this.settleRest();
+    });
   }
 
-  // Reads one frame ahead of the hand: a card's, which is tried once
-  // unless the hand withdrew it on the way, or another.
-  private read(rank: number, card: boolean) {
-    const w: Waiter = {
-      rank,
-      seq: ++this.asked,
-      ahead: true,
-      done: () => {
-        this.aheadOf.delete(w);
-        if (card && w.gone) this.cardTried.delete(rank);
-        queueMicrotask(() => this.aheadNow());
-      },
-    };
-    this.aheadOf.add(w);
-    this.aheadRead.add(rank);
-    if (this.aheadRead.size > 256) this.aheadRead.delete(this.aheadRead.values().next().value!);
-    this.stats.ahead++;
-    this.route(w);
-  }
-
-  // Settles once nothing is left to read ahead, the cards' frames among
-  // them, for the walks, which wait on it rather than on the clock.
+  // Settles once nothing is left to read ahead, for the walks, which wait
+  // on it rather than on the clock: the newest ask has been read, or was
+  // held, which the Go side answers at once.
   rested(): Promise<void> {
     return new Promise((done) => {
       this.restWaiters.push(done);
@@ -593,53 +551,66 @@ export class AppFrames {
   private restWaiters: (() => void)[] = [];
 
   private settleRest() {
-    if (this.readingAhead && !this.closed) return;
+    if (this.aheadAsk && !this.closed) return;
     const was = this.restWaiters;
     this.restWaiters = [];
     for (const done of was) done();
   }
 
-  // Whether frames are still to be read ahead, the cards' among them.
-  get readingAhead(): boolean {
-    this.fitCards();
-    return (
-      this.aheadOf.size > 0 ||
-      !!this.aheadWanted?.length ||
-      this.cardOrder.some((r) => this.cardRanks.has(r) && !this.has(r) && !this.cardTried.has(r))
-    );
+  // The ranks of the frames kept here at this size, which the Go side
+  // need not send.
+  private keptHere(width: number, height: number): number[] {
+    const out: number[] = [];
+    for (const m of [this.kept, this.cardKept]) for (const [r, f] of m) if (f.width === width && f.height === height) out.push(r);
+    return out;
   }
 
-  // The hand asks again: what was read ahead for where it was is not
-  // wanted any more.
-  still() {
-    this.withdraw();
-    this.settleRest();
+  // A card's frame the Go side sent, kept while its card is there.
+  private keepCard(rank: number, frame: Picture) {
+    if (!this.closed) this.stats.fromGo++;
+    const old = this.cardKept.get(rank);
+    if (old === frame) return;
+    old?.close();
+    this.cardKept.set(rank, frame);
   }
 
-  private withdraw() {
-    this.aheadWanted = null;
-    for (const w of this.aheadOf) w.gone = true;
-    this.aheadOf.clear();
+  // A frame the Go side had kept, nothing decoded for it, for the walks.
+  private tookKept(rank: number) {
+    this.stats.kept++;
+    this.stats.keptRanks.push(rank);
+    if (this.stats.keptRanks.length > 16) this.stats.keptRanks.shift();
+  }
+
+  // Asks the Go side for the frames it read around the place the hand
+  // rests on that are not kept here, see engine.Schedule.Near, and keeps
+  // them, so a step with the arrow keys or a slow drag finds its frame
+  // here. One ask at a time, for the newest place.
+  private near(rank: number) {
+    this.nearNext = rank;
+    if (this.nearAsk || this.closed) return;
+    this.nearAsk = true;
+    this.nearNext = -1;
+    const { width, height } = this.size();
+    const has = this.keptHere(width, height).filter((r) => r >= rank - 16 && r <= rank + 8);
+    const q = new URLSearchParams({ path: this.path, frame: String(rank), w: String(width), h: String(height), grid: this.gridText, has: has.join(",") });
+    void this.puller
+      .pull(`/frames/near?${q}`, width, height)
+      .then((got) => {
+        if (this.closed) {
+          for (const { frame } of got.frames) frame.close();
+          return;
+        }
+        for (const { at, frame } of got.frames) this.keep(rankOf(this.track.samples, at), frame);
+      })
+      .finally(() => {
+        this.nearAsk = false;
+        if (this.nearNext >= 0) this.near(this.nearNext);
+      });
   }
 
   route(w: Waiter) {
     if (w.gone || this.closed) {
       w.done(null);
-      return;
-    }
-    if (!w.ahead) {
-      if (this.aheadEvicted.delete(w.rank)) this.stats.aheadLost++;
-      this.aheadRead.delete(w.rank);
-    }
-    if (w.place || w.follows) {
-      // Where the hand is, and what a play from there shows first: the Go
-      // side's to decide, see look. The looks hold the frames read ahead
-      // back until they are answered.
-      this.looking++;
-      void this.look(w).finally(() => {
-        this.looking--;
-        if (!this.looking) this.aheadNow();
-      });
       return;
     }
     const { width, height } = this.size();
@@ -648,30 +619,36 @@ export class AppFrames {
     // it was.
     const have = this.kept.get(w.rank);
     if (have && have.width === width && have.height === height) {
-      this.stats.kept++;
-      this.stats.keptRanks.push(w.rank);
-      if (this.stats.keptRanks.length > 16) this.stats.keptRanks.shift();
+      this.tookKept(w.rank);
       // The kept frame stays the most recently used.
       this.kept.delete(w.rank);
       this.kept.set(w.rank, have);
       w.done(have);
       return;
     }
+    const card = this.cardKept.get(w.rank);
+    if (card && card.width === width && card.height === height) {
+      this.tookKept(w.rank);
+      w.done(card);
+      return;
+    }
+    if (w.place || w.follows) {
+      // Where the hand is, and what a play from there shows first: the Go
+      // side's to decide, see look.
+      void this.look(w);
+      return;
+    }
     let s = this.streams.find((x) => x.width === width && x.height === height && x.reaches(w.rank));
     if (s) this.stats.continued++;
     else {
       s = new Stream(this, w.rank, width, height);
-      this.trace(`a new stream for frame ${w.rank}${w.ahead ? " ahead" : ""} at ${width}x${height}, beside ${this.streams.filter((x) => x !== s).map((x) => x.state).join(", ") || "none"}`);
-      s.aheadOnly = !!w.ahead;
+      this.trace(`a new stream for frame ${w.rank} at ${width}x${height}, beside ${this.streams.filter((x) => x !== s).map((x) => x.state).join(", ") || "none"}`);
       this.stats.first ||= `${width}x${height}`;
       this.stats.streams++;
       this.streams.push(s);
       this.streams = this.streams.filter((x) => !x.ended);
       while (this.streams.length > STREAMS) {
-        // A stream opened only for frames read ahead goes first: the
-        // others are a play's.
-        const ahead = this.streams.filter((x) => x.aheadOnly && x !== s);
-        const oldest = (ahead.length ? ahead : this.streams).reduce((a, b) => (a.used <= b.used ? a : b));
+        const oldest = this.streams.reduce((a, b) => (a.used <= b.used ? a : b));
         this.trace(`a stream at frame ${oldest.position} is closed to make room`);
         oldest.close();
         this.streams = this.streams.filter((x) => x !== oldest);
@@ -691,28 +668,12 @@ export class AppFrames {
     }
     this.kept.set(rank, frame);
     this.keptBytes += bytes(frame);
-    // The cards' frames are kept apart from the count, and never let go of
-    // for a newer frame: their number is held to CARDS_BYTES, see cards.
-    this.fitCards();
-    let free = this.keptBytes;
-    let count = this.kept.size;
-    for (const [r, f] of this.kept)
-      if (this.cardRanks.has(r)) {
-        free -= bytes(f);
-        count--;
-      }
     for (const [r, f] of this.kept) {
-      if (free <= KEPT_BYTES && count <= KEPT_FRAMES) break;
-      if (this.cardRanks.has(r)) continue;
+      if (this.keptBytes <= KEPT_BYTES && this.kept.size <= KEPT_FRAMES) break;
+      if (f === frame) continue;
       this.kept.delete(r);
       this.keptBytes -= bytes(f);
-      free -= bytes(f);
-      count--;
       f.close();
-      if (this.aheadRead.delete(r)) {
-        this.aheadEvicted.add(r);
-        if (this.aheadEvicted.size > 256) this.aheadEvicted.delete(this.aheadEvicted.values().next().value!);
-      }
     }
   }
 
@@ -741,6 +702,8 @@ export class AppFrames {
     for (const f of this.kept.values()) f.close();
     this.kept.clear();
     this.keptBytes = 0;
+    for (const f of this.cardKept.values()) f.close();
+    this.cardKept.clear();
   }
 }
 
@@ -796,7 +759,7 @@ class Puller {
       this.trace(`the frames' worker stopped: ${e.message}, the page reads them now`);
       this.worker = null;
       this.where = "page";
-      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", light: "", exact: false, frames: [], spare: [] });
+      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", light: "", exact: false, kept: false, near: false, frames: [], spare: [] });
       this.waiting.clear();
     };
     this.worker = w;

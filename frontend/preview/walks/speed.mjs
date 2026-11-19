@@ -281,14 +281,14 @@ try {
       if (drags.includes("fast")) console.log(`fast, right and back: ${await drag(30, [1, -1])}\n`);
     }
   } else {
-    const seen = { looks: 0, near: 0, overtaken: 0, streams: 0, kept: 0, ahead: 0, aheadLost: 0, size: "" };
+    const seen = { looks: 0, near: 0, overtaken: 0, streams: 0, kept: 0, ahead: 0, size: "" };
     const count = async () => {
       const s = await page.evaluate(() => {
         const s = window.__appFrames?.stats;
-        return s ? { looks: s.looks, near: s.near, overtaken: s.overtaken, streams: s.streams, kept: s.kept, ahead: s.ahead, aheadLost: s.aheadLost, size: s.first } : null;
+        return s ? { looks: s.looks, near: s.near, overtaken: s.overtaken, streams: s.streams, kept: s.kept, ahead: s.ahead, size: s.first } : null;
       });
       if (!s) return;
-      for (const k of ["looks", "near", "overtaken", "streams", "kept", "ahead", "aheadLost"]) seen[k] += s[k];
+      for (const k of ["looks", "near", "overtaken", "streams", "kept", "ahead"]) seen[k] += s[k];
       seen.size ||= s.size;
     };
     for (let r = 0; r < rounds; r++) {
@@ -330,7 +330,7 @@ try {
     console.log(line(head));
     console.log("| " + widths.map((w, i) => (i === 0 ? "-".repeat(w) : "-".repeat(w - 1) + ":")).join(" | ") + " |");
     for (const r of rows) console.log(line(r));
-    console.log(`frames at ${stats?.size}, ${stats?.looks} looks at the Go side, ${stats?.near} frames it sent on the way, ${stats?.overtaken} looks overtaken, ${stats?.streams} streams opened, ${stats?.kept} from the kept frames, ${stats?.ahead} read ahead, ${stats?.aheadLost} of them let go of before the hand asked for them`);
+    console.log(`frames at ${stats?.size}, ${stats?.looks} looks at the Go side, ${stats?.near} frames it sent on the way, ${stats?.overtaken} looks overtaken, ${stats?.streams} streams opened, ${stats?.kept} from the kept frames, ${stats?.ahead} handed to the Go side to read ahead`);
     const sorted = (xs) => xs.filter((x) => x >= 0).sort((a, b) => a - b);
     const a = sorted(apart);
     const z = sorted(settled);

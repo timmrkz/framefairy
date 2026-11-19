@@ -41,8 +41,8 @@
 <text class="c" x="84" y="193">framing: crops, faces, rotations</text>
 <rect class="chip" x="311" y="178" width="56" height="22" rx="6"/>
 <text class="c" x="319" y="193">render</text>
-<rect class="chip" x="373" y="178" width="289" height="22" rx="6"/>
-<text class="c" x="381" y="193">media: ffmpeg, probes, the decoder client</text>
+<rect class="chip" x="373" y="178" width="335" height="22" rx="6"/>
+<text class="c" x="381" y="193">media: ffmpeg, probes, the decoder, its schedule</text>
 <rect class="chip" x="76" y="206" width="269" height="22" rx="6"/>
 <text class="c" x="84" y="221">speech: hearing, the transcript, words</text>
 <rect class="chip" x="351" y="206" width="309" height="22" rx="6"/>
