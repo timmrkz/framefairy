@@ -544,11 +544,14 @@ func (s *Schedule) hold(r *lookRun) error {
 }
 
 // readOn lets a run that holds read on, for a look that wants the frames
-// after its place. Under the lock.
+// after its place, and for a hand passing over the frames, to the look's
+// own frame where the run has not read it: held there, a drag that kept
+// within a few frames of its last place got no frame at all, and the
+// frame on screen fell further behind with each move. Under the lock.
 func (r *lookRun) readOn(l Hand) {
 	r.passing = passes(l)
 	r.dragged = l.Moving
-	if r.wake != nil && !r.passing {
+	if r.wake != nil && (!r.passing || l.Frame >= r.next) {
 		close(r.wake)
 		r.wake = nil
 	}

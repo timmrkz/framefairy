@@ -500,6 +500,60 @@ func TestASlowDragBackBringsTheFramesBehindIt(t *testing.T) {
 	}
 }
 
+// A run that holds at its place for a hand passing over the frames, a
+// fast drag, reads on to a newer place it covers, however far the frame
+// on screen has fallen behind. On Tim's Mac a drag to the right stood
+// still for seconds: each look stayed within a few frames of the one
+// before, the run held for it as for a hand passing over, nothing was
+// decoded, and the frame on screen fell further behind with every move,
+// which made the hand look faster still. Report of 19 November 21.39.
+func TestARunHeldForAFastDragReadsOnToTheNextPlace(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	first := lookFor(s, move(50, 10))
+	st := dec.next(t)
+	_ = st.give(t, 40)
+	if got := <-first; got.seen.Frame != 40 || got.seen.Exact {
+		t.Fatalf("the first place got %+v, %v, want its key frame on the way", got.seen, got.err)
+	}
+	for f := 41; f < 50; f++ {
+		_ = st.give(t, f)
+	}
+	// The place's own frame: the run holds there, the hand passing over.
+	again := lookFor(s, move(50, 40))
+	waits(s, move(50, 40))
+	// Taken once the run reads on: the stream waits in it while the run
+	// holds.
+	took := make(chan error, 1)
+	go func() { took <- st.give(t, 50) }()
+	if got := <-again; got.seen.Frame != 50 || !got.seen.Exact {
+		t.Fatalf("the place got %+v, %v", got.seen, got.err)
+	}
+	until(s, func() bool { return s.run != nil && s.run.wake != nil })
+	// The hand moves on a few frames, the frame on screen far behind it.
+	next := lookFor(s, move(53, 20))
+	waits(s, move(53, 20))
+	s.mu.Lock()
+	held := s.run != nil && s.run.wake != nil
+	s.mu.Unlock()
+	if held {
+		t.Fatal("the run still holds at frame 50 while the hand waits for frame 53")
+	}
+	if err := <-took; err != nil {
+		t.Fatalf("the run ended at frame 50: %v", err)
+	}
+	_ = st.give(t, 51)
+	_ = st.give(t, 52)
+	// The run holds again at the new place.
+	go func() { took <- st.give(t, 53) }()
+	if got := <-next; got.seen.Frame != 53 || !got.seen.Exact {
+		t.Fatalf("the next place got %+v, %v", got.seen, got.err)
+	}
+	until(s, func() bool { return s.run != nil && s.run.wake != nil && s.run.next == 54 })
+	dec.none(t)
+}
+
 // A hand going on slowly to the left never waits at the end of the frames
 // read behind it: once fewer than lookBack of them are left before it, the
 // ones before those are read while it steps through the ones there are.
