@@ -1644,7 +1644,12 @@ bubble scrolled by those eight pixels.
       could not, because the window stood locked until it was carried on. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
       that failed, the red of its row and of its toast. A search set
-      aside has no row, so the dot says nothing of it either, issue #436. **Its trash can**,
+      aside has no row, so the dot says nothing of it either, issue #436.
+      How a video stands, its dot and the line under its name, is the Go
+      side's to say, `EpisodeStatus.stands` and `transcript`, from
+      `Standing` in `engine/stands.go`, sent in the library and in every
+      state of the video. The sidebar only picks the colour, and pulses
+      the dot from the frame work is pressed for. **Its trash can**,
       there while the pointer is on the row, removes the search when it
       is no longer wanted: the row says Removed with Put it back for ten
       seconds, the way a removed clip's row does, and the search's cards

@@ -1,7 +1,7 @@
 // Shared state: the job list, kept current from the Go side's events.
 // A video's jobs come in its state, onVideoState, one channel, and a job
 // of no video, a model being downloaded, on the job event.
-import { api, onJob, onVideoState, type Job, type Lane, type VideoState } from "./api";
+import { api, onJob, onVideoState, type EpisodeStatus, type Job, type Lane, type VideoState } from "./api";
 import { live, mergeJob, outstanding } from "./flow";
 import { said } from "./said";
 import type { EpisodeOrder } from "./order";
@@ -54,6 +54,11 @@ export class JobStore {
   // comes stopping.
   coming = $state.raw<string[]>([]);
 
+  // How each video stands in the sidebar, from the newest state of it,
+  // see EpisodeStatus.stands. A video no state was sent of yet stands as
+  // the library said.
+  standing = $state.raw<Record<string, EpisodeStatus["stands"]>>({});
+
   // The rev of the newest state of each video the jobs were taken from.
   private revs = new Map<string, number>();
   // The state taken last.
@@ -76,6 +81,9 @@ export class JobStore {
     }
     if (state.rev <= (this.revs.get(state.video) ?? 0)) return;
     this.revs.set(state.video, state.rev);
+    if (state.status && this.standing[state.video] !== state.status.stands) {
+      this.standing = { ...this.standing, [state.video]: state.status.stands };
+    }
     if (!!state.searchComing !== this.coming.includes(state.video)) {
       this.coming = state.searchComing ? [...this.coming, state.video] : this.coming.filter((v) => v !== state.video);
       this.settle();

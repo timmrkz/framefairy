@@ -111,7 +111,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	jobs, rev := s.jobs.ofVideo(path)
 	coming := s.searchComingLocked(path) != ""
 	s.checkMu.Unlock()
-	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.Episode(path), PutBack: removalTime.Seconds()}
+	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.episode(path, jobs), PutBack: removalTime.Seconds()}
 	plans := st.Status.Plans
 	if st.Status.Missing {
 		// A video whose file is gone keeps its clips, see Clips.
@@ -405,6 +405,30 @@ func (n *videoNews) stop() {
 // searchesEnded says of each search among jobs that is done or stopped
 // how it ended, from the video's status and its length, see
 // engine.SearchEnded.
+// searchStands is how the newest search of a video with jobs stands, for
+// engine.EpisodeStatus.Standing: the newest search there is, and of that
+// only a failed one, or one that stopped or was cut off. A search set
+// aside, whose window a hand moved off, says nothing, #436. A search that
+// runs says nothing either: that the video is busy is what the sidebar
+// shows from its jobs and from the presses on their way.
+func searchStands(jobs []Job) int {
+	var last *Job
+	for i := range jobs {
+		if jobs[i].Kind == engine.JobSearch {
+			last = &jobs[i]
+		}
+	}
+	switch {
+	case last == nil || last.Aside:
+		return engine.SearchQuiet
+	case last.State == JobFailed:
+		return engine.SearchFailed
+	case last.State == JobStopped || last.State == JobInterrupted:
+		return engine.SearchStopped
+	}
+	return engine.SearchQuiet
+}
+
 func searchesEnded(jobs []Job, status engine.EpisodeStatus, duration float64) {
 	heard := status.HeardIn(duration)
 	for i := range jobs {

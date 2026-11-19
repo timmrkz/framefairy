@@ -258,3 +258,22 @@ describe("a first search the Go side has on its way", () => {
     expect(jobs.isStopping("/v.mp4", "clips")).toBe(false);
   });
 });
+
+// How a video stands in the sidebar is Go's, in each state of the video,
+// and the store keeps it from the newest, so a state that comes late does
+// not bring back a mark Go has taken away, #928.
+describe("how a video stands", () => {
+  const state = (video: string, rev: number, stands: string) =>
+    ({ video, rev, jobs: [], clips: [], status: { stands }, window: null, chosen: "" }) as never;
+
+  test("is the newest state's, for each video on its own", () => {
+    const jobs = new JobStore();
+    expect(jobs.standing["/v.mp4"]).toBeUndefined();
+    jobs.take(state("/v.mp4", 3, "look"));
+    jobs.take(state("/w.mp4", 2, "failed"));
+    expect(jobs.standing).toEqual({ "/v.mp4": "look", "/w.mp4": "failed" });
+    jobs.take(state("/v.mp4", 5, ""));
+    jobs.take(state("/v.mp4", 4, "look"));
+    expect(jobs.standing).toEqual({ "/v.mp4": "", "/w.mp4": "failed" });
+  });
+});

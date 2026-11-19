@@ -217,6 +217,12 @@ export interface EpisodeStatus {
   // The words and the colour the video is told apart by in the sidebar,
   // kept in its work folder and never in its file name.
   label?: Label;
+  // How the video stands in the sidebar, its dot, as Go decides it: a
+  // file gone or a failed search, something that needs a look, clips
+  // made, or nothing worth a mark. See engine.EpisodeStatus.Standing.
+  stands: "failed" | "look" | "made" | "";
+  // How far the video is transcribed, which the line under its name says.
+  transcript: "whole" | "changed" | "to" | "parts" | "none";
 }
 
 // A video's label, see engine.Label. The colour is #rrggbb.
