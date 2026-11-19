@@ -2479,10 +2479,16 @@ found is a place in the video, and I and O make a clip there.
   clip dark for a moment, a flicker found by Tim. A clip chosen on the range picker or the clip timeline leaves
   its first card where it is when it is in view, and otherwise puts it at
   the top of the list, where the first card stands, and choosing it
-  again does it again. Every card is laid out at its own
-  height, never at a height guessed for the cards out of view, because a
-  guess put the place off as soon as the cards around it were laid out,
-  and WebKit keeps no anchor that would have made up for it. The accent
+  again does it again. The cards in view and a column either side are
+  built at once, and some twenty columns either side while the app is
+  idle and the list is not being scrolled, so opening the list and typing build only what is seen, and a
+  scroll moves through cards already built, as through a list built
+  whole. The room of the rest is their heights, guessed at the mean,
+  to the whole pixel, until a card has been built once, see
+  `lib/stack.svelte.ts`. A
+  guess that is off never moves the card in view or a card turned to:
+  the list keeps that card where it stands as the cards around it are
+  laid out, since WebKit keeps no anchor that would. The accent
   edge is the card's button's, so the grey a card takes under the hand
   never covers it.
 - **What was not transcribed is said.** With nothing typed, a part of the
