@@ -1374,3 +1374,64 @@ func TestADrawingsNameHasEveryFieldOfItsCaptions(t *testing.T) {
 		}
 	}
 }
+
+// Over the moments Steady gives, the caption file starts and ends nothing,
+// so the layer libass draws on any frame there is the layer of every
+// other: the video preview is told a layer is unchanged by them, and a
+// moment too many would leave a word lit that the short no longer lights.
+// Words a frame long, words lit together and a pop on every word are
+// all in the file, and so is a gap between two captions.
+//
+// On the real disk: ffmpeg measures the captions.
+func TestNothingInTheCaptionFileChangesOverASteadySpan(t *testing.T) {
+	ffmpegtest.Need(t)
+	t.Parallel()
+	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
+	source := SourceInfo{FPSNum: 25, FPSDen: 1, Duration: 60}
+	clip := Clip{ID: "01", Slug: "steady", Segments: []Segment{{Start: 10, End: 13.5}, {Start: 14, End: 16}}}
+	tr := &Transcript{Words: []timed.Cue{
+		{Start: 10.2, End: 10.6, Text: "Das"}, {Start: 10.6, End: 11.4, Text: "war"}, {Start: 11.4, End: 11.42, Text: "so"},
+		{Start: 11.42, End: 11.45, Text: "ja"}, {Start: 11.45, End: 12.3, Text: "schön."},
+		{Start: 14.3, End: 14.9, Text: "Und"}, {Start: 14.9, End: 15.8, Text: "dann?"},
+	}, Language: "de"}
+	d := captionsView(Plan{}, clip, tr, nil).Drawing()
+	track, err := e.CaptionTrack(context.Background(), d.Laid, 540, 960, d.Style, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every moment an event of the file starts or ends, in milliseconds.
+	var edges []int64
+	for l := range strings.Lines(string(track)) {
+		var layer, h1, m1, s1, c1, h2, m2, s2, c2 int
+		if _, err := fmt.Sscanf(l, "Dialogue: %d,%d:%d:%d.%d,%d:%d:%d.%d,", &layer, &h1, &m1, &s1, &c1, &h2, &m2, &s2, &c2); err != nil {
+			continue
+		}
+		edges = append(edges, int64(((h1*60+m1)*60+s1)*100+c1)*10, int64(((h2*60+m2)*60+s2)*100+c2)*10)
+	}
+	if len(edges) < 20 || !strings.Contains(string(track), `\fscx115`) {
+		t.Fatalf("the caption file has %d edges and no pop, nothing to test: %s", len(edges), track)
+	}
+	shared := 0
+	for _, seg := range clip.Segments {
+		for k := 0; seg.Start+float64(k)/25 < seg.End; k++ {
+			at := seg.Start + float64(k)/25
+			m := source.CaptionMoment(clip, at)
+			from, to := d.Steady(source, at)
+			if from > m || m >= to {
+				t.Fatalf("at %.2f s, the moment %d ms of the short, Steady gives %d to %d", at, m, from, to)
+			}
+			for _, edge := range edges {
+				if from < edge && edge < to {
+					t.Errorf("at %.2f s Steady gives %d to %d ms, over which an event of the file starts or ends at %d", at, from, to, edge)
+				}
+			}
+			if next := source.CaptionMoment(clip, at+1.0/25); next < to {
+				shared++
+			}
+		}
+	}
+	// Most frames between two words draw what the frame before drew.
+	if shared < 40 {
+		t.Errorf("only %d frames share their steady moments with the next", shared)
+	}
+}
