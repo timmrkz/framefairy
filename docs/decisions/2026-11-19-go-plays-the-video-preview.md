@@ -118,6 +118,34 @@ so a play and a look never work against each other, and the preview cuts
 and fades by the render's own rules. Kept from 5: the play is tested in
 Go frame by frame. Nothing came up in only one.
 
+## Three more designs, weighed after the review
+
+The five above looked at one design from five sides. The review of the
+pull request named three designs they did not weigh. Each was dropped,
+by reasoning, none was built:
+
+- **One push channel per play,** Go sending frames as it decodes them
+  rather than the window pulling a batch at a time. A pull is one
+  request for a batch, not one for each frame, and keeps Go no more
+  than a few frames ahead, which a push would have to get back with a
+  flow control of its own. Every other frame of the video preview comes
+  through the asset routes, and Wails' events, the app's one other way
+  from Go to the window, carry JSON, not 2.3 MB pictures.
+- **Go owns the clock and plays the sound itself,** through the
+  system's sound on each platform, and the window draws the frame Go
+  says is due. It would take the sound buffers and the take over's lead
+  out of `queue.ts`. But the picture is drawn in the webview, at
+  moments Go does not see, so the window would need Go's clock across
+  the bridge to draw by, late by a round trip each way, and picture and
+  sound would drift by that. It would also bring a sound library for
+  three platforms. The clock stays where the picture is drawn.
+- **Go decides where a take over happens,** from what it handed over.
+  The place has to be ahead of the sound heard, which only the sound
+  card in the window knows. So the window names the place and Go says
+  whether the new pieces hold it. What the review found wrong there,
+  the old play stopped before the window had the new one, is fixed by
+  the new play coming as a cue, see below.
+
 ## The decision
 
 ```
@@ -210,3 +238,11 @@ building it:
   `engine.Play.Hold` and `/frames/play/hold`. Go takes it again, and each
   run goes on from the frame after the last it handed over, which the
   frames the window holds cover while the decoder gets there.
+- **A play that takes over is a cue.** Taken at once, the Go side
+  stopped the play under way while the window still pulled from it, and
+  the window, told it was closed, started the play again. The new play
+  now waits, and the window lets it go once it is the one drawn. Where
+  the sound passed the place while Go answered, the place moves on.
+- **A sleeping video keeps no frames on the Go side.** Its decoder
+  stays a while for a video that comes back, two beside the one awake,
+  and each kept up to 192 MB of frames with it.

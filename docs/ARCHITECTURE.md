@@ -273,7 +273,10 @@ copies what it finds nearby, so these are not the pattern for new code.
 
 - Rules of the engine in `frontend/src/lib/flow.ts` and
   `frontend/src/lib/rotate.ts`, `flow.ts`'s frames held to Go by a shared
-  case file, and `frameOf` in `frontend/src/lib/keyframes.ts`, #610. The
+  case file, and `frameOf` in `frontend/src/lib/keyframes.ts`, #610. So
+  is `rankAt` in `frontend/src/lib/frames/movie.ts`, the window's count of
+  `Grid.Holding`, held by the same case file, by which a look names its
+  frame: a look could name its moment and Go count the frame. The
   crop a keyframe holds is no longer one of them: Go sends each piece's
   crop steps, `engine.CropSteps`, and the window only looks them up.
 
