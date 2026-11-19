@@ -868,18 +868,18 @@ func TestTheNewestSearchMarksTheVideoUnlessItWasSetAside(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		jobs []Job
-		want int
+		want searchStanding
 	}{
-		{"no search", nil, engine.SearchQuiet},
-		{"a failed render", []Job{render}, engine.SearchQuiet},
-		{"a failed search", []Job{search(JobFailed, false)}, engine.SearchFailed},
-		{"a search that stopped", []Job{search(JobStopped, false)}, engine.SearchStopped},
-		{"a search cut off", []Job{search(JobInterrupted, false)}, engine.SearchStopped},
-		{"a search that stopped, set aside", []Job{search(JobStopped, true)}, engine.SearchQuiet},
-		{"a failed search, set aside", []Job{search(JobFailed, true)}, engine.SearchQuiet},
-		{"a search that runs", []Job{search(JobRunning, false)}, engine.SearchQuiet},
-		{"a failed search, then one done", []Job{search(JobFailed, false), search(JobDone, false)}, engine.SearchQuiet},
-		{"one done, then one that stopped", []Job{search(JobDone, false), search(JobStopped, false)}, engine.SearchStopped},
+		{"no search", nil, searchQuiet},
+		{"a failed render", []Job{render}, searchQuiet},
+		{"a failed search", []Job{search(JobFailed, false)}, searchFailed},
+		{"a search that stopped", []Job{search(JobStopped, false)}, searchStopped},
+		{"a search cut off", []Job{search(JobInterrupted, false)}, searchStopped},
+		{"a search that stopped, set aside", []Job{search(JobStopped, true)}, searchQuiet},
+		{"a failed search, set aside", []Job{search(JobFailed, true)}, searchQuiet},
+		{"a search that runs", []Job{search(JobRunning, false)}, searchQuiet},
+		{"a failed search, then one done", []Job{search(JobFailed, false), search(JobDone, false)}, searchQuiet},
+		{"one done, then one that stopped", []Job{search(JobDone, false), search(JobStopped, false)}, searchStopped},
 	} {
 		if got := searchStands(c.jobs); got != c.want {
 			t.Errorf("%s: the search stands as %d, want %d", c.name, got, c.want)
@@ -894,14 +894,39 @@ func TestTheNewestSearchMarksTheVideoUnlessItWasSetAside(t *testing.T) {
 func TestTheLibraryAndTheStateSayHowAVideoStandsWithItsSearch(t *testing.T) {
 	s, eps, _ := stoppedSearches(t, "stopped.mp4")
 	lib := s.Library()
-	if len(lib) != 1 || lib[0].Stands != engine.StandsLook {
+	if len(lib) != 1 || lib[0].Stands != standsLook {
 		t.Fatalf("the library says the video with a search that stopped stands as %+v", lib)
 	}
 	st, err := s.State(context.Background(), eps[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Status.Stands != engine.StandsLook {
-		t.Errorf("the video's state says it stands as %q, want %q", st.Status.Stands, engine.StandsLook)
+	if st.Status.Stands != standsLook {
+		t.Errorf("the video's state says it stands as %q, want %q", st.Status.Stands, standsLook)
+	}
+}
+
+// How a video stands, decided here and drawn by the sidebar: a file gone
+// or a failed search first, then what needs a look, then clips made.
+func TestAVideoStandsAsItsFilesAndSearchSay(t *testing.T) {
+	plans := []engine.PlanSummary{{}}
+	for _, c := range []struct {
+		name   string
+		st     engine.EpisodeStatus
+		search searchStanding
+		want   string
+	}{
+		{"a new video", engine.EpisodeStatus{}, searchQuiet, ""},
+		{"a video with clips", engine.EpisodeStatus{Plans: plans}, searchQuiet, standsMade},
+		{"a file gone, with clips", engine.EpisodeStatus{Missing: true, Plans: plans}, searchQuiet, standsFailed},
+		{"a failed search, with clips", engine.EpisodeStatus{Plans: plans}, searchFailed, standsFailed},
+		{"a search that stopped, with clips", engine.EpisodeStatus{Plans: plans}, searchStopped, standsLook},
+		{"a file changed since it was transcribed", engine.EpisodeStatus{TranscriptStale: true, Plans: plans}, searchQuiet, standsLook},
+		{"a file gone with a search that stopped", engine.EpisodeStatus{Missing: true}, searchStopped, standsFailed},
+		{"a failed search on a changed file", engine.EpisodeStatus{TranscriptStale: true}, searchFailed, standsFailed},
+	} {
+		if got := standing(c.st, c.search); got != c.want {
+			t.Errorf("%s stands as %q, want %q", c.name, got, c.want)
+		}
 	}
 }

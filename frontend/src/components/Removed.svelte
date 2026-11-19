@@ -28,8 +28,8 @@
     onresume,
     onhold,
   }: {
-    // How many seconds it can be put back for in all: Go's time for a
-    // clip or work removed, VideoState.putBack and JobAway.whole.
+    // How many seconds it shows in all: Go's time for removed work,
+    // JobAway.whole, or the window's for a clip or a picture, newsShows.
     drain: number;
     spent?: number;
     tile?: boolean;

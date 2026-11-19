@@ -186,12 +186,12 @@ type EpisodeStatus struct {
 	// Label is the words and the colour a person gave the video in the
 	// sidebar, nil when it has none, see Label.
 	Label *Label `json:"label,omitempty"`
-	// Stands is how the video stands in the sidebar, StandsFailed and the
-	// rest, see Standing. As the files say it here, and the app says it
-	// again with its search, which only it knows.
+	// Stands is how the video stands with its work, which only the app
+	// knows: the app sets it, see standing in
+	// cmd/framefairy-app/videostate.go, and the engine leaves it empty.
 	Stands string `json:"stands"`
 	// Transcript is how far the video is transcribed, TranscriptWhole and
-	// the rest, which the line under its name in the sidebar says.
+	// the rest, see transcribed.go.
 	Transcript string `json:"transcript"`
 }
 
@@ -216,7 +216,7 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 	info, err := fsys.Stat(source)
 	if err != nil {
 		st.Missing = true
-		st.Stands, st.Transcript = st.Standing(SearchQuiet), st.transcript()
+		st.Transcript = st.transcript()
 		return st
 	}
 	st.Size, st.Modified = info.Size(), info.ModTime()
@@ -257,7 +257,7 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 	st.Work = fileio.Exists(fsys, work)
 	st.EverSearched = ep.everSearched(st.Plans)
 	st.Label = ReadLabel(fsys, source)
-	st.Stands, st.Transcript = st.Standing(SearchQuiet), st.transcript()
+	st.Transcript = st.transcript()
 	return st
 }
 

@@ -649,7 +649,8 @@
     parts: () => "Transcribed in parts",
     none: () => "Not transcribed",
   };
-  function summary(ep: EpisodeStatus): string {
+  function summary(listed: EpisodeStatus): string {
+    const ep = statusOf(listed);
     if (ep.missing) return "File not found";
     const parts: string[] = [transcribed[ep.transcript]?.(ep) ?? "Not transcribed"];
     const plans = ep.plans?.length ?? 0;
@@ -675,7 +676,14 @@
   const dots: Record<EpisodeStatus["stands"], string> = { failed: "err", look: "warn", made: "ok", "": "" };
   function dotFor(ep: EpisodeStatus): string {
     if (working(ep.source)) return "busy";
-    return dots[jobs.standing[ep.source] ?? ep.stands] ?? "";
+    return dots[statusOf(ep).stands] ?? "";
+  }
+
+  // A video's status from the newest state of it Go sent, or as the
+  // library listed it before any state came, so the dot and the line
+  // under the name say the same.
+  function statusOf(listed: EpisodeStatus): EpisodeStatus {
+    return jobs.statuses[listed.source] ?? listed;
   }
 
   // A pointer that lands anywhere else takes the keyboard with it. Clicking

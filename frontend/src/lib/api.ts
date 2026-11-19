@@ -219,7 +219,8 @@ export interface EpisodeStatus {
   label?: Label;
   // How the video stands in the sidebar, its dot, as Go decides it: a
   // file gone or a failed search, something that needs a look, clips
-  // made, or nothing worth a mark. See engine.EpisodeStatus.Standing.
+  // made, or nothing worth a mark. See standing in
+  // cmd/framefairy-app/videostate.go.
   stands: "failed" | "look" | "made" | "";
   // How far the video is transcribed, which the line under its name says.
   transcript: "whole" | "changed" | "to" | "parts" | "none";
@@ -597,8 +598,9 @@ export interface VideoState {
   // Go's stamp of the cards of what the video says, the transcript
   // search's: they are read again when it changes, and only then.
   cards?: string;
-  // How many seconds removed work or a removed clip can be put back, see
-  // removalTime in cmd/framefairy-app/removal.go.
+  // How many seconds removed work, a search or a clip made by hand that
+  // stopped, can be put back before Go forgets it, see removalTime in
+  // cmd/framefairy-app/removal.go.
   putBack?: number;
   // The key of the clip chosen, by a hand or by the Go side, or nothing.
   chosen?: string;

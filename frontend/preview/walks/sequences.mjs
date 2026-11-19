@@ -250,9 +250,10 @@ async function walkingSequence(seq, shared) {
   let wrong = null;
   // The video and the other file dropped last.
   let droppedVideo = "";
-  // How long a removed thing can be put back, in seconds, which Go says
-  // in the video's state, removalTime in cmd/framefairy-app/removal.go.
-  // The walks check that the rows run down for that long.
+  // How long a removed thing can be put back, in seconds: removed work
+  // as Go says in the video's state, removalTime in
+  // cmd/framefairy-app/removal.go, and a removed clip's row as long as
+  // news shows, newsShows in lib/removed.ts. The two are the same.
   const removeTime = 10;
   // The job of the clip made by hand that "hand stopped" stopped.
   let handJob = "";

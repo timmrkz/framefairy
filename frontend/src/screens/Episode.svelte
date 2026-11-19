@@ -1350,9 +1350,7 @@
   // that put one back leaves it a clip again, not a row to put back.
   const removedRows = $derived(
     Object.fromEntries(
-      clips
-        .filter((c) => c.rejected && c.key in removed)
-        .map((c) => [c.key, { spent: spent(removed[c.key]), whole: removed[c.key].whole }]),
+      clips.filter((c) => c.rejected && c.key in removed).map((c) => [c.key, spent(removed[c.key])]),
     ),
   );
 
@@ -1402,13 +1400,9 @@
     // #878. It is written again with the answer, in the same frame the
     // clip comes back removed, because a list read meanwhile drops a row
     // whose clip is not removed yet, see keepRemovedTrue.
-    // Its time is Go's, the one it said in the video's state, kept with
-    // the row, so a row runs down for as long as it was given.
-    const whole = removed[clip.key]?.whole ?? session.putBack;
     const row = (c: ClipEntry, then = ""): Removed => ({
       clip: c,
-      until: removed[clip.key]?.until ?? Date.now() + whole * 1000,
-      whole,
+      until: removed[clip.key]?.until ?? Date.now() + newsShows * 1000,
       chosen,
       then,
       // Where the playhead goes back to when the clip is put back, only

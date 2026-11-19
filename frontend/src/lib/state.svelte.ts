@@ -54,10 +54,11 @@ export class JobStore {
   // comes stopping.
   coming = $state.raw<string[]>([]);
 
-  // How each video stands in the sidebar, from the newest state of it,
-  // see EpisodeStatus.stands. A video no state was sent of yet stands as
-  // the library said.
-  standing = $state.raw<Record<string, EpisodeStatus["stands"]>>({});
+  // The status of each video in the newest state of it, so the sidebar
+  // draws how the video stands and the line under its name from one
+  // status, the newest, see EpisodeStatus.stands. A video no state was
+  // sent of yet stands as the library said.
+  statuses = $state.raw<Record<string, EpisodeStatus>>({});
 
   // The rev of the newest state of each video the jobs were taken from.
   private revs = new Map<string, number>();
@@ -81,9 +82,7 @@ export class JobStore {
     }
     if (state.rev <= (this.revs.get(state.video) ?? 0)) return;
     this.revs.set(state.video, state.rev);
-    if (state.status && this.standing[state.video] !== state.status.stands) {
-      this.standing = { ...this.standing, [state.video]: state.status.stands };
-    }
+    if (state.status) this.statuses = { ...this.statuses, [state.video]: state.status };
     if (!!state.searchComing !== this.coming.includes(state.video)) {
       this.coming = state.searchComing ? [...this.coming, state.video] : this.coming.filter((v) => v !== state.video);
       this.settle();

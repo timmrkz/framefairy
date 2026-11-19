@@ -100,9 +100,8 @@
     // The clips just taken out. Each keeps its place in the list for a
     // moment, showing what happened to it and offering it back, so the rows
     // do not jump out from under the pointer.
-    // With how many seconds of their time each has used, of how many in
-    // all, as Go said a clip removed can be put back for.
-    removed?: Record<string, { spent: number; whole: number }>;
+    // With how many seconds of their time each has used.
+    removed?: Record<string, number>;
     // What became of the clips there were, when every one of them was
     // removed and nothing is on its way: said in the first row still to
     // come, the way a search that stopped says so there, so an empty list
@@ -425,8 +424,8 @@
         {/if}
       {:else if clip && clip.key in removed}
         <Removed
-          drain={removed[clip.key].whole}
-          spent={removed[clip.key].spent}
+          drain={newsShows}
+          spent={removed[clip.key]}
           onputback={() => onputback?.(clip.key)}
           onend={() => onforget?.(clip.key)}
           onresume={(left) => onheld?.(clip.key, left)}

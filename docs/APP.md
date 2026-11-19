@@ -1646,10 +1646,12 @@ bubble scrolled by those eight pixels.
       that failed, the red of its row and of its toast. A search set
       aside has no row, so the dot says nothing of it either, issue #436.
       How a video stands, its dot and the line under its name, is the Go
-      side's to say, `EpisodeStatus.stands` and `transcript`, from
-      `Standing` in `engine/stands.go`, sent in the library and in every
-      state of the video. The sidebar only picks the colour, and pulses
-      the dot from the frame work is pressed for. **Its trash can**,
+      side's to say, `EpisodeStatus.stands` from `standing` in
+      `cmd/framefairy-app/videostate.go`, and `transcript` from
+      `engine/transcribed.go`, sent in the library and in every state of
+      the video. The sidebar draws the newest of them, picks only the
+      colour and the words, and pulses the dot from the frame work is
+      pressed for. **Its trash can**,
       there while the pointer is on the row, removes the search when it
       is no longer wanted: the row says Removed with Put it back for ten
       seconds, the way a removed clip's row does, and the search's cards
@@ -1716,10 +1718,13 @@ bubble scrolled by those eight pixels.
       the first one's way back with it. The ten seconds are the episode's,
       not the screen's: they run on while another episode or page is open,
       and coming back within them finds the row again with the time it has
-      left. Time the pointer held it still is kept too. How long a row
-      offers its clip or work back is the app's Go side's to say, in the
-      video's state, `VideoState.putBack`, the time it keeps removed work
-      for. The window keeps no copy of it. A list read again,
+      left. Time the pointer held it still is kept too. How long a
+      removed clip's row stays is the window's, like a toast's, because
+      Undo puts the clip back at any time. Removed work, a search or a
+      clip made by hand that stopped, is forgotten by the Go side once its
+      time is up, so its row runs down over the time the Go side keeps,
+      `VideoState.putBack` before it has answered and the job's
+      `away.whole` after. A list read again,
       after a search, a render or an undo, leaves the rows as they are, and
       an undo that puts the clip back makes it a clip again. Leaving the
       episode, or any of those, used to take every way back with it.

@@ -6,18 +6,18 @@
 // it is seconds long and a restart is well past it.
 import type { ClipEntry } from "./api";
 
-// How long a piece of news shows, in seconds: a toast, and a row saying a
-// search found nothing. It is the window's own. How long a clip or work
-// taken out can be put back is Go's, VideoState.putBack, see removal.go.
+// How long a piece of news shows, in seconds: a toast, a clip taken out
+// and a row saying a search found nothing. It is the window's own, how
+// the news is shown. How long removed work can be put back before Go
+// forgets it is Go's, VideoState.putBack, see removal.go.
 export const newsShows = 10;
 
 // A clip taken out, the moment its time runs out, in milliseconds since
-// the epoch, the way Date.now() counts, how many seconds it had in all,
-// as Go said it can be put back for, and whether it was the clip chosen
+// the epoch, the way Date.now() counts, and whether it was the clip chosen
 // when it was taken out. If it was, then is the clip chosen in its place,
 // empty when none was left, and at is where the playhead stood, so
 // putting it back puts both back.
-export type Removed = { clip: ClipEntry; until: number; whole: number; chosen?: boolean; then?: string; at?: number };
+export type Removed = { clip: ClipEntry; until: number; chosen?: boolean; then?: string; at?: number };
 
 const aside = new Map<string, Record<string, Removed>>();
 
@@ -36,7 +36,7 @@ export function takeUp(path: string, now = Date.now()): Record<string, Removed> 
 
 // How much of its time a clip taken out has used, in seconds.
 export function spent(r: Removed, now = Date.now()): number {
-  return Math.min(r.whole, Math.max(0, r.whole - (r.until - now) / 1000));
+  return Math.min(newsShows, Math.max(0, newsShows - (r.until - now) / 1000));
 }
 
 // A search that found nothing new says so in the row its next clip would
