@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -86,6 +87,54 @@ func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, 
 		return ClipEntry{}, err
 	}
 	return entry, nil
+}
+
+// Turns is the clip chosen as it will be once one of its parts is
+// rotated a quarter further, a turn for each part, worked out by the
+// engine's own rule, see engine.TurnClip. R turns the video preview by it
+// in the frame it is pressed in, and the clip RotatePart answers with
+// takes its place. The window turned it by a copy of the rule once, which
+// drifted from it, #610.
+type Turns struct {
+	// Clip is the key of the clip chosen, or nothing when none is.
+	Clip  string `json:"clip"`
+	Parts []Turn `json:"parts"`
+}
+
+// Turn is the clip chosen with the part Part rotated a quarter further:
+// its rotations, and how its crop runs over its pieces then.
+type Turn struct {
+	Part      int                   `json:"part"`
+	Rotations []engine.RotationView `json:"rotations"`
+	Framing
+}
+
+// turnsOf is the Turns of the clip chosen, of the clips of the plans, on
+// the video info says.
+func (s *FrameFairy) turnsOf(plans []engine.PlanSummary, chosen string, clips []ClipEntry, info engine.SourceInfo) Turns {
+	out := Turns{Parts: []Turn{}}
+	i := slices.IndexFunc(clips, func(c ClipEntry) bool { return c.Key == chosen })
+	if i < 0 {
+		return out
+	}
+	entry := clips[i]
+	k := slices.IndexFunc(plans, func(p engine.PlanSummary) bool { return p.Path == entry.Plan })
+	if k < 0 {
+		return out
+	}
+	out.Clip = chosen
+	for j, seg := range entry.Segments {
+		if j > 0 && entry.Segments[j-1].Part == seg.Part {
+			continue
+		}
+		turned, err := engine.TurnClip(plans[k], entry.ID, (seg.Start+seg.End)/2, info)
+		if err != nil {
+			continue
+		}
+		out.Parts = append(out.Parts, Turn{Part: seg.Part, Rotations: engine.RotationViews(turned.Rotations),
+			Framing: s.framingOf(info, engine.SegmentViews(turned.Segments), engine.CropMarkViews(turned.CropMarks))})
+	}
+	return out
 }
 
 // pieceAt is the piece of a clip that holds a moment, or the nearest, the

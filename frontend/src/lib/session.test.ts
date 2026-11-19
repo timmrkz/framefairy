@@ -36,6 +36,7 @@ describe("a video's state in its session", () => {
     clips: [clip("a")],
     jobs: [],
     heard: { saved: [], heard: [], unheard: [] },
+    turns: { clip: "", parts: [] },
     ...more,
   });
 

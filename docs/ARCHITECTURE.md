@@ -269,11 +269,14 @@ other side relies on, and the pull request says so.
 Code that breaks this map today, with the issue that fixes it. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
-- Rules of the engine in `frontend/src/lib/flow.ts` and
-  `frontend/src/lib/rotate.ts`, `flow.ts`'s frames held to Go by a shared
-  case file, and `frameOf` in `frontend/src/lib/keyframes.ts`, #610. The
-  crop a keyframe holds is no longer one of them: Go sends each piece's
-  crop steps, `engine.CropSteps`, and the window only looks them up.
+- Rules of the engine in `frontend/src/lib/flow.ts`, its frames held to
+  Go by a shared case file, the frame lookups `rotationAt` and
+  `pieceHolding` in `frontend/src/lib/rotate.ts`, and `frameOf` in
+  `frontend/src/lib/keyframes.ts`, #610. These are no longer among them,
+  because Go sends each as data and the window only looks it up: the
+  crop a keyframe holds, `engine.CropSteps`, what of a video is heard,
+  `VideoState.heard`, how each part of the chosen clip turns,
+  `VideoState.turns`, and how a choice of model stands, `Standing`.
 - The decoder's schedule in `frontend/src/lib/frames/app.ts`: which
   frames Go decodes, on which stream, what is read ahead and what waits,
   `AppFrames`, `Stream` and `Puller`, and the `VideoDecoder` that

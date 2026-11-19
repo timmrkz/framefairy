@@ -661,10 +661,7 @@ func (s PlanSummary) View() *PlanView {
 			}
 		}
 		v.CropMarks = CropMarkViews(c.CropMarks)
-		v.Rotations = []RotationView{}
-		for _, r := range c.Rotations {
-			v.Rotations = append(v.Rotations, rotationView(r))
-		}
+		v.Rotations = RotationViews(c.Rotations)
 		v.Segments = SegmentViews(c.Segments)
 		v.Rendered = renderedOf(plan, c)
 		v.Short = shortOf(plan, c)

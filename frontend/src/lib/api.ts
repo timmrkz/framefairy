@@ -592,6 +592,9 @@ export interface VideoState {
   marking?: Marking | null;
   // What of the video is heard, see HeardView.
   heard: HeardView;
+  // The clip chosen as it will be once one of its parts is rotated a
+  // quarter further, see Turns.
+  turns: Turns;
   // In a state sent, every clip by its key and its hash, while clips
   // holds only those that changed, each with its hash, or kept when not
   // one changed and the state holds neither. A state read by a call
@@ -599,6 +602,22 @@ export interface VideoState {
   // and what hears it never sees these, see onVideoState.
   order?: ClipMark[];
   kept?: boolean;
+}
+
+// The clip chosen as it will be once one of its parts is rotated a
+// quarter further, a turn for each part, worked out by the engine's own
+// rule, see Turns in cmd/framefairy-app/edits.go. R turns the video
+// preview by it in the frame it is pressed in.
+export interface Turns {
+  // The key of the clip chosen, or nothing.
+  clip: string;
+  parts: Turn[];
+}
+
+// The clip chosen with the part part rotated a quarter further.
+export interface Turn extends Framing {
+  part: number;
+  rotations: Rotation[];
 }
 
 // What of a video is heard, as the Go side says it, see HeardView in

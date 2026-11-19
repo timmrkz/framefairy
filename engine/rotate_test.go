@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -123,6 +124,65 @@ func TestRotateTurnsTheStretchOfThePartAndFourTurnsBringItBack(t *testing.T) {
 	_, crops := rotations(t, fsys, path)
 	if crops[0] == nil || *crops[0] != 120 || crops[1] == nil || *crops[1] != 120 {
 		t.Errorf("rotated back, the part does not have the crop it had")
+	}
+}
+
+// The turn the window shows in the frame R is pressed in is the turn
+// saved, worked out by the same rule without writing: the stretch on the
+// frames, the crop of a part turned alike, and the keyframes waiting.
+// The window once turned it by a copy of its own, which left the part in
+// the middle where it takes the crop of a part turned alike, #610.
+func TestATurnWorkedOutIsTheTurnSaved(t *testing.T) {
+	fsys, path := rotatablePlanPath(t)
+	// The piece after the cut turned, with a crop placed on it, so a
+	// part turned the same way takes that crop.
+	rotate(t, fsys, path, 13.5)
+	if err := SetCrop(fsys, path, "01", 13.5, 400, SourceInfo{}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := afero.ReadFile(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := summaryOf(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, at := range []float64{10.5, 11.5, 13.5} {
+		shown, err := TurnClip(s, "01", at, at25)
+		if err != nil {
+			t.Fatal(err)
+		}
+		again, err := TurnClip(s, "01", at, at25)
+		if err != nil {
+			t.Fatal(err)
+		}
+		saved, savedPath := writePlanAt(t, string(before))
+		if err := RotatePart(saved, savedPath, "01", at, at25); err != nil {
+			t.Fatal(err)
+		}
+		want := clipByID(t, saved, savedPath, "01")
+		if !reflect.DeepEqual(shown.Rotations, want.Rotations) || !reflect.DeepEqual(shown.Segments, want.Segments) {
+			t.Errorf("turned at %v s, shown %+v %+v, saved %+v %+v", at, shown.Rotations, shown.Segments, want.Rotations, want.Segments)
+		}
+		if !reflect.DeepEqual(again, shown) {
+			t.Errorf("turned at %v s a second time, it came out %+v, not %+v", at, again, shown)
+		}
+	}
+	if turned := pieceAt(t, fsys, path, 10.5); turned.Rotate != 0 {
+		t.Errorf("working the turn out wrote it, the first piece is turned %d", turned.Rotate)
+	}
+	if after, _ := afero.ReadFile(fsys, path); string(after) != string(before) {
+		t.Error("working the turn out changed the plan")
+	}
+	// And the case the copy got wrong: the part before the cut, turned
+	// the way the piece after it is, takes its crop.
+	shown, err := TurnClip(s, "01", 11.5, at25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := shown.Segments[0].CropX; c == nil || *c != 400 {
+		t.Errorf("the part turned like the one with a crop placed stands at %v, not 400", c)
 	}
 }
 

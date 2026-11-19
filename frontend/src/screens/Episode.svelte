@@ -86,7 +86,7 @@
   import Pick from "../components/Pick.svelte";
   import Colour from "../components/Colour.svelte";
   import { act, said } from "../lib/said";
-  import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
+  import { pieceHolding, rotationAt } from "../lib/rotate";
   import { markOn } from "../lib/keyframes";
   import { toasts } from "../lib/toast.svelte";
   import { afterRest } from "../lib/rest";
@@ -2574,16 +2574,23 @@
   // R and the Rotate button: the part of the clip between two cuts that
   // the playhead stands in turns a quarter to the left, the way Preview's
   // Rotate Left does, for a phone that was turned while it recorded. It
-  // turns in the video preview in the frame it is pressed in, by the
-  // engine's own rule in lib/rotate.ts, and the clip the engine answers
-  // with takes its place. Plan row 3.25.
+  // turns in the video preview in the frame it is pressed in, as the Go
+  // side said the part would turn, session.turns, worked out by the
+  // engine's own rule, and the clip the engine answers with takes its
+  // place. Plan row 3.25.
   async function rotatePart() {
-    if (!current || renderingCurrent || !inShort || !source) return;
+    if (!current || renderingCurrent || !inShort) return;
     const clip = current;
     const at = time;
-    const picture = source;
+    const i = pieceHolding(clip.segments, at);
+    const turns = session.turns;
+    const turn = i >= 0 && turns.clip === clip.key ? turns.parts.find((t) => t.part === clip.segments[i].part) : undefined;
+    const shown = (c: ClipEntry): ClipEntry =>
+      turn
+        ? { ...c, rotations: turn.rotations, segments: turn.segments, cropMarks: turn.cropMarks, cropLefts: turn.cropLefts, cropSteps: turn.cropSteps, glides: turn.glides }
+        : c;
     try {
-      await session.edit(clip.key, (c) => rotated(c, picture, at), () => api.rotatePart(path, clip.plan, clip.id, at));
+      await session.edit(clip.key, shown, () => api.rotatePart(path, clip.plan, clip.id, at));
     } catch (err) {
       oops(errorText(err));
     }

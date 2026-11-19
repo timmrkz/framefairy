@@ -58,6 +58,9 @@ type VideoState struct {
 	// them and the jobs, so a clip the app chose comes with the state that
 	// holds it.
 	Chosen string `json:"chosen"`
+	// Turns is the clip chosen as it will be once one of its parts is
+	// rotated a quarter further, see Turns.
+	Turns Turns `json:"turns"`
 	// Order is, in a state sent to the window, every clip of the video in
 	// the order of Clips in a state read, by its key and its hash. Clips
 	// then holds only the clips the window was not sent as they are now,
@@ -167,6 +170,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		st.Marking = engine.MarkingOf(st.Status.HeardIn(info.Duration), st.Status.Said, info.Duration)
 	}
 	st.Chosen = s.chosenFor(path, st)
+	st.Turns = s.turnsOf(plans, st.Chosen, st.Clips, info)
 	s.hearChosen(path, st, info.Duration)
 	return st, nil
 }

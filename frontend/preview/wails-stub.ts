@@ -1035,7 +1035,8 @@ function videoState(path: string): Promise<unknown> {
       const w = windowIn();
       const inWindow = heard.heard.reduce((sum, [a, b]) => sum + Math.max(Math.min(b, w.to) - Math.max(a, w.from), 0), 0);
       const win = { ...w, heard: inWindow, heardAll: inWindow >= w.to - w.from - 0.5 || undefined };
-      return { video: path, rev, status, clips, jobs, chosen: chosenIn(clips as any[]), window: win, heard };
+      // The stub works out no turn of a part, so R waits for its answer.
+      return { video: path, rev, status, clips, jobs, chosen: chosenIn(clips as any[]), window: win, heard, turns: { clip: "", parts: [] } };
     });
   });
 }

@@ -2895,7 +2895,11 @@ lies on its side. Plan row 3.25, the design is in
   captions stand on it rotated. The picture turns with the frame on the
   video preview, not with the playhead, which runs ahead of its frames
   when it is dragged: over a cut, the picture turns when the first frame
-  from the other side is there.
+  from the other side is there. The turn shown at once is the one the
+  engine saves: the state of the video carries how each part of the
+  chosen clip turns, `VideoState.turns`, worked out by `engine.TurnClip`,
+  the rule `RotatePart` writes with, so the answer changes nothing on
+  screen.
 - **A rotation belongs to the video, not to the cuts.** Rotate turns the
   stretch of the video the part shows, from the middle of the cut before
   it to the middle of the cut after, where the phone was turned. A part at
