@@ -710,6 +710,12 @@ func joinParts(parts [][2]float64) [][2]float64 {
 	return out
 }
 
+// ErrNoSpeech is a window, or a whole video, in which nothing is said:
+// there is nothing to make a clip from. It is what the video is, not a
+// failure, so a search of it is done with nothing found, see
+// JobRecord.Silent, and only the command line says it as an error.
+var ErrNoSpeech = errors.New("no speech was found in the audio")
+
 // ErrNoSpeechModel is a speech model folder that lacks a file the model
 // needs, as the recogniser finds when it opens, see asr.Check.
 var ErrNoSpeechModel = errors.New("no speech model")

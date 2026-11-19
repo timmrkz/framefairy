@@ -421,6 +421,33 @@ func (e *Engine) Transcribe(ctx context.Context, path string, window timed.Windo
 	return e.transcribe(ctx, path, window, rec, silenceDB, nil, hearingShare{window, 0, window.End - window.Start})
 }
 
+// noSoundDB is the level of a frame with no sound in it, what frameDB
+// says of samples that are all nought.
+const noSoundDB = -200
+
+// soundless is whether the file at path has no sound at all, by its
+// probe, and how long it is. A file the probe cannot read is not taken
+// for one, so ffmpeg says what is wrong with it.
+func (e *Engine) soundless(ctx context.Context, path string) (float64, bool) {
+	info, err := e.Probe(ctx, path)
+	return info.Duration, err == nil && info.SoundChannels == 0
+}
+
+// heardSilence is the transcript of a part from start to end of a file
+// with no sound: silent frames and no word.
+func heardSilence(start, end float64, floor *float64) *Transcript {
+	frames := make([]float32, max(int(math.Round((end-start)/timed.FrameSeconds)), 0))
+	for i := range frames {
+		frames[i] = noSoundDB
+	}
+	t := &Transcript{Start: start, Frames: frames, Mean: noSoundDB, Floor: NoiseFloor(noSoundDB)}
+	if floor != nil {
+		t.Floor = *floor
+	}
+	t.hear(nil)
+	return t
+}
+
 // checkpointDefault is how often, in wall time, a long transcription saves
 // what it has so far, unless the engine says otherwise, see
 // Engine.checkpointEvery.
@@ -455,6 +482,14 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 	rec Recognizer, silenceDB *float64, save checkpoint, share hearingShare) (*Transcript, error) {
 	first := int(math.Round(window.Start / timed.FrameSeconds))
 	window.Start = float64(first) * timed.FrameSeconds
+	if end, ok := e.soundless(ctx, path); ok {
+		// No sound to read, so nothing is said in it: heard as silence,
+		// and a search of it ends with no speech found, not failed.
+		if window.End > window.Start {
+			end = window.End
+		}
+		return heardSilence(window.Start, end, silenceDB), nil
+	}
 	args := audioFrom(path, first, e.pictureStart(ctx, path))
 	e.Log.Detail("ffmpeg %s", strings.Join(args, " "))
 	// Its own context, so stopping at the end of the window can end ffmpeg

@@ -472,7 +472,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
-			q.Get("box") != "0", cameraHeight(q.Get("size")))
+			q.Get("sound") == "none", q.Get("box") != "0", cameraHeight(q.Get("size")))
 		answer(w, path, err)
 	})
 	// Files dropped on the app, which the window hands over the way the
@@ -1475,7 +1475,7 @@ func (b *bridge) startWith(seconds, rate, timing string) (string, error) {
 	if timing != "" && !frameTimings[timing] {
 		return "", fmt.Errorf("%q is no timing of frames", timing)
 	}
-	file := walkFixture(n, rate, 0, timing, false)
+	file := walkFixture(n, rate, 0, timing, false, false)
 	// Named by its kind, so it never meets a video a walk picks next,
 	// folge-1 and on.
 	path := filepath.Join(b.d.home, file)
@@ -1713,13 +1713,13 @@ func cameraHeight(size string) int {
 // bridge's own kind of video, at five frames a second, and with one it is
 // filmed at that rate. With a switch, in seconds, the bridge's own kind is
 // filmed by two cameras that switch then, and with hevc it is HEVC with
-// 10-bit colour. Each is a copy of a video committed in internal/fixtures, see
+// 10-bit colour. With mute it has no sound at all. Each is a copy of a video committed in internal/fixtures, see
 // walkFixture, so one that is not there is refused with its name. With a
 // height it is a camera's picture of that height instead, see
 // makeCameraEpisode.
 //
 // On the real disk: the app adds the video from the disk.
-func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, box bool, height int) (string, error) {
+func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, mute, box bool, height int) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
@@ -1744,7 +1744,7 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, box bool, he
 	if height > 0 {
 		err = makeCameraEpisode(path, n, height, hevc)
 	} else {
-		err = fixtures.CopyTo(walkFixture(n, rate, at, timing, hevc), path)
+		err = fixtures.CopyTo(walkFixture(n, rate, at, timing, hevc, mute), path)
 	}
 	if err != nil {
 		return "", err
@@ -1759,8 +1759,9 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, box bool, he
 
 // walkFixture names the video committed in internal/fixtures that a pick
 // asks for: walk, cameras or filmed and its length, and then its switch,
-// its frame rate and its timing where it has them.
-func walkFixture(seconds int, rate string, switchAt float64, timing string, hevc bool) string {
+// its frame rate and its timing where it has them, or with mute one with
+// no sound at all.
+func walkFixture(seconds int, rate string, switchAt float64, timing string, hevc, mute bool) string {
 	name := fmt.Sprintf("walk-%ds", seconds)
 	switch {
 	case rate != "":
@@ -1773,6 +1774,9 @@ func walkFixture(seconds int, rate string, switchAt float64, timing string, hevc
 	}
 	if hevc && rate == "" {
 		name += "-hevc"
+	}
+	if mute {
+		name += "-mute"
 	}
 	return name + ".mp4"
 }

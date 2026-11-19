@@ -221,8 +221,12 @@ Darwin)
 	# later over the whole bundle.
 	codesign --remove-signature "$PROGRAM" 2>/dev/null || true
 	codesign -s - -f "$PROGRAM" 2>/dev/null || true
+	# Each library loses its local symbols on the way, strip -x, which
+	# nothing loads them by: a tenth of what onnxruntime weighs in an
+	# update. Its exported symbols, the ones a program links by, stay.
 	for lib in "$LIBDIR"/*.dylib; do
 		codesign --remove-signature "$lib" 2>/dev/null || true
+		strip -x "$lib"
 		codesign -s - -f "$lib" 2>/dev/null || true
 	done
 	;;

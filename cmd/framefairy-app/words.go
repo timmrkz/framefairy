@@ -85,25 +85,6 @@ func (s *FrameFairy) words(path string) (*engine.Transcript, error) {
 	return t, err
 }
 
-// Words returns the words said in a part, for walking the playhead from
-// word to word. Before the first transcription there are none, which is an
-// empty answer and not a failure.
-func (s *FrameFairy) Words(path string, from, to float64) ([]engine.WordView, error) {
-	if !s.store.Known(path) {
-		return nil, errNotInLibrary
-	}
-	t, err := s.words(path)
-	if err != nil {
-		return nil, err
-	}
-	out := []engine.WordView{}
-	// One word either side, so a step can reach past the part.
-	for _, w := range t.WordsBetween(from-5, to+5) {
-		out = append(out, engine.WordView{Start: w.Start, End: w.End, Text: w.Text})
-	}
-	return out, nil
-}
-
 // Sentences returns what the video says, as far as it has been heard, as
 // cards for searching it in the clip column: a card for every caption of
 // every clip that is not rejected, named by the clip's key, and cards of
@@ -139,6 +120,20 @@ func (s *FrameFairy) Sentences(path string) (cards []engine.SentenceView, err er
 		clips = append(clips, of...)
 	}
 	return engine.SaidCards(t, clips), nil
+}
+
+// saidStamp is VideoState.Cards for the video at path with plans, on the
+// frames of source, the probe the state read: it changes whenever what
+// Sentences answers would, the look of each plan made the way Sentences
+// makes it. It asks ffprobe nothing and logs nothing, since a state is
+// read up to four times a second, and a video that cannot be read would
+// have been probed again, and its look warned about, on every one.
+func (s *FrameFairy) saidStamp(path string, plans []engine.PlanSummary, source engine.SourceInfo) string {
+	o := s.store.Settings().options()
+	return s.store.machine.Episode(path).SaidStamp(o.ASRModel, o.SilenceDB, plans, func(p engine.PlanSummary) *engine.Look {
+		look, _ := s.lookIn(source, p)
+		return look
+	})
 }
 
 // SetWord corrects a word of one clip, typed in its caption box. Every

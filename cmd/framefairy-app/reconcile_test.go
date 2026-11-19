@@ -501,6 +501,7 @@ func TestAModelDeletedOrAddedOutsideTheAppIsSentToTheWindowAtOnce(t *testing.T) 
 	svc.setupNews = func(state SetupState) { sent <- state }
 	svc.watchTheDisk()
 	t.Cleanup(svc.watch.stop)
+	svc.lookFirst()
 	installed := func(state SetupState) bool {
 		i := slices.IndexFunc(state.Language, func(m LanguageModelView) bool { return m.Name == model.Name })
 		return i >= 0 && state.Language[i].Installed
@@ -637,6 +638,7 @@ func TestAModelTheFirstRunDownloadedIsWatched(t *testing.T) {
 	svc.setupNews = func(state SetupState) { sent <- state }
 	svc.watchTheDisk()
 	t.Cleanup(svc.watch.stop)
+	svc.lookFirst()
 	if _, err := os.Stat(filepath.Dir(models)); !os.IsNotExist(err) {
 		t.Fatalf("the folder over the models is there before the first run: %v", err)
 	}

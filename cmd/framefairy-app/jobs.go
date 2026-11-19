@@ -1419,7 +1419,12 @@ func (s *FrameFairy) Render(path string, req engine.RenderRequest) Job {
 }
 
 // Jobs lists queued, running and finished jobs.
-func (s *FrameFairy) Jobs() []Job { return s.jobs.list() }
+// The searches and renders cut off the last time are in it once the
+// first look has restored them, see lookFirst.
+func (s *FrameFairy) Jobs() []Job {
+	s.store.afterFirstLook()
+	return s.jobs.list()
+}
 
 // CancelJob stops a job, or takes it out of the queue.
 func (s *FrameFairy) CancelJob(id string) {

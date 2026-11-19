@@ -33,11 +33,10 @@ type VideoState struct {
 	// takes a number from the same clock once it is written, see
 	// ClipEntry.Rev, so a state read before the edit is never taken
 	// over its answer.
-	Rev      uint64               `json:"rev"`
-	Status   engine.EpisodeStatus `json:"status"`
-	Clips    []ClipEntry          `json:"clips"`
-	Coverage CoverageView         `json:"coverage"`
-	Jobs     []Job                `json:"jobs"`
+	Rev    uint64               `json:"rev"`
+	Status engine.EpisodeStatus `json:"status"`
+	Clips  []ClipEntry          `json:"clips"`
+	Jobs   []Job                `json:"jobs"`
 	// SearchComing says the video's first search is on its way: the video
 	// was just added and its picture is checked, and the search is asked
 	// for once it is, see checkAdded. Nothing of the video runs meanwhile,
@@ -52,6 +51,10 @@ type VideoState struct {
 	// nil while the video's length is not known: the keys are offered
 	// then and the engine says why a clip could not be made.
 	Marking *engine.Marking `json:"marking"`
+	// Cards changes whenever the cards of what the video says do, the
+	// transcript search's, see Sentences and engine.Episode.SaidStamp.
+	// The window reads them again when it changes, and only then.
+	Cards string `json:"cards"`
 	// Chosen is the key of the clip chosen, by a hand or by the app, see
 	// choose.go, or nothing. It is read after the clips, and chosen from
 	// them and the jobs, so a clip the app chose comes with the state that
@@ -104,7 +107,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	jobs, rev := s.jobs.ofVideo(path)
 	coming := s.searchComingLocked(path) != ""
 	s.checkMu.Unlock()
-	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.Episode(path), Coverage: CoverageView{Passes: []PassView{}}}
+	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.Episode(path)}
 	plans := st.Status.Plans
 	if st.Status.Missing {
 		// A video whose file is gone keeps its clips, see Clips.
@@ -114,15 +117,15 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	if !st.Status.Missing {
 		// A video that cannot be read now still has its status, its jobs
 		// and its clips, as a missing one does, so the workspace says what
-		// it can. Only how often each part was searched needs its length.
+		// it can.
 		if probed, err := s.probe(ctx, path); err != nil {
 			theLog.line(zerolog.WarnLevel, "app").Str("video", filepath.Base(path)).Err(err).Msg("the video could not be read for its state")
 		} else {
 			info = probed
-			st.Coverage = coverageOf(plans, info.Duration)
 		}
 	}
 	st.Clips = s.clipsOf(plans, info, st.Status.Heard)
+	st.Cards = s.saidStamp(path, plans, info)
 	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {
 		st.Window = s.windowFor(ctx, path, st, info.Duration)

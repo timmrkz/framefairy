@@ -25,6 +25,9 @@ import (
 // step with the disk first, see reconcile, so a video whose folder was
 // deleted outside the app is not listed.
 func (s *FrameFairy) Library() []engine.EpisodeStatus {
+	// After the first look, so the library opens with what it let go
+	// gone and what it restored there, see lookFirst.
+	s.store.afterFirstLook()
 	s.reconcile(nil)
 	opts := s.store.Settings().options()
 	out := []engine.EpisodeStatus{}
@@ -89,6 +92,9 @@ func (s *FrameFairy) VideoNames() string { return engine.VideoNames() }
 // and the decoder's first frame took 0.3 to 1.4 s on Tim's Mac, with
 // nothing on screen while they ran, issue #832.
 func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
+	// A video added while the first look runs is weighed against the
+	// library it leaves, see lookFirst.
+	s.store.afterFirstLook()
 	// Which of them have no work folder yet, so a video taken out again
 	// takes the folder this add made with it, and only that one.
 	fresh := map[string]bool{}
@@ -102,6 +108,7 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	added, err := s.store.AddEpisodes(videos)
 	for _, v := range added {
 		s.jobs.openEpisode(v)
+		s.levels.openEpisode(v)
 		// A video added again whose work folder was kept picks up where it
 		// left off, so what its records say stopped says so again, the way
 		// it does when the app starts.
@@ -320,14 +327,17 @@ func (s *FrameFairy) removeEpisode(path string, deleteWork bool) error {
 	// It stays closed once it is gone, and opens again only if it stays in
 	// the library or when it is added again.
 	reopen := s.jobs.closeEpisode(path)
-	// The loudness stops being measured before anything is deleted, so
-	// nothing writes the work folder back. An episode that stays in the
-	// library is measured again the next time its waveform is asked for.
-	s.levels.stop(path)
+	// The loudness stops being measured before anything is deleted, and
+	// starts again on nothing the waveform asks for while the removal
+	// waits, so nothing writes the work folder back. An episode that stays
+	// in the library is measured again the next time its waveform is asked
+	// for.
+	reopenLevels := s.levels.closeEpisode(path)
 	removed := false
 	defer func() {
 		if !removed {
 			reopen()
+			reopenLevels()
 		}
 	}()
 	if deleteWork {

@@ -72,6 +72,15 @@ type levelsFile struct {
 	End int `json:"end,omitempty"`
 	// Done says the parts are the whole audio.
 	Done bool `json:"done"`
+	// Loudest is the loudest frame, in dB, once all of it is measured.
+	Loudest *float32 `json:"loudest,omitempty"`
+}
+
+// silent says the whole audio is measured and none of it is as loud as
+// the loudness the clip timeline is sent can carry, see Loudness: there is
+// nothing to draw but a flat line.
+func (f levelsFile) silent() bool {
+	return f.Done && f.Loudest != nil && *f.Loudest < loudnessFloor
 }
 
 func levelsPaths(logsDir string) (string, string) {
@@ -424,6 +433,17 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 			progress(st.measured())
 		}
 	}
+	if duration, ok := e.soundless(ctx, source); ok {
+		// No sound to measure, so it is silence all through: the clip
+		// timeline draws the video as silent rather than as not measured,
+		// and nothing asks ffmpeg for a sound that is not there, #831.
+		st.end = int(math.Round(duration / timed.FrameSeconds))
+		for n := range st.end {
+			if !st.has(n) {
+				st.put(n, noSoundDB)
+			}
+		}
+	}
 	for {
 		start, ok := st.next(focus())
 		if !ok {
@@ -444,7 +464,27 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 	if progress != nil {
 		progress(st.measured())
 	}
+	// Said once it is all measured, so a waveform that looks empty can be
+	// told apart in the log: a video that is silent, or one never
+	// measured, #831.
+	if loudest, ok := st.loudest(); ok {
+		e.Log.Info("measured the loudness of %.1f s: the loudest %.1f dB", st.measured(), loudest)
+	}
 	return nil
+}
+
+// loudest is the loudest of what was measured, in dB, or false while
+// nothing is measured. A video that is silent all through is about -200.
+func (s *levelState) loudest() (float32, bool) {
+	measured := false
+	loudest := float32(math.Inf(-1))
+	for n, f := range s.frames {
+		if s.got[n] {
+			measured = true
+			loudest = max(loudest, f)
+		}
+	}
+	return loudest, measured
 }
 
 // measureFrom measures from frame start on, until it reaches a frame
@@ -666,6 +706,9 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 	if st.end >= 0 {
 		file.End = st.end
 	}
+	if loudest, ok := st.loudest(); ok && file.Done {
+		file.Loudest = &loudest
+	}
 	body, err := json.Marshal(file)
 	if err != nil {
 		return err
@@ -698,6 +741,9 @@ const (
 // heard: a slow one could save room noise alone first, and then no pause
 // was found in that video at all.
 func (e *Engine) videoLevel(ctx context.Context, source string, duration float64) (float64, error) {
+	if _, ok := e.soundless(ctx, source); ok {
+		return noSoundDB, nil
+	}
 	picture := e.pictureStart(ctx, source)
 	spots := levelSpotsIn(duration)
 	got := make([][]float32, len(spots))

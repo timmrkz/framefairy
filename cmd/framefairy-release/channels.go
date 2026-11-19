@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -75,6 +76,14 @@ func makeList(entries map[string][]byte, newest map[string]string, conflict map[
 		// One whose claim is there and wrong is no build of ours.
 		if b.Claim != "" {
 			if err := updates.VerifyClaim(public, b); err != nil {
+				fmt.Fprintf(log, "left out %s: %v\n", name, err)
+				continue
+			}
+		}
+		// The stored zip is what an app that knows parts installs, so its
+		// signature and claim are held the same way.
+		if st, ok := b.AsStored(); ok {
+			if err := errors.Join(updates.Verify(public, st), updates.VerifyClaim(public, st)); err != nil {
 				fmt.Fprintf(log, "left out %s: %v\n", name, err)
 				continue
 			}
@@ -254,20 +263,53 @@ func uploadList(gh gitHub, data []byte, log io.Writer) error {
 	return gh.upload(older, data)
 }
 
-// removeUnreachable takes away every zip no entry points at. Not at once:
-// a publish that runs beside this may have uploaded a zip whose entry this
-// list has not seen yet, so only a zip over an hour old goes.
+// removeUnreachable takes away every zip no entry points at, the parts
+// and the packed zip beside it, and every piece no remaining parts name. Not at once: a
+// publish that runs beside this may have uploaded a zip, parts or pieces
+// whose entry this list has not seen yet, so only a file over an hour old
+// goes. A piece that goes all the same, because a publish found it there
+// and did not upload it again, costs the app a whole download of that one
+// build, never the update, and the next publish that needs it uploads it
+// again.
 func removeUnreachable(gh gitHub, l updates.List, now time.Time, log io.Writer) error {
 	kept := map[string]bool{}
 	for _, b := range l.Channels {
 		kept[path.Base(b.URL)] = true
+		kept[updates.PartsName(path.Base(b.URL))] = true
+		kept[updates.PackedName(path.Base(b.URL))] = true
 	}
 	all, err := gh.assets()
 	if err != nil {
 		return err
 	}
+	// The pieces every kept parts file names. A parts file that cannot be
+	// read keeps every piece, since nothing then says which may go.
+	pieces, known := map[string]bool{}, true
 	for _, a := range all {
-		if !strings.HasPrefix(a.name, "app-") || !strings.HasSuffix(a.name, ".zip") || kept[a.name] {
+		if !kept[a.name] || !strings.HasSuffix(a.name, ".parts.json") {
+			continue
+		}
+		data, err := gh.download(a)
+		var p updates.Parts
+		if err == nil {
+			err = json.Unmarshal(data, &p)
+		}
+		if err != nil {
+			fmt.Fprintf(log, "reading %s failed, so every piece stays: %v\n", a.name, err)
+			known = false
+			break
+		}
+		for _, part := range p.Parts {
+			if part.Bytes == nil {
+				pieces[updates.PieceName(part.SHA256)] = true
+			}
+		}
+	}
+	for _, a := range all {
+		build := strings.HasPrefix(a.name, "app-") &&
+			(strings.HasSuffix(a.name, ".zip") || strings.HasSuffix(a.name, ".zip.zst") || strings.HasSuffix(a.name, ".parts.json"))
+		piece := known && strings.HasPrefix(a.name, "piece-") && strings.HasSuffix(a.name, ".zst")
+		if !(build && !kept[a.name]) && !(piece && !pieces[a.name]) {
 			continue
 		}
 		if now.Sub(a.created) > time.Hour {

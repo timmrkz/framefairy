@@ -176,7 +176,7 @@ describe("the work of the clip list", () => {
 // anything about, so a job it no longer holds is one the Go side forgot.
 describe("the jobs of a video's state", () => {
   const state = (rev: number, jobs: Job[], video = "/v.mp4") =>
-    ({ video, rev, jobs, clips: [], coverage: { passes: [] }, status: null, window: null, chosen: "" }) as never;
+    ({ video, rev, jobs, clips: [], status: null, window: null, chosen: "" }) as never;
 
   test("are kept, each unless a later snapshot of it is", () => {
     const jobs = new JobStore();
@@ -227,7 +227,7 @@ describe("a state of a video heard twice", () => {
 // #848.
 describe("a first search the Go side has on its way", () => {
   const state = (rev: number, searchComing: boolean, jobs: Job[] = []) =>
-    ({ video: "/v.mp4", rev, jobs, searchComing, clips: [], coverage: { passes: [] }, status: null, window: null, chosen: "" }) as never;
+    ({ video: "/v.mp4", rev, jobs, searchComing, clips: [], status: null, window: null, chosen: "" }) as never;
 
   test("is a start of the search until a newer state no longer says it, and an older state does not bring it back", () => {
     const jobs = new JobStore();

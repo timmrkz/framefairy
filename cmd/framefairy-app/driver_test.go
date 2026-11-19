@@ -186,8 +186,10 @@ func (d *desk) start(st *store) {
 		// The library is on the real disk, so the walks change its
 		// folders from outside the app the way Finder does. The watch
 		// starts once every field it can reach is set, the way main
-		// starts it.
+		// starts it, and the first look follows. The jobs cut off the
+		// last time are restored by openOn.
 		svc.watchTheDisk()
+		svc.reconcile(nil)
 	}
 	// Whatever is still running when the test ends is stopped before its
 	// folder goes: the checks of videos just added first, since each

@@ -1030,8 +1030,7 @@ function videoState(path: string): Promise<unknown> {
     return Promise.all([
       Answers.ByName("main.FrameFairy.Episode", path),
       Answers.ByName("main.FrameFairy.Clips", path),
-      Answers.ByName("main.FrameFairy.Coverage", path),
-    ]).then(([status, clips, coverage]) => ({ video: path, rev, status, clips, coverage, jobs, chosen: chosenIn(clips as any[]), window: windowIn() }));
+    ]).then(([status, clips]) => ({ video: path, rev, status, clips, jobs, chosen: chosenIn(clips as any[]), window: windowIn() }));
   });
 }
 
@@ -1547,23 +1546,6 @@ const Answers = {
           .map((c) => ({ ...c, rejected: !!(window as any).__gone?.[Number(c.id)] }))
           .sort((x, y) => x.start - y.start));
       }
-      case "Coverage": {
-        // The episode in parts by how many searches have read them, the
-        // way the Go side counts them.
-        const view = (passes: { from: number; to: number; times: number }[]) => ({ passes });
-        if (fresh) {
-          if (!found.length) return Promise.resolve(view([{ from: 0, to: 14423, times: 0 }]));
-          return Promise.resolve(view([{ from: 0, to: 1800, times: 1 }, { from: 1800, to: 14423, times: 0 }]));
-        }
-        return Promise.resolve(
-          view([
-            { from: 0, to: 1800, times: 1 },
-            { from: 1800, to: 5400, times: 0 },
-            { from: 5400, to: 7200, times: 1 },
-            { from: 7200, to: 14423, times: 0 },
-          ]),
-        );
-      }
       case "ArrivingCaptions": {
         const h = hands().find((x) => x.id === args[0]);
         const now = h && handAt(h);
@@ -2026,10 +2008,6 @@ const Answers = {
       }
       case "Sentences":
         return Promise.resolve(sentences());
-      case "Words":
-        if (location.search.includes("transcribing")) return Promise.resolve([]);
-        // What the video says, as it was heard, the way the Go side answers.
-        return Promise.resolve(words(Number(args[1]), Number(args[2])));
       // Removing waits for the episode's work to stop, which takes a
       // moment while a search runs. Every call is counted, so a probe can
       // see whether a second click sent a second removal.

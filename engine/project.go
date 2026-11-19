@@ -87,6 +87,11 @@ func (p *Project) step(ctx context.Context, do func() error) error {
 		return nil
 	case errors.Is(err, ErrCancelled) || ctx.Err() != nil:
 		return ErrCancelled
+	case errors.Is(err, ErrNoSpeech):
+		// Nothing said is what the video is, an outcome and no failure,
+		// so it is no error in the log and no last error either.
+		p.engine.Log.Info("%s", err)
+		return err
 	}
 	p.engine.Log.Error("%s", err)
 	p.mu.Lock()
