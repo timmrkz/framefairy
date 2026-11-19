@@ -120,6 +120,26 @@ func (p *Play) From() float64 {
 	return p.p0
 }
 
+// MomentAt is the moment of the video a place on the program stands for,
+// and false at or past its end.
+func (p *Play) MomentAt(at float64) (float64, bool) {
+	_, moment, ok := p.Locate(at)
+	return moment, ok
+}
+
+// First is the frame the play starts with, and false where it has none.
+func (p *Play) First() (int, bool) {
+	s, ok := NewShots(p.grid, p, p.p0).Next()
+	return s.Frame, ok
+}
+
+// Length is how long one time through the program lasts.
+func (p *Play) Length() float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.program.Length()
+}
+
 // End is where on the program the play ends, +Inf while it loops.
 func (p *Play) End() float64 {
 	p.mu.Lock()

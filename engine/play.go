@@ -167,6 +167,17 @@ func (p Program) Place(moment float64) float64 {
 	return p.Length()
 }
 
+// Holds says a moment of the video is inside one of the pieces, not in a
+// cut and not outside the clip.
+func (p Program) Holds(moment float64) bool {
+	for _, q := range p.pieces {
+		if moment >= q.Start && moment < q.End {
+			return true
+		}
+	}
+	return false
+}
+
 // Shot is a frame of a play: the frame of the grid, where on the program
 // it is drawn, and the moment of the video the play stands at there. Edge
 // says it is the first or the last frame of its visit, which is drawn

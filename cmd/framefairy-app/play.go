@@ -20,11 +20,16 @@ import (
 // begins and 1 where it is an edge, see engine.Shot, and its sound, each
 // chunk with the sample of the program it starts at and how many moments
 // it holds. And where on the program the play starts and ends, -1 while it
-// loops. A newer play, or a look of the hand, stops it. A cue waits for
+// loops, and how long one time through lasts. A newer play, or a look of the hand, stops it. A cue waits for
 // /frames/play/go before it takes the decoder, see engine.PlayAsk.
 //
-//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&pieces=<start>:<end>,...&at=<seconds>[&loop=1][&cue=1]
-//	  {"pictures": "...", "sound": "...", "from": <seconds>, "end": <seconds>}
+// It answers with the moment it starts from and where its first frame
+// begins, -1 for none, too. One that takes over from a play under way,
+// after, starts at the moment that play stands at at a place on its
+// program, and is refused with 409 where the new pieces do not hold it.
+//
+//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&pieces=<start>:<end>,...&at=<seconds>[&loop=1][&cue=1][&after=<pictures>&place=<seconds>]
+//	  {"pictures": "...", "sound": "...", "from": <seconds>, "end": <seconds>, "length": <seconds>, "moment": <seconds>, "first": <seconds>}
 //	/frames/play/go?id=<pictures>
 //	/frames/play/loop?id=<pictures>&at=<seconds>[&loop=1]  {"end": <seconds>}
 func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) {
@@ -45,12 +50,31 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "a play needs its pieces and where the playhead is", http.StatusBadRequest)
 		return
 	}
+	loop := q.Get("loop") == "1"
+	if after := q.Get("after"); after != "" {
+		// A play that takes over from the one before, the clip changed
+		// while it plays: from the moment that one stands at, at the place
+		// on its program the window names, where the new pieces hold it.
+		// The window goes on with the one before where they do not.
+		old := p.get(after)
+		place, err := strconv.ParseFloat(q.Get("place"), 64)
+		var moment float64
+		ok := old != nil && old.play != nil && err == nil
+		if ok {
+			moment, ok = old.play.MomentAt(place)
+		}
+		if !ok || !engine.NewProgram(pieces, loop).Holds(moment) {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		at = moment
+	}
 	dec, err := p.decoder(st.machine, path)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	play := p.schedule(dec).Play(engine.PlayAsk{Grid: hand.Grid, W: hand.W, H: hand.H, Pieces: pieces, Loop: q.Get("loop") == "1", Moment: at,
+	play := p.schedule(dec).Play(engine.PlayAsk{Grid: hand.Grid, W: hand.W, H: hand.H, Pieces: pieces, Loop: loop, Moment: at,
 		Cue: q.Get("cue") == "1"})
 	grid := hand.Grid
 	// The pictures are the schedule's, kept for a play started there
@@ -74,8 +98,13 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) 
 			return got(previewFrame{at: float64(out), stamp: []float64{float64(len(chunk) / (4 * channels))}, data: chunk})
 		})
 	})
+	first := -1.0
+	if f, ok := play.First(); ok {
+		first = grid.At(f)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"pictures": pictures, "sound": sound, "from": play.From(), "end": endOf(play.End())})
+	_ = json.NewEncoder(w).Encode(map[string]any{"pictures": pictures, "sound": sound, "from": play.From(), "end": endOf(play.End()),
+		"length": play.Length(), "moment": at, "first": first})
 }
 
 // servePlayGo gives the decoder to a cued play, see engine.Play.Go.

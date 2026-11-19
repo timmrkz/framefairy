@@ -126,6 +126,23 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 		t.Errorf("the play's sound is %d moments, the clip lasts %d", next, want)
 	}
 
+	// A play that takes over from this one starts at the moment it stands
+	// at, where the new pieces hold it, and is refused where they do not.
+	over := url.Values{}
+	for k, v := range ask {
+		over[k] = v
+	}
+	over["after"], over["place"] = []string{play.Pictures}, []string{"0.4"}
+	rec = get("/frames/play", over)
+	var took struct{ Moment, From float64 }
+	if err := json.NewDecoder(rec.Body).Decode(&took); err != nil || math.Abs(took.Moment-(g.At(2)+0.4)) > 1e-9 || math.Abs(took.From-0.4) > 1e-9 {
+		t.Errorf("the play taking over answered %d %q", rec.Code, rec.Body.String())
+	}
+	over["pieces"] = []string{fmt.Sprintf("%v:%v", g.At(12), g.At(17))}
+	if rec := get("/frames/play", over); rec.Code != http.StatusConflict {
+		t.Errorf("a play taking over where its pieces do not hold the playhead answered %d", rec.Code)
+	}
+
 	loop := get("/frames/play/loop", url.Values{"id": {play.Pictures}, "at": {"0"}, "loop": {"1"}})
 	var looped struct{ End float64 }
 	if err := json.NewDecoder(loop.Body).Decode(&looped); err != nil || looped.End != -1 {
