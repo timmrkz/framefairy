@@ -566,6 +566,15 @@ func TestAStateHoldsTheJobsTheWorkspaceShows(t *testing.T) {
 	if want := []string{"render-49", "clip-stopped", "search-new", "clip-new", "render-running", "render-queued"}; !slices.Equal(ids, want) {
 		t.Errorf("the state holds %v, not %v", ids, want)
 	}
+	// The library picks every video's jobs at once the same way, so it
+	// says how a video stands with the jobs its state holds.
+	all := q.ofVideos()
+	for _, video := range []string{"a.mp4", "b.mp4"} {
+		one, _ := q.ofVideo(video)
+		if !reflect.DeepEqual(all[video], one) {
+			t.Errorf("the library holds other jobs of %s than its state:\n%v\n%v", video, all[video], one)
+		}
+	}
 }
 
 // A video's state says how each search that is over or stopped ended,

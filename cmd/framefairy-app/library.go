@@ -31,8 +31,14 @@ func (s *FrameFairy) Library() []engine.EpisodeStatus {
 	s.reconcile(nil)
 	opts := s.store.Settings().options()
 	out := []engine.EpisodeStatus{}
+	// Every video's jobs under one lock, the way a video's state picks
+	// them, see ofVideo.
+	var jobs map[string][]Job
+	if s.jobs != nil {
+		jobs = s.jobs.ofVideos()
+	}
 	for _, ep := range s.store.Episodes() {
-		out = append(out, s.statusWith(ep, opts, s.videoJobs(ep)))
+		out = append(out, s.statusWith(ep, opts, jobs[ep]))
 	}
 	return out
 }
