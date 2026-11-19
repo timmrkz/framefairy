@@ -20,6 +20,7 @@
 /framefairy
 /framefairy-app
 /framefairy-train
+/framefairy-release
 # The same, built inside its own folder
 /cmd/framefairy/framefairy
 /cmd/framefairy-app/framefairy-app

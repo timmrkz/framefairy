@@ -310,6 +310,13 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 	src.Seen = c.seen
 	src.Progress = c.progress
 	src.Newer, src.Refused = newerEntry, refusedEntry
+	// The running app, whose files a build put together from its parts
+	// takes when they are the same, so an update downloads only what
+	// changed. See docs/UPDATES.md.
+	if i := strings.Index(filepath.ToSlash(exe), ".app/"); i >= 0 {
+		src.App = os.DirFS(exe[:i+len(".app")])
+	}
+	src.Pieced = pieced
 	c.cfg = updater.Config{
 		CurrentVersion: c.state.Version,
 		Providers:      []updater.Provider{src},
@@ -462,6 +469,31 @@ func newerEntry(listed, entry updates.Build) {
 func refusedEntry(channel string, why error) {
 	theLog.line(zerolog.DebugLevel, "updates").Str("channel", channel).Err(why).
 		Msg("the channel's own entry was not taken, so the list's build is offered")
+}
+
+// pieced says in the log how a build was put together from its parts, so
+// a report shows what an update downloaded, or why it downloaded the
+// build whole.
+func pieced(p updates.Pieced) {
+	switch {
+	case p.Err != nil && p.Packed > 0:
+		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int64("bytes", p.Packed).
+			Msg("the build could not be put together from its parts, so it was downloaded packed")
+		return
+	case p.Err != nil && p.Kept+p.Fetched > 0:
+		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int("kept", p.Kept).Int("fetched", p.Fetched).
+			Int64("bytes", p.Bytes).Msg("the packed build could not be downloaded, so it was put together from its pieces")
+		return
+	case p.Err != nil:
+		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Msg("the build could not be downloaded")
+		return
+	case p.Packed > 0:
+		theLog.line(zerolog.InfoLevel, "updates").Int64("bytes", p.Packed).
+			Msg("the build was downloaded packed, which weighed less than the pieces the app lacked")
+		return
+	}
+	theLog.line(zerolog.InfoLevel, "updates").Int("kept", p.Kept).Int("fetched", p.Fetched).
+		Int64("bytes", p.Bytes).Msg("the build was put together from the app's own files and the pieces fetched")
 }
 
 // progress is told about every quarter of a megabyte, and passes it on a

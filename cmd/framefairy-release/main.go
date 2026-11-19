@@ -19,12 +19,16 @@
 //	    the screen or the camera, or ask for administrator rights, see
 //	    inputs.go. The workflow runs it before sign, in a step that does
 //	    not hold the key
-//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-refusal F]
+//	framefairy-release pack -zip F -out D
+//	    write the build again as the zip it is published as, its files
+//	    stored, with its parts, a piece for every file and the zip packed
+//	    with zstd, see pack.go
+//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-refusal F]
 //	    sign a build that check passed with the private half, read from
 //	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list
-//	framefairy-release publish -zip F -as NAME -entry F -channel C -commit X
-//	    upload the build and its entry, and mark a pull request's commit
-//	    Ready to update to
+//	framefairy-release publish -zip F -as NAME -entry F -channel C -commit X [-packed D]
+//	    upload the build and its entry, and what pack wrote beside it,
+//	    and mark a pull request's commit Ready to update to
 //	framefairy-release not-published -commit X -run URL [-refusal F]
 //	    mark a commit whose build was not published, and why
 //	framefairy-release channels
@@ -38,18 +42,25 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"framefairy/updates"
 )
@@ -69,6 +80,8 @@ func main() {
 		err = makeKey()
 	case "build-plan", "publish-plan":
 		err = planCommand(os.Args[1], args, gitHubFromEnv())
+	case "pack":
+		err = packCommand(args)
 	case "check":
 		err = check(args)
 	case "sign":
@@ -91,7 +104,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | check | sign | publish | not-published | channels | unstick, see the head of main.go")
+	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick, see the head of main.go")
 	os.Exit(2)
 }
 
@@ -181,12 +194,34 @@ func sign(args []string) error {
 	commit := fs.String("commit", "", "the commit it was built from")
 	where := fs.String("url", "", "where the zip will be downloaded from")
 	out := fs.String("out", "", "where the entry goes")
+	parts := fs.String("parts", "", "the parts pack wrote, beside the stored zip and the zip packed, if it was packed")
 	_ = fs.Parse(args)
-	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *out), os.Stderr)
+	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out), os.Stderr)
 }
 
-// signBuild signs the zip and writes its entry.
-func signBuild(zipPath, channel, name, version, commit, where, out string) error {
+// unpacksTo says whether a zip packed with zstd unpacks to the zip with
+// this SHA-256.
+func unpacksTo(packed, digest []byte) error {
+	dec, err := zstd.NewReader(bytes.NewReader(packed))
+	if err != nil {
+		return err
+	}
+	defer dec.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, dec); err != nil {
+		return fmt.Errorf("the packed zip does not unpack: %w", err)
+	}
+	if !bytes.Equal(h.Sum(nil), digest) {
+		return errors.New("the packed zip is of another zip")
+	}
+	return nil
+}
+
+// signBuild signs the zip and writes its entry. With parts, it signs the
+// stored zip beside them too, once they are read as its parts and the zip
+// packed beside them unpacks to it, and the entry names it. An app that
+// knows parts installs that zip, and an app from before installs the zip.
+func signBuild(zipPath, channel, name, version, commit, where, parts, out string) error {
 	private, public, err := keys()
 	if err != nil {
 		return err
@@ -210,6 +245,16 @@ func signBuild(zipPath, channel, name, version, commit, where, out string) error
 		Size: size, SHA256: hex.EncodeToString(digest), Signature: updates.Sign(private, digest),
 		Published: time.Now().UTC().Truncate(time.Second),
 	}
+	if parts != "" {
+		if err := sameApp(zipPath, filepath.Join(filepath.Dir(parts), storedZip)); err != nil {
+			return err
+		}
+		st, err := signStored(private, b, filepath.Dir(parts), parts)
+		if err != nil {
+			return err
+		}
+		b.Stored = &st
+	}
 	b.Claim = updates.SignClaim(private, b)
 	if err := b.Check(); err != nil {
 		return err
@@ -220,7 +265,100 @@ func signBuild(zipPath, channel, name, version, commit, where, out string) error
 	if err := updates.VerifyClaim(public, b); err != nil {
 		return err
 	}
+	if st, ok := b.AsStored(); ok {
+		if err := updates.Verify(public, st); err != nil {
+			return err
+		}
+		if err := updates.VerifyClaim(public, st); err != nil {
+			return err
+		}
+	}
 	return writeJSON(out, b)
+}
+
+// sameApp says whether two zips hold the same files, by name, size, mode
+// and the SHA-256 of what each holds, so the stored zip signed beside a
+// zip is the app check passed, byte for byte.
+func sameApp(a, b string) error {
+	za, err := zip.OpenReader(a)
+	if err != nil {
+		return err
+	}
+	defer za.Close()
+	zb, err := zip.OpenReader(b)
+	if err != nil {
+		return err
+	}
+	defer zb.Close()
+	if len(za.File) != len(zb.File) {
+		return errors.New("the stored zip holds other files than the zip")
+	}
+	for i, f := range za.File {
+		g := zb.File[i]
+		if f.Name != g.Name || f.UncompressedSize64 != g.UncompressedSize64 || f.Mode() != g.Mode() {
+			return fmt.Errorf("the stored zip holds %s otherwise than the zip", f.Name)
+		}
+		fs, err := fileSum(f)
+		if err != nil {
+			return err
+		}
+		gs, err := fileSum(g)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(fs, gs) {
+			return fmt.Errorf("the stored zip holds other bytes in %s than the zip", f.Name)
+		}
+	}
+	return nil
+}
+
+// fileSum is the SHA-256 of what a file of a zip holds.
+func fileSum(f *zip.File) ([]byte, error) {
+	r, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return nil, err
+	}
+	return h.Sum(nil), nil
+}
+
+// signStored signs the stored zip pack left in packed as the build b is,
+// and checks that the parts and the zip packed beside it make that zip.
+func signStored(private ed25519.PrivateKey, b updates.Build, packed, parts string) (updates.Stored, error) {
+	f, err := os.Open(filepath.Join(packed, storedZip))
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	digest, size, err := updates.Digest(f)
+	f.Close()
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	sum := hex.EncodeToString(digest)
+	data, err := os.ReadFile(parts)
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	if _, err := updates.ParseParts(data, size, sum); err != nil {
+		return updates.Stored{}, err
+	}
+	whole, err := os.ReadFile(filepath.Join(packed, packedWhole))
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	if err := unpacksTo(whole, digest); err != nil {
+		return updates.Stored{}, err
+	}
+	b.Size, b.SHA256 = size, sum
+	return updates.Stored{
+		Size: size, SHA256: sum, Signature: updates.Sign(private, digest),
+		Claim: updates.SignClaim(private, b), PackedSize: int64(len(whole)),
+	}, nil
 }
 
 func publishCommand(args []string, gh gitHub) error {
@@ -230,8 +368,9 @@ func publishCommand(args []string, gh gitHub) error {
 	entry := fs.String("entry", "", "its entry for the channel list")
 	channel := fs.String("channel", "", "main, or pr- and the pull request's number")
 	commit := fs.String("commit", "", "the whole commit it was built from")
+	packed := fs.String("packed", "", "the folder pack wrote, whose parts and pieces go up too")
 	_ = fs.Parse(args)
-	return publish(gh, *zipPath, *as, *entry, *channel, *commit)
+	return publish(gh, *zipPath, *as, *packed, *entry, *channel, *commit)
 }
 
 func notPublishedCommand(args []string, gh gitHub) error {

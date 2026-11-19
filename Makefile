@@ -116,10 +116,16 @@ export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
 export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN) $(CWARNINGS)
 export CGO_CXXFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN) $(CWARNINGS)
 # Go hands CGO_LDFLAGS to the linker of every program with C in it, which
-# on a Mac is every program here.
-ifeq ($(WERROR),1)
-export CGO_LDFLAGS := -O2 -g -Wl,-fatal_warnings
-endif
+# on a Mac is every program here. -headerpad_max_install_names leaves room
+# in the program's header for the paths carry-libs.sh adds, where it looks
+# for the speech libraries. Go leaves that room by itself only while it
+# keeps the debug information, which a shipped program no longer has, see
+# SHIP_LDFLAGS: without it install_name_tool had no room, and the programs
+# could not find their libraries.
+# The comma in a linker flag would end make's $(if), so the flag is a
+# variable of its own.
+FATAL_LINK := -Wl,-fatal_warnings
+export CGO_LDFLAGS := -O2 -g -Wl,-headerpad_max_install_names $(if $(filter 1,$(WERROR)),$(FATAL_LINK))
 LDFLAGS := -extldflags=-mmacosx-version-min=$(MACOS_MIN)
 # The episode's decoder links ffmpeg's static libraries, and pkg-config
 # names some of them more than once, each library listing what it needs.
@@ -158,7 +164,17 @@ LICENCES_BUILT := cmd/framefairy-app/dist/licences.json
 BUILD_VERSION ?=
 BUILD_CHANNEL ?=
 BUILD_COMMIT ?=
-APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildChannel=$(BUILD_CHANNEL) -X main.buildCommit=$(BUILD_COMMIT)
+# What every program that ships is built with. -s -w leaves out the symbol
+# table and the debug information, 6.5 MB of the app's 14 MB in the zip an
+# update downloads. Nobody reads them from a build: a panic and a hang dump
+# still name every function and line, from the table Go keeps to run.
+# -buildvcs=false leaves out the commit Go stamps in by itself, which made
+# every program differ from the build before it even where its code did
+# not, so an update could not tell what it already had. A build of the app
+# still says its commit, in buildCommit below. See docs/UPDATES.md.
+SHIP_FLAGS := -trimpath -buildvcs=false
+SHIP_LDFLAGS := -s -w
+APP_LDFLAGS := $(SHIP_LDFLAGS) $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildChannel=$(BUILD_CHANNEL) -X main.buildCommit=$(BUILD_COMMIT)
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
@@ -272,7 +288,7 @@ $(UI_BUILT): $(UI_SOURCES)
 $(BIN)/framefairy$(EXE): modules
 	@echo "Building $@"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
-		$(GO) build -trimpath -ldflags "$(LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $@ ./cmd/framefairy
+		$(GO) build $(SHIP_FLAGS) -ldflags "$(SHIP_LDFLAGS) $(LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $@ ./cmd/framefairy
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 # The licence of every Go module the programs compile on this system and
@@ -287,7 +303,7 @@ $(LICENCES_BUILT): go.mod go.sum $(UI_BUILT)
 $(BIN)/framefairy-app$(EXE): modules $(UI_BUILT) $(LICENCES_BUILT) frames
 	@echo "Building $@"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
-		$(GO) build -trimpath -tags production -ldflags "$(APP_LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $@ ./cmd/framefairy-app
+		$(GO) build $(SHIP_FLAGS) -tags production -ldflags "$(APP_LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $@ ./cmd/framefairy-app
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
 $(BIN)/framefairy-train$(EXE): modules
@@ -368,7 +384,7 @@ $(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
 	@mkdir -p $(dir $(FRAMES))
 	@PATH="$(CURDIR)/$(STAMPS)/tools/bin:$$PATH" PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
 		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
-		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags "$(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
+		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build $(SHIP_FLAGS) -tags ffmpeglibs -ldflags "$(SHIP_LDFLAGS) $(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
 
 # In a cloud session the decoder is built in the background as the session
 # starts, see scripts/cloud-decoder.sh, and the targets that run it wait
@@ -642,7 +658,7 @@ outside: outside-allowed all
 	@cp -R $(BIN)/. $(OUTSIDE)/ && rm -rf "$(OUTSIDE)/Frame Fairy.app"
 	@echo "Building $(OUTSIDE)/framefairy-app with the probe"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
-		$(GO) build -trimpath -tags 'production outside' -ldflags "$(APP_LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $(OUTSIDE)/framefairy-app ./cmd/framefairy-app
+		$(GO) build $(SHIP_FLAGS) -tags 'production outside' -ldflags "$(APP_LDFLAGS) -X framefairy/engine/tool.sums=$$sums" -o $(OUTSIDE)/framefairy-app ./cmd/framefairy-app
 	@sh scripts/carry-libs.sh $(OUTSIDE)/framefairy-app $(OUTSIDE)/lib
 	@sh scripts/bundle-macos.sh $(OUTSIDE) $(OUTSIDE)
 	@$(GO) build -o $(OUTSIDE)/framefairy-dispenser ./cmd/framefairy-dispenser
