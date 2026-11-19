@@ -51,6 +51,10 @@ type VideoState struct {
 	// nil while the video's length is not known: the keys are offered
 	// then and the engine says why a clip could not be made.
 	Marking *engine.Marking `json:"marking"`
+	// Cards changes whenever the cards of what the video says do, the
+	// transcript search's, see Sentences and engine.Episode.SaidStamp.
+	// The window reads them again when it changes, and only then.
+	Cards string `json:"cards"`
 	// Chosen is the key of the clip chosen, by a hand or by the app, see
 	// choose.go, or nothing. It is read after the clips, and chosen from
 	// them and the jobs, so a clip the app chose comes with the state that
@@ -121,6 +125,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		}
 	}
 	st.Clips = s.clipsOf(plans, info, st.Status.Heard)
+	st.Cards = s.saidStamp(path, plans)
 	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {
 		st.Window = s.windowFor(ctx, path, st, info.Duration)

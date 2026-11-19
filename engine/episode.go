@@ -79,6 +79,9 @@ type PlanSummary struct {
 	clips   []Clip
 	data    []byte
 	ordered func() ([]*object, error)
+	// stamp is the size and time of the file as it was read, see
+	// fileio.Stamp, for SaidStamp.
+	stamp string
 	// said is what Said laid out last, kept with the read, see Said.
 	said *keptSaid
 }
@@ -342,7 +345,7 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 		return PlanSummary{}, err
 	}
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
-		Modified: info.ModTime(), plan: plan, clips: clips, data: data,
+		Modified: info.ModTime(), plan: plan, clips: clips, data: data, stamp: fileio.Stamp(info),
 		ordered: sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) }),
 		said:    &keptSaid{}}
 	made := plan.PlannedWith()

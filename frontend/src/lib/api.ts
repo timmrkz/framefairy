@@ -585,6 +585,9 @@ export interface VideoState {
   searchComing?: boolean;
   // The video's window, or none while the video cannot be read.
   window?: WindowView | null;
+  // Go's stamp of the cards of what the video says, the transcript
+  // search's: they are read again when it changes, and only then.
+  cards?: string;
   // The key of the clip chosen, by a hand or by the Go side, or nothing.
   chosen?: string;
   // Where I and O can make a clip, see engine.MarkingOf, or none while

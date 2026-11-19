@@ -2,8 +2,11 @@ package engine
 
 import (
 	"cmp"
+	"fmt"
+	"hash/fnv"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"weak"
@@ -131,6 +134,32 @@ func (s PlanSummary) Said(t *Transcript, look *Look) []ClipSaid {
 		s.said.set(t, key, out)
 	}
 	return slices.Clip(out)
+}
+
+// SaidStamp changes whenever the cards of what the episode says would,
+// see SaidCards: when its transcript's files change, when a plan file is
+// added, removed or written, and when the look a plan's captions are laid
+// out in changes, look giving that look for each plan. plans are the
+// episode's plans as they are now, see Episode.Plans. The window reads the
+// cards again when it changes, and only then: it once decided that itself
+// from the clips and the captions it held, and missed a clip set changed
+// outside the app, issue #933. A transcript that cannot be read now says
+// so in the stamp, and changes it again once it can be.
+func (ep *Episode) SaidStamp(asrModelDir string, silenceDB *float64, plans []PlanSummary, look func(PlanSummary) *Look) string {
+	h := fnv.New64a()
+	if at, err := ep.transcriptStamp(asrModelDir, silenceDB); err != nil {
+		h.Write([]byte("no transcript"))
+	} else {
+		h.Write([]byte(at.stamp))
+	}
+	for _, plan := range plans {
+		key, ok := look(plan).key()
+		if !ok {
+			key = "a look with no key"
+		}
+		fmt.Fprintf(h, "\x00%s\x00%s\x00%s", plan.Path, plan.stamp, key)
+	}
+	return strconv.FormatUint(h.Sum64(), 36)
 }
 
 // keptSaid is the last Said of one read of a plan, with the transcript and

@@ -122,6 +122,16 @@ func (s *FrameFairy) Sentences(path string) (cards []engine.SentenceView, err er
 	return engine.SaidCards(t, clips), nil
 }
 
+// saidStamp is VideoState.Cards for the video at path with plans: it
+// changes whenever what Sentences answers would, the look of each plan
+// taken the way Sentences takes it.
+func (s *FrameFairy) saidStamp(path string, plans []engine.PlanSummary) string {
+	o := s.store.Settings().options()
+	return s.store.machine.Episode(path).SaidStamp(o.ASRModel, o.SilenceDB, plans, func(p engine.PlanSummary) *engine.Look {
+		return s.lookOf(path, p)
+	})
+}
+
 // SetWord corrects a word of one clip, typed in its caption box. Every
 // other clip still reads it as it was heard. A word typed empty is removed
 // from the clip, and a word the clip removed typed back in beside its
