@@ -40,6 +40,8 @@ type Schedule struct {
 	kept keptFrames
 	// What to read while the hand rests, see Ahead.
 	ahead *aheadWork
+	// The play that has the decoder, see Play.
+	play *Play
 	// Where the newest look of the hand and the newest Ahead stood among
 	// what their window sent, see Sent.
 	lastLook, lastAhead Sent
@@ -246,6 +248,8 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 		s.lastLook = l.Sent
 		s.overtake(l)
 	}
+	// The hand takes the playhead from a play.
+	s.stopPlay()
 	w.back = l.Moving && l.Shown > l.Frame && l.Shown-l.Frame <= lookSlow
 	if k, ok := s.kept.get(key); ok {
 		if r := s.run; !l.Follow && r != nil && (!r.ahead || r.behind && !l.Moving) && !r.covers(l) && !r.after(l) {
@@ -322,6 +326,7 @@ func (s *Schedule) Close() {
 		s.ahead = nil
 		a.done <- aheadDone{err: ErrOvertaken}
 	}
+	s.stopPlay()
 	s.stopRun()
 	s.kept = newKeptFrames(lookKeptBytes)
 }
@@ -819,7 +824,7 @@ func (s *Schedule) startBehind(grid framewire.Grid, w, h, from, to int) {
 // or says the reading is done. Under the lock.
 func (s *Schedule) readAhead() {
 	a := s.ahead
-	if a == nil || a.held || s.run != nil || s.waiting != nil || len(s.follows) > 0 {
+	if a == nil || a.held || s.run != nil || s.play != nil || s.waiting != nil || len(s.follows) > 0 {
 		return
 	}
 	for len(a.todo) > 0 {

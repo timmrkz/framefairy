@@ -53,6 +53,10 @@ import (
 //	                                 see engine.SourceInfo.Grid, as the page
 //	                                 hands it back, see framewire.GridText
 //	/frames/sound?path=<episode>&from=<seconds>&rate=<hz>&ch=<channels>  {"id": "..."}
+//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&pieces=<start>:<end>,...&at=<seconds>[&loop=1]
+//	                                 a play of a clip, its pictures and its
+//	                                 sound as two streams, see servePlay
+//	/frames/play/loop?id=<pictures>&at=<seconds>[&loop=1]
 //	/frames/read?id=<id>&n=<frames>&skip=<seconds>  frames, see writeFrames
 //	/frames/close?id=<id>
 //	/frames/levels?path=<episode>  the loudness, see serveLoudness
@@ -101,8 +105,11 @@ const (
 )
 
 type previewFrame struct {
-	at   float64
-	data []byte
+	at float64
+	// stamp is what is written after at, where the stream has more to
+	// say of each frame, see servePlay.
+	stamp []float64
+	data  []byte
 }
 
 type preview struct {
@@ -128,6 +135,8 @@ type preview struct {
 	skip *atomic.Uint64
 	// Takes back a frame once nothing reads it, see start.
 	give func([]byte)
+	// The play whose frames or sound it is, see servePlay.
+	play *engine.Play
 }
 
 type atomicTime struct {
@@ -155,6 +164,10 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/frames/open", "/frames/sound":
 		p.serveOpen(st, w, r)
+	case "/frames/play":
+		p.servePlay(st, w, r)
+	case "/frames/play/loop":
+		p.servePlayLoop(w, r)
 	case "/frames/look":
 		p.serveLook(st, w, r)
 	case "/frames/near":
@@ -504,6 +517,16 @@ func (p *previews) closeDecoder(d *engine.EpisodeFrames) {
 // the decoder to read a later one into, see engine.EpisodeFrames.Give.
 func (p *previews) start(kind string, times *engine.PreviewTimes, light func() framewire.Light, skip *atomic.Uint64,
 	give func([]byte), run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
+	id, _ := p.startStamped(kind, times, light, skip, give, func(ctx context.Context, got func(previewFrame) error) error {
+		return run(ctx, func(at float64, data []byte) error { return got(previewFrame{at: at, data: data}) })
+	})
+	return id
+}
+
+// startStamped is start for a stream whose frames say more of themselves
+// than where they start, see previewFrame.stamp.
+func (p *previews) startStamped(kind string, times *engine.PreviewTimes, light func() framewire.Light, skip *atomic.Uint64,
+	give func([]byte), run func(ctx context.Context, got func(previewFrame) error) error) (string, *preview) {
 	var raw [16]byte
 	_, _ = rand.Read(raw[:])
 	id := hex.EncodeToString(raw[:])
@@ -543,18 +566,20 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 	p.mu.Unlock()
 	go func() {
 		defer close(s.done)
-		err := streamSafely(ctx, run, func(at float64, frame []byte) error {
-			// A frame or a chunk of sound is handed over in a buffer of its
-			// own, see engine.EpisodeFrames.Stream, and kept as it is until
-			// it is written to the page, see writeFrames, or dropped here.
-			f := previewFrame{at: at, data: frame}
-			select {
-			case s.frames <- f:
-				return nil
-			case <-ctx.Done():
-				s.give(frame)
-				return ctx.Err()
-			}
+		err := streamSafely(func() error {
+			return run(ctx, func(f previewFrame) error {
+				// A frame or a chunk of sound is handed over in a buffer of
+				// its own, see engine.EpisodeFrames.Stream, and kept as it
+				// is until it is written to the page, see writeFrames, or
+				// dropped here.
+				select {
+				case s.frames <- f:
+					return nil
+				case <-ctx.Done():
+					s.give(f.data)
+					return ctx.Err()
+				}
+			})
 		})
 		// Stopped from here, whatever ffmpeg said as it was killed, or the
 		// episode's decoder closed under it: the page asks another stream.
@@ -565,7 +590,7 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 		}
 		s.err = err
 	}()
-	return id
+	return id, s
 }
 
 // streamSafely runs a stream and turns a panic into the stream's error.
@@ -574,15 +599,14 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 // request, see mediaMiddleware, does not reach it, and a panic in it
 // ended the whole app, issue #604. The page asks another stream, as it does for one that
 // failed.
-func streamSafely(ctx context.Context, run func(ctx context.Context, got func(at float64, data []byte) error) error,
-	got func(at float64, data []byte) error) (err error) {
+func streamSafely(run func() error) (err error) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			theLog.line(zerolog.ErrorLevel, "files").Str("stack", string(debug.Stack())).Msgf("the stream stopped unexpectedly: %v", caught)
 			err = fmt.Errorf("the stream stopped unexpectedly: %v", caught)
 		}
 	}()
-	return run(ctx, got)
+	return run()
 }
 
 func (p *previews) get(id string) *preview {
@@ -780,6 +804,12 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 		binary.LittleEndian.PutUint64(head, math.Float64bits(f.at))
 		if _, err := w.Write(head); err != nil {
 			return false
+		}
+		for _, v := range f.stamp {
+			binary.LittleEndian.PutUint64(head, math.Float64bits(v))
+			if _, err := w.Write(head); err != nil {
+				return false
+			}
 		}
 		_, err := w.Write(f.data)
 		return err == nil

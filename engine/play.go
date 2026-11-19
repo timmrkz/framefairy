@@ -198,11 +198,18 @@ func shotsOf(g framewire.Grid, v Visit, p0 float64) []Shot {
 	return shots
 }
 
+// playProgram is what the shots and the sound of a play read of its
+// program: a Program, or a Play, whose loop may be switched while it plays.
+type playProgram interface {
+	Visit(v int) (Visit, bool)
+	Locate(at float64) (int, float64, bool)
+}
+
 // Shots are the shots of a play, worked out a visit at a time as they are
 // asked for.
 type Shots struct {
 	grid    framewire.Grid
-	program *Program
+	program playProgram
 	p0      float64
 	next    int
 	ahead   []Shot
@@ -211,7 +218,7 @@ type Shots struct {
 // NewShots are the shots of a play of the program from p0 on it, on the
 // grid of the video's frames. A program whose loop is switched while it
 // plays changes what comes after the visits already worked out.
-func NewShots(g framewire.Grid, program *Program, p0 float64) *Shots {
+func NewShots(g framewire.Grid, program playProgram, p0 float64) *Shots {
 	s := &Shots{grid: g, program: program, p0: p0, next: -1}
 	if v, _, ok := program.Locate(p0); ok {
 		s.next = v
@@ -263,7 +270,7 @@ func stretchOf(v Visit, p0 float64, rate int) (Stretch, bool) {
 
 // Stretches are the stretches of a play, a visit at a time.
 type Stretches struct {
-	program *Program
+	program playProgram
 	p0      float64
 	rate    int
 	next    int
@@ -271,7 +278,7 @@ type Stretches struct {
 
 // NewStretches are the stretches of a play of the program from p0 on it,
 // at rate samples a second.
-func NewStretches(program *Program, p0 float64, rate int) *Stretches {
+func NewStretches(program playProgram, p0 float64, rate int) *Stretches {
 	s := &Stretches{program: program, p0: p0, rate: rate, next: -1}
 	if v, _, ok := program.Locate(p0); ok {
 		s.next = v
