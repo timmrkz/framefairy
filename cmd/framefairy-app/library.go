@@ -31,8 +31,16 @@ func (s *FrameFairy) Library() []engine.EpisodeStatus {
 	s.reconcile(nil)
 	opts := s.store.Settings().options()
 	out := []engine.EpisodeStatus{}
+	// The jobs read once for every video, not once a video: the newest
+	// search of each is what says how it stands, see searchStands.
+	jobs := map[string][]Job{}
+	if s.jobs != nil {
+		for _, j := range s.jobs.list() {
+			jobs[j.Episode] = append(jobs[j.Episode], j)
+		}
+	}
 	for _, ep := range s.store.Episodes() {
-		out = append(out, s.statusWith(ep, opts, s.videoJobs(ep)))
+		out = append(out, s.statusWith(ep, opts, jobs[ep]))
 	}
 	return out
 }
