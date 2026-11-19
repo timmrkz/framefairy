@@ -342,8 +342,10 @@
   // is true, and an effect that returned having read nothing else never
   // runs again.
   let loaded = $state(false);
-  // What the transcript on disk held when the view was read, see heardKey.
+  // What the transcript on disk held when the view was read, see heardKey,
+  // and the stretch of words read then.
   let loadedHeard = $state("");
+  let loadedSaid = $state<[number, number]>([0, 0]);
   // True while the view is where a hand put it. Until it is let go of, the
   // clip and the playhead stop pulling it back.
   let held = $state(false);
@@ -887,6 +889,10 @@
       from: Math.max(outer.from, middle - spoken / 2),
       to: Math.min(outer.to, middle + spoken / 2),
     };
+    // Known before the words are asked for, so the answer holds at least
+    // what the transcript held then.
+    loadedSaid = [said.from, said.to];
+    loadedWhole = inOnePart(heard, loadedSaid);
     const ask = `${said.from}|${said.to}|${outer.from}|${outer.to}`;
     if (ask === reading) return;
     reading = ask;
@@ -1319,14 +1325,21 @@
   }
 
   // A new episode's words arrive as it is heard, piece by piece, so the
-  // view is read again whenever the Go side says the transcript on disk
-  // holds more. It reads the parts the transcript holds as the stamp of
-  // the words, the way the loudness is read again by its stamp, and
-  // works out nothing from them.
+  // view is read again when the Go side says the transcript on disk holds
+  // more. It reads the parts the transcript holds as the stamp of the
+  // words, the way the loudness is read again by its stamp. Words that lay
+  // in one part the transcript held when they were read, and still lie in
+  // one, are as they were, so a save elsewhere in the video reads nothing.
   const heardKey = $derived(heard.map(([a, b]) => `${a}-${b}`).join(","));
+  const inOnePart = (parts: [number, number][], [from, to]: [number, number]) => parts.some(([a, b]) => a <= from && b >= to);
+  let loadedWhole = false;
   $effect(() => {
-    if (!loaded) return;
-    if (heardKey !== loadedHeard) load(view.from, view.to);
+    if (!loaded || heardKey === loadedHeard) return;
+    if (loadedWhole && inOnePart(heard, loadedSaid)) {
+      loadedHeard = heardKey;
+      return;
+    }
+    load(view.from, view.to);
   });
 
   // The waveform, drawn the way an editor draws one: one column of the
