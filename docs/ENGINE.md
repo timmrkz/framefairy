@@ -833,7 +833,8 @@ ffprobe nothing it asked before.
 
 A video's probe outlives the program too: `Probe` writes it to
 `logs/probe.json` in the video's work folder, with the stamps of the
-video and of the ffprobe that answered, and the next start reads it
+video, of the ffprobe that answered and of the build that read its
+answer, its revision, and the next start reads it
 from there before it asks ffprobe, `engine/probekept.go`. A file whose
 stamps do not match, or that says what no probe can say, is not read.
 See [decisions/2026-11-19-a-videos-probe-kept-in-its-work-folder.md](decisions/2026-11-19-a-videos-probe-kept-in-its-work-folder.md).

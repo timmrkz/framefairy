@@ -7,7 +7,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,13 +110,49 @@ func TestAProbeIsKeptForTheNextStart(t *testing.T) {
 	}
 }
 
-// sameInfo compares two probes field by field, the ones kept to the
+// sameInfo compares two probes in every field, the ones kept to the
 // engine too.
-func sameInfo(a, b SourceInfo) bool {
-	return a.Width == b.Width && a.Height == b.Height && a.Turned == b.Turned && a.FPSNum == b.FPSNum &&
-		a.FPSDen == b.FPSDen && a.Duration == b.Duration && a.VideoStart == b.VideoStart && a.Variable == b.Variable &&
-		slices.Equal(a.Colour, b.Colour) && a.SoundRate == b.SoundRate && a.SoundChannels == b.SoundChannels &&
-		a.origin == b.origin && a.hasClock == b.hasClock && a.unindexed == b.unindexed
+func sameInfo(a, b SourceInfo) bool { return reflect.DeepEqual(a, b) }
+
+// notKept are the fields of SourceInfo a render learns of each piece it
+// cuts, which a kept probe leaves out, see keptInfo.
+var notKept = []string{"unevenAt", "keyAt"}
+
+// Every field of SourceInfo is kept, or named as one that is not: a field
+// added to it and not to keptInfo would read as nothing on every start
+// from then on, found by the review. A probe with every kept field set
+// comes back the same.
+func TestAKeptProbeHasEveryFieldOfAProbe(t *testing.T) {
+	t.Parallel()
+	full := SourceInfo{Width: 1080, Height: 1920, Turned: 90, FPSNum: 30000, FPSDen: 1001, Duration: 61.5, VideoStart: 0.2,
+		Variable: true, Colour: [][2]string{{"colorspace", "bt709"}}, SoundRate: 48000, SoundChannels: 2,
+		origin: 1.5, hasClock: true, unindexed: true}
+	kept := reflect.TypeFor[keptInfo]()
+	v := reflect.ValueOf(full)
+	for i := range v.NumField() {
+		name := v.Type().Field(i).Name
+		if slices.Contains(notKept, name) {
+			continue
+		}
+		if _, ok := kept.FieldByNameFunc(func(n string) bool { return strings.EqualFold(n, name) }); !ok {
+			t.Errorf("SourceInfo.%s is not in keptInfo, nor named in notKept", name)
+		}
+		if v.Field(i).IsZero() {
+			t.Errorf("SourceInfo.%s is not set in this test, so it would not show a field the kept probe loses", name)
+		}
+	}
+	fsys := afero.NewMemMapFs()
+	video := "/videos/episode.mp4"
+	if err := afero.WriteFile(fsys, video, []byte("a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.MkdirAll(LogsDir(video), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	keepProbe(fsys, video, "1 2", full)
+	if back, ok := readKeptProbe(fsys, video, "1 2"); !ok || !sameInfo(back, full) {
+		t.Errorf("kept as %+v, read back as %+v, %v", full, back, ok)
+	}
 }
 
 // keptFor is a kept probe of the video stamped stamp as ffprobe tool

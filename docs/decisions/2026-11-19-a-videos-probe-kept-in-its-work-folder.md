@@ -73,6 +73,11 @@ comes back: the kept file is read and written in one place, the one
 The probe changes when the video changes or when ffprobe does, an
 update of the app. Both are stamps already, in `keyFor`. The file keeps
 both, so a new build reads none of the old answers and asks again, once.
+It also changes when the engine reads ffprobe's answer by other rules,
+where the picture ends or whether its frames are even, with the same
+ffprobe. So the file keeps the revision the program was built from too,
+from Go's build information, added after the review found the probe
+right only because each bundle copies ffprobe with a new time.
 The ink changes with the face and with libass, so its file would need
 the stamp of ffmpeg and of the face for every block, and the faces the
 machine has come and go as fonts are installed. Of the two, only the
@@ -103,6 +108,13 @@ this decision and stays in memory. It costs the first play of a clip,
 not the start, and needs its own five simulations for a home in
 `~/.framefairy/`.
 
+Weighed after the review: a cheaper probe instead of a kept one, one run
+of ffprobe at the start and the four runs that find uneven frames only
+when a render needs them. It halves the runs at most, and the first
+run is still a program started for every video while the window waits,
+so a start with ten videos would still wait on ten. The kept probe asks
+none.
+
 ## The decision
 
 ```
@@ -113,7 +125,8 @@ engine.Probe(path)
 ```
 
 - `logs/probe.json` holds a version, the video's `sourceStamp`, the
-  stamp of the ffprobe that answered, and the answer. It is written only
+  stamp of the ffprobe that answered with the revision of the build
+  that read it, and the answer. It is written only
   into a logs folder that is there, so a short or a file the command
   line was handed gets none, and no folder is made for it, which could
   bring back a work folder a removal had just deleted. It is replaced in
@@ -126,7 +139,8 @@ engine.Probe(path)
 
 - A start of the app with videos it has probed before runs no ffprobe
   for them.
-- An app update, a new ffprobe, probes every video once again.
+- An app update, a new build and a new ffprobe, probes every video once
+  again, so the first start after each update is as slow as before.
 - What would show it wrong: a probe read from the file that differs
   from what ffprobe says of the same file and the same ffprobe. The
   test compares the two field by field.

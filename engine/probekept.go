@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 
 	"github.com/spf13/afero"
@@ -55,11 +56,38 @@ type keptInfo struct {
 	Unindexed     bool        `json:"unindexed"`
 }
 
-// toolStamp is how the kept probe names the ffprobe that answered: its
-// size and the time it was written, so a new build of the app, with an
-// ffprobe of its own, asks again.
+// toolStamp is how the kept probe names what made its answer: the ffprobe
+// that answered, its size and the time it was written, and the build of
+// this program, which reads ffprobe's answer by rules of its own, where
+// the picture ends, whether its frames are even, see Probe. A new build
+// with the same ffprobe asks again too, so a change to those rules never
+// reads an answer the old rules made. A program built without its
+// revision, as a test is, is named by ffprobe alone.
 func toolStamp(tool fileStamp) string {
-	return fmt.Sprintf("%d %d", tool.size, tool.mod.UnixNano())
+	return fmt.Sprintf("%d %d%s", tool.size, tool.mod.UnixNano(), buildStamp())
+}
+
+// buildStamp is the revision this program was built from, and whether
+// its tree had changes then, " <revision>" or " <revision>+", or nothing
+// when the build does not say.
+func buildStamp() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	revision, modified := "", ""
+	for _, s := range info.Settings {
+		switch {
+		case s.Key == "vcs.revision":
+			revision = s.Value
+		case s.Key == "vcs.modified" && s.Value == "true":
+			modified = "+"
+		}
+	}
+	if revision == "" {
+		return ""
+	}
+	return " " + revision + modified
 }
 
 // readKeptProbe is the probe kept for the video at source, when it was

@@ -106,6 +106,15 @@ because WebView2 hangs on a 304, and Windows is a platform this app is
 for. So the shape is the convention's, with headers of our own and 204
 No Content for the answer with nothing.
 
+Weighed after the review: libass says itself whether a frame differs
+from the one it drew before, `detect_change` from `ass_render_frame`.
+But it says so after it has laid the frame out, and of the frame the
+same decoder drew last, which is not the frame the page holds once
+three are asked at a time or another clip asked in between. And the
+answer would come from the decoder, a child program, so the request
+still waits for it. The moments come from the caption file's own times
+in Go, before anything is drawn.
+
 ## The decision
 
 ```

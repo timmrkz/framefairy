@@ -1990,7 +1990,10 @@ export const steps = {
   //                    the waveform is painted in every column of the
   //                    canvas, the canvas is never made new, only drawn
   //                    again, and nothing asks the Go side for the loudness
-  //                    while the hand moves: what is drawn is in hand
+  //                    while the hand moves: what is drawn is in hand. Each
+  //                    step tells the Go side where the clip timeline looks
+  //                    before the next, so its measuring follows the hand
+  //                    while it moves rather than once it rests, issue #937
   async "swipe keeps the canvas"(walk, arg) {
     const { page } = walk;
     const path = await episodeOn(page);
@@ -2023,9 +2026,15 @@ export const steps = {
     page.on("request", listen);
     const line = await page.locator(".clip-timeline").boundingBox();
     await page.mouse.move(line.x + line.width / 2, line.y + line.height * 0.3);
+    const looks = () => page.evaluate(() => window.__calls.filter((c) => c.name === "Look").length);
     for (let i = 0; i < 3 * arg && !walk.wrong; i++) {
+      const told = await looks();
       await page.mouse.wheel(i < arg ? 120 : -120, 0);
       await nextPaint(page, 1);
+      if ((await looks()) === told) {
+        walk.wrong = `step ${i + 1} of the swipe told the Go side nothing of where the clip timeline looks`;
+        break;
+      }
       // A column with a pixel painted is the waveform there, a pixel
       // being -90 dB. The bridge's video has sound from its first second
       // to its last, so every column of a view inside it has a reading.

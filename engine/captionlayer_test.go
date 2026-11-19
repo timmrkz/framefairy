@@ -1411,6 +1411,14 @@ func TestNothingInTheCaptionFileChangesOverASteadySpan(t *testing.T) {
 	if len(edges) < 20 || !strings.Contains(string(track), `\fscx115`) {
 		t.Fatalf("the caption file has %d edges and no pop, nothing to test: %s", len(edges), track)
 	}
+	// Steady holds only while every event is drawn the same from its
+	// start to its end: a tag that moves or fades inside one would stand
+	// still on every frame answered unchanged, found by the review.
+	for _, moving := range []string{`\t(`, `\fad`, `\move`, `\k`, `\K`, `\kf`, `\ko`} {
+		if strings.Contains(string(track), moving) {
+			t.Errorf("the caption file has %s in an event, which libass draws changing inside it", moving)
+		}
+	}
 	shared := 0
 	for _, seg := range clip.Segments {
 		for k := 0; seg.Start+float64(k)/25 < seg.End; k++ {
