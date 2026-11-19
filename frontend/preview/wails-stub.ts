@@ -1307,7 +1307,7 @@ const Answers = {
           },
         ].map((m) => ({ ...m, inUse: m.installed }));
         const answer = {
-          speech: [{ ...model, inUse: true }],
+          speech: [{ ...model, inUse: true, standing: model.installed ? { state: "ok", says: "ready" } : { state: "warn", says: "fetch" } }],
           hasSpeech: model.installed,
           language,
           memory: 34359738368,

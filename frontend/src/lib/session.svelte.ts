@@ -153,7 +153,7 @@ export class EpisodeSession {
       this.clips = fresh ? state.clips : unchanged(this.clips, state.clips);
       this.marking = same(this.marking, state.marking ?? null);
       this.heard = same(this.heard, state.heard);
-      this.turns = same(this.turns, state.turns);
+      if (state.turns) this.turns = same(this.turns, state.turns);
       this.jobs = state.jobs;
       kept = true;
       this.choose(state);
@@ -212,9 +212,11 @@ export class EpisodeSession {
 
   // The window as a hand put it, shown at once while place tells the Go
   // side, which answers with the state of the video read after it, whose
-  // window it fitted to what a search can do with it.
+  // window it fitted to what a search can do with it. How much of it is
+  // heard is Go's to count, so until it answers the window claims none,
+  // rather than what was heard of the window before.
   place(w: KeptWindow, place: (w: KeptWindow) => Promise<VideoState>): Promise<void> {
-    if (this.window) this.window = { ...this.window, ...w };
+    if (this.window) this.window = { ...this.window, ...w, heard: 0, heardAll: undefined };
     return this.places.ask(
       () => place(w),
       (state) => this.take(state),

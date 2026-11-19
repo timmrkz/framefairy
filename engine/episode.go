@@ -81,8 +81,40 @@ type PlanSummary struct {
 	ordered func() ([]*object, error)
 	// said is what Said laid out last, kept with the read, see Said.
 	said *keptSaid
-	// turns are the clips TurnClip worked out of this read, see keptTurns.
-	turns *keptTurns
+	// kept is what was worked out of this read and kept with it, see
+	// Remember.
+	kept *keptAnswers
+}
+
+// Remember is what work makes of this read of the plan, kept with the
+// read under key, so it is worked out once for each read and not again on
+// every state of the video while work runs. A plan read again is a new
+// read and keeps nothing. What is kept is shared and only read. A
+// summary made without a place to keep answers works it out every time.
+func (s PlanSummary) Remember(key string, work func() (any, error)) (any, error) {
+	if s.kept == nil {
+		return work()
+	}
+	s.kept.mu.Lock()
+	defer s.kept.mu.Unlock()
+	if v, ok := s.kept.answers[key]; ok {
+		return v, nil
+	}
+	v, err := work()
+	if err != nil {
+		return nil, err
+	}
+	if s.kept.answers == nil {
+		s.kept.answers = map[string]any{}
+	}
+	s.kept.answers[key] = v
+	return v, nil
+}
+
+// keptAnswers are what Remember kept of one read of a plan.
+type keptAnswers struct {
+	mu      sync.Mutex
+	answers map[string]any
 }
 
 // orderedClips are the clips of the plan in its own order, the way an
@@ -346,7 +378,7 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
 		Modified: info.ModTime(), plan: plan, clips: clips, data: data,
 		ordered: sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) }),
-		said:    &keptSaid{}, turns: &keptTurns{}}
+		said:    &keptSaid{}, kept: &keptAnswers{}}
 	made := plan.PlannedWith()
 	if v, ok := num.AsFloat(made[keyFrom]); ok {
 		s.From = v

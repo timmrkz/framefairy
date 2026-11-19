@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"math"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -99,6 +102,9 @@ type Turns struct {
 	// Clip is the key of the clip chosen, or nothing when none is.
 	Clip  string `json:"clip"`
 	Parts []Turn `json:"parts"`
+	// hash is what the turns hold, as a short text, so a state sent
+	// leaves them out when the window has them, see telling.trim.
+	hash string
 }
 
 // Turn is the clip chosen with the part Part rotated a quarter further:
@@ -109,30 +115,55 @@ type Turn struct {
 	Framing
 }
 
+// noTurns are the Turns of a video with no clip chosen.
+var noTurns = Turns{Parts: []Turn{}, hash: "none"}
+
 // turnsOf is the Turns of the clip chosen, of the clips of the plans, on
-// the video info says.
-func (s *FrameFairy) turnsOf(plans []engine.PlanSummary, chosen string, clips []ClipEntry, info engine.SourceInfo) Turns {
-	out := Turns{Parts: []Turn{}}
+// the video info says. They are worked out once for each read of the
+// plan, the size of the video and of the short, and kept with the read,
+// see engine.PlanSummary.Remember: a state is read four times a second
+// while work runs, and each read worked them out again.
+func (s *FrameFairy) turnsOf(plans []engine.PlanSummary, chosen string, clips []ClipEntry, info engine.SourceInfo) *Turns {
+	out := noTurns
 	i := slices.IndexFunc(clips, func(c ClipEntry) bool { return c.Key == chosen })
 	if i < 0 {
-		return out
+		return &out
 	}
 	entry := clips[i]
 	k := slices.IndexFunc(plans, func(p engine.PlanSummary) bool { return p.Path == entry.Plan })
 	if k < 0 {
-		return out
+		return &out
 	}
-	out.Clip = chosen
+	o := s.store.Settings().options()
+	key := fmt.Sprintf("turns %s %+v %dx%d", entry.ID, info, o.Width, o.Height)
+	kept, err := plans[k].Remember(key, func() (any, error) {
+		return s.turnsMade(plans[k], chosen, entry, info), nil
+	})
+	if err != nil {
+		return &out
+	}
+	out = kept.(Turns)
+	return &out
+}
+
+// turnsMade works out the Turns of the clip entry, chosen, of the plan.
+func (s *FrameFairy) turnsMade(plan engine.PlanSummary, chosen string, entry ClipEntry, info engine.SourceInfo) Turns {
+	out := Turns{Clip: chosen, Parts: []Turn{}}
 	for j, seg := range entry.Segments {
 		if j > 0 && entry.Segments[j-1].Part == seg.Part {
 			continue
 		}
-		turned, err := engine.TurnClip(plans[k], entry.ID, (seg.Start+seg.End)/2, info)
+		turned, err := engine.TurnClip(plan, entry.ID, (seg.Start+seg.End)/2, info)
 		if err != nil {
 			continue
 		}
 		out.Parts = append(out.Parts, Turn{Part: seg.Part, Rotations: engine.RotationViews(turned.Rotations),
 			Framing: s.framingOf(info, engine.SegmentViews(turned.Segments), engine.CropMarkViews(turned.CropMarks))})
+	}
+	var h maphash.Hash
+	h.SetSeed(clipSeed)
+	if err := json.NewEncoder(&h).Encode(out); err == nil {
+		out.hash = strconv.FormatUint(h.Sum64(), 36)
 	}
 	return out
 }

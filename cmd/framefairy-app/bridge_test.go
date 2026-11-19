@@ -353,7 +353,7 @@ func standInsSetup(s SetupState, fresh *freshMachine) SetupState {
 	}
 	// Judged again as the stand-ins stand, which pass their checks, see
 	// standInsChecks.
-	s.checks.language, s.checks.speech = Check{OK: true}, Check{OK: true}
+	s.checks.language, s.checks.speech, s.checks.listed = Check{OK: true}, Check{OK: true}, Check{OK: true}
 	s.judge()
 	return s
 }

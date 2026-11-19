@@ -59,8 +59,10 @@ type VideoState struct {
 	// holds it.
 	Chosen string `json:"chosen"`
 	// Turns is the clip chosen as it will be once one of its parts is
-	// rotated a quarter further, see Turns.
-	Turns Turns `json:"turns"`
+	// rotated a quarter further, see Turns. A state sent leaves it out
+	// when the window has it as it is, see telling.trim. A state read by
+	// a call always has it.
+	Turns *Turns `json:"turns,omitempty"`
 	// Order is, in a state sent to the window, every clip of the video in
 	// the order of Clips in a state read, by its key and its hash. Clips
 	// then holds only the clips the window was not sent as they are now,
@@ -223,6 +225,8 @@ type telling struct {
 	sent map[string]string
 	// order is the Order of the state sent last, nil until a state was.
 	order []ClipMark
+	// turns is the hash of the Turns the window was last sent, see trim.
+	turns string
 	// whole says the next state goes with every clip, because the window
 	// lost track of what it was sent, see SendWhole.
 	whole bool
@@ -293,7 +297,7 @@ func (n *videoNews) tell(path string, t *telling) {
 	t.last = time.Now()
 	if t.whole {
 		t.whole = false
-		t.sent, t.order = nil, nil
+		t.sent, t.order, t.turns = nil, nil, ""
 	}
 	n.mu.Unlock()
 	st, err := n.read(path)
@@ -322,6 +326,13 @@ func (n *videoNews) tell(path string, t *telling) {
 // change: the window then fetched every one of them over a request of
 // its own, which Wails makes for an event over 8 KB.
 func (t *telling) trim(st VideoState) VideoState {
+	if st.Turns != nil {
+		if st.Turns.hash != "" && st.Turns.hash == t.turns {
+			st.Turns = nil
+		} else {
+			t.turns = st.Turns.hash
+		}
+	}
 	sent := make(map[string]string, len(st.Clips))
 	order := make([]ClipMark, 0, len(st.Clips))
 	changed := []ClipEntry{}

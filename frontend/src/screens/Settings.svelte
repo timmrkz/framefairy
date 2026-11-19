@@ -574,7 +574,12 @@
   // The one line under Transcribe with, one line in every state, like the
   // line under Find clips with. A folder named by hand is said, and so is
   // whatever the check found wrong with the model, where it is put right.
-  const speechLine = $derived(speechStanding(speechInUse, speaking, speechInstall, shown));
+  // A folder named by hand stands as the Go side judged the settings, and
+  // once a pick in the list gives it up, the model in use stands as it
+  // does picked, in the frame of the click.
+  const speechLine = $derived(
+    speechStanding(speechInUse, settings?.asrModel ? speaking : (speechInUse?.standing ?? speaking), speechInstall, shown),
+  );
   const installedSpeech = $derived(speech.filter((m) => m.installed).map((m) => speechRow(m)));
   const installedSpeechSize = $derived(
     size(speech.filter((m) => m.installed).reduce((sum, m) => sum + m.unpacked, 0)),

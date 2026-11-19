@@ -218,6 +218,7 @@ describe("the line under the speech model", () => {
     recommended: true,
     installed: true,
     inUse: true,
+    standing: { state: "ok", says: "ready" },
   };
   const idle = { starting: false, failed: "" };
   const shown = (path: string) => path.replace("~", "/Users/tim");
@@ -298,6 +299,7 @@ describe("the speech models to choose from", () => {
     recommended: false,
     installed,
     inUse: false,
+    standing: installed ? { state: "ok", says: "ready" } : { state: "warn", says: "fetch" },
   });
 
   test("every one in one group, the biggest first by the size it shows, with its mark", () => {

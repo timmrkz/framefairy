@@ -34,6 +34,10 @@ type SpeechModelView struct {
 	// InUse marks the one the app hears with: the first one installed,
 	// or the first one offered while none is.
 	InUse bool `json:"inUse"`
+	// Standing is how it stands picked in the list, with no folder named
+	// by hand, so the line under the list follows a pick in the frame of
+	// the click, see Standing.
+	Standing Standing `json:"standing"`
 }
 
 // LanguageModelView is the same for a model that finds clips, and it says
@@ -193,39 +197,54 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 		}
 	}
 
-	// Ready means a short could be made now. Clips can be found either way,
-	// so whichever was chosen has to be usable, and without a choice the
-	// app does not guess on the customer's behalf.
-	canPlan := false
+	s.judge(&state, settings)
+	// Ready means a short could be made now: the speech model is here, and
+	// the choice that finds clips stands ready. Judged apart from the
+	// choice, Ready said yes for a model chosen and not downloaded yet
+	// while another was, though a search cannot start until it is.
+	state.Ready = state.HasSpeech && state.canPlan()
+	return state
+}
+
+// canPlan says whether the choice of what finds clips can find them now,
+// by how it stands, see judge. Without a choice the app does not guess
+// on the customer's behalf. A model named by hand that is no model of the
+// list stands by its check, and by llama-server, which runs it.
+func (state *SetupState) canPlan() bool {
 	switch {
 	case !state.Chosen:
+		return false
 	case state.Planner == "api":
-		canPlan = state.HasKey
+		return state.CloudStanding[state.Provider].State == standingOK
 	case state.Planner == "local":
-		// Both halves, because either one alone makes nothing. The model is
-		// what answers and llama-server is what runs it, and until this was
-		// checked the app could call itself ready on a machine that had the
-		// download and no way to open it.
-		canPlan = state.HasLocalModel && state.HasServer
+		if i := slices.IndexFunc(state.Language, func(m LanguageModelView) bool { return m.InUse }); i >= 0 {
+			return state.Language[i].Standing.State == standingOK
+		}
+		return state.checks.language.OK && state.HasServer
 	}
-	state.Ready = state.HasSpeech && canPlan
-	s.judge(&state, settings)
-	return state
+	return false
 }
 
 // judge says how each choice of model stands, see Standing.
 func (s *FrameFairy) judge(state *SetupState, settings Settings) {
 	opts := settings.options()
-	state.checks = choiceChecks{language: languageCheck(opts), speech: speechCheck(opts), named: settings.ASRModel != ""}
+	listed := opts
+	listed.ASRModel = ""
+	state.checks = choiceChecks{language: languageCheck(opts), speech: speechCheck(opts), listed: speechCheck(listed),
+		named: settings.ASRModel != ""}
 	state.judge()
 }
 
 // choiceChecks are what the standings of a setup are judged from beside
 // the models it lists: the checks of the language model and the speech
-// model in use, and whether the speech model's folder is named by hand.
+// model in use, the speech model's with no folder named, and whether its
+// folder is named by hand.
 type choiceChecks struct {
 	language, speech Check
-	named            bool
+	// listed is the speech model's check with no folder named, the
+	// model the list picks.
+	listed Check
+	named  bool
 }
 
 // judge says how each choice of the setup stands, from the models it
@@ -245,6 +264,13 @@ func (state *SetupState) judge() {
 	}
 	for i := range state.Speech {
 		state.Speech[i].InUse = i == inUse
+		// The one in use stands by its check, another by being here, the
+		// way a language model does, see hereStanding.
+		check := Check{OK: true}
+		if i == inUse {
+			check = state.checks.listed
+		}
+		state.Speech[i].Standing = speechStanding(check, false, state.Speech[i].Installed)
 	}
 	if inUse >= 0 {
 		state.Speaking = speechStanding(state.checks.speech, state.checks.named, state.Speech[inUse].Installed)

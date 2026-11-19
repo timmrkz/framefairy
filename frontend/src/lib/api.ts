@@ -593,8 +593,9 @@ export interface VideoState {
   // What of the video is heard, see HeardView.
   heard: HeardView;
   // The clip chosen as it will be once one of its parts is rotated a
-  // quarter further, see Turns.
-  turns: Turns;
+  // quarter further, see Turns, left out of a state sent when the
+  // window has it as it is.
+  turns?: Turns;
   // In a state sent, every clip by its key and its hash, while clips
   // holds only those that changed, each with its hash, or kept when not
   // one changed and the state holds neither. A state read by a call
@@ -833,6 +834,8 @@ export interface SpeechModel {
   // Whether the app hears with it: the first one installed, or the first
   // one offered while none is.
   inUse: boolean;
+  // How it stands picked in the list, with no folder named by hand.
+  standing: Standing;
 }
 
 // How a choice of model stands at rest, as the Go side judges it, see

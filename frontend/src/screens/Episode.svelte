@@ -695,8 +695,9 @@
 
   // How much of the window is transcribed, as the rows of a search say
   // it. A search runs on the video's window, and one stopped holds it,
-  // see searchHolds in window.go, so its window is this one.
-  const transcribed = $derived(`${clock(win?.heard ?? 0)} of ${clock(to - from)} transcribed`);
+  // see searchHolds in window.go, so its window is the one Go counted
+  // over, never the one under a dragging hand.
+  const transcribed = $derived(`${clock(win?.heard ?? 0)} of ${clock(win ? win.to - win.from : 0)} transcribed`);
 
   // What the row says, held long enough to be read, see lib/headline.ts.
   // It keeps its own time, in onMount, because an effect that reads the

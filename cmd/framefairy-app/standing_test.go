@@ -80,6 +80,15 @@ func TestSetupSaysHowEachChoiceStands(t *testing.T) {
 		if m.InUse != (m.Name == speech) {
 			t.Errorf("%s is in use: %v", m.Name, m.InUse)
 		}
+		// How each stands picked in the list, so the line follows a pick
+		// in the frame of the click.
+		want := Standing{State: "warn", Says: "fetch"}
+		if m.Name == speech {
+			want = Standing{State: "ok", Says: "ready"}
+		}
+		if m.Standing != want {
+			t.Errorf("the speech model %s, picked, stands %+v, want %+v", m.Name, m.Standing, want)
+		}
 	}
 	if state.Speaking != (Standing{State: "ok", Says: "ready"}) {
 		t.Errorf("the speech model that is here stands %+v", state.Speaking)
@@ -101,5 +110,34 @@ func TestTheStandInsStandReady(t *testing.T) {
 	}
 	if state.Speaking != (Standing{State: "ok", Says: "ready"}) {
 		t.Errorf("the stand-in speech model stands %+v", state.Speaking)
+	}
+}
+
+// The app is ready only once the choice that finds clips stands ready. A
+// model chosen and not downloaded yet, with another one here, made Ready
+// say yes though no search could start until it was here.
+func TestReadyIsTheChoiceStandingReady(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the search path works differently enough to need its own test")
+	}
+	s := emptyMachine(t)
+	if err := s.ChoosePlanner("local"); err != nil {
+		t.Fatal(err)
+	}
+	placeSpeechModel(t, engine.SpeechModels()[0].Name)
+	models := engine.LanguageModels()
+	here, away := models[0].Name, models[1].Name
+	placeLanguageModel(t, here)
+	placeLlamaServer(t)
+	for _, c := range []struct {
+		chosen string
+		ready  bool
+	}{{away, false}, {here, true}} {
+		if _, err := s.UseLanguageModel(c.chosen); err != nil {
+			t.Fatal(err)
+		}
+		if got := s.Setup(context.Background()).Ready; got != c.ready {
+			t.Errorf("with %s chosen and %s here, ready is %v", c.chosen, here, got)
+		}
 	}
 }
