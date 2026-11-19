@@ -156,6 +156,7 @@ What to do today, and what changes once the issue named is built.
 | add a setting | a field of `Settings` in `cmd/framefairy-app/settings.go`, changed through `UpdateSettings`. What the engine needs from it reaches it through its options |
 | add a kind of work to the queue | a kind in `engine/jobs.go`, started with `addSteps` in `cmd/framefairy-app/jobs.go`, so it gets the lanes, the recover and the record every job has |
 | choose which frames the video preview's decoder makes while it stands still, and what it reads ahead | `engine.Schedule` in `engine/schedule.go`, one for each video, which the window asks where the hand is through `/frames/look`, and hands what to read ahead through `/frames/ahead`, see [the decision record](decisions/2026-11-19-go-schedules-the-video-previews-frames.md). The window draws what it is sent and keeps it to draw again | the window. It never chooses a stream, a key frame or an order |
+| play the video preview: which frame is drawn where on the play's clock, the cuts and the sound cut and faded at the sample | `engine.Play` in `engine/playing.go` and the program in `engine/play.go`, by the render's own cut and fade, run by the video's `engine.Schedule`, which gives it the decoder while it runs. The window starts one through `/frames/play` and pulls its frames and sound through `/frames/read`, see [the decision record](decisions/2026-11-19-go-plays-the-video-preview.md) | the window. It draws and plays what it is sent where on the clock each is stamped, and works out no frame, cut or fade |
 | draw something of a video while a hand moves it, like the waveform on the clip timeline | the window keeps the whole of it, as Go sent it, and draws every frame from what it holds. It asks again only when a stamp Go sends in the video's state says the data changed, never for the part a view shows, and when to ask is Go's to say. Never a read ahead, a rest timer or an order of answers in the window to hide a call made while the hand moves: that is a fetch policy, which is logic too. Go makes what drawing needs as data, like the levels for zooming out, see [2026-11-18-the-window-holds-the-loudness.md](decisions/2026-11-18-the-window-holds-the-loudness.md) |
 | copy a rule of the engine into TypeScript | don't, and no `.cases.json` makes it right. The interface asks Go, or reads the answer from the state. Where it must answer while a hand drags, Go sends what the drag needs as data, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | add a check to CI | a make target, which one job of `ci.yml` runs as it stands, `make <target>`. A new kind of file joins one of the filters of its job `changes`, and a file of `frontend/` a Go test reads joins `goread`, which `internal/workflows` holds. Never a script that picks, runs or reports tests, see [2026-11-08-one-make-target-per-ci-job.md](decisions/2026-11-08-one-make-target-per-ci-job.md) and BUILD.md |
@@ -275,12 +276,6 @@ copies what it finds nearby, so these are not the pattern for new code.
   case file, and `frameOf` in `frontend/src/lib/keyframes.ts`, #610. The
   crop a keyframe holds is no longer one of them: Go sends each piece's
   crop steps, `engine.CropSteps`, and the window only looks them up.
-- The play's streams in `frontend/src/lib/frames/app.ts`: which stream
-  a play's frame comes from, `Stream`, and the `VideoDecoder` that
-  `AppPictures` plays for `frontend/src/lib/frames/queue.ts`, with the
-  program in `plan.ts`, #924. The frames of a paused video preview are
-  already Go's, `engine.Schedule`. Go takes the play over last, see
-  [the decision record](decisions/2026-11-19-go-schedules-the-video-previews-frames.md).
 
 ## Changing the architecture
 

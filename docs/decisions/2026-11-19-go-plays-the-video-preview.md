@@ -159,3 +159,48 @@ It would show it was wrong if a play measured in the cloud with
 `playback` and `speed.mjs` drew fewer of its frames on time than on
 main, or started later, or if a clip changed while it plays was heard
 to stop at the change.
+
+## How the steps went
+
+The steps went in as planned, with these changes, each found while
+building it:
+
+- **The sound is the play's second stream**, read with `/frames/read`
+  like its frames, not a route of its own: the answer of `/frames/play`
+  names both. Each chunk says the sample of the play's clock it starts
+  at and how many moments it holds.
+- **A cue is a play that waits.** A paused playhead cues a play with
+  `cue=1`: it hands over the frames the look kept and its first sound
+  at once, and takes the decoder only at `/frames/play/go`, which the
+  space bar sends. Looks and the reading ahead go on until then. The
+  window keeps a cue only where its first frame is the frame on screen.
+- **Each frame says whether it is the first or the last of its
+  piece**, which the window draws however short a time it is due for,
+  since the frames either side of a cut say where the cut is.
+- **A clip changed while it plays is a play that takes over**,
+  `after` and `place` on `/frames/play`: Go works out the moment the
+  play under way stands at that place on its clock, and the new play
+  starts from it, counted on the old play's clock. It answers 409 where
+  the new pieces do not hold that moment, and the play goes on as it
+  was. The loop switched off is `/frames/play/loop` on the play under
+  way, which ends it at the end of the time through the sound card has
+  played into.
+- **Steps 3 and 4 are one commit.** The picture and the sound of a play
+  share the clock, the start and the takeover, and the window's old
+  plan could not keep one of them while the other went.
+- **`Samples` stays.** A look still names its frame by the grid, and
+  the window turns the playhead into that frame and back, so the
+  window keeps the grid's times. It no longer counts a play's frames.
+- **What only the old play used went too:** the window's streams of
+  frames, `Stream` in `app.ts`, the routes `/frames/open` and
+  `/frames/sound`, the `skip` of a pull, and the times a stream said
+  of its first frame, `engine.PreviewTimes` and `X-Frames-Times`, which
+  no route sends any more.
+- **A play the Go side closed starts again or is dropped.** The Go side
+  closes a stream nobody has pulled from for 20 seconds, and a play
+  paused or cued and left standing is one. Playing, it starts again from
+  the playhead, and paused or cued it is dropped, so the space bar starts
+  a play of its own.
+- **Left open:** while a play stands paused in its middle, the schedule
+  reads nothing ahead, since the play still holds the decoder, until the
+  hand's next look or until the play is closed for standing unused.

@@ -78,9 +78,9 @@ type Hand struct {
 	// past its first place. A look that does not move rests: a click, a
 	// step, a drag that let go.
 	Moving bool
-	// Follow says the frame is one of those after the place the hand
-	// rests on, which a play from there shows first. It overtakes no
-	// look, and is answered once the decoder has it.
+	// Follow says the look waits on the look of the same place on its
+	// way, see Look: it overtakes no look, and is answered once the
+	// decoder has it.
 	Follow bool
 	// Shown is the frame on screen, or -1, so a frame on the way is sent
 	// only where it is nearer the place than that one, and a hand that
@@ -232,9 +232,8 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 	w := &lookWaiter{look: l, answer: make(chan lookAnswer, 1)}
 	s.mu.Lock()
 	if v := s.waiting; v != nil && !l.Follow && v.look.Grid == l.Grid && v.look.W == l.W && v.look.H == l.H && v.look.Frame == l.Frame {
-		// The same place asked twice, the frame under the hand and the
-		// first of the play cued there: both get it, the way a frame after
-		// the place does.
+		// The same place asked twice, by two asks of the window that
+		// crossed: both get it.
 		l.Follow = true
 		w.look = l
 	}

@@ -587,7 +587,6 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 		}
 		return fmt.Sprintf("next %d %d %.6f", id, ahead, from)
 	}
-	times := previewTimesOf(ctx)
 	f.mu.Lock()
 	if err := f.start(); err != nil {
 		f.mu.Unlock()
@@ -601,9 +600,6 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 		err = f.send(gone, "%s", next(id))
 	}
 	f.mu.Unlock()
-	// The decoder runs and has the request: at once where it ran already,
-	// after starting it where it did not.
-	times.mark(timeStarted)
 	if err != nil {
 		return f.refused(ctx, gone, err)
 	}
@@ -681,22 +677,14 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 			case framewire.Opened:
 				// The cursor is at from: a file opened, a cursor moved, or
 				// a cursor read on to it.
-				how, light := framewire.ReadOpened(rec.Body)
-				if times != nil && how == framewire.OpenedFile {
-					times.File.Store(true)
-				}
-				if times != nil && how == framewire.WentOn {
-					times.WentOn.Store(true)
-				}
+				_, light := framewire.ReadOpened(rec.Body)
 				if kind == pictureCursor {
 					f.mu.Lock()
 					f.light = light
 					f.mu.Unlock()
 				}
-				times.mark(timeOpened)
 			case framewire.Frame:
 				stood(rec)
-				times.mark(timeFirst)
 				if err := got(rec.At, rec.Body); err != nil {
 					finish()
 					return err

@@ -565,9 +565,9 @@ pause holds it. Before, the play went on from the press at once and ran
 away from the hand before a drag could start. Only the space bar and a click on the
 clip timeline change a play. A clip's pieces changing while it plays, a
 cut made, moved or put back, an edge trimmed or a step undone or redone,
-moves no playhead and stops the play only where the next cut is moved
-within about two seconds ahead of the playhead: the play goes on and
-plays the clip as it is now, from the playhead on. An end pulled in and put
+moves no playhead and never stops the play: a play of the clip as it is
+now takes over a moment ahead of the sound heard, and goes on from the
+playhead with no stop. An end pulled in and put
 back with Cmd+Z plays on to the end put back. Tim's rule, #277: an edit
 while it plays never disturbs the play, and an edge of the clip dragged
 past the playhead leaves the playhead outside the clip, on the video. The play then goes on as a play of the
@@ -627,34 +627,30 @@ of its sound and holds the picture back by an empty edit of the same 44
 ms. ffmpeg and the queue's own reading of the file agreed on all of it, so
 what was left was the Mac's own AAC decoder in the webview, and rather than
 measure what it does with those 44 ms, the queue no longer uses it.
-`GoSound` in `lib/frames/queue.ts` answers the calls of the browser's
-`AudioDecoder`: a run of packets is one stream of `/frames/sound`, opened
-where its first packet lies, and each packet after it is the next of its
-samples, the way ffmpeg reads a piece of a render, so a flush ends a run
-and the packets after it start a stream of their own. The page does not
-read the sound in the file at all, plain sound in a MOV included, which
-the page once turned into samples itself. The streams come from the
-episode's decoder, `EpisodeFrames.Sound`, cursors of sound beside the
-cursors of picture, two kept and one opened as the decoder starts, so a
-play or a jump starts no ffmpeg for its sound either. A cursor reads the
-sound by the rule the ffmpeg program reads it by for the render and the
-transcript, `soundSeek` in `engine/levels.go`: seeked a fifth of a second
-early and cut at the moment by the samples' own timestamps, or read from
-the file's start where that would be before the picture starts.
+A play's sound comes with the play, a stream of its own beside its
+frames, see `/frames/play` below. The page does not read the sound in the
+file at all, plain sound in a MOV included, which the page once turned
+into samples itself. The Go side reads it from the episode's decoder,
+`EpisodeFrames.Sound`, cursors of sound beside the cursors of picture,
+two kept and one opened as the decoder starts, so a play or a jump starts
+no ffmpeg for its sound either, and cuts each piece at the sample and
+fades it in and out at its edges the way the render does,
+`engine.Stretch`. A cursor reads the sound by the rule the ffmpeg program
+reads it by for the render and the transcript, `soundSeek` in
+`engine/levels.go`: seeked a fifth of a second early and cut at the
+moment by the samples' own timestamps, or read from the file's start
+where that would be before the picture starts.
 `TestTheEpisodesDecoderHearsWhatFFmpegDoes` holds the two to the sample.
 Read from the start, it does not seek, the way the ffmpeg program does
 not: a seek there lost what the file says to skip of its first packet,
-and the sound came 1024 samples late.
-The Go side closes a stream nobody has read from for 20 seconds, and a
-pause holds the play with its stream, so a stream that answers 404 is
-opened again from the moment after the last that came: a play paused
-longer said the sound had stopped decoding, Tim found. A stream that
-fails anyway is dropped with the packet it failed on, and the next packet
-opens one of its own. Kept, no sound came after it, a play waits for its
-first sound, and the space bar seemed to do nothing. A stream the page
-has closed is never opened again, and the Go side counts streams of sound
-apart from streams of frames, so the seeks of a play never close the
-frames the video preview draws.
+and the sound came 1024 samples late. The page hands each stretch to the
+sound card as it comes, at the place on the play's clock it is stamped
+with, so the stretches meet with no gap. The Go side closes a stream nobody
+has read from for 20 seconds, and a play paused or cued and left
+standing is one: the space bar then starts a play of its own, and a
+play that was playing starts again from the playhead, `lost` in
+`lib/frames/queue.ts`. Taken for the play's end, the space bar after a
+long pause would have ended the play at once.
 
 A frame the page makes from what the Go side decoded is in full range,
 and says so, with the picture's light as the Go side reads it from the
@@ -691,23 +687,11 @@ two stand unheld, the one used longest ago first, `decodersSpare` in
 the ten built as the app starts left ten programs running for a minute.
 The webview's
 decoders and the Mac's own below are still in the code, unused, until the
-step that removes them. Each stream of frames says, with its first frame,
-where its time went, in milliseconds from when it was asked for: until
-the decoder had the request, at once where it ran and after starting it
-where it did not, until it was at the place asked for, which it says
-itself, and until the first frame was out, then 1 where reaching the
-place meant opening the file and 0 where a cursor that had it was moved,
-and last 1 where a cursor read on to the place from where it stood,
-without a seek. Such a stream hands over no key frame first, which the
-app's log says, issue #511.
-That is the header `X-Frames-Times`, which `AppFrames` keeps in
-`stats.opens`, for a probe to tell where the time of a jump went, see
-[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), Speed. A frame asked for a place the hand has left is withdrawn when
-the queue's decoder is reset for the newer place, and one new stream is
-on its way at a time: while one is still coming for a place left behind,
-the newest place waits and goes as soon as it has come, so a drag over
-the clip timeline shows frames as fast as they can be made and starts no
-ffmpeg for every place it passes. Every move of the hand is a seek, which
+step that removes them. A paused frame is a look at the Go side, which
+decides how its decoder gets there, see
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), so a drag over the clip timeline
+shows frames as fast as they can be made and starts no ffmpeg for every
+place it passes. Every move of the hand is a seek, which
 withdraws the frame the seek before asked for, and a frame takes longer to
 come than the hand takes to move. A frame that comes for an ask withdrawn
 on the way is put up while the frame for where the hand is now is still
@@ -716,22 +700,11 @@ coming, unless a frame asked for later is on screen already, `passing` in
 for a whole drag on a busy machine, found by Tim on an HEVC episode at
 1080p. The decoder drops the frames before the moment asked for as they
 come out of decoding, before they are scaled. A stream the Go side stops, to make
-room or after standing unused, says `X-Frames-Closed`, and what waited on
-it goes to another stream. Taken for the end of the episode, it settled
-for a frame near the one wanted, and after a drag Tim saw the wrong frame
-and "the app's decoder did not answer". Before, a system could say it decodes a file and then fail on
+room or after standing unused, says `X-Frames-Closed`, and the play it
+was starts again or is dropped, see above. Before, a system could say it decodes a file and then fail on
 it: WebKit says yes to HEVC with 10-bit colour and its decoder then fails
 on the first frame, "Decoder failure". For such a file, and for one the
-system said no to, the Go side decoded the picture, plan row 2.141. The queue
-asks its picture decoder the same things either way: `AppPictures` in
-`lib/frames/app.ts` answers the calls of a `VideoDecoder`, like
-`GoSound` stands in for the sound decoder, so drawing, the clock, cuts
-and the walks are the same. Only the frames the queue will draw are asked
-for, the file's picture is not read by the page at all, and like a
-decoder it puts them out in the order they are shown, not the order they
-were fed: fed in the order they decode, a run's B-frames came too early
-and its first frames too late, and 72 frames of a play of three seconds
-were dropped as late until it did.
+system said no to, the Go side decoded the picture, plan row 2.141.
 
 There is one way to the frames, step 3 of
 [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). Until then the webview's own
@@ -740,37 +713,35 @@ decoders, the Mac's VideoToolbox through cgo, `NativePictures` and
 read and turned into samples by the page, and the choice between them
 were in the code as well, each with its own way of failing. They are
 removed, and the page reads nothing of the file at all, see step 5 of
-[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). The frames come in streams the page
-opens and pulls from, each on the grid of frames the engine named, which
-the page hands back as it opens one:
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). The frames come from the episode's
+decoder on the grid of frames the engine named, which the page hands
+back with every ask. A paused frame is a look, and a play is two streams
+the page opens and pulls from, one of frames and one of sound:
 
-    /frames/open?path=&from=&w=&h=&grid=   {"id": ...}
-    /frames/read?id=&n=&skip=        up to n frames
+    /frames/look?path=&frame=&w=&h=&grid=&shown=   one frame
+    /frames/play?path=&w=&h=&grid=&rate=&ch=&pieces=&at=   {"pictures": ..., "sound": ...}
+    /frames/read?id=&n=              up to n frames, or n chunks of sound
     /frames/close?id=
 
-A stream is a cursor of the episode's decoder, on the graphics chip where
-it decodes the file, from the key frame before `from`, and hands over every
-frame from `from` on, scaled to `w` by `h` in 8-bit I420, each after the
-moment it starts at as a float64 in 8 bytes. ffmpeg decodes a frame ahead
-of what was pulled and waits: WebKit takes whatever a response writes
-without pushing back, so one long response would have let it decode the
-whole episode into memory while the page stood paused. A stream nobody
-pulls from for 20 seconds is closed, and at most six are open. It only
-reads a file of an episode in the library.
+A play's frames are scaled to `w` by `h` in 8-bit I420, each after where
+on the play's clock it is drawn, the moment it stands for, where its
+frame begins and whether it is the first or last of its piece, each a
+float64 in 8 bytes. ffmpeg decodes a frame ahead of what was pulled and
+waits: WebKit takes whatever a response writes without pushing back, so
+one long response would have let it decode the whole episode into memory
+while the page stood paused. A stream nobody pulls from for 20 seconds is
+closed, and at most six of a kind are open. It only reads a file of an
+episode in the library.
 
-What makes it quick, since a new stream costs moving a cursor of the
+What makes it quick, since a new place costs moving a cursor of the
 episode's decoder and decoding from the key frame before:
 
-- A stream that will reach a frame within a second and a half is waited
-  for rather than a new one started, and the frames it passes on the way
-  are dropped on the Go side, `skip`, not sent. So the arrow keys stepping
-  on, and a paused play going on, cost a frame each.
 - The frames shown last are kept, 40 of them and never more than 192 MB,
   so stepping back or a still close by costs nothing.
 - A frame is decoded at the size of the canvas and no larger than the
   file's own.
-- The queue's second decoder asks for the piece after a cut while the
-  first plays, so its stream is open before it is needed.
+- A play reads the piece after a cut while the one before plays, so the
+  frame after the cut is waiting when it is due.
 - On the Mac the graphics chip decodes, and the frame is made smaller
   and turned into 10-bit colours on the processor by the one chain every
   system uses, see

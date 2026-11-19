@@ -533,7 +533,7 @@ class Puller {
       this.trace(`the frames' worker stopped: ${e.message}, the page reads them now`);
       this.worker = null;
       this.where = "page";
-      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", light: "", exact: false, kept: false, near: false, frames: [], spare: [] });
+      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, light: "", exact: false, kept: false, near: false, frames: [], spare: [] });
       this.waiting.clear();
     };
     this.worker = w;

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -92,14 +91,9 @@ func TestTheHarnessGetsItsFramesFromTheDecoder(t *testing.T) {
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", route+"?"+q.Encode(), nil))
 		return rec
 	}
-	rec := get("/frames/open", url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}})
-	var opened struct{ ID string }
-	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil || opened.ID == "" {
-		t.Fatalf("open answered %d: %v", rec.Code, err)
-	}
-	defer get("/frames/close", url.Values{"id": {opened.ID}})
-	read := get("/frames/read", url.Values{"id": {opened.ID}, "n": {"2"}})
-	if read.Code != http.StatusOK || read.Body.Len() == 0 || read.Body.Len()%(8+32*18*4) != 0 {
+	pictures, _ := playOf(t, handler, mine, "0:1", 0, 32, 18)
+	read := get("/frames/read", url.Values{"id": {pictures}, "n": {"2"}})
+	if read.Code != http.StatusOK || read.Body.Len() == 0 || read.Body.Len()%(32+32*18*4) != 0 {
 		t.Fatalf("read answered %d with %d bytes: %s", read.Code, read.Body.Len(), read.Header().Get("X-Frames-Error"))
 	}
 	// A file beside it that is no episode of the harness is not served.
@@ -107,7 +101,8 @@ func TestTheHarnessGetsItsFramesFromTheDecoder(t *testing.T) {
 	if err := os.Link(mine, other); err != nil {
 		t.Fatal(err)
 	}
-	if rec := get("/frames/open", url.Values{"path": {other}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}}); rec.Code != http.StatusNotFound {
+	if rec := get("/frames/play", url.Values{"path": {other}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}, "rate": {"48000"}, "ch": {"2"},
+		"pieces": {"0:1"}, "at": {"0"}}); rec.Code != http.StatusNotFound {
 		t.Errorf("a file that is not the harness's answered %d, want 404", rec.Code)
 	}
 }

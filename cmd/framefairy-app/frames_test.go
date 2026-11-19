@@ -25,11 +25,30 @@ import (
 	"framefairy/internal/framewire"
 )
 
-// A stream the page opens, pulls from and closes: each frame comes once,
-// in the order shown, from the frame that holds the moment it was opened
-// at, a pull with skip
-// drops what comes before it, and a closed stream is gone.
-func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
+// playOf starts a play of the video from at, of the pieces given as
+// servePlay reads them, at w by h, and says the ids of its two streams.
+func playOf(t *testing.T, handler http.Handler, path, pieces string, at float64, w, h int) (pictures, sound string) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	q := url.Values{"path": {path}, "w": {fmt.Sprint(w)}, "h": {fmt.Sprint(h)}, "grid": {gridOf(t, path)}, "rate": {"48000"}, "ch": {"2"},
+		"pieces": {pieces}, "at": {fmt.Sprint(at)}}
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/play?"+q.Encode(), nil))
+	var play struct{ Pictures, Sound string }
+	if err := json.NewDecoder(rec.Body).Decode(&play); err != nil || play.Pictures == "" || play.Sound == "" {
+		t.Fatalf("the play answered %d %q: %v", rec.Code, rec.Body.String(), err)
+	}
+	t.Cleanup(func() {
+		for _, id := range []string{play.Pictures, play.Sound} {
+			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/frames/close?id="+id, nil))
+		}
+	})
+	return play.Pictures, play.Sound
+}
+
+// A play's frames are pulled and the stream closed: each frame comes once,
+// in the order shown, from the frame that holds the moment the play
+// starts at, and a closed stream is gone.
+func TestTheFramesRouteStreamsAPlay(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
@@ -40,22 +59,14 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", path+"?"+q.Encode(), nil))
 		return rec
 	}
-	rec := get("/frames/open", url.Values{"path": {mine}, "from": {"2.1"}, "w": {"64"}, "h": {"36"}, "grid": {gridOf(t, mine)}})
-	var opened struct{ ID string }
-	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil || opened.ID == "" {
-		t.Fatalf("open answered %d %q: %v", rec.Code, rec.Body.String(), err)
-	}
-	defer get("/frames/close", url.Values{"id": {opened.ID}})
-	size := 8 + 64*36*4
-	var told []string
-	read := func(q url.Values) []float64 {
-		t.Helper()
-		q.Set("id", opened.ID)
-		rec := get("/frames/read", q)
+	pictures, _ := playOf(t, handler, mine, "0:10", 2.1, 64, 36)
+	size := 32 + 64*36*4
+	var begins []float64
+	for len(begins) < 4 {
+		rec := get("/frames/read", url.Values{"id": {pictures}, "n": {"4"}})
 		if rec.Code != http.StatusOK {
 			t.Fatalf("read answered %d", rec.Code)
 		}
-		told = append(told, rec.Header().Get("X-Frames-Times"))
 		if light := rec.Header().Get("X-Frames-Light"); light != "" {
 			t.Errorf("a pull of standard video says its light is %q", light)
 		}
@@ -66,46 +77,21 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 		if len(body)%size != 0 {
 			t.Fatalf("%d bytes is no whole number of frames of %d", len(body), size)
 		}
-		var ats []float64
 		for off := 0; off < len(body); off += size {
-			ats = append(ats, math.Float64frombits(binary.LittleEndian.Uint64(body[off:])))
+			begins = append(begins, math.Float64frombits(binary.LittleEndian.Uint64(body[off+16:])))
 		}
-		return ats
-	}
-	var all []float64
-	for len(all) < 4 {
-		all = append(all, read(url.Values{"n": {"4"}})...)
 	}
 	// The frame that holds 2.1 s, on the grid of the short.
-	if math.Abs(all[0]-2.0) > 1e-6 {
-		t.Errorf("the first frame starts at %.3f, want 2.0, the one that holds 2.1", all[0])
+	if math.Abs(begins[0]-2.0) > 1e-6 {
+		t.Errorf("the first frame begins at %.3f, want 2.0, the one that holds 2.1", begins[0])
 	}
-	for i := 1; i < len(all); i++ {
-		if math.Abs(all[i]-all[i-1]-0.2) > 1e-6 {
-			t.Fatalf("frames at %v, not one every 0.2 s", all)
+	for i := 1; i < len(begins); i++ {
+		if math.Abs(begins[i]-begins[i-1]-0.2) > 1e-6 {
+			t.Fatalf("frames begin at %v, not one every 0.2 s", begins)
 		}
 	}
-	// The first pull says where the stream's time went before its first
-	// frame, in milliseconds, and no pull after it says it again.
-	// The first stream of a decoder nobody held opens the file.
-	var started, opened2, first, file, on int
-	if n, _ := fmt.Sscanf(told[0], "%d,%d,%d,%d,%d", &started, &opened2, &first, &file, &on); n != 5 ||
-		started <= 0 || opened2 < started || first < opened2 || file != 1 || on != 0 {
-		t.Errorf("the first pull told %q as the stream's times, want the request had, the place reached and the first frame, in order, the file opened and no cursor gone on", told[0])
-	}
-	for _, again := range told[1:] {
-		if again != "" {
-			t.Errorf("a later pull told the times again, %q", again)
-		}
-	}
-	// Further on in the same stream, with what comes before dropped.
-	last := all[len(all)-1]
-	skipped := read(url.Values{"n": {"1"}, "skip": {"5.9"}})
-	if len(skipped) != 1 || math.Abs(skipped[0]-6) > 1e-6 {
-		t.Errorf("after %.1f, a pull skipping to 5.9 gave %v, want the frame at 6", last, skipped)
-	}
-	get("/frames/close", url.Values{"id": {opened.ID}})
-	if rec := get("/frames/read", url.Values{"id": {opened.ID}, "n": {"1"}}); rec.Code != http.StatusNotFound {
+	get("/frames/close", url.Values{"id": {pictures}})
+	if rec := get("/frames/read", url.Values{"id": {pictures}, "n": {"1"}}); rec.Code != http.StatusNotFound {
 		t.Errorf("a closed stream answered %d", rec.Code)
 	}
 }
@@ -120,23 +106,14 @@ func TestTheFramesRouteSaysAnHDREpisodesLight(t *testing.T) {
 	// The tags are what says HDR, so any picture tagged HLG will do.
 	fixtures.Copy(t, "small-hlg.mp4", mine)
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
-	get := func(path string, q url.Values) *httptest.ResponseRecorder {
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", path+"?"+q.Encode(), nil))
-		return rec
-	}
-	rec := get("/frames/open", url.Values{"path": {mine}, "from": {"0"}, "w": {"64"}, "h": {"36"}, "grid": {gridOf(t, mine)}})
-	var opened struct{ ID string }
-	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil || opened.ID == "" {
-		t.Fatalf("open answered %d %q: %v", rec.Code, rec.Body.String(), err)
-	}
-	defer get("/frames/close", url.Values{"id": {opened.ID}})
+	pictures, _ := playOf(t, handler, mine, "0:1", 0, 64, 36)
 	for range 2 {
-		rec := get("/frames/read", url.Values{"id": {opened.ID}, "n": {"2"}})
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/read?id="+pictures+"&n=2", nil))
 		if rec.Code != http.StatusOK || rec.Body.Len() == 0 {
 			t.Fatalf("read answered %d with %d bytes: %s", rec.Code, rec.Body.Len(), rec.Header().Get("X-Frames-Error"))
 		}
-		if rec.Body.Len()%(8+64*36*4) != 0 {
+		if rec.Body.Len()%(32+64*36*4) != 0 {
 			t.Errorf("%d bytes is no whole number of frames of 4 bytes a pixel", rec.Body.Len())
 		}
 		if light := rec.Header().Get("X-Frames-Light"); light != "hlg" {
@@ -145,66 +122,55 @@ func TestTheFramesRouteSaysAnHDREpisodesLight(t *testing.T) {
 	}
 }
 
-// A stream that has run to the end of the episode says so.
-func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
+// A play that has run to its end says so.
+func TestTheFramesRouteSaysWhenAPlayEnds(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
 	fixtures.Copy(t, "small-1s.mp4", mine)
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}}.Encode(), nil))
-	var opened struct{ ID string }
-	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil {
-		t.Fatal(err)
-	}
+	pictures, _ := playOf(t, handler, mine, "0:1", 0, 32, 18)
 	frames := 0
 	for range 20 {
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/read?id="+opened.ID+"&n=16", nil))
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/read?id="+pictures+"&n=16", nil))
+		frames += rec.Body.Len() / (32 + 32*18*4)
 		if rec.Header().Get("X-Frames-End") != "" {
 			if frames != 5 {
 				t.Errorf("the end came after %d frames of a second at five a second", frames)
 			}
 			return
 		}
-		frames += rec.Body.Len() / (8 + 32*18*4)
 	}
 	t.Errorf("no end after %d frames", frames)
 }
 
 // A stream the Go side stops, to make room for newer ones or because it
-// stood unused, says it was closed, not that the episode ended, so the
-// page asks another stream for what it waited on. Taken for the end, the
-// page settled for a frame near the one wanted, and Tim saw the wrong
-// frame after a drag along the clip timeline. Plan row 2.156.
+// stood unused, says it was closed, not that the play ended, so the page
+// starts the play again. Taken for the end, a play paused for long ended
+// as the space bar went on with it.
 func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
 	fixtures.Copy(t, "small-10s.mp4", mine)
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}}.Encode(), nil))
-	var opened struct{ ID string }
-	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil {
-		t.Fatal(err)
-	}
+	pictures, _ := playOf(t, handler, mine, "0:10", 0, 32, 18)
 	// Held by a pull that is on its way as the stream is stopped.
-	s := svc.previews.get(opened.ID)
+	s := svc.previews.get(pictures)
 	if s == nil {
 		t.Fatal("the stream is not open")
 	}
-	svc.previews.close(opened.ID)
+	svc.previews.close(pictures)
 	<-s.done
 	read := httptest.NewRecorder()
-	writeFrames(read, httptest.NewRequest("GET", "/frames/read?id="+opened.ID, nil), s, 4, 0)
+	writeFrames(read, httptest.NewRequest("GET", "/frames/read?id="+pictures, nil), s, 4)
 	if read.Header().Get("X-Frames-Closed") == "" || read.Header().Get("X-Frames-Error") != "" {
 		t.Errorf("a stopped stream answered %v, want it said closed and no error", read.Header())
 	}
 	// A pull after it is gone finds nothing, which the page takes the same way.
 	late := httptest.NewRecorder()
-	handler.ServeHTTP(late, httptest.NewRequest("GET", "/frames/read?id="+opened.ID+"&n=1", nil))
+	handler.ServeHTTP(late, httptest.NewRequest("GET", "/frames/read?id="+pictures+"&n=1", nil))
 	if late.Code != http.StatusNotFound {
 		t.Errorf("a pull of a closed stream answered %d, want 404", late.Code)
 	}
@@ -212,11 +178,13 @@ func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
 
 // There is one way to the frames, the episode's decoder: the routes of
 // the Mac's own decoder, which the page fed with the file's samples, are
-// gone with it. Plan row 2.156, step 3 of docs/VIDEO-PREVIEW.md.
+// gone with it, and so are the streams the window once worked a play out
+// of, since a play is the Go side's. Plan row 2.156, step 3 of
+// docs/VIDEO-PREVIEW.md, and the decision record of the play.
 func TestTheFramesRouteHasNoSecondDecoder(t *testing.T) {
 	svc, _, _ := library(t)
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
-	for _, route := range []string{"/frames/native?codec=hvc1&cw=320&ch=180&w=160&h=90", "/frames/decode?id=nobody"} {
+	for _, route := range []string{"/frames/native?codec=hvc1&cw=320&ch=180&w=160&h=90", "/frames/decode?id=nobody", "/frames/open?path=x", "/frames/sound?path=x"} {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("POST", route, strings.NewReader("config")))
 		if rec.Code != http.StatusNotFound {
@@ -225,38 +193,25 @@ func TestTheFramesRouteHasNoSecondDecoder(t *testing.T) {
 	}
 }
 
-// A sound stream is read the way a stream of frames is, and what it holds,
-// put together, is the episode's sound from where it was opened, as ffmpeg
-// decodes it, to its end.
-func TestTheFramesRouteStreamsSound(t *testing.T) {
+// A play's sound, put together, is the video's sound from where it
+// starts, as ffmpeg decodes it, to its end, faded in and out at the
+// piece's edges the way the render does.
+func TestThePlaysSoundIsTheVideosSound(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
 	svc, mine, _ := library(t)
 	fixtures.Copy(t, "small-4s.mp4", mine)
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
-	get := func(path string, q url.Values) *httptest.ResponseRecorder {
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", path+"?"+q.Encode(), nil))
-		return rec
-	}
-	if rec := get("/frames/sound", url.Values{"path": {mine}, "from": {"1"}, "rate": {"48000"}, "ch": {"9"}}); rec.Code != http.StatusBadRequest {
-		t.Errorf("nine channels were opened: %d", rec.Code)
-	}
-	rec := get("/frames/sound", url.Values{"path": {mine}, "from": {"1.5"}, "rate": {"48000"}, "ch": {"2"}})
-	var opened struct{ ID string }
-	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil || opened.ID == "" {
-		t.Fatalf("open answered %d %q: %v", rec.Code, rec.Body.String(), err)
-	}
-	defer get("/frames/close", url.Values{"id": {opened.ID}})
-	whole := 8 + engine.SoundChunk*2*4
+	_, sound := playOf(t, handler, mine, "1.5:4", 1.5, 32, 18)
 	var heard []byte
-	var ats []float64
 	for {
-		rec := get("/frames/read", url.Values{"id": {opened.ID}, "n": {"16"}})
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/read?id="+sound+"&n=16", nil))
 		body := rec.Body.Bytes()
-		for off := 0; off < len(body); off += whole {
-			ats = append(ats, math.Float64frombits(binary.LittleEndian.Uint64(body[off:])))
-			heard = append(heard, body[off+8:min(off+whole, len(body))]...)
+		for off := 0; off+16 <= len(body); {
+			n := int(math.Float64frombits(binary.LittleEndian.Uint64(body[off+8:])))
+			heard = append(heard, body[off+16:off+16+n*8]...)
+			off += 16 + n*8
 		}
 		if rec.Header().Get("X-Frames-End") != "" {
 			if e := rec.Header().Get("X-Frames-Error"); e != "" {
@@ -275,22 +230,27 @@ func TestTheFramesRouteStreamsSound(t *testing.T) {
 	// ships reads it. An older ffmpeg, the system's in CI on Linux, keeps
 	// the samples the AAC encoder padded its last packet with, up to 1024.
 	if extra := len(want) - len(heard); extra < 0 || extra > 1024*8 {
-		t.Fatalf("the stream held %d moments, the sound from 1.5 s has %d", len(heard)/8, len(want)/8)
+		t.Fatalf("the play held %d moments, the sound from 1.5 s has %d", len(heard)/8, len(want)/8)
 	}
+	// Past the fade in, and short of the fade out.
+	fade := int(engine.Fade*48000) * 8
 	worst := 0.0
-	for i := 0; i+4 <= len(heard)-48000/10*8; i += 4 {
+	for i := fade; i+4 <= len(heard)-48000/10*8; i += 4 {
 		a := math.Float32frombits(binary.LittleEndian.Uint32(heard[i:]))
 		b := math.Float32frombits(binary.LittleEndian.Uint32(want[i:]))
 		worst = math.Max(worst, math.Abs(float64(a-b)))
 	}
 	if worst > 1e-4 {
-		t.Errorf("the stream's sound is off by %.5f", worst)
+		t.Errorf("the play's sound is off by %.5f", worst)
 	}
-	for k, at := range ats {
-		if w := 1.5 + float64(k*engine.SoundChunk)/48000; math.Abs(at-w) > 1e-9 {
-			t.Fatalf("chunk %d says %.6f, it is at %.6f", k, at, w)
-		}
-	}
+}
+
+// plain starts a stream whose frames say nothing but where they start.
+func plain(p *previews, give func([]byte), run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
+	id, _ := p.startStamped("frames", nil, give, func(ctx context.Context, got func(previewFrame) error) error {
+		return run(ctx, func(at float64, data []byte) error { return got(previewFrame{at: at, data: data}) })
+	})
+	return id
 }
 
 // needDecoder fails a test of the picture where the episode's decoder is
@@ -439,7 +399,7 @@ func gridOf(t *testing.T, path string) string {
 func TestAStreamThatPanicsFailsItselfNotTheApp(t *testing.T) {
 	// Reaping already, so no reaper of its own outlives the test.
 	p := &previews{reaping: true}
-	id := p.start("frames", nil, nil, nil, nil, func(context.Context, func(float64, []byte) error) error {
+	id := plain(p, nil, func(context.Context, func(float64, []byte) error) error {
 		panic("a frame nobody read before")
 	})
 	s := p.get(id)
@@ -457,12 +417,12 @@ func TestAStreamThatPanicsFailsItselfNotTheApp(t *testing.T) {
 func TestARequestThatPanicsFailsItselfNotTheApp(t *testing.T) {
 	_, read := testLog(t)
 	w := httptest.NewRecorder()
-	mediaMiddleware(nil)(nil).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/frames/open?path=/home/tim/start.mp4", nil))
+	mediaMiddleware(nil)(nil).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/frames/play?path=/home/tim/start.mp4", nil))
 	if w.Code != http.StatusInternalServerError || !strings.HasPrefix(w.Body.String(), "the request stopped unexpectedly: ") {
 		t.Errorf("the request that panicked was answered %d, %q", w.Code, w.Body.String())
 	}
 	line := find(read(), "the window's request stopped unexpectedly")
-	has(t, line, map[string]any{"level": "error", "from": "files", "path": "/frames/open"})
+	has(t, line, map[string]any{"level": "error", "from": "files", "path": "/frames/play"})
 	if stack, _ := line["stack"].(string); !strings.Contains(stack, "goroutine") {
 		t.Errorf("the app's log holds no stack of the panic, %v", line)
 	}
@@ -478,7 +438,7 @@ func TestAPullThatPanicsAfterItsAnswerBeganIsCutShort(t *testing.T) {
 	svc := &FrameFairy{}
 	// Reaping already, so no reaper of its own outlives the test.
 	svc.previews.reaping = true
-	id := svc.previews.start("frames", nil, nil, nil, nil, func(_ context.Context, got func(float64, []byte) error) error {
+	id := plain(&svc.previews, nil, func(_ context.Context, got func(float64, []byte) error) error {
 		return got(1.5, []byte("a frame"))
 	})
 	t.Cleanup(func() { svc.previews.close(id) })
@@ -506,8 +466,8 @@ func (b *breaksOnSecondWrite) Write(p []byte) (int, error) {
 }
 
 // Every frame a stream hands over is given back to its decoder once,
-// when it is written to the page, when a pull's skip drops it, or when
-// the stream stops with it in hand, so the decoder reads a later frame
+// when it is written to the page, or when the stream stops with it in
+// hand, so the decoder reads a later frame
 // into it rather than into new memory, issue #898. A frame given back
 // twice would be read into while the page still had it.
 func TestEveryFrameIsGivenBackOnceNothingReadsIt(t *testing.T) {
@@ -518,11 +478,11 @@ func TestEveryFrameIsGivenBackOnceNothingReadsIt(t *testing.T) {
 		given = append(given, b)
 		mu.Unlock()
 	}
-	frames := [][]byte{[]byte("dropped"), []byte("second"), []byte("third"), []byte("in hand")}
+	frames := [][]byte{[]byte("first"), []byte("second"), []byte("in hand")}
 	svc := &FrameFairy{}
 	// Reaping already, so no reaper of its own outlives the test.
 	svc.previews.reaping = true
-	id := svc.previews.start("frames", nil, nil, nil, give, func(_ context.Context, got func(float64, []byte) error) error {
+	id := plain(&svc.previews, give, func(_ context.Context, got func(float64, []byte) error) error {
 		for i, f := range frames {
 			if err := got(float64(i+1), f); err != nil {
 				return err
@@ -531,18 +491,18 @@ func TestEveryFrameIsGivenBackOnceNothingReadsIt(t *testing.T) {
 		return nil
 	})
 	s := svc.previews.get(id)
-	pull := func(skip string) string {
+	pull := func() string {
 		w := httptest.NewRecorder()
-		svc.serveFrames(w, httptest.NewRequest(http.MethodGet, "/frames/read?n=1&skip="+skip+"&id="+id, nil))
+		svc.serveFrames(w, httptest.NewRequest(http.MethodGet, "/frames/read?n=1&id="+id, nil))
 		return w.Body.String()[8:]
 	}
-	if got := pull("1.5"); got != "second" {
-		t.Fatalf("the first pull, from 1.5 on, wrote %q, want second", got)
+	if got := pull(); got != "first" {
+		t.Fatalf("the first pull wrote %q, want first", got)
 	}
-	if got := pull("0"); got != "third" {
-		t.Fatalf("the second pull wrote %q, want third", got)
+	if got := pull(); got != "second" {
+		t.Fatalf("the second pull wrote %q, want second", got)
 	}
-	// The stream holds the fourth frame, which nobody pulls, and stops.
+	// The stream holds the third frame, which nobody pulls, and stops.
 	svc.previews.close(id)
 	<-s.done
 	mu.Lock()
@@ -558,7 +518,7 @@ func TestEveryFrameIsGivenBackOnceNothingReadsIt(t *testing.T) {
 }
 
 // A paused video preview asks for where the hand is and gets the frame
-// under it, the same frame a stream from there hands over, said to be the
+// under it, the same frame a play from there hands over, said to be the
 // frame of the place. A look for a frame the grid does not have, or for a
 // file outside the library, is refused.
 //
@@ -591,19 +551,6 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 		t.Errorf("the look's frame starts at %.6f s, want %.6f", at, g.At(30))
 	}
 
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "from": {fmt.Sprint(g.At(30))}, "w": {"32"}, "h": {"18"}, "grid": {grid}}.Encode(), nil))
-	var opened struct{ ID string }
-	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil {
-		t.Fatal(err)
-	}
-	read := httptest.NewRecorder()
-	handler.ServeHTTP(read, httptest.NewRequest("GET", "/frames/read?id="+opened.ID+"&n=1", nil))
-	svc.previews.close(opened.ID)
-	if read.Body.String() != look.Body.String() {
-		t.Error("the look's frame is not the frame a stream from there hands over")
-	}
-
 	// The frames the decoder read around the click, which the window does
 	// not hold yet, the one before it held already.
 	near := httptest.NewRecorder()
@@ -629,10 +576,18 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 		}
 	}
 
+	pictures, _ := playOf(t, handler, mine, "0:10", g.At(30), 32, 18)
+	read := httptest.NewRecorder()
+	handler.ServeHTTP(read, httptest.NewRequest("GET", "/frames/read?id="+pictures+"&n=1", nil))
+	svc.previews.close(pictures)
+	if got := read.Body.Bytes(); len(got) != 32+32*18*4 || string(got[32:]) != string(look.Body.Bytes()[8:]) {
+		t.Error("the look's frame is not the frame a play from there hands over")
+	}
+
 	if bad := ask(fmt.Sprint(g.Count), nil); bad.Code != http.StatusBadRequest {
 		t.Errorf("a look past the grid answered %d", bad.Code)
 	}
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/look?"+url.Values{"path": {"/elsewhere.mp4"}, "w": {"32"}, "h": {"18"}, "grid": {grid}, "frame": {"1"}}.Encode(), nil))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("a look at a file outside the library answered %d", rec.Code)

@@ -79,7 +79,7 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) 
 	grid := hand.Grid
 	// The pictures are the schedule's, kept for a play started there
 	// again, so none is given back.
-	pictures, s := p.startStamped("play", nil, dec.Light, nil, nil, func(ctx context.Context, got func(previewFrame) error) error {
+	pictures, s := p.startStamped("play", dec.Light, nil, func(ctx context.Context, got func(previewFrame) error) error {
 		return play.Pictures(ctx, func(f engine.PlayFrame) error {
 			edge := 0.0
 			if f.Edge {
@@ -90,7 +90,7 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) 
 	})
 	s.play = play
 	e := engine.NewEngine(engineLog("files", path), st.machine)
-	sound, _ := p.startStamped("playsound", nil, nil, nil, dec.Give, func(ctx context.Context, got func(previewFrame) error) error {
+	sound, _ := p.startStamped("playsound", nil, dec.Give, func(ctx context.Context, got func(previewFrame) error) error {
 		source := func(ctx context.Context, from float64, rate, channels int, got func(float64, []byte) error) error {
 			return dec.Sound(ctx, e, from, rate, channels, got)
 		}

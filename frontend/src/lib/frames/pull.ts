@@ -18,12 +18,8 @@ export type Pulled = {
   end: boolean;
   error: string;
   // The Go side closed the stream, to make room for newer ones or because
-  // nobody pulled from it: no end of the episode and no failure.
+  // nobody pulled from it: no end of the play and no failure.
   closed: boolean;
-  // Where the stream's time went before its first frame, sent with its
-  // first frame: "started,opened,first,file,on", milliseconds and then
-  // 1 or 0, see engine.PreviewTimes.
-  times: string;
   // How the frames code their brightness, see light.ts.
   light: Light;
   // A look's frame is the one asked for, not one on the way to it, see
@@ -52,13 +48,12 @@ export function pictures(got: Pulled, width: number, height: number): { at: numb
 // many bytes come before each frame.
 export async function pull(url: string, width: number, height: number, spare: ArrayBuffer[] = [], head = 8): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
-  if (!res) return { status: 0, end: false, error: "", closed: false, times: "", light: "", exact: false, kept: false, near: false, frames: [], spare };
+  if (!res) return { status: 0, end: false, error: "", closed: false, light: "", exact: false, kept: false, near: false, frames: [], spare };
   const out: Pulled = {
     status: res.status,
     end: !!res.headers.get("X-Frames-End"),
     error: res.headers.get("X-Frames-Error") ?? "",
     closed: !!res.headers.get("X-Frames-Closed"),
-    times: res.headers.get("X-Frames-Times") ?? "",
     light: lightOf(res.headers.get("X-Frames-Light")),
     exact: !!res.headers.get("X-Frames-Exact"),
     kept: !!res.headers.get("X-Frames-Kept"),

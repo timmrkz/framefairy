@@ -26,9 +26,9 @@ import (
 )
 
 // The episode's decoder hands over the frames the ffmpeg program hands
-// over, from any moment, with the same moments and the same pictures, and
+// over, from any moment, with the same moments and the same pictures. That
 // a stream after the first moves a cursor that is open rather than opening
-// the file again.
+// the file again, the decoder says, see the test after this one.
 // It needs framefairy-frames built against ffmpeg's libraries, which make
 // does, named by FRAMEFAIRY_FRAMES, and skips without it.
 //
@@ -65,22 +65,15 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 		return out
 	}
 	grid := gridOf(t, path)
-	for i, from := range []float64{0, 2.1, 7.39, 3.98} {
+	for _, from := range []float64{0, 2.1, 7.39, 3.98} {
 		// From the frame that holds the moment, which on a file whose
 		// frames keep to their rate is the file's own.
 		want := collect(func(got func(float64, []byte) error) error {
 			return ffmpegFrames(context.Background(), path, grid.At(grid.Holding(from)), 160, 90, got)
 		})
-		times := NewPreviewTimes()
 		got := collect(func(got func(float64, []byte) error) error {
-			return dec.Stream(WithPreviewTimes(context.Background(), times), grid, from, 160, 90, false, nil, got)
+			return dec.Stream(context.Background(), grid, from, 160, 90, false, nil, got)
 		})
-		if times.File.Load() != (i == 0) {
-			t.Errorf("stream %d from %.2f opened the file: %v, want only the first to", i, from, times.File.Load())
-		}
-		if s, o, f := times.Started.Load(), times.Opened.Load(), times.First.Load(); s <= 0 || o < s || f < o {
-			t.Errorf("stream %d told its times as %d, %d, %d, want the request, the place and the first frame in order", i, s, o, f)
-		}
 		if len(got) != len(want) {
 			t.Fatalf("from %.2f the decoder gave %d frames, ffmpeg %d", from, len(got), len(want))
 		}
@@ -167,17 +160,11 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 		wantAts, want := collect(func(got func(float64, []byte) error) error {
 			return ffmpegFrames(context.Background(), path, grid.At(grid.Holding(j.from)), 160, 90, got)
 		})
-		times := NewPreviewTimes()
 		gotAts, got := collect(func(got func(float64, []byte) error) error {
-			return dec.Stream(WithPreviewTimes(context.Background(), times), grid, j.from, 160, 90, false, nil, got)
+			return dec.Stream(context.Background(), grid, j.from, 160, 90, false, nil, got)
 		})
 		if len(got) != len(want) {
 			t.Fatalf("from %.2f the decoder gave %d frames, ffmpeg %d", j.from, len(got), len(want))
-		}
-		// The stream says it went on, for the page to know no key frame
-		// comes first, issue #511.
-		if on := times.WentOn.Load(); on != (j.how == "went on") {
-			t.Errorf("the jump to %.2f s, which %s, told the page it went on: %v", j.from, j.how, on)
 		}
 		for i := range want {
 			if math.Abs(gotAts[i]-wantAts[i]) > 1e-6 {
@@ -438,13 +425,9 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 	// The cursors open while nothing is asked. Should they never, the
 	// test hangs here until go test's -timeout.
 	untilCursors(dec, func() bool { return len(dec.idle[pictureCursor]) == cursorsKept[pictureCursor] })
-	times := NewPreviewTimes()
-	err := dec.Stream(WithPreviewTimes(context.Background(), times), gridOf(t, path), 1.5, 160, 90, false, nil, func(float64, []byte) error { return errStop })
+	err := dec.Stream(context.Background(), gridOf(t, path), 1.5, 160, 90, false, nil, func(float64, []byte) error { return errStop })
 	if !errors.Is(err, errStop) {
 		t.Fatal(err)
-	}
-	if times.File.Load() {
-		t.Error("the first frame asked for opened the file, want a cursor opened before moved")
 	}
 	dec.mu.Lock()
 	opened := dec.nextID

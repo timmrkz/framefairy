@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -18,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -97,9 +95,9 @@ type previews struct {
 }
 
 // A stream that nobody has pulled from for this long is closed, and at
-// most this many are open at once, the least recently pulled closed first.
-// The frame queue uses two, one a decoder, and a third while it changes
-// over.
+// most this many of a kind are open at once, the least recently pulled
+// closed first. A play has one of frames and one of sound, and a play
+// taking over from it two more for a moment.
 const (
 	previewIdle = 20 * time.Second
 	previewMost = 6
@@ -114,7 +112,8 @@ type previewFrame struct {
 }
 
 type preview struct {
-	// "sound" for a stream of sound, "" for one of frames.
+	// "play" for a play's frames, "playsound" for its sound, see
+	// servePlay. At most previewMost of a kind are open.
 	kind   string
 	frames chan previewFrame
 	stop   context.CancelFunc
@@ -123,17 +122,9 @@ type preview struct {
 	// Closed when ffmpeg has stopped, with why in err.
 	done chan struct{}
 	err  error
-	// Where a stream of frames' time went before its first frame, told
-	// once, with the first pull that has a frame. Nil for sound.
-	times *engine.PreviewTimes
-	told  atomic.Bool
 	// How the frames code their brightness, said with every pull that has
 	// a frame, see framewire.Picture. Nil for sound.
 	light func() framewire.Light
-	// The moment before which the page wants no frame, as the bits of a
-	// float64, said by its newest pull. The decoder lets the frames before
-	// it go unscaled, see engine.EpisodeFrames.Stream. Nil for sound.
-	skip *atomic.Uint64
 	// Takes back a frame once nothing reads it, see start.
 	give func([]byte)
 	// The play whose frames or sound it is, see servePlay.
@@ -163,8 +154,6 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 	st, p := s.store, &s.previews
 	q := r.URL.Query()
 	switch r.URL.Path {
-	case "/frames/open", "/frames/sound":
-		p.serveOpen(st, w, r)
 	case "/frames/play":
 		p.servePlay(st, w, r)
 	case "/frames/play/go":
@@ -184,11 +173,7 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		n, _ := strconv.Atoi(q.Get("n"))
-		skip, err := strconv.ParseFloat(q.Get("skip"), 64)
-		if err != nil || math.IsNaN(skip) || math.IsInf(skip, 0) {
-			skip = 0
-		}
-		writeFrames(w, r, stream, min(max(n, 1), 16), skip)
+		writeFrames(w, r, stream, min(max(n, 1), 16))
 	case "/frames/captions":
 		s.serveCaptions(w, r)
 	case "/frames/captions/words":
@@ -219,85 +204,9 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	path := q.Get("path")
-	if !episodeFile(st, path) {
-		http.NotFound(w, r)
-		return
-	}
-	from, err := strconv.ParseFloat(q.Get("from"), 64)
-	if err != nil || math.IsNaN(from) || math.IsInf(from, 0) || from < 0 {
-		from = 0
-	}
-	e := engine.NewEngine(engineLog("files", path), st.machine)
-	var run func(ctx context.Context, got func(at float64, data []byte) error) error
-	var times *engine.PreviewTimes
-	var light func() framewire.Light
-	var skip *atomic.Uint64
-	var give func([]byte)
-	if r.URL.Path == "/frames/sound" {
-		rate, _ := strconv.Atoi(q.Get("rate"))
-		channels, _ := strconv.Atoi(q.Get("ch"))
-		if rate < 8000 || rate > 192000 || channels < 1 || channels > 8 {
-			http.Error(w, "a sound stream needs a rate and a number of channels", http.StatusBadRequest)
-			return
-		}
-		dec, err := p.decoder(st.machine, path)
-		if err == nil {
-			give = dec.Give
-		}
-		run = func(ctx context.Context, got func(float64, []byte) error) error {
-			if err != nil {
-				return err
-			}
-			return dec.Sound(ctx, e, from, rate, channels, got)
-		}
-	} else {
-		width, _ := strconv.Atoi(q.Get("w"))
-		height, _ := strconv.Atoi(q.Get("h"))
-		if width < 2 || height < 2 || width > 7680 || height > 4320 {
-			http.Error(w, "a preview needs a width and a height", http.StatusBadRequest)
-			return
-		}
-		// The frames of the short, on the grid the page counts on, which
-		// is the one the engine named, see engine.SourceInfo.Grid. The page
-		// hands it back so the two cannot count on different grids.
-		grid, ok := framewire.ReadGrid(q.Get("grid"))
-		if !ok {
-			http.Error(w, "a preview needs the grid of frames it counts on", http.StatusBadRequest)
-			return
-		}
-		// key=1 asks for the key frame before from first, while the hand
-		// drags the playhead, see engine.EpisodeFrames.Stream.
-		key := q.Get("key") == "1"
-		times = engine.NewPreviewTimes()
-		skip = new(atomic.Uint64)
-		skipped := func() float64 { return math.Float64frombits(skip.Load()) }
-		dec, err := p.decoder(st.machine, path)
-		if err == nil {
-			light, give = dec.Light, dec.Give
-		}
-		run = func(ctx context.Context, got func(float64, []byte) error) error {
-			if err != nil {
-				return err
-			}
-			return dec.Stream(engine.WithPreviewTimes(ctx, times), grid, from, width&^1, height&^1, key, skipped, got)
-		}
-	}
-	kind := ""
-	if r.URL.Path == "/frames/sound" {
-		kind = "sound"
-	}
-	id := p.start(kind, times, light, skip, give, run)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
-}
-
 // serveLook answers where the hand is on a paused video preview with a
 // frame, see engine.Schedule: frame is the frame of the grid under the
-// hand, move says the hand moves over it, follow that it is one of the
-// frames after the place the hand rests on, and shown is the frame on
+// hand, move says the hand moves over it, and shown is the frame on
 // screen, or -1. The answer is the frame as writeFrames writes one, with
 // X-Frames-Exact where it is the frame of the place and not one on the
 // way, X-Frames-Kept where nothing was decoded for it, and X-Frames-Near
@@ -313,7 +222,7 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) 
 	if err != nil || shown < 0 || shown >= hand.Grid.Count {
 		shown = -1
 	}
-	hand.Shown, hand.Moving, hand.Follow = shown, q.Get("move") == "1", q.Get("follow") == "1"
+	hand.Shown, hand.Moving = shown, q.Get("move") == "1"
 	frame := hand.Frame
 	dec, err := p.decoder(st.machine, path)
 	if err != nil {
@@ -518,17 +427,10 @@ func (p *previews) closeDecoder(d *engine.EpisodeFrames) {
 // video preview is drawing, nor frames the sound. give, where it is not
 // nil, takes back a frame once it is written to the page or dropped, for
 // the decoder to read a later one into, see engine.EpisodeFrames.Give.
-func (p *previews) start(kind string, times *engine.PreviewTimes, light func() framewire.Light, skip *atomic.Uint64,
-	give func([]byte), run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
-	id, _ := p.startStamped(kind, times, light, skip, give, func(ctx context.Context, got func(previewFrame) error) error {
-		return run(ctx, func(at float64, data []byte) error { return got(previewFrame{at: at, data: data}) })
-	})
-	return id
-}
-
-// startStamped is start for a stream whose frames say more of themselves
-// than where they start, see previewFrame.stamp.
-func (p *previews) startStamped(kind string, times *engine.PreviewTimes, light func() framewire.Light, skip *atomic.Uint64,
+// startStamped starts a stream, of a play's frames or of its sound, see
+// servePlay. Each frame says more of itself than where it starts, see
+// previewFrame.stamp.
+func (p *previews) startStamped(kind string, light func() framewire.Light,
 	give func([]byte), run func(ctx context.Context, got func(previewFrame) error) error) (string, *preview) {
 	var raw [16]byte
 	_, _ = rand.Read(raw[:])
@@ -537,7 +439,7 @@ func (p *previews) startStamped(kind string, times *engine.PreviewTimes, light f
 	if give == nil {
 		give = func([]byte) {}
 	}
-	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{}), times: times, light: light, skip: skip, give: give}
+	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{}), light: light, give: give}
 	s.pulled.set(time.Now())
 	p.mu.Lock()
 	if p.open == nil {
@@ -791,7 +693,7 @@ func (p *previews) reapOnce(idle time.Duration) bool {
 // first that starts at skip or later. Every frame of a stream is as long
 // as every other, but the last of a sound stream, which may be shorter. A stream that has ended answers
 // with no frame and X-Frames-End, and with the reason when it failed.
-func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip float64) {
+func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	head := make([]byte, 8)
@@ -817,38 +719,9 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 		_, err := w.Write(f.data)
 		return err == nil
 	}
-	// Frames before skip are dropped here: the page wants one further on,
-	// and stepping on in a stream that is open is quicker than a new one
-	// from the key frame before. The frames the decoder has made already
-	// come and are dropped, and it is told to make none before skip in the
-	// frames it is asked for next.
-	if s.skip != nil {
-		s.skip.Store(math.Float64bits(skip))
-	}
 	for waiting := true; waiting; {
 		select {
 		case f := <-s.frames:
-			if f.at < skip {
-				s.give(f.data)
-				continue
-			}
-			// The first frame of a stream says where its time went, in
-			// milliseconds from when it was asked for: until the decoder
-			// had the request, until it was at the place, until the first
-			// frame was out, then 1 where that meant opening the file and 0
-			// where a cursor was moved, and last 1 where the cursor read on
-			// to the place without a seek, see engine.PreviewTimes.
-			if s.times != nil && !s.told.Swap(true) {
-				file, on := 0, 0
-				if s.times.File.Load() {
-					file = 1
-				}
-				if s.times.WentOn.Load() {
-					on = 1
-				}
-				w.Header().Set("X-Frames-Times", fmt.Sprintf("%d,%d,%d,%d,%d",
-					s.times.Started.Load(), s.times.Opened.Load(), s.times.First.Load(), file, on))
-			}
 			// HDR frames are 10 bits a colour in the file's own curve, and
 			// the page draws them as such, see framewire.Picture.
 			if s.light != nil {

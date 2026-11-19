@@ -96,8 +96,7 @@ removed. Nothing is prepared before the first play.
    spliced the new program into the running play in 366 lines, and was
    closed for it. Loop was the first exception, 2.150 and 2.183, which
    changes only where the play ends. That end is the play's own: the
-   next play builds its program again, `Program.changedWhilePlaying`.
-   Kept, a loop switched off in the second time through sent the next
+   next play builds its program again. Kept, a loop switched off in the second time through sent the next
    play round the clip's end once more. Then the play kept the pieces it
    started with while an edge or a cut was dragged, because starting it
    again at every step of the hand stuttered. Tim found the cost of that
@@ -106,22 +105,14 @@ removed. Nothing is prepared before the first play.
    had taken back. No rule of the product makes that case not happen, an
    undo while the clip plays is an ordinary thing to do, so rule 7 lets
    the machinery in. Now every change of the clip while it plays, an edge
-   or a cut dragged, an undo or a redo, is spliced in ahead of the
-   playhead, `changed` in `lib/frames/queue.ts` and `Program.spliced` in
-   `lib/frames/plan.ts`. The play keeps what it worked out up to the
-   first piece the change reaches, which runs on to where it ends now,
-   the pieces after it are the new ones, and nothing that plays moves,
-   stops or jumps. So a change further on, the clip's end with the
-   playhead a moment before a cut, touches nothing the decoders already
-   work on. A play cut short keeps what was fed and stops at the new end,
-   the sound faded out there by the sound card, so a later change, the
-   end put back, dragged on past the playhead or the loop switched on, is
-   weighed against what was really fed. Only where the decoders or the
-   sound card were fed past the place the two programs part does the play
-   start again from the playhead, a moment's stop: the next cut moved or
-   taken away within about two seconds ahead of the playhead, where the
-   piece after it is decoded already, or a run already flushed. An edge of
-   the clip dragged past
+   or a cut dragged, an undo or a redo, is a new play that takes over
+   from the one under way a moment ahead of the sound heard, `changed` in
+   `lib/frames/queue.ts`. The Go side works out the moment the play under
+   way stands at there and plays the new pieces from it, and its first
+   frames are the ones it decoded already, so nothing that plays moves,
+   stops or jumps. Where the new pieces do not hold that moment, the play
+   goes on as it was and the pieces are the next play's. An edge of the
+   clip dragged past
    the playhead leaves the playhead outside the clip, on the video,
    Tim's rule on #277, so the play goes on as a play of the video,
    straight on to the episode's end, `playOn`. Paused, the playhead goes
@@ -319,11 +310,23 @@ closed for standing unused.
   frames put up on the way, how long the frame under the hand took after
   letting go, how long the picture stood while the hand had moved on,
   against the 50 ms below, and how many looks were sent, sent a frame on
-  the way, or were overtaken. A play still reads streams of frames, a
-  few at a time, until the last step of the decision record.
-- The routes the interface reads from, `/frames/open`, `/frames/sound`,
-  `/frames/read` and `/frames/close`, stay as they are. The interface
-  cannot tell whether a frame came from it or from the ffmpeg program.
+  the way, or were overtaken.
+- **A play is worked out here too**, `engine.Play`, run by the same
+  schedule, which gives the decoder to the play while it runs and takes
+  it back for the hand's next look. The window says which pieces, whether
+  they loop and where the playhead is. Go works out which frame is drawn
+  where, with the code that cuts the render, reads the frames a piece at a
+  time with the next piece read ahead before its cut, and cuts and fades
+  the sound at the sample. Each frame is sent stamped with where on the
+  play's clock it is drawn, the moment it stands for and whether it is the
+  first or last of its piece. A play cued at a paused playhead takes the
+  frames kept for it and its sound at once, and waits for the space bar
+  before it takes the decoder, so looks and the reading ahead go on until
+  then. See [the decision
+  record](decisions/2026-11-19-go-plays-the-video-preview.md).
+- The routes the interface reads from are `/frames/look`, `/frames/near`
+  and `/frames/ahead` for a paused video preview, `/frames/play`, `/frames/play/go` and `/frames/play/loop` for a
+  play, `/frames/read` for what a play sends, and `/frames/close`.
 
 ### The Go side
 
@@ -347,14 +350,14 @@ closed for standing unused.
 
 ### The interface
 
-- **The program**, `plan.ts`: which pieces play in which order, and where
-  each starts and ends, counted on the frames the engine names.
-- **The clock**, the sound card's, as now. The playhead is the sound
-  heard.
-- **Two picture streams and a sound stream**, as the two decoders are
-  now: the second stream is asked for the next piece while the first
-  plays, so the frame after a cut is already waiting.
-- **Drawing**: each frame onto the one canvas when the clock reaches it.
+- **A play**, `play.ts`: asks the Go side for a play of the clip's
+  pieces and pulls its frames, a few ahead, and its sound, a second
+  ahead, each stamped with where on the play's clock it goes. Which
+  frames, the cuts and the fades are the Go side's.
+- **The clock**, the sound card's, as now. The playhead is the moment
+  the frame due stands for, moved on with the sound heard.
+- **Drawing**: each frame onto the one canvas when the clock reaches it,
+  and never past the first or last frame of a piece without drawing it.
 - **The size of a frame** is the canvas's, no larger than the file's
   own picture. No frame is asked for before the stylesheet has laid the
   canvas out and told it its size, one frame after the workspace is on
@@ -367,12 +370,12 @@ closed for standing unused.
   the size has stood still for 150 ms.
   Asked at every step, each was a stream of frames and one of sound
   opened and closed again on the Go side.
-- **A paused frame** is the frame that holds the playhead. Paused on a
-  piece, the play from the playhead is cued, its first frame drawn and
-  the frames after it read ahead, the next piece's too. Whether the cue's
-  first frame holds the playhead is asked of the cue's own plan, never
-  worked out apart: a playhead a hair before a piece's end is in the cut
-  for the plan, and is then a still of its own. Under a dragging hand, a
+- **A paused frame** is the frame that holds the playhead, a look. Once
+  it is up, the play from the playhead is cued on the Go side, which
+  says which frame the play starts with. Where that is the frame up, the
+  cue is kept and the space bar starts it at once. A playhead in a cut or
+  a hair before a piece's end starts its play on another frame, and
+  cues nothing. Under a dragging hand, a
   frame that comes after the hand has moved on is put up while the next
   one is on its way, but only a frame that held the playhead, never one
   read ahead of it. Both kept the frames after a cut off the screen while
