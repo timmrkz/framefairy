@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -36,13 +37,13 @@ import (
 // A stream left open is how a paused play goes on at once, and how the
 // next frame is there when the arrow key steps to it.
 //
-//	/frames/look?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&shown=<frame>[&move=1][&follow=1]
+//	/frames/look?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&shown=<frame>&win=<window>&n=<sent>[&move=1][&follow=1]
 //	                                 the frame for where the hand is, see
 //	                                 serveLook and engine.Schedule
 //	/frames/near?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&has=<frame>,...
 //	                                 the frames kept around a place the
 //	                                 window does not hold, see serveNear
-//	/frames/ahead?path=<episode>&w=<width>&h=<height>&grid=<grid>&frames=<frame>,...&cards=<frame>,...&has=<frame>,...[&held=1]
+//	/frames/ahead?path=<episode>&w=<width>&h=<height>&grid=<grid>&frames=<frame>,...&cards=<frame>,...&has=<frame>,...&win=<window>&n=<sent>[&held=1]
 //	                                 what to read while the hand rests,
 //	                                 answered by the frames read that the
 //	                                 window does not hold, see serveAhead
@@ -371,7 +372,7 @@ func handArgs(st *store, w http.ResponseWriter, r *http.Request, frame bool) (st
 		http.Error(w, "frames need the grid they count on", http.StatusBadRequest)
 		return "", engine.Hand{}, false
 	}
-	hand := engine.Hand{Grid: grid, W: width &^ 1, H: height &^ 1, Shown: -1}
+	hand := engine.Hand{Grid: grid, W: width &^ 1, H: height &^ 1, Shown: -1, Sent: sentOf(q)}
 	if frame {
 		f, err := strconv.Atoi(q.Get("frame"))
 		if err != nil || f < 0 || f >= grid.Count {
@@ -381,6 +382,18 @@ func handArgs(st *store, w http.ResponseWriter, r *http.Request, frame bool) (st
 		hand.Frame = f
 	}
 	return path, hand, true
+}
+
+// sentOf reads where a request stands among what its window sent, see
+// engine.Sent: the window's name, at most 64 characters, and how many it
+// had sent. A request without them stands nowhere.
+func sentOf(q url.Values) engine.Sent {
+	win := q.Get("win")
+	n, err := strconv.ParseUint(q.Get("n"), 10, 64)
+	if win == "" || len(win) > 64 || err != nil {
+		return engine.Sent{}
+	}
+	return engine.Sent{Window: win, N: n}
 }
 
 // frameList reads a list of frames of the grid, "1,2,3", leaving out what
@@ -441,7 +454,7 @@ func (p *previews) serveAhead(st *store, w http.ResponseWriter, r *http.Request)
 	}
 	seen, err := p.schedule(dec).Ahead(r.Context(), engine.Ahead{Grid: hand.Grid, W: hand.W, H: hand.H,
 		Frames: frameList(q.Get("frames"), hand.Grid, 16), Cards: frameList(q.Get("cards"), hand.Grid, 256),
-		Has: frameList(q.Get("has"), hand.Grid, 512), Held: q.Get("held") == "1"})
+		Has: frameList(q.Get("has"), hand.Grid, 512), Held: q.Get("held") == "1", Sent: hand.Sent})
 	switch {
 	case errors.Is(err, engine.ErrOvertaken):
 		w.WriteHeader(http.StatusNoContent)

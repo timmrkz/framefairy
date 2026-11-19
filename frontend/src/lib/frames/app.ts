@@ -275,6 +275,12 @@ export class AppFrames {
   private dragPlaces = 0;
   // The number of the newest ask.
   asked = 0;
+  // This window's name and how many looks and asks to read ahead it has
+  // sent the Go side, which serves each on a goroutine of its own, so they
+  // may come in another order: by these it knows which one was sent last,
+  // see engine.Sent.
+  private readonly name = Math.random().toString(36).slice(2, 12);
+  private sent = 0;
   // What to read while the hand rests, see ahead and cards: the frames of
   // the words beside, the cards', what was last handed to the Go side,
   // and the ask still on its way, which settles once the Go side has read
@@ -431,6 +437,8 @@ export class AppFrames {
       grid: this.gridText,
       shown: String(this.shownRank()),
     });
+    q.set("win", this.name);
+    q.set("n", String(++this.sent));
     if (w.moving) q.set("move", "1");
     if (w.follows) q.set("follow", "1");
     const asked = this.puller.pull(`/frames/look?${q}`, width, height);
@@ -537,6 +545,8 @@ export class AppFrames {
     if (!held) this.stats.ahead += this.aheadWanted.length + this.cardOrder.length;
     // What is kept here already is not sent again.
     q.set("has", this.keptHere(width, height).join(","));
+    q.set("win", this.name);
+    q.set("n", String(++this.sent));
     const sent = this.puller.pull(`/frames/ahead?${q}`, width, height).then((got) => {
       const cards = new Set(this.cardOrder);
       for (const { at, frame } of got.frames) {

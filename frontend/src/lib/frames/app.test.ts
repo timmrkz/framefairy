@@ -263,6 +263,26 @@ describe("a place while the video preview stands still", () => {
     app.close();
   });
 
+  // The Go side serves each request on a goroutine of its own, so they may
+  // come in another order than they were sent: each look and each ask to
+  // read ahead says which window sent it and how many it had sent, and
+  // the Go side goes by the one sent last, see engine.Sent.
+  test("says where it stands among what the window sent", async () => {
+    const { app, asked, pulls } = goSide();
+    app.paused = () => true;
+    void app.frame(40, 0, undefined, true);
+    await pulls(1);
+    app.ahead([60]);
+    await pulls(2);
+    void app.frame(80, 0, undefined, true);
+    await pulls(3);
+    const sent = asked.map((a) => new URL(a.url, "http://x").searchParams);
+    expect(new Set(sent.map((q) => q.get("win"))).size).toBe(1);
+    expect(sent[0].get("win")).not.toBe("");
+    expect(sent.map((q) => Number(q.get("n")))).toEqual([1, 2, 3]);
+    app.close();
+  });
+
   // A newer place took this one's: the Go side answers with nothing, and
   // the frame under the hand comes for the newer one.
   test("overtaken by a newer one gets nothing", async () => {

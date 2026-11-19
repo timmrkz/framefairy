@@ -638,3 +638,27 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 		t.Errorf("a look at a file outside the library answered %d", rec.Code)
 	}
 }
+
+// A look and an ask to read ahead say where they stand among what their
+// window sent, see engine.Sent. A name too long or a count that is no
+// number stands nowhere, and the schedule takes the request as it comes.
+func TestARequestSaysWhereItStandsAmongWhatItsWindowSent(t *testing.T) {
+	for _, c := range []struct {
+		query string
+		want  engine.Sent
+	}{
+		{"win=ab&n=7", engine.Sent{Window: "ab", N: 7}},
+		{"win=ab", engine.Sent{}},
+		{"n=7", engine.Sent{}},
+		{"win=ab&n=-1", engine.Sent{}},
+		{"win=" + strings.Repeat("a", 65) + "&n=7", engine.Sent{}},
+	} {
+		q, err := url.ParseQuery(c.query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := sentOf(q); got != c.want {
+			t.Errorf("%s stands at %+v, want %+v", c.query, got, c.want)
+		}
+	}
+}

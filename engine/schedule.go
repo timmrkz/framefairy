@@ -40,6 +40,9 @@ type Schedule struct {
 	kept keptFrames
 	// What to read while the hand rests, see Ahead.
 	ahead *aheadWork
+	// Where the newest look of the hand and the newest Ahead stood among
+	// what their window sent, see Sent.
+	lastLook, lastAhead Sent
 	// looks wakes whoever waits whenever a look starts to wait, so a test
 	// goes on once the schedule has it. Only the tests wait on it.
 	looks wake.Wake
@@ -80,6 +83,26 @@ type Hand struct {
 	// only where it is nearer the place than that one, and a hand that
 	// moves a frame or two back from it goes back slowly, see startFor.
 	Shown int
+	// Sent is where the look stands among what its window sent.
+	Sent Sent
+}
+
+// Sent is where a look or an Ahead stands among what its window sent: the
+// window's own name, and how many it had sent before. Requests reach the
+// Go side in any order, since each is served on a goroutine of its own,
+// so the newest is the one the window sent last, not the one that came
+// last. An Ahead sent a millisecond before the newest once came after it
+// and took its place, and the frames of the word beside were never read.
+// A request with no window's name stands nowhere and is the newest when
+// it comes.
+type Sent struct {
+	Window string
+	N      uint64
+}
+
+// before says the window sent s before t.
+func (s Sent) before(t Sent) bool {
+	return s.Window != "" && s.Window == t.Window && s.N < t.N
 }
 
 // Seen is a frame sent for a look: which frame of the grid, where it
@@ -192,6 +215,13 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 		w.look = l
 	}
 	if !l.Follow {
+		if l.Sent.before(s.lastLook) {
+			// The window has sent a newer look, which took this one's
+			// place before it came.
+			s.mu.Unlock()
+			return Seen{}, ErrOvertaken
+		}
+		s.lastLook = l.Sent
 		s.overtake(l)
 	}
 	w.back = l.Moving && l.Shown > l.Frame && l.Shown-l.Frame <= lookSlow
@@ -571,6 +601,8 @@ type Ahead struct {
 	// Ahead says it let go. A card's seek stood between the hand and the
 	// frame under it, issue #596.
 	Held bool
+	// Sent is where it stands among what its window sent.
+	Sent Sent
 }
 
 type aheadWork struct {
@@ -645,6 +677,13 @@ func (s *Schedule) Ahead(ctx context.Context, a Ahead) ([]Seen, error) {
 		work.todo = append(work.todo, aheadSpan{from: f, to: f})
 	}
 	s.mu.Lock()
+	if a.Sent.before(s.lastAhead) {
+		// The window has sent a newer Ahead, which took this one's place
+		// before it came.
+		s.mu.Unlock()
+		return nil, ErrOvertaken
+	}
+	s.lastAhead = a.Sent
 	if old := s.ahead; old != nil {
 		s.ahead = nil
 		old.done <- aheadDone{err: ErrOvertaken}

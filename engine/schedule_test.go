@@ -765,6 +765,72 @@ func TestANewerAheadStopsTheOneBefore(t *testing.T) {
 	dec.none(t)
 }
 
+// An Ahead the window sent before the newest one, which reached the Go
+// side after it, is answered as overtaken and stops nothing: the newest
+// one reads on. The window paused a play and sent the frames of the
+// playhead it stopped on a millisecond after an older ask, which came
+// last and took its place, so a step to the next word waited for its
+// frame.
+func TestAnAheadSentBeforeTheNewestTakesNothingsPlace(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	newest := aheadOf([]int{50}, nil)
+	newest.Sent = Sent{Window: "a", N: 2}
+	read := aheadFor(s, newest)
+	word := dec.next(t)
+	older := aheadOf([]int{300}, nil)
+	older.Sent = Sent{Window: "a", N: 1}
+	if got := <-aheadFor(s, older); !errors.Is(got.err, ErrOvertaken) || got.frames != nil {
+		t.Fatalf("the Ahead sent before the newest got %v, %v, want it overtaken", got.frames, got.err)
+	}
+	for f := 49; f <= 50+lookAhead; f++ {
+		if err := word.give(t, f); f < 50+lookAhead && err != nil {
+			t.Fatalf("the newest Ahead stopped at %d: %v", f, err)
+		}
+	}
+	if got := <-read; got.err != nil || len(got.frames) != 6 {
+		t.Fatalf("the newest Ahead got %v, %v", got.frames, got.err)
+	}
+	// Another window's ask is the newest when it comes.
+	other := aheadOf([]int{300}, nil)
+	other.Sent = Sent{Window: "b", N: 1}
+	read = aheadFor(s, other)
+	st := dec.next(t)
+	if st.from != 299 {
+		t.Fatalf("another window's Ahead was read from %d", st.from)
+	}
+	for f := 299; f <= 300+lookAhead; f++ {
+		_ = st.give(t, f)
+	}
+	if got := <-read; got.err != nil {
+		t.Fatalf("another window's Ahead got %v", got.err)
+	}
+}
+
+// A look the window sent before the newest one, which reached the Go side
+// after it, is answered as overtaken and leaves the newest place waiting:
+// the decoder goes on to where the hand is, not to where it was.
+func TestALookSentBeforeTheNewestTakesNothingsPlace(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	newest := rest(200)
+	newest.Sent = Sent{Window: "a", N: 2}
+	place := lookFor(s, newest)
+	st := dec.next(t)
+	older := rest(48)
+	older.Sent = Sent{Window: "a", N: 1}
+	if got := <-lookFor(s, older); !errors.Is(got.err, ErrOvertaken) {
+		t.Fatalf("the look sent before the newest got %+v, %v, want it overtaken", got.seen, got.err)
+	}
+	_ = st.give(t, 199)
+	_ = st.give(t, 200)
+	if got := <-place; got.err != nil || got.seen.Frame != 200 {
+		t.Fatalf("the newest look got %+v, %v", got.seen, got.err)
+	}
+}
+
 // What the window holds is neither read nor handed over again, and what
 // the schedule kept already is handed over with no decoding.
 func TestTheWindowIsHandedOnlyWhatItLacks(t *testing.T) {

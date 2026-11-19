@@ -251,7 +251,12 @@ closed for standing unused.
   `/frames/look`: the frame under it, whether the hand moves, and which
   frame is on screen. The newest place wins: a look for a place the hand
   has left is answered with nothing as a newer one comes, and the decoder
-  stops working for it between two frames. Before, the interface chose
+  stops working for it between two frames. The newest is the one the
+  interface sent last, not the one that came last: Go serves each
+  request on a goroutine of its own, so each look and each ask to read
+  ahead carries the window's name and how many it had sent, `engine.Sent`,
+  and one sent before the newest is answered with nothing when it comes.
+  Before, the interface chose
   the streams, parked a place behind a stream that had not given its
   first frame, and a let-go waited up to 950 ms on Tim's Mac, issue #924.
   - A click or a step opens from the frame before its place and reads
