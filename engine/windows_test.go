@@ -51,6 +51,34 @@ func TestSearchPasses(t *testing.T) {
 	}
 }
 
+// A window was searched before when a search read some of it, more
+// than the half second an edge may be off by, and Search then says it
+// looks again.
+func TestSearched(t *testing.T) {
+	pass := func(from, to float64, times int) Pass { return Pass{timed.Window{Start: from, End: to}, times} }
+	passes := []Pass{pass(0, 600, 1), pass(600, 1200, 0), pass(1200, 1800, 2), pass(1800, 2400, 0)}
+	for _, c := range []struct {
+		name     string
+		from, to float64
+		want     bool
+	}{
+		{"inside a searched part", 100, 400, true},
+		{"in a part nobody searched", 700, 1100, false},
+		{"over a searched part and one that was not", 500, 900, true},
+		{"touching a searched part at its edge", 600, 1200, false},
+		{"reaching half a second into a searched part", 599.5, 1200.5, false},
+		{"reaching a second into a searched part", 599, 1200, true},
+		{"over the last part, nobody searched", 1800, 2400, false},
+	} {
+		if got := Searched(passes, timed.Window{Start: c.from, End: c.to}); got != c.want {
+			t.Errorf("%s, %.1f to %.1f: searched %v, want %v", c.name, c.from, c.to, got, c.want)
+		}
+	}
+	if Searched(nil, timed.Window{Start: 0, End: 600}) {
+		t.Error("a video with no passes says it was searched")
+	}
+}
+
 // The window moves on when the app chooses it, from where the fewest
 // searches have been. Moved here from the workspace with the window's
 // one owner, #458.

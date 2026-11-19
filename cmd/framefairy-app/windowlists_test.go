@@ -51,7 +51,7 @@ func TestEveryListTheWindowReadsIsMadeWhereItsTypeIsBuilt(t *testing.T) {
 	keep(svc.Licences())
 	keep(svc.StopListening())
 	sent = append(sent, svc.framingOf(engine.SourceInfo{}, nil, nil), svc.Library(), svc.Episode(mine[1]),
-		svc.Setup(ctx), svc.ReportDraft(), svc.dropFiles(nil), svc.CaptionStart(), coverageOf(nil, 0),
+		svc.Setup(ctx), svc.ReportDraft(), svc.dropFiles(nil), svc.CaptionStart(),
 		Dictation{Said: copySaid(nil)})
 
 	seen, null := map[string]bool{}, map[string]bool{}

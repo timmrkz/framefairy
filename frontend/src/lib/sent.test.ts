@@ -13,7 +13,6 @@ describe("a state sent made whole", () => {
     rev,
     status: { source: video } as EpisodeStatus,
     clips,
-    coverage: { passes: [] },
     jobs: [],
     order: order?.map(([key, hash]) => ({ key, hash })),
   });

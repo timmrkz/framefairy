@@ -6,7 +6,7 @@
 // video again. See
 // docs/decisions/2026-10-30-a-videos-state-in-one-session.md and
 // docs/decisions/2026-11-01-every-rule-of-the-workspace-in-go.md.
-import type { ClipEntry, CoverageView, EpisodeStatus, Job, KeptWindow, Marking, VideoState, WindowView } from "./api";
+import type { ClipEntry, EpisodeStatus, Job, KeptWindow, Marking, VideoState, WindowView } from "./api";
 import type { JobStore } from "./state.svelte";
 import { said } from "./said";
 import { unchanged } from "./unchanged";
@@ -46,7 +46,6 @@ export class EpisodeSession {
   // first is in.
   status = $state.raw<EpisodeStatus | null>(null);
   clips = $state.raw<ClipEntry[]>([]);
-  coverage = $state.raw<CoverageView>({ passes: [] });
   // Where I and O can make a clip, from the newest state kept.
   marking = $state.raw<Marking | null>(null);
   // The rev of the newest state kept.
@@ -142,7 +141,6 @@ export class EpisodeSession {
       this.rev = state.rev;
       this.status = same(this.status, state.status);
       this.clips = fresh ? state.clips : unchanged(this.clips, state.clips);
-      this.coverage = same(this.coverage, state.coverage);
       this.marking = same(this.marking, state.marking ?? null);
       this.jobs = state.jobs;
       kept = true;

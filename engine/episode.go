@@ -146,6 +146,10 @@ type EpisodeStatus struct {
 	// where the parts around the playhead are heard the app offers
 	// neither there, see MarkingOf.
 	Said *[2]float64 `json:"said,omitempty"`
+	// Speechless says the whole video is transcribed and nobody speaks in
+	// it: no clip can be found in it, which the clip list says for as long
+	// as it is true, #831.
+	Speechless bool `json:"speechless,omitempty"`
 	// Measured is how many seconds of the loudness are measured, which is
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
 	// all of it. It runs ahead of the transcript, where the clip timeline
@@ -153,6 +157,10 @@ type EpisodeStatus struct {
 	Measured      float64      `json:"measured"`
 	MeasuredParts [][2]float64 `json:"measuredParts"`
 	MeasuredAll   bool         `json:"measuredAll"`
+	// Silent says all of the loudness is measured and nothing in it is
+	// loud enough to draw, so the clip timeline says No sound over its
+	// flat line, which on its own read as an empty clip timeline, #831.
+	Silent bool `json:"silent,omitempty"`
 	// Loudness changes whenever what Loudness gives for the episode does:
 	// as more is measured, and as more is heard while the measuring has
 	// not reached the end, since the transcript's loudness lies under the
@@ -211,13 +219,16 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 			span := *said
 			st.Said = &span
 		}
+		st.Speechless = t.done && t.said == nil
 		if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
 			st.Covered = st.Heard[0][1]
 		}
 	} else if errors.Is(err, ErrNoTranscript) && fileio.Exists(fsys, whole) {
 		st.TranscriptStale = true
 	}
-	st.MeasuredParts, st.MeasuredAll = LevelsReach(fsys, source)
+	if file, _, ok := readLevelsFile(fsys, source); ok {
+		st.MeasuredParts, st.MeasuredAll, st.Silent = partSeconds(file.Parts), file.Done, file.silent()
+	}
 	for _, p := range st.MeasuredParts {
 		st.Measured += p[1] - p[0]
 	}

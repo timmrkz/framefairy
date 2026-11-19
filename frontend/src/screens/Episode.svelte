@@ -49,7 +49,6 @@
     inEpisode,
     endInEpisode,
     Newest,
-    timesIn,
     frameAt,
     frameMiddle,
     live as going,
@@ -165,8 +164,6 @@
   let click = "";
   let clicks = 0;
   let time = $state(0);
-  // Where the model has already looked. A window is only drawn outside it.
-  const coverage = $derived(session.coverage);
   // The clip chosen, by a hand or by the app, which the Go side decides
   // and sends in the video's state, see choose.go. A hand's pick shows at
   // once, see EpisodeSession.pick.
@@ -1024,7 +1021,10 @@
     // counts what the search it carries on wrote: one called off once its
     // clips were written had nothing left to write, and its row said
     // Nothing new found, Tim's report of 25 October, 21.40.
-    if (last?.state !== "done" || (last.ended !== "nothing" && last.ended !== "short")) return null;
+    if (last?.state !== "done" || (last.ended !== "nothing" && last.ended !== "silent" && last.ended !== "short")) return null;
+    // A video nobody speaks in at all says so in a row that stays, see
+    // speechless, rather than in one that runs down.
+    if (last.ended === "silent" && status?.speechless) return null;
     const job = last.id;
     if (told[job] === 0) return null;
     const fades = {
@@ -1039,6 +1039,17 @@
     const start = last.from ?? 0;
     const end = last.to && last.to > 0 ? last.to : duration;
     const window = `Window ${clock(start)} to ${clock(end)}`;
+    // Nothing said in the window is what the video is, not a failure, so
+    // it is said in the row, with no toast and no Report, #831.
+    if (last.ended === "silent") {
+      return {
+        job,
+        what: "No speech found",
+        left: window,
+        full: `${window}. Nobody speaks in it, so there are no clips to find`,
+        fades,
+      };
+    }
     if (last.ended === "short") {
       return {
         job,
@@ -1063,7 +1074,21 @@
   });
   // The news first: with every clip removed, a search that found nothing
   // says so, and the row that stands for an empty list comes after it.
-  const note = $derived(foundNothing ?? emptied);
+  // Nobody speaks anywhere in the video, as the Go side says once all of
+  // it is transcribed. The row says so for as long as that is true, since
+  // an empty list with no reason looked broken, #831. A window with no
+  // speech in a video with speech elsewhere says so once, in foundNothing.
+  const speechless = $derived.by(() => {
+    // A card of a clip made by hand still on its way, or one that failed,
+    // is no clip, so the row stands under it.
+    if (busy || stopped || !status?.speechless || shown.length > 0 || closing.length > 0) return null;
+    return {
+      what: "No speech in this video",
+      left: "Nobody speaks in it",
+      full: "The whole video is transcribed and nobody speaks in it, so there are no clips to find",
+    };
+  });
+  const note = $derived(foundNothing ?? speechless ?? emptied);
   const coming = $derived(
     shown.length +
       onTheWay.length +
@@ -1076,12 +1101,12 @@
           ? count
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
-            stopped || foundNothing ? 1 : 0),
+            stopped || foundNothing || speechless ? 1 : 0),
   );
-  // Whether the window has been searched before, all of it or a part.
-  // Search then looks there again, for moments its searches did not bring,
-  // and every clip there is stays.
-  const searchedBefore = $derived(timesIn(coverage.passes, from, to) > 0);
+  // Whether the window has been searched before, all of it or a part, as
+  // the Go side says in the video's state. Search then looks there again,
+  // for moments its searches did not bring, and every clip there is stays.
+  const searchedBefore = $derived(!!win?.searched);
   // A clip taken out leaves the track at once. Its row stays a moment
   // longer, but that row is what became of it, not a clip.
   //
@@ -3559,6 +3584,7 @@
         {duration}
         heard={saved}
         loudnessStamp={status?.loudness ?? ""}
+        soundless={!!status?.silent}
         {time}
         shown={shownMoment}
         locked={renderingCurrent || (!current && !!making)}

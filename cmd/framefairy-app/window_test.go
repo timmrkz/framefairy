@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -93,6 +96,39 @@ func TestTheStateCarriesTheWindowFittedToWhatASearchReads(t *testing.T) {
 	}
 	if kept := keptWindow(svc, source); kept == nil || !sameWindow(*kept, w.KeptWindow) {
 		t.Errorf("the window kept is %+v, not the one fitted, %+v", kept, w.KeptWindow)
+	}
+}
+
+// The state says whether a search read the window before, so Search
+// says it looks again: a window over the part a search read says so, one
+// past it does not. The interface counted the searches over the window
+// itself before, #610.
+func TestTheStateSaysWhetherTheWindowWasSearched(t *testing.T) {
+	t.Parallel()
+	svc, source, duration := anUnevenVideo(t)
+	ctx := context.Background()
+	plan := filepath.Join(engine.LogsDir(source), "clips-0-600.json")
+	searched := `{"source":"ep.mp4","planned_with":{"from":0,"to":600},"clips":[]}`
+	if err := afero.WriteFile(svc.store.files, plan, []byte(searched), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		from, to float64
+		want     bool
+	}{{100, 400, true}, {450, 750, true}, {600, 900, false}, {1800, 2100, false}} {
+		if err := svc.chooseWindow(source, c.from, c.to, c.to-c.from, true); err != nil {
+			t.Fatal(err)
+		}
+		st, err := svc.State(ctx, source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Window == nil || st.Window.From != c.from || st.Window.To != c.to {
+			t.Fatalf("the window %v–%v s came as %+v", c.from, c.to, st.Window)
+		}
+		if st.Window.Searched != c.want {
+			t.Errorf("the window %v–%v s of %v s says searched %v, with 0–600 s searched once", c.from, c.to, duration, st.Window.Searched)
+		}
 	}
 }
 

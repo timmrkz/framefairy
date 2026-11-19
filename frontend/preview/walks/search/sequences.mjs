@@ -275,9 +275,12 @@ export default [
   {
     // Issue #450: the card of a clip made by hand that failed said why in
     // its second line, cut to a line. A video with no speech has nothing
-    // to make a clip of, which the clip finds once it has heard it.
+    // to make a clip of, which the clip finds once it has heard it. Its
+    // search is done, not failed, and says so in its row, issue #831. A
+    // video with no sound at all is the same, and its clip timeline says
+    // No sound.
     name: "a clip made by hand that failed says where it lies, and why in a toast",
-    steps: [["speech", "wordless"], ["speech", "hold"], ["add", 120], ["wait for", "Cancel"], ["hand failed"]],
+    steps: [["speech", "wordless"], ["speech", "hold"], ["add", 120], ["wait for", "Cancel"], ["hand failed"], ["no speech"], ["no sound", 20]],
   },
   {
     // Tim on #456: I at the end of the video made a card that could only

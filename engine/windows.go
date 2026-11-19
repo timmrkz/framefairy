@@ -80,6 +80,21 @@ func SearchPasses(plans []PlanSummary, duration float64) []Pass {
 	return out
 }
 
+// Searched says whether a search has read any of w, by the parts an
+// episode was read in, see SearchPasses. Search then looks there again
+// for moments the searches before did not bring, and keeps every clip
+// there is, which its title says. A searched part that reaches into w by
+// half a second or less is not counted, the room the rest of the app
+// gives an edge.
+func Searched(passes []Pass, w timed.Window) bool {
+	for _, p := range passes {
+		if p.Times > 0 && p.End > w.Start+0.5 && p.Start < w.End-0.5 {
+			return true
+		}
+	}
+	return false
+}
+
 // NextWindow is the window the app chooses by itself: where the fewest
 // searches have been, earliest first, and at most one window of it, size
 // long, see SuggestedWindow. The first round walks the episode from its

@@ -78,9 +78,6 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if err := svc.Look(other, 0, 10); err == nil {
 		t.Error("Look took a file that is not in the library")
 	}
-	if _, err := svc.Coverage(ctx, other); err == nil {
-		t.Error("Coverage answered for a file that is not in the library")
-	}
 	if _, err := svc.State(ctx, other); err == nil {
 		t.Error("State answered for a file that is not in the library")
 	}

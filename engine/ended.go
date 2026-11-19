@@ -10,6 +10,9 @@ const (
 	// EndedNothing is a search done that found no moment beyond the
 	// clips there are.
 	EndedNothing = "nothing"
+	// EndedSilent is a search done that found nothing because nothing is
+	// said in its window, see ErrNoSpeech.
+	EndedSilent = "silent"
 	// EndedShort is a search done that found nothing because the video
 	// is shorter than Shortest, so it holds one clip, already found.
 	EndedShort = "short"
@@ -31,6 +34,8 @@ func SearchEnded(r JobRecord, done bool, found int, heard [][2]float64, duration
 		switch {
 		case found > 0:
 			return EndedFound
+		case r.Silent:
+			return EndedSilent
 		case duration > 0 && duration < r.Min:
 			return EndedShort
 		default:

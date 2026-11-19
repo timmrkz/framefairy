@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
+	"framefairy/engine/timed"
 )
 
 // The window of a video: the part of it a search reads, drawn on the
@@ -79,6 +80,10 @@ type WindowView struct {
 	// and once it ends. The workspace shows it back from the press of Stop
 	// transcribing, see Episode.svelte.
 	Hidden bool `json:"hidden,omitempty"`
+	// Searched is that a search has read some of the window before, see
+	// engine.Searched, so Search looks there again and keeps the clips
+	// there are, which its title says.
+	Searched bool `json:"searched,omitempty"`
 }
 
 // windowFor is the window of the video whose state st is, on a video of
@@ -101,8 +106,10 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 	limits := func(w KeptWindow) engine.WindowLimits {
 		return o.Limits(r, duration, w.To-w.From, s.store.Settings().targetFor(w.To-w.From))
 	}
+	passes := engine.SearchPasses(st.Status.Plans, duration)
 	view := func(w KeptWindow, l engine.WindowLimits) *WindowView {
-		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: o.Min, Longest: o.Max, Hidden: wholeHeard(st.Jobs)}
+		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: o.Min, Longest: o.Max, Hidden: wholeHeard(st.Jobs),
+			Searched: engine.Searched(passes, timed.Window{Start: w.From, End: w.To})}
 	}
 	l := limits(w)
 	if searchHolds(st.Jobs) {
