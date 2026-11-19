@@ -301,6 +301,8 @@ export class AppFrames {
   paused: () => boolean = () => true;
   // The near frames asked of the Go side, and the place asked for next.
   private nearAsk = false;
+  // The looks on their way, by the rank they ask for, see look.
+  private asking = new Map<number, Promise<unknown>>();
   private nearNext = -1;
   // first is the size the first frame was asked at, for the walks.
   // keptRanks are the ranks of the frames last handed over from the kept
@@ -407,6 +409,17 @@ export class AppFrames {
   // it, put up as a frame passing, after which the place is asked again. A
   // look a newer one took the place of comes back with nothing.
   private async look(w: Waiter) {
+    const was = this.asking.get(w.rank);
+    if (was) {
+      // The same frame is asked for already, the frame under the hand and
+      // the first of the play cued there as the hand lets go: one answer
+      // serves both, and the frame is sent once. Sent twice, the second
+      // came 40 ms after the first, and the cue waited for it.
+      await was;
+      if (w.gone || this.closed) w.done(null);
+      else this.route(w);
+      return;
+    }
     const { width, height } = this.size();
     this.stats.first ||= `${width}x${height}`;
     this.stats.looks++;
@@ -420,7 +433,10 @@ export class AppFrames {
     });
     if (w.moving) q.set("move", "1");
     if (w.follows) q.set("follow", "1");
-    const got = await this.puller.pull(`/frames/look?${q}`, width, height);
+    const asked = this.puller.pull(`/frames/look?${q}`, width, height);
+    this.asking.set(w.rank, asked);
+    const got = await asked;
+    if (this.asking.get(w.rank) === asked) this.asking.delete(w.rank);
     if (this.closed) {
       for (const { frame } of got.frames) frame.close();
       w.done(null);

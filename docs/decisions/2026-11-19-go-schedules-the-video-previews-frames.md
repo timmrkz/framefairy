@@ -274,7 +274,8 @@ request."
   and tested in Go. A fast drag's runs read on past their place and were
   sent the frames around it, which only kept the decoder from the next
   place, so a hand that moves more than two frames at a time gets
-  neither. A slow drag to the left stood still at the end of each
+  neither: its run holds right after the place, and reads on once the
+  hand rests there or a play is cued there, with no second seek. A slow drag to the left stood still at the end of each
   batch read behind it, so the next batch is read while the hand is
   still among the frames of the one before. A run with its key frame
   first made a picture of every frame between its key frame and its

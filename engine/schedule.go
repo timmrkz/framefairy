@@ -151,8 +151,11 @@ type lookRun struct {
 	// done is closed once the run's stream has ended, see Near.
 	done chan struct{}
 	// passing says the newest look the run answers passes over the frames
-	// around its place, see passes: the run ends at its target.
+	// around its place, see passes: the run holds at its target, see hold.
 	passing bool
+	// ctx is the run's, and wake, while it holds, lets it read on.
+	ctx  context.Context
+	wake chan struct{}
 	// behind says the run reads the frames before a hand that steps back
 	// slowly, see readBehind. It reads ahead of the hand, the way ahead
 	// does, but for the hand, not for an Ahead.
@@ -193,8 +196,12 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 	}
 	w.back = l.Moving && l.Shown > l.Frame && l.Shown-l.Frame <= lookSlow
 	if k, ok := s.kept.get(key); ok {
-		if r := s.run; !l.Follow && r != nil && (!r.ahead || r.behind && !l.Moving) && !r.covers(l) {
+		if r := s.run; !l.Follow && r != nil && (!r.ahead || r.behind && !l.Moving) && !r.covers(l) && !r.after(l) {
 			s.stopRun()
+		}
+		if r := s.run; r != nil && !r.ahead && r.after(l) {
+			r.target = max(r.target, l.Frame)
+			r.readOn(l)
 		}
 		if w.back {
 			s.readBehind(l)
@@ -210,6 +217,9 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 		// The run for the place reads on to the frames after it, see got.
 		s.follows = append(s.follows, w)
 		reaches := r != nil && !r.ahead && r.grid == l.Grid && r.w == l.W && r.h == l.H && l.Frame >= r.next
+		if reaches {
+			r.readOn(l)
+		}
 		if !reaches && (r == nil || s.waiting == nil) {
 			s.stopRun()
 			s.startFor(w)
@@ -218,7 +228,7 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 		s.waiting = w
 		r.target = max(r.target, l.Frame)
 		r.ahead, r.behind = false, false
-		r.passing = passes(l)
+		r.readOn(l)
 	case r != nil && !r.gave && r.moving && l.Moving:
 		// The decoder's first frame for a place the hand passed comes
 		// first, and the run for this place starts after it, see got. A
@@ -329,7 +339,7 @@ func (s *Schedule) startFor(w *lookWaiter) {
 		from = max(0, l.Frame-1)
 	}
 	ctx, stop := context.WithCancel(context.Background())
-	r := &lookRun{grid: l.Grid, w: l.W, h: l.H, from: from, target: l.Frame, moving: l.Moving, next: from, stop: stop, done: make(chan struct{}), passing: passes(l)}
+	r := &lookRun{grid: l.Grid, w: l.W, h: l.H, from: from, target: l.Frame, moving: l.Moving, next: from, stop: stop, done: make(chan struct{}), passing: passes(l), ctx: ctx}
 	s.run = r
 	var skip func() float64
 	if key {
@@ -418,11 +428,53 @@ func (s *Schedule) got(r *lookRun, at float64, picture []byte) error {
 	for _, w := range s.follows {
 		last = max(last, w.look.Frame)
 	}
-	if frame >= last+lookAhead || frame >= last && r.passing {
+	if frame >= last && r.passing && frame < last+lookAhead {
+		return s.hold(r)
+	}
+	if frame >= last+lookAhead {
 		s.run = nil
 		return errLookDone
 	}
 	return nil
+}
+
+// hold keeps a run of a hand that passes over the frames around its
+// place where it is, at the frame after the place, with nothing decoded
+// and nothing made into a picture: the hand rests there once it lets go,
+// and a play cued there wants the frames after it, which the run then
+// reads on to with no second seek. A look elsewhere stops it, one the
+// run covers or the hand resting on its place lets it read on, see
+// readOn. Under the lock, which it lets go of while it holds.
+func (s *Schedule) hold(r *lookRun) error {
+	wake := make(chan struct{})
+	r.wake = wake
+	s.mu.Unlock()
+	select {
+	case <-wake:
+	case <-r.ctx.Done():
+	}
+	s.mu.Lock()
+	if s.run != r || r.ctx.Err() != nil {
+		return errLookDone
+	}
+	return nil
+}
+
+// readOn lets a run that holds read on, for a look that wants the frames
+// after its place. Under the lock.
+func (r *lookRun) readOn(l Hand) {
+	r.passing = passes(l)
+	if r.wake != nil && !r.passing {
+		close(r.wake)
+		r.wake = nil
+	}
+}
+
+// after tells whether the run stands right after the place of a look, the
+// way a run that holds does: the frames it reads next are the ones after
+// the place.
+func (r *lookRun) after(l Hand) bool {
+	return r.grid == l.Grid && r.w == l.W && r.h == l.H && r.next == l.Frame+1
 }
 
 // nearerThanShown tells whether a frame on the way to the place of a look is nearer

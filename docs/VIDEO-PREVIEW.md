@@ -264,9 +264,10 @@ closed for standing unused.
     gave its first frame waits for that frame, so the picture moves at
     all while the hand outruns the decoder. A hand that moves more than
     two frames at a time passes over the frames around each place, so
-    its run ends at the place and nothing around it goes to the
-    interface: on a fast drag they only kept the decoder from the next
-    place.
+    nothing around it goes to the interface, and its run holds right
+    after the place, decoding nothing: on a fast drag those frames only
+    kept the decoder from the next place. Once the hand rests there, or
+    a play is cued there, the run reads on with no second seek.
   - A hand a frame or two back from the frame on screen goes back
     slowly, and the run opens 15 frames before the place, `lookBack`,
     with no key frame first, so the next steps back find their frames.

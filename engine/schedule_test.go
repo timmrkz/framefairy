@@ -267,37 +267,77 @@ func TestADragShowsTheKeyFramesOnTheWay(t *testing.T) {
 		t.Fatalf("the stream skips to %v, not to the place at %v", at, lookGrid.At(170))
 	}
 	// The hand went 20 frames at a time, past the frames around each
-	// place, so the stream ends at the place.
+	// place, so the stream holds after the place, with nothing decoded.
 	again = lookFor(s, move(170, 150))
 	waits(s, move(170, 150))
-	if err := now.give(t, 170); !errors.Is(err, errLookDone) {
-		t.Fatalf("the stream of a fast hand read on past its place: %v", err)
-	}
+	held := make(chan error, 1)
+	go func() { held <- now.give(t, 170) }()
 	if got := <-again; got.seen.Frame != 170 || !got.seen.Exact {
 		t.Fatalf("the place got %+v, %v, want its own frame", got.seen, got.err)
 	}
-	// A hand that goes on slowly has its stream read on a little past the
-	// place, so its next frames are found on the way, and a step there
-	// opens no stream.
+	until(s, func() bool { return s.run != nil && s.run.wake != nil })
+	// A hand that goes on slowly from there has the stream read on, so its
+	// next frames are found on the way, and a step there opens no stream.
 	step := lookFor(s, move(172, 170))
 	waits(s, move(172, 170))
-	slow := dec.next(t)
-	_ = slow.give(t, 172)
+	if err := <-held; err != nil {
+		t.Fatalf("the stream that held ended with %v", err)
+	}
+	_ = now.give(t, 171)
+	_ = now.give(t, 172)
 	if got := <-step; got.seen.Frame != 172 || !got.seen.Exact {
 		t.Fatalf("the slow step got %+v, %v", got.seen, got.err)
 	}
 	step = lookFor(s, move(173, 172))
 	waits(s, move(173, 172))
-	_ = slow.give(t, 173)
+	_ = now.give(t, 173)
 	if got := <-step; got.seen.Frame != 173 || !got.seen.Exact {
 		t.Fatalf("the step on got %+v, %v", got.seen, got.err)
 	}
 	for f := 174; f < 173+lookAhead; f++ {
-		if err := slow.give(t, f); err != nil {
+		if err := now.give(t, f); err != nil {
 			t.Fatalf("the stream stopped at frame %d, before the frames after the place: %v", f, err)
 		}
 	}
-	if err := slow.give(t, 173+lookAhead); !errors.Is(err, errLookDone) {
+	if err := now.give(t, 173+lookAhead); !errors.Is(err, errLookDone) {
+		t.Fatalf("the stream read on past the frames after the place: %v", err)
+	}
+	dec.none(t)
+}
+
+// A click far along the clip timeline grips the playhead, and the frames
+// after its place come once the hand lets go, from the stream that found
+// the place, with no second seek: a play cued there wants them.
+func TestALetGoReadsOnWhereTheClickHeld(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	click := lookFor(s, move(300, 10))
+	st := dec.next(t)
+	_ = st.give(t, 280)
+	if got := <-click; got.seen.Frame != 280 {
+		t.Fatalf("the click got %+v, %v, want its key frame on the way", got.seen, got.err)
+	}
+	click = lookFor(s, move(300, 280))
+	waits(s, move(300, 280))
+	held := make(chan error, 1)
+	go func() { held <- st.give(t, 300) }()
+	if got := <-click; got.seen.Frame != 300 || !got.seen.Exact {
+		t.Fatalf("the click got %+v, %v", got.seen, got.err)
+	}
+	until(s, func() bool { return s.run != nil && s.run.wake != nil })
+	if got := <-lookFor(s, rest(300)); !got.seen.Kept {
+		t.Fatalf("letting go got %+v, %v", got.seen, got.err)
+	}
+	if err := <-held; err != nil {
+		t.Fatalf("the stream that held ended with %v", err)
+	}
+	for f := 301; f < 300+lookAhead; f++ {
+		if err := st.give(t, f); err != nil {
+			t.Fatalf("the stream stopped at %d: %v", f, err)
+		}
+	}
+	if err := st.give(t, 300+lookAhead); !errors.Is(err, errLookDone) {
 		t.Fatalf("the stream read on past the frames after the place: %v", err)
 	}
 	dec.none(t)

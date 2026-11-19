@@ -247,6 +247,22 @@ describe("a place while the video preview stands still", () => {
     app.close();
   });
 
+  // The frame under the hand and the first frame of the play cued there
+  // as the hand lets go are the same frame: it is asked for once and sent
+  // once, and both get it.
+  test("asked twice at once is one look", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    app.paused = () => true;
+    const still = app.frame(40, 0, undefined, true);
+    await pulls(1);
+    const cue = app.frame(40, 0, undefined, true);
+    asked[0].give([40], "", true);
+    expect(await rankOf(still)).toBe(40);
+    expect(await rankOf(cue)).toBe(40);
+    expect(asked.length).toBe(1);
+    app.close();
+  });
+
   // A newer place took this one's: the Go side answers with nothing, and
   // the frame under the hand comes for the newer one.
   test("overtaken by a newer one gets nothing", async () => {
