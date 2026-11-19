@@ -274,6 +274,12 @@ copies what it finds nearby, so these are not the pattern for new code.
   case file, and `frameOf` in `frontend/src/lib/keyframes.ts`, #610. The
   crop a keyframe holds is no longer one of them: Go sends each piece's
   crop steps, `engine.CropSteps`, and the window only looks them up.
+- The decoder's schedule in `frontend/src/lib/frames/app.ts`: which
+  frames Go decodes, on which stream, what is read ahead and what waits,
+  `AppFrames`, `Stream` and `Puller`, and the `VideoDecoder` that
+  `AppPictures` plays for `frontend/src/lib/frames/queue.ts`, #924. Go
+  takes it over step by step, see
+  [the decision record](decisions/2026-11-19-go-schedules-the-video-previews-frames.md).
 
 ## Changing the architecture
 

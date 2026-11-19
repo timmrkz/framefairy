@@ -405,9 +405,9 @@ func (f *EpisodeFrames) refused(ctx context.Context, gone chan struct{}, err err
 // and decoding up to it again. A jump a few frames on, or a play after a
 // pause, is then a frame or two of work. Where the closest is a cursor
 // whose stream has just stopped, the playhead it followed jumping, it
-// waits for that cursor to finish the few frames of its batch: the
-// decoder has them to make before it hears anything else on that cursor,
-// and they cost less than a seek. Otherwise it gets the cursor kept last.
+// waits for that cursor to stop, which the decoder does between two
+// frames, see stream, and reads on from where it stopped, which costs
+// less than a seek. Otherwise it gets the cursor kept last.
 // Under the lock.
 func (f *EpisodeFrames) take(kind int, want *place) (uint32, chan framewire.Record) {
 	var id uint32
@@ -624,6 +624,15 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 		}
 	}
 	finish := func() {
+		// Nobody reads on: the decoder ends what it was asked between two
+		// frames, rather than decode on to the end of the batch, which for
+		// an open is every frame from the key frame to the one asked for,
+		// issue #924. The cursor is then handed on as soon as it answers.
+		if pending && kind == pictureCursor {
+			f.mu.Lock()
+			_ = f.send(gone, "stop %d", id)
+			f.mu.Unlock()
+		}
 		if at != nil && pending {
 			f.mu.Lock()
 			if f.gone == gone {

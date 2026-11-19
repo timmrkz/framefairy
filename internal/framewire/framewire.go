@@ -16,9 +16,14 @@
 //	                                        and starts at from
 //	next <cursor> <n> <skip>                up to n frames, none before skip,
 //	                                        or n chunks of sound
+//	stop <cursor>                           a cursor of picture ends what it
+//	                                        was asked before, between two
+//	                                        frames, and answers its batch done
 //	close <cursor>
 //
-// A cursor is of picture or of sound for as long as it is open.
+// A cursor is of picture or of sound for as long as it is open. A stop is
+// read at once, not after the work it ends, so a cursor sent to a place
+// the page has left decodes no further towards it.
 //
 // Every answer is a record of a header and a body. A next is answered by
 // up to n frame records and then one record that ends the batch, or one
