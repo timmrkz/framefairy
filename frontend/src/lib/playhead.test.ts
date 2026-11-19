@@ -363,7 +363,7 @@ describe("an arrow key on the clip timeline", () => {
     expect(arrowStep(key({ shift: true, time: 14.5 }))).toEqual({ to: 15.04, word: true });
   });
 
-  test("with Shift walks the words heard in the cuts until the caption's words arrive", () => {
+  test("with Shift in a clip whose caption lights no word walks the words heard in its cuts", () => {
     expect(arrowStep(key({ shift: true, time: 12, lit: [] }))).toEqual({ to: 15.04, word: true });
   });
 
@@ -373,7 +373,7 @@ describe("an arrow key on the clip timeline", () => {
     expect(arrowStep(key({ shift: true, time: 19 }))).toBe("clip");
   });
 
-  test("with Shift and no words heard yet steps a second, and past the last word heard goes nowhere", () => {
+  test("with Shift before the captions arrive steps a second, and past the last word heard goes nowhere", () => {
     expect(arrowStep(key({ shift: true, time: 12, lit: [], inCuts: [] }))).toEqual({ to: 13, word: false });
     expect(arrowStep(key({ shift: true, time: 14.5, inCuts: [inCuts[0]] }))).toBeNull();
   });

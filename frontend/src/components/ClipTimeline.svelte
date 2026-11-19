@@ -1090,8 +1090,8 @@
   });
 
   // Telling the Go side where the view is waits until the fingers come
-  // to rest. The waveform does not: it is drawn from what
-  // is in hand. Where the view stood when they began is kept until then,
+  // to rest, because each call reads the loudness file, issue #937. The
+  // waveform does not: it is drawn from what is in hand. Where the view stood when they began is kept until then,
   // for the log.
   let settle = 0;
   let swipedFrom: { from: number; to: number } | null = null;
