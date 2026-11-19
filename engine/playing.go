@@ -26,6 +26,11 @@ type PlayAsk struct {
 	Pieces []PlayPiece
 	Loop   bool
 	Moment float64
+	// Cue says the play waits for Go before it takes the decoder: it
+	// hands over the frames kept from its first on, and its sound, so a
+	// press of the space bar starts it at once, and leaves the decoder to
+	// the hand and the reading ahead until then.
+	Cue bool
 }
 
 // PlayFrame is a frame of a play: its shot and its picture, see
@@ -43,6 +48,9 @@ type Play struct {
 	p0   float64
 	ctx  context.Context
 	stop context.CancelFunc
+	// going is closed once the play has the decoder, see Go.
+	going chan struct{}
+	gone  sync.Once
 
 	mu      sync.Mutex
 	program Program
@@ -54,14 +62,32 @@ type Play struct {
 const playDepth = 4
 
 // Play starts a play of the video, which takes the decoder from the hand
-// and from the reading ahead: what they wait for is answered with
-// ErrOvertaken. A newer play, or a look of the hand, stops it.
+// and from the reading ahead, at once or with Go where it is a cue: what
+// they wait for is answered with ErrOvertaken. A newer play, or a look of
+// the hand, stops it once it has the decoder.
 func (s *Schedule) Play(a PlayAsk) *Play {
 	program := NewProgram(a.Pieces, a.Loop)
 	ctx, stop := context.WithCancel(context.Background())
-	p := &Play{s: s, grid: a.Grid, w: a.W, h: a.H, program: program, p0: program.Place(a.Moment), ctx: ctx, stop: stop}
+	p := &Play{s: s, grid: a.Grid, w: a.W, h: a.H, program: program, p0: program.Place(a.Moment), ctx: ctx, stop: stop, going: make(chan struct{})}
+	if !a.Cue {
+		p.Go()
+	}
+	return p
+}
+
+// Go gives the decoder to a cued play, see PlayAsk.Cue. A play that has
+// it already, or was stopped, is left as it is.
+func (p *Play) Go() {
+	s := p.s
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if p.ctx.Err() != nil {
+		return
+	}
+	p.gone.Do(func() { close(p.going) })
+	if s.play == p {
+		return
+	}
 	if old := s.play; old != nil {
 		old.stop()
 	}
@@ -78,7 +104,6 @@ func (s *Schedule) Play(a PlayAsk) *Play {
 		a.done <- aheadDone{err: ErrOvertaken}
 	}
 	s.stopRun()
-	return p
 }
 
 // stopPlay stops the play that has the decoder, for the hand. Under the
@@ -250,6 +275,11 @@ func (p *Play) startRun(ctx context.Context, shots []Shot) *playRun {
 			}
 		}
 		if i == len(shots) {
+			return
+		}
+		select {
+		case <-p.going:
+		case <-ctx.Done():
 			return
 		}
 		err := p.s.frames.Stream(ctx, p.grid, p.grid.At(shots[i].Frame), p.w, p.h, false, nil, func(at float64, picture []byte) error {

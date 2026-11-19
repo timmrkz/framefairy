@@ -124,6 +124,17 @@ func TestAPlayDrawsEveryFrameOfEveryPieceAndNoneFromACut(t *testing.T) {
 	if !near(shots[64].Moment, 60.32) {
 		t.Errorf("its second frame stands at %v", shots[64].Moment)
 	}
+	// The frames either side of each cut are drawn however short a time
+	// they are due for, and no other.
+	var edges []int
+	for k, s := range shots {
+		if s.Edge {
+			edges = append(edges, k)
+		}
+	}
+	if want := []int{0, 62, 63, 109, 110, len(shots) - 1}; !slices.Equal(edges, want) {
+		t.Errorf("the edges are shots %v, not %v", edges, want)
+	}
 }
 
 // A play begun inside a frame drew the frames on a grid from where it

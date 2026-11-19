@@ -226,3 +226,43 @@ func TestAPlaysSoundIsEachPieceCutAtTheSampleAndFadedAtItsEdges(t *testing.T) {
 		}
 	}
 }
+
+// A cued play hands over the frames kept from its first on and leaves the
+// decoder to the hand until the space bar says go: then it reads on from
+// the first frame not kept.
+func TestACuedPlayWaitsForGoBeforeItTakesTheDecoder(t *testing.T) {
+	t.Parallel()
+	d := newHeldDecoder()
+	s := newSchedule(d)
+	s.kept.put(keptKey{grid: lookGrid, w: 4, h: 2, frame: 25}, lookGrid.At(25), []byte{25})
+	looking := lookFor(s, rest(100))
+	waits(s, rest(100))
+	run := d.next(t)
+	p := s.Play(PlayAsk{Grid: lookGrid, W: 4, H: 2, Pieces: []PlayPiece{{1, 1.2}}, Moment: 1, Cue: true})
+	frames := make(chan PlayFrame, 8)
+	go func() {
+		_ = p.Pictures(context.Background(), func(f PlayFrame) error {
+			frames <- f
+			return nil
+		})
+	}()
+	if f := <-frames; f.Frame != 25 || !f.Edge {
+		t.Fatalf("the cue starts with %+v", f)
+	}
+	// The hand's look still has the decoder.
+	for f := 99; f <= 100; f++ {
+		if err := run.give(t, f); err != nil {
+			t.Fatalf("frame %d of the look: %v", f, err)
+		}
+	}
+	if got := <-looking; got.err != nil || got.seen.Frame != 100 {
+		t.Fatalf("the look was answered with %+v", got)
+	}
+	d.none(t)
+	p.Go()
+	run.stopped(t)
+	if st := d.next(t); st.from != 26 {
+		t.Fatalf("the play reads on from %d", st.from)
+	}
+	p.Stop()
+}

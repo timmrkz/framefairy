@@ -61,7 +61,7 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 		t.Errorf("the play goes from %v to %v", play.From, play.End)
 	}
 
-	size := 24 + 32*18*4
+	size := 32 + 32*18*4
 	var pictures []byte
 	for {
 		rec := get("/frames/read", url.Values{"id": {play.Pictures}, "n": {"16"}})
@@ -85,11 +85,15 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 		at := math.Float64frombits(binary.LittleEndian.Uint64(head))
 		moment := math.Float64frombits(binary.LittleEndian.Uint64(head[8:]))
 		begins := math.Float64frombits(binary.LittleEndian.Uint64(head[16:]))
+		edge := math.Float64frombits(binary.LittleEndian.Uint64(head[24:]))
+		if wantEdge := k == 0 || k == 4 || k == 5 || k == 9; (edge == 1) != wantEdge {
+			t.Errorf("frame %d says edge %v", k, edge)
+		}
 		if math.Abs(at-float64(k)*length/10) > 1e-6 || math.Abs(moment-g.At(frame)) > 1e-6 || math.Abs(begins-g.At(frame)) > 1e-6 {
 			t.Errorf("frame %d is drawn at %v, stands at %v and begins at %v", k, at, moment, begins)
 		}
 		look := get("/frames/look", url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {text}, "frame": {fmt.Sprint(frame)}, "shown": {"-1"}})
-		if string(look.Body.Bytes()[8:]) != string(head[24:size]) {
+		if string(look.Body.Bytes()[8:]) != string(head[32:size]) {
 			t.Errorf("frame %d of the play is not the frame a look at %d answers with", k, frame)
 		}
 	}

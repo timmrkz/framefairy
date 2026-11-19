@@ -168,11 +168,15 @@ func (p Program) Place(moment float64) float64 {
 }
 
 // Shot is a frame of a play: the frame of the grid, where on the program
-// it is drawn, and the moment of the video the play stands at there.
+// it is drawn, and the moment of the video the play stands at there. Edge
+// says it is the first or the last frame of its visit, which is drawn
+// however short a time it is due for, since the frames either side of a
+// cut are the ones that say where the cut is.
 type Shot struct {
 	Frame  int
 	At     float64
 	Moment float64
+	Edge   bool
 }
 
 // shotsOf are the shots of one visit, of a play that began at p0 on the
@@ -190,11 +194,12 @@ func shotsOf(g framewire.Grid, v Visit, p0 float64) []Shot {
 	a := g.Holding(moment)
 	b := max(a, g.Holding(math.Max(moment, v.End-frame)))
 	shots := make([]Shot, 0, b-a+1)
-	shots = append(shots, Shot{Frame: a, At: from, Moment: moment})
+	shots = append(shots, Shot{Frame: a, At: from, Moment: moment, Edge: true})
 	for r := a + 1; r <= b; r++ {
 		begins := g.At(r)
 		shots = append(shots, Shot{Frame: r, At: v.From + (begins - v.Start), Moment: begins})
 	}
+	shots[len(shots)-1].Edge = true
 	return shots
 }
 

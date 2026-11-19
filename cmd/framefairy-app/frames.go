@@ -56,6 +56,7 @@ import (
 //	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&pieces=<start>:<end>,...&at=<seconds>[&loop=1]
 //	                                 a play of a clip, its pictures and its
 //	                                 sound as two streams, see servePlay
+//	/frames/play/go?id=<pictures>
 //	/frames/play/loop?id=<pictures>&at=<seconds>[&loop=1]
 //	/frames/read?id=<id>&n=<frames>&skip=<seconds>  frames, see writeFrames
 //	/frames/close?id=<id>
@@ -166,6 +167,8 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 		p.serveOpen(st, w, r)
 	case "/frames/play":
 		p.servePlay(st, w, r)
+	case "/frames/play/go":
+		p.servePlayGo(w, r)
 	case "/frames/play/loop":
 		p.servePlayLoop(w, r)
 	case "/frames/look":

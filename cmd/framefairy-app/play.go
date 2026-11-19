@@ -16,14 +16,16 @@ import (
 // playhead is at, with the size, the grid and the sound card's rate and
 // channels. It answers with two streams, read with /frames/read like any
 // other: the play's pictures, each written with where on the program it is
-// drawn, the moment of the video the play stands at there and where its
-// frame begins, and its sound, each chunk with the sample of the program
-// it starts at and how many moments it holds. And where on the program the
-// play starts and ends, -1 while it loops. A newer play, or a look of the
-// hand, stops it.
+// drawn, the moment of the video the play stands at there, where its frame
+// begins and 1 where it is an edge, see engine.Shot, and its sound, each
+// chunk with the sample of the program it starts at and how many moments
+// it holds. And where on the program the play starts and ends, -1 while it
+// loops. A newer play, or a look of the hand, stops it. A cue waits for
+// /frames/play/go before it takes the decoder, see engine.PlayAsk.
 //
-//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&pieces=<start>:<end>,...&at=<seconds>[&loop=1]
+//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&pieces=<start>:<end>,...&at=<seconds>[&loop=1][&cue=1]
 //	  {"pictures": "...", "sound": "...", "from": <seconds>, "end": <seconds>}
+//	/frames/play/go?id=<pictures>
 //	/frames/play/loop?id=<pictures>&at=<seconds>[&loop=1]  {"end": <seconds>}
 func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) {
 	path, hand, ok := handArgs(st, w, r, false)
@@ -48,13 +50,18 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	play := p.schedule(dec).Play(engine.PlayAsk{Grid: hand.Grid, W: hand.W, H: hand.H, Pieces: pieces, Loop: q.Get("loop") == "1", Moment: at})
+	play := p.schedule(dec).Play(engine.PlayAsk{Grid: hand.Grid, W: hand.W, H: hand.H, Pieces: pieces, Loop: q.Get("loop") == "1", Moment: at,
+		Cue: q.Get("cue") == "1"})
 	grid := hand.Grid
 	// The pictures are the schedule's, kept for a play started there
 	// again, so none is given back.
 	pictures, s := p.startStamped("play", nil, dec.Light, nil, nil, func(ctx context.Context, got func(previewFrame) error) error {
 		return play.Pictures(ctx, func(f engine.PlayFrame) error {
-			return got(previewFrame{at: f.At, stamp: []float64{f.Moment, grid.At(f.Frame)}, data: f.Picture})
+			edge := 0.0
+			if f.Edge {
+				edge = 1
+			}
+			return got(previewFrame{at: f.At, stamp: []float64{f.Moment, grid.At(f.Frame), edge}, data: f.Picture})
 		})
 	})
 	s.play = play
@@ -69,6 +76,17 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) 
 	})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"pictures": pictures, "sound": sound, "from": play.From(), "end": endOf(play.End())})
+}
+
+// servePlayGo gives the decoder to a cued play, see engine.Play.Go.
+func (p *previews) servePlayGo(w http.ResponseWriter, r *http.Request) {
+	s := p.get(r.URL.Query().Get("id"))
+	if s == nil || s.play == nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.play.Go()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // servePlayLoop switches the loop of a play while it plays, at a place on
