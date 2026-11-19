@@ -189,6 +189,10 @@ type lookRun struct {
 	// than end, so the hand's next frames are read on from where it
 	// stands, with no seek, see got.
 	dragged bool
+	// before is the frame before a far place, which the run read from the
+	// place on and so did not read, or -1: it is read once the run is
+	// done, see startFor.
+	before int
 	// idle is closed while the run holds and once it has ended, see Near.
 	idle    chan struct{}
 	resting bool
@@ -378,17 +382,24 @@ func (s *Schedule) stopRun() {
 // Under the lock.
 func (s *Schedule) startFor(w *lookWaiter) {
 	l := w.look
-	from, key := l.Frame, l.Moving
+	from, key, before := l.Frame, l.Moving, -1
 	switch {
 	case l.Follow:
 	case w.back:
 		from, key = max(0, l.Frame-lookBack), false
+	case !l.Moving && l.Shown >= 0 && absInt(l.Frame-l.Shown) > lookBack:
+		// A far place, a click along the clip timeline: its own frame
+		// first, and the frame before it once the frames after it are
+		// read. From the frame before, the frame clicked came a frame
+		// later, 15 to 25 ms in the cloud, and the frame before may lie
+		// before the place's key frame, a whole seek further back.
+		before = l.Frame - 1
 	case !l.Moving:
 		from = max(0, l.Frame-1)
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	r := &lookRun{grid: l.Grid, w: l.W, h: l.H, from: from, target: l.Frame, moving: l.Moving, next: from, stop: stop, done: make(chan struct{}), passing: passes(l), ctx: ctx,
-		dragged: l.Moving && !w.back, idle: make(chan struct{})}
+		dragged: l.Moving && !w.back, idle: make(chan struct{}), before: before}
 	s.run = r
 	var skip func() float64
 	if key {
@@ -485,6 +496,9 @@ func (s *Schedule) got(r *lookRun, at float64, picture []byte) error {
 			return s.hold(r)
 		}
 		s.run = nil
+		if b := r.before; b >= 0 && !s.kept.has(keptKey{grid: r.grid, w: r.w, h: r.h, frame: b}) {
+			s.startBehind(r.grid, r.w, r.h, b, b)
+		}
 		return errLookDone
 	}
 	return nil
@@ -780,9 +794,17 @@ func (s *Schedule) readBehind(l Hand) {
 	if b == 0 || l.Frame-b >= lookBack {
 		return
 	}
-	from := max(0, b-lookBack)
+	s.startBehind(l.Grid, l.W, l.H, max(0, b-lookBack), b-1)
+}
+
+// startBehind starts a run that reads frames before the hand, which
+// nobody waits for: the frames before a slow step back, see readBehind,
+// or the frame before a far place, see before. A look of the hand that
+// covers it takes it over, and one that rests elsewhere stops it. Under
+// the lock.
+func (s *Schedule) startBehind(grid framewire.Grid, w, h, from, to int) {
 	ctx, stop := context.WithCancel(context.Background())
-	r := &lookRun{grid: l.Grid, w: l.W, h: l.H, from: from, target: b - 1, next: from, stop: stop, ahead: true, behind: true, done: make(chan struct{}), idle: make(chan struct{})}
+	r := &lookRun{grid: grid, w: w, h: h, from: from, target: to, next: from, stop: stop, ahead: true, behind: true, done: make(chan struct{}), idle: make(chan struct{})}
 	s.run = r
 	go func() {
 		err := s.frames.Stream(ctx, r.grid, r.grid.At(from), r.w, r.h, false, nil, func(at float64, picture []byte) error {

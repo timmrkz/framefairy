@@ -179,6 +179,45 @@ func TestAClickBringsItsFrameAndTheFramesBesideIt(t *testing.T) {
 	dec.none(t)
 }
 
+// A click far from the frame on screen has its own frame read first, and
+// the frame before it once the frames after it are read. Read from the
+// frame before, the frame clicked came a frame later, and the frame
+// before can lie before the place's key frame, a whole seek further back.
+func TestAFarClickBringsItsOwnFrameFirst(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	far := rest(300)
+	far.Shown = 10
+	click := lookFor(s, far)
+	st := dec.next(t)
+	if st.from != 300 || st.key {
+		t.Fatalf("a far click opened a stream from %d, key first %v, want from its own frame", st.from, st.key)
+	}
+	_ = st.give(t, 300)
+	if got := <-click; got.err != nil || got.seen.Frame != 300 || !got.seen.Exact {
+		t.Fatalf("the click got %+v, %v", got.seen, got.err)
+	}
+	for f := 301; f < 300+lookAhead; f++ {
+		_ = st.give(t, f)
+	}
+	if err := st.give(t, 300+lookAhead); !errors.Is(err, errLookDone) {
+		t.Fatalf("the stream went on past the frames after the click: %v", err)
+	}
+	before := dec.next(t)
+	if before.from != 299 {
+		t.Fatalf("the frame before the click was read from %d", before.from)
+	}
+	if err := before.give(t, 299); !errors.Is(err, errLookDone) {
+		t.Fatalf("the reading of the frame before went on: %v", err)
+	}
+	until(s, func() bool { return s.run == nil })
+	if got := <-lookFor(s, rest(299)); !got.seen.Kept {
+		t.Fatalf("a step back after the click got %+v, %v, want it kept", got.seen, got.err)
+	}
+	dec.none(t)
+}
+
 // A click on another place before the frame came stops the decoder's work
 // for the first at once, and the first click is answered as overtaken.
 func TestTheNewestPlaceWins(t *testing.T) {

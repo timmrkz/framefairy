@@ -260,7 +260,11 @@ closed for standing unused.
   the streams, parked a place behind a stream that had not given its
   first frame, and a let-go waited up to 950 ms on Tim's Mac, issue #924.
   - A click or a step opens from the frame before its place and reads
-    four frames past it, `lookAhead`, so the arrow keys find theirs.
+    four frames past it, `lookAhead`, so the arrow keys find theirs. A
+    click further than 15 frames from the frame on screen opens at its
+    place instead and reads the frame before it last: read first, it
+    held the frame clicked back by a frame, and it may lie a whole seek
+    further back, before the place's key frame.
   - While a drag moves, a run opens with the key frame its seek lands on,
     and that frame is sent on the way when it is nearer the place than
     the frame on screen, so a hand that outruns the decoder sees a frame

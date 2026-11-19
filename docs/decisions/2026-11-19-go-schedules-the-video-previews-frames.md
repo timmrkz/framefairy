@@ -280,6 +280,17 @@ request."
   still among the frames of the one before. A run with its key frame
   first made a picture of every frame between its key frame and its
   place, so those are now decoded and not scaled.
+- Two more came up, one in CI and one in the measurements. Requests
+  reach the Go side in any order, since each is served on a goroutine of
+  its own, and an ask to read ahead sent a millisecond before the newest
+  came after it and took its place, so the frames of the word beside
+  were never read. Each look and each ask now says which window sent it
+  and how many it had sent before, `engine.Sent`, and the newest is the
+  one sent last. And a slow drag to the right stood still now and then:
+  its run read four frames past the place and ended, so the next place
+  past those was a seek of its own, where main had read on in the stream
+  it held. The run of a hand that holds the playhead now holds there
+  instead, and reads on from where it stands.
 - Step 5 found nothing to build. Tim's log of 12 November says a jump's
   seek takes 0 ms, `moved ... 0 ms`, so an index of key frames would
   save nothing, and its key frame came 15 to 16 ms after the open with
