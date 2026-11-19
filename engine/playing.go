@@ -48,9 +48,12 @@ type Play struct {
 	p0   float64
 	ctx  context.Context
 	stop context.CancelFunc
-	// going is closed once the play has the decoder, see Go.
+	// going is closed while the play has the decoder, see Go, and made
+	// again when it gives it back, see Hold. lease is cancelled then, which
+	// stops the decoder's stream, under the schedule's lock.
 	going chan struct{}
-	gone  sync.Once
+	lease context.Context
+	free  context.CancelFunc
 
 	mu      sync.Mutex
 	program Program
@@ -75,8 +78,8 @@ func (s *Schedule) Play(a PlayAsk) *Play {
 	return p
 }
 
-// Go gives the decoder to a cued play, see PlayAsk.Cue. A play that has
-// it already, or was stopped, is left as it is.
+// Go gives the decoder to a cued play, see PlayAsk.Cue, or to one held,
+// see Hold. A play that has it already, or was stopped, is left as it is.
 func (p *Play) Go() {
 	s := p.s
 	s.mu.Lock()
@@ -84,9 +87,17 @@ func (p *Play) Go() {
 	if p.ctx.Err() != nil {
 		return
 	}
-	p.gone.Do(func() { close(p.going) })
 	if s.play == p {
 		return
+	}
+	if p.free != nil {
+		p.free()
+	}
+	p.lease, p.free = context.WithCancel(p.ctx)
+	select {
+	case <-p.going:
+	default:
+		close(p.going)
 	}
 	if old := s.play; old != nil {
 		old.stop()
@@ -104,6 +115,24 @@ func (p *Play) Go() {
 		a.done <- aheadDone{err: ErrOvertaken}
 	}
 	s.stopRun()
+}
+
+// Hold gives the decoder back while the play is paused, so the hand and
+// the reading ahead have it, and keeps everything else: the frames and the
+// sound handed over stay the window's, and Go takes the decoder again and
+// goes on from the next frame. Kept, a paused play held the decoder, and
+// nothing was read ahead until it was closed.
+func (p *Play) Hold() {
+	s := p.s
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.play != p {
+		return
+	}
+	p.free()
+	p.going = make(chan struct{})
+	s.play = nil
+	s.restart()
 }
 
 // stopPlay stops the play that has the decoder, for the hand. Under the
@@ -272,7 +301,7 @@ func (p *Play) startRun(ctx context.Context, shots []Shot) *playRun {
 	}
 	r := &playRun{out: make(chan PlayFrame, playDepth)}
 	key := func(frame int) keptKey { return keptKey{grid: p.grid, w: p.w, h: p.h, frame: frame} }
-	send := func(f PlayFrame) error {
+	send := func(ctx context.Context, f PlayFrame) error {
 		select {
 		case r.out <- f:
 			return nil
@@ -283,43 +312,73 @@ func (p *Play) startRun(ctx context.Context, shots []Shot) *playRun {
 	go func() {
 		defer close(r.out)
 		i := 0
-		for ; i < len(shots); i++ {
-			p.s.mu.Lock()
-			k, ok := p.s.kept.get(key(shots[i].Frame))
-			p.s.mu.Unlock()
-			if !ok {
-				break
+		// Once for every time the play has the decoder: a play held while
+		// this run's frames were on their way goes on from the next one,
+		// which the decoder kept if it had it already.
+		for {
+			for ; i < len(shots); i++ {
+				p.s.mu.Lock()
+				k, ok := p.s.kept.get(key(shots[i].Frame))
+				p.s.mu.Unlock()
+				if !ok {
+					break
+				}
+				if send(ctx, PlayFrame{Shot: shots[i], Picture: k.picture}) != nil {
+					return
+				}
 			}
-			if send(PlayFrame{Shot: shots[i], Picture: k.picture}) != nil {
+			if i == len(shots) {
 				return
 			}
-		}
-		if i == len(shots) {
-			return
-		}
-		select {
-		case <-p.going:
-		case <-ctx.Done():
-			return
-		}
-		err := p.s.frames.Stream(ctx, p.grid, p.grid.At(shots[i].Frame), p.w, p.h, false, nil, func(at float64, picture []byte) error {
-			frame := p.grid.Holding(at)
-			if frame != shots[i].Frame {
-				return nil
+			p.s.mu.Lock()
+			going := p.going
+			p.s.mu.Unlock()
+			select {
+			case <-going:
+			case <-ctx.Done():
+				return
 			}
 			p.s.mu.Lock()
-			p.s.kept.put(key(frame), at, picture)
+			lease := p.lease
 			p.s.mu.Unlock()
-			if err := send(PlayFrame{Shot: shots[i], Picture: picture}); err != nil {
-				return err
+			// Stopped, or held again before the stream began.
+			if p.ctx.Err() != nil {
+				return
 			}
-			if i++; i == len(shots) {
-				return errRunDone
+			if lease.Err() != nil {
+				continue
 			}
-			return nil
-		})
-		if err != nil && !errors.Is(err, errRunDone) && ctx.Err() == nil {
-			r.err = err
+			held, stop := context.WithCancel(ctx)
+			undo := context.AfterFunc(lease, stop)
+			err := p.s.frames.Stream(held, p.grid, p.grid.At(shots[i].Frame), p.w, p.h, false, nil, func(at float64, picture []byte) error {
+				frame := p.grid.Holding(at)
+				if frame != shots[i].Frame {
+					return nil
+				}
+				p.s.mu.Lock()
+				p.s.kept.put(key(frame), at, picture)
+				p.s.mu.Unlock()
+				if err := send(held, PlayFrame{Shot: shots[i], Picture: picture}); err != nil {
+					return err
+				}
+				if i++; i == len(shots) {
+					return errRunDone
+				}
+				return nil
+			})
+			undo()
+			stop()
+			switch {
+			case ctx.Err() != nil, p.ctx.Err() != nil, errors.Is(err, errRunDone):
+				return
+			case lease.Err() != nil:
+				// Held: the next time through waits for Go.
+			case err != nil:
+				r.err = err
+				return
+			default:
+				return
+			}
 		}
 	}()
 	return r

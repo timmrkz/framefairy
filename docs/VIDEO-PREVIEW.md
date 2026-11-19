@@ -325,8 +325,8 @@ closed for standing unused.
   then. See [the decision
   record](decisions/2026-11-19-go-plays-the-video-preview.md).
 - The routes the interface reads from are `/frames/look`, `/frames/near`
-  and `/frames/ahead` for a paused video preview, `/frames/play`, `/frames/play/go` and `/frames/play/loop` for a
-  play, `/frames/read` for what a play sends, and `/frames/close`.
+  and `/frames/ahead` for a paused video preview, `/frames/play`, `/frames/play/go`, `/frames/play/hold` and
+  `/frames/play/loop` for a play, `/frames/read` for what a play sends, and `/frames/close`.
 
 ### The Go side
 
@@ -371,8 +371,9 @@ closed for standing unused.
   Asked at every step, each was a stream of frames and one of sound
   opened and closed again on the Go side.
 - **A paused frame** is the frame that holds the playhead, a look. A
-  play paused in its middle is closed once its sound has faded, so the
-  decoder goes back to the hand and the reading ahead. Once the frame
+  play paused in its middle keeps its frames and its sound and gives the
+  decoder back to the hand and the reading ahead, `engine.Play.Hold`,
+  and takes it again as the space bar goes on. Once the frame
   is up, the play from the playhead is cued on the Go side, which
   says which frame the play starts with. Where that is the frame up, the
   cue is kept and the space bar starts it at once. A playhead in a cut or

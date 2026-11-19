@@ -720,10 +720,12 @@ the page opens and pulls from, one of frames and one of sound:
 
     /frames/look?path=&frame=&w=&h=&grid=&shown=   one frame
     /frames/play?path=&w=&h=&grid=&rate=&ch=&pieces=&at=   {"pictures": ..., "sound": ...}
+    /frames/play/go?id=              a cued or paused play takes the decoder
+    /frames/play/hold?id=            a paused play gives it back
     /frames/read?id=&n=              up to n frames, or n chunks of sound
     /frames/close?id=
 
-A play's frames are scaled to `w` by `h` in 8-bit I420, each after where
+A play's frames are scaled to `w` by `h` in RGBA, 8 bits each, each after where
 on the play's clock it is drawn, the moment it stands for, where its
 frame begins and whether it is the first or last of its piece, each a
 float64 in 8 bytes. ffmpeg decodes a frame ahead of what was pulled and

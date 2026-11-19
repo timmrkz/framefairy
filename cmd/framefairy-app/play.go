@@ -20,8 +20,10 @@ import (
 // begins and 1 where it is an edge, see engine.Shot, and its sound, each
 // chunk with the sample of the program it starts at and how many moments
 // it holds. And where on the program the play starts and ends, -1 while it
-// loops, and how long one time through lasts. A newer play, or a look of the hand, stops it. A cue waits for
-// /frames/play/go before it takes the decoder, see engine.PlayAsk.
+// loops, and how long one time through lasts. A newer play, or a look of
+// the hand, stops it. A cue waits for /frames/play/go before it takes the
+// decoder, see engine.PlayAsk, and a play paused gives it back with
+// /frames/play/hold until /frames/play/go.
 //
 // It answers with the moment it starts from and where its first frame
 // begins, -1 for none, too. One that takes over from a play under way,
@@ -31,6 +33,7 @@ import (
 //	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&pieces=<start>:<end>,...&at=<seconds>[&loop=1][&cue=1][&after=<pictures>&place=<seconds>]
 //	  {"pictures": "...", "sound": "...", "from": <seconds>, "end": <seconds>, "length": <seconds>, "moment": <seconds>, "first": <seconds>}
 //	/frames/play/go?id=<pictures>
+//	/frames/play/hold?id=<pictures>
 //	/frames/play/loop?id=<pictures>&at=<seconds>[&loop=1]  {"end": <seconds>}
 func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) {
 	path, hand, ok := handArgs(st, w, r, false)
@@ -107,7 +110,8 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) 
 		"length": play.Length(), "moment": at, "first": first})
 }
 
-// servePlayGo gives the decoder to a cued play, see engine.Play.Go.
+// servePlayGo gives the decoder to a cued play, or to one held, see
+// engine.Play.Go.
 func (p *previews) servePlayGo(w http.ResponseWriter, r *http.Request) {
 	s := p.get(r.URL.Query().Get("id"))
 	if s == nil || s.play == nil {
@@ -115,6 +119,18 @@ func (p *previews) servePlayGo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.play.Go()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// servePlayHold gives the decoder back while the play is paused, see
+// engine.Play.Hold.
+func (p *previews) servePlayHold(w http.ResponseWriter, r *http.Request) {
+	s := p.get(r.URL.Query().Get("id"))
+	if s == nil || s.play == nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.play.Hold()
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -189,8 +189,18 @@ export class GoPlay {
 
   // Gives the Go side's decoder to a cued play: the space bar was pressed.
   go() {
+    this.held = false;
     if (!this.closed) void fetch(`/frames/play/go?id=${this.pictures}`).catch(() => {});
   }
+
+  // Paused: the Go side's decoder goes to the hand and the reading ahead,
+  // and everything handed over stays, so go goes on from here at once.
+  hold() {
+    if (this.closed || this.held) return;
+    this.held = true;
+    void fetch(`/frames/play/hold?id=${this.pictures}`).catch(() => {});
+  }
+  held = false;
 
   // Switches the loop at a place on the clock, and says where the play
   // now ends.

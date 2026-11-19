@@ -266,3 +266,49 @@ func TestACuedPlayWaitsForGoBeforeItTakesTheDecoder(t *testing.T) {
 	}
 	p.Stop()
 }
+
+// A paused play held the decoder, and nothing was read ahead while it
+// stood: held, it gives the decoder to the hand, and with Go it goes on
+// from the frame after the last it handed over.
+func TestAHeldPlayGivesTheDecoderBackAndGoesOnFromWhereItWas(t *testing.T) {
+	t.Parallel()
+	d := newHeldDecoder()
+	s := newSchedule(d)
+	p, frames, _ := playOf(s, []PlayPiece{{1, 2}}, 1)
+	st := d.next(t)
+	for _, f := range []int{25, 26} {
+		if err := st.give(t, f); err != nil {
+			t.Fatalf("frame %d: %v", f, err)
+		}
+		if got := <-frames; got.Frame != f {
+			t.Fatalf("the play handed over %d, not %d", got.Frame, f)
+		}
+	}
+	p.Hold()
+	st.stopped(t)
+	// The hand has the decoder while the play is held.
+	looking := lookFor(s, rest(100))
+	waits(s, rest(100))
+	run := d.next(t)
+	for f := 99; f <= 100; f++ {
+		if err := run.give(t, f); err != nil {
+			t.Fatalf("frame %d of the look: %v", f, err)
+		}
+	}
+	if got := <-looking; got.err != nil || got.seen.Frame != 100 {
+		t.Fatalf("the look was answered with %+v", got)
+	}
+	p.Go()
+	run.stopped(t)
+	on := d.next(t)
+	if on.from != 27 {
+		t.Fatalf("the play goes on from %d, not 27", on.from)
+	}
+	if err := on.give(t, 27); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-frames; got.Frame != 27 {
+		t.Fatalf("the play handed over %d after it went on, not 27", got.Frame)
+	}
+	p.Stop()
+}

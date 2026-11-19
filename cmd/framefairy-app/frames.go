@@ -27,13 +27,13 @@ import (
 )
 
 // The picture of the episode, decoded on the Go side by the episode's
-// decoder, see engine.EpisodeFrames. The page opens a stream at a moment, pulls its
-// frames a few at a time and closes it. ffmpeg decodes only as far as the
-// page has pulled, a frame or two ahead: WebKit takes whatever a response
-// writes without ever pushing back, so one long response would have let
-// ffmpeg decode the whole episode into memory while the page stood paused.
-// A stream left open is how a paused play goes on at once, and how the
-// next frame is there when the arrow key steps to it.
+// decoder, see engine.EpisodeFrames. The page starts a play, pulls its
+// frames and its sound a few at a time and closes them. ffmpeg decodes only
+// as far as the page has pulled, a few frames ahead: WebKit takes whatever
+// a response writes without ever pushing back, so one long response would
+// have let ffmpeg decode the whole episode into memory while the page
+// stood paused. A play paused gives the decoder back and keeps the rest, so
+// it goes on at once.
 //
 //	/frames/look?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&shown=<frame>&win=<window>&n=<sent>[&move=1][&follow=1]
 //	                                 the frame for where the hand is, see
@@ -45,18 +45,16 @@ import (
 //	                                 what to read while the hand rests,
 //	                                 answered by the frames read that the
 //	                                 window does not hold, see serveAhead
-//	/frames/open?path=<episode>&from=<seconds>&w=<width>&h=<height>&grid=<grid>[&key=1]  {"id": "..."}
-//	                                 the frames of the grid from the one that
-//	                                 holds from: the grid the engine named,
-//	                                 see engine.SourceInfo.Grid, as the page
-//	                                 hands it back, see framewire.GridText
-//	/frames/sound?path=<episode>&from=<seconds>&rate=<hz>&ch=<channels>  {"id": "..."}
-//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&pieces=<start>:<end>,...&at=<seconds>[&loop=1]
+//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&pieces=<start>:<end>,...&at=<seconds>[&loop=1][&cue=1]
 //	                                 a play of a clip, its pictures and its
-//	                                 sound as two streams, see servePlay
+//	                                 sound as two streams, see servePlay. The
+//	                                 grid is the one the engine named, see
+//	                                 engine.SourceInfo.Grid, as the page
+//	                                 hands it back, see framewire.GridText
 //	/frames/play/go?id=<pictures>
+//	/frames/play/hold?id=<pictures>
 //	/frames/play/loop?id=<pictures>&at=<seconds>[&loop=1]
-//	/frames/read?id=<id>&n=<frames>&skip=<seconds>  frames, see writeFrames
+//	/frames/read?id=<id>&n=<frames>  frames, see writeFrames
 //	/frames/close?id=<id>
 //	/frames/levels?path=<episode>  the loudness, see serveLoudness
 //
@@ -158,6 +156,8 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 		p.servePlay(st, w, r)
 	case "/frames/play/go":
 		p.servePlayGo(w, r)
+	case "/frames/play/hold":
+		p.servePlayHold(w, r)
 	case "/frames/play/loop":
 		p.servePlayLoop(w, r)
 	case "/frames/look":
@@ -687,12 +687,11 @@ func (p *previews) reapOnce(idle time.Duration) bool {
 
 // writeFrames answers a pull: the next frame once ffmpeg has it, and up to
 // n in all, as many as are there by then without waiting for more. Each is
-// the moment of the episode it starts at, 8 bytes, a float64 in little
-// endian, then the frame in colours, RGBA with 8 bits each and an opaque alpha, or the
-// moments of sound, from the
-// first that starts at skip or later. Every frame of a stream is as long
-// as every other, but the last of a sound stream, which may be shorter. A stream that has ended answers
-// with no frame and X-Frames-End, and with the reason when it failed.
+// where it goes, 8 bytes, a float64 in little endian, then its stamp, 8
+// bytes for each number, then the frame in colours, RGBA with 8 bits each
+// and an opaque alpha, or a chunk of sound, see servePlay. A stream that
+// has ended answers with no frame and X-Frames-End, and with the reason
+// when it failed.
 func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")

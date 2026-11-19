@@ -19,8 +19,9 @@ import (
 // are drawn, each stamped with where on the program it goes, the moment
 // it stands for and where its frame begins, the same frames a look at
 // them answers with, and the sound of both pieces, end to end on the
-// program. A play with no pieces is refused, and its loop is switched
-// while it plays.
+// program. A play with no pieces is refused, a play paused gives the
+// decoder to a look and goes on after, and its loop is switched while it
+// plays.
 //
 // Not parallel: library sets the environment the store reads.
 func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
@@ -62,7 +63,19 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 	}
 
 	size := 32 + 32*18*4
-	var pictures []byte
+	// Paused, the play gives the decoder back: a look has it meanwhile,
+	// and the play goes on after with no frame lost or twice.
+	pictures := get("/frames/read", url.Values{"id": {play.Pictures}, "n": {"3"}}).Body.Bytes()
+	if rec := get("/frames/play/hold", url.Values{"id": {play.Pictures}}); rec.Code != http.StatusNoContent {
+		t.Errorf("the play held answered %d", rec.Code)
+	}
+	held := get("/frames/look", url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {text}, "frame": {"15"}, "shown": {"-1"}})
+	if held.Code != http.StatusOK || held.Body.Len() != 8+32*18*4 {
+		t.Errorf("a look while the play is held answered %d with %d bytes", held.Code, held.Body.Len())
+	}
+	if rec := get("/frames/play/go", url.Values{"id": {play.Pictures}}); rec.Code != http.StatusNoContent {
+		t.Errorf("the play let go answered %d", rec.Code)
+	}
 	for {
 		rec := get("/frames/read", url.Values{"id": {play.Pictures}, "n": {"16"}})
 		pictures = append(pictures, rec.Body.Bytes()...)

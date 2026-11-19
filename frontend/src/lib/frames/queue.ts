@@ -864,6 +864,7 @@ export class FrameQueue {
     // sound card was only held.
     if (!changed && this.goPlay && this.c0 !== null && this.state === "paused") {
       clearTimeout(this.suspendTimer);
+      if (this.goPlay.held) this.goPlay.go();
       this.state = "playing";
       this.app?.began();
       this.trace(`playing on from ${this.at.toFixed(3)} s`);
@@ -909,20 +910,14 @@ export class FrameQueue {
     this.state = "paused";
     cancelAnimationFrame(this.frameRequest);
     // The sound fades out over the render's fade, then the sound card is
-    // held. A play the space bar starts again within the fade goes on
-    // with everything scheduled. After it the play gives the Go side's
-    // decoder back, so the frames of the cards and of the words beside
-    // are read while the hand rests, and the play from here is cued, the
-    // way it is for any paused playhead, see settle. Kept, the paused
-    // play held the decoder, and a card clicked after a play waited for
-    // its frame, found by the walk of the cards read ahead.
+    // held, with everything scheduled kept, so play goes on from here.
+    // The play gives the Go side's decoder back meanwhile, so the frames
+    // of the cards and of the words beside are read while the hand rests,
+    // and takes it again as it goes on, see GoPlay.hold. Kept, it held the
+    // decoder, and nothing was read ahead while it stood paused.
     this.ramp(0);
-    this.suspendTimer = window.setTimeout(() => {
-      void this.audio.suspend();
-      if (this.state !== "paused" || !this.goPlay) return;
-      this.stopPlay();
-      this.settle(this.at);
-    }, FADE * 1000 + 10);
+    this.suspendTimer = window.setTimeout(() => void this.audio.suspend(), FADE * 1000 + 10);
+    this.goPlay?.hold();
     this.hold();
     this.report();
   }

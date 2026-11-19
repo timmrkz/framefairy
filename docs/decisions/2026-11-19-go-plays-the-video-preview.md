@@ -202,9 +202,11 @@ building it:
   the playhead, and paused or cued it is dropped, so the space bar starts
   a play of its own.
 - **A paused play gives the decoder back.** Kept, a play paused in its
-  middle held the decoder, so nothing was read ahead while it stood, and
-  a card clicked after a play waited for its frame, which the walk of
-  the cards read ahead caught. Once its sound has faded, a paused play
-  is closed and the play from the playhead is cued, as at any paused
-  playhead. The space bar within the fade still goes on with everything
-  scheduled.
+  middle held the decoder, so nothing was read ahead while it stood.
+  Closed and cued again from the playhead once its sound had faded, the
+  space bar after a pause started a play of its own, 55 ms later than
+  going on, measured in the cloud. So a paused play stays, holds its
+  frames and its sound in the window, and gives only the decoder back,
+  `engine.Play.Hold` and `/frames/play/hold`. Go takes it again, and each
+  run goes on from the frame after the last it handed over, which the
+  frames the window holds cover while the decoder gets there.
