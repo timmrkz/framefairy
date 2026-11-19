@@ -647,7 +647,10 @@ export const steps = {
       // An L the app did not take changes nothing, and the app then
       // settles with the loop still on, which is said below.
       await Promise.race([switched, window.__settled(false)]);
-      return { crossed, loop: q.program.loop, ends: q.program.end, sounded: sounded() };
+      const heard = sounded();
+      // The Go side says where the play now ends, see looped.
+      await q.looped;
+      return { crossed, loop: q.program.loop, ends: q.program.end, sounded: heard };
     });
     await page.keyboard.press("Space");
     await settle(page);

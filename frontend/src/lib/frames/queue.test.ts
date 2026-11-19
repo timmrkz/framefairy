@@ -712,3 +712,59 @@ describe("a play the Go side closed", () => {
     expect(shut()).toBe(1);
   });
 });
+
+// A paused play held the Go side's decoder, so nothing was read ahead
+// while it stood paused, and a card clicked after a play waited for its
+// frame, found by the walk of the cards read ahead.
+describe("a play paused", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function paused() {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.stubGlobal("window", globalThis);
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const inside = q as unknown as { state: string; goPlay: unknown; at: number; c0: number | null; audio: unknown; out: unknown; settle(at: number): void };
+    let shut = 0;
+    let suspended = 0;
+    const gain = { value: 1, cancelScheduledValues() {}, setValueAtTime() {}, linearRampToValueAtTime() {} };
+    inside.audio = { currentTime: 3, suspend: () => (suspended++, Promise.resolve()), resume: () => Promise.resolve() };
+    inside.out = { gain };
+    inside.goPlay = { shots: [], close: () => shut++, more() {} };
+    inside.state = "playing";
+    inside.at = 61;
+    inside.c0 = 0;
+    const settled: number[] = [];
+    inside.settle = (at) => settled.push(at);
+    // The page's frames are not run here: nothing is drawn.
+    (inside as unknown as { loop(): void }).loop = () => {};
+    q.pause();
+    return { q, inside, shut: () => shut, suspended: () => suspended, settled };
+  }
+
+  test("gives the decoder back once its sound has faded, and is cued from the playhead", () => {
+    const { inside, shut, suspended, settled } = paused();
+    expect(shut()).toBe(0);
+    vi.runAllTimers();
+    expect(suspended()).toBe(1);
+    expect(shut()).toBe(1);
+    expect(inside.goPlay).toBe(null);
+    expect(inside.state).toBe("paused");
+    expect(settled).toEqual([61]);
+  });
+
+  test("started again within the fade goes on with everything scheduled", () => {
+    const { q, inside, shut, settled } = paused();
+    q.play();
+    vi.runAllTimers();
+    expect(inside.state).toBe("playing");
+    expect(shut()).toBe(0);
+    expect(settled).toEqual([]);
+  });
+});

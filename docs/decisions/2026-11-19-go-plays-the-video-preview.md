@@ -201,6 +201,10 @@ building it:
   paused or cued and left standing is one. Playing, it starts again from
   the playhead, and paused or cued it is dropped, so the space bar starts
   a play of its own.
-- **Left open:** while a play stands paused in its middle, the schedule
-  reads nothing ahead, since the play still holds the decoder, until the
-  hand's next look or until the play is closed for standing unused.
+- **A paused play gives the decoder back.** Kept, a play paused in its
+  middle held the decoder, so nothing was read ahead while it stood, and
+  a card clicked after a play waited for its frame, which the walk of
+  the cards read ahead caught. Once its sound has faded, a paused play
+  is closed and the play from the playhead is cued, as at any paused
+  playhead. The space bar within the fade still goes on with everything
+  scheduled.

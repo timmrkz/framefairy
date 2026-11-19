@@ -370,8 +370,10 @@ closed for standing unused.
   the size has stood still for 150 ms.
   Asked at every step, each was a stream of frames and one of sound
   opened and closed again on the Go side.
-- **A paused frame** is the frame that holds the playhead, a look. Once
-  it is up, the play from the playhead is cued on the Go side, which
+- **A paused frame** is the frame that holds the playhead, a look. A
+  play paused in its middle is closed once its sound has faded, so the
+  decoder goes back to the hand and the reading ahead. Once the frame
+  is up, the play from the playhead is cued on the Go side, which
   says which frame the play starts with. Where that is the frame up, the
   cue is kept and the space bar starts it at once. A playhead in a cut or
   a hair before a piece's end starts its play on another frame, and

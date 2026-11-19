@@ -585,7 +585,7 @@ export class FrameQueue {
     // A play still on its way from the Go side is opened again with what
     // is wanted, see start.
     if (play) {
-      void play.loop(false, Math.max(this.reached, this.sounded())).then(() => {
+      this.looped = play.loop(false, Math.max(this.reached, this.sounded())).then(() => {
         if (play !== this.goPlay) return;
         for (const src of this.sources.keys()) this.clip(src);
       });
@@ -836,6 +836,10 @@ export class FrameQueue {
   }
   // The cards given last, once the frames have them, see rested.
   private cardsGiven: Promise<void> = Promise.resolve();
+  // Settles once the Go side has said where the play ends after the loop
+  // was switched off, see relooped, for the walks: until then the play
+  // under way still loops, see program.
+  looped: Promise<void> = Promise.resolve();
 
   // Settles once the frames read ahead are in, the cards' among them, for
   // the walks, see AppFrames.rested.
@@ -905,9 +909,20 @@ export class FrameQueue {
     this.state = "paused";
     cancelAnimationFrame(this.frameRequest);
     // The sound fades out over the render's fade, then the sound card is
-    // held, with everything scheduled kept, so play goes on from here.
+    // held. A play the space bar starts again within the fade goes on
+    // with everything scheduled. After it the play gives the Go side's
+    // decoder back, so the frames of the cards and of the words beside
+    // are read while the hand rests, and the play from here is cued, the
+    // way it is for any paused playhead, see settle. Kept, the paused
+    // play held the decoder, and a card clicked after a play waited for
+    // its frame, found by the walk of the cards read ahead.
     this.ramp(0);
-    this.suspendTimer = window.setTimeout(() => void this.audio.suspend(), FADE * 1000 + 10);
+    this.suspendTimer = window.setTimeout(() => {
+      void this.audio.suspend();
+      if (this.state !== "paused" || !this.goPlay) return;
+      this.stopPlay();
+      this.settle(this.at);
+    }, FADE * 1000 + 10);
     this.hold();
     this.report();
   }
