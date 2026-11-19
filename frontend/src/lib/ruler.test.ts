@@ -54,26 +54,30 @@ describe("pickerSteps", () => {
 });
 
 describe("dragStep", () => {
+  // The round steps as Go sends them in WindowLimits.Rounds. Which steps
+  // they are is Go's, tested in engine/windows_test.go; this picks one.
+  const rounds = [1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800];
+
   test("lands on every line of the ruler on Tim's video of two hours and a half", () => {
     // youtube.mp4, 9609.58 s, a line every 15 minutes. Two minutes were
     // about eight pixels and the window could not start at 45:00.
-    expect(dragStep(9609.58, 700, 900)).toBe(300);
-    expect(dragStep(9609.58, 860, 900)).toBe(300);
+    expect(dragStep(rounds, 9609.58, 700, 900)).toBe(300);
+    expect(dragStep(rounds, 9609.58, 860, 900)).toBe(300);
   });
 
   test("is still the smallest round step about eight pixels wide", () => {
-    expect(dragStep(4 * 3600, 915, 1800)).toBe(300);
-    expect(dragStep(4 * 3600, 1370, 1800)).toBe(120);
-    expect(dragStep(4 * 3600, 1370, 3600)).toBe(120);
-    expect(dragStep(360, 915, 60)).toBe(5);
-    expect(dragStep(1500, 870, 300)).toBe(15);
+    expect(dragStep(rounds, 4 * 3600, 915, 1800)).toBe(300);
+    expect(dragStep(rounds, 4 * 3600, 1370, 1800)).toBe(120);
+    expect(dragStep(rounds, 4 * 3600, 1370, 3600)).toBe(120);
+    expect(dragStep(rounds, 360, 915, 60)).toBe(5);
+    expect(dragStep(rounds, 1500, 870, 300)).toBe(15);
   });
 
   test("passes over a round step the ruler's step is no whole number of", () => {
     // 2 minutes into 5, 10 into 15, 10 minutes into 15.
-    expect(dragStep(3600, 300, 300)).toBe(300);
-    expect(dragStep(120, 150, 15)).toBe(15);
-    expect(dragStep(20000, 300, 900)).toBe(900);
+    expect(dragStep(rounds, 3600, 300, 300)).toBe(300);
+    expect(dragStep(rounds, 120, 150, 15)).toBe(15);
+    expect(dragStep(rounds, 20000, 300, 900)).toBe(900);
   });
 
   test("lands on every line of the ruler the range picker draws, at any width", () => {
@@ -85,7 +89,7 @@ describe("dragStep", () => {
       for (let width = 300; width <= 2000; width += 10) {
         for (const label of [25, 32, 46]) {
           const ruler = rulerStep(duration, width, label, pickerSteps(duration));
-          const step = dragStep(duration, width, ruler);
+          const step = dragStep(rounds, duration, width, ruler);
           const at = `${duration} s on ${width} px`;
           expect(ruler % step, at).toBe(0);
           if (step !== ruler) expect((step / duration) * width, at).toBeGreaterThanOrEqual(8);
@@ -95,6 +99,10 @@ describe("dragStep", () => {
   });
 
   test("is the ruler's own step when no round step fits", () => {
-    expect(dragStep(100 * 3600, 50, 7200)).toBe(7200);
+    expect(dragStep(rounds, 100 * 3600, 50, 7200)).toBe(7200);
+  });
+
+  test("is the ruler's own step before Go has sent any", () => {
+    expect(dragStep([], 3600, 900, 300)).toBe(300);
   });
 });

@@ -46,6 +46,7 @@
     least = 0,
     leastSays = "",
     most = Infinity,
+    rounds = [],
     reachSays = "",
     resumes = false,
     hidden = false,
@@ -102,6 +103,9 @@
     leastSays?: string;
     most?: number;
     reachSays?: string;
+    // The round steps a dragged edge may land on, as Go sends them, see
+    // dragStep in lib/ruler.ts.
+    rounds?: readonly number[];
     // A search stands stopped on the window, so the mark is where Continue
     // carries it on rather than where Search looks.
     resumes?: boolean;
@@ -249,7 +253,7 @@
   // places, see dragStep in lib/ruler.ts. The ends of the episode win over
   // it. The window snapped this way before it was taken away, and Tim
   // missed it.
-  const grid = $derived(ruled > 0 ? dragStep(duration, width, ruled) : 0);
+  const grid = $derived(ruled > 0 ? dragStep(rounds, duration, width, ruled) : 0);
 
   function round(t: number): number {
     return grid > 0 ? Math.round(t / grid) * grid : Math.round(t);

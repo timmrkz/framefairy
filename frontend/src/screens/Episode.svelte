@@ -2976,6 +2976,7 @@
     least={win?.least ?? 0}
     leastSays={typed > 0 ? `room for ${typed} clips of ${min} s` : `room for a clip of ${min} s`}
     most={win?.most ?? duration}
+    rounds={win?.rounds ?? []}
     reachSays={win?.by === "budget"
       ? "all the budget pays for"
       : win?.by === "memory"

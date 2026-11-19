@@ -40,20 +40,20 @@ export function pickerSteps(duration: number): number[] {
 
 // The round step an edge of the window lands on when it is dragged, on a
 // range picker width pixels wide whose ruler draws a line every ruler
-// seconds: the smallest round step still about eight pixels wide, so a
-// window is something that can be said out loud, that the ruler's step is
-// a whole number of, so every line of the ruler is a place an edge can
-// land. Five minutes for four hours on a narrow range picker, five seconds
-// for six minutes. The two steps were once picked apart, and Tim could
-// not move the window onto the 45:00 line of a video of two hours and a
-// half: the ruler drew a line every 15 minutes and a drag moved in steps
-// of 2. The ruler's own step when none of the round ones fits.
-// The windows the app places land on one of the same round steps, chosen
-// from the episode alone, see PlaceStep in engine/windows.go.
-const DRAG = [1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800];
-export function dragStep(duration: number, width: number, ruler: number): number {
+// seconds: the smallest of the round steps Go sends, rounds, still about
+// eight pixels wide, so a window is something that can be said out loud,
+// that the ruler's step is a whole number of, so every line of the ruler
+// is a place an edge can land. Five minutes for four hours on a narrow
+// range picker, five seconds for six minutes. The two steps were once
+// picked apart, and Tim could not move the window onto the 45:00 line of
+// a video of two hours and a half: the ruler drew a line every 15 minutes
+// and a drag moved in steps of 2. The ruler's own step when none of the
+// round ones fits. The round steps are the ones the app places windows
+// on, WindowLimits.Rounds in engine/limits.go, so this keeps no list of
+// its own: how wide the range picker is drawn is the window's to know.
+export function dragStep(rounds: readonly number[], duration: number, width: number, ruler: number): number {
   const least = (duration / Math.max(width, 1)) * 8;
-  return DRAG.find((step) => step >= least && ruler % step === 0) ?? ruler;
+  return rounds.find((step) => step >= least && ruler % step === 0) ?? ruler;
 }
 
 // Whether a time whose line is at x fits on a track width pixels wide,

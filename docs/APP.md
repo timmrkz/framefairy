@@ -1750,8 +1750,10 @@ bubble scrolled by those eight pixels.
       that the ruler's step is a whole number of, so every line on the
       range picker is a place an edge can land: five minutes on a four
       hour episode and five seconds on a six minute one, and the ends of
-      the episode win over the step. Every
-      window the app places itself lands on a step of the same kind,
+      the episode win over the step. The round steps come from the app's
+      Go side with the window, `WindowLimits.Rounds`, and the range picker
+      only picks the one that fits how wide it is drawn. Every
+      window the app places itself lands on one of the same steps,
       chosen from the length of the video alone and never from how wide
       the app is, about a 180th of the video, two minutes for four hours,
       its start and its length, so the app's own half hour of a four hour

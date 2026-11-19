@@ -1,6 +1,9 @@
 package engine
 
-import "math"
+import (
+	"math"
+	"slices"
+)
 
 // The limits of a window and of the search asked of it, worked out once
 // here, for the app and the command line alike. The app sends them to
@@ -35,6 +38,11 @@ type WindowLimits struct {
 	// SuggestedSteps, up to ClipsAtMost, so the count a drag suggests
 	// is read off them as the hand moves.
 	Steps []float64 `json:"steps"`
+	// Rounds are the round steps an edge of the window may land on when a
+	// hand drags it, the same the app places a window on, see PlaceStep.
+	// The range picker picks one from them by how wide it is drawn,
+	// which only the window knows, and keeps no list of its own.
+	Rounds []float64 `json:"rounds"`
 }
 
 // The bounds of what a hand may type: clips asked for, and how long the
@@ -65,6 +73,7 @@ func (o Options) Limits(r RoomAndLines, duration, length float64, typed int) Win
 	}
 	l.Least = math.Min(math.Max(float64(max(l.Typed, 1))*shortest, leastWindowFloor), duration)
 	l.Steps = SuggestedSteps(shortest, longest, l.ClipsAtMost)
+	l.Rounds = slices.Clone(placeSteps)
 	l.ShortestAtMost = math.Max(leastShortest, math.Min(mostShortest, math.Floor((most+0.01)/float64(max(l.Count, 1)))))
 	return l
 }

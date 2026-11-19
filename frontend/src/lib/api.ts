@@ -508,6 +508,9 @@ export interface WindowView extends KeptWindow {
   // The lengths of window at which the count suggested rises, so a drag
   // reads its count off them, see engine.SuggestedSteps.
   steps?: number[];
+  // The round steps a dragged edge of the window may land on, finest
+  // first, the ones the app places a window on, see dragStep in ruler.ts.
+  rounds?: number[];
   // How long the clips a search asks for may be, as they are set.
   shortest: number;
   longest: number;
