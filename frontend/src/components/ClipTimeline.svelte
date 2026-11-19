@@ -51,7 +51,6 @@
     type GlideSpan,
   } from "../lib/api";
   import {
-    heardIn,
     inClip,
     inEpisode,
     endInEpisode,
@@ -62,7 +61,6 @@
     litWord,
     wordInEpisode,
     type CaptionDraft,
-    type Parts,
   } from "../lib/flow";
   import { Presses } from "../lib/twice";
   import { scrub as scrubPlayhead } from "../lib/scrub";
@@ -81,7 +79,6 @@
     path,
     clip,
     duration,
-    heard = [[0, duration]],
     loudnessStamp = "",
     soundless = false,
     time,
@@ -101,6 +98,7 @@
     captions = [],
     captionTrack = "",
     captionPieces,
+    inCuts = [],
     arriving = false,
     captionLook = null,
     oncaptiontime,
@@ -128,9 +126,6 @@
     // Without a clip the timeline follows the playhead through the episode.
     clip: ClipEntry | null;
     duration: number;
-    // What the transcript has heard, in parts. The words arrive with it,
-    // so the view is taken again as more of it is heard.
-    heard?: Parts;
     // Go's stamp of the video's loudness, which is the waveform: it
     // changes whenever the loudness does, as it is measured and heard, and
     // the loudness is read again then, see EpisodeStatus.loudness.
@@ -150,6 +145,11 @@
     // Where the picture's first frame begins in the file, which is where
     // its frames are counted from, see frameAt in lib/flow.ts.
     frameStart?: number;
+    // The words heard in the clip's cuts, with the word either side of
+    // each, as Go sends them with the clip's captions, see
+    // CaptionsView.inCuts. Shift and an arrow walk these in a cut, where
+    // the caption lights nothing.
+    inCuts?: Word[];
     // The words the caption lights up, on the episode's clock. Shift and
     // an arrow key step through these, because these are the words anyone
     // can see. They are not the words of the transcript: a correction that
@@ -287,8 +287,8 @@
     // and in how many pieces, and whether an edit is still on its way to
     // disk.
     numbers?: ClipNumbers;
-    // Whether the first reading of the words and the loudness has come
-    // back, so the track has something of the episode on it. The workspace
+    // Whether the first reading of the loudness has come back, so the
+    // track has something of the episode on it. The workspace
     // is not put in front of the person before, see ready in Episode.svelte.
     drawn?: boolean;
   } = $props();
@@ -331,27 +331,22 @@
   // #759.
   let inPage = $state(false);
   let view = $state({ from: 0, to: 1 });
-  let words = $state.raw<Word[]>([]);
   // The whole loudness of the video as far as it is measured, which every
   // view is drawn from, see lib/loudness.ts. A swipe or a pinch asks the
   // Go side for nothing: the waveform is drawn in the same frame as the
   // hand moves, however fast it moves and however slow Go is.
   let loudness = $state.raw(silent);
   let viewFor = "";
-  // Whether a view has been read yet. It is state, because the effect
-  // that reads the view again as the words grow returns early until it
-  // is true, and an effect that returned having read nothing else never
-  // runs again.
+  // Whether a view has been taken yet. It is state, because the effects
+  // that follow the clip and the playhead return early until it is true,
+  // and an effect that returned having read nothing else never runs
+  // again.
   let loaded = $state(false);
-  // How much of the view the transcript had heard when it was read.
-  let loadedHeard = $state(-1);
   // True while the view is where a hand put it. Until it is let go of, the
   // clip and the playhead stop pulling it back.
   let held = $state(false);
   // The closest the timeline goes, in seconds.
   const nearest = 2;
-  // How much of the episode is asked for in words at a time.
-  const spoken = 600;
 
   const segments = $derived(clip?.segments ?? []);
   const first = $derived(segments.length ? segments[0].start : 0);
@@ -859,63 +854,35 @@
     await reshape({ kind: "join", edge: "", index: 0, from: (cut.from + cut.to) / 2, to: 0, toWords: false });
   }
 
-  // The words of a view are read with as much again either side of it, for
-  // snapping an edge to, and the Go side is told where the view is, so the
-  // loudness is measured there first. Neither is on the path of a frame:
-  // the waveform is drawn from the loudness in hand.
+  // The Go side is told where the view is, so the loudness is measured
+  // there first. It is not on the path of a frame: the waveform is drawn
+  // from the loudness in hand. The words Shift and an arrow walk come
+  // with the clip's captions, see inCuts, so a view asks for none: it
+  // asked for ten minutes of them after every swipe, issue #932.
   //
-  // A reading that comes back after a newer one is dropped.
-  let latest = 0;
-  // What the reading on its way was asked for. The same view asked for
-  // again before it is back is that reading: an episode opening asked for
-  // the clip's view twice over.
-  let reading = "";
-  let wordsRead = false;
+  // The same view told again before anything moved is not told twice: an
+  // episode opening asked for the clip's view twice over.
+  let told = "";
 
-  async function load(from: number, to: number) {
+  function load(from: number, to: number) {
     view = { from, to };
     loaded = true;
-    loadedHeard = heardIn(heard, from, to);
     const shown = Math.max(to - from, 0.001);
     const whole = Math.max(duration, to);
     const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
-    // The words are wanted around the playhead, for snapping an edge to
-    // them. Zoomed out to a four hour episode that would be forty thousand
-    // of them for every swipe, so they are asked for by the ten minutes
-    // around where the work is.
-    const middle = time >= outer.from && time <= outer.to ? time : (from + to) / 2;
-    const said = {
-      from: Math.max(outer.from, middle - spoken / 2),
-      to: Math.min(outer.to, middle + spoken / 2),
-    };
-    const ask = `${said.from}|${said.to}|${outer.from}|${outer.to}`;
-    if (ask === reading) return;
-    reading = ask;
+    const ask = `${path}|${outer.from}|${outer.to}`;
+    if (ask === told) return;
+    told = ask;
     void api.look(path, outer.from, outer.to).catch(() => {});
-    const mine = ++latest;
-    try {
-      const w = await api.words(path, said.from, said.to);
-      if (mine !== latest) return;
-      words = w ?? [];
-    } catch {
-      if (mine !== latest) return;
-      words = [];
-    } finally {
-      if (mine === latest) reading = "";
-    }
-    wordsRead = true;
-    drawn = loudnessRead;
   }
 
   // The loudness is read whole when the video opens, and again whenever
   // Go's stamp of it changes, never while the view moves. A clip timeline
   // out of the page reads nothing until it is back, see HeldLoudness.
-  let loudnessRead = false;
   const holding = new HeldLoudness((of, got) => {
     if (of !== path) return;
     loudness = got;
-    loudnessRead = true;
-    drawn = wordsRead;
+    drawn = true;
   });
   $effect(() => {
     holding.want(path, loudnessStamp, inPage);
@@ -1088,7 +1055,7 @@
       clip: wholeClip,
       pieces: drawnPieces,
       lit,
-      words,
+      inCuts,
       looping,
     });
     if (to === "clip") onwalkclip?.(back);
@@ -1116,14 +1083,14 @@
     if (playing || scrubbing || gripping || !onahead) return;
     const times: number[] = [];
     for (const back of [false, true]) {
-      const to = arrowStep({ time, frame, back, shift: true, through: false, clip: wholeClip, pieces: drawnPieces, lit, words, looping });
+      const to = arrowStep({ time, frame, back, shift: true, through: false, clip: wholeClip, pieces: drawnPieces, lit, inCuts, looping });
       if (to && to !== "clip" && to.word) times.push(Math.max(0, Math.min(to.to, duration)));
     }
     if (times.length) onahead(times);
   });
 
-  // Reading the words and telling the Go side where the view is wait until
-  // the fingers come to rest. The waveform does not: it is drawn from what
+  // Telling the Go side where the view is waits until the fingers come
+  // to rest. The waveform does not: it is drawn from what
   // is in hand. Where the view stood when they began is kept until then,
   // for the log.
   let settle = 0;
@@ -1318,14 +1285,6 @@
     if (ahead && t >= view.from && t <= view.to) return;
     turnPage(t, back);
   }
-
-  // A new episode's words arrive as it is heard, piece by piece, so a
-  // view read before they reached it is read again when the transcript
-  // grows past where it stood.
-  $effect(() => {
-    if (!loaded) return;
-    if (heardIn(heard, view.from, view.to) > loadedHeard + 0.5) load(view.from, view.to);
-  });
 
   // The waveform, drawn the way an editor draws one: one column of the
   // screen per column of the picture, each a whole pixel wide and a whole

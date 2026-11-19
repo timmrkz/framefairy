@@ -963,6 +963,36 @@ type CaptionsView struct {
 	// how the rest are taken from the captions of the clip as it was, see
 	// laidNear. Without it, Captions are all of them.
 	Splice *Splice `json:"splice,omitempty"`
+	// InCuts are the words heard in the clip's cuts, with the word either
+	// side of each cut, on the episode's clock and as they were heard,
+	// see cutWords. The caption lights nothing in a cut, so these are what
+	// Shift and an arrow walk there. They come whole on every view, a step
+	// of a drag too, and are none for a clip without cuts. The window
+	// asked for ten minutes of the transcript after every swipe for them,
+	// issue #932.
+	InCuts []WordView `json:"inCuts"`
+}
+
+// cutWords is CaptionsView.InCuts: every word of t that is heard in a cut
+// between two of segments, in part or whole, and the word before and the
+// word after each cut, so a step can reach the clip's words on either
+// side. A word is in it once, however many cuts it touches.
+func cutWords(t *Transcript, segments []Segment) []WordView {
+	out := []WordView{}
+	words := t.Words
+	next := 0
+	for i := 1; i < len(segments); i++ {
+		from, to := segments[i-1].End, segments[i].Start
+		first := sort.Search(len(words), func(k int) bool { return words[k].End > from })
+		last := sort.Search(len(words), func(k int) bool { return words[k].Start >= to })
+		first = max(first-1, next, 0)
+		last = min(last+1, len(words))
+		for _, w := range words[first:last] {
+			out = append(out, WordView{Start: w.Start, End: w.End, Text: runes.Scrub(w.Text, 200)})
+		}
+		next = max(next, last)
+	}
+	return out
 }
 
 // CaptionDrawing is what a clip's captions are drawn from, by libass, in
@@ -1210,6 +1240,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 // captionsViewFrom is captionsView for a clip a gesture changed, from was,
 // the drawing of its captions before, see ShapeClipView. was may be nil.
 func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView {
+	heard := t
 	t = t.Of(clip)
 	drawing := look.drawing(was, plan, clip, t)
 	clip, laid := drawing.Clip, drawing.Laid
@@ -1231,6 +1262,7 @@ func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, 
 		HighlightColour: s.HighlightWeb(), Text: s.Text, BoxOn: s.Box,
 	}}
 	view.drawing = drawing
+	view.InCuts = cutWords(heard, clip.Segments)
 	view.Track = view.drawing.name()
 	// Kept, so a step of a drag made from this drawing is named without
 	// going over all of its captions again, see name. Set before the

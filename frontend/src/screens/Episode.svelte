@@ -3582,7 +3582,6 @@
         waiting={!opened}
         clip={current ?? making}
         {duration}
-        heard={saved}
         loudnessStamp={status?.loudness ?? ""}
         soundless={!!status?.silent}
         {time}
@@ -3620,6 +3619,7 @@
         captions={captions?.captions ?? []}
         captionTrack={captions?.track}
         captionPieces={captions?.pieces}
+        inCuts={captions?.inCuts ?? []}
         captionLook={shownCaptions
           ? {
               text: shownCaptions.style.primary,
