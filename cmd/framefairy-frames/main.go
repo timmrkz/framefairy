@@ -593,8 +593,21 @@ func (c *cursor) do(job func()) {
 // left decoded on to its frame, up to 40 frames on Tim's Mac, while the
 // new place waited behind it, issue #924.
 func (c *cursor) stopped() bool {
+	if stopAfter > 0 && !c.sound && c.decodedInOpen >= stopAfter && madeToStop.CompareAndSwap(false, true) {
+		c.stopTo.Store(c.job)
+		c.say("stops as if told to, see FRAMEFAIRY_FRAMES_STOP_AFTER")
+	}
 	return c.stopTo.Load() >= c.job
 }
+
+// stopAfter makes a cursor of picture stop as a stop would, once in the
+// program's life, when the open it is in has decoded that many frames,
+// so a test stops a cursor between two frames of its choosing rather than
+// whenever its request happens to come. Nought, never, unless
+// FRAMEFAIRY_FRAMES_STOP_AFTER says otherwise.
+var stopAfter, _ = strconv.Atoi(os.Getenv("FRAMEFAIRY_FRAMES_STOP_AFTER"))
+
+var madeToStop atomic.Bool
 
 // errStopped ends the work of a job a stop reached.
 var errStopped = errors.New("stopped")
@@ -1024,6 +1037,14 @@ func (c *cursor) next(n int, skip float64) {
 	sent := 0
 	for sent < n {
 		if c.stopped() {
+			if c.keyNext {
+				// The key frame asked for first was not handed over. The
+				// frames from it to the frame asked for were let go
+				// unscaled or never decoded, so the key frame's picture
+				// says nothing of them, and the cursor stands at the frame
+				// asked for: a later open before it seeks, see goOn.
+				c.keyNext, c.rank, c.shown = false, max(c.rank, c.wanted), nil
+			}
 			c.say(fmt.Sprintf("stopped after %d frames of %d asked, %d decoded", sent, n, c.decodedInOpen))
 			break
 		}

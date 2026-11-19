@@ -628,18 +628,16 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 		// frames, rather than decode on to the end of the batch, which for
 		// an open is every frame from the key frame to the one asked for,
 		// issue #924. The cursor is then handed on as soon as it answers.
+		// Both under one lock, so a stream that takes a cursor in between
+		// sees this one finishing and may wait to read on from it.
+		f.mu.Lock()
 		if pending && kind == pictureCursor {
-			f.mu.Lock()
 			_ = f.send(gone, "stop %d", id)
-			f.mu.Unlock()
 		}
-		if at != nil && pending {
-			f.mu.Lock()
-			if f.gone == gone {
-				f.finishing[id] = *at
-			}
-			f.mu.Unlock()
+		if at != nil && pending && f.gone == gone {
+			f.finishing[id] = *at
 		}
+		f.mu.Unlock()
 		go func() {
 			for pending {
 				select {

@@ -94,11 +94,13 @@ dropped.
 
 Weighed here: a channel open for as long as the video preview, the
 window sending places on it and Go sending frames as they are made. It
-saves a request per frame, about a millisecond, and needs a reply body
-that streams, through Wails on WebKit, WebKitGTK and WebView2, and the
-walks' bridge. Each request already brings one frame, and the request is
-not where the time goes. Dropped for now, kept as the next step should
-the request show up in the measurements.
+saves a request per frame and needs a reply body that streams, through
+Wails on WebKit, WebKitGTK and WebView2, and the walks' bridge. What a
+request costs on a Mac was not measured. In the one case of Tim's log
+where both ends are timed, a request that brought three frames of 4.9 MB
+each was on the page 2 ms after Go wrote it. Each request already brings
+a frame, so the request stays, and the channel comes back should step 2's
+measurements show the request is where the time goes.
 
 ### 3. Who may know about whom
 
@@ -149,6 +151,37 @@ is exact. Kept from 5: the schedule is tested in Go by frames counted,
 not by walks. Kept from 4 as the last step: the play. Dropped from 2:
 a channel that streams, until the request is shown to cost time.
 
+## Weighed after the review
+
+The review found that the five simulations are mostly one design seen
+from five sides, and named two candidates they leave out.
+
+**The schedule inside the decoder.** `cmd/framefairy-frames` holds the
+cursors, the packets and where the key frames are, so it could choose
+too. But a play's program is cut by `cutOf` and `byTimes`, the reads
+ahead follow the words of the transcript, and the cards follow the
+clips, all of them the engine's, and the code map keeps the decoder to
+decoding. What the review found wrong in step 1 shows where the line
+goes instead: the engine chose a cursor while the decoder alone knew
+whether that cursor could read on, and a stop left the two disagreeing.
+So the engine says what is wanted, the place, how the hand is and that
+the newest wins, and the decoder alone says how to get there, a seek or
+reading on, as `goOn` already does. Kept as a refinement of the
+decision, not as a sixth layer.
+
+**The window closes the streams it left**, the first version of #921.
+It is the smallest change, and it keeps the schedule in the window,
+which still cannot see what a stream costs and still guesses with
+`REACH`, `BACK` and `SLOW`. It is the rule kept on the wrong side that
+#665 and Tim's words of 18 November rule out. Dropped.
+
+**The frames the window keeps.** Showing a frame the window holds again
+costs nothing, and a frame from Go costs a request and 4.9 MB carried.
+So step 3 does not take the window's kept frames away before it has
+measured a step back both ways. What the window may keep is what it was
+sent, as memory to draw from, the way it keeps the loudness. Which
+frames to read and keep ahead is Go's.
+
 ## The decision
 
 ```
@@ -176,7 +209,8 @@ The steps, each a pull request, each measured before and after:
    route, the schedule, and `Stream`, `REACH`, `BACK`, `SLOW`, `stale` and
    the parked places out of `app.ts`.
 3. Go keeps the frames it decoded around the playhead, so a place the
-   hand has been costs nothing, and the window's 40 kept frames go.
+   hand has been costs no decoding. The window's 40 kept frames go only
+   if a step back measures no slower without them.
 4. Go reads ahead, the next and the last word and the cards on screen,
    into what it keeps, and the window's reads ahead go.
 5. The decoder gets quicker: kept ready across a jump, several frames in
@@ -193,9 +227,20 @@ and most of `app.ts`, about 900 lines, over five or six pull requests.
 It buys an end to the waits that come from the window's guessing, up to
 950 ms in Tim's report, and it makes the decoder's own speed worth
 working on, since what it works on is then chosen by what knows the cost.
-Estimated from the parts and Tim's numbers, not measured: a median jump
-from about 61 ms to 15 to 20 ms once steps 2 to 5 are in, and no stand
-over about 30 ms while dragging.
+
+What each step may bring, estimated from the parts and Tim's numbers,
+none of it measured on a Mac yet. A let-go that waited took 61 ms on the
+median, of which the decoder's jump was 48 ms, 25 ms to start and 3.2 ms
+for each of about 10 frames decoded.
+
+- Step 2 takes away what the window added, about 13 ms on the median
+  and up to 950 ms, so about 48 ms is left: the decoder's jump.
+- Step 5 takes the start from about 25 ms to about 5 ms, by keeping the
+  chip's decoder ready across a seek, and a frame from about 3.2 ms to
+  about 1 ms, with several frames in the chip at once. About 15 ms for a
+  jump of 10 frames.
+- Steps 3 and 4 make a place the hand has been, or one read ahead,
+  cost no decoding at all, only the request.
 
 It would show it was wrong if the frames under a drag came no sooner
 with Go deciding than with the window, measured the way
