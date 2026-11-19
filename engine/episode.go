@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -79,9 +80,9 @@ type PlanSummary struct {
 	clips   []Clip
 	data    []byte
 	ordered func() ([]*object, error)
-	// stamp is the size and time of the file as it was read, see
-	// fileio.Stamp, for SaidStamp.
-	stamp string
+	// saidFrom is what the cards of the plan's clips are made of, see
+	// saidFrom, worked out once for each read.
+	saidFrom func() string
 	// said is what Said laid out last, kept with the read, see Said.
 	said *keptSaid
 }
@@ -345,9 +346,10 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 		return PlanSummary{}, err
 	}
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
-		Modified: info.ModTime(), plan: plan, clips: clips, data: data, stamp: fileio.Stamp(info),
-		ordered: sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) }),
-		said:    &keptSaid{}}
+		Modified: info.ModTime(), plan: plan, clips: clips, data: data,
+		said:     &keptSaid{},
+		ordered:  sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) }),
+		saidFrom: sync.OnceValue(func() string { return saidFrom(clips) })}
 	made := plan.PlannedWith()
 	if v, ok := num.AsFloat(made[keyFrom]); ok {
 		s.From = v
@@ -1164,6 +1166,27 @@ func (l *Look) key() (string, bool) {
 		return "", false
 	}
 	return fmt.Sprintf("%s\x00%+v\x00%p\x00%d", style, l.Source, l.Fonts, l.Fonts.generation()), true
+}
+
+// lookOnly are the parts of a caption style that change how the captions
+// look and never which words a caption holds or when it shows: the
+// colours and the height. A style that differs only in these lays the
+// captions out the same, so the cards of what was said stay as they were,
+// see layoutKey.
+var lookOnly = []string{"primary", "outline_colour", "back_colour", "highlight_colour", "margin_v"}
+
+// layoutKey is key without lookOnly: two looks with the same layoutKey
+// lay the captions out in the same words at the same times, whatever
+// colour or height they are drawn in.
+func (l *Look) layoutKey() (string, bool) {
+	if l == nil {
+		return "", true
+	}
+	style := maps.Clone(l.Style)
+	for _, k := range lookOnly {
+		delete(style, k)
+	}
+	return (&Look{Style: style, Source: l.Source, Fonts: l.Fonts}).key()
 }
 
 // fonts are the faces of l, the bundled ones when l has none.
