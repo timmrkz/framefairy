@@ -9,11 +9,14 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -788,5 +791,63 @@ func TestAClipsHashChangesWithEveryStepOfItsCrop(t *testing.T) {
 	}
 	if !slices.Equal(fields, []string{"Frame", "X"}) {
 		t.Errorf("a crop step holds %v, and clipHash hashes Frame and X of it alone", fields)
+	}
+}
+
+// The transcript search reads its cards again when the stamp of them in
+// the video's state changes, issue #933. A word corrected in a clip set
+// outside the app, a sync service bringing it in from another Mac, keeps
+// every clip's pieces, which the window once read the change from, and
+// still changes the cards. So it changes the stamp, and the cards read
+// then say the corrected word. A state read again with nothing changed
+// keeps the stamp, so the window reads nothing.
+func TestAStateSaysWhenTheCardsOfWhatWasSaidChanged(t *testing.T) {
+	svc, mine, plan := anEpisodeWithAPlan(t)
+	ctx := context.Background()
+	svc.probeVideo = func(context.Context, string) (engine.SourceInfo, error) {
+		return engine.SourceInfo{Duration: 31}, nil
+	}
+	heardEpisode(t, svc, mine, 30, [][3]any{{10.1, 10.5, "eins"}, {20.1, 20.6, "zwei"}})
+	says := func(word string) bool {
+		t.Helper()
+		cards, err := svc.Sentences(mine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.ContainsFunc(cards, func(c engine.SentenceView) bool { return c.Text == word })
+	}
+	first, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Cards == "" || !says("zwei") {
+		t.Fatalf("the cards are stamped %q and say zwei: %v", first.Cards, says("zwei"))
+	}
+	if again, _ := svc.State(ctx, mine); again.Cards != first.Cards {
+		t.Errorf("a state read again with nothing changed is stamped %q, was %q", again.Cards, first.Cards)
+	}
+
+	outside := strings.Replace(historyPlan, `"slug": "zwei",`, `"slug": "zwei", "corrections": {"20100": "zwo"},`, 1)
+	if outside == historyPlan {
+		t.Fatal("the clip set was not changed")
+	}
+	if err := afero.WriteFile(svc.store.files, plan, []byte(outside), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.store.files.Chtimes(plan, time.Unix(2_000_000_000, 0), time.Unix(2_000_000_000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	after, err := svc.State(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.EqualFunc(after.Clips, first.Clips, func(a, b ClipEntry) bool { return reflect.DeepEqual(a.Segments, b.Segments) }) {
+		t.Fatal("the pieces of a clip changed, which is not the case this is about")
+	}
+	if after.Cards == first.Cards {
+		t.Error("a word corrected outside the app left the stamp of the cards as it was")
+	}
+	if !says("zwo") {
+		t.Error("the cards read after the stamp changed do not say the corrected word")
 	}
 }

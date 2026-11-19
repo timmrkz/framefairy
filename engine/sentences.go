@@ -2,8 +2,12 @@ package engine
 
 import (
 	"cmp"
+	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"weak"
@@ -113,7 +117,7 @@ type ClipSaid struct {
 // the edit changed: one corrected word laid out every clip of every plan.
 // The slice is the caller's, the captions in it are shared and only read.
 func (s PlanSummary) Said(t *Transcript, look *Look) []ClipSaid {
-	key, keep := look.key()
+	key, keep := look.layoutKey()
 	keep = keep && s.said != nil
 	if keep {
 		if out, ok := s.said.get(t, key); ok {
@@ -131,6 +135,68 @@ func (s PlanSummary) Said(t *Transcript, look *Look) []ClipSaid {
 		s.said.set(t, key, out)
 	}
 	return slices.Clip(out)
+}
+
+// SaidStamp changes whenever the cards of what the episode says would,
+// see SaidCards, and only then: when its transcript's files change, when
+// a plan is added or removed, when what a plan's cards are made of
+// changes, see saidFrom, and when the layout of a plan's captions
+// changes, see Look.layoutKey, look giving the look of each plan. plans
+// are the episode's plans as they are now, see Episode.Plans. A crop, a
+// keyframe, a colour or the captions' height leaves it as it was. The
+// window reads the cards again when it changes, and only then: it once
+// decided that itself from the clips and the captions it held, and missed
+// a clip set changed outside the app, issue #933. A transcript that
+// cannot be read now says so in the stamp, and changes it again once it
+// can be.
+func (ep *Episode) SaidStamp(asrModelDir string, silenceDB *float64, plans []PlanSummary, look func(PlanSummary) *Look) string {
+	h := fnv.New64a()
+	if at, err := ep.transcriptStamp(asrModelDir, silenceDB); err != nil {
+		h.Write([]byte("no transcript"))
+	} else {
+		h.Write([]byte(at.stamp))
+	}
+	for _, plan := range plans {
+		key, ok := look(plan).layoutKey()
+		if !ok {
+			key = "a look with no key"
+		}
+		from := ""
+		if plan.saidFrom != nil {
+			from = plan.saidFrom()
+		}
+		fmt.Fprintf(h, "\x00%s\x00%s\x00%s", plan.Path, from, key)
+	}
+	return strconv.FormatUint(h.Sum64(), 36)
+}
+
+// saidFrom is what Said reads of clips besides the transcript and the
+// look, hashed: for every clip it lays out, one not rejected that keeps a
+// piece, its name, its pieces, the captions moved by hand, the words it
+// removed and its corrections. Nothing else of a clip changes its cards:
+// not its crop, its keyframes, its title or its thumbnails.
+func saidFrom(clips []Clip) string {
+	h := fnv.New64a()
+	enc := json.NewEncoder(h)
+	for _, c := range clips {
+		if c.Rejected || len(c.Segments) == 0 {
+			continue
+		}
+		pieces := make([][2]float64, len(c.Segments))
+		for i, p := range c.Segments {
+			pieces[i] = [2]float64{p.Start, p.End}
+		}
+		// Maps are written in the order of their keys, so the same clip
+		// always hashes the same.
+		_ = enc.Encode(struct {
+			ID           string
+			Pieces       [][2]float64
+			CaptionTimes map[string]CaptionTime
+			Removed      RemovedWords
+			Corrections  map[string]string
+		}{c.ID, pieces, c.CaptionTimes, c.RemovedWords, c.Corrections})
+	}
+	return strconv.FormatUint(h.Sum64(), 36)
 }
 
 // keptSaid is the last Said of one read of a plan, with the transcript and

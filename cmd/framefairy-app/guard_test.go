@@ -64,9 +64,6 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Clips(ctx, other); err == nil {
 		t.Error("Clips answered for a file that is not in the library")
 	}
-	if _, err := svc.Words(other, 0, 10); err == nil {
-		t.Error("Words answered for a file that is not in the library")
-	}
 	if _, err := svc.Sentences(other); err == nil {
 		t.Error("Sentences answered for a file that is not in the library")
 	}

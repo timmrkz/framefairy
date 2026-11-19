@@ -48,6 +48,9 @@ export class EpisodeSession {
   clips = $state.raw<ClipEntry[]>([]);
   // Where I and O can make a clip, from the newest state kept.
   marking = $state.raw<Marking | null>(null);
+  // Go's stamp of the cards of what the video says, from the newest state
+  // kept, see VideoState.cards.
+  cards = $state("");
   // The rev of the newest state kept.
   rev = $state(0);
   // The video's jobs in the newest state kept, the clips on their way
@@ -142,6 +145,7 @@ export class EpisodeSession {
       this.status = same(this.status, state.status);
       this.clips = fresh ? state.clips : unchanged(this.clips, state.clips);
       this.marking = same(this.marking, state.marking ?? null);
+      this.cards = state.cards ?? "";
       this.jobs = state.jobs;
       kept = true;
       this.choose(state);

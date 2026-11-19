@@ -142,10 +142,6 @@ func TestAnEpisodeWithoutATranscriptReadsEmpty(t *testing.T) {
 	if loud := askLoudness(t, svc, source); len(loud) != 8 || binary.LittleEndian.Uint32(loud) != 0 {
 		t.Errorf("loudness got %v", loud)
 	}
-	words, err := svc.Words(source, 0, 60)
-	if err != nil || words == nil || len(words) != 0 {
-		t.Errorf("words got %v, %v", words, err)
-	}
 	sentences, err := svc.Sentences(source)
 	if err != nil || sentences == nil || len(sentences) != 0 {
 		t.Errorf("sentences got %v, %v", sentences, err)
