@@ -1,11 +1,9 @@
 package engine
 
 import (
-	"bufio"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -226,26 +224,6 @@ func (r *Records) appendRecord(path string, record any) error {
 	return err
 }
 
-// readRecords calls fn with every line of a JSON Lines file in the
-// training folder. Broken lines, for example from a crash mid-write, are
-// skipped.
-func (r *Records) readRecords(path string, fn func(line []byte)) error {
-	f, err := r.Files.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1<<20), 64<<20)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if json.Valid(line) {
-			fn(line)
-		}
-	}
-	return scanner.Err()
-}
-
 func newPlanID(now time.Time) string {
 	var b [2]byte
 	_, _ = rand.Read(b[:])
@@ -323,55 +301,20 @@ func lineSpans(lines []Line) [][][2]float64 {
 
 // findPlanRecord returns the newest plan record with the given reply key.
 func (r *Records) findPlanRecord(replyKey string) (PlanRecord, bool) {
-	var found PlanRecord
-	ok := false
-	_ = r.readRecords(filepath.Join(r.TrainingDir(), "plans.jsonl"), func(line []byte) {
-		var probe struct {
-			PlanID   string `json:"plan_id"`
-			ReplyKey string `json:"reply_key"`
-		}
-		if json.Unmarshal(line, &probe) == nil && probe.ReplyKey == replyKey {
-			var full PlanRecord
-			if json.Unmarshal(line, &full) == nil {
-				found, ok = full, true
-			}
-		}
-	})
-	return found, ok
+	return r.plans.planRecordReplying(r, replyKey)
 }
 
 // findSamePlan returns an earlier record of the same answer to the same
 // prompt, so doing the same thing twice is recorded once.
 func (r *Records) findSamePlan(rec PlanRecord) (PlanRecord, bool) {
-	var found PlanRecord
-	ok := false
-	_ = r.readRecords(filepath.Join(r.TrainingDir(), "plans.jsonl"), func(line []byte) {
-		if !strings.Contains(string(line), rec.ExampleKey) {
-			return
-		}
-		var full PlanRecord
-		if json.Unmarshal(line, &full) == nil && full.ExampleKey == rec.ExampleKey &&
-			full.Planner.Model == rec.Planner.Model && sameCandidates(full.Candidates, rec.Candidates) {
-			found, ok = full, true
-		}
+	return r.plans.planRecordAsking(r, rec.ExampleKey, func(full PlanRecord) bool {
+		return full.Planner.Model == rec.Planner.Model && sameCandidates(full.Candidates, rec.Candidates)
 	})
-	return found, ok
 }
 
 // loadPlanRecord returns the plan record with a plan id.
 func (r *Records) loadPlanRecord(planID string) (PlanRecord, bool) {
-	var found PlanRecord
-	ok := false
-	_ = r.readRecords(filepath.Join(r.TrainingDir(), "plans.jsonl"), func(line []byte) {
-		if !strings.Contains(string(line), planID) {
-			return
-		}
-		var full PlanRecord
-		if json.Unmarshal(line, &full) == nil && full.PlanID == planID {
-			found, ok = full, true
-		}
-	})
-	return found, ok
+	return r.plans.planRecordWith(r, planID)
 }
 
 // LinesForSegments maps a clip's final segments back to the numbered lines

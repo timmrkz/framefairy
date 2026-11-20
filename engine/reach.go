@@ -35,18 +35,13 @@ type RoomAndLines struct {
 	Rate  float64
 }
 
-// Weigh is the part of a RoomAndLines that comes from t alone, its lines,
-// the parts heard and the rate, with no room. Weighing every line of a
-// long video is the slow part, so what reads it often keeps it for as
-// long as t is the same, see TranscriptRead.Weighed.
-func Weigh(t *Transcript) RoomAndLines {
-	r := RoomAndLines{Rate: SpokenChars}
-	if t != nil {
-		r.Lines = WeighLines(t)
-		r.Heard = t.Heard
-		r.Rate = RateOf(r.Lines)
-	}
-	return r
+// weigh is the part of a RoomAndLines that comes from t alone, its lines,
+// the parts heard and the rate, with no room, from t's lines built with
+// no loudness. Weighing every line of a long video is the slow part, so
+// it is kept for as long as t is the same, see TranscriptRead.Weighed.
+func weigh(t *Transcript, lines []Line) RoomAndLines {
+	w := weighLines(t, lines)
+	return RoomAndLines{Lines: w, Heard: t.Heard, Rate: RateOf(w)}
 }
 
 // Room is what one search of the episode's video can read with the
@@ -54,7 +49,7 @@ func Weigh(t *Transcript) RoomAndLines {
 // weighed once for each read of it, see TranscriptRead.Weighed. A
 // transcript that cannot be read is nothing heard yet.
 func (ep *Episode) Room(o Options) RoomAndLines {
-	w := Weigh(nil)
+	w := RoomAndLines{Rate: SpokenChars}
 	if h, err := ep.Transcript(o.ASRModel, o.SilenceDB); err == nil {
 		w = h.Weighed()
 	}

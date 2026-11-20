@@ -3,6 +3,8 @@ package num
 import (
 	"encoding/json"
 	"math"
+	"math/rand/v2"
+	"strconv"
 	"testing"
 )
 
@@ -28,6 +30,9 @@ func TestRoundToKeepsNDecimals(t *testing.T) {
 		{0.125, 2, 0.12},
 		{12.3456, 1, 12.3},
 		{-0.05, 1, -0.1},
+		{12.3456, 3, 12.346},
+		{3599.25, 1, 3599.2},
+		{-3599.35, 1, -3599.3}, // -3599.35 is -3599.34999999999990905 as a float
 	}
 	for _, c := range cases {
 		if got := RoundTo(c.x, c.n); got != c.want {
@@ -36,6 +41,56 @@ func TestRoundToKeepsNDecimals(t *testing.T) {
 	}
 	if got := RoundTo(math.Inf(1), 2); !math.IsInf(got, 1) {
 		t.Errorf("RoundTo(inf, 2) = %v, want inf", got)
+	}
+	// Written out, a small negative number keeps its sign as -0.000.
+	if got := RoundTo(-0.0001, 3); got != 0 || !math.Signbit(got) {
+		t.Errorf("RoundTo(-0.0001, 3) = %v, want -0", got)
+	}
+}
+
+// TestRoundToGivesWhatTheTextGives holds RoundTo to its definition, the
+// number written with n decimals and read back, bit for bit. Every time
+// the engine keeps is rounded so, and a plan or a transcript written
+// before must read the same.
+func TestRoundToGivesWhatTheTextGives(t *testing.T) {
+	t.Parallel()
+	byText := func(x float64, n int) float64 {
+		v, err := strconv.ParseFloat(strconv.FormatFloat(x, 'f', n, 64), 64)
+		if err != nil {
+			return x
+		}
+		return v
+	}
+	check := func(x float64, n int) {
+		if !IsFinite(x) {
+			return // kept as they are, see TestRoundToKeepsNDecimals
+		}
+		if want, got := byText(x, n), RoundTo(x, n); math.Float64bits(got) != math.Float64bits(want) {
+			t.Fatalf("RoundTo(%s, %d) = %v, written and read back %v", strconv.FormatFloat(x, 'g', -1, 64), n, got, want)
+		}
+	}
+	rng := rand.New(rand.NewPCG(3, 4))
+	for range 300_000 {
+		n := rng.IntN(6)
+		var x float64
+		switch rng.IntN(5) {
+		case 0: // any time in a long video
+			x = rng.Float64() * 400000
+		case 1: // a time already on the millisecond grid
+			x = float64(rng.IntN(400000000)) / 1000
+		case 2: // a half of the last decimal kept
+			x = (float64(rng.IntN(4000000)) + 0.5) / math.Pow(10, float64(n))
+		case 3: // any bit pattern
+			x = math.Float64frombits(rng.Uint64())
+		default:
+			x = (rng.Float64() - 0.5) * 200
+		}
+		check(x, n)
+	}
+	for _, x := range []float64{0, math.Copysign(0, -1), -0.0001, 1.005, 2.675, 0.125, -0.125, 1e17, 5e-324, 4503599627370495.5, math.MaxFloat64} {
+		for n := range 18 {
+			check(x, n)
+		}
 	}
 }
 

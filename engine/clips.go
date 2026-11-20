@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -239,7 +240,7 @@ func (p Plan) PlannedWith() map[string]any {
 }
 
 func decodeJSON(data []byte, into any) error {
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	return decoder.Decode(into)
 }

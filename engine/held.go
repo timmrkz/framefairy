@@ -241,7 +241,7 @@ func (ep *Episode) heardSoFar(modelDir string, silenceDB *float64) (heardSoFar, 
 		if err != nil {
 			return heardSoFar{}, err
 		}
-		return heardSoFar{done: file.done(), heard: t.Heard, said: saidOf(BuildLines(t.Words, t.Levels(), nil))}, nil
+		return heardSoFar{done: file.done(), heard: t.Heard, said: saidOf(BuildLines(t.Words, nil, nil))}, nil
 	})
 }
 
@@ -297,9 +297,11 @@ func (ep *Episode) transcriptStamp(modelDir string, silenceDB *float64) (transcr
 // newTranscriptRead is t as it is held, done when it has heard the whole
 // video.
 func newTranscriptRead(t *Transcript, done bool) *TranscriptRead {
+	// Built once for both, and with no loudness, which neither reads.
+	lines := sync.OnceValue(func() []Line { return BuildLines(t.Words, nil, nil) })
 	return &TranscriptRead{Transcript: t, Done: done,
-		said:    sync.OnceValue(func() *[2]float64 { return saidOf(BuildLines(t.Words, t.Levels(), nil)) }),
-		weighed: sync.OnceValue(func() RoomAndLines { return Weigh(t) }),
+		said:    sync.OnceValue(func() *[2]float64 { return saidOf(lines()) }),
+		weighed: sync.OnceValue(func() RoomAndLines { return weigh(t, lines()) }),
 	}
 }
 

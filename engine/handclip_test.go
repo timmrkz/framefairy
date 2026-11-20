@@ -5,8 +5,12 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -186,6 +190,65 @@ func TestAClipMadeByHand(t *testing.T) {
 	o := view.Clips[1]
 	if o.End < 60-0.01 || o.End > 60+maxLineSeconds || o.Duration < 20 || o.Duration > 30.5 {
 		t.Errorf("O at 60 s made %.1f to %.1f s", o.Start, o.Start+o.Duration)
+	}
+}
+
+// transcriptOpens is a disk that counts how often the files of a
+// transcript are opened, the one way a transcript is read.
+type transcriptOpens struct {
+	afero.Fs
+	n atomic.Int64
+}
+
+func (f *transcriptOpens) Open(name string) (afero.File, error) {
+	f.count(name)
+	return f.Fs.Open(name)
+}
+
+func (f *transcriptOpens) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	f.count(name)
+	return f.Fs.OpenFile(name, flag, perm)
+}
+
+func (f *transcriptOpens) count(name string) {
+	if slices.Contains(TranscriptFiles(filepath.Dir(name)), name) {
+		f.n.Add(1)
+	}
+}
+
+// A press of I or O where the video is heard already reads no transcript
+// from the disk: the one the video holds is the one the clip is made of.
+// A long video's transcript takes a fifth of a second to read, every time
+// it is read, before the clip's crop can be placed.
+//
+// On the real disk: ffmpeg reads the episode the clip is heard and framed from.
+func TestAClipMadeByHandReadsTheTranscriptTheVideoHolds(t *testing.T) {
+	t.Parallel()
+	source := testEpisode(t, "70")
+	log, _ := underwayLog()
+	opens := &transcriptOpens{Fs: disk}
+	var heard int32
+	e := NewEngine(log, NewMachine(opens))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	base.Min, base.Max = 20, 30
+	p := NewProject(e, source, base)
+	ctx := context.Background()
+
+	if _, err := p.MakeClip(ctx, "clip-1", ClipRequest{At: 20}, Host{}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	before := opens.n.Load()
+	if _, err := p.MakeClip(ctx, "clip-2", ClipRequest{At: 20}, Host{}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if n := opens.n.Load() - before; n != 0 {
+		t.Errorf("the second clip opened the transcript's files %d times, want none", n)
+	}
+	if view, err := ReadPlan(disk, p.HandPlanPath()); err != nil || len(view.Clips) != 2 {
+		t.Fatalf("%v %+v", err, view)
 	}
 }
 
