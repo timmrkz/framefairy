@@ -96,6 +96,30 @@ describe("AppFrames", () => {
     expect(told.searchParams.get("kept")).toBe("1");
     app.close();
   });
+
+  test("a hand that lets go on a kept frame is told to the Go side", async () => {
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      asked.push(url);
+      return new Promise(() => {});
+    });
+    const { app, picture } = frames(() => ({ width: 4, height: 2 }));
+    app.paused = () => true;
+    app.keep(40, picture(40, 4, 2));
+    app.keep(41, picture(41, 4, 2));
+    app.grip(true);
+    await app.frame(41, 0);
+    await app.frame(40, 0);
+    app.grip(false);
+    const was = asked.length;
+    await app.frame(40, 0);
+    // The Go side heard the hand drag to 40, and now that it rests there.
+    expect(asked.length).toBe(was + 1);
+    const told = new URL(asked[was], "http://x");
+    expect(told.searchParams.get("frame")).toBe("40");
+    expect(told.searchParams.get("move")).toBe(null);
+    app.close();
+  });
 });
 
 // Frames of a 200 frame track on a Go side that never answers, so a frame

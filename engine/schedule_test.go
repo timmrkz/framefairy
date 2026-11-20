@@ -912,3 +912,57 @@ func TestADragIsLoggedOnceTheHandLetsGo(t *testing.T) {
 		t.Fatalf("the drag was logged as %q", line)
 	}
 }
+
+// A hand that jumps far is shown no frame kept from the stretch it left,
+// however much nearer than the frame on screen: the picture would jump
+// there and away again once the key frame before the hand comes. The
+// first frame on the way is that key frame, read from the start.
+func TestAFarJumpShowsNoFrameOfTheStretchItLeft(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	s.mu.Lock()
+	for f := 10; f <= 40; f++ {
+		s.kept.put(keptKey{grid: lookGrid, w: 4, h: 2, frame: f}, lookGrid.At(f), make([]byte, 32))
+	}
+	s.mu.Unlock()
+	h := move(110, 10)
+	at := lookFor(s, h)
+	st := dec.next(t)
+	if st.from != 100 || !st.key {
+		t.Fatalf("the jump had a stream from %d, key first %v, want from its key frame at 100", st.from, st.key)
+	}
+	_ = st.give(t, 100)
+	if got := <-at; got.err != nil || got.seen.Frame != 100 || got.seen.Exact {
+		t.Fatalf("the jump got %+v, %v, want the key frame before the hand on the way", got.seen, got.err)
+	}
+}
+
+// A video preview that lets go of the video in the middle of a drag
+// leaves no hand behind: the first look of the next is the frame of its
+// place, and no frame on the way, as the hand never moved there. An
+// episode opened on its clip showed a frame before the clip's first,
+// because a trim had dragged the playhead before its workspace slept.
+func TestTheNextVideoPreviewFindsNoDragLeftBehind(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	dragged := lookFor(s, move(30, 20))
+	st := dec.next(t)
+	_ = st.give(t, 30)
+	if got := <-dragged; got.err != nil || got.seen.Frame != 30 {
+		t.Fatalf("the drag got %+v, %v", got.seen, got.err)
+	}
+	s.LetFramesGo()
+	opened := lookFor(s, rest(19))
+	again := dec.next(t)
+	if again.key {
+		t.Fatalf("the look of a new video preview had a stream from %d with its key frame first, as for a drag", again.from)
+	}
+	for f := again.from; f <= 19; f++ {
+		_ = again.give(t, f)
+	}
+	if got := <-opened; got.err != nil || got.seen.Frame != 19 || !got.seen.Exact {
+		t.Fatalf("the look of a new video preview got %+v, %v, want its own frame and none on the way", got.seen, got.err)
+	}
+}

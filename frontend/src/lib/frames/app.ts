@@ -96,9 +96,10 @@ export class AppFrames {
   paused: () => boolean = () => true;
   // The near frames asked of the Go side, and the place asked for next.
   private nearAsk = false;
-  // The place of the hand the Go side was asked for or told last, see
-  // tell.
+  // The place of the hand the Go side was asked for or told last, and
+  // whether the hand moved there, see tell.
   private place = -1;
+  private placeMoving = false;
   // The looks on their way, by the rank they ask for, see look.
   private asking = new Map<number, Promise<unknown>>();
   private nearNext = -1;
@@ -210,6 +211,7 @@ export class AppFrames {
     q.set("n", String(++this.sent));
     if (w.moving) q.set("move", "1");
     this.place = w.rank;
+    this.placeMoving = w.moving;
     const asked = this.puller.pull(`/frames/look?${q}`, width, height);
     this.asking.set(w.rank, asked);
     const got = await asked;
@@ -416,9 +418,11 @@ export class AppFrames {
   // know, and the frames past them were read only once it got there.
   private tell(w: Waiter) {
     // The place the Go side was told or asked last is where it knows the
-    // hand to be.
-    if (w.rank === this.place) return;
+    // hand to be, unless the hand let go there or took hold: a let-go the
+    // Go side never heard leaves it thinking the hand still drags.
+    if (w.rank === this.place && w.moving === this.placeMoving) return;
     this.place = w.rank;
+    this.placeMoving = w.moving;
     const { width, height } = this.size();
     const q = new URLSearchParams({
       path: this.path,

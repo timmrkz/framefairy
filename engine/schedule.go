@@ -365,21 +365,17 @@ func (s *Schedule) best(l Hand) (Seen, bool) {
 	if !s.early {
 		return Seen{}, false
 	}
-	// Nearer than the frame on screen, and no further than a few spans of
-	// key frames: further than that, the decoder has the frame sooner
-	// than this finds it, and nothing that far is kept for long.
-	most := 4 * s.span(l.Grid)
-	if l.Shown >= 0 {
-		most = min(most, framesApart(l.Shown, l.Frame)-1)
-	}
 	// The side the frame on screen is on first: a frame there is on the
 	// way from it.
 	toward := -1
 	if l.Shown > l.Frame {
 		toward = 1
 	}
-	for d := 1; d <= most; d++ {
+	for d := 1; d <= 4*s.span(l.Grid); d++ {
 		for _, f := range [2]int{l.Frame + toward*d, l.Frame - toward*d} {
+			if !s.onTheWay(l, f) {
+				continue
+			}
 			key.frame = f
 			if k, ok := s.kept.get(key); ok {
 				return Seen{Frame: f, At: k.at, Picture: k.picture, Kept: true}, true
@@ -387,6 +383,23 @@ func (s *Schedule) best(l Hand) (Seen, bool) {
 		}
 	}
 	return Seen{}, false
+}
+
+// onTheWay tells whether a frame other than the place of a look is one to
+// show on the way to it: nearer the place than the frame on screen, and
+// not before the key frame before the place. A frame before that key
+// frame is of another stretch of the video, which the picture would jump
+// to and away from again as soon as the key frame comes, and the decoder
+// has that key frame sooner than the hand could read the frame. Under the
+// lock.
+func (s *Schedule) onTheWay(l Hand, f int) bool {
+	if f == l.Frame || f < 0 || f >= l.Grid.Count {
+		return false
+	}
+	if l.Shown >= 0 && framesApart(f, l.Frame) >= framesApart(l.Shown, l.Frame) {
+		return false
+	}
+	return f > l.Frame || f >= s.keyBefore(l.Grid, l.Frame)
 }
 
 // overtake answers every look that waits with ErrOvertaken: the hand went
@@ -404,6 +417,11 @@ func (s *Schedule) overtake() {
 func (s *Schedule) LetFramesGo() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// The hand of the video preview that let go is no hand any more: a
+	// drag it left unfinished would have the first look of the next
+	// answered with frames on the way, as if the hand had moved there.
+	s.endDrag()
+	s.handSet = false
 	s.kept = newKeptFrames(lookKeptBytes)
 }
 
@@ -733,7 +751,7 @@ func (s *Schedule) answer(r *lookRun, frame int) {
 	kept := s.waiting[:0]
 	for _, w := range s.waiting {
 		l := w.look
-		near := frame == l.Frame || s.early && (l.Shown < 0 || framesApart(frame, l.Frame) < framesApart(l.Shown, l.Frame))
+		near := frame == l.Frame || s.early && s.onTheWay(l, frame)
 		if r.sized(l) && near {
 			if seen, ok := s.best(l); ok {
 				seen.Kept = false
