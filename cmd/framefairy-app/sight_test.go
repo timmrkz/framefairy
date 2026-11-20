@@ -1,7 +1,6 @@
 package main
 
 import (
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -68,18 +67,5 @@ func TestTheLogSaysWhetherThePageStaysDrawnWhileCovered(t *testing.T) {
 		if level != c.level || !strings.Contains(msg, c.says) {
 			t.Errorf("done %d said %s %q, want %s with %q", c.done, level, msg, c.level, c.says)
 		}
-	}
-}
-
-// Away from the Mac the page is left as the system draws it, and a window
-// that is not there yet is no fault.
-func TestOnlyTheMacIsToldToKeepACoveredPageDrawn(t *testing.T) {
-	got := drawingKeep(nil)
-	want := drawingNotDropped
-	if runtime.GOOS == "darwin" {
-		want = drawingNoWebView
-	}
-	if got != want {
-		t.Errorf("drawingKeep(nil) did %d, want %d", got, want)
 	}
 }

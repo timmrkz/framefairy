@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,18 +62,8 @@ func main() {
 	}
 	info("opened %s", probe.about())
 	probe.close()
-	if chip && runtime.GOOS == "darwin" {
-		if t := astiav.FindHardwareDeviceTypeByName("videotoolbox"); t != astiav.HardwareDeviceTypeNone {
-			hw, err := astiav.CreateHardwareDeviceContext(t, "", nil, 0)
-			if err != nil {
-				info("the graphics chip cannot decode here: %v", err)
-			} else {
-				d.hardware = hw
-				info("the graphics chip is ready, VideoToolbox")
-			}
-		} else {
-			info("this ffmpeg has no VideoToolbox")
-		}
+	if chip {
+		d.hardware = chipDevice()
 	}
 	lines := bufio.NewScanner(os.Stdin)
 	for lines.Scan() {

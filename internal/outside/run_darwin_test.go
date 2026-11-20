@@ -1,4 +1,4 @@
-//go:build outside && darwin
+//go:build outside
 
 package outside
 

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -917,13 +916,6 @@ func silent(samples []float32) bool {
 		}
 	}
 	return true
-}
-
-func heardNothing() string {
-	if runtime.GOOS == "darwin" {
-		return "the microphone heard nothing. If Frame Fairy may not use it, allow it in System Settings, Privacy & Security, Microphone."
-	}
-	return "the microphone heard nothing. Check that one is connected and that Frame Fairy may use it."
 }
 
 // systemMicrophone is the machine's own microphone, the one the system

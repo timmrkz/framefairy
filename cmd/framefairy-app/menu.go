@@ -1,10 +1,6 @@
 package main
 
-import (
-	"runtime"
-
-	"github.com/wailsapp/wails/v3/pkg/application"
-)
+import "github.com/wailsapp/wails/v3/pkg/application"
 
 // appMenu is the menu Wails gives every app, with two changes: Undo and
 // Redo in Edit belong to the app, and so does Help.
@@ -20,21 +16,7 @@ func appMenu(app *application.App, tell emitter, checkForUpdates func()) *applic
 	// The app menu, the stock one with Check for Updates in it, where every
 	// Mac app keeps it. The first menu is the app menu whatever it is
 	// called.
-	if runtime.GOOS == "darwin" {
-		own := menu.AddSubmenu("Frame Fairy")
-		own.AddRole(application.About)
-		own.Add("Check for Updates…").OnClick(func(*application.Context) { checkForUpdates() })
-		own.AddSeparator()
-		own.AddRole(application.ServicesMenu)
-		own.AddSeparator()
-		own.AddRole(application.Hide)
-		own.AddRole(application.HideOthers)
-		own.AddRole(application.UnHide)
-		own.AddSeparator()
-		own.AddRole(application.Quit)
-	} else if runtime.GOOS != "windows" {
-		menu.AddRole(application.AppMenu)
-	}
+	addAppMenu(menu, checkForUpdates)
 	menu.AddRole(application.FileMenu)
 	edit := menu.AddSubmenu("Edit")
 	edit.Add("Undo").SetAccelerator("CmdOrCtrl+z").OnClick(func(*application.Context) {
@@ -49,9 +31,7 @@ func appMenu(app *application.App, tell emitter, checkForUpdates func()) *applic
 	edit.AddRole(application.Cut)
 	edit.AddRole(application.Copy)
 	edit.AddRole(application.Paste)
-	if runtime.GOOS == "darwin" {
-		edit.AddRole(application.PasteAndMatchStyle)
-	}
+	addPasteAndMatchStyle(edit)
 	edit.AddRole(application.Delete)
 	edit.AddRole(application.SelectAll)
 	menu.AddRole(application.ViewMenu)

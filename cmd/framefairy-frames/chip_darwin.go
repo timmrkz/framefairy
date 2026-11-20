@@ -36,3 +36,20 @@ func chipDecodes(id astiav.CodecID) bool {
 	t := C.CMVideoCodecType(uint32(kind[0])<<24 | uint32(kind[1])<<16 | uint32(kind[2])<<8 | uint32(kind[3]))
 	return C.VTIsHardwareDecodeSupported(t) != 0
 }
+
+// chipDevice is VideoToolbox, the graphics chip that decodes pictures on
+// a Mac, or nil when this ffmpeg has none or it cannot decode here.
+func chipDevice() *astiav.HardwareDeviceContext {
+	t := astiav.FindHardwareDeviceTypeByName("videotoolbox")
+	if t == astiav.HardwareDeviceTypeNone {
+		info("this ffmpeg has no VideoToolbox")
+		return nil
+	}
+	hw, err := astiav.CreateHardwareDeviceContext(t, "", nil, 0)
+	if err != nil {
+		info("the graphics chip cannot decode here: %v", err)
+		return nil
+	}
+	info("the graphics chip is ready, VideoToolbox")
+	return hw
+}

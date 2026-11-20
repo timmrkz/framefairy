@@ -3427,23 +3427,6 @@ func TestAHomeKeptByOneBridgeIsTakenByAnother(t *testing.T) {
 	}
 }
 
-// A program's processor time holds what the programs it started and
-// waited for took: the walks summary counts a bridge with its ffmpeg.
-func TestTheProcessorTimeOfAProgramHoldsWhatItStarted(t *testing.T) {
-	t.Parallel()
-	if runtime.GOOS != "linux" {
-		t.Skip("the walks summary counts the programs a program started on Linux")
-	}
-	// The shell only waits, its child counts to 200000.
-	cmd := exec.Command("sh", "-c", `sh -c 'i=0; while [ $i -lt 200000 ]; do i=$((i+1)); done' & wait`)
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
-	}
-	if cpu := cpuOf(cmd); cpu < 20*time.Millisecond {
-		t.Errorf("a shell whose child counted took %s, want the child's counting in it", cpu)
-	}
-}
-
 // The machine's busy time is read from the first line of /proc/stat, in
 // hundredths of a second, without the time it was idle or waited on the
 // disk, and nothing else passes for it.

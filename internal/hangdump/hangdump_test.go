@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -53,9 +52,7 @@ func TestAProgramThatWaitsIsWrittenDown(t *testing.T) {
 	if strings.Contains(said, "not all of them found") || strings.Contains(said, "ps:") {
 		t.Errorf("the dump says a tool failed:\n%s", said)
 	}
-	if runtime.GOOS == "darwin" && (!strings.Contains(said, "== process "+strconv.Itoa(cat)+":\n") || !strings.Contains(said, "Call graph")) {
-		t.Errorf("no stack of cat on a Mac:\n%s", said)
-	}
+	hasStack(t, said, cat)
 	if !strings.HasSuffix(said, "== hangdump: end\n") {
 		t.Errorf("the dump does not end where it says:\n%s", said)
 	}
