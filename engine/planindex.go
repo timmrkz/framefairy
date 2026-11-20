@@ -163,8 +163,7 @@ func (x *planIndex) catchUp(f io.ReaderAt, info fs.FileInfo) error {
 // the first "plan_id":" is the record's own. A key whose value holds an
 // escape, or a line that holds none of them, is read as JSON. A broken
 // line, from a crash in the middle of writing it, is found when its
-// record is read, and passed over then, the way readRecords passes it
-// over.
+// record is read, and passed over then.
 func keysOf(line []byte) (planKeys, bool) {
 	var keys planKeys
 	found := 0

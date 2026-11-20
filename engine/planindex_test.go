@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -206,4 +208,24 @@ func (f *countedFile) ReadAt(p []byte, off int64) (int, error) {
 	n, err := f.File.ReadAt(p, off)
 	f.n.Add(int64(n))
 	return n, err
+}
+
+// readRecords calls fn with every line of a JSON Lines file in the
+// training folder, for a test to read what was recorded. Broken lines, for example from a crash mid-write, are
+// skipped.
+func (r *Records) readRecords(path string, fn func(line []byte)) error {
+	f, err := r.Files.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1<<20), 64<<20)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if json.Valid(line) {
+			fn(line)
+		}
+	}
+	return scanner.Err()
 }

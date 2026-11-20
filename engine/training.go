@@ -1,11 +1,9 @@
 package engine
 
 import (
-	"bufio"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -224,26 +222,6 @@ func (r *Records) appendRecord(path string, record any) error {
 		err = closeErr
 	}
 	return err
-}
-
-// readRecords calls fn with every line of a JSON Lines file in the
-// training folder. Broken lines, for example from a crash mid-write, are
-// skipped.
-func (r *Records) readRecords(path string, fn func(line []byte)) error {
-	f, err := r.Files.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1<<20), 64<<20)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if json.Valid(line) {
-			fn(line)
-		}
-	}
-	return scanner.Err()
 }
 
 func newPlanID(now time.Time) string {
