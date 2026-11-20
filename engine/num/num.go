@@ -57,7 +57,10 @@ func RoundTo(x float64, n int) float64 {
 	}
 	if n >= 0 && n < len(pow10) {
 		p := pow10[n]
-		if y := x * p; math.Abs(y) < 1<<52 && math.Abs(y-math.Trunc(y)) != 0.5 {
+		// The conversion keeps the product rounded to a float64. Without it
+		// arm64 fuses the multiply into the subtraction below, which then
+		// sees the exact product and misses a half the rounded one lands on.
+		if y := float64(x * p); math.Abs(y) < 1<<52 && math.Abs(y-math.Trunc(y)) != 0.5 {
 			return math.Round(y) / p
 		}
 	}
