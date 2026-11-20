@@ -169,11 +169,13 @@ func (p *Project) MakeClip(ctx context.Context, id string, req ClipRequest, host
 	}
 	defer release()
 
-	t, err := p.Transcript()
+	// The transcript hear just read, and with no loudness, which neither
+	// the clip nor its plan reads.
+	t, err := p.heldTranscript()
 	if err != nil {
 		return "", err
 	}
-	lines := BuildLines(t.Words, t.Levels(), o.MaxPause)
+	lines := BuildLines(t.Words, nil, o.MaxPause)
 	build := p.engine.newPlanBuilder(stepCtx, p.Source, source, lines, nil, PlanOptions{
 		Count: 1, MinLen: o.Min, MaxLen: o.Max, OutW: o.Width, OutH: o.Height,
 		MaxPause: o.MaxPause, KeepPause: o.KeepPause, Recipe: o.Recipe, LogDir: p.LogsDir(),

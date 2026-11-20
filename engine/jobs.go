@@ -728,7 +728,7 @@ func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (
 		p.engine.mu.Unlock()
 	}()
 	for {
-		gaps := Unheard(p.Files, p.Source, p.Base.ASRModel, span)
+		gaps := p.unheard(span)
 		if len(gaps) == 0 {
 			return nothing, nil
 		}
@@ -770,12 +770,24 @@ func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (
 		if err != nil {
 			return nothing, err
 		}
-		if gaps := Unheard(p.Files, p.Source, p.Base.ASRModel, span); len(gaps) > 0 {
+		if gaps := p.unheard(span); len(gaps) > 0 {
 			release()
 			return nothing, fmt.Errorf("the transcription left %s to %s unheard", HMS(gaps[0].Start), HMS(gaps[0].End))
 		}
 		return release, nil
 	}
+}
+
+// unheard is what of span the episode's transcript has not heard yet, see
+// Unheard, from the transcript the machine holds. What hears next, or
+// makes a clip of what was heard, reads the same transcript, so it is
+// read once for both rather than once for each.
+func (p *Project) unheard(span timed.Window) []timed.Window {
+	var heard [][2]float64
+	if t, err := p.heldTranscript(); err == nil {
+		heard = t.Heard
+	}
+	return gapsIn(heard, span)
 }
 
 // windowEnd is where a search's window ends.

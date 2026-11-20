@@ -426,6 +426,13 @@ func (p *Project) Transcript() (*Transcript, error) {
 	return SavedTranscript(p.Files, p.Source, p.LogsDir(), p.Base.ASRModel, p.Base.SilenceDB)
 }
 
+// heldTranscript is the transcript of the episode as the machine holds
+// it, read from its files only when they changed since it was last read,
+// see Episode.Transcript. It is shared and only read.
+func (p *Project) heldTranscript() (*TranscriptRead, error) {
+	return p.engine.Episode(p.Source).Transcript(p.Base.ASRModel, p.Base.SilenceDB)
+}
+
 // SavedTranscript reads the words already heard of an episode, as far as
 // hearing it has got, as they were heard. A clip's corrections are its
 // own, see Transcript.Of. It never transcribes, and
