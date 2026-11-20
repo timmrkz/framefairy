@@ -124,3 +124,46 @@ func BenchmarkSavingAPartHeard(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkTheTranscriptSearch times one letter typed into the search in
+// the clip column over the cards of a video of four hours: an answer
+// that holds what was typed, one found only with a slip, and none, and
+// making the cards ready, which is done once for each read of them.
+func BenchmarkTheTranscriptSearch(b *testing.B) {
+	fsys, source := longVideo(b, 4)
+	r, err := NewMachine(fsys).Episode(source).Transcript("m", nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	cards := SaidCards(r.Transcript, nil)
+	b.Run("ready", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			NewSaidSearch(cards).Answer("")
+		}
+	})
+	search := NewSaidSearch(cards)
+	search.Answer("")
+	for _, typed := range []string{"ende", "wrot", "qxz"} {
+		b.Run(typed, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				search.Answer(typed)
+			}
+		})
+	}
+}
+
+// BenchmarkTheLinesOfASearch times the lines a search of half an hour
+// asks about, with the default recipe, from a transcript read.
+func BenchmarkTheLinesOfASearch(b *testing.B) {
+	fsys, source := longVideo(b, 0.5)
+	r, err := NewMachine(fsys).Episode(source).Transcript("m", nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		searchLines(r.Transcript, Options{})
+	}
+}

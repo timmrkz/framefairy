@@ -2394,12 +2394,16 @@ found is a place in the video, and I and O make a clip there.
   card is there. Typing keeps the cards that hold what was typed. Only
   where no card holds it, the cards where every word typed is a word of
   the card typed with a slip, a letter too many, too few, wrong or two
-  swapped, `near` in `lib/match.ts`. A word of up to seven letters may
+  swapped. A word of up to seven letters may
   have one slip and a longer one two, two letters none, and from five
   letters on it may be the start of a longer word. So arrm finds Arm and
   genomen finds genommen. The font list's way of finding a name, by its
   letters in order with gaps, found Verteidigungsministers for ernste in
-  a transcript, found by Tim. The words that answer are bold. What is typed
+  a transcript, found by Tim. The words that answer are bold. Go answers
+  what is typed, `engine.SaidSearch` through `SearchSaid`, over the cards
+  the video's Episode keeps ready until they change, and the window shows
+  the cards it is told, #927. Each answer stays until the next, so the list never
+  empties between two letters. What is typed
   is read from the top of the list, wherever the hand had scrolled it.
   The field says in grey, before its cross, how many cards match, the
   number fading in anew as it changes. Where nothing matches, the list

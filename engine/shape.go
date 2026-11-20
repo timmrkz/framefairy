@@ -205,7 +205,7 @@ func (g Gesture) change(clip Clip, t *Transcript, keepPause float64, s Style) (
 	// The words an edge lands on are the words the captions show, halves
 	// of a hyphenated word and all, see ShowWords.
 	stops := func(from, to float64) []timed.Cue {
-		return ShowWords(t.WordsBetween(from-60, to+60), s, t.Language)
+		return ShowWords(t.WordsBetween(from-60, to+60), s, t.Language())
 	}
 	first := clip.Segments[0].Start
 	last := clip.Segments[len(clip.Segments)-1].End
@@ -513,7 +513,7 @@ const landingReach = 30.0
 // wordsNear are the words, as the captions show them in the style s, that
 // an edge the hand has at can land on, see wordsAround.
 func wordsNear(t *Transcript, s Style, at float64) []timed.Cue {
-	return ShowWords(wordsAround(t.Words, at), s, t.Language)
+	return ShowWords(wordsAround(t.Words, at), s, t.Language())
 }
 
 // goesNear are where the captions of clip go near an end the hand has

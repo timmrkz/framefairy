@@ -15,13 +15,15 @@ export default [
     // Then, in a short app so most cards are out of view, a card walked
     // to lands where it should, though typing lays out only the cards in
     // view. "a" after "ar" brings cards in again not laid out in that
-    // search.
+    // search. Last, the answer to an earlier letter coming back after
+    // the answer to a later one.
     steps: [
       ["trim", "start", 300],
       ["make while paused", "i"],
       ["search said", ["Jahre", 0, "copy"]],
       ["app size", 1100, 520],
       ["said lands", ["e", "ar", "a", ""]],
+      ["said answers in order", ["a", "ar"]],
     ],
   },
   {

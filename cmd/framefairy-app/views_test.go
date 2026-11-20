@@ -150,6 +150,7 @@ func TestThePlansAskedThroughTheAppFromEverywhereAtOnce(t *testing.T) {
 				_ = svc.Episode(video)
 			case 3:
 				_, _ = svc.Sentences(video)
+				_, _ = svc.SearchSaid(video, "eins")
 			case 4:
 				_ = svc.captionLook(video, plan)
 			default:

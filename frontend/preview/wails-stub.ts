@@ -869,6 +869,15 @@ function sentences() {
   close();
   return out;
 }
+// The cards Sentences sent last, which the Go side searches, kept while
+// what is heard stays the same: making them again for every letter typed
+// cost the preview more than the search does.
+let sentKept: { heard: string; cards: (ReturnType<typeof sentences>[number] & { lower: string })[] } | null = null;
+function sentSentences() {
+  const heard = JSON.stringify(heardParts());
+  if (sentKept?.heard !== heard) sentKept = { heard, cards: sentences().map((c) => ({ ...c, lower: c.text.toLowerCase() })) };
+  return sentKept.cards;
+}
 // What the transcript on disk has heard: from the start as far as the
 // searches got, and the parts the clips made by hand had heard.
 function heardParts(): [number, number][] {
@@ -2060,6 +2069,24 @@ const Answers = {
       }
       case "Sentences":
         return Promise.resolve(sentences());
+      // The cards that hold what was typed, with the words that hold it
+      // in bold. The Go side also finds a word typed with a slip, see
+      // engine.SaidSearch, which no layout here needs.
+      case "SearchSaid": {
+        const want = String(args[1]).trim().toLowerCase().replace(/\s+/g, " ");
+        return Promise.resolve(
+          sentSentences().flatMap((c) => {
+            const at = c.lower.indexOf(want);
+            if (!want || at < 0) return want ? [] : [{ start: c.start, bold: [] }];
+            // A word from its first letter or digit to its last, the
+            // marks around it not bold, as in engine.SaidSearch.
+            const words = [...c.text.matchAll(/[\p{L}\p{N}](?:\S*[\p{L}\p{N}])?/gu)].filter(
+              (m) => m.index < at + want.length && m.index + m[0].length > at,
+            );
+            return [{ start: c.start, bold: words.map((m) => [m.index, m.index + m[0].length]) }];
+          }),
+        );
+      }
       // Removing waits for the episode's work to stop, which takes a
       // moment while a search runs. Every call is counted, so a probe can
       // see whether a second click sent a second removal.

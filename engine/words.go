@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"framefairy/engine/timed"
@@ -20,16 +21,56 @@ import (
 // a correction that reads as several words is split into those words.
 
 // hear makes the words from what the recogniser heard, moved onto the
-// sound, with no corrections yet.
+// sound, with no corrections yet. The language and the keys of the words
+// are worked out only when something asks, see heardLookups.
 func (t *Transcript) hear(raw []timed.Cue) {
 	t.RawWords = raw
 	t.snapped = SnapWords(raw, t.Frames, t.Start, t.Floor)
-	t.keys, t.byKey = nil, nil
-	if len(raw) == len(t.snapped) {
-		t.keys = make([]string, len(raw))
-		t.byKey = make(map[string]int, len(raw))
-		taken := make(map[int64]bool, len(raw))
-		for i, w := range raw {
+	t.lookups = &heardLookups{raw: raw, snapped: t.snapped}
+	t.Correct(nil)
+	t.lookups.words = t.Words
+}
+
+// heardLookups is what a transcript reads off its heard words only when
+// something asks: the key each heard word is kept by, which only a
+// correction needs, and the language, which only captions need. Every
+// read of a transcript used to work out both, 7 ms for two hours of
+// words, whatever the reader wanted. hear makes a new one, and the copies
+// Of makes share it, so a read works out each at most once, from the
+// words as they were heard, whatever a clip corrects. They are worked
+// out under a sync.Once, because a transcript is read from more than one
+// goroutine at a time.
+type heardLookups struct {
+	raw, snapped []timed.Cue
+	// words are the words as heard, the ones the language is read off.
+	words []timed.Cue
+
+	keysOnce sync.Once
+	// keys are what each heard word is kept by, the millisecond the
+	// recogniser heard it start, and byKey finds a heard word by its
+	// key, see heardIndex.
+	keys  []string
+	byKey map[string]int
+
+	languageOnce sync.Once
+	language     string
+}
+
+// keyed is the key of each heard word and the word of each key, or none
+// for a transcript that was not heard, or whose words were not all moved
+// onto the sound.
+func (l *heardLookups) keyed() ([]string, map[string]int) {
+	if l == nil {
+		return nil, nil
+	}
+	l.keysOnce.Do(func() {
+		if len(l.raw) != len(l.snapped) {
+			return
+		}
+		l.keys = make([]string, len(l.raw))
+		l.byKey = make(map[string]int, len(l.raw))
+		taken := make(map[int64]bool, len(l.raw))
+		for i, w := range l.raw {
 			// The recogniser can hear two words start in the same step,
 			// the first of them no longer than nothing. The second takes
 			// the next millisecond free, so every word has a key of its
@@ -39,12 +80,27 @@ func (t *Transcript) hear(raw []timed.Cue) {
 				ms++
 			}
 			taken[ms] = true
-			t.keys[i] = heardKey(ms)
-			t.byKey[t.keys[i]] = i
+			l.keys[i] = heardKey(ms)
+			l.byKey[l.keys[i]] = i
 		}
+	})
+	return l.keys, l.byKey
+}
+
+// spoken is the language the heard words are in, see wordsLanguage.
+func (l *heardLookups) spoken() string {
+	if l == nil {
+		return ""
 	}
-	t.Correct(nil)
-	t.Language = wordsLanguage(t.Words)
+	l.languageOnce.Do(func() { l.language = wordsLanguage(l.words) })
+	return l.language
+}
+
+// Language is what the episode's words are in, as ISO 639-1, read off
+// the words as they were heard. A clip's own words, see Of, are in the
+// episode's language, whatever the clip spells.
+func (t *Transcript) Language() string {
+	return t.lookups.spoken()
 }
 
 // Correct makes the words again with a clip's corrections, keyed by the
@@ -201,8 +257,8 @@ func parseWordKey(key string) (ms int64, heard, ok bool) {
 
 // keyAt is the key the i-th heard word is kept by.
 func (t *Transcript) keyAt(i int) string {
-	if i < len(t.keys) {
-		return t.keys[i]
+	if keys, _ := t.lookups.keyed(); i < len(keys) {
+		return keys[i]
 	}
 	return wordKey(t.snapped[i].Start)
 }
@@ -218,7 +274,8 @@ func (t *Transcript) heardIndex(key string) (int, bool) {
 		return 0, false
 	}
 	if heard {
-		i, ok := t.byKey[key]
+		_, byKey := t.lookups.keyed()
+		i, ok := byKey[key]
 		return i, ok
 	}
 	at, _ := strconv.ParseFloat(key, 64)
@@ -648,5 +705,5 @@ func ClipCaptions(clip Clip, t *Transcript, s Style) []LaidCaption {
 	t = t.Of(clip)
 	clip.CaptionTimes = t.captionTimesNow(clip.CaptionTimes)
 	captions := Captions(clip, t.clipCaptionWords(clip), max(8, int(s.MaxChars)), TooWide(s))
-	return LayOutCaptions(captions, s, t.Language)
+	return LayOutCaptions(captions, s, t.Language())
 }

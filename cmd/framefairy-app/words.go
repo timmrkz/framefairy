@@ -95,6 +95,15 @@ func (s *FrameFairy) Sentences(path string) (cards []engine.SentenceView, err er
 	if !s.store.Known(path) {
 		return nil, errNotInLibrary
 	}
+	// The stamp of what the cards are made of, taken before they are, so
+	// a file written while they are made changes it after, and the next
+	// search makes them again.
+	stamp := s.cardsStamp(path)
+	defer func() {
+		if err == nil {
+			s.store.machine.Episode(path).KeepCards(stamp, cards)
+		}
+	}()
 	began := time.Now()
 	plans := s.plansOf(path)
 	var clips []engine.ClipSaid
@@ -120,6 +129,44 @@ func (s *FrameFairy) Sentences(path string) (cards []engine.SentenceView, err er
 		clips = append(clips, of...)
 	}
 	return engine.SaidCards(t, clips), nil
+}
+
+// SearchSaid answers what is typed in the search in the clip column: the
+// cards of what was said that answer it, and the words to set in bold in
+// each, see engine.SaidSearch. The cards are the ones Sentences would
+// send now, kept ready by the video's Episode until their stamp changes,
+// see engine.Episode.SaidSearch, so a letter typed reads no transcript
+// and lays out no caption. When they changed since the window read them,
+// it reads them again by the stamp in the video's state, and asks again.
+func (s *FrameFairy) SearchSaid(path, typed string) (found []engine.CardFound, err error) {
+	if !s.store.Known(path) {
+		return nil, errNotInLibrary
+	}
+	began := time.Now()
+	// How long an answer took and how much it found, never what was
+	// typed nor a word of the cards.
+	defer func() {
+		level := zerolog.DebugLevel
+		if err != nil {
+			level = zerolog.ErrorLevel
+		}
+		theLog.line(level, "files").Str("video", filepath.Base(path)).Int("typed", len([]rune(typed))).
+			Int("found", len(found)).Float64("ms", float64(time.Since(began).Microseconds())/1000).Err(err).Msg("the transcript search answered")
+	}()
+	search, err := s.store.machine.Episode(path).SaidSearch(s.cardsStamp(path), func() ([]engine.SentenceView, error) {
+		return s.Sentences(path)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return search.Answer(typed), nil
+}
+
+// cardsStamp is the stamp of the cards Sentences makes for the video at
+// path, see engine.Episode.SaidStamp, from the same plans and the same
+// probe Sentences lays their captions out with.
+func (s *FrameFairy) cardsStamp(path string) string {
+	return s.saidStamp(path, s.plansOf(path), s.unprobed.source(path, s.probe))
 }
 
 // saidStamp is VideoState.Cards for the video at path with plans, on the

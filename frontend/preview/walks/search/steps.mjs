@@ -321,6 +321,37 @@ export const steps = {
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
   },
+  // ["said answers in order", [earlier, later]]
+  //                    opens the search of what was said, types earlier
+  //                    while its question is held on its way to the Go
+  //                    side, then later, and lets the held question
+  //                    through only once later is answered: the list
+  //                    shows the cards of later, never the answer that
+  //                    came back last. Each letter asks the Go side, and
+  //                    an answer to an older letter can come late, found
+  //                    in the review of moving the search to Go
+  async "said answers in order"(walk, [earlier, later]) {
+    const { page } = walk;
+    const path = await episodeOn(page);
+    const keys = async (typed) => new Set(((await ask(page, "SearchSaid", path, typed)) ?? []).map((f) => `s${f.start}|${f.clip ?? ""}`));
+    const [was, now] = [await keys(earlier), await keys(later)];
+    if (![...was].some((k) => !now.has(k))) throw new Error(`"${earlier}" finds no card "${later}" does not, so the order would test nothing`);
+    await page.locator('.listhead button[aria-label="Search the transcript"]').click();
+    const field = page.locator('input[aria-label="Search transcript"]');
+    await field.waitFor();
+    await hold(page, "SearchSaid");
+    await field.fill(earlier);
+    await field.fill(later);
+    await settle(page);
+    await letHeld(page);
+    await settle(page);
+    const shown = await page.evaluate(() => [...document.querySelectorAll("ol.said li[data-row]")].map((li) => li.dataset.row));
+    const stray = shown.filter((k) => !now.has(k));
+    if (!shown.length) walk.wrong = `after "${earlier}" answered late, the list shows no card for "${later}"`;
+    else if (stray.length) walk.wrong = `after "${earlier}" answered late, the list shows ${stray.length} cards "${later}" does not find, ${stray.slice(0, 3).join(", ")}`;
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+  },
   // ["search said", word]
   // ["search said", [word, n]]
   //                    presses the transcript button in the head of the clip column

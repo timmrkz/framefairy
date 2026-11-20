@@ -111,7 +111,7 @@ func bounceEpisode(t *testing.T, rate string, words []timed.Cue, end float64) (e
 		t.Fatal(err)
 	}
 	clip = info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: end}}})
-	laid = ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, new(Fonts).Style(nil))
+	laid = ClipCaptions(clip, inLanguage(words, "de"), new(Fonts).Style(nil))
 	return e, source, info, clip, laid
 }
 
@@ -534,7 +534,7 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 				{Start: 1.20, End: 1.50, Text: "einem"}, {Start: 1.50, End: 2.40, Text: "Regenschirm."}}
 		}
 		clip := Clip{ID: "01", Segments: []Segment{{Start: 0, End: 2.6}}}
-		laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, style)
+		laid := ClipCaptions(clip, inLanguage(words, "de"), style)
 		if len(laid) != 1 || len(laid[0].Lines) != 2 {
 			t.Fatalf("%s: the words should make one caption of two lines, not %+v", second, laid)
 		}

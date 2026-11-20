@@ -35,6 +35,7 @@
     type LitWord,
     type Word,
     type Sentence,
+    type CardFound,
     type VideoState,
     onUndo,
     onVideoState,
@@ -462,6 +463,37 @@
           // An old failure never covers a newer answer.
           if (ticket !== sentencesAsked || of !== path) return;
           sentencesFailed = errorText(err);
+        });
+    });
+  });
+  // The cards that answer what is typed, as the Go side answers it over
+  // the cards it sent, with the words to set in bold, issue #927. Asked
+  // again at every letter and whenever the cards are read again. An answer
+  // stays until the next one comes, so the list never empties in between,
+  // and only the answer to the last question is taken. While nothing is
+  // typed there is no question, and the list is every card.
+  let sayFound = $state.raw<CardFound[] | null>(null);
+  let foundAsked = 0;
+  $effect(() => {
+    const of = path;
+    const typed = sayTyped;
+    void sentences;
+    if (!saying || !typed.trim()) {
+      foundAsked++;
+      sayFound = null;
+      return;
+    }
+    const ticket = ++foundAsked;
+    untrack(() => {
+      api
+        .searchSaid(of, typed)
+        .then((found) => {
+          if (ticket === foundAsked) sayFound = found ?? [];
+        })
+        .catch((err) => {
+          // Only the answer to the last question says it failed, once,
+          // and not every letter typed before it.
+          if (ticket === foundAsked) oops(errorText(err));
         });
     });
   });
@@ -3459,6 +3491,7 @@
                 bind:this={saidList}
                 sentences={saved.length ? sentences : []}
                 typed={sayTyped}
+                found={sayFound}
                 {unheard}
                 {unheardLit}
                 clips={shown}

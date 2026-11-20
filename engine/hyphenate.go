@@ -172,8 +172,9 @@ var spokenLanguages = map[whatlanggo.Lang]bool{
 }
 
 // wordsLanguage says which language words are in, as ISO 639-1. An
-// episode is read once, off its first few thousand words, which is plenty
-// to tell and quick enough to do every time a transcript is read.
+// episode is read off its first few thousand words, which is plenty to
+// tell, once per read of its transcript and only when asked, see
+// heardLookups.
 func wordsLanguage(words []timed.Cue) string {
 	var text strings.Builder
 	for i, w := range words {

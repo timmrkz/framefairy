@@ -32,12 +32,13 @@ var heartRecipe = Recipe{
 	Name: "heart",
 	About: "the lines brief and transcript, the heart of every clip named, and the length fitted " +
 		"by the engine on whole sentences around the heart, asked once",
-	Unit:    "line",
-	Hearts:  true,
-	Version: 1,
-	System:  promptSystem("heart"),
-	Request: heartRequest,
-	Schema:  heartSchema,
+	Unit:     "line",
+	Hearts:   true,
+	Loudness: true,
+	Version:  1,
+	System:   promptSystem("heart"),
+	Request:  heartRequest,
+	Schema:   heartSchema,
 }
 
 // heartOpeningRecipe is heart with the opening named too: the first line
@@ -49,12 +50,13 @@ var heartOpeningRecipe = Recipe{
 	Name: "heart-opening",
 	About: "heart, with the opening named too, the first line a stranger needs, which the engine " +
 		"never starts a clip after",
-	Unit:    "line",
-	Hearts:  true,
-	Version: 1,
-	System:  promptSystem("heart-opening"),
-	Request: heartOpeningRequest,
-	Schema:  heartOpeningSchema,
+	Unit:     "line",
+	Hearts:   true,
+	Loudness: true,
+	Version:  1,
+	System:   promptSystem("heart-opening"),
+	Request:  heartOpeningRequest,
+	Schema:   heartOpeningSchema,
 }
 
 // heartLeanRecipe is heart-opening asked in a few lines: one message, the

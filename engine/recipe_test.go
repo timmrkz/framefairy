@@ -490,3 +490,65 @@ func TestTheBriefIsPutRight(t *testing.T) {
 		t.Error("the brief changed, so its version has to")
 	}
 }
+
+// louderAndQuieter is a minute of speech in sentences of six words, the
+// third of every three said louder and the second quieter, with a pause
+// of a second after every fourth sentence.
+func louderAndQuieter() *Transcript {
+	frames := make([]float32, 6000)
+	for i := range frames {
+		frames[i] = -70
+	}
+	var words []timed.Cue
+	at := 0.5
+	for sentence := 0; at < 58; sentence++ {
+		level := []float32{-25, -32, -15}[sentence%3]
+		for w := range 6 {
+			text := "wort"
+			if w == 5 {
+				text = "ende."
+			}
+			words = append(words, timed.Cue{Start: at, End: at + 0.3, Text: text})
+			for f := int(at * 100); f < int((at+0.3)*100); f++ {
+				frames[f] = level
+			}
+			at += 0.35
+		}
+		at += 0.3
+		if sentence%4 == 3 {
+			at += 1
+		}
+	}
+	floor := -50.0
+	return fromStored(words, frames, 0, -25, &floor)
+}
+
+// A search measures the loudness of its window only for a recipe that
+// writes it, and no recipe asks anything else for it: what each one
+// asks is what it asked with the loudness of every line measured.
+func TestEveryRecipeAsksWhatItAskedWithTheLoudnessMeasured(t *testing.T) {
+	t.Parallel()
+	tr := louderAndQuieter()
+	measured := BuildLines(tr.Words, tr.Levels(), nil)
+	if !strings.Contains(AnnotateLines(measured), "louder") || !strings.Contains(AnnotateLines(measured), "quieter") {
+		t.Fatalf("the test needs lines louder and quieter than the rest:\n%s", AnnotateLines(measured))
+	}
+	opts := PlanOptions{Count: 2, MinLen: 20, MaxLen: 30}
+	for _, name := range RecipeNames() {
+		r, err := RecipeNamed(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := searchLines(tr, Options{Recipe: name})
+		got, want := r.Request(lines, r.units(lines), opts), r.Request(measured, r.units(measured), opts)
+		if got != want {
+			t.Errorf("%s asks something else without the loudness:\n%s\nwant:\n%s", name, got, want)
+		}
+		if r.Transcript != nil && r.Transcript(lines, opts) != r.Transcript(measured, opts) {
+			t.Errorf("%s writes its transcript otherwise without the loudness", name)
+		}
+		if r.Loudness != strings.Contains(want, "louder") {
+			t.Errorf("%s says it writes the loudness %v, and its request does: %v", name, r.Loudness, !r.Loudness)
+		}
+	}
+}

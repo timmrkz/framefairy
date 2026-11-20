@@ -288,8 +288,8 @@ func TestAClipsWordsAreTheSameMadeInPlaceOrWhole(t *testing.T) {
 		if !slices.Equal(fast.HeardWords, whole.HeardWords) || !slices.Equal(fast.Words, whole.Words) {
 			t.Fatalf("seed %d: made in place, the words differ from the words made whole", seed)
 		}
-		if fast.Language != tr.Language {
-			t.Errorf("seed %d: the clip's words are in %q, the video's in %q", seed, fast.Language, tr.Language)
+		if fast.Language() != tr.Language() {
+			t.Errorf("seed %d: the clip's words are in %q, the video's in %q", seed, fast.Language(), tr.Language())
 		}
 		if len(tr.fixes) != 0 || tr.HeardWords[7].Text != "zwei worte" {
 			t.Fatalf("seed %d: the video's words changed", seed)

@@ -72,14 +72,10 @@ type Transcript struct {
 	// correction is kept against. In a clip's words, see Of, they carry
 	// its corrections.
 	HeardWords []timed.Cue
-	// Language is what the words are in, as ISO 639-1, read off them once.
-	Language string
-	snapped  []timed.Cue
-	// keys are what each heard word is kept by, the millisecond the
-	// recogniser heard it start, and byKey finds a heard word by its key,
-	// see heardIndex.
-	keys  []string
-	byKey map[string]int
+	snapped    []timed.Cue
+	// lookups are the language and the key of each heard word, worked out
+	// the first time something asks, see heardLookups.
+	lookups *heardLookups
 	// fixes are the corrections the words were made with, see Of.
 	fixes map[string]string
 	// from is the transcript a clip's own was made from by Of, so two

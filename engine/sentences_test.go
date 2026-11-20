@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf16"
 	"weak"
 
 	"framefairy/engine/timed"
@@ -343,4 +344,191 @@ func TestEveryFieldOfALookIsInItsKey(t *testing.T) {
 	if key(base) == was {
 		t.Error("the look's faces read again with a change have the same key")
 	}
+}
+
+// boldOf is what a search for typed sets in bold in a card of text, as
+// the window cuts it out, by UTF-16 units, or nil where it does not
+// answer.
+func boldOf(text, typed string) []string {
+	found := NewSaidSearch([]SentenceView{{Start: 1, End: 2, Text: text}}).Answer(typed)
+	if len(found) == 0 {
+		return nil
+	}
+	units := utf16.Encode([]rune(text))
+	out := []string{}
+	for _, b := range found[0].Bold {
+		out = append(out, string(utf16.Decode(units[b[0]:b[1]])))
+	}
+	return out
+}
+
+// The search in the clip column, over what was said (#366), answered in
+// Go since #927.
+func TestASearchSetsTheWordsThatHoldWhatWasTypedInBold(t *testing.T) {
+	t.Parallel()
+	said := "meine Mutter hat mich einfach in den Arm genommen."
+	for _, c := range []struct {
+		text, typed string
+		want        []string
+	}{
+		{said, "Arm", []string{"Arm"}},
+		{said, "den arm", []string{"den", "Arm"}},
+		{said, "  DEN   arm ", []string{"den", "Arm"}},
+		{said, "mutt", []string{"Mutter"}},
+		{said, "genommen.", []string{"genommen"}},
+		// Counted in UTF-16 units, the way the window cuts a string, so
+		// a word after an emoji or a letter of two bytes is where it is.
+		{"Wir 😀 lachten über Öl.", "öl", []string{"Öl"}},
+		{"Wir 😀 lachten über Öl.", "lachten", []string{"lachten"}},
+		// Nothing typed answers with nothing bold.
+		{said, "", []string{}},
+		{said, "   ", []string{}},
+	} {
+		if got := boldOf(c.text, c.typed); !slices.Equal(got, c.want) || got == nil {
+			t.Errorf("%q in %q sets %q in bold, want %q", c.typed, c.text, got, c.want)
+		}
+	}
+}
+
+// Tim typed arrm, armm and aarm for arm and found nothing.
+func TestASearchFindsAWordTypedWithASlip(t *testing.T) {
+	t.Parallel()
+	said := "meine Mutter hat mich einfach in den Arm genommen."
+	for _, c := range []struct {
+		text, typed string
+		want        []string
+	}{
+		{said, "arrm", []string{"Arm"}},
+		{said, "armm", []string{"Arm"}},
+		{said, "aarm", []string{"Arm"}},
+		{said, "genomen", []string{"genommen"}},
+		{said, "mtuter", []string{"Mutter"}},
+		{said, "arrm mutter", []string{"Mutter", "Arm"}},
+		{"Das ist ernst gemeint.", "ernste", []string{"ernst"}},
+		// The start of a long word with a slip in it, the way it reads
+		// while the rest is still being typed.
+		{"Die Verantwortung liegt bei uns.", "verantwotr", []string{"Verantwortung"}},
+	} {
+		if got := boldOf(c.text, c.typed); !slices.Equal(got, c.want) {
+			t.Errorf("%q in %q sets %q in bold, want %q", c.typed, c.text, got, c.want)
+		}
+	}
+}
+
+// Tim typed ernste and was shown Verteidigungsministers, Veranstalter and
+// Quereinsteigermentalität.
+func TestASearchNeverFindsAWordThatOnlyHoldsTheLettersTyped(t *testing.T) {
+	t.Parallel()
+	said := "meine Mutter hat mich einfach in den Arm genommen."
+	for _, c := range []struct{ text, typed string }{
+		{"unter politischer Führung des Verteidigungsministers.", "ernste"},
+		{"Und die sind auch in Amerika die Veranstalter?", "ernste"},
+		{"Glaubst du, dass es so eine Art Quereinsteigermentalität braucht, um.", "ernste"},
+		{"Die Anrufmaschine im Arbeitszimmer.", "arm"},
+		// Two letters are too few to have a slip in them.
+		{said, "ma"},
+		{said, "Vater"},
+		{said, "arm vater"},
+	} {
+		if got := boldOf(c.text, c.typed); got != nil {
+			t.Errorf("%q in %q sets %q in bold, want no answer", c.typed, c.text, got)
+		}
+	}
+}
+
+// Where a card holds what was typed, only the cards that hold it answer,
+// and none that only comes near: three letters come near a lot of words,
+// and in a video of an hour the cards that held them were lost, found in
+// the review of #367. Two clips over each other each have a card of the
+// same words, and both answer.
+func TestASearchAnswersWithTheCardsThatHoldWhatWasTypedFirst(t *testing.T) {
+	t.Parallel()
+	search := NewSaidSearch([]SentenceView{
+		{Start: 1, End: 2, Text: "Den Arm hielt er fest."},
+		{Start: 3, End: 4, Text: "Die Arme hingen herab."},
+		{Start: 5, End: 6, Text: "Er war arn dran."},
+		{Start: 5, End: 6, Text: "Er war arn dran.", Clip: "p.json/01"},
+		{Start: 7, End: 8, Text: "Nichts davon."},
+	})
+	starts := func(found []CardFound) []string {
+		var out []string
+		for _, f := range found {
+			out = append(out, fmt.Sprintf("%g%s", f.Start, f.Clip))
+		}
+		return out
+	}
+	for _, c := range []struct {
+		typed string
+		want  []string
+	}{
+		{"arm", []string{"1", "3"}},
+		{"arn", []string{"5", "5p.json/01"}},
+		{"aram", []string{"1"}},
+		{"arnn", []string{"5", "5p.json/01"}},
+		{"", []string{"1", "3", "5", "5p.json/01", "7"}},
+		{"qxzvqxzv", nil},
+	} {
+		if got := starts(search.Answer(c.typed)); !slices.Equal(got, c.want) {
+			t.Errorf("%q answers %v, want %v", c.typed, got, c.want)
+		}
+	}
+}
+
+// The cards made ready to search are kept by the Episode with the stamp
+// of what they were made of: a letter typed while the stamp stays makes
+// no card, and a new stamp makes them again. Cards a read just made are
+// kept the same way.
+func TestTheCardsReadyToSearchAreKeptUntilTheirStampChanges(t *testing.T) {
+	t.Parallel()
+	ep := NewMachine(afero.NewMemMapFs()).Episode("/v/ep.mp4")
+	made := 0
+	cards := func(text string) func() ([]SentenceView, error) {
+		return func() ([]SentenceView, error) {
+			made++
+			return []SentenceView{{Start: 1, End: 2, Text: text}}, nil
+		}
+	}
+	for range 3 {
+		search, err := ep.SaidSearch("a", cards("alt"))
+		if err != nil || len(search.Answer("alt")) != 1 {
+			t.Fatalf("the cards of a do not answer alt: %v", err)
+		}
+	}
+	if made != 1 {
+		t.Errorf("three letters with one stamp made the cards %d times, want once", made)
+	}
+	search, _ := ep.SaidSearch("b", cards("neu"))
+	if made != 2 || len(search.Answer("neu")) != 1 || len(search.Answer("alt")) != 0 {
+		t.Errorf("a new stamp made the cards %d times in all, and they answer neu %v", made, search.Answer("neu"))
+	}
+	ep.KeepCards("c", []SentenceView{{Start: 1, End: 2, Text: "gelesen"}})
+	search, _ = ep.SaidSearch("c", cards("nie"))
+	if made != 2 || len(search.Answer("gelesen")) != 1 {
+		t.Errorf("the cards a read kept were made again, %d times in all", made)
+	}
+}
+
+// The cards are asked to be searched from several goroutines at once,
+// one letter after another and the cards read again, under the race
+// detector.
+func TestTheCardsReadyToSearchAreAskedFromEverywhereAtOnce(t *testing.T) {
+	t.Parallel()
+	ep := NewMachine(afero.NewMemMapFs()).Episode("/v/ep.mp4")
+	var wg sync.WaitGroup
+	for i := range 32 {
+		wg.Go(func() {
+			stamp := fmt.Sprint(i % 3)
+			if i%4 == 0 {
+				ep.KeepCards(stamp, []SentenceView{{Start: 1, End: 2, Text: "wort"}})
+				return
+			}
+			search, err := ep.SaidSearch(stamp, func() ([]SentenceView, error) {
+				return []SentenceView{{Start: 1, End: 2, Text: "wort"}}, nil
+			})
+			if err != nil || len(search.Answer("wort")) != 1 {
+				t.Errorf("goroutine %d found no wort: %v", i, err)
+			}
+		})
+	}
+	wg.Wait()
 }
