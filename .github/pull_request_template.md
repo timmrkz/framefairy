@@ -17,11 +17,11 @@ not play. Tim found it testing #184. Now it plays."
 -->
 
 - **Architecture:** <!-- better, the same or worse -->
-- **Speed:** <!-- faster, slower or the same -->
+- **Performance:** <!-- faster, slower or the same -->
 
 <!--
 The bottom line, always, and nothing else in it. Architecture: one word,
-better, the same or worse, against docs/ARCHITECTURE.md. Speed: for the
+better, the same or worse, against docs/ARCHITECTURE.md. Performance: for the
 app, or for CI when only the tests or the build change. One word, and
 when it is faster or slower, the change in percent with its spread,
 `12 % faster, ± 3 %`, or `one run` in place of the spread. It is the
@@ -32,7 +32,7 @@ measured change is its number, even inside its spread,
 `2 % faster, ± 5 %`. Everything else goes in Proof: what was measured,
 where and how often, the parts, CI when the app changed too, what was
 read from the code, where each new thing went, and what a slower part
-buys. See Every change knows its speed in CLAUDE.md.
+buys. See Every change knows its performance in CLAUDE.md.
 -->
 
 ## Root cause

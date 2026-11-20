@@ -212,8 +212,9 @@ thing belongs. In short:
   what gets built.
 - **Report plainly.** What changed, what to test and how, what is still open.
   Name bugs you found on the way, including your own.
-- **Every change knows its speed.** Every pull request says in its bottom
-  line whether it makes the app faster, slower or the same, or CI when
+- **Every change knows its performance.** Every pull request says on
+  the Performance line of its bottom line whether it makes the app
+  faster, slower or the same, or CI when
   only the tests or the build change, before Tim has to ask. The bottom
   line is a word and, when it is faster or slower, the change in percent
   with its spread, overall, nothing more. A part that got slower is in
@@ -275,9 +276,14 @@ thing belongs. In short:
   that says whether the change leaves
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) better, the same or
   worse, and a change that makes it worse is fixed in the same pull
-  request before it is merged. Every review has a speed section too, that
-  says whether the change makes the app or CI faster, slower or the same,
-  and checks the pull request's own speed line as a claim. Its brief
+  request before it is merged. Every review has a performance section
+  too, that says whether the change makes the app or CI faster, slower
+  or the same, and checks the pull request's own Performance line as a
+  claim. And every review has a security section, that says whether the
+  change makes the app, the build or CI safer, less safe or leaves them
+  as they were: what it lets in from outside, what it runs or fetches,
+  what it lets out, and who could use it. A change that makes it less
+  safe is fixed in the same pull request before it is merged. Its brief
   carries Tim's own messages, the issue, the goals under The project above
   and the path of `docs/ARCHITECTURE.md`, never the session's summary of
   them. For an architectural change it carries the decision record too,
