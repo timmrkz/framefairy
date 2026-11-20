@@ -144,6 +144,40 @@ describe("the pieces changed while playing", () => {
 // with its own frame on the canvas, and the new queue cleared it, setting
 // the canvas to the size it had, and drew it again over nothing when its
 // captions came.
+describe("a play whose loop was switched off as it went round", () => {
+  // L pressed again just before the end: the Go side says the play ends at
+  // the end of this time through, but the clock may have gone round by
+  // then, with the first frame of the next time through on screen. The
+  // playhead read the clip's start, 0.000 s, in a walk in CI.
+  test("ends at the end of its last piece", () => {
+    vi.stubGlobal("window", { setTimeout: () => 0 });
+    try {
+      const q = new FrameQueue(
+        canvas(),
+        "/episode.mp4",
+        movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+      );
+      const inside = q as unknown as {
+        goPlay: unknown;
+        due: unknown;
+        at: number;
+        state: string;
+        wanted: { pieces: { start: number; end: number }[]; loop: boolean };
+        end(): void;
+      };
+      inside.wanted = { pieces: [{ start: 0, end: 24.8 }], loop: false };
+      inside.state = "playing";
+      inside.goPlay = { shots: [], end: 24.8, picturesEnded: true };
+      inside.due = { at: 24.8, moment: 0, begins: 0, edge: true };
+      inside.at = 0;
+      inside.end();
+      expect(inside.at).toBeCloseTo(24.8);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("a workspace woken again", () => {
   function woken() {
     let writes = 0;

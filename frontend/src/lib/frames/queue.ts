@@ -1814,7 +1814,15 @@ export class FrameQueue {
     let last = -1;
     while (last + 1 < play.shots.length && play.shots[last + 1].at < play.end) last++;
     if (last >= 0) this.draw(play, last);
-    if (this.due) this.at = this.due.moment + Math.max(0, play.end - this.due.at);
+    // The loop switched off just before the end can be said by the Go
+    // side after the clock has gone round: the frame on screen is then of
+    // the next time through, and the playhead read the clip's start. The
+    // play ends where the time through ends, at its last piece's end.
+    const round = this.due !== null && this.due.at >= play.end;
+    if (round) {
+      const p = this.wanted.pieces;
+      this.at = p?.length ? p[p.length - 1].end : (this.movie?.duration ?? this.at);
+    } else if (this.due) this.at = this.due.moment + Math.max(0, play.end - this.due.at);
     this.trace(`played to the end, ${this.at.toFixed(3)} s, ${this.howItWent()}`);
     this.report(last >= 0);
     // The sound card is held once the last of the sound has been heard.
@@ -1822,7 +1830,7 @@ export class FrameQueue {
     this.suspendTimer = window.setTimeout(() => {
       if (this.state === "ended") void this.audio.suspend();
     }, 300);
-    if (last < 0 && play.picturesEnded === false && this.video) void this.still(this.at, Math.max(0, this.at - this.video.frame));
+    if ((round || (last < 0 && play.picturesEnded === false)) && this.video) void this.still(this.at, Math.max(0, this.at - this.video.frame));
   }
 
   // ---- Pulling the pictures and the sound
