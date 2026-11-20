@@ -96,6 +96,9 @@ export class AppFrames {
   paused: () => boolean = () => true;
   // The near frames asked of the Go side, and the place asked for next.
   private nearAsk = false;
+  // The place of the hand the Go side was asked for or told last, see
+  // tell.
+  private place = -1;
   // The looks on their way, by the rank they ask for, see look.
   private asking = new Map<number, Promise<unknown>>();
   private nearNext = -1;
@@ -206,6 +209,7 @@ export class AppFrames {
     q.set("win", this.name);
     q.set("n", String(++this.sent));
     if (w.moving) q.set("move", "1");
+    this.place = w.rank;
     const asked = this.puller.pull(`/frames/look?${q}`, width, height);
     this.asking.set(w.rank, asked);
     const got = await asked;
@@ -405,6 +409,33 @@ export class AppFrames {
       });
   }
 
+  // Tells the Go side where the hand is when the frame under it is kept
+  // here: nothing is sent back, and the Go side reads the frames around
+  // the place before the hand gets to them, see engine.Schedule. Without
+  // it, a hand that moved over kept frames was where the Go side did not
+  // know, and the frames past them were read only once it got there.
+  private tell(w: Waiter) {
+    // The place the Go side was told or asked last is where it knows the
+    // hand to be.
+    if (w.rank === this.place) return;
+    this.place = w.rank;
+    const { width, height } = this.size();
+    const q = new URLSearchParams({
+      path: this.path,
+      frame: String(w.rank),
+      w: String(width),
+      h: String(height),
+      grid: this.gridText,
+      shown: String(w.rank),
+    });
+    q.set("win", this.name);
+    q.set("n", String(++this.sent));
+    if (w.moving) q.set("move", "1");
+    void this.puller.pull(`/frames/look?${q}`, width, height).then((got) => {
+      for (const { frame } of got.frames) frame.close();
+    });
+  }
+
   route(w: Waiter) {
     if (w.gone || this.closed) {
       w.done(null);
@@ -421,12 +452,14 @@ export class AppFrames {
       this.kept.delete(w.rank);
       this.kept.set(w.rank, have);
       w.done(have);
+      this.tell(w);
       return;
     }
     const card = this.cardKept.get(w.rank);
     if (card && card.width === width && card.height === height) {
       this.tookKept(w.rank);
       w.done(card);
+      this.tell(w);
       return;
     }
     // Where the hand is: the Go side's to decide, see look.

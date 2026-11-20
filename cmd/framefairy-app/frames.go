@@ -35,7 +35,7 @@ import (
 // stood paused. A play paused gives the decoder back and keeps the rest, so
 // it goes on at once.
 //
-//	/frames/look?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&shown=<frame>&win=<window>&n=<sent>[&move=1][&follow=1]
+//	/frames/look?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&shown=<frame>&win=<window>&n=<sent>[&move=1]
 //	                                 the frame for where the hand is, see
 //	                                 serveLook and engine.Schedule
 //	/frames/near?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&has=<frame>,...
@@ -210,8 +210,11 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 // screen, or -1. The answer is the frame as writeFrames writes one, with
 // X-Frames-Exact where it is the frame of the place and not one on the
 // way, X-Frames-Kept where nothing was decoded for it, and X-Frames-Near
-// where frames around it are worth asking for, see serveNear. A look a newer one took the place of is answered with no content,
-// and one the decoder failed with X-Frames-Error and no frame.
+// where frames around it are worth asking for, see serveNear. A look a
+// newer one took the place of is answered with no content, and so is one
+// whose window shows the frame already: it only says where the hand is,
+// for the frames around it to be read. One the decoder failed has
+// X-Frames-Error and no frame.
 func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	path, hand, ok := handArgs(st, w, r, true)
@@ -232,7 +235,7 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) 
 	}
 	seen, err := p.schedule(dec).Look(r.Context(), hand)
 	switch {
-	case errors.Is(err, engine.ErrOvertaken):
+	case errors.Is(err, engine.ErrOvertaken), errors.Is(err, engine.ErrShown):
 		w.WriteHeader(http.StatusNoContent)
 		return
 	case r.Context().Err() != nil:

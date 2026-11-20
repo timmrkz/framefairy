@@ -73,21 +73,26 @@ describe("AppFrames", () => {
   });
 
   // The frames a step with the arrow keys goes to are kept here: the
-  // frame on screen is shown again with no request.
-  test("a place kept here is shown with no look", async () => {
-    let asked = 0;
-    vi.stubGlobal("fetch", () => {
-      asked++;
+  // frame on screen is shown at once, and the Go side is only told where
+  // the hand is, so it reads the frames around it.
+  test("a place kept here is shown at once, and the Go side told where it is", async () => {
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      asked.push(url);
       return new Promise(() => {});
     });
     const { app, picture } = frames(() => ({ width: 4, height: 2 }));
     app.paused = () => true;
-    const was = asked;
+    const was = asked.length;
     app.keep(40, picture(40, 4, 2));
     const f = await app.frame(40, 0);
     expect(f).not.toBe(null);
-    expect(asked).toBe(was);
     expect(app.stats.kept).toBe(1);
+    expect(asked.length).toBe(was + 1);
+    const told = new URL(asked[was], "http://x");
+    expect(told.pathname).toBe("/frames/look");
+    expect(told.searchParams.get("frame")).toBe("40");
+    expect(told.searchParams.get("shown")).toBe("40");
     app.close();
   });
 });
@@ -264,10 +269,12 @@ describe("the frames read while the hand rests", () => {
     expect(read.url).toContain("/frames/ahead?");
     read.give([59, 60, 150]);
     await app.rested();
-    const before = asked.length;
+    let before = asked.length;
     expect(await rankOf(app.frame(60, 0))).toBe(60);
     expect(await rankOf(app.frame(150, 0))).toBe(150);
-    expect(asked.length).toBe(before);
+    // Only where the hand is goes to the Go side, with no frame asked for.
+    expect(asked.slice(before).map((a) => new URL(a.url, "http://x").searchParams.get("shown"))).toEqual(["60", "150"]);
+    before = asked.length;
     app.ahead([70]);
     await pulls(before + 1);
     expect(new URL(asked[before].url, "http://x").searchParams.get("has")?.split(",")).toContain("150");
