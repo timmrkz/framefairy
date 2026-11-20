@@ -26,8 +26,8 @@ github.com/k2-fsa/sherpa-onnx-go-windows/v2 v2.0.1 h1:eGSMUAEedupoBuAIOi75tJ3/25
 github.com/k2-fsa/sherpa-onnx-go-windows/v2 v2.0.1/go.mod h1:4T8q8/N4uaTxf7acMYaJrafG69HJRdlDRDstAODHz2Q=
 github.com/k2-fsa/sherpa-onnx-go/v2 v2.0.1 h1:mnVi3YOMc49PfZ7nJ7I/1WGevmseMjAQdtD/7MsRwb4=
 github.com/k2-fsa/sherpa-onnx-go/v2 v2.0.1/go.mod h1:MDprYfx0mHgBp2rAdLIfafqdDD+ugPWbR1lYsOKxBfs=
-github.com/klauspost/compress v1.20.3 h1:zWNoFqq/lSuYQRim3dUXlXeA0IqwuZGicdG5ZTfY5j4=
-github.com/klauspost/compress v1.20.3/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
+github.com/klauspost/compress v1.20.4 h1:dD0v/bvxtjCBqQu6sx1TNWkalEY5lNTIe+HY9w8TeNI=
+github.com/klauspost/compress v1.20.4/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
 github.com/mattn/go-colorable v0.1.16 h1:+2YjeAe7xP1OQbZW1jERPWWCDLlNqFNCvjiqGiAt84A=
 github.com/mattn/go-colorable v0.1.16/go.mod h1:6LmQG8QLFO4G5z1gPvYEzlUgJ2wF+stgPZH1UqBm1s8=
 github.com/mattn/go-isatty v0.0.24 h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=

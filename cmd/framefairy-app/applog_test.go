@@ -456,6 +456,13 @@ func TestAnEditOfAClipsWordsSaysHowManyItChanges(t *testing.T) {
 // words, as far as seconds, the way a transcription leaves it.
 func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, words [][3]any) {
 	t.Helper()
+	heardPartOf(t, svc, path, seconds, seconds, words)
+}
+
+// heardPartOf is heardEpisode for a video of end seconds whose transcript
+// has heard only its first seconds, as one saved on the way does.
+func heardPartOf(t *testing.T, svc *FrameFairy, path string, seconds, end float64, words [][3]any) {
+	t.Helper()
 	fsys, logs := svc.store.files, engine.LogsDir(path)
 	info, err := fsys.Stat(path)
 	if err != nil {
@@ -469,7 +476,7 @@ func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, w
 		"version": 3, "model": filepath.Base(filepath.Clean(model)),
 		"source": map[string]any{"name": filepath.Base(path), "size": info.Size(),
 			"modified": info.ModTime().UTC().Format(time.RFC3339Nano)},
-		"from": 0, "to": seconds, "mean": -20, "parts": [][2]float64{{0, seconds}}, "end": seconds,
+		"from": 0, "to": seconds, "mean": -20, "parts": [][2]float64{{0, seconds}}, "end": end,
 		"words": words,
 	}
 	body, err := json.Marshal(file)

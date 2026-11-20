@@ -47,6 +47,8 @@ type VideoState struct {
 	// Window is the video's window, with its limits, see WindowView, or
 	// nil while the video cannot be read.
 	Window *WindowView `json:"window"`
+	// Heard is what of the video is heard, see HeardView.
+	Heard HeardView `json:"heard"`
 	// Marking is where I and O can make a clip, see engine.MarkingOf, or
 	// nil while the video's length is not known: the keys are offered
 	// then and the engine says why a clip could not be made.
@@ -60,6 +62,11 @@ type VideoState struct {
 	// them and the jobs, so a clip the app chose comes with the state that
 	// holds it.
 	Chosen string `json:"chosen"`
+	// Turns is the clip chosen as it will be once one of its parts is
+	// rotated a quarter further, see Turns. A state sent leaves it out
+	// when the window has it as it is, see telling.trim. A state read by
+	// a call always has it.
+	Turns *Turns `json:"turns,omitempty"`
 	// Order is, in a state sent to the window, every clip of the video in
 	// the order of Clips in a state read, by its key and its hash. Clips
 	// then holds only the clips the window was not sent as they are now,
@@ -74,6 +81,43 @@ type VideoState struct {
 	// order, so it holds neither clips nor Order: a state that named
 	// every clip went over the 8 KB Wails sends inline at about 95 clips.
 	Kept bool `json:"kept,omitempty"`
+}
+
+// HeardView is what of a video is heard, as the workspace draws it: on
+// the range picker, as the parts not heard yet in the clip column and in
+// how much of a window a row says is transcribed. The engine says it, see
+// engine.Episode.Reached, so the window keeps no mark of its own, #610.
+type HeardView struct {
+	// Saved is every part the transcript on disk holds, all of the video
+	// once it is transcribed.
+	Saved [][2]float64 `json:"saved"`
+	// Heard is every part heard, saved or still being heard, which only
+	// ever grows, see engine.Episode.Reached.
+	Heard [][2]float64 `json:"heard"`
+	// Unheard is what of the video Heard does not hold, gaps under a
+	// second left out, see engine.NotHeard.
+	Unheard [][2]float64 `json:"unheard"`
+}
+
+// heardView is what of the video at path is heard, from its status, on
+// a video of duration seconds, or nought while that is not known.
+func (s *FrameFairy) heardView(path string, status engine.EpisodeStatus, duration float64) HeardView {
+	saved := status.HeardIn(duration)
+	if saved == nil {
+		saved = [][2]float64{}
+	}
+	// A transcript out of date will be read again, and a work folder that
+	// is gone holds nothing heard, so what was heard means nothing then.
+	restart := status.TranscriptStale || !status.Work
+	heard := s.store.machine.Episode(path).Reached(saved, restart)
+	v := HeardView{Saved: saved, Heard: heard, Unheard: [][2]float64{}}
+	if v.Heard == nil {
+		v.Heard = [][2]float64{}
+	}
+	if duration > 0 {
+		v.Unheard = append(v.Unheard, engine.NotHeard(heard, duration)...)
+	}
+	return v
 }
 
 // ClipMark is a clip in a state sent to the window, by its key and its
@@ -125,6 +169,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		}
 	}
 	st.Clips = s.clipsOf(plans, info, st.Status.Heard)
+	st.Heard = s.heardView(path, st.Status, info.Duration)
 	st.Cards = s.saidStamp(path, plans, info)
 	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {
@@ -132,6 +177,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		st.Marking = engine.MarkingOf(st.Status.HeardIn(info.Duration), st.Status.Said, info.Duration)
 	}
 	st.Chosen = s.chosenFor(path, st)
+	st.Turns = s.turnsOf(plans, st.Chosen, st.Clips, info)
 	s.hearChosen(path, st, info.Duration)
 	return st, nil
 }
@@ -184,6 +230,8 @@ type telling struct {
 	sent map[string]string
 	// order is the Order of the state sent last, nil until a state was.
 	order []ClipMark
+	// turns is the hash of the Turns the window was last sent, see trim.
+	turns string
 	// whole says the next state goes with every clip, because the window
 	// lost track of what it was sent, see SendWhole.
 	whole bool
@@ -254,7 +302,7 @@ func (n *videoNews) tell(path string, t *telling) {
 	t.last = time.Now()
 	if t.whole {
 		t.whole = false
-		t.sent, t.order = nil, nil
+		t.sent, t.order, t.turns = nil, nil, ""
 	}
 	n.mu.Unlock()
 	st, err := n.read(path)
@@ -283,6 +331,13 @@ func (n *videoNews) tell(path string, t *telling) {
 // change: the window then fetched every one of them over a request of
 // its own, which Wails makes for an event over 8 KB.
 func (t *telling) trim(st VideoState) VideoState {
+	if st.Turns != nil {
+		if st.Turns.hash != "" && st.Turns.hash == t.turns {
+			st.Turns = nil
+		} else {
+			t.turns = st.Turns.hash
+		}
+	}
 	sent := make(map[string]string, len(st.Clips))
 	order := make([]ClipMark, 0, len(st.Clips))
 	changed := []ClipEntry{}

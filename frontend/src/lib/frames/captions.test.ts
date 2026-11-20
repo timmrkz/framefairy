@@ -226,6 +226,58 @@ describe("the layers of the captions", () => {
     answer = [];
   });
 
+  // Between two words a frame is drawn like the frame before, so the ask
+  // brings the tag of the layer that came last, and where the Go side
+  // says it is the same, with nothing, the frame keeps that layer, the same
+  // pixels the screen holds already. Never the tag of other captions or
+  // another size.
+  it("keeps the layer the Go side says a frame is drawn the same as", async () => {
+    const asked: { url: string; have: string | null }[] = [];
+    let same = false;
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      const have = new Headers(init?.headers).get("X-Caption-Have");
+      asked.push({ url, have });
+      const n = asked.length;
+      if (same && have) return Promise.resolve(new Response(null, { status: 204, headers: { "X-Caption-Tag": have } }));
+      return Promise.resolve(
+        new Response(body(layer(0, 0, 1, 1, [n, 0, 0, 255])), {
+          headers: { "X-Caption-Showing": `${n} 0 0`, "X-Caption-Scale": "1.0000", "X-Caption-Tag": `tag${n}` },
+        }),
+      );
+    });
+    const layers = new CaptionLayers(() => {}, { paused: () => false });
+    const ask = { path: "/v.mp4", clip: "a", track: "abc", drafts: {} };
+    layers.set(ask);
+    layers.coming(1.0, [10, 20]);
+    await layers.taken(1);
+    expect(asked[0].have).toBeNull();
+    const first = layers.at(1.0, [10, 20]);
+    same = true;
+    layers.coming(1.04, [10, 20]);
+    await layers.taken(2);
+    expect(asked[1].have).toBe("tag1");
+    expect(layers.at(1.04, [10, 20])).toBe(first);
+    expect(layers.stats.same).toBe(1);
+    // The frame after it, drawn anew, and the one after that asks by the
+    // newest layer's tag.
+    same = false;
+    layers.coming(1.08, [10, 20]);
+    await layers.taken(3);
+    expect(asked[2].have).toBe("tag1");
+    expect(layers.at(1.08, [10, 20])?.pixels[0]).toBe(3);
+    layers.coming(1.12, [10, 20]);
+    await layers.taken(4);
+    expect(asked[3].have).toBe("tag3");
+    // Another size, or other captions, bring no tag.
+    layers.coming(1.16, [12, 20]);
+    await layers.taken(5);
+    expect(asked[4].have).toBeNull();
+    layers.set({ ...ask, track: "abd" });
+    layers.coming(1.2, [12, 20]);
+    await layers.taken(6);
+    expect(asked[5].have).toBeNull();
+  });
+
   // A fetch that answers each ask in turn: a layer whose first red is the
   // number of the ask, or a failure where fail says so.
   function answering(fail: (n: number) => boolean = () => false) {

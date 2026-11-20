@@ -785,9 +785,19 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 		return e.probe(ctx, path)
 	}
 	// One probe of a file at a time, see askOnce. What is kept and handed
-	// on is shared, so each caller is given a copy of its own.
+	// on is shared, so each caller is given a copy of its own. A probe a
+	// start before this one made is read from the video's work folder,
+	// see probekept.go.
 	info, err := askOnce(ctx, e.Machine, key, func(ctx context.Context) (SourceInfo, error) {
-		return e.probe(ctx, path)
+		tool := toolStamp(key.tool)
+		if kept, ok := readKeptProbe(e.Files, path, tool); ok {
+			return kept, nil
+		}
+		info, err := e.probe(ctx, path)
+		if err == nil && ctx.Err() == nil {
+			keepProbe(e.Files, path, tool, info)
+		}
+		return info, err
 	})
 	return info.clone(), err
 }

@@ -14,6 +14,8 @@ describe("a state sent made whole", () => {
     status: { source: video } as EpisodeStatus,
     clips,
     jobs: [],
+    heard: { saved: [], heard: [], unheard: [] },
+    turns: { clip: "", parts: [] },
     order: order?.map(([key, hash]) => ({ key, hash })),
   });
   const kept = (rev: number): VideoState => ({ ...state(rev, []), kept: true });

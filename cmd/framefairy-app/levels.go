@@ -46,6 +46,13 @@ type measuring struct {
 	// a video opened again reads it from here rather than from the disk.
 	kept   engine.Levels
 	keptBy string
+	// The episodes a look starts nothing for: measured whole, as the disk
+	// said when start last read it, or measured as far as a run could,
+	// one that ended by itself. The clip timeline says where it looks on
+	// every move of the hand, so a look reads this and never the disk,
+	// see look. start reads the disk again, and forgets an episode the
+	// disk says is not measured whole.
+	settled map[string]bool
 }
 
 type measure struct {
@@ -55,7 +62,7 @@ type measure struct {
 
 func newMeasuring(machine *engine.Machine, notify func(string)) *measuring {
 	m := &measuring{machine: machine, notify: notify, running: map[string]*measure{},
-		looking: map[string][2]float64{}, shut: map[string]int{}, slots: make(chan struct{}, 2)}
+		looking: map[string][2]float64{}, shut: map[string]int{}, settled: map[string]bool{}, slots: make(chan struct{}, 2)}
 	m.measure = func(ctx context.Context, path string, focus func() (float64, float64), progress func(float64)) error {
 		return engine.NewEngine(engineLog("levels", path), m.machine).MeasureLevels(ctx, path, focus, progress)
 	}
@@ -63,8 +70,9 @@ func newMeasuring(machine *engine.Machine, notify func(string)) *measuring {
 }
 
 // start measures an episode unless it is measured already, being
-// measured or being removed. It is cheap to call as often as the loudness
-// is asked for.
+// measured or being removed. Whether it is measured it reads from the
+// small file of its levels, which is cheap enough for every time the
+// loudness is asked for, but not for every move of the hand, see look.
 // Like every method here it does nothing on a nil measuring, which is what
 // a test that builds the service by hand has.
 func (m *measuring) start(path string) {
@@ -77,11 +85,14 @@ func (m *measuring) start(path string) {
 		return
 	}
 	m.mu.Unlock()
-	if _, done := engine.LevelsReach(m.machine.Files, path); done {
-		return
-	}
+	_, done := engine.LevelsReach(m.machine.Files, path)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if done {
+		m.settled[path] = true
+		return
+	}
+	delete(m.settled, path)
 	if !m.mayStartLocked(path) {
 		return
 	}
@@ -106,6 +117,13 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 		m.mu.Lock()
 		if m.running[path] == run {
 			delete(m.running, path)
+			// A run that ended by itself has measured all it could, and a
+			// look does not start it again: one that failed would fail
+			// again on every move of the hand. Opening the video again
+			// asks start, which reads the disk.
+			if ctx.Err() == nil {
+				m.settled[path] = true
+			}
 		}
 		m.mu.Unlock()
 		run.stop()
@@ -133,15 +151,22 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 }
 
 // look says what the clip timeline of an episode shows, from and to, which
-// its measuring goes to next. The window says it when the view comes to
-// rest, see Look.
+// its measuring goes to next, and measures an episode not measured yet.
+// The window says it on every move of the hand, see Look, so once an
+// episode is settled a look is a map write and reads nothing from the
+// disk. Before, the window held the call back until the hand rested,
+// because each one read the levels file, issue #937.
 func (m *measuring) look(path string, from, to float64) {
 	if m == nil {
 		return
 	}
 	m.mu.Lock()
 	m.looking[path] = [2]float64{from, to}
+	settled := m.settled[path] || !m.mayStartLocked(path)
 	m.mu.Unlock()
+	if !settled {
+		m.start(path)
+	}
 }
 
 func (m *measuring) lookingAt(path string) (float64, float64) {
@@ -168,6 +193,12 @@ func (m *measuring) closeEpisode(path string) (reopen func()) {
 	run := m.running[path]
 	delete(m.looking, path)
 	m.mu.Unlock()
+	defer func() {
+		// Forgotten after the run has ended, which may have settled it.
+		m.mu.Lock()
+		delete(m.settled, path)
+		m.mu.Unlock()
+	}()
 	if run != nil {
 		run.stop()
 		<-run.done
@@ -192,6 +223,7 @@ func (m *measuring) openEpisode(path string) {
 	}
 	m.mu.Lock()
 	delete(m.shut, path)
+	delete(m.settled, path)
 	m.mu.Unlock()
 }
 

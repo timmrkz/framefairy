@@ -1030,8 +1030,43 @@ function videoState(path: string): Promise<unknown> {
     return Promise.all([
       Answers.ByName("main.FrameFairy.Episode", path),
       Answers.ByName("main.FrameFairy.Clips", path),
-    ]).then(([status, clips]) => ({ video: path, rev, status, clips, jobs, chosen: chosenIn(clips as any[]), window: windowIn() }));
+    ]).then(([status, clips]) => {
+      const heard = heardOf(path, status as any);
+      const w = windowIn();
+      const inWindow = heard.heard.reduce((sum, [a, b]) => sum + Math.max(Math.min(b, w.to) - Math.max(a, w.from), 0), 0);
+      const win = { ...w, heard: inWindow, heardAll: inWindow >= w.to - w.from - 0.5 || undefined };
+      // The stub works out no turn of a part, so R waits for its answer.
+      return { video: path, rev, status, clips, jobs, chosen: chosenIn(clips as any[]), window: win, heard, turns: { clip: "", parts: [] } };
+    });
   });
+}
+
+// What of a video is heard, the way videostate.go answers it: what the
+// saved transcript holds, joined with what every hearing reached as it
+// went, a mark that only ever grows, see engine/reached.go, and what is
+// left, gaps under a second aside.
+const reachedMarks = new Map<string, [number, number][]>();
+function heardOf(path: string, status: { transcribed: boolean; heard: [number, number][] }) {
+  const saved: [number, number][] = status.transcribed ? [[0, fullLength]] : (status.heard ?? []);
+  const reaching = [...fakeSearches().map(searchJob), ...hands().map(handJob)]
+    .map((j: any) => j.progress)
+    .filter((p) => p?.stage === "asr" && path === "/eps/ep.mp4")
+    .map((p): [number, number] => [p.from, p.covered]);
+  const parts = [...(reachedMarks.get(path) ?? []), ...reaching, ...saved].sort((x, y) => x[0] - y[0]);
+  const heard: [number, number][] = [];
+  for (const [a, b] of parts) {
+    const last = heard[heard.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else if (b > a) heard.push([a, b]);
+  }
+  reachedMarks.set(path, heard);
+  const unheard: [number, number][] = [];
+  let at = 0;
+  for (const [a, b] of [...heard, [fullLength, fullLength] as [number, number]]) {
+    if (a - at >= 1) unheard.push([at, a]);
+    at = Math.max(at, b);
+  }
+  return { saved, heard: heard.map((p) => [...p]), unheard };
 }
 
 // The window and how far a search reaches, the way window.go answers
@@ -1271,8 +1306,8 @@ const Answers = {
             recommended: false,
           },
         ].map((m) => ({ ...m, inUse: m.installed }));
-        return Promise.resolve({
-          speech: [model],
+        const answer = {
+          speech: [{ ...model, inUse: true, standing: model.installed ? { state: "ok", says: "ready" } : { state: "warn", says: "fetch" } }],
           hasSpeech: model.installed,
           language,
           memory: 34359738368,
@@ -1320,6 +1355,23 @@ const Answers = {
           chosen: fresh ? !!planner : true,
           ready: !fresh,
           installing: modelRunning() ? "m1" : "",
+        };
+        // How each choice stands, judged the way standing.go judges it.
+        const keys: Record<string, string> = answer.keys;
+        return Promise.resolve({
+          ...answer,
+          language: answer.language.map((m) => ({
+            ...m,
+            standing: !m.installed
+              ? { state: "warn", says: "fetch" }
+              : { state: answer.hasServer ? "ok" : "err", says: "ready" },
+          })),
+          cloudStanding: Object.fromEntries(
+            answer.providers.map((p) => [p.name, { state: keys[p.name] ? "ok" : "warn", says: "cloud" }]),
+          ),
+          // The stub's check of the speech model always passes, see
+          // CheckSetup below.
+          speaking: model.installed ? { state: "ok", says: "ready" } : { state: "warn", says: "fetch" },
         });
       }
       case "InstallSpeechModel":

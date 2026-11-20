@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"math"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -86,6 +90,82 @@ func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, 
 		return ClipEntry{}, err
 	}
 	return entry, nil
+}
+
+// Turns is the clip chosen as it will be once one of its parts is
+// rotated a quarter further, a turn for each part, worked out by the
+// engine's own rule, see engine.TurnClip. R turns the video preview by it
+// in the frame it is pressed in, and the clip RotatePart answers with
+// takes its place. The window turned it by a copy of the rule once, which
+// drifted from it, #610.
+type Turns struct {
+	// Clip is the key of the clip chosen, or nothing when none is.
+	Clip  string `json:"clip"`
+	Parts []Turn `json:"parts"`
+	// hash is what the turns hold, as a short text, so a state sent
+	// leaves them out when the window has them, see telling.trim.
+	hash string
+}
+
+// Turn is the clip chosen with the part Part rotated a quarter further:
+// its rotations, and how its crop runs over its pieces then.
+type Turn struct {
+	Part      int                   `json:"part"`
+	Rotations []engine.RotationView `json:"rotations"`
+	Framing
+}
+
+// noTurns are the Turns of a video with no clip chosen.
+var noTurns = Turns{Parts: []Turn{}, hash: "none"}
+
+// turnsOf is the Turns of the clip chosen, of the clips of the plans, on
+// the video info says. They are worked out once for each read of the
+// plan, the size of the video and of the short, and kept with the read,
+// see engine.PlanSummary.Remember: a state is read four times a second
+// while work runs, and each read worked them out again.
+func (s *FrameFairy) turnsOf(plans []engine.PlanSummary, chosen string, clips []ClipEntry, info engine.SourceInfo) *Turns {
+	out := noTurns
+	i := slices.IndexFunc(clips, func(c ClipEntry) bool { return c.Key == chosen })
+	if i < 0 {
+		return &out
+	}
+	entry := clips[i]
+	k := slices.IndexFunc(plans, func(p engine.PlanSummary) bool { return p.Path == entry.Plan })
+	if k < 0 {
+		return &out
+	}
+	o := s.store.Settings().options()
+	key := fmt.Sprintf("turns %s %+v %dx%d", entry.ID, info, o.Width, o.Height)
+	kept, err := plans[k].Remember(key, func() (any, error) {
+		return s.turnsMade(plans[k], chosen, entry, info), nil
+	})
+	if err != nil {
+		return &out
+	}
+	out = kept.(Turns)
+	return &out
+}
+
+// turnsMade works out the Turns of the clip entry, chosen, of the plan.
+func (s *FrameFairy) turnsMade(plan engine.PlanSummary, chosen string, entry ClipEntry, info engine.SourceInfo) Turns {
+	out := Turns{Clip: chosen, Parts: []Turn{}}
+	for j, seg := range entry.Segments {
+		if j > 0 && entry.Segments[j-1].Part == seg.Part {
+			continue
+		}
+		turned, err := engine.TurnClip(plan, entry.ID, (seg.Start+seg.End)/2, info)
+		if err != nil {
+			continue
+		}
+		out.Parts = append(out.Parts, Turn{Part: seg.Part, Rotations: engine.RotationViews(turned.Rotations),
+			Framing: s.framingOf(info, engine.SegmentViews(turned.Segments), engine.CropMarkViews(turned.CropMarks))})
+	}
+	var h maphash.Hash
+	h.SetSeed(clipSeed)
+	if err := json.NewEncoder(&h).Encode(out); err == nil {
+		out.hash = strconv.FormatUint(h.Sum64(), 36)
+	}
+	return out
 }
 
 // pieceAt is the piece of a clip that holds a moment, or the nearest, the

@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -47,7 +51,12 @@ import (
 //	                                 typing, the caption without the ink
 //	                                 of that word, which the caption box
 //	                                 draws as it is typed, see
-//	                                 engine.CaptionDrawing.Typing
+//	                                 engine.CaptionDrawing.Typing. The
+//	                                 header X-Caption-Tag names the
+//	                                 layer, and a request whose header
+//	                                 X-Caption-Have names the layer of
+//	                                 its frame is answered 204, with
+//	                                 nothing drawn or sent, see layerTag
 //
 //	/frames/captions/words?path=<episode>&track=<track>[&<drafts>]
 //	                                 where the words of a view stand in the
@@ -166,14 +175,25 @@ func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
 	source, err := s.probe(ctx, path)
 	err = waitedOn(ctx, r, "probing the video", err)
 	if err == nil {
+		// The short's size as the render takes it, which is what the
+		// caption file is laid out at.
+		e := engine.NewEngine(engineLog("captions", path), st.machine)
+		o := jobOptions(st, e)
+		drawing := kept.drawing.Typing(typing).Lifted(part)
+		// A frame drawn the same as the layer the video preview has is
+		// answered unchanged, without drawing it or sending it again.
+		// Between two words of a playing clip that was every other frame,
+		// libass drawing the same layer over and over, issue #896.
+		tag := layerTag(q, drawing, source, o.RenderSettings(), at)
+		w.Header().Set("X-Caption-Tag", tag)
+		if r.Header.Get("X-Caption-Have") == tag {
+			p.layers.unchanged(path)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		var dec *engine.EpisodeFrames
 		dec, err = p.decoder(st.machine, path)
 		if err == nil {
-			// The short's size as the render takes it, which is what the
-			// caption file is laid out at.
-			e := engine.NewEngine(engineLog("captions", path), st.machine)
-			o := jobOptions(st, e)
-			drawing := kept.drawing.Typing(typing).Lifted(part)
 			var l engine.CaptionLayer
 			// A video whose folder was deleted outside the app is let go
 			// as the app hears of it, see reconcile, and until then its
@@ -226,6 +246,25 @@ func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
 	if r.Context().Err() == nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// layerTag names the layer a request for captions asks for: by all it
+// asks but the frame, and by what of the frame the drawing depends on,
+// the moments of the short around it over which the caption file changes
+// nothing, see engine.CaptionDrawing.Steady, and the size of the short
+// there. Two frames with one tag are drawn the same, so a request that
+// brings the tag of the layer it has is answered that it is unchanged.
+// It is a header of our own, not HTTP's If-None-Match and 304: Wails
+// takes If-None-Match off every request on Windows, because WebView2
+// hangs on a 304, see request_windows.go in Wails' assetserver.
+func layerTag(q url.Values, d *engine.CaptionDrawing, source engine.SourceInfo, rs engine.RenderSettings, at float64) string {
+	from, to := d.Steady(source, at)
+	shortW, shortH := d.ShortSize(source, rs, at)
+	asked := maps.Clone(q)
+	delete(asked, "at")
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x00%d %d %dx%d", asked.Encode(), from, to, shortW, shortH)
+	return hex.EncodeToString(h.Sum(nil)[:12])
 }
 
 // serveWordFrames answers /frames/captions/words: where libass puts the
@@ -338,9 +377,9 @@ type layerTally struct {
 }
 
 type tally struct {
-	drawn, slow int
-	worst       time.Duration
-	quiet       *time.Timer
+	drawn, slow, unchanged int
+	worst                  time.Duration
+	quiet                  *time.Timer
 }
 
 // layersQuiet is how long a video asks for no layer before its stretch
@@ -352,6 +391,25 @@ const layersQuiet = 2 * time.Second
 func (lt *layerTally) add(path string, drew, frame time.Duration) {
 	lt.mu.Lock()
 	defer lt.mu.Unlock()
+	t := lt.of(path)
+	t.drawn++
+	if drew > frame {
+		t.slow++
+	}
+	t.worst = max(t.worst, drew)
+}
+
+// unchanged counts a layer of the video at path answered unchanged, not
+// drawn, see layerTag.
+func (lt *layerTally) unchanged(path string) {
+	lt.mu.Lock()
+	defer lt.mu.Unlock()
+	lt.of(path).unchanged++
+}
+
+// of is the tally of the video at path, its stretch of asking held open
+// for another layersQuiet. lt.mu is held.
+func (lt *layerTally) of(path string) *tally {
 	t := lt.byVideo[path]
 	if t == nil {
 		if lt.byVideo == nil {
@@ -363,11 +421,7 @@ func (lt *layerTally) add(path string, drew, frame time.Duration) {
 	} else {
 		t.quiet.Reset(layersQuiet)
 	}
-	t.drawn++
-	if drew > frame {
-		t.slow++
-	}
-	t.worst = max(t.worst, drew)
+	return t
 }
 
 // said writes the line of a stretch that ended and starts the next.
@@ -376,13 +430,13 @@ func (lt *layerTally) said(path string) {
 	t := lt.byVideo[path]
 	delete(lt.byVideo, path)
 	lt.mu.Unlock()
-	if t == nil || t.drawn == 0 {
+	if t == nil || t.drawn+t.unchanged == 0 {
 		return
 	}
 	level := zerolog.TraceLevel
 	if t.slow > 0 {
 		level = zerolog.DebugLevel
 	}
-	theLog.line(level, "captions").Str("video", filepath.Base(path)).Int("drawn", t.drawn).Int("slow", t.slow).
-		Int64("slowest_ms", t.worst.Milliseconds()).Msg("caption layers drawn, those slower than a frame counted")
+	theLog.line(level, "captions").Str("video", filepath.Base(path)).Int("drawn", t.drawn).Int("unchanged", t.unchanged).Int("slow", t.slow).
+		Int64("slowest_ms", t.worst.Milliseconds()).Msg("caption layers drawn and answered unchanged, those slower than a frame counted")
 }

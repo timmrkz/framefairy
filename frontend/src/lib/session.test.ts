@@ -35,6 +35,8 @@ describe("a video's state in its session", () => {
     status: { source: "/v.mp4", measured: rev } as EpisodeStatus,
     clips: [clip("a")],
     jobs: [],
+    heard: { saved: [], heard: [], unheard: [] },
+    turns: { clip: "", parts: [] },
     ...more,
   });
 
@@ -269,11 +271,14 @@ describe("a video's state in its session", () => {
   test("draws the window its state carries, and keeps a hand's place on screen until its answer", async () => {
     const { session: here } = session();
     const win = (from: number, to: number) => ({ from, to, length: to - from, most: 1800, least: 60 }) as WindowView;
-    here.take(state(5, { window: win(0, 600) }));
+    here.take(state(5, { window: { ...win(0, 600), heard: 600, heardAll: true } }));
     expect([here.window?.from, here.window?.to]).toEqual([0, 600]);
     let answer: (s: VideoState) => void = () => {};
     const placed = here.place({ from: 600, to: 1200, length: 600 }, () => new Promise((r) => (answer = r)));
     expect([here.window?.from, here.window?.to]).toEqual([600, 1200]);
+    // What was heard of the window before is not said of the one placed:
+    // that is Go's to count once it answers.
+    expect([here.window?.heard, here.window?.heardAll]).toEqual([0, undefined]);
     // Read before the Go side had the window moved.
     here.take(state(6, { window: win(0, 600) }));
     expect([here.window?.from, here.window?.to]).toEqual([600, 1200]);

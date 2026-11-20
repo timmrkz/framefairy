@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { ClipEntry, Rotation, SourceView } from "./api";
-import { partOf, pictureOf, pieceHolding, rotated, rotationAt, shownAt } from "./rotate";
+import { pictureOf, pieceHolding, rotationAt, shownAt } from "./rotate";
 
 // A portrait video, the way a phone records one standing up.
 const phone = { width: 1080, height: 1920, cropWidth: 1080, cropHeight: 1920, turnedCropWidth: 608 } as SourceView;
@@ -17,35 +17,14 @@ const clip = {
   cropLefts: [0, 0, 0],
 } as unknown as ClipEntry;
 
-describe("rotating a part of a clip", () => {
-  test("turns the stretch of the video the part shows, to the middle of the cut", () => {
-    expect(partOf(clip.segments, 0)).toEqual([0, 1]);
-    expect(partOf(clip.segments, 2)).toEqual([2, 2]);
-    const once = rotated(clip, phone, 11.5);
-    expect(once.segments.map((s) => s.rotate ?? 0)).toEqual([90, 90, 0]);
-    expect(once.rotations).toEqual([{ from: null, to: 12.5, deg: 90 }]);
-    const after = rotated(clip, phone, 13.5);
-    expect(after.rotations).toEqual([{ from: 12.5, to: null, deg: 90 }]);
-  });
-
-  test("puts the crop in the middle of the picture rotated", () => {
-    const once = rotated(clip, phone, 10.5);
-    // 1920 wide rotated, a crop of 608 in the middle.
-    expect(once.cropLefts).toEqual([656, 656, 0]);
+// How a part turns is the engine's to say, see engine.TurnClip, and the
+// state carries it. What stays here is the picture a turn shows.
+describe("the picture of a rotated part", () => {
+  test("swaps width and height a quarter turn either way, with the crop for it", () => {
+    // 1920 wide rotated, a crop of 608 on it.
     expect(pictureOf(phone, 90)).toEqual({ width: 1920, height: 1080, cropWidth: 608 });
-  });
-
-  test("comes back after four quarter turns", () => {
-    let c = clip;
-    for (let i = 0; i < 4; i++) c = rotated(c, phone, 13.5);
-    expect(c.segments[2].rotate).toBe(0);
-    expect(c.rotations).toEqual([]);
+    expect(pictureOf(phone, 270)).toEqual({ width: 1920, height: 1080, cropWidth: 608 });
     expect(pictureOf(phone, 180)).toEqual({ width: 1080, height: 1920, cropWidth: 1080 });
-  });
-
-  test("turns two parts that meet as one stretch", () => {
-    const both = rotated(rotated(clip, phone, 10.5), phone, 13.5);
-    expect(both.rotations).toEqual([{ from: null, to: null, deg: 90 }]);
   });
 });
 

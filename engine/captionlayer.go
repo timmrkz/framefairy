@@ -185,10 +185,7 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, work s
 		// of time says where, issue #687.
 		return CaptionLayer{}, fmt.Errorf("the caption file: %w", err)
 	}
-	shortW, shortH := rs.OutW, rs.OutH
-	if piece := source.PieceShowing(d.Clip, at); piece >= 0 {
-		shortW, shortH = rs.FrameSize(source, d.Clip.Segments[piece])
-	}
+	shortW, shortH := d.ShortSize(source, rs, at)
 	drew := time.Now()
 	l, err := dec.Captions(ctx, framewire.Captions{Width: width, Height: height, ShortW: shortW, ShortH: shortH,
 		File: track.file, Fonts: filepath.Join(filepath.Dir(track.file), FontsFolder)}, source.CaptionMoment(d.Clip, at))
@@ -203,6 +200,16 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, work s
 		err = fmt.Errorf("the episode's decoder drawing the captions: %w", err)
 	}
 	return CaptionLayer{l, scale, time.Since(drew)}, err
+}
+
+// ShortSize is the size of the short the render rs makes, on the frame of
+// the episode that starts at, which the caption file is laid out at: a
+// piece of the clip that is not scaled up is the size its crop is.
+func (d *CaptionDrawing) ShortSize(source SourceInfo, rs RenderSettings, at float64) (width, height int) {
+	if piece := source.PieceShowing(d.Clip, at); piece >= 0 {
+		return rs.FrameSize(source, d.Clip.Segments[piece])
+	}
+	return rs.OutW, rs.OutH
 }
 
 // Showing is what libass shows of the captions of d on the frame of the
@@ -273,6 +280,50 @@ func (d *CaptionDrawing) PopScale(source SourceInfo, at float64) float64 {
 		}
 	}
 	return 1
+}
+
+// Steady is the moments of the short around the frame of the episode that
+// starts at, from and to in milliseconds, over which the caption file of d
+// starts and ends nothing: libass draws every frame there the same, so a
+// layer of one of them is the layer of all of them, at one size. It takes
+// every moment the file is written with, each caption's start and end,
+// the first word of the caption showing, the runs of its words lit, see
+// litRuns, and the pop of the run lit, see popSpans. A file with no pill
+// is written with fewer of them, and a part of the captions, see Lifted,
+// with fewer too, so the moments are only ever fewer than libass draws
+// the same over, never more. from is math.MinInt64 before the first
+// moment, and to math.MaxInt64 after the last.
+func (d *CaptionDrawing) Steady(source SourceInfo, at float64) (from, to int64) {
+	m := source.CaptionMoment(d.Clip, at)
+	from, to = math.MinInt64, math.MaxInt64
+	edge := func(cs int) {
+		if ms := int64(cs) * 10; ms <= m {
+			from = max(from, ms)
+		} else {
+			to = min(to, ms)
+		}
+	}
+	for _, c := range d.Laid {
+		start, end := centiseconds(c.Start), centiseconds(c.End)
+		edge(start)
+		edge(end)
+		if end <= start || m < int64(start)*10 || m >= int64(end)*10 || len(c.Words) == 0 {
+			continue
+		}
+		edge(wordBegins(c, start, end)[0])
+		for _, r := range source.litRuns(c, start, end) {
+			edge(r.from)
+			edge(r.to)
+			if m < int64(r.from)*10 || m >= int64(r.to)*10 {
+				continue
+			}
+			for _, span := range source.popSpans(r.from, r.to) {
+				edge(span.from)
+				edge(span.to)
+			}
+		}
+	}
+	return from, to
 }
 
 // Lifted is d with only part of it drawn, LiftWord or LiftRest, at rest:
