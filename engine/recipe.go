@@ -48,6 +48,12 @@ type Recipe struct {
 	// and leaves the length to the engine, which fits each clip around its
 	// heart and never asks again. See heart.go.
 	Hearts bool
+	// Loudness is true for a recipe whose request marks a line quieter or
+	// louder than the speaker's usual level, see AnnotateLines. A search
+	// measures the loudness of its window only for such a recipe, see
+	// searchLines: for the others it took 40 ms an hour of video and
+	// changed nothing they ask.
+	Loudness bool
 	// Switchable is true for a recipe asked from a prompt file that can
 	// show the model more or less, see PromptSwitches.
 	Switchable bool
@@ -192,11 +198,12 @@ func joinRuns(keep [][2]int) [][2]int {
 // before it, and the answer runs of lines. Its prompt and answer are
 // version 4 of PromptVersion, the last before middle.
 var linesRecipe = Recipe{
-	Name:    "lines",
-	About:   "a brief for any video, every line of speech numbered, with its length, pauses and level, and the task again after the transcript",
-	Unit:    "line",
-	Version: 4,
-	System:  SystemPrompt,
+	Name:     "lines",
+	About:    "a brief for any video, every line of speech numbered, with its length, pauses and level, and the task again after the transcript",
+	Unit:     "line",
+	Loudness: true,
+	Version:  4,
+	System:   SystemPrompt,
 	Request: func(lines []Line, _ [][2]int, opts PlanOptions) string {
 		return prompt("lines", lines, AnnotateLines(lines), opts)
 	},
