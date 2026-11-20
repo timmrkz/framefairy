@@ -104,13 +104,7 @@ func (p *Play) Go() {
 		old.stop()
 	}
 	s.play = p
-	if w := s.waiting; w != nil {
-		w.answer <- lookAnswer{err: ErrOvertaken}
-	}
-	for _, w := range s.follows {
-		w.answer <- lookAnswer{err: ErrOvertaken}
-	}
-	s.waiting, s.follows = nil, nil
+	s.overtake()
 	if a := s.ahead; a != nil {
 		s.ahead = nil
 		a.done <- aheadDone{err: ErrOvertaken}
@@ -133,7 +127,7 @@ func (p *Play) Hold() {
 	p.free()
 	p.going = make(chan struct{})
 	s.play = nil
-	s.restart()
+	s.plan()
 }
 
 // stopPlay stops the play that has the decoder, for the hand. Under the
@@ -206,7 +200,7 @@ func (p *Play) Stop() {
 	p.s.mu.Lock()
 	if p.s.play == p {
 		p.s.play = nil
-		p.s.restart()
+		p.s.plan()
 	}
 	p.s.mu.Unlock()
 }
@@ -232,7 +226,7 @@ func (p *Play) Pictures(ctx context.Context, got func(PlayFrame) error) error {
 		p.s.mu.Lock()
 		if p.s.play == p && p.ctx.Err() == nil {
 			p.s.play = nil
-			p.s.restart()
+			p.s.plan()
 		}
 		p.s.mu.Unlock()
 	}()
