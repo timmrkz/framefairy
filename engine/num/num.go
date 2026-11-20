@@ -38,10 +38,28 @@ func Sum(values []float64) float64 {
 // Round rounds to the nearest whole number, halves to even.
 func Round(x float64) int { return int(math.RoundToEven(x)) }
 
-// RoundTo is the nearest value with n decimals, halves to even.
+// RoundTo is the nearest value with n decimals, halves to even. It is
+// the number written with n decimals and read back, worked out without
+// the text where that gives the same.
+//
+// x times 10^n is rounded to the nearest double, and rounding never takes
+// a number past a half, which a double holds exactly below 2^52. So
+// unless the product lands on a half, it lies on the same side of every
+// half as the true product, and its nearest whole number k is the digits
+// the text keeps. k / 10^n is then the double nearest that decimal, which
+// is what reading the text gives, since k and 10^n are both exact. On a
+// half, and past 2^52, it writes and reads. The words of a transcript are
+// rounded several times on every read and save, and the text took 130 ns
+// a number.
 func RoundTo(x float64, n int) float64 {
 	if math.IsNaN(x) || math.IsInf(x, 0) {
 		return x
+	}
+	if n >= 0 && n < len(pow10) {
+		p := pow10[n]
+		if y := x * p; math.Abs(y) < 1<<52 && math.Abs(y-math.Trunc(y)) != 0.5 {
+			return math.Round(y) / p
+		}
 	}
 	v, err := strconv.ParseFloat(strconv.FormatFloat(x, 'f', n, 64), 64)
 	if err != nil {
@@ -49,6 +67,10 @@ func RoundTo(x float64, n int) float64 {
 	}
 	return v
 }
+
+// pow10 is the powers of ten RoundTo multiplies by, each exact in a
+// double.
+var pow10 = [...]float64{1, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15}
 
 // Fixed writes x with exactly n decimals.
 func Fixed(x float64, n int) string { return strconv.FormatFloat(x, 'f', n, 64) }
