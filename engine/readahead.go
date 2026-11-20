@@ -208,15 +208,16 @@ type heardWindow struct {
 // heardSoFar is the window of req as far as it is heard, with the options
 // its search asks with. The window and the options are worked out the way
 // the search works them out, see Plan and prepare, so its lines are the
-// search's lines.
+// search's lines. The transcript is the one the machine holds, read once
+// after each save for the app and the read ahead together, and the
+// window is cut out of it in memory.
 func (p *Project) heardSoFar(req PlanRequest) (heardWindow, bool) {
-	file, _, _, ok := readEpisodeTranscript(p.Files, p.Source, p.Base.ASRModel)
-	duration := float64(file.End)
-	if !ok || duration <= 0 {
+	t, err := p.heldTranscript()
+	if err != nil || t.End <= 0 {
 		return heardWindow{}, false
 	}
-	window := inMilliseconds(searchWindow(req.From, req.To, req.Pass, duration))
-	span := timed.Window{Start: 0, End: duration}
+	window := inMilliseconds(searchWindow(req.From, req.To, req.Pass, t.End))
+	span := timed.Window{Start: 0, End: t.End}
 	if window != nil {
 		span = *window
 	}
@@ -224,21 +225,16 @@ func (p *Project) heardSoFar(req PlanRequest) (heardWindow, bool) {
 	opts = opts.forSpan(span)
 	// Heard up to the first gap, by the same rule the search hears its
 	// window by, which leaves gaps under a tenth of a second alone.
-	gaps := gapsIn(file.heard(), span)
+	gaps := gapsIn(t.Heard, span)
 	heard := heardWindow{opts: opts, whole: len(gaps) == 0}
 	if heard.whole || gaps[0].Start <= span.Start {
 		return heard, true
 	}
-	stamp, err := stampOf(p.Files, p.Source)
-	if err != nil {
-		return heardWindow{}, false
-	}
-	t, ok := sliceTranscript(p.Files, filepath.Join(p.LogsDir(), TranscriptName(nil)), stamp,
-		filepath.Base(filepath.Clean(speechModel(opts))), timed.Window{Start: span.Start, End: gaps[0].Start}, opts.SilenceDB)
+	sliced, ok := t.slice(timed.Window{Start: span.Start, End: gaps[0].Start}, opts.SilenceDB)
 	if !ok {
 		return heardWindow{}, false
 	}
-	heard.lines = searchLines(t, opts)
+	heard.lines = searchLines(sliced, opts)
 	return heard, true
 }
 

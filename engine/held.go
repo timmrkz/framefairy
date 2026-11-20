@@ -92,7 +92,10 @@ func (m *Machine) Forget(source string) {
 type TranscriptRead struct {
 	*Transcript
 	// Done says the transcript has heard the whole video.
-	Done    bool
+	Done bool
+	// End is how long the video's sound is, as the transcript file says,
+	// and nothing for a file from before version 3, which did not say.
+	End     float64
 	said    func() *[2]float64
 	weighed func() RoomAndLines
 }
@@ -122,7 +125,9 @@ func (ep *Episode) Transcript(modelDir string, silenceDB *float64) (*TranscriptR
 		if err != nil {
 			return nil, err
 		}
-		return newTranscriptRead(t, file.done()), nil
+		r := newTranscriptRead(t, file.done())
+		r.End = float64(file.End)
+		return r, nil
 	})
 }
 

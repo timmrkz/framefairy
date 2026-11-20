@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -555,6 +556,42 @@ func TestOnlyARequestThatStartsWithTheTranscriptIsReadAhead(t *testing.T) {
 		if got := readsAhead(lines, PlanOptions{Recipe: recipe, Count: 1, MinLen: 20, MaxLen: 30}); got != want {
 			t.Errorf("the %s recipe is read ahead: %v, want %v", recipe, got, want)
 		}
+	}
+}
+
+// The lines read ahead are cut out of the transcript the machine holds,
+// and they are the lines the search reads from the transcript's file once
+// that much of its window is heard: for a window heard from its start,
+// one that starts inside what is heard, and after the next save. A window
+// heard whole is left to the search.
+func TestTheLinesReadAheadAreTheLinesOfTheTranscriptFile(t *testing.T) {
+	t.Parallel()
+	v := videoReadAhead(t, NewMachine(afero.NewMemMapFs()), t.Name())
+	check := func(req PlanRequest, heardTo float64) {
+		t.Helper()
+		heard, ok := v.p.heardSoFar(req)
+		if !ok || heard.whole {
+			t.Fatalf("%v heard to %v s: ok %v, whole %v", req, heardTo, ok, heard.whole)
+		}
+		sliced, ok := sliceTranscript(v.files, v.path, v.stamp, "parakeet",
+			timed.Window{Start: req.From, End: heardTo}, heard.opts.SilenceDB)
+		if !ok {
+			t.Fatalf("no transcript of %v to %v s in the file", req.From, heardTo)
+		}
+		want := searchLines(sliced, heard.opts)
+		if len(want) < 2 || !reflect.DeepEqual(heard.lines, want) {
+			t.Errorf("%v heard to %v s: read ahead %d lines %v, the file's %d lines %v",
+				req, heardTo, len(heard.lines), heard.lines, len(want), want)
+		}
+	}
+	v.hear(0, 40)
+	check(PlanRequest{From: 0, To: 60}, 40)
+	check(PlanRequest{From: 12, To: 60}, 40)
+	v.hear(40, 50)
+	check(PlanRequest{From: 0, To: 60}, 50)
+	v.hear(50, 60)
+	if heard, ok := v.p.heardSoFar(PlanRequest{From: 0, To: 60}); !ok || !heard.whole || heard.lines != nil {
+		t.Errorf("a window heard whole: ok %v, whole %v, %d lines", ok, heard.whole, len(heard.lines))
 	}
 }
 

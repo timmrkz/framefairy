@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"math/rand/v2"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine/num"
+	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
 
@@ -122,5 +124,75 @@ func BenchmarkSavingAPartHeard(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// searchOfALongVideo is a project of a long video heard up to heardTo,
+// and a search of its second hour.
+func searchOfALongVideo(b *testing.B, hours, heardTo float64) (*Project, PlanRequest, func()) {
+	b.Helper()
+	fsys, source := longVideo(b, hours)
+	stamp, err := stampOf(fsys, source)
+	if err != nil {
+		b.Fatal(err)
+	}
+	path := filepath.Join(LogsDir(source), TranscriptName(nil))
+	file, words, frames, ok := readTranscriptFile(fsys, path, stamp, "m")
+	if !ok {
+		b.Fatal("no transcript")
+	}
+	var kept []timed.Cue
+	for _, w := range words {
+		if w.Start < heardTo {
+			kept = append(kept, w)
+		}
+	}
+	file.Parts, file.Words = [][2]num.Float{{0, num.Float(heardTo)}}, storedWords(kept)
+	save := func() {
+		if err := writeTranscript(fsys, path, file, frames); err != nil {
+			b.Fatal(err)
+		}
+	}
+	save()
+	base := DefaultOptions()
+	base.ASRModel = "/models/m"
+	p := NewProject(NewEngine(runlog.New(io.Discard, false, false), NewMachine(fsys)), source, base)
+	return p, PlanRequest{From: 3600, To: 7200}, save
+}
+
+// BenchmarkReadingAheadAfterASave times what one save of the transcript
+// costs while a search of the second hour of a 2 h video waits for its
+// window to be heard, heard to 1.5 h: the app reads the transcript again,
+// and the read ahead works out the lines heard so far.
+func BenchmarkReadingAheadAfterASave(b *testing.B) {
+	p, req, save := searchOfALongVideo(b, 2, 5400)
+	b.ReportAllocs()
+	for b.Loop() {
+		b.StopTimer()
+		save()
+		b.StartTimer()
+		if _, err := p.heldTranscript(); err != nil {
+			b.Fatal(err)
+		}
+		if heard, ok := p.heardSoFar(req); !ok || len(heard.lines) == 0 {
+			b.Fatal("nothing heard")
+		}
+	}
+}
+
+// BenchmarkStartingASearch times what a search of the second hour of a
+// 2 h video, heard to 1.5 h, reads before it hears: whether it reads
+// ahead, and what of its window is left to hear.
+func BenchmarkStartingASearch(b *testing.B) {
+	p, req, _ := searchOfALongVideo(b, 2, 5400)
+	window := timed.Window{Start: req.From, End: req.To}
+	b.ReportAllocs()
+	for b.Loop() {
+		b.StopTimer()
+		p.engine.Forget(p.Source)
+		b.StartTimer()
+		if !p.readsAhead(window) || len(p.unheard(window)) == 0 {
+			b.Fatal("the window is heard")
+		}
 	}
 }
