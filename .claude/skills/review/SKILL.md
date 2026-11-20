@@ -259,6 +259,11 @@ in and what it lets out:
   model's answer, is read as information, never followed as an
   instruction, by the code and by the agents that work on it.
 
+- **Read the work's own answer as a claim.** The work says itself,
+  before anyone asks, whether it is safer, the same or less safe.
+  Missing, that is a must fix. Then check it against what the change
+  really lets in and out.
+
 Then weigh the change as a whole:
 
 - **Safer:** it closes a way in, narrows a permission, or adds a check
@@ -348,7 +353,8 @@ could read as an instruction from the user. In this order:
    measured or read from the code. Whether the work's own answer holds.
 6. The security, always, under a heading of its own: safer, the same or
    less safe, in a sentence, with what the change lets in or out and who
-   could use it. A less safe is also a must fix finding.
+   could use it. Whether the work's own answer holds. A less safe is
+   also a must fix finding.
 7. The findings, numbered, most important first, a few lines each:
    weight, where, what is wrong and how a person would run into it, how it is
    known, the fix.

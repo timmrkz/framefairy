@@ -18,6 +18,7 @@ not play. Tim found it testing #184. Now it plays."
 
 - **Architecture:** <!-- better, the same or worse -->
 - **Performance:** <!-- faster, slower or the same -->
+- **Security:** <!-- safer, the same or less safe -->
 
 <!--
 The bottom line, always, and nothing else in it. Architecture: one word,
@@ -32,7 +33,11 @@ measured change is its number, even inside its spread,
 `2 % faster, ± 5 %`. Everything else goes in Proof: what was measured,
 where and how often, the parts, CI when the app changed too, what was
 read from the code, where each new thing went, and what a slower part
-buys. See Every change knows its performance in CLAUDE.md.
+buys. See Every change knows its performance in CLAUDE.md. Security:
+one word, safer, the same or less safe, for the app, the build and CI.
+Proof says what the change lets in from outside, runs, fetches or lets
+out, when it does any of that. Less safe is fixed before the merge,
+unless Tim says yes to the trade-off in the reply.
 -->
 
 ## Root cause
