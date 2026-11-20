@@ -19,7 +19,7 @@ import (
 // that asks the way the app does, all on the fake clock of a
 // testing/synctest bubble, so a drag of seconds runs in milliseconds and
 // every run is the same. What the video preview shows is checked against
-// four targets, the ones in the decision record, for every drag:
+// five targets, the ones in the decision record, for every drag:
 //
 //  1. The decoder never rests while the picture is not the frame under
 //     the hand.
@@ -32,6 +32,11 @@ import (
 //     the frames of a whole key frame span take, 135 ms at 25 frames.
 //  4. The picture is never further behind the hand than one key frame
 //     span and how far the hand moved in the last 50 ms.
+//  5. While the picture is more than a key frame span from the hand, it
+//     moves at least every 50 ms, with no allowance: a fast drag, the
+//     usual drag on the range picker, turns by the second target's
+//     allowance at every step, so a schedule that never caught up would
+//     pass the second.
 //
 // The decoder's costs were fitted from the decoder's lines in Tim's
 // reports of 19 and 20 November 2026, an M2 Max: about 10 ms to open a
@@ -47,9 +52,6 @@ const (
 	// simTick is a frame of the screen, at which the hand moves and the
 	// window draws.
 	simTick = time.Second / 60
-	// simW by simH is the video preview the frames are made for, the size
-	// the cloud measures at, so the schedule keeps as many as there.
-	simW, simH = 1012, 570
 	// simKeepUp is how many frames the decoder makes in a frame of the
 	// screen: a hand that moves further at a step leaves frames on its
 	// way that nobody could read.
@@ -67,9 +69,12 @@ const (
 // between, and otherwise opens at the key frame before it. It decodes one
 // frame at a time, whichever stream asks.
 type simDecoder struct {
-	// span is how many frames there are from one key frame to the next.
-	span int
-	chip chan struct{}
+	video simVideo
+	chip  chan struct{}
+	// streams counts the streams under way, so a drag ends once the frame
+	// each was making is made: a stream stopped finishes its frame, as the
+	// decoder's cursor does.
+	streams sync.WaitGroup
 	// picture is one buffer every frame is a piece of: the schedule counts
 	// the bytes it keeps, and none of them is ever written.
 	picture []byte
@@ -97,11 +102,55 @@ func (d *simDecoder) tell(format string, args ...any) {
 
 type simSpan struct{ from, to time.Time }
 
-func newSimDecoder(span int) *simDecoder {
-	return &simDecoder{span: span, chip: make(chan struct{}, 1), picture: make([]byte, simW*simH*4)}
+func newSimDecoder(v simVideo) *simDecoder {
+	return &simDecoder{video: v, chip: make(chan struct{}, 1), picture: make([]byte, v.w*v.h*4)}
 }
 
-func (d *simDecoder) keyOf(frame int) int { return frame - frame%d.span }
+func (d *simDecoder) keyOf(frame int) int { return d.video.keyOf(frame) }
+
+// simVideo is the video a drag is over and the video preview it is shown
+// in: where its key frames are, the longest stretch from one to the next,
+// and the size its frames are made at, which says how many the schedule
+// keeps.
+type simVideo struct {
+	name  string
+	keyOf func(frame int) int
+	span  int
+	w, h  int
+}
+
+// everyKey is a video with a key frame every span frames, shown at the
+// size the cloud measures at.
+func everyKey(name string, span int) simVideo {
+	return simVideo{name: name, keyOf: func(f int) int { return f - f%span }, span: span, w: 1012, h: 570}
+}
+
+// unevenKeys is a video whose key frames come at gaps that change, the
+// way an encoder puts one at each cut: 12, 25, 50 and 75 frames apart in
+// turn.
+func unevenKeys() simVideo {
+	gaps := []int{12, 25, 50, 75}
+	round := 0
+	for _, g := range gaps {
+		round += g
+	}
+	return simVideo{
+		name: "key frames 12 to 75 frames apart",
+		keyOf: func(f int) int {
+			k := f - f%round
+			for _, g := range gaps {
+				if k+g > f {
+					break
+				}
+				k += g
+			}
+			return k
+		},
+		span: slices.Max(gaps),
+		w:    1012,
+		h:    570,
+	}
+}
 
 // work keeps the decoder busy for so long, once it is free.
 func (d *simDecoder) work(ctx context.Context, cost time.Duration) error {
@@ -121,6 +170,8 @@ func (d *simDecoder) work(ctx context.Context, cost time.Duration) error {
 
 func (d *simDecoder) Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int, key bool,
 	skip func() float64, got func(at float64, frame []byte) error) error {
+	d.streams.Add(1)
+	defer d.streams.Done()
 	first := grid.Holding(from)
 	d.mu.Lock()
 	best := -1
@@ -200,6 +251,7 @@ func (d *simDecoder) Stream(ctx context.Context, grid framewire.Grid, from float
 type simWindow struct {
 	s    *Schedule
 	grid framewire.Grid
+	w, h int
 	ctx  context.Context
 	all  sync.WaitGroup
 
@@ -221,8 +273,8 @@ type simMark struct {
 	held bool
 }
 
-func newSimWindow(ctx context.Context, s *Schedule, grid framewire.Grid) *simWindow {
-	return &simWindow{s: s, grid: grid, ctx: ctx, shown: -1, has: map[int]bool{}}
+func newSimWindow(ctx context.Context, s *Schedule, grid framewire.Grid, v simVideo) *simWindow {
+	return &simWindow{s: s, grid: grid, w: v.w, h: v.h, ctx: ctx, shown: -1, has: map[int]bool{}}
 }
 
 // show draws a frame. Under the lock.
@@ -260,7 +312,7 @@ func (w *simWindow) to(frame int, held bool) {
 		// frames around it are read before the hand gets there.
 		w.show(frame)
 		w.sent++
-		l := Hand{Grid: w.grid, Frame: frame, W: simW, H: simH, Moving: moving, Shown: frame, Has: true, Sent: Sent{Window: "sim", N: w.sent}}
+		l := Hand{Grid: w.grid, Frame: frame, W: w.w, H: w.h, Moving: moving, Shown: frame, Has: true, Sent: Sent{Window: "sim", N: w.sent}}
 		w.all.Go(func() { _, _ = w.s.Look(w.ctx, l) })
 		return
 	}
@@ -276,7 +328,7 @@ func (w *simWindow) look(frame int, moving bool) {
 			return
 		}
 		w.sent++
-		l := Hand{Grid: w.grid, Frame: frame, W: simW, H: simH, Moving: moving, Shown: w.shown, Sent: Sent{Window: "sim", N: w.sent}}
+		l := Hand{Grid: w.grid, Frame: frame, W: w.w, H: w.h, Moving: moving, Shown: w.shown, Sent: Sent{Window: "sim", N: w.sent}}
 		w.mu.Unlock()
 		w.mu.Lock()
 		w.told = append(w.told, simEvent{time.Now(), fmt.Sprintf("window: looks at %d, moving %v, shows %d", frame, moving, l.Shown)})
@@ -361,7 +413,7 @@ func wander(seed uint64, count int) []simPath {
 // simDrag is one drag simulated: what the picture did and what the
 // decoder did.
 type simDrag struct {
-	span      int
+	video     simVideo
 	start     time.Time
 	ends      time.Time
 	hands     []simMark
@@ -377,18 +429,24 @@ type simDrag struct {
 	stillAt   time.Duration
 	behind    int
 	behindAt  time.Duration
+	// farLong is the longest the picture stood still while it was more
+	// than a span of key frames from the hand, with no allowance: a fast
+	// drag turns at every step by the allowance of the second target, so
+	// it is held to this one.
+	farLong time.Duration
+	farAt   time.Duration
 }
 
 // drag runs the paths one after the other on a new schedule, each held
 // and then let go and rested on for half a second.
-func drag(t *testing.T, grid framewire.Grid, span int, paths ...simPath) simDrag {
+func drag(t *testing.T, grid framewire.Grid, v simVideo, paths ...simPath) simDrag {
 	t.Helper()
 	var d simDrag
 	synctest.Test(t, func(t *testing.T) {
-		dec := newSimDecoder(span)
+		dec := newSimDecoder(v)
 		s := newSchedule(dec)
 		ctx, cancel := context.WithCancel(context.Background())
-		w := newSimWindow(ctx, s, grid)
+		w := newSimWindow(ctx, s, grid, v)
 		d.start = time.Now()
 		for _, p := range paths {
 			for i, f := range p {
@@ -403,6 +461,7 @@ func drag(t *testing.T, grid framewire.Grid, span int, paths ...simPath) simDrag
 		cancel()
 		s.Close()
 		w.all.Wait()
+		dec.streams.Wait()
 		synctest.Wait()
 		w.mu.Lock()
 		d.shows = w.shows
@@ -418,7 +477,7 @@ func drag(t *testing.T, grid framewire.Grid, span int, paths ...simPath) simDrag
 		}
 		slices.SortStableFunc(d.told, func(a, b simEvent) int { return a.at.Compare(b.at) })
 	})
-	d.span = span
+	d.video = v
 	d.measure()
 	return d
 }
@@ -450,7 +509,7 @@ func (d *simDrag) floor(now time.Time, h, sh int) time.Duration {
 			return 0
 		}
 	}
-	key := h - h%d.span
+	key := d.video.keyOf(h)
 	lo := max(key, h-far+1)
 	return simOpen + time.Duration(lo-key)*simFrame + simScale
 }
@@ -465,7 +524,7 @@ func later(a, b time.Time) time.Time {
 func (d *simDrag) measure() {
 	hand, shown, busy := 0, 0, 0
 	h, sh, pressed := -1, -1, -1
-	var idle time.Duration
+	var idle, farFor time.Duration
 	var waiting, dragging bool
 	// A stand-still began at waited, and what it waited for could not be
 	// there before excused, see floor.
@@ -544,6 +603,14 @@ func (d *simDrag) measure() {
 		if since := now.Sub(waited.Add(max(0, excused.Sub(waited)))); waiting && since > d.standLong {
 			d.standLong, d.standAt = since, at
 		}
+		if far := dragging && framesApart(sh, h) > d.video.span; far && !moved {
+			farFor += time.Millisecond
+			if farFor > d.farLong {
+				d.farLong, d.farAt = farFor, at
+			}
+		} else {
+			farFor = 0
+		}
 		if off && !working {
 			idle += time.Millisecond
 		} else {
@@ -581,11 +648,15 @@ func (d *simDrag) p95() time.Duration {
 	return s[(len(s)*95)/100]
 }
 
-// misses says each target the drag missed.
-func (d *simDrag) misses() []string {
+// misses says each target the drag missed: only the first, that the
+// decoder never rests, unless all five are asked for.
+func (d *simDrag) misses(all bool) []string {
 	var out []string
 	if d.idleLong > 2*time.Millisecond {
 		out = append(out, fmt.Sprintf("the decoder rested %v while the picture was not the hand's", d.idleLong))
+	}
+	if !all {
+		return out
 	}
 	if d.standLong > 50*time.Millisecond {
 		out = append(out, fmt.Sprintf("the picture stood still %v while the hand was elsewhere", d.standLong))
@@ -593,11 +664,14 @@ func (d *simDrag) misses() []string {
 	if p := d.p95(); p > 25*time.Millisecond {
 		out = append(out, fmt.Sprintf("95 %% of the stand-stills were up to %v", p))
 	}
-	if most := simOpen + time.Duration(d.span+1)*(simFrame+simScale); d.stillLong > most {
+	if most := simOpen + time.Duration(d.video.span+1)*(simFrame+simScale); d.stillLong > most {
 		out = append(out, fmt.Sprintf("the frame under the hand came %v after it stopped, more than %v", d.stillLong, most))
 	}
-	if d.behind > d.span {
+	if d.behind > d.video.span {
 		out = append(out, fmt.Sprintf("the picture was %d frames further behind than the hand moved in 50 ms, %v in", d.behind, d.behindAt))
+	}
+	if d.farLong > 50*time.Millisecond {
+		out = append(out, fmt.Sprintf("the picture stood still %v while it was more than a span from the hand, %v in", d.farLong, d.farAt))
 	}
 	return out
 }
@@ -614,12 +688,18 @@ func (d *simDrag) around(at time.Duration) string {
 }
 
 func (d *simDrag) String() string {
-	return fmt.Sprintf("longest stand-still %v, 95 %% within %v, decoder rested %v at most, frame after the hand stopped %v at most, %d frames behind at most",
-		d.standLong, d.p95(), d.idleLong, d.stillLong, d.behind)
+	return fmt.Sprintf("longest stand-still %v, 95 %% within %v, decoder rested %v at most, frame after the hand stopped %v at most, %d frames behind at most, %v still while a span behind",
+		d.standLong, d.p95(), d.idleLong, d.stillLong, d.behind, d.farLong)
 }
 
 // Every drag, slow or fast, either way, turning round or not, keeps the
-// picture near the hand, see the targets above.
+// picture near the hand, see the targets above, over a video with a key
+// frame every second, which is what Tim's videos have. Over videos whose
+// key frames are further apart, or come unevenly, the schedule knows only
+// the key frames the decoder was seen to start from, and guesses the
+// rest. There the decoder is held to never resting, and the other four
+// targets are said, not held: a guess that is wrong costs the frames
+// between where the decoder starts and where it was asked to.
 func TestADragKeepsThePictureNearTheHand(t *testing.T) {
 	grid := framewire.Grid{Num: 25, Den: 1, Count: 30000}
 	drags := []struct {
@@ -644,18 +724,60 @@ func TestADragKeepsThePictureNearTheHand(t *testing.T) {
 			paths []simPath
 		}{fmt.Sprintf("wandering, seed %d", seed), wander(seed, grid.Count)})
 	}
-	for _, c := range drags {
-		t.Run(c.name, func(t *testing.T) {
+	videos := []struct {
+		simVideo
+		all bool
+	}{
+		{everyKey("a key frame a second", 25), true},
+		{everyKey("a key frame every two seconds", 50), false},
+		{everyKey("a key frame every ten seconds", 250), false},
+		{unevenKeys(), false},
+	}
+	for _, v := range videos {
+		for _, c := range drags {
+			t.Run(v.name+", "+c.name, func(t *testing.T) {
+				t.Parallel()
+				d := drag(t, grid, v.simVideo, c.paths...)
+				t.Log(d.String())
+				for _, m := range d.misses(v.all) {
+					t.Error(m)
+				}
+				if t.Failed() {
+					t.Logf("the longest stand-still a span from the hand, %v in:\n%s", d.farAt, d.around(d.farAt))
+					t.Logf("the longest stand-still, %v in:\n%s", d.standAt, d.around(d.standAt))
+					t.Logf("the slowest frame under a hand that stopped, %v in:\n%s", d.stillAt, d.around(d.stillAt))
+					t.Logf("the furthest behind, %v in:\n%s", d.behindAt, d.around(d.behindAt))
+				}
+			})
+		}
+	}
+}
+
+// A video preview of any size lets the decoder rest once the hand does:
+// what is read around the hand fits in the frames the schedule keeps. At
+// 2560 by 1440 and more, fewer frames fit than were read around the hand,
+// each run let go of what the one before read, and the decoder started
+// again for good, with nothing read ahead.
+func TestTheDecoderRestsAtAnySizeOfTheVideoPreview(t *testing.T) {
+	grid := framewire.Grid{Num: 25, Den: 1, Count: 30000}
+	for _, size := range [][2]int{{1012, 570}, {1920, 1080}, {2560, 1440}, {3840, 2160}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
 			t.Parallel()
-			d := drag(t, grid, 25, c.paths...)
-			t.Log(d.String())
-			for _, m := range d.misses() {
+			v := everyKey("a key frame a second", 25)
+			v.w, v.h = size[0], size[1]
+			d := drag(t, grid, v, simPath{1000}, along(2000, [2]int{60, -1}), along(3000, [2]int{60, 1}))
+			for _, m := range d.misses(false) {
 				t.Error(m)
 			}
-			if t.Failed() {
-				t.Logf("the longest stand-still, %v in:\n%s", d.standAt, d.around(d.standAt))
-				t.Logf("the slowest frame under a hand that stopped, %v in:\n%s", d.stillAt, d.around(d.stillAt))
-				t.Logf("the furthest behind, %v in:\n%s", d.behindAt, d.around(d.behindAt))
+			quiet := d.ends.Add(-time.Second / 4)
+			late := 0
+			for _, m := range d.made {
+				if m.at.After(quiet) {
+					late++
+				}
+			}
+			if late > 0 {
+				t.Errorf("the decoder made %d frames in the last 250 ms of half a second the hand rested", late)
 			}
 		})
 	}

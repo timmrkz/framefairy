@@ -47,6 +47,11 @@ type Schedule struct {
 	early   bool
 	// step is how far the hand's last move went, in frames.
 	step int
+	// sides are the runs around the hand's place started since it got
+	// there, by kind and last frame, see want: each is read once for a
+	// place, so frames the kept ones had no room for are not read again
+	// and again.
+	sides []work
 	// The looks of the hand's place that wait for a frame nearer it than
 	// the one they show.
 	waiting []*lookWaiter
@@ -55,7 +60,7 @@ type Schedule struct {
 	kept keptFrames
 	// keys are the key frames of each grid the decoder was seen to start
 	// from, in order, see keyBefore.
-	keys map[framewire.Grid][]int
+	keys map[framewire.Grid][]keyFrame
 	// What to read while the hand rests, see Ahead.
 	ahead *aheadWork
 	// The play that has the decoder, see Play.
@@ -148,7 +153,7 @@ func NewSchedule(f *EpisodeFrames) *Schedule {
 }
 
 func newSchedule(frames framesSource) *Schedule {
-	return &Schedule{frames: frames, kept: newKeptFrames(lookKeptBytes), keys: map[framewire.Grid][]int{}}
+	return &Schedule{frames: frames, kept: newKeptFrames(lookKeptBytes), keys: map[framewire.Grid][]keyFrame{}}
 }
 
 // Hand is where the hand is: a frame of the grid, at a size, and what it
@@ -306,6 +311,7 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 	same := s.handSet && sameSize(s.hand, l)
 	if !same || s.hand.Frame != l.Frame {
 		s.overtake()
+		s.sides = s.sides[:0]
 		s.early = l.Moving || same && s.hand.Moving
 		if same && l.Frame != s.hand.Frame {
 			s.back = l.Frame < s.hand.Frame
@@ -457,40 +463,73 @@ func (s *Schedule) stopRun() {
 	s.looks.WakeLocked()
 }
 
+// keyFrame is a key frame the decoder was seen to start from, and the
+// furthest frame it started there for: no key frame lies between the two.
+type keyFrame struct {
+	at, clear int
+}
+
 // span is how many frames there are from one key frame to the next, as
-// far as the schedule knows: a second's worth, which is what encoders
-// make unless told otherwise, and what Tim's videos have.
+// far as the schedule knows. Encoders differ: a second is common, two
+// seconds is what streaming guides ask for, and x264 left to itself puts
+// one every 250 frames, and one at each cut besides. A second's worth is
+// the guess until the decoder shows otherwise. Each key frame it starts
+// from for a frame further on says the span is at least that long, and
+// the shortest gap between two key frames it started from is the span
+// where that gap is no longer than the longest seen and less than twice
+// it: two key frames seen need not be neighbours, and a gap twice the
+// span is a gap between two that are not. Under the lock.
 func (s *Schedule) span(g framewire.Grid) int {
-	return max(1, (g.Num+g.Den/2)/g.Den)
+	guess := max(1, (g.Num+g.Den/2)/g.Den)
+	keys := s.keys[g]
+	least, gap := 0, 0
+	for i, k := range keys {
+		least = max(least, k.clear-k.at+1)
+		if i > 0 && (gap == 0 || k.at-keys[i-1].at < gap) {
+			gap = k.at - keys[i-1].at
+		}
+	}
+	switch {
+	case gap > 0 && least <= gap && 2*least > gap:
+		return gap
+	case least > guess:
+		return least
+	}
+	return guess
 }
 
 // keyBefore is the key frame the decoder starts from for a frame, as far
-// as the schedule knows: the one the decoder was seen to start from, where
-// the frame lies within a span after it, and otherwise one on the spans
-// counted from it, or from the start. Under the lock.
+// as the schedule knows: the one the decoder was seen to start from for
+// it or a frame after it, and otherwise one on the spans counted from the
+// nearest seen before it, or from the start. Under the lock.
 func (s *Schedule) keyBefore(g framewire.Grid, frame int) int {
 	span := s.span(g)
 	keys := s.keys[g]
-	i, _ := slices.BinarySearch(keys, frame+1)
+	i, _ := slices.BinarySearchFunc(keys, frame+1, func(k keyFrame, f int) int { return k.at - f })
 	if i == 0 {
-		if len(keys) > 0 && keys[0]-frame <= span {
+		if len(keys) > 0 && keys[0].at-frame <= span {
 			// Counted back from the first key frame known.
-			return frame - ((frame-keys[0])%span+span)%span
+			return frame - ((frame-keys[0].at)%span+span)%span
 		}
 		return frame - frame%span
 	}
 	k := keys[i-1]
-	return k + (frame-k)/span*span
+	if frame <= k.clear {
+		return k.at
+	}
+	return k.at + (frame-k.at)/span*span
 }
 
-// learnKey keeps a key frame the decoder was seen to start from. Under
-// the lock.
-func (s *Schedule) learnKey(g framewire.Grid, frame int) {
+// learnKey keeps a key frame the decoder was seen to start from for a
+// frame. Under the lock.
+func (s *Schedule) learnKey(g framewire.Grid, key, frame int) {
 	keys := s.keys[g]
-	i, found := slices.BinarySearch(keys, frame)
-	if !found {
-		s.keys[g] = slices.Insert(keys, i, frame)
+	i, found := slices.BinarySearchFunc(keys, key, func(k keyFrame, f int) int { return k.at - f })
+	if found {
+		keys[i].clear = max(keys[i].clear, frame)
+		return
 	}
+	s.keys[g] = slices.Insert(keys, i, keyFrame{at: key, clear: frame})
 }
 
 // work is what the decoder should do next: a run of a kind, from a frame
@@ -511,6 +550,9 @@ func (s *Schedule) plan() {
 		return
 	}
 	j, ok := s.want()
+	if ok && j.kind != runHand && !slices.ContainsFunc(s.sides, func(d work) bool { return d.kind == j.kind && d.to == j.to }) {
+		s.sides = append(s.sides, j)
+	}
 	if r := s.run; r != nil {
 		if ok && s.goesOn(r, j) {
 			r.kind, r.target = j.kind, max(j.to, r.next-1)
@@ -538,6 +580,19 @@ func (s *Schedule) want() (work, bool) {
 	h := s.hand
 	has := func(f int) bool { return s.kept.has(keptKey{grid: h.Grid, w: h.W, h: h.H, frame: f}) }
 	after, before := s.around()
+	// What is read around the place fits in the kept frames with room to
+	// spare, at any size of the video preview: a stream behind the hand
+	// reads from the key frame before the furthest frame it wants. More
+	// than fits would have each run let go of what the one before read,
+	// and the decoder start again for good.
+	room := s.room(h)
+	span := s.span(h.Grid)
+	most := func(n int, behind bool) int {
+		if behind {
+			return max(0, min(n, room-span-2*lookAhead))
+		}
+		return min(n, room/4)
+	}
 	if !has(h.Frame) && !h.Has {
 		j := s.forHand(h, after)
 		for j.from < h.Frame && has(j.from) {
@@ -570,10 +625,10 @@ func (s *Schedule) want() (work, bool) {
 		return work{kind: runBefore, from: s.keyBefore(h.Grid, max(0, h.Frame-n)), to: b - 1, key: true}, true
 	}
 	sides := []func() (work, bool){
-		func() (work, bool) { return ahead(after) },
-		func() (work, bool) { return behind(before) },
-		func() (work, bool) { return ahead(lookAhead) },
-		func() (work, bool) { return behind(lookBack) },
+		func() (work, bool) { return ahead(most(after, false)) },
+		func() (work, bool) { return behind(most(before, true)) },
+		func() (work, bool) { return ahead(most(lookAhead, false)) },
+		func() (work, bool) { return behind(most(lookBack, true)) },
 	}
 	if s.hand.Moving && s.step > lookFast {
 		sides = sides[:2]
@@ -582,11 +637,26 @@ func (s *Schedule) want() (work, bool) {
 		sides[2], sides[3] = sides[3], sides[2]
 	}
 	for _, side := range sides {
-		if j, ok := side(); ok {
+		if j, ok := side(); ok && !s.sideRead(j) {
 			return j, true
 		}
 	}
 	return work{}, false
+}
+
+// sideRead tells whether a run around the hand's place was started for
+// it before and is not the run under way. Under the lock.
+func (s *Schedule) sideRead(j work) bool {
+	if r := s.run; r != nil && r.kind == j.kind && r.target == j.to {
+		return false
+	}
+	return slices.ContainsFunc(s.sides, func(d work) bool { return d.kind == j.kind && d.to == j.to })
+}
+
+// room is how many frames of the hand's size the schedule keeps, less a
+// quarter for the frames the window was sent last. Under the lock.
+func (s *Schedule) room(h Hand) int {
+	return int(lookKeptBytes/max(1, int64(h.W)*int64(h.H)*4)) * 3 / 4
 }
 
 // around is how many frames after the hand and before it are read first,
@@ -621,10 +691,12 @@ func (s *Schedule) around() (after, before int) {
 func (s *Schedule) forHand(h Hand, after int) work {
 	to := min(h.Grid.Count-1, h.Frame+after)
 	switch {
-	case h.Moving && s.back:
+	case h.Moving && s.back && s.span(h.Grid) < s.room(h):
 		// Every frame of the span the hand drags into: it wants them
 		// one after another as it goes on, and a stream that read only
 		// the nearest would seek back to the same key frame for the rest.
+		// Where a span is more than the kept frames hold, it would let go
+		// of the first of them before the hand gets there.
 		return work{kind: runHand, from: s.keyBefore(h.Grid, h.Frame), to: to, key: true}
 	case h.Moving || s.early:
 		return work{kind: runHand, from: s.nearer(h), to: to, key: true}
@@ -712,7 +784,7 @@ func (s *Schedule) got(r *lookRun, at float64, picture []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r.key && !r.gave && frame < r.from {
-		s.learnKey(r.grid, frame)
+		s.learnKey(r.grid, frame, r.from)
 	}
 	r.gave = true
 	// The key frame handed first leaves the run where it was asked to

@@ -966,3 +966,45 @@ func TestTheNextVideoPreviewFindsNoDragLeftBehind(t *testing.T) {
 		t.Fatalf("the look of a new video preview got %+v, %v, want its own frame and none on the way", got.seen, got.err)
 	}
 }
+
+// The span of key frames is learned from where the decoder starts: a
+// second until it shows otherwise, longer once it started from a key frame
+// for a frame further on, and the gap between two key frames once that
+// gap is less than twice the longest seen. A video with a key frame every
+// two seconds was read as if it had one every second, and each guess cost
+// the frames between the key frame and the one guessed.
+func TestTheSpanOfKeyFramesIsLearnedFromTheDecoder(t *testing.T) {
+	type seen struct{ key, from int }
+	cases := []struct {
+		name string
+		seen []seen
+		span int
+	}{
+		{"nothing seen", nil, 25},
+		{"a key frame a second", []seen{{100, 110}, {200, 224}}, 25},
+		{"two seen a span apart", []seen{{100, 120}, {125, 140}}, 25},
+		{"two seen far apart", []seen{{100, 110}, {9000, 9010}}, 25},
+		{"a frame 40 after its key frame", []seen{{100, 140}}, 41},
+		{"two seconds apart", []seen{{100, 140}, {150, 160}}, 50},
+		{"ten seconds apart", []seen{{0, 200}, {250, 260}, {750, 900}}, 250},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := newSchedule(newHeldDecoder())
+			defer s.Close()
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			for _, k := range c.seen {
+				s.learnKey(lookGrid, k.key, k.from)
+			}
+			if got := s.span(lookGrid); got != c.span {
+				t.Fatalf("the span is %d, want %d", got, c.span)
+			}
+			for _, k := range c.seen {
+				if got := s.keyBefore(lookGrid, k.from); got != k.key {
+					t.Fatalf("the key frame before %d is %d, want %d, where the decoder started for it", k.from, got, k.key)
+				}
+			}
+		})
+	}
+}
