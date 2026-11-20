@@ -25,13 +25,19 @@ import { frames as framePool } from "./pool";
 // A pull with its frames as Pictures.
 type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture; stamp: number[] }[] };
 
-// How much of the frames sent last is kept. The kept frames are counted, so the room follows the size of the frames: 40 are
-// about 90 MB at 1012 by 570 and 190 MB at 1512 by 850, a big window's.
-// With 96 MB at that size a word back sought again for frames it had let
-// go of, plan row 2.269. Never more than 192 MB, so a big screen on a Mac
-// with little memory keeps no more than that.
-const KEPT_FRAMES = 40;
+// How much of the frames sent last is kept. The kept frames are counted, so
+// the room follows the size of the frames: 64 are about 150 MB at 1012 by
+// 570. A place the hand rests on is sent up to 20 frames around it and 12
+// for the words beside, see engine.Schedule, and the window keeps the
+// place before it too, so a word key back finds its frame. With 40 it let
+// go of the frames of the place before as the words beside came, and a
+// word back found its frame missing. Never more than 192 MB, so a big
+// screen on a Mac with little memory keeps no more than that.
+const KEPT_FRAMES = 64;
 const KEPT_BYTES = 192 << 20;
+// How many frames after a word's first the Go side reads ahead with it,
+// lookAhead in engine/schedule.go, and the one before it.
+const AHEAD_AFTER = 4;
 
 // A frame asked for. gone is set when the one who asked no longer wants
 // it, a newer still. seq numbers the asks in the order they were made.
@@ -329,7 +335,14 @@ export class AppFrames {
     q.set("has", this.keptHere(width, height).join(","));
     q.set("win", this.name);
     q.set("n", String(++this.sent));
+    const words = this.aheadWanted.slice();
     const sent = this.puller.pull(`/frames/ahead?${q}`, width, height).then((got) => {
+      // The words' frames held here already, which the Go side did not
+      // send again, are made the ones used last before the frames that
+      // came are kept: kept as they were, the frames that came made room
+      // by letting them go, and a word key pressed next found its frame
+      // missing.
+      for (const r of words) for (let f = r - 1; f <= r + AHEAD_AFTER; f++) this.used(f);
       const cards = new Set(this.cardOrder);
       for (const { at, frame } of got.frames) {
         const rank = rankOf(this.track.samples, at);
@@ -458,9 +471,7 @@ export class AppFrames {
     const have = this.kept.get(w.rank);
     if (have && have.width === width && have.height === height) {
       this.tookKept(w.rank);
-      // The kept frame stays the most recently used.
-      this.kept.delete(w.rank);
-      this.kept.set(w.rank, have);
+      this.used(w.rank);
       w.done(have);
       this.tell(w);
       return;
@@ -494,6 +505,14 @@ export class AppFrames {
       this.keptBytes -= bytes(f);
       f.close();
     }
+  }
+
+  // Makes a kept frame the one used last, see keep.
+  private used(rank: number) {
+    const have = this.kept.get(rank);
+    if (!have) return;
+    this.kept.delete(rank);
+    this.kept.set(rank, have);
   }
 
   // The kept frame of this rank, or the closest one before it.

@@ -315,6 +315,28 @@ describe("the frames read while the hand rests", () => {
     void look;
   });
 
+  // A word's frames held here are not sent again, and the frames that
+  // come with them make room by letting go of the frames used longest
+  // ago. The word's frame, kept first, was let go of for them, and the
+  // word key found it missing.
+  test("keep the frame of a word held here, whatever comes with them", async () => {
+    const { app, asked, pulls, rankOf } = goSide();
+    app.paused = () => true;
+    const pic = (r: number) => new Picture(new Uint8Array(4 * 2 * 4).fill(r), 4, 2, (r * 1e6) / 25);
+    app.keep(60, pic(60));
+    for (let r = 200; r < 263; r++) app.keep(r, pic(r));
+    app.ahead([60]);
+    await pulls(1);
+    asked[0].give([300, 301, 302, 303, 304, 305]);
+    await app.rested();
+    // Shown from here at once, with no look at the Go side.
+    const kept = app.stats.kept;
+    const shown = app.frame(60, 0);
+    expect(app.stats.kept).toBe(kept + 1);
+    expect(await rankOf(shown)).toBe(60);
+    app.close();
+  });
+
   // The walks wait on rested before a step to the word beside, and the
   // step must find its frame kept. Asked again for other words while the
   // first ask was on its way, rested let the walk go before the newer
