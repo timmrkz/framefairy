@@ -621,10 +621,10 @@ func TestTheFramesAroundAPlaceGoToTheWindow(t *testing.T) {
 	_ = st.give(t, 47)
 	_ = st.give(t, 48)
 	<-click
-	if !s.HasNear(rest(48)) {
+	if !s.AskNear(rest(48)) {
 		t.Fatal("the look says no frames are near the click, with its run still reading")
 	}
-	if s.HasNear(rest(300)) {
+	if s.AskNear(rest(300)) {
 		t.Fatal("the look says frames are near a place nothing was read around")
 	}
 	near := make(chan []Seen, 1)
@@ -1086,7 +1086,7 @@ func TestASlowDragIsHandedTheFramesBesideIt(t *testing.T) {
 			<-lookFor(s, move(c.from, c.from+1))
 			h := move(c.to, c.from)
 			<-lookFor(s, h)
-			if got := s.HasNear(h); got != c.near {
+			if got := s.AskNear(h); got != c.near {
 				t.Fatalf("the window is handed the frames near the hand: %v, want %v", got, c.near)
 			}
 		})

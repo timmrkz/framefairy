@@ -69,6 +69,11 @@ type Schedule struct {
 	// see Look.
 	held   map[int]bool
 	heldOf keptKey
+	// drawing says the window draws the frame of the place the hand rests
+	// on and asks Near once it is on screen: nothing more is read until
+	// then, so the decoder takes no processor from the window as it draws.
+	// In the cloud a far click came up 13 ms later than on main without it.
+	drawing bool
 	// The play that has the decoder, see Play.
 	play *Play
 	// Where the newest look of the hand and the newest Ahead stood among
@@ -314,6 +319,7 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 	}
 	s.lastLook = l.Sent
 	s.logDrag(l)
+	s.drawing = false
 	same := s.handSet && sameSize(s.hand, l)
 	if !same || s.hand.Frame != l.Frame {
 		s.overtake()
@@ -441,6 +447,7 @@ func (s *Schedule) LetFramesGo() {
 	// answered with frames on the way, as if the hand had moved there.
 	s.endDrag()
 	s.handSet = false
+	s.drawing = false
 	s.kept = newKeptFrames(lookKeptBytes)
 }
 
@@ -561,6 +568,11 @@ type work struct {
 func (s *Schedule) plan() {
 	s.answerAhead()
 	if s.play != nil {
+		return
+	}
+	if s.drawing && len(s.waiting) == 0 {
+		// The run under way, the hand's reading on, goes on. Nothing new
+		// starts before the window asks Near.
 		return
 	}
 	j, ok := s.want()
@@ -1033,6 +1045,10 @@ func (s *Schedule) Ahead(ctx context.Context, a Ahead) ([]Seen, error) {
 		return nil, ErrOvertaken
 	}
 	s.lastAhead = a.Sent
+	if !a.Held {
+		// The window hands it over once it drew the frame, see app.ts.
+		s.drawing = false
+	}
 	s.held, s.heldOf = has, keptKey{grid: a.Grid, w: a.W, h: a.H}
 	if old := s.ahead; old != nil {
 		s.ahead = nil
@@ -1177,6 +1193,12 @@ func (s *Schedule) readsOn(r *lookRun) bool {
 func (s *Schedule) Near(ctx context.Context, l Hand, has func(frame int) bool) []Seen {
 	from, to := max(0, l.Frame-lookBack), min(l.Grid.Count-1, l.Frame+lookAhead)
 	s.mu.Lock()
+	if s.drawing {
+		// The frame is on screen: the frames around the place are read
+		// now, and handed over once they are.
+		s.drawing = false
+		s.plan()
+	}
 	for {
 		r := s.run
 		if r == nil || r.kind == runAhead || !r.sized(l) || r.target < from || r.from > to {
@@ -1203,17 +1225,26 @@ func (s *Schedule) Near(ctx context.Context, l Hand, has func(frame int) bool) [
 	return near
 }
 
-// HasNear tells whether Near would hand over frames around the place of
-// a look the window had answered: a run reads around it, or frames around
-// it are kept. A drag faster than lookFast frames a step has none, the
-// frames around each place would be sent and let go of again. A slower
-// drag has: its next places are the frames read beside it, and each step
-// that finds its frame in the window shows it with no request. Without
-// them a slow drag waited for a look at every step, 10 ms in the cloud,
-// where the window that read its own frames took 1 ms.
-func (s *Schedule) HasNear(l Hand) bool {
+// AskNear tells whether the window is to ask Near for the frames around
+// the place of a look it had answered: a run reads around it, or frames
+// around it are kept. A drag faster than lookFast frames a step has none,
+// the frames around each place would be sent and let go of again. A
+// slower drag has: its next places are the frames read beside it, and
+// each step that finds its frame in the window shows it with no request.
+// Without them a slow drag waited for a look at every step, 10 ms in the
+// cloud, where the window that read its own frames took 1 ms. Where the
+// hand rests, the window asks once it has drawn the frame, and nothing
+// more is read around the place until then, see drawing.
+func (s *Schedule) AskNear(l Hand) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	ask := s.hasNear(l)
+	s.drawing = ask && !l.Moving && s.handSet && s.hand.Frame == l.Frame && sameSize(s.hand, l)
+	return ask
+}
+
+// hasNear is AskNear's answer. Under the lock.
+func (s *Schedule) hasNear(l Hand) bool {
 	if l.Moving && s.step > lookFast {
 		return false
 	}

@@ -256,7 +256,7 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) 
 	if seen.Kept {
 		w.Header().Set("X-Frames-Kept", "1")
 	}
-	if seen.Exact && p.schedule(dec).HasNear(hand) {
+	if seen.Exact && p.schedule(dec).AskNear(hand) {
 		w.Header().Set("X-Frames-Near", "1")
 	}
 	writeSeen(w, dec, []engine.Seen{seen})

@@ -353,7 +353,7 @@ func (w *simWindow) look(frame int, moving bool) {
 		still := !w.held
 		w.mu.Unlock()
 		if seen.Exact {
-			if still && w.s.HasNear(l) {
+			if still && w.s.AskNear(l) {
 				near := w.s.Near(w.ctx, l, func(f int) bool {
 					w.mu.Lock()
 					defer w.mu.Unlock()

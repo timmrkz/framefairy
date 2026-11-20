@@ -121,7 +121,7 @@ func (w *pressWindow) look(l Hand, began time.Time) {
 		w.waits = append(w.waits, time.Since(began)) //nolint:forbidigo // synctest bubble
 	}
 	w.mu.Unlock()
-	if seen.Exact && w.s.HasNear(l) {
+	if seen.Exact && w.s.AskNear(l) {
 		w.mu.Lock()
 		w.nearAt++
 		w.mu.Unlock()
@@ -436,6 +436,51 @@ func TestASlowDragFindsTheFramesTheWindowHeld(t *testing.T) {
 		}
 		if len(long) > 0 {
 			t.Errorf("the drag to the right waited over 50 ms at %d of %d places: %v", len(long), len(right), long)
+		}
+	})
+}
+
+// A far click has its frame drawn before the decoder reads around it: the
+// window asks Near once the frame is on screen, see app.ts, and the frames
+// before the place wait for that. Read at once, they took the processor
+// from the window as it drew the frame clicked, and in the cloud the
+// picture came up 13 ms later than on main.
+func TestTheFramesAroundAClickWaitForItsFrameToBeDrawn(t *testing.T) {
+	grid := framewire.Grid{Num: 25, Den: 1, Count: 30000}
+	v := everyKey("a key frame every 2 s", 50)
+	synctest.Test(t, func(t *testing.T) {
+		dec := newSimDecoder(v)
+		s := newSchedule(dec)
+		defer s.Close()
+		ctx := context.Background()
+		l := Hand{Grid: grid, Frame: 434, W: v.w, H: v.h, Shown: 0, Sent: Sent{Window: "sim", N: 1}}
+		seen, err := s.Look(ctx, l)
+		if err != nil || !seen.Exact || seen.Frame != 434 {
+			t.Fatalf("the look at 434 answered %+v, %v", seen, err)
+		}
+		if !s.AskNear(l) {
+			t.Fatal("the frames around the click are not offered to the window")
+		}
+		// The window draws the frame meanwhile.
+		time.Sleep(time.Second) //nolint:forbidigo // synctest bubble
+		dec.mu.Lock()
+		var early []string
+		for _, e := range dec.told {
+			if strings.Contains(e.what, "stream from") && !strings.Contains(e.what, "stream from 434") {
+				early = append(early, e.what)
+			}
+		}
+		dec.mu.Unlock()
+		if len(early) > 0 {
+			t.Errorf("before the window asked for them, the decoder read around the click: %v", early)
+		}
+		near := s.Near(ctx, l, func(int) bool { return false })
+		var frames []int
+		for _, n := range near {
+			frames = append(frames, n.Frame)
+		}
+		if !slices.Contains(frames, 433) || !slices.Contains(frames, 434-lookBack) {
+			t.Errorf("Near handed over %v, want the %d frames before 434 among them", frames, lookBack)
 		}
 	})
 }

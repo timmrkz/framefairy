@@ -131,7 +131,8 @@ function frames(size: () => { width: number; height: number }, rate = 25) {
   const n = 200;
   const samples = { count: n, timescale: rate, start: 0, step: 1 };
   const track: VideoTrack = { kind: "video", width: 4, height: 2, samples, frame: 1 / rate };
-  const app = new AppFrames("/v.mp4", track, size, () => {});
+  // The frame on screen is drawn at once.
+  const app = new AppFrames("/v.mp4", track, size, () => {}, (then) => then());
   // Pulls go to the fetch the test stubs, and bring no frames.
   (app as unknown as { puller: unknown }).puller = {
     pull: (url: string) =>

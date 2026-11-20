@@ -141,6 +141,8 @@ export class AppFrames {
     readonly track: VideoTrack,
     private size: () => { width: number; height: number },
     private onTrouble: (why: string) => void,
+    // Calls back once the frame on screen is drawn, see afterPaint.
+    private painted: (then: () => void) => void = afterPaint,
   ) {
     const g = track.grid;
     this.gridText = g ? [g.origin, g.start, g.num, g.den, g.count].join(",") : "";
@@ -247,7 +249,13 @@ export class AppFrames {
     if (got.exact) {
       if (got.kept) this.tookKept(rank);
       w.done(sent.frame);
-      if (got.near) this.near(rank);
+      // Where the hand rests, the Go side reads nothing more around the
+      // place until it is asked, see engine.Schedule.AskNear: the frame is
+      // drawn first.
+      if (got.near) {
+        if (w.moving) this.near(rank);
+        else this.painted(() => this.near(rank));
+      }
       return;
     }
     this.stats.near++;
@@ -336,7 +344,13 @@ export class AppFrames {
     q.set("win", this.name);
     q.set("n", String(++this.sent));
     const words = this.aheadWanted.slice();
-    const sent = this.puller.pull(`/frames/ahead?${q}`, width, height).then((got) => {
+    // Handed over once the frame on screen is drawn, unless it stops the
+    // reading, see afterPaint.
+    const sent = new Promise<Got>((done) => {
+      const send = () => done(this.puller.pull(`/frames/ahead?${q}`, width, height));
+      if (held) send();
+      else this.painted(send);
+    }).then((got) => {
       // The words' frames held here already, which the Go side did not
       // send again, are made the ones used last before the frames that
       // came are kept: kept as they were, the frames that came made room
@@ -454,9 +468,14 @@ export class AppFrames {
     q.set("n", String(++this.sent));
     if (w.moving) q.set("move", "1");
     q.set("kept", "1");
-    void this.puller.pull(`/frames/look?${q}`, width, height).then((got) => {
-      for (const { frame } of got.frames) frame.close();
-    });
+    // A hand at rest is told once its frame is drawn, see afterPaint: the
+    // Go side reads around the place from then on.
+    const send = () =>
+      void this.puller.pull(`/frames/look?${q}`, width, height).then((got) => {
+        for (const { frame } of got.frames) frame.close();
+      });
+    if (w.moving) send();
+    else this.painted(send);
   }
 
   route(w: Waiter) {
@@ -631,4 +650,13 @@ class Puller {
 
 function bytes(f: Picture): number {
   return f.width * f.height * 4;
+}
+
+// Calls back once the frame of the page after this one is painted. The Go
+// side is handed what to read around a resting hand from then on: read at
+// once, the decoder took the processor from the app as it drew the frame
+// the hand went to, and in the cloud a step a word on came up 2 ms and a
+// far click 13 ms later than when the app read its own frames.
+function afterPaint(then: () => void) {
+  requestAnimationFrame(() => setTimeout(then, 0));
 }

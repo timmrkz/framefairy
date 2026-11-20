@@ -270,7 +270,13 @@ closed for standing unused.
     frame before it stands nowhere near. The frames behind read from
     the first one missing, so a stream that stands before them reads on
     to it, and the frames the window said it holds count as there, so
-    none is decoded again for it. The window keeps 64 frames, two
+    none is decoded again for it, until the hand drags: a drag fills
+    the window, which lets go of those first. Where the hand rests,
+    nothing more is read around the place until the window has drawn
+    its frame: it asks Near, tells where the hand is and hands over the
+    words beside once the frame is painted. Read at once, the decoder
+    took the processor from the window as it drew, and a far click came
+    up 13 ms later than on main. The window keeps 64 frames, two
     places with the words beside each, and makes the words' frames it
     holds the ones used last when the frames read ahead come. With 40 it
     let go of them for the frames that came. The speed walk's presses,
