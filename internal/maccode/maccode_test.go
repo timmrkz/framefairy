@@ -181,9 +181,23 @@ func unnamedMacFiles(name string, fset *token.FileSet, f *ast.File) ([]string, e
 	return nil, nil
 }
 
-// macBranches finds every question a file asks runtime.GOOS that a Mac
-// and Linux answer differently, in a file a Mac builds and that is not
-// named for it.
+// macBranches finds every use of runtime.GOOS that could tell a Mac from
+// Linux, in a file a Mac builds and that is not named for it. It does not
+// list the uses it forbids, it lists the ones it allows, so a new way of
+// asking fails until it is judged:
+//
+//   - compared, == or !=, with a written system other than darwin and
+//     linux, runtime.GOOS == "windows",
+//   - the subject of a switch whose cases are all written systems and
+//     that sends a Mac and Linux to the same clause,
+//   - handed to a function or method of this module, set in a field of a
+//     composite literal or returned, as a value. The code that receives
+//     it takes the system as a parameter, and a test on Linux hands it
+//     "darwin".
+//
+// Handed to a function of another package, like strings.EqualFold, kept
+// in a variable or compared with a constant, it could be a question a Mac
+// and Linux answer differently, so it is found.
 func macBranches(name string, fset *token.FileSet, f *ast.File) ([]string, error) {
 	expr, err := buildConstraint(f)
 	if err != nil {
@@ -192,29 +206,37 @@ func macBranches(name string, fset *token.FileSet, f *ast.File) ([]string, error
 	if some, _ := onAMac(name, expr); !some || namedForTheMac(name) {
 		return nil, nil
 	}
-	var runtimeNames []string
+	// The names the file imports runtime under, "." for a dot import, and
+	// the names of the packages it imports from outside this module.
+	var runtimeNames, foreign []string
 	for _, imp := range f.Imports {
-		if path, _ := strconv.Unquote(imp.Path.Value); path == "runtime" {
-			name := "runtime"
-			if imp.Name != nil {
-				name = imp.Name.Name
-			}
-			runtimeNames = append(runtimeNames, name)
+		path, _ := strconv.Unquote(imp.Path.Value)
+		as := path[strings.LastIndex(path, "/")+1:]
+		if imp.Name != nil {
+			as = imp.Name.Name
+		}
+		if path == "runtime" {
+			runtimeNames = append(runtimeNames, as)
+		}
+		if path != module && !strings.HasPrefix(path, module+"/") {
+			foreign = append(foreign, as)
 		}
 	}
 	if len(runtimeNames) == 0 {
 		return nil, nil
 	}
-	isGOOS := func(e ast.Expr) bool {
-		sel, ok := e.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "GOOS" {
-			return false
+	isGOOS := func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.SelectorExpr:
+			id, ok := n.X.(*ast.Ident)
+			return ok && n.Sel.Name == "GOOS" && slices.Contains(runtimeNames, id.Name)
+		case *ast.Ident:
+			return n.Name == "GOOS" && slices.Contains(runtimeNames, ".")
 		}
-		id, ok := sel.X.(*ast.Ident)
-		return ok && slices.Contains(runtimeNames, id.Name)
+		return false
 	}
 	system := func(e ast.Expr) (string, bool) {
-		lit, ok := e.(*ast.BasicLit)
+		lit, ok := ast.Unparen(e).(*ast.BasicLit)
 		if !ok || lit.Kind != token.STRING {
 			return "", false
 		}
@@ -222,42 +244,100 @@ func macBranches(name string, fset *token.FileSet, f *ast.File) ([]string, error
 		return s, err == nil
 	}
 	differs := func(s string) bool { return s == "darwin" || s == "linux" }
+	// ownCall says whether a call goes to code of this module: a function
+	// of this package or of a package of the module, or a method.
+	ownCall := func(fun ast.Expr) bool {
+		switch fun := ast.Unparen(fun).(type) {
+		case *ast.Ident:
+			return !slices.Contains(builtins, fun.Name)
+		case *ast.SelectorExpr:
+			id, ok := fun.X.(*ast.Ident)
+			return !ok || !slices.Contains(foreign, id.Name)
+		}
+		return false
+	}
 	var found []string
 	at := func(n ast.Node, what string) {
 		found = append(found, fmt.Sprintf("%s:%d %s", name, fset.Position(n.Pos()).Line, what))
 	}
-	ast.Inspect(f, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.BinaryExpr:
-			if n.Op != token.EQL && n.Op != token.NEQ {
-				return true
+	// judge looks at one use of runtime.GOOS, with the nodes it stands in,
+	// innermost last.
+	judge := func(use ast.Node, outer []ast.Node) {
+		i := len(outer) - 1
+		for ; i >= 0; i-- {
+			if _, ok := outer[i].(*ast.ParenExpr); !ok {
+				break
 			}
-			for _, pair := range [][2]ast.Expr{{n.X, n.Y}, {n.Y, n.X}} {
-				if s, ok := system(pair[1]); ok && isGOOS(pair[0]) && differs(s) {
-					at(n, fmt.Sprintf("asks whether runtime.GOOS is %q", s))
+			use = outer[i]
+		}
+		if i < 0 {
+			at(use, "uses runtime.GOOS")
+			return
+		}
+		switch p := outer[i].(type) {
+		case *ast.BinaryExpr:
+			other := p.X
+			if p.X == use {
+				other = p.Y
+			}
+			if s, ok := system(other); ok && (p.Op == token.EQL || p.Op == token.NEQ) {
+				if differs(s) {
+					at(p, fmt.Sprintf("asks whether runtime.GOOS is %q", s))
 				}
+				return
 			}
 		case *ast.SwitchStmt:
-			if n.Tag == nil || !isGOOS(n.Tag) {
-				return true
-			}
 			// The clause each system lands in, -1 for the default.
 			lands := map[string]int{"darwin": -1, "linux": -1}
-			for i, stmt := range n.Body.List {
+			for c, stmt := range p.Body.List {
 				for _, e := range stmt.(*ast.CaseClause).List {
-					if s, ok := system(e); ok && differs(s) {
-						lands[s] = i
+					s, ok := system(e)
+					if !ok {
+						at(p, "switches on runtime.GOOS with a case that is not a written system")
+						return
+					}
+					if differs(s) {
+						lands[s] = c
 					}
 				}
 			}
 			if lands["darwin"] != lands["linux"] {
-				at(n, "switches on runtime.GOOS with a Mac and Linux in different cases")
+				at(p, "switches on runtime.GOOS with a Mac and Linux in different cases")
 			}
+			return
+		case *ast.CallExpr:
+			if p.Fun != use && ownCall(p.Fun) {
+				return
+			}
+		case *ast.KeyValueExpr:
+			if _, ok := outer[max(i-1, 0)].(*ast.CompositeLit); ok && p.Value == use {
+				return
+			}
+		case *ast.ReturnStmt:
+			return
 		}
+		at(use, "uses runtime.GOOS in a way this check cannot tell from a question a Mac and Linux answer differently")
+	}
+	var outer []ast.Node
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n == nil {
+			outer = outer[:len(outer)-1]
+			return true
+		}
+		if isGOOS(n) {
+			judge(n, outer)
+		}
+		outer = append(outer, n)
 		return true
 	})
 	return found, nil
 }
+
+// module is this module's path, from go.mod.
+const module = "framefairy"
+
+// builtins are Go's own functions that could read a system's name.
+var builtins = []string{"len", "cap", "min", "max", "string", "append", "copy"}
 
 // everyGoFile reads every Go file of the module with rule, and gives what
 // the rule found in them.
@@ -374,23 +454,30 @@ func TestTheCheckFindsAFileOnlyAMacBuilds(t *testing.T) {
 }
 
 // The check finds the questions a Mac and Linux answer differently, under
-// another name for runtime too, and lets be the ones they answer alike,
-// runtime.GOOS handed on as a value, and any question in a file for the
-// Mac or one a Mac never builds.
+// another name for runtime too, and every use it cannot judge: kept in a
+// variable, compared with a constant, handed to another package's
+// function. It lets be the questions a Mac and Linux answer alike,
+// runtime.GOOS handed on as a value, and any use in a file for the Mac or
+// one a Mac never builds.
 func TestTheCheckFindsABranchForTheMac(t *testing.T) {
 	src := `package x
 
 import (
 	"runtime"
 	rt "runtime"
+	"strings"
+
+	"framefairy/engine"
 )
 
-func f() {
+const mac = "darwin"
+
+func f() string {
 	if runtime.GOOS == "darwin" {
 	}
 	if runtime.GOOS != "linux" {
 	}
-	if "darwin" == rt.GOOS {
+	if "darwin" == (rt.GOOS) {
 	}
 	if runtime.GOOS == "windows" {
 	}
@@ -408,15 +495,35 @@ func f() {
 	switch runtime.GOOS {
 	case "windows":
 	}
+	goos := runtime.GOOS
+	if runtime.GOOS == mac {
+	}
+	switch runtime.GOOS {
+	case mac:
+	}
+	if strings.EqualFold(runtime.GOOS, "darwin") || strings.HasPrefix(runtime.GOOS, "dar") {
+	}
+	if len(runtime.GOOS) == 6 {
+	}
 	g(runtime.GOOS)
+	engine.SystemMedia(runtime.GOOS)
+	s.setUp(goos, runtime.GOOS)
+	_ = info{OS: runtime.GOOS}
+	return runtime.GOOS
 }
 `
 	want := []string{
-		`x.go:9 asks whether runtime.GOOS is "darwin"`,
-		`x.go:11 asks whether runtime.GOOS is "linux"`,
-		`x.go:13 asks whether runtime.GOOS is "darwin"`,
-		`x.go:17 switches on runtime.GOOS with a Mac and Linux in different cases`,
-		`x.go:25 switches on runtime.GOOS with a Mac and Linux in different cases`,
+		`x.go:14 asks whether runtime.GOOS is "darwin"`,
+		`x.go:16 asks whether runtime.GOOS is "linux"`,
+		`x.go:18 asks whether runtime.GOOS is "darwin"`,
+		`x.go:22 switches on runtime.GOOS with a Mac and Linux in different cases`,
+		`x.go:30 switches on runtime.GOOS with a Mac and Linux in different cases`,
+		`x.go:36 uses runtime.GOOS in a way this check cannot tell from a question a Mac and Linux answer differently`,
+		`x.go:37 uses runtime.GOOS in a way this check cannot tell from a question a Mac and Linux answer differently`,
+		`x.go:39 switches on runtime.GOOS with a case that is not a written system`,
+		`x.go:42 uses runtime.GOOS in a way this check cannot tell from a question a Mac and Linux answer differently`,
+		`x.go:42 uses runtime.GOOS in a way this check cannot tell from a question a Mac and Linux answer differently`,
+		`x.go:44 uses runtime.GOOS in a way this check cannot tell from a question a Mac and Linux answer differently`,
 	}
 	if got := check(t, macBranches, "x.go", src); !slices.Equal(got, want) {
 		t.Errorf("found\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
