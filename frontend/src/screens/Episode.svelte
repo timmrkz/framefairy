@@ -1602,14 +1602,16 @@
       const at = time;
       const job = await jobs.startJob(path, "clips", () => api.makeClip(path, at, backward), backward ? "out" : "in");
       const now = jobs.list.find((j) => j.id === job.id) ?? job;
-      const key = now.underway?.[0]?.clip ?? `${job.id}/1`;
-      if (now.state !== "failed") {
-        // Its card is chosen, and stays chosen as the clip it becomes.
-        session.pick(key, (k) => api.chooseClip(path, k));
-      }
       // A failure says why in a toast, which the Go side tells as it
       // fails, see notice.go.
       if (now.state === "failed") return;
+      // Its card is chosen by the Go side as it queues the clip, and stays
+      // chosen as the clip it becomes, see makeClip in search.go, and the
+      // video's state brings the choice. The window picked the card once
+      // more when the press had its answer, by a key read off the job in
+      // the list, which a clip written before the answer no longer had:
+      // the pick named no card, and for those frames none was chosen and
+      // the clip timeline dimmed, #781.
       await tick();
       showChosen();
     } catch (err) {

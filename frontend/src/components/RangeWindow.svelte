@@ -179,12 +179,18 @@
   // the start did not. A window that starts or ends with the episode
   // reaches the outside of the border and takes its round corner, so it
   // lies on the range picker's own edge rather than inside it.
+  // A frame is never narrower than its line, and it is laid from its end,
+  // so a part of the whole video running out keeps its end where it is
+  // and ends as one line of the frame's width, see .window below. Laid
+  // from its start, a frame narrower than its two lines took the room of
+  // both and stepped past the part's end, Tim's report of 19 November.
   function frameOver(a: number, b: number) {
     const first = a <= 0.5;
     const last = b >= duration - 0.5;
     const left = first ? "0px" : `(${on(a, inner)} + 1px)`;
     const right = last ? "100cqw" : `(${on(b, inner)} + 2px)`;
-    return { style: `left: calc(${left}); width: max(calc(${right} - ${left}), 0px)`, first, last };
+    const wide = `max(calc(${right} - ${left}), var(--frame-line))`;
+    return { style: `--frame-w: ${wide}; left: calc(${right} - var(--frame-w)); width: var(--frame-w)`, first, last };
   }
   const frame = $derived(frameOver(from, to));
   // Each time the search's window is shown is a frame of its own, so a
@@ -657,6 +663,11 @@
     /* Only looked at: a press on it is a press on the track, which moves
        the playhead. */
     pointer-events: none;
+    /* Narrower than its two lines, the line at its start thins away and
+       the line at its end stays, so a part running out ends as one line
+       on its end, not two lines pushed past it, Tim's report of 19
+       November. */
+    border-left-width: clamp(0px, var(--frame-w) - var(--frame-line), var(--frame-line));
   }
 
   .window.whole {

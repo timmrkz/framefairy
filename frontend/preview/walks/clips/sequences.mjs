@@ -176,7 +176,7 @@ export default [
     // for the clip was looked at only when a job changed, and none
     // changed after the answer came.
     name: "a clip made with I is chosen when the answer to the press comes after the clip",
-    steps: [["trim", "start", 300], ["make with its answer late", "i"]],
+    steps: [["trim", "start", 300], ["make with its answer late", "i"], ["made on the clip"]],
   },
   // Where a short goes, its name, a render again over it and a render
   // cut on whole frames are the engine's rules, tested in Go, see
@@ -234,15 +234,14 @@ export default [
   {
     // Issue #697: a busy machine wrote the clip made with O before the
     // pick of its card had its answer, and for a frame no card was
-    // chosen and the clip timeline was dimmed. The clip is written while
-    // the answer to the pick is held, so it is that order every time.
-    name: "a clip made with O while the episode plays is not dimmed, nor when it is written before its card's pick has its answer",
+    // chosen and the clip timeline was dimmed. The window picks the card
+    // no more, the Go side chooses it as it queues the clip, #781, so the
+    // order with the pick held is gone, and the answer to the press held
+    // is walked above.
+    name: "a clip made with O while the episode plays is not dimmed",
     steps: [
       ["trim", "start", 300],
       ["make while playing", "o"],
-      ["made on the clip"],
-      ["trim", "start", 300],
-      ["make with its pick late", "o"],
       ["made on the clip"],
     ],
   },
