@@ -153,3 +153,17 @@ func BenchmarkTheTranscriptSearch(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkTheLinesOfASearch times the lines a search of half an hour
+// asks about, with the default recipe, from a transcript read.
+func BenchmarkTheLinesOfASearch(b *testing.B) {
+	fsys, source := longVideo(b, 0.5)
+	r, err := NewMachine(fsys).Episode(source).Transcript("m", nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		searchLines(r.Transcript, Options{})
+	}
+}
