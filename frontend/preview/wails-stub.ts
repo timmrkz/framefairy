@@ -869,6 +869,15 @@ function sentences() {
   close();
   return out;
 }
+// The cards Sentences sent last, which the Go side searches, kept while
+// what is heard stays the same: making them again for every letter typed
+// cost the preview more than the search does.
+let sentKept: { heard: string; cards: (ReturnType<typeof sentences>[number] & { lower: string })[] } | null = null;
+function sentSentences() {
+  const heard = JSON.stringify(heardParts());
+  if (sentKept?.heard !== heard) sentKept = { heard, cards: sentences().map((c) => ({ ...c, lower: c.text.toLowerCase() })) };
+  return sentKept.cards;
+}
 // What the transcript on disk has heard: from the start as far as the
 // searches got, and the parts the clips made by hand had heard.
 function heardParts(): [number, number][] {
@@ -2066,8 +2075,8 @@ const Answers = {
       case "SearchSaid": {
         const want = String(args[1]).trim().toLowerCase().replace(/\s+/g, " ");
         return Promise.resolve(
-          sentences().flatMap((c) => {
-            const at = c.text.toLowerCase().indexOf(want);
+          sentSentences().flatMap((c) => {
+            const at = c.lower.indexOf(want);
             if (!want || at < 0) return want ? [] : [{ start: c.start, bold: [] }];
             const words = [...c.text.matchAll(/\S+/g)].filter((m) => m.index < at + want.length && m.index + m[0].length > at);
             return [{ start: c.start, bold: words.map((m) => [m.index, m.index + m[0].length]) }];
