@@ -104,8 +104,10 @@ checks from outside passed, and on any branch when it found none.
 
 Every push takes two Mac jobs where it took three, and one setup of
 about 50 s and one `make all` of about 45 s less. A build to update to
-ends about 30 s later, the time `make outside` adds after `make all`,
-and the Updates page offers it that much later.
+ends about 33 s later, and the Updates page offers it that much later.
+Measured on the first run that passed, one run: `make outside` took 32 s
+after the upload, relinking the programs included, and saving the cache
+1 s.
 
 It costs the checks from outside on the first commit of a pull request
 pushed before the pull request was opened, until its next push.
