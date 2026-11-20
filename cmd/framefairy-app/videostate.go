@@ -57,6 +57,12 @@ type VideoState struct {
 	// transcript search's, see Sentences and engine.Episode.SaidStamp.
 	// The window reads them again when it changes, and only then.
 	Cards string `json:"cards"`
+	// PutBack is how many seconds removed work can be put back before it
+	// is forgotten, removalTime, so the row of work just removed runs
+	// down for as long as Go keeps the work before Go has answered, and
+	// the window keeps no time of its own for it. A removed clip's row is
+	// news and keeps the window's time, since Undo puts it back whenever.
+	PutBack float64 `json:"putBack"`
 	// Chosen is the key of the clip chosen, by a hand or by the app, see
 	// choose.go, or nothing. It is read after the clips, and chosen from
 	// them and the jobs, so a clip the app chose comes with the state that
@@ -151,7 +157,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	jobs, rev := s.jobs.ofVideo(path)
 	coming := s.searchComingLocked(path) != ""
 	s.checkMu.Unlock()
-	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.Episode(path)}
+	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.episode(path, jobs), PutBack: removalTime.Seconds()}
 	plans := st.Status.Plans
 	if st.Status.Missing {
 		// A video whose file is gone keeps its clips, see Clips.
@@ -451,6 +457,70 @@ func (n *videoNews) stop() {
 	for _, sent := range going {
 		<-sent
 	}
+}
+
+// How a video stands with its work, engine.EpisodeStatus.Stands, which
+// the sidebar draws as the video's dot. The sidebar once worked it out
+// for itself from the status and the search, and a search set aside still
+// marked the video, #436. A video with none of these stands as nothing
+// worth a mark.
+const (
+	// standsFailed is a video whose file is gone, or whose search failed.
+	standsFailed = "failed"
+	// standsLook is a video that needs a look: its search stopped or was
+	// cut off, or its file changed since it was transcribed.
+	standsLook = "look"
+	// standsMade is a video with clips found or made in it.
+	standsMade = "made"
+)
+
+// searchStanding is how the newest search of a video stands, see
+// searchStands.
+type searchStanding int
+
+const (
+	searchQuiet searchStanding = iota
+	searchFailed
+	searchStopped
+)
+
+// standing is how the video whose status is st stands with its search: a
+// file gone and a failed search first, then what needs a look, then
+// clips made.
+func standing(st engine.EpisodeStatus, search searchStanding) string {
+	switch {
+	case st.Missing || search == searchFailed:
+		return standsFailed
+	case search == searchStopped || st.TranscriptStale:
+		return standsLook
+	case len(st.Plans) > 0:
+		return standsMade
+	}
+	return ""
+}
+
+// searchStands is how the newest search among a video's jobs stands: of
+// the newest search there is, only a failed one, or one that stopped or
+// was cut off, counts. A search set aside, whose window a hand moved off,
+// says nothing, #436. A search that runs says nothing either: that the
+// video is busy is what the sidebar shows from its jobs and from the
+// presses on their way.
+func searchStands(jobs []Job) searchStanding {
+	var last *Job
+	for i := range jobs {
+		if jobs[i].Kind == engine.JobSearch {
+			last = &jobs[i]
+		}
+	}
+	switch {
+	case last == nil || last.Aside:
+		return searchQuiet
+	case last.State == JobFailed:
+		return searchFailed
+	case last.State == JobStopped || last.State == JobInterrupted:
+		return searchStopped
+	}
+	return searchQuiet
 }
 
 // searchesEnded says of each search among jobs that is done or stopped

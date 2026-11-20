@@ -61,6 +61,9 @@ export class EpisodeSession {
   // Go's stamp of the cards of what the video says, from the newest state
   // kept, see VideoState.cards.
   cards = $state("");
+  // How many seconds removed work or a removed clip can be put back, from
+  // the newest state kept, see VideoState.putBack.
+  putBack = $state(0);
   // The rev of the newest state kept.
   rev = $state(0);
   // The video's jobs in the newest state kept, the clips on their way
@@ -158,6 +161,7 @@ export class EpisodeSession {
       this.heard = same(this.heard, state.heard);
       if (state.turns) this.turns = same(this.turns, state.turns);
       this.cards = state.cards ?? "";
+      this.putBack = state.putBack ?? 0;
       this.jobs = state.jobs;
       kept = true;
       this.choose(state);

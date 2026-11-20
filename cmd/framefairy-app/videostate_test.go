@@ -566,6 +566,15 @@ func TestAStateHoldsTheJobsTheWorkspaceShows(t *testing.T) {
 	if want := []string{"render-49", "clip-stopped", "search-new", "clip-new", "render-running", "render-queued"}; !slices.Equal(ids, want) {
 		t.Errorf("the state holds %v, not %v", ids, want)
 	}
+	// The library picks every video's jobs at once the same way, so it
+	// says how a video stands with the jobs its state holds.
+	all := q.ofVideos()
+	for _, video := range []string{"a.mp4", "b.mp4"} {
+		one, _ := q.ofVideo(video)
+		if !reflect.DeepEqual(all[video], one) {
+			t.Errorf("the library holds other jobs of %s than its state:\n%v\n%v", video, all[video], one)
+		}
+	}
 }
 
 // A video's state says how each search that is over or stopped ended,
@@ -849,5 +858,84 @@ func TestAStateSaysWhenTheCardsOfWhatWasSaidChanged(t *testing.T) {
 	}
 	if !says("zwo") {
 		t.Error("the cards read after the stamp changed do not say the corrected word")
+	}
+}
+
+// The search that marks a video in the sidebar is its newest, and only
+// when it failed, stopped or was cut off. One whose window a hand moved
+// off, set aside, says nothing, the way it has no row: it once still
+// marked the video, #436. One that runs says nothing here, because the
+// sidebar shows the video busy from its jobs.
+func TestTheNewestSearchMarksTheVideoUnlessItWasSetAside(t *testing.T) {
+	search := func(state string, aside bool) Job {
+		j := Job{State: state, Aside: aside}
+		j.Kind = engine.JobSearch
+		return j
+	}
+	render := Job{State: JobFailed}
+	render.Kind = engine.JobRender
+	for _, c := range []struct {
+		name string
+		jobs []Job
+		want searchStanding
+	}{
+		{"no search", nil, searchQuiet},
+		{"a failed render", []Job{render}, searchQuiet},
+		{"a failed search", []Job{search(JobFailed, false)}, searchFailed},
+		{"a search that stopped", []Job{search(JobStopped, false)}, searchStopped},
+		{"a search cut off", []Job{search(JobInterrupted, false)}, searchStopped},
+		{"a search that stopped, set aside", []Job{search(JobStopped, true)}, searchQuiet},
+		{"a failed search, set aside", []Job{search(JobFailed, true)}, searchQuiet},
+		{"a search that runs", []Job{search(JobRunning, false)}, searchQuiet},
+		{"a failed search, then one done", []Job{search(JobFailed, false), search(JobDone, false)}, searchQuiet},
+		{"one done, then one that stopped", []Job{search(JobDone, false), search(JobStopped, false)}, searchStopped},
+	} {
+		if got := searchStands(c.jobs); got != c.want {
+			t.Errorf("%s: the search stands as %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+// The library and a video's state say how the video stands with its
+// search, the one the queue holds: a search that stopped makes a video
+// with no clips one that needs a look, in the sidebar's first read and
+// in every state sent after.
+func TestTheLibraryAndTheStateSayHowAVideoStandsWithItsSearch(t *testing.T) {
+	s, eps, _ := stoppedSearches(t, "stopped.mp4")
+	lib := s.Library()
+	if len(lib) != 1 || lib[0].Stands != standsLook {
+		t.Fatalf("the library says the video with a search that stopped stands as %+v", lib)
+	}
+	st, err := s.State(context.Background(), eps[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Status.Stands != standsLook {
+		t.Errorf("the video's state says it stands as %q, want %q", st.Status.Stands, standsLook)
+	}
+}
+
+// How a video stands, decided here and drawn by the sidebar: a file gone
+// or a failed search first, then what needs a look, then clips made.
+func TestAVideoStandsAsItsFilesAndSearchSay(t *testing.T) {
+	plans := []engine.PlanSummary{{}}
+	for _, c := range []struct {
+		name   string
+		st     engine.EpisodeStatus
+		search searchStanding
+		want   string
+	}{
+		{"a new video", engine.EpisodeStatus{}, searchQuiet, ""},
+		{"a video with clips", engine.EpisodeStatus{Plans: plans}, searchQuiet, standsMade},
+		{"a file gone, with clips", engine.EpisodeStatus{Missing: true, Plans: plans}, searchQuiet, standsFailed},
+		{"a failed search, with clips", engine.EpisodeStatus{Plans: plans}, searchFailed, standsFailed},
+		{"a search that stopped, with clips", engine.EpisodeStatus{Plans: plans}, searchStopped, standsLook},
+		{"a file changed since it was transcribed", engine.EpisodeStatus{TranscriptStale: true, Plans: plans}, searchQuiet, standsLook},
+		{"a file gone with a search that stopped", engine.EpisodeStatus{Missing: true}, searchStopped, standsFailed},
+		{"a failed search on a changed file", engine.EpisodeStatus{TranscriptStale: true}, searchFailed, standsFailed},
+	} {
+		if got := standing(c.st, c.search); got != c.want {
+			t.Errorf("%s stands as %q, want %q", c.name, got, c.want)
+		}
 	}
 }

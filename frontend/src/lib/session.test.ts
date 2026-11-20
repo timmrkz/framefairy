@@ -49,6 +49,16 @@ describe("a video's state in its session", () => {
     expect([here.rev, here.status?.measured]).toEqual([6, 6]);
   });
 
+  test("keeps how long Go says removed work and clips can be put back", () => {
+    // The window kept its own ten seconds once, and a removed row ran down
+    // over them whatever Go kept the work for, #931.
+    const here = new EpisodeSession("/v.mp4", new JobStore());
+    here.take(state(5, { putBack: 25 }));
+    expect(here.putBack).toBe(25);
+    expect(here.take(state(4, { putBack: 7 }))).toBe(false);
+    expect(here.putBack).toBe(25);
+  });
+
   test("a read asked to be fresh makes the clips new, though a newer state came first", () => {
     const here = new EpisodeSession("/v.mp4", new JobStore());
     here.take(state(5));

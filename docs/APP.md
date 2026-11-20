@@ -1644,7 +1644,14 @@ bubble scrolled by those eight pixels.
       could not, because the window stood locked until it was carried on. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
       that failed, the red of its row and of its toast. A search set
-      aside has no row, so the dot says nothing of it either, issue #436. **Its trash can**,
+      aside has no row, so the dot says nothing of it either, issue #436.
+      How a video stands, its dot and the line under its name, is the Go
+      side's to say, `EpisodeStatus.stands` from `standing` in
+      `cmd/framefairy-app/videostate.go`, and `transcript` from
+      `engine/transcribed.go`, sent in the library and in every state of
+      the video. The sidebar draws the newest of them, picks only the
+      colour and the words, and pulses the dot from the frame work is
+      pressed for. **Its trash can**,
       there while the pointer is on the row, removes the search when it
       is no longer wanted: the row says Removed with Put it back for ten
       seconds, the way a removed clip's row does, and the search's cards
@@ -1711,7 +1718,13 @@ bubble scrolled by those eight pixels.
       the first one's way back with it. The ten seconds are the episode's,
       not the screen's: they run on while another episode or page is open,
       and coming back within them finds the row again with the time it has
-      left. Time the pointer held it still is kept too. A list read again,
+      left. Time the pointer held it still is kept too. How long a
+      removed clip's row stays is the window's, like a toast's, because
+      Undo puts the clip back at any time. Removed work, a search or a
+      clip made by hand that stopped, is forgotten by the Go side once its
+      time is up, so its row runs down over the time the Go side keeps,
+      `VideoState.putBack` before it has answered and the job's
+      `away.whole` after. A list read again,
       after a search, a render or an undo, leaves the rows as they are, and
       an undo that puts the clip back makes it a clip again. Leaving the
       episode, or any of those, used to take every way back with it.
@@ -1750,8 +1763,10 @@ bubble scrolled by those eight pixels.
       that the ruler's step is a whole number of, so every line on the
       range picker is a place an edge can land: five minutes on a four
       hour episode and five seconds on a six minute one, and the ends of
-      the episode win over the step. Every
-      window the app places itself lands on a step of the same kind,
+      the episode win over the step. The round steps come from the app's
+      Go side with the window, `WindowLimits.Rounds`, and the range picker
+      only picks the one that fits how wide it is drawn. Every
+      window the app places itself lands on one of the same steps,
       chosen from the length of the video alone and never from how wide
       the app is, about a 180th of the video, two minutes for four hours,
       its start and its length, so the app's own half hour of a four hour
@@ -2588,8 +2603,8 @@ another. The same words from the same place while they show come in on
 top again with their time started again, rather than twice. It is
 300 px wide, one width for every toast so a stack reads as one column,
 which Tim found 340 px a little too wide for. A toast about a video shows while that video is on
-screen and waits while another is. Its time, the ten seconds a removed
-clip has to be put back, runs down from the moment it comes, in the
+screen and waits while another is. Its time, ten seconds, the window's
+own, `newsShows` in `lib/removed.ts`, runs down from the moment it comes, in the
 same fill, and stands still while the pointer is on it. Its cross takes it away at
 once. It wears the red of a removed row over the dark of the app, with
 no line round it. The first one waited for the pointer before its time

@@ -217,6 +217,13 @@ export interface EpisodeStatus {
   // The words and the colour the video is told apart by in the sidebar,
   // kept in its work folder and never in its file name.
   label?: Label;
+  // How the video stands in the sidebar, its dot, as Go decides it: a
+  // file gone or a failed search, something that needs a look, clips
+  // made, or nothing worth a mark. See standing in
+  // cmd/framefairy-app/videostate.go.
+  stands: "failed" | "look" | "made" | "";
+  // How far the video is transcribed, which the line under its name says.
+  transcript: "whole" | "changed" | "to" | "parts" | "none";
 }
 
 // A video's label, see engine.Label. The colour is #rrggbb.
@@ -508,6 +515,9 @@ export interface WindowView extends KeptWindow {
   // The lengths of window at which the count suggested rises, so a drag
   // reads its count off them, see engine.SuggestedSteps.
   steps?: number[];
+  // The round steps a dragged edge of the window may land on, finest
+  // first, the ones the app places a window on, see dragStep in ruler.ts.
+  rounds?: number[];
   // How long the clips a search asks for may be, as they are set.
   shortest: number;
   longest: number;
@@ -592,6 +602,10 @@ export interface VideoState {
   // Go's stamp of the cards of what the video says, the transcript
   // search's: they are read again when it changes, and only then.
   cards?: string;
+  // How many seconds removed work, a search or a clip made by hand that
+  // stopped, can be put back before Go forgets it, see removalTime in
+  // cmd/framefairy-app/removal.go.
+  putBack?: number;
   // The key of the clip chosen, by a hand or by the Go side, or nothing.
   chosen?: string;
   // Where I and O can make a clip, see engine.MarkingOf, or none while

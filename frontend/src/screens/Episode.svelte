@@ -58,7 +58,7 @@
   import { suggestedCount } from "../lib/count";
   import { asleep, asking, keysElsewhere, typing, workspaceKey } from "../lib/keys";
   import {
-    secondThoughts,
+    newsShows,
     setAside,
     setAsideTold,
     spent,
@@ -909,10 +909,12 @@
     const press = pressedAway[job];
     const away = jobs.list.find((j) => j.id === job)?.away;
     if (press === "back" || (!away && press !== "away")) return undefined;
-    const whole = away?.whole ?? secondThoughts;
+    // Before Go answers the press, the time it said in the video's state.
+    const whole = away?.whole ?? session.putBack;
     const left = !away ? whole : away.until ? (away.until - Date.now()) / 1000 : away.left;
     return {
       spent: Math.min(whole, Math.max(0, whole - left)),
+      whole,
       // A search is removed in its row and in each of its cards on the
       // way at once, and the hand on any of them holds them all.
       together: `away ${job}`,
@@ -1016,7 +1018,7 @@
   // The row's time starts the first time it is shown.
   $effect(() => {
     const job = foundNothing?.job;
-    if (job && !(job in told)) told = { ...told, [job]: Date.now() + secondThoughts * 1000 };
+    if (job && !(job in told)) told = { ...told, [job]: Date.now() + newsShows * 1000 };
   });
   // The news first: with every clip removed, a search that found nothing
   // says so, and the row that stands for an empty list comes after it.
@@ -1370,7 +1372,7 @@
     // whose clip is not removed yet, see keepRemovedTrue.
     const row = (c: ClipEntry, then = ""): Removed => ({
       clip: c,
-      until: removed[clip.key]?.until ?? Date.now() + secondThoughts * 1000,
+      until: removed[clip.key]?.until ?? Date.now() + newsShows * 1000,
       chosen,
       then,
       // Where the playhead goes back to when the clip is put back, only
@@ -2953,6 +2955,7 @@
     least={win?.least ?? 0}
     leastSays={typed > 0 ? `room for ${typed} clips of ${min} s` : `room for a clip of ${min} s`}
     most={win?.most ?? duration}
+    rounds={win?.rounds ?? []}
     reachSays={win?.by === "budget"
       ? "all the budget pays for"
       : win?.by === "memory"
@@ -3776,6 +3779,7 @@
           {#if !inHand && renderLeft && renderAway}
             <span class="renderaway">
               <RemovedRow
+                drain={renderAway.whole}
                 spent={renderAway.spent}
                 together={renderAway.together}
                 onputback={renderAway.onputback}

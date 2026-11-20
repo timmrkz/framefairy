@@ -3,7 +3,7 @@
   import { clock, type ClipEntry } from "../lib/api";
   import { Carrier, type Away, type OnTheWayCard } from "../lib/arriving";
   import { hoverClip } from "../lib/hover";
-  import { secondThoughts } from "../lib/removed";
+  import { newsShows } from "../lib/removed";
   import Removed from "./Removed.svelte";
 
   import Busy from "./Busy.svelte";
@@ -355,6 +355,7 @@
           <span class="meta muted num">{next.left}</span>
         {:else if g === 0 && stopped?.away}
           <Removed
+            drain={stopped.away.whole}
             spent={stopped.away.spent}
             together={stopped.away.together}
             onputback={stopped.away.onputback}
@@ -376,7 +377,7 @@
         {:else if g === 0 && emptied}
           {#if emptied.fades}
             <Busy
-              drain={secondThoughts}
+              drain={newsShows}
               spent={emptied.fades.spent}
               onend={emptied.fades.onend}
               onresume={emptied.fades.onresume}
@@ -391,6 +392,7 @@
                is the episode's, see Episode, so the range picker drops its
                mark at once and leaving the video takes nothing with it. -->
           <Removed
+            drain={a.away.whole}
             spent={a.away.spent}
             together={a.away.together}
             onputback={a.away.onputback}
@@ -422,6 +424,7 @@
         {/if}
       {:else if clip && clip.key in removed}
         <Removed
+          drain={newsShows}
           spent={removed[clip.key]}
           onputback={() => onputback?.(clip.key)}
           onend={() => onforget?.(clip.key)}

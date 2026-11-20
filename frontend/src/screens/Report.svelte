@@ -13,6 +13,7 @@
   } from "../lib/api";
   import { asking, keyFocus, typing } from "../lib/keys";
   import Removed from "../components/Removed.svelte";
+  import { newsShows } from "../lib/removed";
   import { chime, wake } from "../lib/chime";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
@@ -892,8 +893,12 @@
       {#each tiles as t (t.p.id)}
         <li class="tile" data-id={t.p.id}>
           {#if t.gone}
+            <!-- Go keeps a picture removed until the next report, and
+                 Cmd+Z puts it back however long ago, so the tile's time
+                 decides nothing: it is news, shown as long as news is. -->
             <Removed
               tile
+              drain={newsShows}
               onputback={() => putBack(t.p.id)}
               onend={() => delete removed[t.p.id]}
             />

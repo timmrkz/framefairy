@@ -63,6 +63,8 @@ export type Arriving = {
 // and run down as one, see Busy.
 export type Away = {
   spent: number;
+  // How many seconds it has in all, as Go keeps them, JobAway.whole.
+  whole: number;
   together?: string;
   onputback: () => void;
   onhold: (held: boolean) => void;
