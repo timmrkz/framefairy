@@ -17,11 +17,12 @@ not play. Tim found it testing #184. Now it plays."
 -->
 
 - **Architecture:** <!-- better, the same or worse -->
-- **Speed:** <!-- faster, slower or the same -->
+- **Performance:** <!-- faster, slower or the same -->
+- **Security:** <!-- safer, the same or less safe -->
 
 <!--
 The bottom line, always, and nothing else in it. Architecture: one word,
-better, the same or worse, against docs/ARCHITECTURE.md. Speed: for the
+better, the same or worse, against docs/ARCHITECTURE.md. Performance: for the
 app, or for CI when only the tests or the build change. One word, and
 when it is faster or slower, the change in percent with its spread,
 `12 % faster, ± 3 %`, or `one run` in place of the spread. It is the
@@ -32,7 +33,11 @@ measured change is its number, even inside its spread,
 `2 % faster, ± 5 %`. Everything else goes in Proof: what was measured,
 where and how often, the parts, CI when the app changed too, what was
 read from the code, where each new thing went, and what a slower part
-buys. See Every change knows its speed in CLAUDE.md.
+buys. See Every change knows its performance in CLAUDE.md. Security:
+one word, safer, the same or less safe, for the app, the build and CI.
+Proof says what the change lets in from outside, runs, fetches or lets
+out, when it does any of that. Less safe is fixed before the merge,
+unless Tim says yes to the trade-off in the reply.
 -->
 
 ## Root cause
@@ -56,7 +61,7 @@ names in the code. The docs that changed with it.
 
 <!--
 The tests that ensure it, and that they fail on main and pass here. The
-walks, the measurements before and after that the speed line stands on,
+walks, the measurements before and after that the Performance line stands on,
 and whether CI passed on the last commit. What could not be checked
 here, like WebKit on a Mac, is said. This section may be as long as the
 proof needs.
