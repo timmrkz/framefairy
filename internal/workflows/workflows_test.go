@@ -876,10 +876,12 @@ func TestWhatOnlyAMacTellsRunsEveryNight(t *testing.T) {
 	}
 }
 
-// A pull request runs the Go tests on a Mac when it changes a file only a
-// Mac builds, and only then. internal/maccode keeps every such file named
-// *_darwin.go or *_darwin_test.go, and the filter mac of the job changes
-// looks for exactly those names.
+// A pull request runs the Go tests on a Mac when it changes code only a
+// Mac builds, and only then. internal/maccode keeps every such file of
+// ours named *_darwin.go or *_darwin_test.go, and the modules' own come in
+// through go.mod and go.sum, so the filter mac of the job changes looks
+// for exactly those. It is one pattern, since the filter needs every line
+// of it to match.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestThePullRequestsMacTestsFollowItsMacCode(t *testing.T) {
@@ -905,7 +907,7 @@ func TestThePullRequestsMacTestsFollowItsMacCode(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(fmt.Sprint(s.With["filters"])), &filters); err != nil {
 			t.Fatal(err)
 		}
-		if got := filters["mac"]; !slices.Equal(got, []string{"**/*_darwin*.go"}) {
+		if got := filters["mac"]; !slices.Equal(got, []string{"{**/*_darwin*.go,go.mod,go.sum}"}) {
 			t.Errorf("the filter mac is %q, not the files internal/maccode keeps the Mac's code in", got)
 		}
 		return

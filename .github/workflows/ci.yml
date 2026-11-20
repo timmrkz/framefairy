@@ -6,7 +6,8 @@
 # when Go changed, the interface's tests when the interface changed, and
 # the jobs that test the whole app, the build and the walks, when either
 # did, and the Go tests on a Mac when code only a Mac builds changed, a
-# *_darwin.go or *_darwin_test.go file. What counts as which is the
+# *_darwin.go or *_darwin_test.go file, or go.mod or go.sum, which bring
+# the modules' own code only a Mac builds. What counts as which is the
 # filters of the job changes, below. A change to the docs alone starts
 # nothing. A push to main starts every job but the Mac's. The Go tests on
 # a Mac and the app opened from outside run every night on main instead,
@@ -86,8 +87,10 @@ jobs:
               - 'frontend/src/lib/{api.ts,*.cases.json}'
             interface:
               - '{frontend/**,.github/workflows/**,.github/actions/**,.node-version,Makefile}'
+            # One line: with predicate-quantifier every, two lines must
+            # both match.
             mac:
-              - '**/*_darwin*.go'
+              - '{**/*_darwin*.go,go.mod,go.sum}'
 
   # The machine the Linux jobs run on, with every system package they use,
   # so none waits on the Ubuntu mirror, see ci-image.yml.
@@ -256,9 +259,12 @@ jobs:
   # The Go tests on a Mac, against the ffmpeg we ship, when a pull request
   # changed code only a Mac builds. Every other line of Go is built and
   # tested on Linux, and internal/maccode keeps everything that behaves
-  # differently on a Mac in a *_darwin file. They run on main every night,
-  # see mac-nightly.yml. make unit on a Mac leaves out the race detector
-  # and the licence server, see the Makefile.
+  # differently on a Mac in a *_darwin file. A change to go.mod or go.sum
+  # runs them too, since a module brings code only a Mac builds, like the
+  # speech library for the Mac. They run on main every night, see
+  # mac-nightly.yml, which saves the cache this job starts from. make unit
+  # on a Mac leaves out the race detector and the licence server, see the
+  # Makefile.
   macos:
     needs: changes
     if: needs.changes.outputs.mac == 'true'
@@ -271,10 +277,4 @@ jobs:
           key: go-v2-macos-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-v2-macos-${{ runner.os }}-
           ffmpeg: true
-      - id: tests
-        run: make unit
-      - if: steps.tests.outcome == 'success'
-        uses: ./.github/actions/save
-        with:
-          key: go-v2-macos-${{ runner.os }}-${{ github.sha }}
-          save: ${{ github.ref == 'refs/heads/main' }}
+      - run: make unit
