@@ -438,7 +438,8 @@ func aheadOf(frames, cards []int) Ahead {
 
 // The frames read ahead wait until the decoder has nothing to do for the
 // hand, and a step or a card clicked then finds its frame kept, nothing
-// decoded for it. The word beside first, then the cards. Issue #383.
+// decoded for it. The word beside first, then the frames before the
+// hand, then the cards. Issue #383.
 func TestTheFramesAheadAreReadOnceTheHandRestsAndFoundKept(t *testing.T) {
 	dec := newHeldDecoder()
 	s := newSchedule(dec)
@@ -454,20 +455,11 @@ func TestTheFramesAheadAreReadOnceTheHandRestsAndFoundKept(t *testing.T) {
 	if got := <-click; got.seen.Frame != 10 || got.seen.Kept {
 		t.Fatalf("the click got %+v, %v", got.seen, got.err)
 	}
-	// The frames before the click come before anything is read ahead.
-	behind := dec.next(t)
-	if behind.from != 0 || !behind.key {
-		t.Fatalf("the frames before the click were read from %d, key first %v", behind.from, behind.key)
-	}
-	for f := 0; f < 8; f++ {
-		_ = behind.give(t, f)
-	}
-	if err := behind.give(t, 8); !errors.Is(err, errLookDone) {
-		t.Fatalf("the reading of the frames before went on: %v", err)
-	}
 	// The word's frame comes with the frame before it, where the arrow to
 	// the left steps, and the frames after it, where the arrow to the
-	// right does.
+	// right does. It comes before the frames before the click, which cost
+	// the frames from the key frame before them, and a word key pressed
+	// next waits for it.
 	// No key frame first: nobody waits to be shown one.
 	word := dec.next(t)
 	if word.from != 49 || word.key {
@@ -480,6 +472,17 @@ func TestTheFramesAheadAreReadOnceTheHandRestsAndFoundKept(t *testing.T) {
 	}
 	if err := word.give(t, 50+lookAhead); !errors.Is(err, errLookDone) {
 		t.Fatalf("the reading went on past the word's frames: %v", err)
+	}
+	// Then the frames before the click, before the cards.
+	behind := dec.next(t)
+	if behind.from != 0 || !behind.key {
+		t.Fatalf("the frames before the click were read from %d, key first %v", behind.from, behind.key)
+	}
+	for f := 0; f < 8; f++ {
+		_ = behind.give(t, f)
+	}
+	if err := behind.give(t, 8); !errors.Is(err, errLookDone) {
+		t.Fatalf("the reading of the frames before went on: %v", err)
 	}
 	card := dec.next(t)
 	if card.from != 200 {
@@ -501,7 +504,9 @@ func TestTheFramesAheadAreReadOnceTheHandRestsAndFoundKept(t *testing.T) {
 }
 
 // A look of the hand stops the reading ahead between two frames, and the
-// frame it was reading is read once the hand rests again.
+// frame it was reading is read once the hand rests again, before the
+// frames before the hand: a word key pressed next wants it, and a frame
+// before the hand costs the frames from the key frame before.
 func TestTheHandStopsTheReadingAhead(t *testing.T) {
 	dec := newHeldDecoder()
 	s := newSchedule(dec)
@@ -521,19 +526,22 @@ func TestTheHandStopsTheReadingAhead(t *testing.T) {
 	if got := <-click; got.seen.Frame != 300 {
 		t.Fatalf("the click got %+v, %v", got.seen, got.err)
 	}
-	behind := dec.next(t)
-	for f := behind.from; f < 298; f++ {
-		_ = behind.give(t, f)
-	}
-	if err := behind.give(t, 298); !errors.Is(err, errLookDone) {
-		t.Fatalf("the reading of the frames before went on: %v", err)
-	}
 	again := dec.next(t)
 	if again.from != 49 {
 		t.Fatalf("the reading ahead went on from %d, not the word's frames", again.from)
 	}
 	for f := 49; f <= 50+lookAhead; f++ {
 		_ = again.give(t, f)
+	}
+	behind := dec.next(t)
+	if behind.from > 300-lookBack {
+		t.Fatalf("the frames before the click were read from %d", behind.from)
+	}
+	for f := behind.from; f < 298; f++ {
+		_ = behind.give(t, f)
+	}
+	if err := behind.give(t, 298); !errors.Is(err, errLookDone) {
+		t.Fatalf("the reading of the frames before went on: %v", err)
 	}
 	if got := <-read; got.err != nil {
 		t.Fatalf("the reading ahead ended with %v", got.err)

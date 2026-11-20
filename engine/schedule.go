@@ -632,6 +632,11 @@ func (s *Schedule) want() (work, bool) {
 	}
 	if s.hand.Moving && s.step > lookFast {
 		sides = sides[:2]
+	} else if !s.hand.Moving && s.ahead.wordsLeft(h) {
+		// A hand at rest has the words beside read first, then the
+		// frames before it: a frame before it costs the frames from the
+		// key frame before, and a word key pressed next waits for them.
+		sides = sides[:1]
 	} else if s.hand.Moving && s.back {
 		sides[0], sides[1] = sides[1], sides[0]
 		sides[2], sides[3] = sides[3], sides[2]
@@ -907,9 +912,22 @@ type aheadWork struct {
 	// wants are the frames to hand over, and out the ones read or kept
 	// so far, in the order they came.
 	wants map[int]bool
+	// words are the frames read for the words beside, the first reads of
+	// todo.
+	words []int
 	out   []Seen
 	held  bool
 	done  chan aheadDone
+}
+
+// wordsLeft tells whether a frame for the words beside is still to be
+// read: the frames before a hand at rest wait for them, since the next
+// press of a word key wants one of them. Under the lock.
+func (a *aheadWork) wordsLeft(h Hand) bool {
+	if a == nil || a.held || a.grid != h.Grid || a.w != h.W || a.h != h.H {
+		return false
+	}
+	return slices.ContainsFunc(a.words, func(f int) bool { return a.wants[f] })
 }
 
 type aheadSpan struct{ from, to int }
@@ -948,6 +966,7 @@ func (s *Schedule) Ahead(ctx context.Context, a Ahead) ([]Seen, error) {
 				continue
 			}
 			work.wants[g] = true
+			work.words = append(work.words, g)
 			if read.from < 0 {
 				read.from = g
 			}
