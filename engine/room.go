@@ -232,17 +232,14 @@ type LineWeight struct {
 	Chars int     `json:"chars"`
 }
 
-// WeighLines is the transcript cut into the lines a search would send, each
-// with what it weighs, written the way the default recipe writes them.
-// They are added up over a window to know whether it fits the room, see
-// Reach. The numbers in
-// front of a line depend on where the window starts, so a line is counted
-// with the widest number any window of this episode would give it, which
-// only ever errs towards a window that fits.
-func WeighLines(t *Transcript) []LineWeight { return weighLines(t, nil) }
-
-// weighLines is WeighLines of lines already built from t with no
-// loudness, or of its own when lines is nil. A line's loudness is read
+// weighLines is the transcript cut into the lines a search would send,
+// each with what it weighs, written the way the default recipe writes
+// them. They are added up over a window to know whether it fits the room,
+// see Reach. The numbers in front of a line depend on where the window
+// starts, so a line is counted with the widest number any window of this
+// episode would give it, which only ever errs towards a window that fits.
+//
+// lines are t's lines built with no loudness. A line's loudness is read
 // only by AnnotateLines, which the default recipe does not write, so it
 // is measured only for a recipe that does: measured for every 10 ms of a
 // long video on each read of its transcript, it was most of the read.
@@ -250,8 +247,6 @@ func weighLines(t *Transcript, lines []Line) []LineWeight {
 	r, _ := RecipeNamed("")
 	if r.Transcript == nil {
 		lines = BuildLines(t.Words, t.Levels(), nil)
-	} else if lines == nil {
-		lines = BuildLines(t.Words, nil, nil)
 	}
 	out := make([]LineWeight, 0, len(lines))
 	widest := len(itoa(len(lines)))

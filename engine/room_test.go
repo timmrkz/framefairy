@@ -170,7 +170,7 @@ func TestTheWeightOfAWindowIsNeverLessThanWhatItSends(t *testing.T) {
 	if said := read.Said(); said == nil || *said != [2]float64{0, 4799} {
 		t.Errorf("speech is said from %v, want from 0 to 4799 s", said)
 	}
-	for name, weights := range map[string][]LineWeight{"WeighLines": WeighLines(tr), "a read's Weighed": read.Weighed().Lines} {
+	for name, weights := range map[string][]LineWeight{"weighLines": weighLines(tr, BuildLines(tr.Words, nil, nil)), "a read's Weighed": read.Weighed().Lines} {
 		weighsWhatItSends(t, name, tr, weights)
 	}
 }
@@ -201,7 +201,7 @@ func weighsWhatItSends(t *testing.T, name string, tr *Transcript, weights []Line
 			t.Errorf("%s, lines %d to %d: counted %d, far over the %d it sends", name, span[0], span[1], counted, sent)
 		}
 	}
-	if len(WeighLines(&Transcript{})) != 0 {
+	if len(weighLines(&Transcript{}, nil)) != 0 {
 		t.Error("no words, and still something to weigh")
 	}
 }

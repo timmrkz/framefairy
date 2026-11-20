@@ -171,4 +171,3 @@ func FuzzATranscriptIsWrittenAsBefore(f *testing.F) {
 		readsAsBefore(t, got)
 	})
 }
-
