@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"framefairy/internal/framewire"
@@ -874,5 +875,29 @@ func TestAWindowWithTheFrameStillSaysWhereTheHandIs(t *testing.T) {
 	st := dec.next(t)
 	if st.from != 111 || st.key {
 		t.Fatalf("a hand on the frame on screen had a stream from %d, key first %v, want the frames after it", st.from, st.key)
+	}
+}
+
+// A drag is written to the log as one line once the hand lets go, with
+// every place it went to, so a drag that lagged on someone's machine is
+// told in their report the way it went.
+func TestADragIsLoggedOnceTheHandLetsGo(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	var lines []string
+	s.say = func(line string) { lines = append(lines, line) }
+	for _, h := range []Hand{move(10, -1), move(11, -1), move(13, -1)} {
+		_ = lookFor(s, h)
+		waits(s, h)
+	}
+	until(s, func() bool { return len(lines) == 0 && s.drag != nil && len(s.drag.places) == 3 })
+	_ = lookFor(s, rest(13))
+	until(s, func() bool { return len(lines) == 1 })
+	s.mu.Lock()
+	line := lines[0]
+	s.mu.Unlock()
+	if !strings.Contains(line, "over 3 places") || !strings.HasSuffix(line, "places 10,11,13") {
+		t.Fatalf("the drag was logged as %q", line)
 	}
 }

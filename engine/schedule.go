@@ -4,8 +4,13 @@ import (
 	"container/list"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"framefairy/internal/framewire"
 	"framefairy/internal/wake"
@@ -28,6 +33,8 @@ import (
 // see Ahead.
 type Schedule struct {
 	frames framesSource
+	// say writes a line for the log, see dragLog. Nil in a test.
+	say func(line string)
 
 	mu sync.Mutex
 	// hand is the newest look of the hand, once there is one, and back
@@ -60,8 +67,69 @@ type Schedule struct {
 	// starts or ends, so a test goes on once the schedule has it. Only the
 	// tests wait on it.
 	looks wake.Wake
+	// drag is the drag under way, for the log, see dragLog.
+	drag *dragLog
 }
 
+// dragLog is what a drag did, written as one line once the hand lets go:
+// every place the hand went to in turn, and how long the window waited
+// at most for a frame. A drag that lagged on someone's machine is then
+// told in their report the way it went, and can be played in the
+// simulation, see drag_test.go.
+type dragLog struct {
+	began  time.Time
+	places []int
+	// longest is the longest a look waited for its answer, at place at.
+	longest time.Duration
+	at      int
+}
+
+// dragPlaces is how many places of a drag the log keeps, about eight
+// seconds of it.
+const dragPlaces = 500
+
+// logDrag takes a look into the drag under way, and writes the drag that
+// ended. Under the lock.
+func (s *Schedule) logDrag(l Hand) {
+	if !l.Moving {
+		s.endDrag()
+		return
+	}
+	if s.drag == nil {
+		s.drag = &dragLog{began: time.Now()}
+	}
+	if d := s.drag; len(d.places) < dragPlaces && (len(d.places) == 0 || d.places[len(d.places)-1] != l.Frame) {
+		d.places = append(d.places, l.Frame)
+	}
+}
+
+// waited notes how long a look of a drag waited. Under the lock.
+func (s *Schedule) waited(l Hand, took time.Duration) {
+	if d := s.drag; d != nil && l.Moving && took > d.longest {
+		d.longest, d.at = took, l.Frame
+	}
+}
+
+// endDrag writes the drag under way, if any. Under the lock.
+func (s *Schedule) endDrag() {
+	d := s.drag
+	if d == nil {
+		return
+	}
+	s.drag = nil
+	if s.say == nil || len(d.places) == 0 {
+		return
+	}
+	var b strings.Builder
+	for i, f := range d.places {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.Itoa(f))
+	}
+	s.say(fmt.Sprintf("a drag of %d ms over %d places, the longest wait %d ms at frame %d, places %s",
+		time.Since(d.began).Milliseconds(), len(d.places), d.longest.Milliseconds(), d.at, b.String()))
+}
 
 // framesSource is where a schedule's frames come from, the episode's
 // decoder in the app, see EpisodeFrames.Stream. A test hands in its own,
@@ -71,9 +139,12 @@ type framesSource interface {
 		skip func() float64, got func(at float64, frame []byte) error) error
 }
 
-// NewSchedule is the schedule of the video whose decoder this is.
+// NewSchedule is the schedule of the video whose decoder this is. What it
+// says for the log goes where the decoder's lines go.
 func NewSchedule(f *EpisodeFrames) *Schedule {
-	return newSchedule(f)
+	s := newSchedule(f)
+	s.say = func(line string) { f.said.say("schedule", f.path, 0, slog.LevelDebug, line) }
+	return s
 }
 
 func newSchedule(frames framesSource) *Schedule {
@@ -228,6 +299,7 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 		return Seen{}, ErrOvertaken
 	}
 	s.lastLook = l.Sent
+	s.logDrag(l)
 	same := s.handSet && sameSize(s.hand, l)
 	if !same || s.hand.Frame != l.Frame {
 		s.overtake()
@@ -258,8 +330,12 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 	s.plan()
 	s.looks.WakeLocked()
 	s.mu.Unlock()
+	asked := time.Now()
 	select {
 	case a := <-w.answer:
+		s.mu.Lock()
+		s.waited(l, time.Since(asked))
+		s.mu.Unlock()
 		return a.seen, a.err
 	case <-ctx.Done():
 		s.mu.Lock()
@@ -333,6 +409,7 @@ func (s *Schedule) LetFramesGo() {
 func (s *Schedule) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.endDrag()
 	s.overtake()
 	s.handSet = false
 	if a := s.ahead; a != nil {
