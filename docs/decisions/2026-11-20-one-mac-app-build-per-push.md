@@ -109,8 +109,13 @@ Measured on the first run that passed, one run: `make outside` took 32 s
 after the upload, relinking the programs included, and saving the cache
 1 s.
 
-It costs the checks from outside on the first commit of a pull request
-pushed before the pull request was opened, until its next push.
+It costs three things the checks from outside had in `ci.yml`. The
+first commit of a pull request pushed before the pull request was opened
+gets none until its next push, though in 13 recent pull requests every
+head commit was built. They test the branch as it is, where `ci.yml`
+tested the pull request merged with main, so what main changed meanwhile
+is checked on main after the merge. And a pull request from a fork gets
+none, since `builds.yml` runs only on a push to this repository.
 
 It was wrong if a push still waits on a Mac as often as before, if the
 build to update to is held back by a failing check from outside more

@@ -191,6 +191,10 @@ jobs:
       # linked again.
       - id: outside
         name: The app opened from outside
+        # It took 30 s. A hang that go test's own timeout does not reach,
+        # in make all or in the bundle, holds the Mac 10 minutes at most,
+        # not the job's 90.
+        timeout-minutes: 10
         run: make outside WERROR=1
 
       # Saved on main once everything passed, and on a branch only when

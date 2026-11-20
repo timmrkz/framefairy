@@ -44,12 +44,10 @@ concurrency:
 #
 # A Go test waits on signals, never on the clock, so one whose signal never
 # comes hangs. go test ends it after UNITTIMEOUT and prints every
-# goroutine, well under a job's five minutes. The checks from outside the
-# app end the same way after OUTSIDETIMEOUT.
+# goroutine, well under a job's five minutes.
 env:
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
   UNITTIMEOUT: 4m
-  OUTSIDETIMEOUT: 2m
 
 jobs:
   # What the pull request changed, by the files GitHub lists for it. Go is

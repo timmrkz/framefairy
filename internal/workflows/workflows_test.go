@@ -719,7 +719,8 @@ func TestCIStopsTheRunOfAnOutdatedCommit(t *testing.T) {
 // update to in builds.yml, which opens the same app from outside. The
 // account runs five Mac jobs at once for every branch together, and
 // when a third job built the same app again, two pushes close together
-// filled the queue.
+// filled the queue. A Mac named in a matrix and one in a workflow a job
+// calls count too.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestAPushTakesTwoMacJobs(t *testing.T) {
@@ -729,32 +730,86 @@ func TestAPushTakesTwoMacJobs(t *testing.T) {
 		if !strings.Contains(filepath.ToSlash(f), "/workflows/") {
 			continue
 		}
-		b, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
 		var wf struct {
-			On   map[string]any `yaml:"on"`
-			Jobs map[string]struct {
-				RunsOn any `yaml:"runs-on"`
-			} `yaml:"jobs"`
+			On map[string]any `yaml:"on"`
 		}
-		if err := yaml.Unmarshal(b, &wf); err != nil {
-			t.Fatal(err)
-		}
+		readYAML(t, f, &wf)
 		_, push := wf.On["push"]
 		_, pr := wf.On["pull_request"]
-		if !push && !pr {
-			continue
-		}
-		for name, j := range wf.Jobs {
-			if strings.Contains(fmt.Sprint(j.RunsOn), "macos") {
-				macs = append(macs, filepath.Base(f)+" "+name)
-			}
+		if push || pr {
+			macs = append(macs, macJobs(t, f)...)
 		}
 	}
 	if len(macs) != 2 {
 		t.Errorf("a push or a pull request starts %d Mac jobs, %v, where it should take two: the Go tests and the build that opens the app from outside", len(macs), macs)
+	}
+}
+
+// macJobs names the Mac jobs a run of the workflow at path starts: one
+// for each job on a Mac, one for each Mac in a job's matrix, and the
+// Mac jobs of a workflow of this repository a job calls.
+func macJobs(t *testing.T, path string) []string {
+	t.Helper()
+	var wf struct {
+		Jobs map[string]struct {
+			RunsOn   any    `yaml:"runs-on"`
+			Uses     string `yaml:"uses"`
+			Strategy struct {
+				Matrix any `yaml:"matrix"`
+			} `yaml:"strategy"`
+		} `yaml:"jobs"`
+	}
+	readYAML(t, path, &wf)
+	var macs []string
+	for name, j := range wf.Jobs {
+		name = filepath.Base(path) + " " + name
+		switch {
+		case strings.HasPrefix(j.Uses, "./.github/workflows/"):
+			macs = append(macs, macJobs(t, filepath.Join("..", "..", j.Uses))...)
+		case strings.Contains(fmt.Sprint(j.RunsOn), "${{"):
+			for range countMacs(j.Strategy.Matrix) {
+				macs = append(macs, name)
+			}
+		case strings.Contains(fmt.Sprint(j.RunsOn), "macos"):
+			macs = append(macs, name)
+		}
+	}
+	return macs
+}
+
+// countMacs counts the values of a matrix that name a Mac.
+func countMacs(v any) int {
+	switch v := v.(type) {
+	case string:
+		if strings.Contains(v, "macos") {
+			return 1
+		}
+	case []any:
+		n := 0
+		for _, e := range v {
+			n += countMacs(e)
+		}
+		return n
+	case map[string]any:
+		n := 0
+		for k, e := range v {
+			if k != "exclude" {
+				n += countMacs(e)
+			}
+		}
+		return n
+	}
+	return 0
+}
+
+func readYAML(t *testing.T, path string, v any) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal(b, v); err != nil {
+		t.Fatalf("%s: %v", path, err)
 	}
 }
 

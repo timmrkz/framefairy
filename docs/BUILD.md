@@ -360,7 +360,9 @@ local dispenser beside it, see
 [TESTING.md](TESTING.md#from-outside-the-app). It runs on every push to
 main and to a branch with an open pull request whose app changed against
 its channel's build. A build whose checks from outside fail is not
-published. See the decision record
+published. They check the branch as pushed, not merged with main, and a
+pull request from a fork, or the first commit pushed before its pull
+request opened, gets none until it is built. See the decision record
 [2026-11-20-one-mac-app-build-per-push.md](decisions/2026-11-20-one-mac-app-build-per-push.md).
 
 Every job but `interface` starts from Go's build cache as main left it
