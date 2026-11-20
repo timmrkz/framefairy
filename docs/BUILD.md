@@ -132,8 +132,8 @@ whose code it changed, by the filters of the job `changes` in `ci.yml`:
 
 | Changed | Starts |
 | --- | --- |
-| Go: any file outside `frontend/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `frontend/` a Go test reads, the filter `goread` | `linux`, `fuzz`, `macos`, the walks and `outside` |
-| the interface: `frontend/`, the Makefile, `.github/workflows/`, `.github/actions/` and `.node-version` | `interface`, the walks and `outside` |
+| Go: any file outside `frontend/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `frontend/` a Go test reads, the filter `goread` | `linux`, `fuzz`, `macos` and the walks |
+| the interface: `frontend/`, the Makefile, `.github/workflows/`, `.github/actions/` and `.node-version` | `interface` and the walks |
 | only the docs, `docs/`, any `.md`, `.claude/` | only `build` |
 
 A push to main starts every job. Inside a Go job Go's own test cache
@@ -348,7 +348,19 @@ command, the one a person runs:
 | `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | Go or the interface | `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, `walk-times.tsv`, so a run that hangs is named in minutes. After the walks, the log says how busy the walkers were and what every run took, slowest first. Every walk walks in Chromium, and every night in WebKit too, see Two browsers in [TESTING.md](TESTING.md#two-browsers). On four machines the jobs took 181 to 226 seconds in Chromium, in three runs on 5 November, and 223 to 377 while every walk walked in WebKit |
 | `fuzz` | Linux, in the CI image | Go | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | Go | `make unit` against the ffmpeg we ship, built by its script and kept until the script changes. On a Mac it leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
-| `outside` | macOS | Go or the interface | `make outside WERROR=1`: the app built with the ffmpeg and the llama-server we ship and no warning allowed, see [No build warnings on macOS](#no-build-warnings-on-macos), then a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
+
+The app opened from outside is checked in `builds.yml`, by the job that
+builds the app to update to, not in `ci.yml`: after `make app WERROR=1`
+packs and uploads the build, a keychain of its own, then `make outside
+WERROR=1` with the same version, channel and commit, so `make all` finds
+everything built and only the app with the probe is built again, then
+the app opened by macOS from an Unlock link, closed and open, with the
+local dispenser beside it, see
+[TESTING.md](TESTING.md#from-outside-the-app). It runs on every push to
+main and to a branch with an open pull request whose app changed against
+its channel's build. A build whose checks from outside fail is not
+published. See the decision record
+[2026-11-20-one-mac-app-build-per-push.md](decisions/2026-11-20-one-mac-app-build-per-push.md).
 
 Every job but `interface` starts from Go's build cache as main left it
 after its last push, one cache for each job and for each machine of
@@ -360,9 +372,9 @@ kept everything ever built, and a Linux test job restored 669 MB where
 it used about 214. Every run says in its log how much of the cache it
 used. The modules have a cache of their own, the zips Go downloaded, one
 for each `go.sum`. The build to update to in
-`builds.yml` starts from the cache of `outside`, which runs the same
-`make`, and saves none of its own, so no upload sits between a push and
-its build on the Updates page. setup-go keeps the cache by `go.sum`
+`builds.yml` keeps a cache of its own, `go-v2-app`, which it saves on
+main once its checks from outside passed, after the zip is uploaded, so
+no upload sits between a push and its build on the Updates page. setup-go keeps the cache by `go.sum`
 alone and saves it only when `go.sum` changes, so with it a job started
 from a cache weeks old and compiled nearly everything again: a minute on
 Linux and close to two on a Mac, the episode's decoder included.
@@ -405,7 +417,8 @@ side by side.
 Every test runs on Linux under the race detector, with the same
 `FUZZTIME`, and every test of what runs on a Mac runs on a Mac too. The
 account runs five Mac jobs at once for every branch together, so a push
-takes two, `macos` and `outside`, and the app is built once there. The
+takes two, `macos` in `ci.yml` and `build` in `builds.yml`, and the app
+is built once, in `build`, which opens it from outside too. The
 two fuzz targets about paths are fuzzed on a Mac at night, because a
 case-insensitive filesystem is a different thing to explore. The others
 read text and numbers, which Go reads the same on both. The known inputs
@@ -684,7 +697,7 @@ It also sets `CGO_ENABLED=1`, which the speech library needs, and
 `GOTOOLCHAIN` already set in the environment wins, which the cloud
 environment in [WORKFLOW.md](WORKFLOW.md) uses.
 
-CI checks the same on every pull request. Its job `outside` builds with
+CI checks the same on every pull request. The build in `builds.yml` builds with
 `WERROR=1`, and then a warning fails the build where it comes from:
 clang's, with `-Werror` in `CGO_CFLAGS` and `CGO_CXXFLAGS`, Apple's
 linker's, with `-Wl,-fatal_warnings` in `CGO_LDFLAGS`, and the interface

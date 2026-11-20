@@ -1407,8 +1407,9 @@ last frame of what played.
 The walks drive the interface from inside its page. Some of what the app
 does starts outside it: a link in a mail that opens the app, with the app
 closed or already open, and the app quitting and being started again. `make outside` checks those on a real Mac, the
-way Tim did by hand, and CI runs it in the job `outside`, the only one
-that needs any of what it sets up.
+way Tim did by hand, and CI runs it in the job `build` of `builds.yml`,
+right after it built the app to update to, the only job that needs any
+of what it sets up.
 
 What it needs, and nothing else needs:
 

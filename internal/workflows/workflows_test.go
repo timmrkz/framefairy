@@ -713,3 +713,86 @@ func TestCIStopsTheRunOfAnOutdatedCommit(t *testing.T) {
 		t.Errorf("ci.yml says cancel-in-progress: %v, so a newer commit waits for the run of an older one", wf.Concurrency.Cancel)
 	}
 }
+
+// A push takes two Mac jobs, see A Mac only for what is different on a
+// Mac in CLAUDE.md: the Go tests on a Mac in ci.yml, and the build to
+// update to in builds.yml, which opens the same app from outside. The
+// account runs five Mac jobs at once for every branch together, and
+// when a third job built the same app again, two pushes close together
+// filled the queue.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestAPushTakesTwoMacJobs(t *testing.T) {
+	t.Parallel()
+	var macs []string
+	for _, f := range actionFiles(t) {
+		if !strings.Contains(filepath.ToSlash(f), "/workflows/") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wf struct {
+			On   map[string]any `yaml:"on"`
+			Jobs map[string]struct {
+				RunsOn any `yaml:"runs-on"`
+			} `yaml:"jobs"`
+		}
+		if err := yaml.Unmarshal(b, &wf); err != nil {
+			t.Fatal(err)
+		}
+		_, push := wf.On["push"]
+		_, pr := wf.On["pull_request"]
+		if !push && !pr {
+			continue
+		}
+		for name, j := range wf.Jobs {
+			if strings.Contains(fmt.Sprint(j.RunsOn), "macos") {
+				macs = append(macs, filepath.Base(f)+" "+name)
+			}
+		}
+	}
+	if len(macs) != 2 {
+		t.Errorf("a push or a pull request starts %d Mac jobs, %v, where it should take two: the Go tests and the build that opens the app from outside", len(macs), macs)
+	}
+}
+
+// The checks from outside the app open the app the build to update to
+// built, in the same job, and only once its zip is uploaded, so they
+// never change what it holds.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestTheBuildOpensItsAppFromOutside(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "builds.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Uses string `yaml:"uses"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	uploaded, outside := -1, -1
+	for i, s := range wf.Jobs["build"].Steps {
+		if strings.HasPrefix(s.Uses, "actions/upload-artifact@") {
+			uploaded = i
+		}
+		if strings.HasPrefix(s.Run, "make outside") {
+			outside = i
+		}
+	}
+	switch {
+	case outside < 0:
+		t.Error("the build in builds.yml does not run make outside, so the app it builds is never opened from outside")
+	case uploaded < 0 || outside < uploaded:
+		t.Errorf("make outside is step %d of the build, before the zip is uploaded at step %d", outside+1, uploaded+1)
+	}
+}

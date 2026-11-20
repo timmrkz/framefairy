@@ -223,11 +223,11 @@ the same one you run on your Mac, see
   fuzz cache main left.
 - **macos**, when Go changed: `make unit` against our own ffmpeg, which
   on a Mac leaves out the race detector, which Linux runs.
-- **outside**, when Go or the interface changed: `make outside
-  WERROR=1` on a Mac, which fails on a warning from clang, the linker or
-  the interface build, see No build warnings on macOS in
-  [BUILD.md](BUILD.md#no-build-warnings-on-macos), then the app opened
-  by macOS from a link, see
+- **build** of `builds.yml`, the build to update to, when the app
+  changed: `make app WERROR=1` on a Mac, which fails on a warning from
+  clang, the linker or the interface build, see No build warnings on
+  macOS in [BUILD.md](BUILD.md#no-build-warnings-on-macos), then
+  `make outside`, the app opened by macOS from a link, see
   [TESTING.md](TESTING.md#from-outside-the-app).
 
 A push to `main` runs every job. A pull request of docs alone runs only
