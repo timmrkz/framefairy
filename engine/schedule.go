@@ -65,7 +65,8 @@ type Schedule struct {
 	ahead *aheadWork
 	// held are the frames the window said it holds with its newest
 	// Ahead, of the grid and size heldOf says: the frames around the hand
-	// are not read again for it, see want.
+	// are not read again for it, see want. Forgotten once the hand drags,
+	// see Look.
 	held   map[int]bool
 	heldOf keptKey
 	// The play that has the decoder, see Play.
@@ -328,6 +329,13 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 		s.early = s.early || l.Moving
 	}
 	s.hand, s.handSet = l, true
+	if l.Moving {
+		// A hand that drags fills the window with the frames it passes,
+		// and the window lets go of the ones it used longest ago for
+		// them: what it held when the hand pressed is the first to go.
+		// Its newest Ahead says again what it holds once the hand lets go.
+		s.held = nil
+	}
 	// The hand takes the playhead from a play.
 	s.stopPlay()
 	if l.Has {

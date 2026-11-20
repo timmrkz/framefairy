@@ -317,3 +317,125 @@ func TestAPressWalkDecodesEachFrameAboutOnce(t *testing.T) {
 		t.Errorf("the decoder decoded %d frames and sent %d again, want 260 and 10 at most: %v", p.decoded, p.again, p)
 	}
 }
+
+// drag moves the hand over frames one at a time, holding the playhead,
+// a frame of the page apart, and lets go at the last, the way a slow drag
+// of the playhead does in the app: an Ahead held with what the window
+// keeps when the hand presses, then a look at each place, and an Ahead
+// let go at the end. It returns how long each place waited for its frame.
+func (w *pressWindow) drag(frames []int) []time.Duration {
+	w.mu.Lock()
+	a := Ahead{Grid: w.grid, W: w.w, H: w.h, Has: slices.Clone(w.kept), Held: true, Sent: w.next()}
+	w.mu.Unlock()
+	_, _ = w.s.Ahead(w.ctx, a)
+	var waits []time.Duration
+	for i, f := range frames {
+		w.mu.Lock()
+		w.hand = f
+		moving := i > 0
+		if w.has(f) {
+			w.use(f)
+			w.shown = f
+			l := Hand{Grid: w.grid, Frame: f, W: w.w, H: w.h, Moving: moving, Shown: f, Has: true, Sent: w.next()}
+			w.mu.Unlock()
+			w.all.Go(func() { _, _ = w.s.Look(w.ctx, l) })
+			waits = append(waits, 0)
+		} else {
+			w.mu.Unlock()
+			began := time.Now()
+			w.all.Go(func() { w.dragLook(f, moving) })
+			synctest.Wait()
+			// The frame came before the next frame of the page, or the
+			// hand waits on at the next place: what it waited is counted
+			// from here until it is there.
+			w.mu.Lock()
+			if w.has(f) {
+				waits = append(waits, time.Since(began)) //nolint:forbidigo // synctest bubble
+			} else {
+				waits = append(waits, -1)
+			}
+			w.mu.Unlock()
+		}
+		time.Sleep(16 * time.Millisecond) //nolint:forbidigo // synctest bubble
+		w.mu.Lock()
+		if waits[len(waits)-1] < 0 && w.has(f) {
+			waits[len(waits)-1] = 16 * time.Millisecond
+		}
+		w.mu.Unlock()
+	}
+	w.mu.Lock()
+	w.hand = -1
+	a = Ahead{Grid: w.grid, W: w.w, H: w.h, Has: slices.Clone(w.kept), Sent: w.next()}
+	w.mu.Unlock()
+	w.all.Go(func() { _, _ = w.s.Ahead(w.ctx, a) })
+	synctest.Wait()
+	return waits
+}
+
+// dragLook asks for a place the hand drags over until its frame is in
+// the window or the hand left it, keeping the frames that came on the way.
+func (w *pressWindow) dragLook(f int, moving bool) {
+	for {
+		w.mu.Lock()
+		if w.hand != f {
+			w.mu.Unlock()
+			return
+		}
+		l := Hand{Grid: w.grid, Frame: f, W: w.w, H: w.h, Moving: moving, Shown: w.shown, Sent: w.next()}
+		w.mu.Unlock()
+		seen, err := w.s.Look(w.ctx, l)
+		if err != nil {
+			return
+		}
+		w.mu.Lock()
+		w.keep(seen.Frame)
+		w.shown = seen.Frame
+		w.mu.Unlock()
+		if seen.Exact {
+			return
+		}
+	}
+}
+
+// A slow drag to the right finds the frames ahead of the hand as it gets
+// there, over frames a drag to the left went over just before. The window
+// held most of them when the hand pressed and let go of them, the oldest
+// first, for the frames that came as it dragged. Before, the Go side
+// counted them held for the whole drag and read none of them, and the
+// hand waited for a stream from the key frame before each one it found
+// missing: the slow drag to the right of the speed walk waited over 50 ms
+// at 2 to 11 of about 300 places from its second round on, and never in
+// its first.
+func TestASlowDragFindsTheFramesTheWindowHeld(t *testing.T) {
+	grid := framewire.Grid{Num: 25, Den: 1, Count: 30000}
+	v := everyKey("a key frame every 2 s", 50)
+	synctest.Test(t, func(t *testing.T) {
+		dec := newSimDecoder(v)
+		s := newSchedule(dec)
+		ctx, cancel := context.WithCancel(context.Background())
+		w := &pressWindow{s: s, grid: grid, w: v.w, h: v.h, ctx: ctx, ever: map[int]bool{}, shown: -1, hand: -1}
+		var left, right []int
+		for f := 300; f >= 100; f-- {
+			left = append(left, f)
+		}
+		for f := 100; f <= 300; f++ {
+			right = append(right, f)
+		}
+		w.drag(left)
+		waits := w.drag(right)
+		cancel()
+		s.Close()
+		w.all.Wait()
+		dec.streams.Wait()
+		synctest.Wait()
+		var long []int
+		for i, d := range waits {
+			if d < 0 || d > 50*time.Millisecond {
+				long = append(long, right[i])
+			}
+		}
+		if len(long) > 0 {
+			t.Errorf("the drag to the right waited over 50 ms at %d of %d places: %v", len(long), len(right), long)
+		}
+	})
+}
