@@ -250,38 +250,50 @@ closed for standing unused.
   Before, the interface chose
   the streams, parked a place behind a stream that had not given its
   first frame, and a let-go waited up to 950 ms on Tim's Mac, issue #924.
+  - What the decoder does next is one rule, `plan`, asked again after
+    every frame it makes, every look and every change of what has the
+    decoder, see
+    [the decision record](decisions/2026-11-20-the-video-preview-keeps-up-with-the-hand.md).
+    It wants, the most wanted first: the frame under the hand, then the
+    frames on the side the hand drags to, then a few on either side,
+    four after and 15 before, `lookAhead` and `lookBack`, whatever the
+    hand does, since nobody knows where it goes next. A hand that moves
+    further at a step than `lookFast`, eight frames, has only its own
+    frame read. The run under way goes on where reading on is the
+    quickest way to what is wanted, and is stopped between two frames
+    where a seek to a key frame is quicker. A drag that stood still in
+    Tim's reports of 19 and 20 November had runs started over at each
+    move of the hand, one of them 216 frames decoded with none shown.
+  - Every frame a run makes that is nearer the hand than the frame on
+    screen goes up at once, so the picture walks toward a hand the
+    decoder cannot keep up with. A drag's run starts at the furthest of
+    those frames, or at the key frame before the hand where that is
+    nearer. A run that has yet to reach the hand goes on as the hand
+    moves on, since its frames on the way are nearer too.
   - A click or a step opens from the frame before its place and reads
-    four frames past it, `lookAhead`, so the arrow keys find theirs. A
-    click further than 15 frames from the frame on screen opens at its
-    place instead and reads the frame before it last: read first, it
-    held the frame clicked back by a frame, and it may lie a whole seek
-    further back, before the place's key frame.
-  - While a drag moves, a run opens with the key frame its seek lands on,
-    and that frame is sent on the way when it is nearer the place than
-    the frame on screen, so a hand that outruns the decoder sees a frame
-    near it. The frame of the place follows and takes its place, issue
-    #281. A place the hand passes before the run for the place before it
-    gave its first frame waits for that frame, so the picture moves at
-    all while the hand outruns the decoder. A hand that moves more than
-    two frames at a time passes over the frames around each place, so
-    nothing around it goes to the interface, and its run holds right
-    after the place, decoding nothing: on a fast drag those frames only
-    kept the decoder from the next place. Once the hand rests there, or
-    a play is cued there, the run reads on with no second seek.
-  - A hand that moves slowly to the right has its run hold four frames
-    past its place, rather than end, for as long as it holds the
-    playhead, and its next places past those are read on from there.
-    Ended, the run left the next place to a seek of its own, and a slow
-    drag to the right stood still now and then for its key frame. The
-    hand letting go ends it, so what is read ahead can start.
-  - A hand a frame or two back from the frame on screen goes back
-    slowly, and the run opens 15 frames before the place, `lookBack`,
-    with no key frame first, so the next steps back find their frames.
-    Each step back was a seek of its own, and the picture stood for
-    each, issue #596. Once fewer than 15 frames before the hand are
-    kept, the 15 before those are read while it steps through the ones
-    there are, so a slow drag to the left does not stand still at the
-    end of each batch. A hand that lets go stops that reading.
+    four frames past it, so the arrow keys find theirs. A click further
+    than 15 frames from the frame on screen opens at its place instead
+    and reads the frame before it last: read first, it held the frame
+    clicked back by a frame, and it may lie a whole seek further back,
+    before the place's key frame.
+  - A hand that drags to the left has the span of key frames it drags
+    into read whole, from its key frame, every frame kept, and once its
+    own frame is there the span before it, so the steps back find their
+    frames kept. Each step back was a seek of its own, and the picture
+    stood for each, issue #596.
+  - The window tells Go where the hand is on every move, also over the
+    frames it keeps itself, with a look whose frame on screen is the
+    frame of the place. That look is answered with no content, and Go
+    reads around the place before the hand gets further. Without it, a
+    hand that moved over kept frames was somewhere Go did not know, and
+    the frames past them were read only once the hand got there.
+  - With the key frame first, the decoder makes a picture of the key
+    frame and of the frames from the run's first frame on only. The
+    frames between are decoded and not scaled.
+  - A drag is written to the log as one line once the hand lets go,
+    `schedule` with every place the hand went to and the longest a look
+    waited, so a drag that lagged on someone's Mac can be played again
+    in the simulation, see below.
   - The frames it decoded are kept, 192 MB of them, the ones used longest
     ago let go of first, and a place kept costs no decoding. The frames
     around a place the hand rests on that the interface does not hold go
@@ -302,9 +314,6 @@ closed for standing unused.
     the hand holds the playhead, the app is sized or a play runs, a
     second decoder seeking in the file the play decodes. The interface
     hands them over held then.
-  - A run that starts with its key frame, for a hand that grips or drags
-    the playhead, makes pictures of the key frame and of the frames from
-    its place on only. The frames between are decoded and not scaled.
   The app's log says how each drag went once the hand lets go: how far
   the frame on screen was from the playhead as the hand moved, the
   frames put up on the way, how long the frame under the hand took after
