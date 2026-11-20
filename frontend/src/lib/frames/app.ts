@@ -151,8 +151,13 @@ export class AppFrames {
   // The hand takes hold of the playhead, or lets go of it, see
   // FrameQueue.grip. Nothing is read ahead while it holds it, see ahead.
   grip(held: boolean) {
+    const letGo = this.dragging && !held;
     this.dragging = held;
     this.dragPlaces = 0;
+    // A hand that lets go where the frame is on screen asks for no frame,
+    // so the Go side is told: a click after it was taken for a drag, and
+    // every frame on the way to it was made and sent.
+    if (letGo && this.placeMoving && this.place >= 0) this.tell({ rank: this.place, seq: ++this.asked, done: () => {} });
     this.aheadNow();
   }
 

@@ -257,9 +257,12 @@ closed for standing unused.
     It wants, the most wanted first: the frame under the hand, then the
     frames on the side the hand drags to, then a few on either side,
     four after and 15 before, `lookAhead` and `lookBack`, whatever the
-    hand does, since nobody knows where it goes next. A hand that moves
-    further at a step than `lookFast`, eight frames, has only its own
-    frame read. The run under way goes on where reading on is the
+    hand does, since nobody knows where it goes next. A hand at rest has
+    the frames of the words beside read before the 15 before it: those
+    cost the frames from the key frame before them, and a word key
+    pressed next waited for them, a step a word on took 32 % longer. A
+    hand that moves further at a step than `lookFast`, eight frames, has
+    only its own frame read. The run under way goes on where reading on is the
     quickest way to what is wanted, and is stopped between two frames
     where a seek to a key frame is quicker. A drag that stood still in
     Tim's reports of 19 and 20 November had runs started over at each
@@ -304,7 +307,10 @@ closed for standing unused.
     for the frame at the new size. Without it, a
     hand that moved over kept frames was somewhere Go did not know, and
     the frames past them were read only once the hand got there. A
-    let-go on a frame the window keeps is told too, and a video the
+    let-go is told too, also where the frame under the hand is on
+    screen and nothing is asked: a click after a drag was taken for a
+    drag, every frame on the way to it was made and sent, and it came
+    83 % later than on main. A video the
     video preview lets go of leaves no hand behind: a drag Go never saw
     end had the first look of the next video answered with frames on the
     way.

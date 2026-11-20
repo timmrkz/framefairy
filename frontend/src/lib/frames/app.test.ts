@@ -97,10 +97,11 @@ describe("AppFrames", () => {
     app.close();
   });
 
-  test("a hand that lets go on a kept frame is told to the Go side", async () => {
+  test("a hand that lets go is told to the Go side, with no frame asked", async () => {
     const asked: string[] = [];
     vi.stubGlobal("fetch", (url: string) => {
-      asked.push(url);
+      // The looks only: the reading ahead starts as the hand lets go.
+      if (url.startsWith("/frames/look")) asked.push(url);
       return new Promise(() => {});
     });
     const { app, picture } = frames(() => ({ width: 4, height: 2 }));
@@ -110,14 +111,16 @@ describe("AppFrames", () => {
     app.grip(true);
     await app.frame(41, 0);
     await app.frame(40, 0);
-    app.grip(false);
     const was = asked.length;
-    await app.frame(40, 0);
+    app.grip(false);
     // The Go side heard the hand drag to 40, and now that it rests there.
     expect(asked.length).toBe(was + 1);
     const told = new URL(asked[was], "http://x");
     expect(told.searchParams.get("frame")).toBe("40");
     expect(told.searchParams.get("move")).toBe(null);
+    // The frame asked there after it tells nothing more.
+    await app.frame(40, 0);
+    expect(asked.length).toBe(was + 1);
     app.close();
   });
 });
