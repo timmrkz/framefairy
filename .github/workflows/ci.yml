@@ -27,10 +27,11 @@ permissions:
 # cancels any older one that waits, so a run on main that was left to
 # finish never gave every commit a result of its own: it only held the
 # newest commit back. When pull requests are merged one after another,
-# the run of a commit already outdated kept every machine of a run, two
-# Macs among them, for minutes, and the newest waited for it. A job saves
-# its cache only at its end and only when it passed, under its commit, so
-# a run stopped halfway leaves the cache as it was.
+# the run of a commit already outdated went on for minutes, often with a
+# Mac job still waiting in the account's Mac queue, and the newest waited
+# for all of it. A job saves its cache only at its end and only when it
+# passed, under its commit, so a run stopped halfway leaves the cache as
+# it was.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true

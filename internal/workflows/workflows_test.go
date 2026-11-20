@@ -686,9 +686,9 @@ func TestAConflictIsToldAgainWhenMainMoves(t *testing.T) {
 }
 
 // CI tests only the newest commit of a branch, main as well. A run left to
-// finish for a commit already outdated kept every machine of a run, two
-// Macs among them, while the newest commit of main waited behind it, each
-// time pull requests were merged one after another.
+// finish for a commit already outdated, often with a Mac job still waiting
+// in the Mac queue, held the newest commit of main back each time pull
+// requests were merged one after another.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestCIStopsTheRunOfAnOutdatedCommit(t *testing.T) {
