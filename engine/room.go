@@ -240,12 +240,13 @@ type LineWeight struct {
 // episode would give it, which only ever errs towards a window that fits.
 //
 // lines are t's lines built with no loudness. A line's loudness is read
-// only by AnnotateLines, which the default recipe does not write, so it
-// is measured only for a recipe that does: measured for every 10 ms of a
-// long video on each read of its transcript, it was most of the read.
+// only by a recipe that writes it, see Recipe.Loudness, which the default
+// recipe is not, so it is measured only for one that is: measured for
+// every 10 ms of a long video on each read of its transcript, it was most
+// of the read.
 func weighLines(t *Transcript, lines []Line) []LineWeight {
 	r, _ := RecipeNamed("")
-	if r.Transcript == nil {
+	if r.Loudness {
 		lines = BuildLines(t.Words, t.Levels(), nil)
 	}
 	out := make([]LineWeight, 0, len(lines))

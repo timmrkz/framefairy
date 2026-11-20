@@ -630,10 +630,15 @@ func speechModel(opts Options) string {
 }
 
 // searchLines are the lines a search asks about, from the transcript of
-// its window. The transcript read ahead of a search is made of the same,
-// see readahead.go.
+// its window, with the loudness of each line only for a recipe that
+// writes it, see Recipe.Loudness. The transcript read ahead of a search
+// is made of the same, see readahead.go.
 func searchLines(t *Transcript, opts Options) []Line {
-	return BuildLines(t.Words, t.Levels(), opts.MaxPause)
+	var levels []timed.Reading
+	if (PlanOptions{Recipe: opts.Recipe}).recipe().Loudness {
+		levels = t.Levels()
+	}
+	return BuildLines(t.Words, levels, opts.MaxPause)
 }
 
 // hear makes the transcript of the window and writes it out to be read.

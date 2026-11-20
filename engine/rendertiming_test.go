@@ -166,7 +166,7 @@ func checkRenderTiming(t *testing.T, clip Clip) {
 	clip.ID, clip.Slug = "01", "timing"
 	// The way the render takes a clip, see Run.
 	clip = info.OnFrames(clip)
-	heard := &Transcript{Words: renderTimingWords, Language: "de"}
+	heard := inLanguage(renderTimingWords, "de")
 	laid := ClipCaptions(clip, heard, style)
 	if len(laid) == 0 {
 		t.Fatal("no captions")

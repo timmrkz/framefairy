@@ -725,3 +725,41 @@ func TestAWordCorrectedWithTheSearchOpenReadsCorrectedInItsCard(t *testing.T) {
 		t.Errorf("after the correction the cards read %s", after)
 	}
 }
+
+// The transcript search answers over the cards as they are, the ones
+// Sentences sends, issue #927: a word corrected in a clip is found as it
+// reads now, and no longer as it was. A search before any read of the
+// cards reads them.
+func TestTheTranscriptSearchAnswersOverTheCardsAsTheyAre(t *testing.T) {
+	e := newCaptionEditor(t)
+	finds := func(typed string) []string {
+		t.Helper()
+		found, err := e.svc.SearchSaid(e.mine, typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, f := range found {
+			out = append(out, fmt.Sprintf("%s %v", f.Clip, f.Bold))
+		}
+		return out
+	}
+	if got := finds("schulhof"); len(got) != 1 || !strings.HasPrefix(got[0], "clips.json/01 [[") {
+		t.Fatalf("schulhof, before any read of the cards, finds %v, want one card of clip 01 with a word in bold", got)
+	}
+	if got := finds("schulhfo"); len(got) != 1 {
+		t.Errorf("schulhfo, typed with a slip, finds %v, want the card of Schulhof", got)
+	}
+	at := -1.0
+	for _, w := range captionedWords() {
+		if w[2] == "Schulhof" {
+			at = w[0].(float64)
+		}
+	}
+	if _, err := e.svc.SetWord(context.Background(), e.mine, e.plan, "01", at, "Pausenhof"); err != nil {
+		t.Fatal(err)
+	}
+	if got, gone := finds("pausenhof"), finds("schulhof"); len(got) != 1 || len(gone) != 0 {
+		t.Errorf("after the correction, pausenhof finds %v and schulhof %v", got, gone)
+	}
+}

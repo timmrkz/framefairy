@@ -8,8 +8,7 @@
   // a darker grey, so the clips stand out of the transcript they came
   // from. Where nothing was transcribed yet, a dashed
   // card says so in its place, because the search cannot look there.
-  import { clock, type ClipEntry, type Sentence } from "../lib/api";
-  import { found } from "../lib/match";
+  import { clock, type CardFound, type ClipEntry, type Sentence } from "../lib/api";
   import { equal } from "../lib/equal";
   import { hoverClip } from "../lib/hover";
   import { between, copies, joined, pick, type Picked } from "../lib/copy";
@@ -21,6 +20,7 @@
   let {
     sentences,
     typed = "",
+    found = null,
     unheard = [],
     unheardLit = -1,
     clips = [],
@@ -39,6 +39,10 @@
     // that found nothing.
     sentences: Sentence[] | null;
     typed?: string;
+    // The cards that answer what is typed, with the words to set in bold,
+    // as the Go side answered the last question, see engine.SaidSearch.
+    // Null while nothing is typed, or before the first answer.
+    found?: CardFound[] | null;
     unheard?: [number, number][];
     // The part not transcribed yet under the hand on the range picker,
     // whose card is lit with it.
@@ -355,11 +359,10 @@
     return s.clip ? (clips.find((c) => c.key === s.clip) ?? null) : null;
   }
 
-  // The cards that hold what was typed, and only where none does the
-  // cards with the word typed with a slip, see near in lib/match.ts. Three
-  // letters answer a lot of words the way a font answers its name, and in
-  // a video of an hour the cards that hold them were lost among cards
-  // that only share their letters, found in the review of #367.
+  // The cards that answer what is typed, which the Go side says, see
+  // engine.SaidSearch, and every card while nothing is. Before the first
+  // answer to what is typed, the list stays every card, and then each
+  // answer stays until the next.
   // A card that shows what it showed keeps the row it had, so Svelte
   // leaves it alone: a letter that bolds the same words, or a state of
   // the video that changed no card, touched every card of the list. A
@@ -370,18 +373,21 @@
   const rows = $derived.by(() => {
     const out: Row[] = [];
     const was = rowsWere;
-    for (const fuzzy of [false, true]) {
-      for (const s of sentences ?? []) {
-        const bold = found(s.text, typed, fuzzy);
-        if (!bold) continue;
-        // Two clips over each other each have a card of the same words.
-        const key = `s${s.start}|${s.clip ?? ""}`;
-        const clip = clipOf(s);
-        const old = was.get(key);
-        out.push(old && "sentence" in old && equal(old.sentence, s) && old.clip === clip && sameBold(old.bold, bold) ? old : { key, at: s.start, sentence: s, bold, clip });
+    const row = (s: Sentence, bold: [number, number][]) => {
+      // Two clips over each other each have a card of the same words.
+      const key = cardKey(s.start, s.clip);
+      const clip = clipOf(s);
+      const old = was.get(key);
+      out.push(old && "sentence" in old && equal(old.sentence, s) && old.clip === clip && sameBold(old.bold, bold) ? old : { key, at: s.start, sentence: s, bold, clip });
+    };
+    const searching = typed.trim() !== "" && found !== null;
+    if (searching) {
+      const byKey = new Map((sentences ?? []).map((s) => [cardKey(s.start, s.clip), s]));
+      for (const f of found ?? []) {
+        const s = byKey.get(cardKey(f.start, f.clip));
+        if (s) row(s, f.bold ?? []);
       }
-      if (out.length || !typed.trim()) break;
-    }
+    } else for (const s of sentences ?? []) row(s, []);
     // Where nothing was transcribed yet is said while the whole of what
     // was said is shown. It is no answer to what is typed, found by Tim.
     // Known by their place among them, not by where they start, which
@@ -391,6 +397,11 @@
     rowsWere = new Map(out.map((r) => [r.key, r]));
     return out;
   });
+
+  // The key of a card, by where it starts and the clip it is named for.
+  function cardKey(start: number, clip: string | undefined): string {
+    return `s${start}|${clip ?? ""}`;
+  }
 
   const keys = $derived(rows.map((r) => r.key));
   const built = $derived(rows.slice(stack.built[0], stack.built[1] + 1));

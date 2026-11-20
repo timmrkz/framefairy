@@ -74,7 +74,7 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 	clip := info.OnFrames(Clip{ID: "01", Slug: "layer",
 		Segments: []Segment{{Start: 0.1, End: 1.4}, {Start: 1.9, End: 2.8}}})
 	style := new(Fonts).Style(nil)
-	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, style)
+	laid := ClipCaptions(clip, inLanguage(words, "de"), style)
 	const w, h = 540, 960
 	rs := RenderSettings{OutW: w, OutH: h, ScaleUp: true}
 
@@ -210,7 +210,7 @@ func TestACaptionTrackIsNamedByWhatItIs(t *testing.T) {
 			Segments: []Segment{{Start: 0, End: 2, CropX: &x}}}
 		ws := slices.Clone(words)
 		ws[1].Text = said
-		return captionsView(Plan{}, clip, &Transcript{Words: ws, Language: "de"}, nil).Track
+		return captionsView(Plan{}, clip, inLanguage(ws, "de"), nil).Track
 	}
 	first, again, other := view("respektvoll"), view("respektvoll"), view("respektlos")
 	if first == "" || first != again {
@@ -233,7 +233,7 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	clip := Clip{ID: "01", Slug: "once", Segments: []Segment{{Start: 0, End: 2}}}
-	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
+	tr := inLanguage([]timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, "de")
 	view := captionsView(Plan{}, clip, tr, nil)
 	d := view.Drawing()
 	want, err := e.CaptionTrack(ctx, d.Laid, 540, 960, d.Style, SourceInfo{})
@@ -290,7 +290,7 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	words := []timed.Cue{{Start: 0.20, End: 0.40, Text: "Das"}, {Start: 0.50, End: 1.00, Text: "respektvoll"}, {Start: 1.00, End: 1.30, Text: "ist."}}
 	clip := Clip{ID: "01", Slug: "small", Segments: []Segment{{Start: 0, End: 1.4}}}
-	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, new(Fonts).Style(nil))
+	laid := ClipCaptions(clip, inLanguage(words, "de"), new(Fonts).Style(nil))
 	const W, H, by = 1080, 1920, 3
 	track, err := e.CaptionTrack(ctx, laid, W, H, nil, SourceInfo{})
 	if err != nil {
@@ -405,7 +405,7 @@ func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	clip := Clip{ID: "01", Slug: "typing", Segments: []Segment{{Start: 0, End: 2}}}
-	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
+	tr := inLanguage([]timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, "de")
 	for _, style := range []map[string]any{nil, {"highlight": false}} {
 		view := captionsView(Plan{}, clip, tr, nil)
 		d := view.Drawing()
@@ -486,7 +486,7 @@ func TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest(t *testing.T) {
 		t.Fatal(err)
 	}
 	clip := info.OnFrames(Clip{ID: "01", Slug: "lift", Segments: []Segment{{Start: 0, End: 2.5}}})
-	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.6, Text: "respektvoll"}, {Start: 1.6, End: 2.0, Text: "ist."}}, Language: "de"}
+	tr := inLanguage([]timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.6, Text: "respektvoll"}, {Start: 1.6, End: 2.0, Text: "ist."}}, "de")
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
 	dec := newEpisodeFrames(program, source)
 	defer dec.Close()
@@ -534,7 +534,7 @@ func TestACaptionFileIsNeverWrittenIntoAWorkFolderThatIsGone(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	clip := Clip{ID: "01", Slug: "gone", Segments: []Segment{{Start: 0, End: 2}}}
-	tr := &Transcript{Words: []timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, Language: "de"}
+	tr := inLanguage([]timed.Cue{{Start: 0.2, End: 0.6, Text: "Das"}, {Start: 0.6, End: 1.2, Text: "respektvoll"}, {Start: 1.2, End: 1.5, Text: "ist."}}, "de")
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
 	work := filepath.Join(t.TempDir(), "folge.framefairy")
 	_, err := e.previewTrack(ctx, work, d, d.Style, new(Fonts).Style(d.Style).Font, SourceInfo{}, 540, 960)
@@ -958,7 +958,7 @@ func threeCaptions(t *testing.T, id string, overrides map[string]any) *CaptionDr
 		at += 0.3
 	}
 	clip := Clip{ID: id, Slug: "alone", Segments: []Segment{{Start: 0, End: 4.2}}}
-	d := &CaptionDrawing{Laid: ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, new(Fonts).Style(overrides)), Clip: clip}
+	d := &CaptionDrawing{Laid: ClipCaptions(clip, inLanguage(words, "de"), new(Fonts).Style(overrides)), Clip: clip}
 	if len(d.Laid) < 3 {
 		t.Fatalf("the clip has %d captions, the test wants three or more", len(d.Laid))
 	}
@@ -1389,11 +1389,11 @@ func TestNothingInTheCaptionFileChangesOverASteadySpan(t *testing.T) {
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	source := SourceInfo{FPSNum: 25, FPSDen: 1, Duration: 60}
 	clip := Clip{ID: "01", Slug: "steady", Segments: []Segment{{Start: 10, End: 13.5}, {Start: 14, End: 16}}}
-	tr := &Transcript{Words: []timed.Cue{
+	tr := inLanguage([]timed.Cue{
 		{Start: 10.2, End: 10.6, Text: "Das"}, {Start: 10.6, End: 11.4, Text: "war"}, {Start: 11.4, End: 11.42, Text: "so"},
 		{Start: 11.42, End: 11.45, Text: "ja"}, {Start: 11.45, End: 12.3, Text: "schön."},
 		{Start: 14.3, End: 14.9, Text: "Und"}, {Start: 14.9, End: 15.8, Text: "dann?"},
-	}, Language: "de"}
+	}, "de")
 	d := captionsView(Plan{}, clip, tr, nil).Drawing()
 	track, err := e.CaptionTrack(context.Background(), d.Laid, 540, 960, d.Style, source)
 	if err != nil {

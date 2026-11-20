@@ -972,7 +972,7 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stops := ShowWords(tr.Of(clip).WordsBetween(10, 14), new(Fonts).Style(captionStyle(loaded, clip)), tr.Language)
+	stops := ShowWords(tr.Of(clip).WordsBetween(10, 14), new(Fonts).Style(captionStyle(loaded, clip)), tr.Language())
 	view, err := ClipCaptionsView(planAt(t, fsys, path), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)

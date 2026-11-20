@@ -67,6 +67,9 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Sentences(other); err == nil {
 		t.Error("Sentences answered for a file that is not in the library")
 	}
+	if _, err := svc.SearchSaid(other, "eins"); err == nil {
+		t.Error("SearchSaid answered for a file that is not in the library")
+	}
 	rec := httptest.NewRecorder()
 	svc.serveFrames(rec, httptest.NewRequest("GET", "/frames/levels?path="+url.QueryEscape(other), nil))
 	if rec.Code != http.StatusNotFound {

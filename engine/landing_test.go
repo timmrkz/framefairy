@@ -48,12 +48,12 @@ func TestAnEdgeLandsTheSameReadOnlyNearTheHand(t *testing.T) {
 		}
 		for range 60 {
 			hand := 10 + r.Float64()*(at-10)
-			want := SnapEnd(ShowWords(tr.Words, s, tr.Language), captionsGo(runOn(clip, hand), tr, s), hand, 0.1)
+			want := SnapEnd(ShowWords(tr.Words, s, tr.Language()), captionsGo(runOn(clip, hand), tr, s), hand, 0.1)
 			near := wordsNear(tr, s, hand)
 			if got := SnapEnd(near, goesNear(clip, tr, near, hand, s), hand, 0.1); math.Abs(got-want) > 1e-6 {
 				t.Errorf("seed %d: an end at %.3f lands at %.3f, read whole at %.3f", seed, hand, got, want)
 			}
-			want = SnapStart(ShowWords(tr.Words, s, tr.Language), hand, 0.1)
+			want = SnapStart(ShowWords(tr.Words, s, tr.Language()), hand, 0.1)
 			if got := SnapStart(wordsNear(tr, s, hand), hand, 0.1); math.Abs(got-want) > 1e-6 {
 				t.Errorf("seed %d: a start at %.3f lands at %.3f, read whole at %.3f", seed, hand, got, want)
 			}
