@@ -23,11 +23,17 @@ permissions:
   contents: read
 
 # A second push makes the first answer worthless, so it is stopped rather
-# than left to finish. Never on main, where every commit's result is worth
-# having on its own.
+# than left to finish, on main too. A group keeps one run waiting and
+# cancels any older one that waits, so a run on main that was left to
+# finish never gave every commit a result of its own: it only held the
+# newest commit back. When pull requests are merged one after another,
+# the run of a commit already outdated kept every machine of a run, two
+# Macs among them, for minutes, and the newest waited for it. A job saves
+# its cache only at its end and only when it passed, under its commit, so
+# a run stopped halfway leaves the cache as it was.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 # A cache whose download stalls is given up after a minute, and the job
 # goes on as if there were no cache, where it would wait ten.

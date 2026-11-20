@@ -684,3 +684,32 @@ func TestAConflictIsToldAgainWhenMainMoves(t *testing.T) {
 		}
 	}
 }
+
+// CI tests only the newest commit of a branch, main as well. A run left to
+// finish for a commit already outdated kept every machine of a run, two
+// Macs among them, while the newest commit of main waited behind it, each
+// time pull requests were merged one after another.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestCIStopsTheRunOfAnOutdatedCommit(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Concurrency struct {
+			Group  string `yaml:"group"`
+			Cancel any    `yaml:"cancel-in-progress"`
+		} `yaml:"concurrency"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(wf.Concurrency.Group, "github.ref") {
+		t.Errorf("ci.yml queues its runs in %q, not one queue per branch", wf.Concurrency.Group)
+	}
+	if wf.Concurrency.Cancel != true {
+		t.Errorf("ci.yml says cancel-in-progress: %v, so a newer commit waits for the run of an older one", wf.Concurrency.Cancel)
+	}
+}

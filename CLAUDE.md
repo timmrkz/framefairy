@@ -829,8 +829,9 @@ request.
   `go test` plays it.
 - **A run for an old commit is stopped.** Every workflow that runs on a
   pull request cancels its older run of the same pull request, with
-  `concurrency` and `cancel-in-progress`. Only what writes shared state
-  is never stopped halfway: publishing builds and CI on main, where every commit keeps its own result.
+  `concurrency` and `cancel-in-progress`, and so does CI on main, where
+  only the newest commit is worth a runner. Only what writes shared
+  state is never stopped halfway: publishing builds.
 - **What is long or costs a Mac and blocks nothing runs by hand or at
   night**, like the speech benchmark and the long fuzzing, never on every
   push. The speech benchmark runs only by hand: a session whose change

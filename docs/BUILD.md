@@ -416,8 +416,10 @@ at all: it follows the builds of `builds.yml`, see
 [UPDATES.md](UPDATES.md).
 
 A second push to a branch cancels the run the first one started, because its
-answer is about code nobody is waiting on any more. Pushes to main are never
-cancelled: every commit's result there is worth having on its own.
+answer is about code nobody is waiting on any more. The same holds on main:
+when pull requests are merged one after another, only the newest commit of
+main is tested, and the run of the one before stops. GitHub never gave every
+commit of main a run anyway, since a newer push cancels a run that waits.
 
 **A test that needs ffmpeg and finds none it can use fails in CI, and
 skips everywhere else.** CI does not list skipped tests, so a skip there
