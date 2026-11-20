@@ -35,7 +35,7 @@ import (
 // stood paused. A play paused gives the decoder back and keeps the rest, so
 // it goes on at once.
 //
-//	/frames/look?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&shown=<frame>&win=<window>&n=<sent>[&move=1]
+//	/frames/look?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&shown=<frame>&win=<window>&n=<sent>[&move=1][&kept=1]
 //	                                 the frame for where the hand is, see
 //	                                 serveLook and engine.Schedule
 //	/frames/near?path=<episode>&frame=<frame>&w=<width>&h=<height>&grid=<grid>&has=<frame>,...
@@ -212,8 +212,8 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 // way, X-Frames-Kept where nothing was decoded for it, and X-Frames-Near
 // where frames around it are worth asking for, see serveNear. A look a
 // newer one took the place of is answered with no content, and so is one
-// whose window shows the frame already: it only says where the hand is,
-// for the frames around it to be read. One the decoder failed has
+// with kept, whose window holds the frame of the place at this size: it
+// only says where the hand is, for the frames around it to be read. One the decoder failed has
 // X-Frames-Error and no frame.
 func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -225,7 +225,7 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) 
 	if err != nil || shown < 0 || shown >= hand.Grid.Count {
 		shown = -1
 	}
-	hand.Shown, hand.Moving = shown, q.Get("move") == "1"
+	hand.Shown, hand.Moving, hand.Has = shown, q.Get("move") == "1", q.Get("kept") == "1"
 	frame := hand.Frame
 	dec, err := p.decoder(st.machine, path)
 	if err != nil {

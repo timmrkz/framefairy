@@ -162,10 +162,13 @@ type Hand struct {
 	// step, a drag that let go.
 	Moving bool
 	// Shown is the frame on screen, or -1: a look is answered with a frame
-	// nearer the place than that one. A look whose window shows the frame
-	// of the place tells only where the hand is, and is answered with
-	// ErrShown at once.
+	// nearer the place than that one.
 	Shown int
+	// Has says the window holds the frame of the place at this size: the
+	// look tells only where the hand is, and is answered with ErrShown at
+	// once. A frame on screen of the place at another size, from before
+	// the app was sized, is no such frame.
+	Has bool
 	// Sent is where the look stands among what its window sent.
 	Sent Sent
 }
@@ -316,7 +319,7 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 	s.hand, s.handSet = l, true
 	// The hand takes the playhead from a play.
 	s.stopPlay()
-	if l.Shown == l.Frame {
+	if l.Has {
 		s.plan()
 		s.mu.Unlock()
 		return Seen{}, ErrShown
@@ -517,7 +520,7 @@ func (s *Schedule) want() (work, bool) {
 	h := s.hand
 	has := func(f int) bool { return s.kept.has(keptKey{grid: h.Grid, w: h.W, h: h.H, frame: f}) }
 	after, before := s.around()
-	if !has(h.Frame) && h.Shown != h.Frame {
+	if !has(h.Frame) && !h.Has {
 		j := s.forHand(h, after)
 		for j.from < h.Frame && has(j.from) {
 			j.from++

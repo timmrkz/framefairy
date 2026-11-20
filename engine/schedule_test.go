@@ -861,20 +861,31 @@ func TestARunGoesOnOnlyWhereThatIsQuickest(t *testing.T) {
 	}
 }
 
-// A window that shows the frame under the hand says where the hand is all
+// A window that holds the frame under the hand says where the hand is all
 // the same: nothing is read for that frame, and the frames around it are.
+// One that shows the frame at another size, from before the app was
+// sized, waits for it at the new size.
 func TestAWindowWithTheFrameStillSaysWhereTheHandIs(t *testing.T) {
 	dec := newHeldDecoder()
 	s := newSchedule(dec)
 	defer s.Close()
 	h := rest(110)
-	h.Shown = 110
+	h.Shown, h.Has = 110, true
 	if got := <-lookFor(s, h); !errors.Is(got.err, ErrShown) {
 		t.Fatalf("a look at the frame on screen got %+v, %v", got.seen, got.err)
 	}
 	st := dec.next(t)
 	if st.from != 111 || st.key {
 		t.Fatalf("a hand on the frame on screen had a stream from %d, key first %v, want the frames after it", st.from, st.key)
+	}
+	sized := Hand{Grid: lookGrid, Frame: 110, W: 8, H: 4, Shown: 110}
+	resized := lookFor(s, sized)
+	st.stopped(t)
+	again := dec.next(t)
+	_ = again.give(t, 109)
+	_ = again.give(t, 110)
+	if got := <-resized; got.err != nil || got.seen.Frame != 110 || !got.seen.Exact {
+		t.Fatalf("the frame on screen at another size got %+v, %v", got.seen, got.err)
 	}
 }
 

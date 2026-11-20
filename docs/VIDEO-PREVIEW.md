@@ -282,9 +282,11 @@ closed for standing unused.
     frames kept. Each step back was a seek of its own, and the picture
     stood for each, issue #596.
   - The window tells Go where the hand is on every move, also over the
-    frames it keeps itself, with a look whose frame on screen is the
-    frame of the place. That look is answered with no content, and Go
-    reads around the place before the hand gets further. Without it, a
+    frames it keeps itself, with a look marked `kept`. That look is
+    answered with no content, and Go reads around the place before the
+    hand gets further. A frame on screen of the place at another size,
+    from before the app was sized, is no frame kept: a look then waits
+    for the frame at the new size. Without it, a
     hand that moved over kept frames was somewhere Go did not know, and
     the frames past them were read only once the hand got there.
   - With the key frame first, the decoder makes a picture of the key

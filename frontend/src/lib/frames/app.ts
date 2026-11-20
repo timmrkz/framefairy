@@ -431,6 +431,7 @@ export class AppFrames {
     q.set("win", this.name);
     q.set("n", String(++this.sent));
     if (w.moving) q.set("move", "1");
+    q.set("kept", "1");
     void this.puller.pull(`/frames/look?${q}`, width, height).then((got) => {
       for (const { frame } of got.frames) frame.close();
     });

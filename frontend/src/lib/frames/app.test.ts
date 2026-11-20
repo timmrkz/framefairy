@@ -93,6 +93,7 @@ describe("AppFrames", () => {
     expect(told.pathname).toBe("/frames/look");
     expect(told.searchParams.get("frame")).toBe("40");
     expect(told.searchParams.get("shown")).toBe("40");
+    expect(told.searchParams.get("kept")).toBe("1");
     app.close();
   });
 });

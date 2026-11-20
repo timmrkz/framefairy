@@ -260,7 +260,7 @@ func (w *simWindow) to(frame int, held bool) {
 		// frames around it are read before the hand gets there.
 		w.show(frame)
 		w.sent++
-		l := Hand{Grid: w.grid, Frame: frame, W: simW, H: simH, Moving: moving, Shown: frame, Sent: Sent{Window: "sim", N: w.sent}}
+		l := Hand{Grid: w.grid, Frame: frame, W: simW, H: simH, Moving: moving, Shown: frame, Has: true, Sent: Sent{Window: "sim", N: w.sent}}
 		w.all.Go(func() { _, _ = w.s.Look(w.ctx, l) })
 		return
 	}
