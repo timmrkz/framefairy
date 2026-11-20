@@ -57,6 +57,8 @@ The targets, each a check in the simulation:
    a whole key frame span of frames take, 135 ms at 25 frames.
 4. The picture is never further behind the hand than one key frame
    span and how far the hand moved in the last 50 ms.
+5. While the picture is more than a key frame span from the hand, it
+   moves at least every 50 ms, with no allowance.
 
 The second and third are not quite what the proposal to Tim said. The
 proposal held every stand-still to 50 ms. A hand that turns round into a
@@ -68,6 +70,14 @@ have had the frame. A drag the hand makes steadily gets no such
 allowance: there the frames could have been read before it got there,
 and the schedule is held to 50 ms. The third was 120 ms before the cost
 of making the pictures was counted.
+
+The fifth came from the review. A fast drag, the usual drag on the range
+picker, where a pixel is about 100 frames of an hour, moves further at
+every step than the decoder can follow, so every step counted as a turn
+and the second target's allowance always lay ahead. A schedule broken on
+purpose so that it never caught up passed the second with a longest
+stand-still of 5 ms while the picture was 205 frames behind. The fifth
+has no allowance, and catches it.
 
 ## Five designs
 
@@ -96,9 +106,19 @@ far from the hand. Dropped.
 
 ### D. Two decoders, one forward and one backward
 
-Work on both sides at once. The decoder makes one frame at a time, so
-two streams take turns and each is half as fast, and the forward one,
-the common case, loses most. Dropped.
+Work on both sides at once. Dropped, first because "the decoder makes
+one frame at a time, so two streams take turns". That is not so: each
+cursor of `framefairy-frames` runs on a goroutine of its own, and a play
+already runs the next stream beside the one it shows. In the cloud, on
+the processor with four cores, two streams of 40 frames at once took
+1.18 to 1.49 times as long as one, in three runs, so two streams at once
+make more frames than one. On Tim's Mac the frames are decoded on the
+graphics chip, whose one decoder the streams share, and that was not
+measured. D stays dropped for this change, on two grounds that hold:
+the planner of B already keeps the decoder busy on the frames wanted
+most, and D needs a second run in every rule of the schedule, which B
+has none of. Whether two streams at once on Tim's Mac make more frames
+than one decides whether D is worth simulating, see What follows.
 
 ### E. Only key frames while the hand moves
 
@@ -113,7 +133,9 @@ after every frame. It wants, the most wanted first:
 
 1. the frame under the hand. A drag's run starts at the furthest of the
    frames nearer the hand than the picture, so each one it makes moves
-   the picture. A drag to the left reads the whole key frame span it
+   the picture. A frame before the key frame before the hand is not put
+   up on the way: it is of another stretch of the video, which the
+   picture would leave again as soon as the key frame comes. A drag to the left reads the whole key frame span it
    drags into, since it wants those frames one after another and a run
    that read only the nearest would seek back to the same key frame for
    the rest.
@@ -124,6 +146,20 @@ after every frame. It wants, the most wanted first:
    nothing to do costs the hand as much as one stopped between two
    frames for its next place. Not on a drag faster than eight frames a
    step, where the decoder is kept for the frame under the hand.
+
+What is read around the hand fits in the frames the schedule keeps,
+192 MB, with a quarter to spare, and each run around a place is read
+once until the hand moves. At a video preview of 2560 by 1440 and more,
+the review found, fewer frames fit than were wanted, each run let go of
+what the one before read, and the decoder never rested.
+
+Where the key frames are is learned from the decoder, which hands the
+key frame first for a drag: the key frame it starts from for a frame
+says no key frame lies between the two, and the shortest gap between two
+key frames seen is the span once it is less than twice the longest
+stretch seen. Until then a span is a second. Encoders differ: two
+seconds is what streaming guides ask for, and x264 puts one every 250
+frames unless told otherwise, and one at each cut besides.
 
 The run under way goes on when it reads what is wanted by reading on,
 with no key frame worth seeking to on the way, or when it is a run for
@@ -145,30 +181,57 @@ drags written out, slow and fast, both ways, turning round, a click far
 off, and 12 made at random from fixed seeds, which speed up, stop, turn
 and jump. The simulated decoder hands frames the way `framefairy-frames`
 does: with the key frame first, the key frame and then the frames from
-the one asked for. Each drag is checked against the four targets, and a
-drag that misses one prints what the decoder, the window and the hand
-did around the miss.
+the one asked for, and a stream stopped finishes the frame it is making.
+Each drag is checked against the five targets, and a drag that misses
+one prints what the decoder, the window and the hand did around the
+miss.
+
+The drags run over a video with a key frame every second, held to all
+five targets, and over videos with one every two seconds, every ten,
+and at gaps of 12 to 75 frames, held to the first. A video preview of
+1012 by 570 up to 3840 by 2160 has the decoder rest once the hand does.
 
 The schedule as it stood before this record misses a target in 19 of
-the 23 drags. The planner meets all four in all 23. Measured in the
-simulation, which is exact, so each number is one run with no spread:
+the 23 drags over the video with a key frame a second. Its Before column
+was made in a worktree of its own, with the schedule of that commit and
+one line added: its runs behind and ahead had no context to stop them
+by, and stopping one panicked under this simulation. The planner meets
+all five targets in all 23. Measured in the simulation, which repeats
+exactly, so each number is one run with no spread:
 
-| Over the 23 drags                         | Before | After | Change      |
+| Over the 23 drags, a key frame a second   | Before | After | Change      |
 | ----------------------------------------- | -----: | ----: | ----------- |
-| Mean longest stand-still, ms              |   69.0 |  13.3 | 81 % faster |
+| Mean longest stand-still, ms              |   69.0 |  14.4 | 79 % faster |
 | Worst stand-still, ms                     |  133.0 |  49.0 | 63 % faster |
-| Mean 95th percentile stand-still, ms      |   55.1 |  11.1 | 80 % faster |
+| Mean 95th percentile stand-still, ms      |   55.1 |  12.2 | 78 % faster |
 | Mean exact frame after letting go, ms     |   86.6 |  67.0 | 23 % faster |
 | Worst exact frame after letting go, ms    |  339.0 | 131.0 | 61 % faster |
-| Mean furthest behind the hand, frames     |   41.8 |   6.5 | 84 % fewer  |
+| Mean furthest behind the hand, frames     |   41.8 |  10.7 | 74 % fewer  |
 
 The exact frame after letting go comes later in 6 of the 23 drags, by
-up to 18 ms, 113 to 131 ms at worst. These are drags to the left that
-let go inside a span the run reads whole, making a picture of each frame
-on the way. Read with the key frame first and the rest unscaled, they
-came sooner, and the stand-stills of a slow drag to the left came back.
+up to 18 ms, 131 ms at worst. Four are wandering drags that let go
+inside a span the run reads whole, making a picture of each frame on
+the way, by 4 to 18 ms. Read with the key frame first and the rest
+unscaled, they came sooner, and the stand-stills of a slow drag to the
+left came back. The other two are the fast drags, by 2 ms, 16 to 18 ms.
 The difference is the guessed cost of making the pictures, so it is as
 uncertain as that guess.
+
+Over the other videos the planner guesses where the key frames are
+until the decoder has started from a few, and each wrong guess costs
+the frames between where the decoder starts and where it was asked to.
+The same simulation, After only, since the schedule before took a key
+frame every second for every video:
+
+| Over the 23 drags, After                  | 2 s   | 10 s  | 12 to 75 frames |
+| ----------------------------------------- | ----: | ----: | --------------: |
+| Mean longest stand-still, ms              |  45.4 | 127.7 |           108.5 |
+| Worst stand-still, ms                     | 105.0 | 549.0 |           301.0 |
+| Mean exact frame after letting go, ms     | 105.8 | 295.6 |           151.6 |
+| Worst exact frame after letting go, ms    | 254.0 | 566.0 |           302.0 |
+
+A key frame every ten seconds costs up to 250 frames, about 1.2 s of
+decoding, for a frame decoded from it, on any schedule.
 
 ## What follows
 
@@ -176,3 +239,8 @@ uncertain as that guess.
   becomes a drag of its own in the simulation.
 - The cost of making a picture is a guess. A measurement of it on Tim's
   Mac settles the six slower drags either way.
+- The key frames of a video could be read from its file once, the way
+  the engine already asks ffprobe for the key frame before a cut, so
+  the planner knows them rather than learns them.
+- Two streams at once on Tim's Mac, from the decoder's lines in a
+  report, say whether D is worth simulating.

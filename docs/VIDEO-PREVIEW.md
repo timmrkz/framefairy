@@ -266,10 +266,25 @@ closed for standing unused.
     move of the hand, one of them 216 frames decoded with none shown.
   - Every frame a run makes that is nearer the hand than the frame on
     screen goes up at once, so the picture walks toward a hand the
-    decoder cannot keep up with. A drag's run starts at the furthest of
-    those frames, or at the key frame before the hand where that is
-    nearer. A run that has yet to reach the hand goes on as the hand
-    moves on, since its frames on the way are nearer too.
+    decoder cannot keep up with, but none before the key frame before
+    the hand: that is another stretch of the video, which the picture
+    would jump to and away from as soon as the key frame comes. A drag's
+    run starts at the furthest of those frames, or at the key frame
+    before the hand where that is nearer. A run that has yet to reach
+    the hand goes on as the hand moves on, since its frames on the way
+    are nearer too.
+  - Where the key frames are is learned from the decoder: the key frame
+    it hands first for a frame says no key frame lies between the two,
+    and the shortest gap between two key frames seen is the span once it
+    is less than twice the longest stretch seen. Until then a span is a
+    second, what Tim's videos have. A video with a key frame every two
+    seconds, or every 250 frames as x264 makes unless told otherwise,
+    was read as if it had one every second.
+  - What is read around the hand fits in the frames kept, at any size of
+    the video preview, and each run around a place is read once until
+    the hand moves. At 2560 by 1440 and more, fewer frames fit than were
+    read around the hand, each run let go of what the one before read,
+    and the decoder never rested.
   - A click or a step opens from the frame before its place and reads
     four frames past it, so the arrow keys find theirs. A click further
     than 15 frames from the frame on screen opens at its place instead
@@ -279,7 +294,7 @@ closed for standing unused.
   - A hand that drags to the left has the span of key frames it drags
     into read whole, from its key frame, every frame kept, and once its
     own frame is there the span before it, so the steps back find their
-    frames kept. Each step back was a seek of its own, and the picture
+    frames kept, where a span fits in the frames kept. Each step back was a seek of its own, and the picture
     stood for each, issue #596.
   - The window tells Go where the hand is on every move, also over the
     frames it keeps itself, with a look marked `kept`. That look is
@@ -288,7 +303,11 @@ closed for standing unused.
     from before the app was sized, is no frame kept: a look then waits
     for the frame at the new size. Without it, a
     hand that moved over kept frames was somewhere Go did not know, and
-    the frames past them were read only once the hand got there.
+    the frames past them were read only once the hand got there. A
+    let-go on a frame the window keeps is told too, and a video the
+    video preview lets go of leaves no hand behind: a drag Go never saw
+    end had the first look of the next video answered with frames on the
+    way.
   - With the key frame first, the decoder makes a picture of the key
     frame and of the frames from the run's first frame on only. The
     frames between are decoded and not scaled.
