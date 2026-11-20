@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"path/filepath"
 	"testing"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine/num"
 	"framefairy/engine/timed"
@@ -170,4 +173,46 @@ func FuzzATranscriptIsWrittenAsBefore(f *testing.F) {
 		}
 		readsAsBefore(t, got)
 	})
+}
+
+// A save keeps the loudness of every frame heard, up to the edge of each
+// part, and only those: a frame off by one at an edge draws a sliver of
+// silence on the clip timeline and moves the pauses read from it. A frame
+// is heard when its middle is in a part, or within 5 ms before its start.
+func TestASaveKeepsTheLoudnessOfEveryFrameHeard(t *testing.T) {
+	t.Parallel()
+	fsys := afero.NewMemMapFs()
+	source := "/ep.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stamp, err := stampOf(fsys, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(LogsDir(source), TranscriptName(nil))
+	had := make([]float32, 20)
+	for i := range had {
+		had[i] = float32(i + 1)
+	}
+	// Frames are 10 ms. The first part ends off the grid, inside frame 3
+	// past its middle, the second starts and ends off it.
+	file := transcriptFile{Version: transcriptVersion, Source: stamp, Model: "m", Mean: -25, End: 0.2,
+		Parts: [][2]num.Float{{0.003, 0.037}, {0.0555, 0.0705}}}
+	if err := writeTranscript(fsys, path, file, had); err != nil {
+		t.Fatal(err)
+	}
+	m := NewMachine(fsys)
+	if err := m.addHeard(path, stamp, "m", 0.2, -25, timed.Window{Start: 0.15, End: 0.19}, nil,
+		[]float32{100, 101, 102, 103}, 0.15); err != nil {
+		t.Fatal(err)
+	}
+	_, _, frames, ok := readTranscriptFile(fsys, path, stamp, "m")
+	if !ok {
+		t.Fatal("the transcript does not read after the save")
+	}
+	want := []float32{1, 2, 3, 4, -90, 6, 7, -90, -90, -90, -90, -90, -90, -90, -90, 100, 101, 102, 103, -90}
+	if fmt.Sprint(frames) != fmt.Sprint(want) {
+		t.Errorf("frames saved\n%v\nwant\n%v", frames, want)
+	}
 }
