@@ -517,6 +517,10 @@ export interface WindowView extends KeptWindow {
   // A search has read some of the window before, so Search looks there
   // again and keeps the clips there are.
   searched?: boolean;
+  // How many seconds of the window are heard, and whether all of it is,
+  // as the Go side counts it, so a search of it finds at once.
+  heard: number;
+  heardAll?: boolean;
 }
 
 export interface SourceView {
@@ -593,6 +597,12 @@ export interface VideoState {
   // Where I and O can make a clip, see engine.MarkingOf, or none while
   // the video's length is not known.
   marking?: Marking | null;
+  // What of the video is heard, see HeardView.
+  heard: HeardView;
+  // The clip chosen as it will be once one of its parts is rotated a
+  // quarter further, see Turns, left out of a state sent when the
+  // window has it as it is.
+  turns?: Turns;
   // In a state sent, every clip by its key and its hash, while clips
   // holds only those that changed, each with its hash, or kept when not
   // one changed and the state holds neither. A state read by a call
@@ -600,6 +610,33 @@ export interface VideoState {
   // and what hears it never sees these, see onVideoState.
   order?: ClipMark[];
   kept?: boolean;
+}
+
+// The clip chosen as it will be once one of its parts is rotated a
+// quarter further, a turn for each part, worked out by the engine's own
+// rule, see Turns in cmd/framefairy-app/edits.go. R turns the video
+// preview by it in the frame it is pressed in.
+export interface Turns {
+  // The key of the clip chosen, or nothing.
+  clip: string;
+  parts: Turn[];
+}
+
+// The clip chosen with the part part rotated a quarter further.
+export interface Turn extends Framing {
+  part: number;
+  rotations: Rotation[];
+}
+
+// What of a video is heard, as the Go side says it, see HeardView in
+// cmd/framefairy-app/videostate.go. saved is what the transcript on disk
+// holds, heard what is heard, saved or still being heard, which only ever
+// grows, and unheard what heard does not hold yet, the parts a search
+// cannot look in.
+export interface HeardView {
+  saved: [number, number][];
+  heard: [number, number][];
+  unheard: [number, number][];
 }
 
 // A clip in a state sent, by its key and its hash, see VideoState.order.
@@ -801,6 +838,21 @@ export interface SpeechModel {
   // The one the app offers when nobody has chosen.
   recommended: boolean;
   installed: boolean;
+  // Whether the app hears with it: the first one installed, or the first
+  // one offered while none is.
+  inUse: boolean;
+  // How it stands picked in the list, with no folder named by hand.
+  standing: Standing;
+}
+
+// How a choice of model stands at rest, as the Go side judges it, see
+// cmd/framefairy-app/standing.go. state is whether it can do its work
+// now, says what the line under the choice says, in the settings' words,
+// and detail the problem or the folder it names.
+export interface Standing {
+  state: "ok" | "warn" | "err";
+  says: "cloud" | "fetch" | "ready" | "folder" | "problem";
+  detail?: string;
 }
 
 // One model that can find clips. A model runs from memory, so what decides
@@ -827,6 +879,8 @@ export interface LanguageModel {
   // Whether clips are found with it: the file named in the settings, or
   // with none named the only one there is.
   inUse: boolean;
+  // How it stands as the one clips are found with.
+  standing: Standing;
 }
 
 // One row of a list of models, as the list draws it. Speech models and
@@ -905,6 +959,10 @@ export interface SetupState {
   // Whether a key can be found for the company of the model named.
   hasKey: boolean;
   hasLocalModel: boolean;
+  // How a model in the cloud stands, by the name of its company, and how
+  // the speech model in use stands.
+  cloudStanding: Record<string, Standing>;
+  speaking: Standing;
   // Whether llama-server can be found. A model without it is a very large
   // file that answers nothing.
   hasServer: boolean;

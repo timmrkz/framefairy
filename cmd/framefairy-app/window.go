@@ -84,6 +84,12 @@ type WindowView struct {
 	// engine.Searched, so Search looks there again and keeps the clips
 	// there are, which its title says.
 	Searched bool `json:"searched,omitempty"`
+	// Heard is how many seconds of the window are heard, saved or still
+	// being heard, see HeardView.Heard, and HeardAll that all of it is,
+	// but the half second an edge may be off by, so a search of it finds
+	// at once rather than hearing first.
+	Heard    float64 `json:"heard"`
+	HeardAll bool    `json:"heardAll,omitempty"`
 }
 
 // windowFor is the window of the video whose state st is, on a video of
@@ -108,8 +114,10 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 	}
 	passes := engine.SearchPasses(st.Status.Plans, duration)
 	view := func(w KeptWindow, l engine.WindowLimits) *WindowView {
+		heard := st.Heard.Heard
 		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: o.Min, Longest: o.Max, Hidden: wholeHeard(st.Jobs),
-			Searched: engine.Searched(passes, timed.Window{Start: w.From, End: w.To})}
+			Searched: engine.Searched(passes, timed.Window{Start: w.From, End: w.To}),
+			Heard:    engine.HeardOf(heard, w.From, w.To), HeardAll: engine.HeardOver(heard, w.From, w.To)}
 	}
 	l := limits(w)
 	if searchHolds(st.Jobs) {

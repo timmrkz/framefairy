@@ -240,6 +240,15 @@ type RotationView struct {
 	Deg  int      `json:"deg"`
 }
 
+// RotationViews are a clip's rotations as the window is sent them.
+func RotationViews(spans []Rotation) []RotationView {
+	out := make([]RotationView, 0, len(spans))
+	for _, r := range spans {
+		out = append(out, rotationView(r))
+	}
+	return out
+}
+
 func rotationView(r Rotation) RotationView {
 	v := RotationView{Deg: r.Deg}
 	if !math.IsInf(r.From, 0) {

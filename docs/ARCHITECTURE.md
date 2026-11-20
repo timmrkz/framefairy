@@ -100,13 +100,14 @@ waiting for the day the two disagree.
 | what is chosen in a video, its clip and window | in memory, in the video's record beside its undo steps, `picked` in `cmd/framefairy-app/chosen.go`, behind a lock of its own, and written through to `chosen.json` in its work folder, which is read only the first time | the app's Go side |
 | the library and the settings | the app's config folder | the app's Go side |
 | the models, notes about running servers, the training records | `~/.framefairy/` | the engine, and for the models from outside the app the person in Finder, which `reconcile` hears of through the watch on the models folder and sends to the setup and the settings, see `tellSetup` |
-| what a video's files said, as read: its transcript so far and its plans | the video's one `engine.Episode`, which `Machine.Episode` gives, `engine/held.go`. It keeps each read with the stamp of the files it was read from, `fileio.Stamp`, and reads again only what changed, whoever wrote it, see the decision record [2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md) | the engine, as the files are read. Nothing tells it a file changed |
+| what a video's files said, as read: its transcript so far and its plans, and what was worked out of a read of a plan | the video's one `engine.Episode`, which `Machine.Episode` gives, `engine/held.go`. It keeps each read with the stamp of the files it was read from, `fileio.Stamp`, and reads again only what changed, whoever wrote it, see the decision record [2026-11-03-one-episode-per-video.md](decisions/2026-11-03-one-episode-per-video.md). What is worked out of a read is kept with it, `PlanSummary.Remember`, and goes with it | the engine, as the files are read. Nothing tells it a file changed |
+| what a video's hearing has reached and not saved yet, which only grows | its `engine.Episode`, `reached` and `hearing` in `engine/reached.go`, joined with what the transcript holds by `Episode.Reached` | the engine's hearing, chunk by chunk, through `reach` in `Engine.transcribe`. A transcript out of date or a work folder gone starts it over, `Reached` with `restart` |
 | what was learned about the machine while a program runs: the encoders and subtitle filter of each ffmpeg, the face detector, the tools already checked | `engine.Machine`, one for each program, in memory | the engine |
 | what ffprobe said of a video | `probe.json` in the `logs` folder of its work folder, by the stamps of the video, of the ffprobe that answered and of the program's build, read by `Engine.Probe` before it asks ffprobe and kept on the `engine.Machine` beside every other answer, see [the decision record](decisions/2026-11-19-a-videos-probe-kept-in-its-work-folder.md) | the engine's `Engine.Probe`, only into a logs folder that is there |
 | what runs now, and the lane each job holds or waits for | the job queue, in memory | the app's Go side |
 | the step a job is in, and what it was asked for | its `engine.JobRecord`, on disk and in the job the queue holds, which keeps each record the engine tells it through the job's `engine.Host` | the engine |
 | how a job stands beyond its step: that it is stopping, how a search ended, how long removed work has left | the job the queue holds, `Stopping`, `Ended` and `Away` in `cmd/framefairy-app/jobs.go`, and the timer of each removal in the queue, see `removal.go` | the app's Go side |
-| the clips the window was last sent, for each video | Go's `videoNews` keeps each clip's hash, `telling.sent` in `cmd/framefairy-app/videostate.go`, and the window the clips, `SentClips` in `frontend/src/lib/sent.ts`, held to each other by the hashes, see [the decision record](decisions/2026-11-13-a-state-sends-only-the-clips-that-changed.md) | Go's side as it sends a state, the window's as it makes it whole. `SendWhole` starts both over |
+| the clips the window was last sent, for each video, and the turns of its chosen clip | Go's `videoNews` keeps each clip's hash, `telling.sent` in `cmd/framefairy-app/videostate.go`, and the hash of the turns, `telling.turns`, and the window the clips, `SentClips` in `frontend/src/lib/sent.ts`, held to each other by the hashes, see [the decision record](decisions/2026-11-13-a-state-sends-only-the-clips-that-changed.md) | Go's side as it sends a state, the window's as it makes it whole. `SendWhole` starts both over |
 | a video's loudness, which the clip timeline draws | the levels files in the `logs` folder of its work folder, `engine.ReadLevels`, laid over the transcript's, and the copy the window keeps whole to draw every view from, `HeldLoudness` in `frontend/src/lib/loudness.ts`, as the bytes `engine.Loudness` makes, see [the decision record](decisions/2026-11-18-the-window-holds-the-loudness.md) | the engine's measuring. Go says when the window's copy is old, by the stamp `EpisodeStatus.Loudness` in the video's state, and the window then reads it again whole from `/frames/levels`, never a part of it |
 | what is on screen | the interface's stores, and a video's status, clips, coverage, jobs, clip chosen and window in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick or move of the window until Go answers it, or ten seconds have passed without an answer | from what Go sends, and nothing else. What a hand pressed is kept by the job store until Go answers, see `startJob` |
 
@@ -270,11 +271,14 @@ other side relies on, and the pull request says so.
 Code that breaks this map today, with the issue that fixes it. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
-- Rules of the engine in `frontend/src/lib/flow.ts` and
-  `frontend/src/lib/rotate.ts`, `flow.ts`'s frames held to Go by a shared
-  case file, and `frameOf` in `frontend/src/lib/keyframes.ts`, #610. The
-  crop a keyframe holds is no longer one of them: Go sends each piece's
-  crop steps, `engine.CropSteps`, and the window only looks them up.
+- Rules of the engine in `frontend/src/lib/flow.ts`, its frames held to
+  Go by a shared case file, the frame lookups `rotationAt` and
+  `pieceHolding` in `frontend/src/lib/rotate.ts`, and `frameOf` in
+  `frontend/src/lib/keyframes.ts`, #610. These are no longer among them,
+  because Go sends each as data and the window only looks it up: the
+  crop a keyframe holds, `engine.CropSteps`, what of a video is heard,
+  `VideoState.heard`, how each part of the chosen clip turns,
+  `VideoState.turns`, and how a choice of model stands, `Standing`.
 - The decoder's schedule in `frontend/src/lib/frames/app.ts`: which
   frames Go decodes, on which stream, what is read ahead and what waits,
   `AppFrames`, `Stream` and `Puller`, and the `VideoDecoder` that

@@ -2553,7 +2553,9 @@ found is a place in the video, and I and O make a clip there.
   hand on a part on the range picker still lights it. Walked to with the keys it lit nothing on the range picker,
   found by Tim. The parts give way as the work hears, from what is heard, not
   from the transcript, which is saved in pieces: a search hearing half an
-  hour took the parts away in thirds, found by Tim. While the work hears
+  hour took the parts away in thirds, found by Tim. What is heard, and
+  what of the window, comes from Go in the state of the video,
+  `VideoState.heard` and `WindowView.heard`, see `engine/reached.go`. While the work hears
   into a part, its dots stand still on the range picker's grid and its
   left edge wipes over them as it goes.
 - **Escape steps back wherever the keyboard is**, unless the keyboard is
@@ -2911,7 +2913,11 @@ lies on its side. Plan row 3.25, the design is in
   captions stand on it rotated. The picture turns with the frame on the
   video preview, not with the playhead, which runs ahead of its frames
   when it is dragged: over a cut, the picture turns when the first frame
-  from the other side is there.
+  from the other side is there. The turn shown at once is the one the
+  engine saves: the state of the video carries how each part of the
+  chosen clip turns, `VideoState.turns`, worked out by `engine.TurnClip`,
+  the rule `RotatePart` writes with, so the answer changes nothing on
+  screen.
 - **A rotation belongs to the video, not to the cuts.** Rotate turns the
   stretch of the video the part shows, from the middle of the cut before
   it to the middle of the cut after, where the phone was turned. A part at
@@ -3383,9 +3389,16 @@ by hand under **Advanced**, **Model in the cloud**, belongs to the company
 its name says, `claude-` or `gpt-`, and is in the list too, so the list
 never names nothing.
 
-The decisions behind the row, which company a model belongs to, what the
-list offers, and what the line says and how it stands in every state, are
-in `frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
+How each choice stands at rest, whether a key, a download or a model
+that does not work is in the way, is the Go side's to judge, for every
+model in the list at once, `Standing` in `cmd/framefairy-app/standing.go`,
+sent with the models by `Setup`, so a click on any of them shows how it
+stands in the frame of the click. The speech model in use is judged the
+same way. `standing_test.go` holds each case. The settings only word it,
+and lay the work in hand over it, a download on its way, one that stopped
+and a search that uses the model, the way every place shows work, from
+its job. The wording and which company a model belongs to are in
+`frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
 somebody can click their way into, run by `make interface` and CI.
 
 The line under the choice says what it costs: a few cents a video and

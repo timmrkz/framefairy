@@ -550,45 +550,80 @@ func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames Sourc
 		if err != nil {
 			return err
 		}
-		pieces := segmentObjects(c)
-		target := segmentAt(pieces, at)
-		if target < 0 {
-			return renderErr("clip %s has no pieces", clipID)
-		}
-		spans := rotationsOf(c)
-		// The keyframes are read with the clip turned as it was, so each
-		// keeps the turn it was placed on, written down before the turn.
-		marks := cropMarksOf(c)
-		first, last := partOf(pieces, target)
-		from, to := math.Inf(-1), math.Inf(1)
-		if first > 0 {
-			from = frames.frameStartNear((number(pieces[first-1].values[keyEnd]) + number(pieces[first].values[keyStart])) / 2)
-		}
-		if last+1 < len(pieces) {
-			to = frames.frameStartNear((number(pieces[last].values[keyEnd]) + number(pieces[last+1].values[keyStart])) / 2)
-		}
-		turned := (rotationOf(pieces[target], spans) + 90) % 360
-		spans = turnStretch(spans, from, to, turned)
-		setRotations(c, spans)
-		if len(marks) > 0 {
-			setCropMarks(c, marks)
-		}
-		var stretch []*object
-		for _, seg := range pieces {
-			if number(seg.values[keyEnd]) > from && number(seg.values[keyStart]) < to {
-				seg.remove(keyCropXTurned)
-				stretch = append(stretch, seg)
-			}
-		}
-		// The pieces turned alike share one crop, so a part turned the
-		// way another already is takes the crop placed there. Left in
-		// the middle, the clip had two crops turned one way, #402.
-		_, like := framingOf(pieces, spans)
-		for _, seg := range stretch {
-			copyFraming(seg, like[turned], keyCropXTurned)
-		}
-		return nil
+		return turnPart(c, clipID, at, frames)
 	})
+}
+
+// TurnClip works out what RotatePart makes of a clip of the plan s, the
+// part a moment is in rotated a quarter further, and writes nothing, the
+// way ShapeClip works out a gesture. The window turns the video preview by
+// it in the frame R is pressed in, and the clip RotatePart answers with
+// takes its place. It is the one rule, so the two are the same: the
+// window once turned it by a copy of its own, which put the edges of the
+// stretch off the frames and left a part in the middle where it takes the
+// crop of a part turned alike.
+func TurnClip(s PlanSummary, clipID string, at float64, frames SourceInfo) (Clip, error) {
+	clips, err := s.orderedClips()
+	if err != nil {
+		return Clip{}, err
+	}
+	c, err := findClip(clips, clipID)
+	if err != nil {
+		return Clip{}, err
+	}
+	c = cloneObject(c)
+	if err := turnPart(c, clipID, at, frames); err != nil {
+		return Clip{}, err
+	}
+	entry, _ := plainOf(c).(map[string]any)
+	clip, ok, err := readClip(entry, 1)
+	if err == nil && !ok {
+		err = renderErr("clip %s has no pieces", clipID)
+	}
+	return clip, err
+}
+
+// turnPart rotates the part of the clip c that a moment is in a quarter
+// turn to the left, see RotatePart.
+func turnPart(c *object, clipID string, at float64, frames SourceInfo) error {
+	pieces := segmentObjects(c)
+	target := segmentAt(pieces, at)
+	if target < 0 {
+		return renderErr("clip %s has no pieces", clipID)
+	}
+	spans := rotationsOf(c)
+	// The keyframes are read with the clip turned as it was, so each
+	// keeps the turn it was placed on, written down before the turn.
+	marks := cropMarksOf(c)
+	first, last := partOf(pieces, target)
+	from, to := math.Inf(-1), math.Inf(1)
+	if first > 0 {
+		from = frames.frameStartNear((number(pieces[first-1].values[keyEnd]) + number(pieces[first].values[keyStart])) / 2)
+	}
+	if last+1 < len(pieces) {
+		to = frames.frameStartNear((number(pieces[last].values[keyEnd]) + number(pieces[last+1].values[keyStart])) / 2)
+	}
+	turned := (rotationOf(pieces[target], spans) + 90) % 360
+	spans = turnStretch(spans, from, to, turned)
+	setRotations(c, spans)
+	if len(marks) > 0 {
+		setCropMarks(c, marks)
+	}
+	var stretch []*object
+	for _, seg := range pieces {
+		if number(seg.values[keyEnd]) > from && number(seg.values[keyStart]) < to {
+			seg.remove(keyCropXTurned)
+			stretch = append(stretch, seg)
+		}
+	}
+	// The pieces turned alike share one crop, so a part turned the
+	// way another already is takes the crop placed there. Left in
+	// the middle, the clip had two crops turned one way, #402.
+	_, like := framingOf(pieces, spans)
+	for _, seg := range stretch {
+		copyFraming(seg, like[turned], keyCropXTurned)
+	}
+	return nil
 }
 
 // PiecesMeet is the most two pieces of a clip may stand apart and still

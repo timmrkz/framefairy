@@ -332,6 +332,7 @@ func standInsSetup(s SetupState, fresh *freshMachine) SetupState {
 			s.Keys[provider], s.KeyHints[provider] = "keychain", "sk-…walk"
 		}
 		s.HasKey = s.Keys[s.Provider] != ""
+		s.judge()
 		return s
 	}
 	s.HasSpeech, s.HasLocalModel, s.Chosen, s.Ready = true, true, true, true
@@ -350,6 +351,10 @@ func standInsSetup(s SetupState, fresh *freshMachine) SetupState {
 		s.Language[i].InUse = i == chosen
 		s.Language[i].Installed = i == chosen
 	}
+	// Judged again as the stand-ins stand, which pass their checks, see
+	// standInsChecks.
+	s.checks.language, s.checks.speech, s.checks.listed = Check{OK: true}, Check{OK: true}, Check{OK: true}
+	s.judge()
 	return s
 }
 
