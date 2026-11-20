@@ -158,8 +158,10 @@ func meanOfFrames(frames []float32) float64 {
 
 // Coverage says how far the transcript reaches from the start of the
 // episode without a gap, in seconds, and whether it has heard all of it.
-// What is heard further on, where a search or a clip made by hand needed
-// it first, is in HeardParts.
+// It reads the files the way another program would, every word and the
+// loudness, which is what a test checks them by. The engine and the app
+// ask the transcript the video's Episode holds instead, read once after
+// each save for everyone, see Episode.Transcript and Project.unheard.
 func Coverage(fsys afero.Fs, source, asrModelDir string) (float64, bool) {
 	file, _, _, ok := readEpisodeTranscript(fsys, source, asrModelDir)
 	if !ok {
@@ -170,22 +172,6 @@ func Coverage(fsys afero.Fs, source, asrModelDir string) (float64, bool) {
 		covered = parts[0][1]
 	}
 	return covered, file.done()
-}
-
-// HeardParts is every part of the episode its transcript has heard, in
-// seconds, in order and apart.
-func HeardParts(fsys afero.Fs, source, asrModelDir string) [][2]float64 {
-	file, _, _, ok := readEpisodeTranscript(fsys, source, asrModelDir)
-	if !ok {
-		return nil
-	}
-	return file.heard()
-}
-
-// Unheard is what of a span of the episode its transcript has not heard
-// yet, in order. A gap too short to hold a word is left.
-func Unheard(fsys afero.Fs, source, asrModelDir string, span timed.Window) []timed.Window {
-	return gapsIn(HeardParts(fsys, source, asrModelDir), span)
 }
 
 // Unheard is what of a clip's pieces its transcript has not heard yet, in
