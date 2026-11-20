@@ -11,7 +11,7 @@
   // llama-server, are rows the caller hands in.
   import type { Snippet } from "svelte";
   import type { Job, ModelRow } from "../lib/api";
-  import type { Standing, Tone } from "../lib/finding";
+  import type { LineState, Tone } from "../lib/finding";
   import type { Install } from "../lib/install.svelte";
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
@@ -49,7 +49,7 @@
     shaking: boolean;
     onshaken: () => void;
     head: string;
-    line: { text: string; tone: Tone; state: Standing; using?: boolean };
+    line: { text: string; tone: Tone; state: LineState; using?: boolean };
     install: Install;
     download?: { title: string; onclick: () => void };
     oncancel: () => void;

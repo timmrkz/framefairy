@@ -305,22 +305,42 @@ func (q *queue) nextStampLocked() uint64 {
 func (q *queue) ofVideo(episode string) ([]Job, uint64) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	newest := map[string]*Job{}
+	out := []Job{}
+	q.shownLocked(episode, func(j *Job) { out = append(out, *j) })
+	q.seq++
+	return out, q.seq
+}
+
+// ofVideos is ofVideo for every video at once, by video, under one lock,
+// for the library, which says how each video stands with its jobs.
+func (q *queue) ofVideos() map[string][]Job {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := map[string][]Job{}
+	q.shownLocked("", func(j *Job) { out[j.Episode] = append(out[j.Episode], *j) })
+	return out
+}
+
+// shownLocked hands keep, in the queue's order, each job the workspace
+// shows of the video episode, or of every video when episode is empty,
+// see ofVideo. q.mu is held.
+func (q *queue) shownLocked(episode string, keep func(j *Job)) {
+	type kindOf struct{ episode, kind string }
+	of := func(j *Job) bool { return j.Episode != "" && (episode == "" || j.Episode == episode) }
+	newest := map[kindOf]*Job{}
 	for _, j := range q.jobs {
-		if j.Episode == episode && !j.going() {
-			if n := newest[j.Kind]; n == nil || j.Seq > n.Seq {
-				newest[j.Kind] = j
+		if of(j) && !j.going() {
+			k := kindOf{j.Episode, j.Kind}
+			if n := newest[k]; n == nil || j.Seq > n.Seq {
+				newest[k] = j
 			}
 		}
 	}
-	out := []Job{}
 	for _, j := range q.jobs {
-		if j.Episode == episode && (j.going() || j.unfinished() || newest[j.Kind] == j) {
-			out = append(out, *j)
+		if of(j) && (j.going() || j.unfinished() || newest[kindOf{j.Episode, j.Kind}] == j) {
+			keep(j)
 		}
 	}
-	q.seq++
-	return out, q.seq
 }
 
 // stampLocked marks a change to a job, and tells whoever waits on the

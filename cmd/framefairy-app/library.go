@@ -31,8 +31,14 @@ func (s *FrameFairy) Library() []engine.EpisodeStatus {
 	s.reconcile(nil)
 	opts := s.store.Settings().options()
 	out := []engine.EpisodeStatus{}
+	// Every video's jobs under one lock, the way a video's state picks
+	// them, see ofVideo.
+	var jobs map[string][]Job
+	if s.jobs != nil {
+		jobs = s.jobs.ofVideos()
+	}
 	for _, ep := range s.store.Episodes() {
-		out = append(out, s.store.machine.Episode(ep).Status(opts.ASRModel, opts.SilenceDB))
+		out = append(out, s.statusWith(ep, opts, jobs[ep]))
 	}
 	return out
 }
@@ -44,8 +50,34 @@ func (s *FrameFairy) Episode(path string) engine.EpisodeStatus {
 	if !s.store.Known(path) {
 		return engine.EpisodeStatus{}
 	}
-	opts := s.store.Settings().options()
-	return s.store.machine.Episode(path).Status(opts.ASRModel, opts.SilenceDB)
+	return s.episode(path, s.videoJobs(path))
+}
+
+// episode is the state of the episode at path, whose jobs are jobs, how it
+// stands in the sidebar with them.
+func (s *FrameFairy) episode(path string, jobs []Job) engine.EpisodeStatus {
+	if !s.store.Known(path) {
+		return engine.EpisodeStatus{}
+	}
+	return s.statusWith(path, s.store.Settings().options(), jobs)
+}
+
+// statusWith is the state of the episode at path as its files say it,
+// read with opts, and how it stands with its jobs, see searchStands.
+func (s *FrameFairy) statusWith(path string, opts engine.Options, jobs []Job) engine.EpisodeStatus {
+	st := s.store.machine.Episode(path).Status(opts.ASRModel, opts.SilenceDB)
+	st.Stands = standing(st, searchStands(jobs))
+	return st
+}
+
+// videoJobs is the jobs of the video at path as the workspace shows them,
+// none where no queue runs, as in a test that builds the service by hand.
+func (s *FrameFairy) videoJobs(path string) []Job {
+	if s.jobs == nil {
+		return nil
+	}
+	jobs, _ := s.jobs.ofVideo(path)
+	return jobs
 }
 
 // ChooseFolder asks for a folder, the way a Mac app asks where to save

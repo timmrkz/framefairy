@@ -86,7 +86,7 @@ runs:
         path: ${{ runner.tool_cache }}/go/${{ steps.pinned-go.outputs.version }}
         key: go-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ steps.pinned-go.outputs.version }}
     - if: steps.image-go.outputs.there != 'true'
-      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
       with:
         go-version: ${{ steps.pinned-go.outputs.version }}
         cache: false

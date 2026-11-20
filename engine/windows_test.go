@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -164,6 +165,30 @@ func TestAWindowTheAppPlacesLandsOnTheStep(t *testing.T) {
 		if got := OnStep(c.w, c.length, c.duration, c.step, c.least); got != c.want {
 			t.Errorf("%s: %+v, want %+v", c.name, got, c.want)
 		}
+	}
+}
+
+// A hand dragging the window's edge lands on the same round steps the
+// app places a window on, sent with the window's limits, so a window the
+// app placed is one a hand can drag back to. The list sent is the
+// window's own: a change to it moves no window Go places.
+func TestADraggedEdgeLandsOnTheStepsTheAppPlacesWindowsOn(t *testing.T) {
+	for _, duration := range []float64{15, 60, 360, 3600, 14423, 30 * 3600, 100 * 3600} {
+		l := limitsWith(20, 30).Limits(RoomAndLines{}, duration, 60, 0)
+		if !slices.Contains(l.Rounds, PlaceStep(duration)) {
+			t.Errorf("a video of %s places its window on %v, which a drag on %v never reaches",
+				HMS(duration), PlaceStep(duration), l.Rounds)
+		}
+		if !slices.IsSorted(l.Rounds) {
+			t.Errorf("the steps %v are not from the finest up, so the range picker would not pick the finest that fits", l.Rounds)
+		}
+	}
+	sent := limitsWith(20, 30).Limits(RoomAndLines{}, 3600, 60, 0)
+	for i := range sent.Rounds {
+		sent.Rounds[i] = 7
+	}
+	if got := PlaceStep(3600); got != 30 {
+		t.Errorf("a change to the steps sent moved the step Go places an hour's window on to %v", got)
 	}
 }
 

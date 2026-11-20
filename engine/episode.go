@@ -85,6 +85,40 @@ type PlanSummary struct {
 	saidFrom func() string
 	// said is what Said laid out last, kept with the read, see Said.
 	said *keptSaid
+	// kept is what was worked out of this read and kept with it, see
+	// Remember.
+	kept *keptAnswers
+}
+
+// Remember is what work makes of this read of the plan, kept with the
+// read under key, so it is worked out once for each read and not again on
+// every state of the video while work runs. A plan read again is a new
+// read and keeps nothing. What is kept is shared and only read. A
+// summary made without a place to keep answers works it out every time.
+func (s PlanSummary) Remember(key string, work func() (any, error)) (any, error) {
+	if s.kept == nil {
+		return work()
+	}
+	s.kept.mu.Lock()
+	defer s.kept.mu.Unlock()
+	if v, ok := s.kept.answers[key]; ok {
+		return v, nil
+	}
+	v, err := work()
+	if err != nil {
+		return nil, err
+	}
+	if s.kept.answers == nil {
+		s.kept.answers = map[string]any{}
+	}
+	s.kept.answers[key] = v
+	return v, nil
+}
+
+// keptAnswers are what Remember kept of one read of a plan.
+type keptAnswers struct {
+	mu      sync.Mutex
+	answers map[string]any
 }
 
 // orderedClips are the clips of the plan in its own order, the way an
@@ -186,6 +220,13 @@ type EpisodeStatus struct {
 	// Label is the words and the colour a person gave the video in the
 	// sidebar, nil when it has none, see Label.
 	Label *Label `json:"label,omitempty"`
+	// Stands is how the video stands with its work, which only the app
+	// knows: the app sets it, see standing in
+	// cmd/framefairy-app/videostate.go, and the engine leaves it empty.
+	Stands string `json:"stands"`
+	// Transcript is how far the video is transcribed, TranscriptWhole and
+	// the rest, see transcribed.go.
+	Transcript string `json:"transcript"`
 }
 
 // HeardIn is every part of a video of duration seconds that is heard, from
@@ -209,6 +250,7 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 	info, err := fsys.Stat(source)
 	if err != nil {
 		st.Missing = true
+		st.Transcript = st.transcript()
 		return st
 	}
 	st.Size, st.Modified = info.Size(), info.ModTime()
@@ -249,6 +291,7 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 	st.Work = fileio.Exists(fsys, work)
 	st.EverSearched = ep.everSearched(st.Plans)
 	st.Label = ReadLabel(fsys, source)
+	st.Transcript = st.transcript()
 	return st
 }
 
@@ -347,7 +390,7 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 	}
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
 		Modified: info.ModTime(), plan: plan, clips: clips, data: data,
-		said:     &keptSaid{},
+		said: &keptSaid{}, kept: &keptAnswers{},
 		ordered:  sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) }),
 		saidFrom: sync.OnceValue(func() string { return saidFrom(clips) })}
 	made := plan.PlannedWith()
@@ -673,10 +716,7 @@ func (s PlanSummary) View() *PlanView {
 			}
 		}
 		v.CropMarks = CropMarkViews(c.CropMarks)
-		v.Rotations = []RotationView{}
-		for _, r := range c.Rotations {
-			v.Rotations = append(v.Rotations, rotationView(r))
-		}
+		v.Rotations = RotationViews(c.Rotations)
 		v.Segments = SegmentViews(c.Segments)
 		v.Rendered = renderedOf(plan, c)
 		v.Short = shortOf(plan, c)

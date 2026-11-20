@@ -140,8 +140,9 @@ func FollowingWindow(ended, length, duration, least float64) timed.Window {
 	return timed.Window{Start: from, End: math.Min(from+math.Max(length, 0), duration)}
 }
 
-// placeSteps are the round steps a window the app places lands on, the
-// same as the range picker's, see dragStep in frontend/src/lib/ruler.ts.
+// placeSteps are the round steps a window the app places lands on, and
+// the ones a dragged edge lands on, which the range picker is sent as
+// WindowLimits.Rounds.
 var placeSteps = []float64{1, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800}
 
 // PlaceStep is the round step a window the app places lands on: the

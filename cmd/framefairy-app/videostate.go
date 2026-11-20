@@ -47,6 +47,8 @@ type VideoState struct {
 	// Window is the video's window, with its limits, see WindowView, or
 	// nil while the video cannot be read.
 	Window *WindowView `json:"window"`
+	// Heard is what of the video is heard, see HeardView.
+	Heard HeardView `json:"heard"`
 	// Marking is where I and O can make a clip, see engine.MarkingOf, or
 	// nil while the video's length is not known: the keys are offered
 	// then and the engine says why a clip could not be made.
@@ -55,11 +57,22 @@ type VideoState struct {
 	// transcript search's, see Sentences and engine.Episode.SaidStamp.
 	// The window reads them again when it changes, and only then.
 	Cards string `json:"cards"`
+	// PutBack is how many seconds removed work can be put back before it
+	// is forgotten, removalTime, so the row of work just removed runs
+	// down for as long as Go keeps the work before Go has answered, and
+	// the window keeps no time of its own for it. A removed clip's row is
+	// news and keeps the window's time, since Undo puts it back whenever.
+	PutBack float64 `json:"putBack"`
 	// Chosen is the key of the clip chosen, by a hand or by the app, see
 	// choose.go, or nothing. It is read after the clips, and chosen from
 	// them and the jobs, so a clip the app chose comes with the state that
 	// holds it.
 	Chosen string `json:"chosen"`
+	// Turns is the clip chosen as it will be once one of its parts is
+	// rotated a quarter further, see Turns. A state sent leaves it out
+	// when the window has it as it is, see telling.trim. A state read by
+	// a call always has it.
+	Turns *Turns `json:"turns,omitempty"`
 	// Order is, in a state sent to the window, every clip of the video in
 	// the order of Clips in a state read, by its key and its hash. Clips
 	// then holds only the clips the window was not sent as they are now,
@@ -74,6 +87,43 @@ type VideoState struct {
 	// order, so it holds neither clips nor Order: a state that named
 	// every clip went over the 8 KB Wails sends inline at about 95 clips.
 	Kept bool `json:"kept,omitempty"`
+}
+
+// HeardView is what of a video is heard, as the workspace draws it: on
+// the range picker, as the parts not heard yet in the clip column and in
+// how much of a window a row says is transcribed. The engine says it, see
+// engine.Episode.Reached, so the window keeps no mark of its own, #610.
+type HeardView struct {
+	// Saved is every part the transcript on disk holds, all of the video
+	// once it is transcribed.
+	Saved [][2]float64 `json:"saved"`
+	// Heard is every part heard, saved or still being heard, which only
+	// ever grows, see engine.Episode.Reached.
+	Heard [][2]float64 `json:"heard"`
+	// Unheard is what of the video Heard does not hold, gaps under a
+	// second left out, see engine.NotHeard.
+	Unheard [][2]float64 `json:"unheard"`
+}
+
+// heardView is what of the video at path is heard, from its status, on
+// a video of duration seconds, or nought while that is not known.
+func (s *FrameFairy) heardView(path string, status engine.EpisodeStatus, duration float64) HeardView {
+	saved := status.HeardIn(duration)
+	if saved == nil {
+		saved = [][2]float64{}
+	}
+	// A transcript out of date will be read again, and a work folder that
+	// is gone holds nothing heard, so what was heard means nothing then.
+	restart := status.TranscriptStale || !status.Work
+	heard := s.store.machine.Episode(path).Reached(saved, restart)
+	v := HeardView{Saved: saved, Heard: heard, Unheard: [][2]float64{}}
+	if v.Heard == nil {
+		v.Heard = [][2]float64{}
+	}
+	if duration > 0 {
+		v.Unheard = append(v.Unheard, engine.NotHeard(heard, duration)...)
+	}
+	return v
 }
 
 // ClipMark is a clip in a state sent to the window, by its key and its
@@ -107,7 +157,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	jobs, rev := s.jobs.ofVideo(path)
 	coming := s.searchComingLocked(path) != ""
 	s.checkMu.Unlock()
-	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.Episode(path)}
+	st := VideoState{Video: path, Rev: rev, Jobs: jobs, SearchComing: coming, Status: s.episode(path, jobs), PutBack: removalTime.Seconds()}
 	plans := st.Status.Plans
 	if st.Status.Missing {
 		// A video whose file is gone keeps its clips, see Clips.
@@ -125,6 +175,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		}
 	}
 	st.Clips = s.clipsOf(plans, info, st.Status.Heard)
+	st.Heard = s.heardView(path, st.Status, info.Duration)
 	st.Cards = s.saidStamp(path, plans, info)
 	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {
@@ -132,6 +183,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		st.Marking = engine.MarkingOf(st.Status.HeardIn(info.Duration), st.Status.Said, info.Duration)
 	}
 	st.Chosen = s.chosenFor(path, st)
+	st.Turns = s.turnsOf(plans, st.Chosen, st.Clips, info)
 	s.hearChosen(path, st, info.Duration)
 	return st, nil
 }
@@ -184,6 +236,8 @@ type telling struct {
 	sent map[string]string
 	// order is the Order of the state sent last, nil until a state was.
 	order []ClipMark
+	// turns is the hash of the Turns the window was last sent, see trim.
+	turns string
 	// whole says the next state goes with every clip, because the window
 	// lost track of what it was sent, see SendWhole.
 	whole bool
@@ -254,7 +308,7 @@ func (n *videoNews) tell(path string, t *telling) {
 	t.last = time.Now()
 	if t.whole {
 		t.whole = false
-		t.sent, t.order = nil, nil
+		t.sent, t.order, t.turns = nil, nil, ""
 	}
 	n.mu.Unlock()
 	st, err := n.read(path)
@@ -283,6 +337,13 @@ func (n *videoNews) tell(path string, t *telling) {
 // change: the window then fetched every one of them over a request of
 // its own, which Wails makes for an event over 8 KB.
 func (t *telling) trim(st VideoState) VideoState {
+	if st.Turns != nil {
+		if st.Turns.hash != "" && st.Turns.hash == t.turns {
+			st.Turns = nil
+		} else {
+			t.turns = st.Turns.hash
+		}
+	}
 	sent := make(map[string]string, len(st.Clips))
 	order := make([]ClipMark, 0, len(st.Clips))
 	changed := []ClipEntry{}
@@ -396,6 +457,70 @@ func (n *videoNews) stop() {
 	for _, sent := range going {
 		<-sent
 	}
+}
+
+// How a video stands with its work, engine.EpisodeStatus.Stands, which
+// the sidebar draws as the video's dot. The sidebar once worked it out
+// for itself from the status and the search, and a search set aside still
+// marked the video, #436. A video with none of these stands as nothing
+// worth a mark.
+const (
+	// standsFailed is a video whose file is gone, or whose search failed.
+	standsFailed = "failed"
+	// standsLook is a video that needs a look: its search stopped or was
+	// cut off, or its file changed since it was transcribed.
+	standsLook = "look"
+	// standsMade is a video with clips found or made in it.
+	standsMade = "made"
+)
+
+// searchStanding is how the newest search of a video stands, see
+// searchStands.
+type searchStanding int
+
+const (
+	searchQuiet searchStanding = iota
+	searchFailed
+	searchStopped
+)
+
+// standing is how the video whose status is st stands with its search: a
+// file gone and a failed search first, then what needs a look, then
+// clips made.
+func standing(st engine.EpisodeStatus, search searchStanding) string {
+	switch {
+	case st.Missing || search == searchFailed:
+		return standsFailed
+	case search == searchStopped || st.TranscriptStale:
+		return standsLook
+	case len(st.Plans) > 0:
+		return standsMade
+	}
+	return ""
+}
+
+// searchStands is how the newest search among a video's jobs stands: of
+// the newest search there is, only a failed one, or one that stopped or
+// was cut off, counts. A search set aside, whose window a hand moved off,
+// says nothing, #436. A search that runs says nothing either: that the
+// video is busy is what the sidebar shows from its jobs and from the
+// presses on their way.
+func searchStands(jobs []Job) searchStanding {
+	var last *Job
+	for i := range jobs {
+		if jobs[i].Kind == engine.JobSearch {
+			last = &jobs[i]
+		}
+	}
+	switch {
+	case last == nil || last.Aside:
+		return searchQuiet
+	case last.State == JobFailed:
+		return searchFailed
+	case last.State == JobStopped || last.State == JobInterrupted:
+		return searchStopped
+	}
+	return searchQuiet
 }
 
 // searchesEnded says of each search among jobs that is done or stopped

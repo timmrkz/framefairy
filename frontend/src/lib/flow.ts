@@ -13,43 +13,6 @@ export type Piece = { start: number; end: number };
 // needs it first, see docs/ENGINE.md, and the Go side says which.
 export type Parts = [number, number][];
 
-// The parts in order, with any that touch or overlap made one.
-export function joinParts(parts: Parts): Parts {
-  const out: Parts = [];
-  for (const [a, b] of [...parts].filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0])) {
-    const last = out[out.length - 1];
-    if (last && a <= last[1] + 0.005) last[1] = Math.max(last[1], b);
-    else out.push([a, b]);
-  }
-  return out;
-}
-
-// How many seconds of from..to the parts hold.
-export function heardIn(parts: Parts, from: number, to: number): number {
-  let sum = 0;
-  for (const [a, b] of parts) sum += Math.max(Math.min(b, to) - Math.max(a, from), 0);
-  return sum;
-}
-
-// Whether the parts hold all of from..to, give or take the half second
-// the rest of the workspace allows an edge.
-export function covers(parts: Parts, from: number, to: number): boolean {
-  return heardIn(parts, from, to) >= to - from - 0.5;
-}
-
-// What of from..to the parts do not hold, in order.
-export function gapsIn(parts: Parts, from: number, to: number): Parts {
-  const out: Parts = [];
-  let at = from;
-  for (const [a, b] of parts) {
-    if (b <= at || a >= to) continue;
-    if (a > at) out.push([at, a]);
-    at = Math.max(at, b);
-  }
-  if (at < to) out.push([at, to]);
-  return out;
-}
-
 // A run of asks where only the newest answer counts.
 //
 // Several asks can be in the air at once, the clip list read again while
@@ -86,28 +49,6 @@ export class Newest {
   }
 }
 
-// What of an episode has been heard, which can only ever grow.
-//
-// Two things say it and they disagree on purpose. The saved transcript is
-// rewritten whole, so it lands seconds apart and jumps minutes of audio at
-// a time. A running transcription says where it got to as each chunk
-// finishes, which is far more often. The range picker draws the second one,
-// because that is the one that moves with the work.
-//
-// The moment the transcription stops, the second one is gone and what is
-// left is the number from disk, which is behind it by however much had not
-// been saved. The edge then walks backwards, and it cannot: it says how
-// much of the episode has been read, and reading does not unhappen. Pausing
-// showed this plainly, because pausing is the one moment the live number
-// disappears while the saved one is at its most stale.
-//
-// The same holds for answers that cross. Every refresh of the episode is a
-// call of its own, so an older one can land after a newer one and carry a
-// smaller number with it.
-//
-// So everything seen is kept, and what is heard never shrinks. It starts
-// over only when the mark is about a transcript that no longer exists:
-// another episode, or one being read again from the beginning.
 // A job as the Go side reports it, by its id and the number of its last
 // change. The number grows with every change to any job, and is set where
 // the change is made, so of two snapshots of one job the later one has the
@@ -138,35 +79,6 @@ export const unfinished = (j: Job | undefined) =>
 // A job that still has something to say: on its way, or ended before it
 // was done and not settled yet. One done, cancelled or settled has not.
 export const outstanding = (j: Job | undefined) => live(j) || unfinished(j);
-
-export class Heard {
-  private parts: Parts = [];
-  private of = "";
-
-  // saved are the parts the transcript on disk holds. running is the part a
-  // running transcription says it has heard, from where it began to where
-  // it has got, or null when none is running. restart says the mark is
-  // about to be meaningless: the transcript is out of date and will be read
-  // again, or there is no work folder left at all.
-  //
-  // A transcription carried on after a pause reports from where the saved
-  // transcript ends, which is behind the mark. That is not a step back:
-  // those seconds were heard, they were only never written down, so the
-  // edge stands still until the work passes it rather than rewinding.
-  seen(episode: string, saved: Parts, running: [number, number] | null, restart: boolean): Parts {
-    if (episode !== this.of || restart) {
-      this.of = episode;
-      this.parts = [];
-    }
-    const now = [...this.parts, ...saved.map(([a, b]) => [a, b] as [number, number])];
-    if (running) now.push([running[0], running[1]]);
-    const joined = joinParts(now);
-    // The same parts as before are the same answer, so what reads them
-    // does not see a change that is not one.
-    if (JSON.stringify(joined) !== JSON.stringify(this.parts)) this.parts = joined;
-    return this.parts;
-  }
-}
 
 // Where a moment of a clip falls in the episode.
 //

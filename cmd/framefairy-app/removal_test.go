@@ -99,6 +99,35 @@ func TestRemovedWorkIsForgottenWhenItsTimeIsUp(t *testing.T) {
 	})
 }
 
+// The state the window is answered with says how long removed work can
+// be put back, and that is how long Go keeps it, to the millisecond, so
+// the row the window draws runs down with the work and keeps no time of
+// its own. The window once fell back on its own ten seconds.
+func TestTheStateSaysHowLongRemovedWorkCanBePutBack(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, _, ids := stoppedSearches(t, "removed.mp4")
+		st, err := s.RemoveWork(context.Background(), ids[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, away := removalOf(s, ids[0])
+		if st.PutBack <= 0 || away == nil || away.Whole != st.PutBack {
+			t.Fatalf("the state says removed work can be put back for %v s, and the removal is %+v", st.PutBack, away)
+		}
+		putBack := time.Duration(st.PutBack * float64(time.Second))
+		time.Sleep(putBack - time.Millisecond) //nolint:forbidigo // synctest bubble
+		synctest.Wait()
+		if state, _ := removalOf(s, ids[0]); state != JobStopped {
+			t.Errorf("the work was forgotten before the %v s the state said: %s", st.PutBack, state)
+		}
+		time.Sleep(time.Millisecond) //nolint:forbidigo // synctest bubble
+		synctest.Wait()
+		if state, _ := removalOf(s, ids[0]); state != JobSettled {
+			t.Errorf("the work is %s once the %v s the state said were up", state, st.PutBack)
+		}
+	})
+}
+
 // Removed work is not forgotten once the app has closed, nor work removed
 // as it closes: its time ends with the app, the way the process ending
 // ends it. The walks' bridge opens the app again in the same process, and

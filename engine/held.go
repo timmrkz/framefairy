@@ -39,6 +39,11 @@ type Episode struct {
 	// clip more, its captions laid out, see PlanSummary.Said, measured once
 	// on 80 clips. A video's plans go when it leaves the library, see Forget.
 	plans map[string]*planSlot
+	// reached is every part of the video heard, saved or not yet, and
+	// hearing the part the hearing running now has reached, see
+	// reached.go. Guarded by the machine's held too.
+	reached [][2]float64
+	hearing *[2]float64
 }
 
 // planSlot is where one plan file's read is kept, so held has a place

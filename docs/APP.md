@@ -1644,7 +1644,14 @@ bubble scrolled by those eight pixels.
       could not, because the window stood locked until it was carried on. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
       that failed, the red of its row and of its toast. A search set
-      aside has no row, so the dot says nothing of it either, issue #436. **Its trash can**,
+      aside has no row, so the dot says nothing of it either, issue #436.
+      How a video stands, its dot and the line under its name, is the Go
+      side's to say, `EpisodeStatus.stands` from `standing` in
+      `cmd/framefairy-app/videostate.go`, and `transcript` from
+      `engine/transcribed.go`, sent in the library and in every state of
+      the video. The sidebar draws the newest of them, picks only the
+      colour and the words, and pulses the dot from the frame work is
+      pressed for. **Its trash can**,
       there while the pointer is on the row, removes the search when it
       is no longer wanted: the row says Removed with Put it back for ten
       seconds, the way a removed clip's row does, and the search's cards
@@ -1711,7 +1718,13 @@ bubble scrolled by those eight pixels.
       the first one's way back with it. The ten seconds are the episode's,
       not the screen's: they run on while another episode or page is open,
       and coming back within them finds the row again with the time it has
-      left. Time the pointer held it still is kept too. A list read again,
+      left. Time the pointer held it still is kept too. How long a
+      removed clip's row stays is the window's, like a toast's, because
+      Undo puts the clip back at any time. Removed work, a search or a
+      clip made by hand that stopped, is forgotten by the Go side once its
+      time is up, so its row runs down over the time the Go side keeps,
+      `VideoState.putBack` before it has answered and the job's
+      `away.whole` after. A list read again,
       after a search, a render or an undo, leaves the rows as they are, and
       an undo that puts the clip back makes it a clip again. Leaving the
       episode, or any of those, used to take every way back with it.
@@ -1750,8 +1763,10 @@ bubble scrolled by those eight pixels.
       that the ruler's step is a whole number of, so every line on the
       range picker is a place an edge can land: five minutes on a four
       hour episode and five seconds on a six minute one, and the ends of
-      the episode win over the step. Every
-      window the app places itself lands on a step of the same kind,
+      the episode win over the step. The round steps come from the app's
+      Go side with the window, `WindowLimits.Rounds`, and the range picker
+      only picks the one that fits how wide it is drawn. Every
+      window the app places itself lands on one of the same steps,
       chosen from the length of the video alone and never from how wide
       the app is, about a 180th of the video, two minutes for four hours,
       its start and its length, so the app's own half hour of a four hour
@@ -2553,7 +2568,9 @@ found is a place in the video, and I and O make a clip there.
   hand on a part on the range picker still lights it. Walked to with the keys it lit nothing on the range picker,
   found by Tim. The parts give way as the work hears, from what is heard, not
   from the transcript, which is saved in pieces: a search hearing half an
-  hour took the parts away in thirds, found by Tim. While the work hears
+  hour took the parts away in thirds, found by Tim. What is heard, and
+  what of the window, comes from Go in the state of the video,
+  `VideoState.heard` and `WindowView.heard`, see `engine/reached.go`. While the work hears
   into a part, its dots stand still on the range picker's grid and its
   left edge wipes over them as it goes.
 - **Escape steps back wherever the keyboard is**, unless the keyboard is
@@ -2586,8 +2603,8 @@ another. The same words from the same place while they show come in on
 top again with their time started again, rather than twice. It is
 300 px wide, one width for every toast so a stack reads as one column,
 which Tim found 340 px a little too wide for. A toast about a video shows while that video is on
-screen and waits while another is. Its time, the ten seconds a removed
-clip has to be put back, runs down from the moment it comes, in the
+screen and waits while another is. Its time, ten seconds, the window's
+own, `newsShows` in `lib/removed.ts`, runs down from the moment it comes, in the
 same fill, and stands still while the pointer is on it. Its cross takes it away at
 once. It wears the red of a removed row over the dark of the app, with
 no line round it. The first one waited for the pointer before its time
@@ -2911,7 +2928,11 @@ lies on its side. Plan row 3.25, the design is in
   captions stand on it rotated. The picture turns with the frame on the
   video preview, not with the playhead, which runs ahead of its frames
   when it is dragged: over a cut, the picture turns when the first frame
-  from the other side is there.
+  from the other side is there. The turn shown at once is the one the
+  engine saves: the state of the video carries how each part of the
+  chosen clip turns, `VideoState.turns`, worked out by `engine.TurnClip`,
+  the rule `RotatePart` writes with, so the answer changes nothing on
+  screen.
 - **A rotation belongs to the video, not to the cuts.** Rotate turns the
   stretch of the video the part shows, from the middle of the cut before
   it to the middle of the cut after, where the phone was turned. A part at
@@ -3383,9 +3404,16 @@ by hand under **Advanced**, **Model in the cloud**, belongs to the company
 its name says, `claude-` or `gpt-`, and is in the list too, so the list
 never names nothing.
 
-The decisions behind the row, which company a model belongs to, what the
-list offers, and what the line says and how it stands in every state, are
-in `frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
+How each choice stands at rest, whether a key, a download or a model
+that does not work is in the way, is the Go side's to judge, for every
+model in the list at once, `Standing` in `cmd/framefairy-app/standing.go`,
+sent with the models by `Setup`, so a click on any of them shows how it
+stands in the frame of the click. The speech model in use is judged the
+same way. `standing_test.go` holds each case. The settings only word it,
+and lay the work in hand over it, a download on its way, one that stopped
+and a search that uses the model, the way every place shows work, from
+its job. The wording and which company a model belongs to are in
+`frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
 somebody can click their way into, run by `make interface` and CI.
 
 The line under the choice says what it costs: a few cents a video and

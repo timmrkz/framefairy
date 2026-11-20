@@ -490,6 +490,10 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 		}
 		return heardSilence(window.Start, end, silenceDB), nil
 	}
+	// What it hears is told to the video's Episode as it goes, so what has
+	// been heard is the engine's to say before it is saved, see reached.go.
+	ep := e.Episode(path)
+	defer ep.reachEnds()
 	args := audioFrom(path, first, e.pictureStart(ctx, path))
 	e.Log.Detail("ffmpeg %s", strings.Join(args, " "))
 	// Its own context, so stopping at the end of the window can end ffmpeg
@@ -643,8 +647,9 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 		part := math.Min((share.before+done)/math.Max(share.total, 1), 1)
 		// Every chunk says how far the audio has been heard, not only
 		// every save, so what shows it moves with the work.
-		e.Log.ProgressTo("transcribing", part, left, share.part.Start,
-			min(max(covered, share.part.Start), share.part.End))
+		reached := min(max(covered, share.part.Start), share.part.End)
+		ep.reach(share.part.Start, reached)
+		e.Log.ProgressTo("transcribing", part, left, share.part.Start, reached)
 	}
 
 	// Where the window ends, in samples from its start. The chunk is cut

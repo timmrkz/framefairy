@@ -124,7 +124,7 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
 
   test("a clip made by hand being removed says so, and is Stopped as it was once it is not", () => {
     const hand = job({ id: "h", kind: "clip", state: "stopped", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
-    const away = { spent: 3, together: "away h", onputback: nothing, onhold: nothing };
+    const away = { spent: 3, whole: 10, together: "away h", onputback: nothing, onhold: nothing };
     const [row] = arriving([hand], never, nothing, { remove: nothing, away: () => away });
     expect(row.away).toBe(away);
     // Why its work could not be removed is a toast, never its line.

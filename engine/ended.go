@@ -46,21 +46,8 @@ func SearchEnded(r JobRecord, done bool, found int, heard [][2]float64, duration
 	if to <= 0 {
 		to = duration
 	}
-	if heardOver(heard, r.From, to) {
+	if HeardOver(heard, r.From, to) {
 		return EndedFinding
 	}
 	return EndedHearing
-}
-
-// heardOver says whether the parts heard cover from..to, all but half a
-// second of it, the room a window cut at the end of the video leaves.
-func heardOver(parts [][2]float64, from, to float64) bool {
-	in := 0.0
-	for _, p := range parts {
-		a, b := max(p[0], from), min(p[1], to)
-		if b > a {
-			in += b - a
-		}
-	}
-	return in >= to-from-0.5
 }

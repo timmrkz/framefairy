@@ -640,14 +640,19 @@
     return v.name === "episode" && v.path === path;
   }
 
-  function summary(ep: EpisodeStatus): string {
+  // The line under a video's name: how far it is transcribed, as Go says
+  // it, see EpisodeStatus.transcript, then its plans and its shorts.
+  const transcribed: Record<EpisodeStatus["transcript"], (ep: EpisodeStatus) => string> = {
+    whole: () => "Transcribed",
+    changed: () => "Changed since transcription",
+    to: (ep) => `Transcribed to ${clock(ep.covered)}`,
+    parts: () => "Transcribed in parts",
+    none: () => "Not transcribed",
+  };
+  function summary(listed: EpisodeStatus): string {
+    const ep = statusOf(listed);
     if (ep.missing) return "File not found";
-    const parts: string[] = [];
-    if (ep.transcribed) parts.push("Transcribed");
-    else if (ep.transcriptStale) parts.push("Changed since transcription");
-    else if (ep.heard?.length === 1 && ep.covered > 0) parts.push(`Transcribed to ${clock(ep.covered)}`);
-    else if (ep.heard?.length) parts.push("Transcribed in parts");
-    else parts.push("Not transcribed");
+    const parts: string[] = [transcribed[ep.transcript]?.(ep) ?? "Not transcribed"];
     const plans = ep.plans?.length ?? 0;
     if (plans) parts.push(plans === 1 ? "1 plan" : `${plans} plans`);
     if (ep.rendered) parts.push(`${ep.rendered} rendered`);
@@ -662,20 +667,23 @@
     return `${base.replace(/\.[^.]+$/, "")}.framefairy`;
   }
 
+  // The colour of a video's dot. Busy, from its jobs and the presses on
+  // their way, see working. Otherwise how it stands as Go says it, from
+  // the newest state of the video, or the library before any state came:
+  // a file gone or a failed search in the colour of an error, a search
+  // that stopped or a file changed since it was transcribed in the colour
+  // of a warning, see EpisodeStatus.stands.
+  const dots: Record<EpisodeStatus["stands"], string> = { failed: "err", look: "warn", made: "ok", "": "" };
   function dotFor(ep: EpisodeStatus): string {
     if (working(ep.source)) return "busy";
-    if (ep.missing) return "err";
-    // A search that stopped says so here as well as in its row, so it can
-    // be found from the sidebar: stopped or cut off in the colour of a
-    // warning, failed in the colour of an error. One set aside has no row,
-    // so it says nothing here either, issue #436.
-    const found = jobs.search(ep.source);
-    const search = found?.aside ? undefined : found;
-    if (search?.state === "failed") return "err";
-    if (search?.state === "interrupted" || search?.state === "stopped") return "warn";
-    if (ep.transcriptStale) return "warn";
-    if (ep.plans?.length) return "ok";
-    return "";
+    return dots[statusOf(ep).stands] ?? "";
+  }
+
+  // A video's status from the newest state of it Go sent, or as the
+  // library listed it before any state came, so the dot and the line
+  // under the name say the same.
+  function statusOf(listed: EpisodeStatus): EpisodeStatus {
+    return jobs.statuses[listed.source] ?? listed;
   }
 
   // A pointer that lands anywhere else takes the keyboard with it. Clicking
