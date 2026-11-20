@@ -80,6 +80,11 @@ One folder for every episode, `~/.framefairy/training` unless `FRAMEFAIRY_TRAINI
 `--training-dir` or the app's setting says otherwise. Append only, one JSON
 record per line, in `plans.jsonl` and `decisions.jsonl`.
 
+A plan record is found by where it starts in `plans.jsonl`, which the
+engine keeps while it runs and reads on only for what was appended since,
+see `planIndex` in `engine/planindex.go`. So a trim let go, which records
+against its plan, reads one record however many searches came before it.
+
 The records do not live with an episode. Letting go of a video takes
 everything the app made of it, work folder and all, and the records outlive
 that: they are examples of what a model was asked and what a person did with

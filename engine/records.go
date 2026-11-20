@@ -29,6 +29,8 @@ type Records struct {
 	// finish at once do not each write over the other.
 	write      sync.Mutex
 	speedWrite sync.Mutex
+	// plans is where each plan record starts, see planIndex.
+	plans planIndex
 }
 
 // NewRecords keeps the records on fsys, in the training folder dir and
