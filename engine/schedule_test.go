@@ -590,11 +590,16 @@ func TestTheFramesAroundAPlaceGoToTheWindow(t *testing.T) {
 	for f := 49; f <= 48+lookAhead; f++ {
 		_ = st.give(t, f)
 	}
+	// The frames before it, from the key frame before the furthest.
+	behind := dec.next(t)
+	for f := behind.from; f <= 46; f++ {
+		_ = behind.give(t, f)
+	}
 	var got []int
 	for _, n := range <-near {
 		got = append(got, n.Frame)
 	}
-	if want := []int{49, 50, 51, 52}; !slices.Equal(got, want) {
+	if want := []int{33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 49, 50, 51, 52}; !slices.Equal(got, want) {
 		t.Fatalf("the window was handed frames %v, want %v", got, want)
 	}
 }

@@ -1043,7 +1043,7 @@ func (s *Schedule) readAhead() {
 
 // Near hands over the frames kept around a place the hand rests on, the
 // ones the runs for it read on the way, after it and before it, once the
-// runs for its frame and the frames after it have ended: lookBack frames
+// runs for its frame and the frames around it have ended: lookBack frames
 // before it and lookAhead after, and of those only the ones has says the
 // window does not hold. The window keeps them, so the arrow keys and a
 // slow drag find their frames with no request, see app.ts. A newer look
@@ -1053,7 +1053,7 @@ func (s *Schedule) Near(ctx context.Context, l Hand, has func(frame int) bool) [
 	s.mu.Lock()
 	for {
 		r := s.run
-		if r == nil || r.kind != runHand && r.kind != runAfter || !r.sized(l) || r.target < from || r.from > to {
+		if r == nil || r.kind == runAhead || !r.sized(l) || r.target < from || r.from > to {
 			break
 		}
 		s.mu.Unlock()

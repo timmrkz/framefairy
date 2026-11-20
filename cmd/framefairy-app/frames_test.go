@@ -552,11 +552,12 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 	}
 
 	// The frames the decoder read around the click, which the window does
-	// not hold yet, the one before it held already.
+	// not hold yet, the one before it held already: 14 before it and 4
+	// after.
 	near := httptest.NewRecorder()
 	handler.ServeHTTP(near, httptest.NewRequest("GET", "/frames/near?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {grid}, "frame": {"30"}, "has": {"29"}}.Encode(), nil))
-	if n := near.Body.Len(); near.Code != http.StatusOK || n != 4*(8+32*18*4) {
-		t.Errorf("the frames near answered %d with %d bytes, want the 4 frames after the click", near.Code, n)
+	if n := near.Body.Len(); near.Code != http.StatusOK || n != 18*(8+32*18*4) {
+		t.Errorf("the frames near answered %d with %d bytes, want the 14 frames before the click and the 4 after", near.Code, n)
 	}
 
 	// A frame read ahead is found kept, nothing decoded for it.
