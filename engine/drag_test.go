@@ -82,6 +82,8 @@ type simDecoder struct {
 	mu   sync.Mutex
 	idle []int
 	busy []simSpan
+	// decoded counts every frame the decoder decoded, handed over or not.
+	decoded int
 	// made is every frame the decoder handed over, when.
 	made []simMark
 	// told is what the decoder did, for a drag that missed a target.
@@ -228,6 +230,9 @@ func (d *simDecoder) Stream(ctx context.Context, grid framewire.Grid, from float
 			return err
 		}
 		last = f
+		d.mu.Lock()
+		d.decoded++
+		d.mu.Unlock()
 		if !out {
 			continue
 		}

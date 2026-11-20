@@ -260,8 +260,22 @@ closed for standing unused.
     hand does, since nobody knows where it goes next. A hand at rest has
     the frames of the words beside read before the 15 before it: those
     cost the frames from the key frame before them, and a word key
-    pressed next waited for them, a step a word on took 32 % longer. A
-    hand that moves further at a step than `lookFast`, eight frames, has
+    pressed next waited for them, a step a word on took 32 % longer. The
+    words' frames go to the window as soon as they are read, not once
+    the frames behind are read too, which came hundreds of milliseconds
+    later. A read of the words ahead under way goes on when the hand
+    moves onto a frame the window holds, rather than being stopped and
+    started again as a new stream that seeks, and only a run that has
+    handed a frame reads on to them: one still decoding from the key
+    frame before it stands nowhere near. The frames behind read from
+    the first one missing, so a stream that stands before them reads on
+    to it, and the frames the window said it holds count as there, so
+    none is decoded again for it. The window keeps 64 frames, two
+    places with the words beside each, and makes the words' frames it
+    holds the ones used last when the frames read ahead come. With 40 it
+    let go of them for the frames that came. The speed walk's presses,
+    simulated in `engine/press_test.go`, decoded 587 frames and now 239.
+    A hand that moves further at a step than `lookFast`, eight frames, has
     only its own frame read. The run under way goes on where reading on is the
     quickest way to what is wanted, and is stopped between two frames
     where a seek to a key frame is quicker. A drag that stood still in

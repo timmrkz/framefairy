@@ -63,6 +63,11 @@ type Schedule struct {
 	keys map[framewire.Grid][]keyFrame
 	// What to read while the hand rests, see Ahead.
 	ahead *aheadWork
+	// held are the frames the window said it holds with its newest
+	// Ahead, of the grid and size heldOf says: the frames around the hand
+	// are not read again for it, see want.
+	held   map[int]bool
+	heldOf keptKey
 	// The play that has the decoder, see Play.
 	play *Play
 	// Where the newest look of the hand and the newest Ahead stood among
@@ -546,6 +551,7 @@ type work struct {
 // under way does it, see goesOn. A run that does not is stopped between
 // two frames and the one that does is started. Under the lock.
 func (s *Schedule) plan() {
+	s.answerAhead()
 	if s.play != nil {
 		return
 	}
@@ -558,7 +564,7 @@ func (s *Schedule) plan() {
 			r.kind, r.target = j.kind, max(j.to, r.next-1)
 			return
 		}
-		if !ok && s.readsOn(r) {
+		if !ok && (s.readingAhead(r) || s.readsOn(r)) {
 			return
 		}
 		s.stopRun()
@@ -581,7 +587,15 @@ func (s *Schedule) want() (work, bool) {
 		return work{}, false
 	}
 	h := s.hand
-	has := func(f int) bool { return s.kept.has(keptKey{grid: h.Grid, w: h.W, h: h.H, frame: f}) }
+	// A frame is there when the schedule keeps it or the window holds
+	// it: read again for the window, a frame it holds is decoded and not
+	// sent, see Near. The schedule lets go of frames the window holds, and
+	// the frames around the hand were read again from the key frame
+	// before them at every press of a key.
+	held := s.heldOf == keptKey{grid: h.Grid, w: h.W, h: h.H}
+	has := func(f int) bool {
+		return held && s.held[f] || s.kept.has(keptKey{grid: h.Grid, w: h.W, h: h.H, frame: f})
+	}
 	after, before := s.around()
 	// What is read around the place fits in the kept frames with room to
 	// spare, at any size of the video preview: a stream behind the hand
@@ -596,7 +610,7 @@ func (s *Schedule) want() (work, bool) {
 		}
 		return min(n, room/4)
 	}
-	if !has(h.Frame) && !h.Has {
+	if !s.kept.has(keptKey{grid: h.Grid, w: h.W, h: h.H, frame: h.Frame}) && !h.Has {
 		j := s.forHand(h, after)
 		for j.from < h.Frame && has(j.from) {
 			j.from++
@@ -624,8 +638,16 @@ func (s *Schedule) want() (work, bool) {
 		// One stream from the key frame before the furthest of them up
 		// to the kept ones: the frames from that key frame on are decoded
 		// either way, and the hand that goes on to the left wants them
-		// next.
-		return work{kind: runBefore, from: s.keyBefore(h.Grid, max(0, h.Frame-n)), to: b - 1, key: true}, true
+		// next. Where the first of them are kept, from the first that is
+		// not: the decoder reads on to it from a stream that stands
+		// before it, and decodes the rest from the key frame before it
+		// otherwise, without making pictures of frames kept already.
+		j := work{kind: runBefore, from: s.keyBefore(h.Grid, max(0, h.Frame-n)), to: b - 1, key: true}
+		for j.from < j.to && has(j.from) {
+			j.from++
+			j.key = false
+		}
+		return j, true
 	}
 	sides := []func() (work, bool){
 		func() (work, bool) { return ahead(most(after, false)) },
@@ -1003,6 +1025,7 @@ func (s *Schedule) Ahead(ctx context.Context, a Ahead) ([]Seen, error) {
 		return nil, ErrOvertaken
 	}
 	s.lastAhead = a.Sent
+	s.held, s.heldOf = has, keptKey{grid: a.Grid, w: a.W, h: a.H}
 	if old := s.ahead; old != nil {
 		s.ahead = nil
 		old.done <- aheadDone{err: ErrOvertaken}
@@ -1066,6 +1089,41 @@ func (s *Schedule) readAhead() {
 	a.done <- aheadDone{out: a.out}
 }
 
+// answerAhead hands the window the frames read ahead once none is left
+// to read, whatever the decoder does next: the first frame of the next
+// word was read in tens of milliseconds and then waited for the frames
+// behind the hand, hundreds, and a press of the word key in between
+// found it missing. Under the lock.
+func (s *Schedule) answerAhead() {
+	a := s.ahead
+	if a == nil || a.held {
+		return
+	}
+	if r := s.run; r != nil && r.kind == runAhead {
+		return
+	}
+	for _, read := range a.todo {
+		for f := read.from; f <= read.to; f++ {
+			if a.wants[f] {
+				return
+			}
+		}
+	}
+	s.ahead = nil
+	a.done <- aheadDone{out: a.out}
+}
+
+// readingAhead tells whether the run under way reads frames ahead that
+// are still to come, and is left to read them: a hand that moved onto a
+// frame the window holds wants nothing of the decoder, and a run stopped
+// for that and started again for the same frames is a new stream, which
+// seeks while the one stopped ends. Under the lock.
+func (s *Schedule) readingAhead(r *lookRun) bool {
+	a := s.ahead
+	return r.kind == runAhead && a != nil && !a.held && s.play == nil && len(s.waiting) == 0 &&
+		r.grid == a.grid && r.w == a.w && r.h == a.h && r.next <= r.target
+}
+
 // readsOn has the run under way read the next of the frames read ahead,
 // where reading on gets there sooner than a seek: the next word mostly
 // lies in the stretch the hand's run reads, and a stream of its own
@@ -1073,7 +1131,13 @@ func (s *Schedule) readAhead() {
 // the lock.
 func (s *Schedule) readsOn(r *lookRun) bool {
 	a := s.ahead
-	if a == nil || a.held || s.play != nil || len(s.waiting) > 0 || r.grid != a.grid || r.w != a.w || r.h != a.h {
+	// A run that has handed no frame yet may still decode its way from
+	// the key frame before its first: it stands nowhere near it, and a
+	// stream of its own reads on from wherever the decoder stands. A word
+	// key pressed 150 ms after the one before waited for frames read on
+	// from a stream that was still decoding from the key frame 23 frames
+	// back.
+	if a == nil || a.held || !r.gave || s.play != nil || len(s.waiting) > 0 || r.grid != a.grid || r.w != a.w || r.h != a.h {
 		return false
 	}
 	for len(a.todo) > 0 {
