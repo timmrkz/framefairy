@@ -748,6 +748,8 @@ func TestAPushTakesTwoMacJobs(t *testing.T) {
 // macJobs names the Mac jobs a run of the workflow at path starts: one
 // for each job on a Mac, one for each Mac in a job's matrix, and the
 // Mac jobs of a workflow of this repository a job calls.
+//
+// On the real disk: what is read is the repository's own workflows.
 func macJobs(t *testing.T, path string) []string {
 	t.Helper()
 	var wf struct {
@@ -802,6 +804,9 @@ func countMacs(v any) int {
 	return 0
 }
 
+// readYAML reads the workflow at path into v.
+//
+// On the real disk: what is read is the repository's own workflows.
 func readYAML(t *testing.T, path string, v any) {
 	t.Helper()
 	b, err := os.ReadFile(path)
