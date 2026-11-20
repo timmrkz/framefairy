@@ -618,6 +618,40 @@ func TestASearchReadsAheadOnlyOfAWindowStillToBeHeard(t *testing.T) {
 	}
 }
 
+// Before it hears, a search asks whether it reads ahead and what of its
+// window is left to hear. Both ask the transcript the machine holds, so
+// its file is read once for both, and not again while it is not written.
+func TestASearchReadsTheTranscriptOnceBeforeItHears(t *testing.T) {
+	t.Parallel()
+	files := &countedOpens{Fs: afero.NewMemMapFs(), name: TranscriptName(nil)}
+	v := videoReadAhead(t, NewMachine(files), t.Name())
+	v.hear(0, 40)
+	window := timed.Window{Start: 0, End: 60}
+	files.opens.Store(0)
+	for range 2 {
+		if !v.p.readsAhead(window) || len(v.p.unheard(window)) != 1 {
+			t.Fatal("a window heard to 40 s of 60 is heard")
+		}
+	}
+	if n := files.opens.Load(); n != 1 {
+		t.Errorf("the transcript was read %d times, want once", n)
+	}
+}
+
+// countedOpens counts how often the file called name is opened.
+type countedOpens struct {
+	afero.Fs
+	name  string
+	opens atomic.Int32
+}
+
+func (c *countedOpens) Open(path string) (afero.File, error) {
+	if filepath.Base(path) == c.name {
+		c.opens.Add(1)
+	}
+	return c.Fs.Open(path)
+}
+
 // heldRecognizer hears nothing until it is let go, so a test sees what a
 // search does while its window is still being heard.
 type heldRecognizer struct {

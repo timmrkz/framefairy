@@ -259,9 +259,10 @@ func (p *Project) warmModel(ctx context.Context, req PlanRequest) (ReadAhead, er
 // readsAhead says whether a search of window loads the model while it
 // hears, see warmAhead: only when some of the window is still to be
 // heard. A window heard already goes straight to finding, which loads
-// the model itself.
+// the model itself. It asks the transcript the machine holds, which the
+// search then hears from, so the files are read once for both.
 func (p *Project) readsAhead(window timed.Window) bool {
-	return len(Unheard(p.Files, p.Source, p.Base.ASRModel, window)) > 0
+	return len(p.unheard(window)) > 0
 }
 
 // warmAhead is warmModel beside the search of req, which Search starts
