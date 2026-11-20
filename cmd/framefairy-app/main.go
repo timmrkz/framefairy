@@ -390,6 +390,9 @@ type FrameFairy struct {
 	// toldOld is the videos whose old corrections.json was looked for, so
 	// it is looked for and said once, see oldCorrections.
 	toldOld sync.Map
+	// said is the cards of what was said sent last, to search, see
+	// SearchSaid.
+	said saidSent
 	// histories are the undo and redo of each episode, see history.go.
 	histories map[string]*history
 	// clearing counts the clearLetGo calls under way. Wait returns once

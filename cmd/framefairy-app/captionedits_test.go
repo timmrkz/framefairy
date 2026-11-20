@@ -725,3 +725,65 @@ func TestAWordCorrectedWithTheSearchOpenReadsCorrectedInItsCard(t *testing.T) {
 		t.Errorf("after the correction the cards read %s", after)
 	}
 }
+
+// The transcript search answers over the cards the window holds, the
+// ones Sentences sent last, issue #927: a word corrected since is found
+// as it was until the cards are read again, and then as it is now. A
+// search before any read of the cards reads them.
+func TestTheTranscriptSearchAnswersOverTheCardsSentLast(t *testing.T) {
+	e := newCaptionEditor(t)
+	finds := func(typed string) []string {
+		t.Helper()
+		found, err := e.svc.SearchSaid(e.mine, typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, f := range found {
+			out = append(out, fmt.Sprintf("%s %v", f.Clip, f.Bold))
+		}
+		return out
+	}
+	if got := finds("schulhof"); len(got) != 1 || !strings.HasPrefix(got[0], "clips.json/01 [[") {
+		t.Fatalf("schulhof, before any read of the cards, finds %v, want one card of clip 01 with a word in bold", got)
+	}
+	if got := finds("schulhfo"); len(got) != 1 {
+		t.Errorf("schulhfo, typed with a slip, finds %v, want the card of Schulhof", got)
+	}
+	at := -1.0
+	for _, w := range captionedWords() {
+		if w[2] == "Schulhof" {
+			at = w[0].(float64)
+		}
+	}
+	if _, err := e.svc.SetWord(context.Background(), e.mine, e.plan, "01", at, "Pausenhof"); err != nil {
+		t.Fatal(err)
+	}
+	if got, gone := finds("schulhof"), finds("pausenhof"); len(got) != 1 || len(gone) != 0 {
+		t.Errorf("before the cards are read again, schulhof finds %v and pausenhof %v, want the cards the window holds", got, gone)
+	}
+	if _, err := e.svc.Sentences(e.mine); err != nil {
+		t.Fatal(err)
+	}
+	if got, gone := finds("pausenhof"), finds("schulhof"); len(got) != 1 || len(gone) != 0 {
+		t.Errorf("once the cards are read again, pausenhof finds %v and schulhof %v", got, gone)
+	}
+}
+
+// A read of the cards that comes back after a later one leaves the later
+// one's cards to search, the cards the window keeps too.
+func TestAnOlderReadOfTheCardsNeverTakesTheLatersPlace(t *testing.T) {
+	var k saidSent
+	first, second := k.begin(), k.begin()
+	k.keep("/v/ep.mp4", second, []engine.SentenceView{{Start: 1, End: 2, Text: "neu"}})
+	k.keep("/v/ep.mp4", first, []engine.SentenceView{{Start: 1, End: 2, Text: "alt"}})
+	if got := k.of("/v/ep.mp4").Answer("alt"); len(got) != 0 {
+		t.Errorf("alt, from the older read, finds %v", got)
+	}
+	if got := k.of("/v/ep.mp4").Answer("neu"); len(got) != 1 {
+		t.Errorf("neu, from the later read, finds %v", got)
+	}
+	if k.of("/v/other.mp4") != nil {
+		t.Error("another video's cards are searched as this one's")
+	}
+}

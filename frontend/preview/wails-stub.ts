@@ -2060,6 +2060,20 @@ const Answers = {
       }
       case "Sentences":
         return Promise.resolve(sentences());
+      // The cards that hold what was typed, with the words that hold it
+      // in bold. The Go side also finds a word typed with a slip, see
+      // engine.SaidSearch, which no layout here needs.
+      case "SearchSaid": {
+        const want = String(args[1]).trim().toLowerCase().replace(/\s+/g, " ");
+        return Promise.resolve(
+          sentences().flatMap((c) => {
+            const at = c.text.toLowerCase().indexOf(want);
+            if (!want || at < 0) return want ? [] : [{ start: c.start, bold: [] }];
+            const words = [...c.text.matchAll(/\S+/g)].filter((m) => m.index < at + want.length && m.index + m[0].length > at);
+            return [{ start: c.start, bold: words.map((m) => [m.index, m.index + m[0].length]) }];
+          }),
+        );
+      }
       // Removing waits for the episode's work to stop, which takes a
       // moment while a search runs. Every call is counted, so a probe can
       // see whether a second click sent a second removal.

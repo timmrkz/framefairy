@@ -405,6 +405,15 @@ export interface Sentence {
   clip?: string;
 }
 
+// A card that answers what is typed in the transcript search: where it
+// starts and the clip it is named for, which find it among the cards, and
+// the words to set in bold, from and to in its text.
+export interface CardFound {
+  start: number;
+  clip?: string;
+  bold: [number, number][] | null;
+}
+
 // One line of a caption, the way the render lays it out.
 export interface CaptionLine {
   words: Word[];
@@ -1183,6 +1192,10 @@ export const api = {
   // What the video says, sentence by sentence, as far as it has been
   // heard, for searching it in the clip column.
   sentences: (path: string) => call<Sentence[] | null>("Sentences", path),
+  // The cards that answer what is typed in the search in the clip
+  // column, and the words to set in bold in each. The Go side answers
+  // over the cards it sent last for the video.
+  searchSaid: (path: string, typed: string) => call<CardFound[] | null>("SearchSaid", path, typed),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),
   // Removes one word from the captions of one clip alone, the word heard
