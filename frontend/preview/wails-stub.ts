@@ -2078,7 +2078,11 @@ const Answers = {
           sentSentences().flatMap((c) => {
             const at = c.lower.indexOf(want);
             if (!want || at < 0) return want ? [] : [{ start: c.start, bold: [] }];
-            const words = [...c.text.matchAll(/\S+/g)].filter((m) => m.index < at + want.length && m.index + m[0].length > at);
+            // A word from its first letter or digit to its last, the
+            // marks around it not bold, as in engine.SaidSearch.
+            const words = [...c.text.matchAll(/[\p{L}\p{N}](?:\S*[\p{L}\p{N}])?/gu)].filter(
+              (m) => m.index < at + want.length && m.index + m[0].length > at,
+            );
             return [{ start: c.start, bold: words.map((m) => [m.index, m.index + m[0].length]) }];
           }),
         );

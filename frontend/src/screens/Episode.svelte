@@ -490,7 +490,11 @@
         .then((found) => {
           if (ticket === foundAsked) sayFound = found ?? [];
         })
-        .catch((err) => oops(errorText(err)));
+        .catch((err) => {
+          // Only the answer to the last question says it failed, once,
+          // and not every letter typed before it.
+          if (ticket === foundAsked) oops(errorText(err));
+        });
     });
   });
   // The part not transcribed yet under the hand, in the list, lit on the

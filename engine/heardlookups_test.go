@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -33,21 +32,11 @@ func englishHeard() *Transcript {
 	return fromStored(words, frames, start, -20, &floor)
 }
 
-// eagerKeys is the key of each heard word as hear made them before it
-// left them until asked.
-func eagerKeys(raw []timed.Cue) []string {
-	keys := make([]string, len(raw))
-	taken := map[int64]bool{}
-	for i, w := range raw {
-		ms := int64(math.Round(w.Start * 1000))
-		for taken[ms] {
-			ms++
-		}
-		taken[ms] = true
-		keys[i] = heardKey(ms)
-	}
-	return keys
-}
+// englishKeys are the keys the words of englishHeard are kept by, the
+// millisecond each was heard at, and the second of the two heard at
+// 59.9 s the millisecond after.
+var englishKeys = strings.Fields("h59100 h59300 h59500 h59700 h59900 h59901 h60300 h60500 h60700 h60900 " +
+	"h61100 h61300 h61500 h61700 h61900 h62100 h62300 h62500 h62700")
 
 // A read of a transcript no longer works out its language and the key of
 // every word until something asks. Whoever asks first, the video or a
@@ -60,10 +49,13 @@ func TestTheLanguageAndTheKeysAreTheSameWhoeverAsksFirst(t *testing.T) {
 	if want != "en" {
 		t.Fatalf("the test needs words read as English, they read as %q", want)
 	}
+	if n := len(englishHeard().RawWords); n != len(englishKeys) {
+		t.Fatalf("englishHeard has %d words and %d keys", n, len(englishKeys))
+	}
 	for _, first := range []string{"the video", "a clip"} {
 		tr := englishHeard()
 		corrections := map[string]string{}
-		for i, key := range eagerKeys(tr.RawWords) {
+		for i, key := range englishKeys {
 			corrections[key] = []string{"die", "Leute", "kamen", "und", "blieben"}[i%5]
 		}
 		clip := Clip{Corrections: corrections}
@@ -80,7 +72,7 @@ func TestTheLanguageAndTheKeysAreTheSameWhoeverAsksFirst(t *testing.T) {
 		if got := own.Language(); got != want {
 			t.Errorf("%s asked first: the clip's words are in %q, want %q", first, got, want)
 		}
-		for i, key := range eagerKeys(tr.RawWords) {
+		for i, key := range englishKeys {
 			if got := tr.keyAt(i); got != key {
 				t.Errorf("%s asked first: heard word %d is kept by %q, want %q", first, i, got, key)
 			}
@@ -104,7 +96,7 @@ func TestTheLanguageAndTheKeysAreTheSameWhoeverAsksFirst(t *testing.T) {
 func TestALanguageAndKeysAskedForTogetherAreWorkedOutOnce(t *testing.T) {
 	t.Parallel()
 	tr := englishHeard()
-	keys := eagerKeys(tr.RawWords)
+	keys := englishKeys
 	var wg sync.WaitGroup
 	languages := make([]string, 16)
 	found := make([]bool, 16)
