@@ -78,3 +78,49 @@ func BenchmarkOpeningALongVideo(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkSavingAPartHeard times one save while a video is heard, every
+// 8 s: the transcript read, the new part joined in and both files
+// written, with the video heard up to a minute before its end.
+func BenchmarkSavingAPartHeard(b *testing.B) {
+	for _, hours := range []float64{1, 2, 4} {
+		fsys, source := longVideo(b, hours)
+		stamp, err := stampOf(fsys, source)
+		if err != nil {
+			b.Fatal(err)
+		}
+		path := filepath.Join(LogsDir(source), TranscriptName(nil))
+		file, words, frames, ok := readTranscriptFile(fsys, path, stamp, "m")
+		if !ok {
+			b.Fatal("no transcript")
+		}
+		seconds := hours * 3600
+		cut := seconds - 60
+		var kept, raw []timed.Cue
+		for _, w := range words {
+			if w.Start < cut {
+				kept = append(kept, w)
+			}
+			if w.Start >= cut-8 && w.Start < cut+8 {
+				raw = append(raw, w)
+			}
+		}
+		end := num.Float(seconds)
+		file.Parts, file.Words = [][2]num.Float{{0, num.Float(cut)}}, storedWords(kept)
+		m := NewMachine(fsys)
+		b.Run(fmt.Sprintf("%.0fh", hours), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				b.StopTimer()
+				if err := writeTranscript(fsys, path, file, frames); err != nil {
+					b.Fatal(err)
+				}
+				b.StartTimer()
+				if err := m.addHeard(path, stamp, "m", float64(end), -25, timed.Window{Start: cut, End: cut + 8}, raw,
+					frames[int(cut/timed.FrameSeconds)-800:int(cut/timed.FrameSeconds)+800], cut-8); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}

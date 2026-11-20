@@ -1,9 +1,7 @@
 package engine
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -65,7 +63,7 @@ type transcriptFile struct {
 	// nothing there, see heard.
 	Parts [][2]num.Float `json:"parts,omitempty"`
 	End   num.Float      `json:"end,omitempty"`
-	Words [][3]any       `json:"words"`
+	Words []storedWord   `json:"words"`
 }
 
 // heard is what the file has heard, in seconds, in order and apart. An
@@ -136,15 +134,11 @@ func framesPath(jsonPath string) string {
 // in one step. The words file says how far the transcript goes, and the
 // frames only ever grow, so a reader never sees words without their frames.
 func writeTranscript(fsys afero.Fs, path string, file transcriptFile, frames []float32) error {
-	body, err := MarshalPlan(file)
+	body, err := encodeTranscript(file)
 	if err != nil {
 		return err
 	}
-	var raw bytes.Buffer
-	if err := binary.Write(&raw, binary.LittleEndian, frames); err != nil {
-		return err
-	}
-	if err := fileio.WriteAtomic(fsys, framesPath(path), raw.Bytes()); err != nil {
+	if err := fileio.WriteAtomic(fsys, framesPath(path), writtenFrames(frames)); err != nil {
 		return err
 	}
 	return fileio.WriteAtomic(fsys, path, body)
@@ -160,14 +154,6 @@ func meanOfFrames(frames []float32) float64 {
 		power += math.Pow(10, float64(f)/10)
 	}
 	return 10 * math.Log10(power/float64(len(frames))+1e-20)
-}
-
-func storedWords(words []timed.Cue) [][3]any {
-	out := make([][3]any, len(words))
-	for i, w := range words {
-		out[i] = [3]any{num.Float(num.RoundTo(w.Start, 3)), num.Float(num.RoundTo(w.End, 3)), w.Text}
-	}
-	return out
 }
 
 // Coverage says how far the transcript reaches from the start of the
@@ -319,7 +305,7 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 	[]float32, bool) {
 	var file transcriptFile
 	data, err := afero.ReadFile(fsys, path)
-	if err != nil || decodeJSON(data, &file) != nil {
+	if err != nil || decodeTranscript(data, &file) != nil {
 		return file, nil, nil, false
 	}
 	if file.Version < oldestTranscript || file.Version > transcriptVersion ||
@@ -327,11 +313,11 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 		return file, nil, nil, false
 	}
 	raw, err := afero.ReadFile(fsys, framesPath(path))
-	if err != nil || len(raw)%4 != 0 {
+	if err != nil {
 		return file, nil, nil, false
 	}
-	frames := make([]float32, len(raw)/4)
-	if binary.Read(bytes.NewReader(raw), binary.LittleEndian, frames) != nil {
+	frames, ok := readLoudness(raw)
+	if !ok {
 		return file, nil, nil, false
 	}
 	// The parts are what the file says it heard, in order and apart. A
@@ -366,19 +352,13 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 		}
 		parts = file.heard()
 	}
-	var words []timed.Cue
-	for _, item := range file.Words {
-		low, ok1 := num.AsFloat(item[0])
-		high, ok2 := num.AsFloat(item[1])
-		text, ok3 := item[2].(string)
-		if !ok1 || !ok2 || !ok3 {
-			return file, nil, nil, false
-		}
+	words := make([]timed.Cue, 0, len(file.Words))
+	for _, w := range file.Words {
 		// Only the words of what it heard. A file of version 2 stopped
 		// where a search waited kept words up to where it stopped, and the
 		// word across that edge is heard again, whole.
-		if inParts(parts, low) {
-			words = append(words, timed.Cue{Start: low, End: high, Text: text})
+		if inParts(parts, w.Start) {
+			words = append(words, timed.Cue(w))
 		}
 	}
 	return file, words, frames, true
@@ -581,9 +561,15 @@ func (m *Machine) addHeard(path string, stamp sourceStamp, model string, duratio
 		all[i] = -90
 	}
 	heardFrame := func(n int) bool { return inParts(parts, (float64(n)+0.5)*timed.FrameSeconds) }
-	for n, f := range hadFrames {
-		if heardFrame(n) {
-			all[n] = f
+	// Only the frames of a part, and a frame either side, can be heard,
+	// so only those are asked rather than every frame of the video.
+	for _, p := range parts {
+		from := max(0, int(math.Floor(p[0]/timed.FrameSeconds))-1)
+		to := min(len(hadFrames), int(math.Ceil(p[1]/timed.FrameSeconds))+1)
+		for n := from; n < to; n++ {
+			if heardFrame(n) {
+				all[n] = hadFrames[n]
+			}
 		}
 	}
 	first := int(math.Round(read / timed.FrameSeconds))
