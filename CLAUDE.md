@@ -806,15 +806,21 @@ request.
   jobs at once, for every branch together, so each Mac job a push takes
   is a push of someone else's that waits. A push takes one, the build to
   update to, without warnings, and a second, the Go tests on a Mac, only
-  when it changes code only a Mac builds. What a Mac does differently is
-  in a file named for it, `*_darwin.go` or `*_darwin_test.go`, never
-  behind `runtime.GOOS` in a file every system builds, and
-  `internal/maccode` fails a pull request that breaks that, because the
-  filter that starts the Mac's tests looks for those names. What no file
+  when it changes code only a Mac builds, a `_darwin` file, `go.mod` or
+  `go.sum`. What a Mac does differently is in a file named for it,
+  `*_darwin.go` or `*_darwin_test.go`, never behind `runtime.GOOS` in a
+  file every system builds, and `internal/maccode` fails a pull request
+  that breaks that, because the filter that starts the Mac's tests looks
+  for those names. The one use it allows is `runtime.GOOS` handed on as
+  a value, to a function that takes the system as a parameter, like
+  `SystemMedia`, whose test on Linux hands it `"darwin"`. What no file
   says is the Mac's, its disk's names, the ffmpeg built for it and the
   app opened from outside, runs every night on main, in
-  `mac-nightly.yml`, and by hand on a branch. Code that never runs on a
-  Mac, like the licence server, is tested on Linux only. The race
+  `mac-nightly.yml`. A session whose change touches `internal/outside/`,
+  `probe_outside.go`, the Unlock link or `scripts/bundle-macos.sh`
+  starts `mac-nightly.yml` on its branch through the GitHub API, and
+  reads the run before it says the pull request is ready. Code that
+  never runs on a Mac, like the licence server, is tested on Linux only. The race
   detector runs on Linux only, which covers the same Go code. A new Mac
   job needs a reason that can be said out loud.
 - **Slow tests run side by side.** A test that takes over a second calls

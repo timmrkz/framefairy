@@ -222,7 +222,7 @@ the same one you run on your Mac, see
 - **fuzz**, when Go changed: `make fuzz` on Linux, going on from the
   fuzz cache main left.
 - **macos**, when code only a Mac builds changed, a `*_darwin*.go`
-  file: `make unit` against our own ffmpeg, which on a Mac leaves out
+  file, or `go.mod` or `go.sum`: `make unit` against our own ffmpeg, which on a Mac leaves out
   the race detector, which Linux runs.
 - **build** of `builds.yml`, the build to update to, when the app
   changed: `make app WERROR=1` on a Mac, which fails on a warning from

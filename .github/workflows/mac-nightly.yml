@@ -8,8 +8,9 @@
 # link, the ffmpeg we build for the Mac, and what macOS does around the
 # app, a link that opens it, the keychain, quitting and starting again.
 #
-# Run workflow, on the Actions page, runs it on any branch, for a change
-# whose Mac side is worth knowing before it is merged.
+# Run workflow, on the Actions page or through the API, runs it on any
+# branch. A session starts it on its branch when its change touches what
+# only this tests, see On a Mac in docs/BUILD.md.
 name: Nightly on a Mac
 
 on:

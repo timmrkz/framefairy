@@ -239,10 +239,16 @@ which reads this file.
     [2026-11-14-update-decisions-in-go.md](decisions/2026-11-14-update-decisions-in-go.md).
 14. What a Mac does differently is in a file named for the Mac,
     `*_darwin.go` or `*_darwin_test.go`, with its counterpart for the
-    other systems in a file built for them, `//go:build !darwin`. Never a
-    branch on `runtime.GOOS` that a Mac and Linux answer differently in a
-    file every system builds. So every pull request that changes code
-    only a Mac runs gets the Go tests on a Mac. Held by
+    other systems in a file built for them, `//go:build !darwin`. In a
+    file every system builds, `runtime.GOOS` is only compared with a
+    system a Mac and Linux answer alike, or handed on as a value, to a
+    function of this module, a field or a return, never used any other
+    way. The code that takes it as a value takes the system as a
+    parameter, like `SystemMedia`, and its test on Linux hands it
+    `"darwin"`. So a pull request that changes a `_darwin` file, or
+    `go.mod` or `go.sum`, which bring the modules' code only a Mac
+    builds, gets the Go tests on a Mac, and the Mac arm of a function
+    that takes the system is tested on Linux. Held by
     `internal/maccode`, see
     [2026-11-20-a-mac-only-for-mac-code.md](decisions/2026-11-20-a-mac-only-for-mac-code.md).
 
