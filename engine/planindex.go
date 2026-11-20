@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sync"
+
+	"framefairy/engine/fileio"
 )
 
 // planIndex is where each plan record starts in plans.jsonl, by its plan
@@ -18,8 +20,10 @@ import (
 // by reading them all, so a trim grew slower with every search made.
 //
 // The file is read once, and then only what was appended since. It is
-// read again from the start when it is not the file it was: shorter than
-// what was read, starting with other bytes, or in another folder. The app
+// read again from the start when it is not the file it was, by
+// fileio.Grew: shorter than what was read, or another file put in its
+// place, and where the system cannot tell one file from another,
+// starting with other bytes. A file in another folder is another file. The app
 // removes it to clear the training, and framefairy-train reads it but
 // never writes it. A record is checked against what was looked for once
 // it is read, so a lookup never trusts the index over the file.
@@ -30,6 +34,8 @@ type planIndex struct {
 	// whole line, and head its first bytes.
 	size int64
 	head []byte
+	// seen is the file as it was when it was last read.
+	seen fs.FileInfo
 	// Where the records are, oldest first, by each key.
 	byID, byReply, byExample map[string][]lineSpan
 }
@@ -62,12 +68,18 @@ func (x *planIndex) newest(r *Records, of func(*planIndex) map[string][]lineSpan
 		return PlanRecord{}, false
 	}
 	defer f.Close()
-	if !x.same(f, path) {
-		x.reset(path)
-	}
-	if err := x.catchUp(f); err != nil {
+	info, err := f.Stat()
+	if err != nil {
+		x.reset("")
 		return PlanRecord{}, false
 	}
+	if !x.same(f, path, info) {
+		x.reset(path)
+	}
+	if err := x.catchUp(f, info); err != nil {
+		return PlanRecord{}, false
+	}
+	x.seen = info
 	at := of(x)[key]
 	for i := len(at) - 1; i >= 0; i-- {
 		var rec PlanRecord
@@ -81,14 +93,19 @@ func (x *planIndex) newest(r *Records, of func(*planIndex) map[string][]lineSpan
 
 // reset forgets everything read, for the file at path.
 func (x *planIndex) reset(path string) {
-	x.path, x.size, x.head = path, 0, nil
+	x.path, x.size, x.head, x.seen = path, 0, nil, nil
 	x.byID, x.byReply, x.byExample = map[string][]lineSpan{}, map[string][]lineSpan{}, map[string][]lineSpan{}
 }
 
-// same says whether f, at path, is the file the index has read: as long
-// at least, and starting with the same bytes.
-func (x *planIndex) same(f io.ReaderAt, path string) bool {
+// same says whether f, at path and now as info says, is the file the
+// index has read: the same file grown, by fileio.Grew, and starting with
+// the same bytes, which tells a file put in its place where the system
+// does not say which file is which.
+func (x *planIndex) same(f io.ReaderAt, path string, info fs.FileInfo) bool {
 	if x.path != path || x.byID == nil {
+		return false
+	}
+	if x.seen != nil && !fileio.Grew(x.seen, info) {
 		return false
 	}
 	if x.size == 0 {
@@ -102,17 +119,10 @@ func (x *planIndex) same(f io.ReaderAt, path string) bool {
 	return n == len(x.head) && bytes.Equal(head, x.head)
 }
 
-// catchUp reads the whole lines appended to f since it was last read.
-// A last line not ended yet is left for the next read, the way a record
-// being appended is.
-func (x *planIndex) catchUp(f interface {
-	io.ReaderAt
-	Stat() (fs.FileInfo, error)
-}) error {
-	info, err := f.Stat()
-	if err != nil {
-		return err
-	}
+// catchUp reads the whole lines appended to f, now as info says, since it
+// was last read. A last line not ended yet is left for the next read, the
+// way a record being appended is.
+func (x *planIndex) catchUp(f io.ReaderAt, info fs.FileInfo) error {
 	if info.Size() < x.size {
 		x.reset(x.path)
 	}
