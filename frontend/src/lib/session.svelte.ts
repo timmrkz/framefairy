@@ -70,6 +70,8 @@ export class EpisodeSession {
   // The rev of the newest answer to an edit: a state read before it
   // knows nothing of the edit, and would put back what it changed.
   private floor = 0;
+  // The rev of the state the turns came with.
+  private turnsRev = 0;
   // Changes shown before the Go side has answered them, and the newest
   // state that came in the meantime, kept until they are answered.
   private holds = 0;
@@ -147,6 +149,15 @@ export class EpisodeSession {
   // the state. Whether it was kept.
   take(state: VideoState, fresh = false): boolean {
     let kept = false;
+    // The Go side leaves the turns out of a state when they are the ones
+    // it sent last, see trim in videostate.go, so the turns a state
+    // carries are taken though the state itself is held for an edit or
+    // passed over as read before one. Lost with it, R turned the video
+    // preview only once its answer came.
+    if (state.turns && state.rev >= this.turnsRev) {
+      this.turnsRev = state.rev;
+      this.turns = same(this.turns, state.turns);
+    }
     if (this.holds > 0) {
       if (!this.waiting || state.rev > this.waiting.rev) this.waiting = state;
       this.waitingFresh ||= fresh;
@@ -156,7 +167,6 @@ export class EpisodeSession {
       this.clips = fresh ? state.clips : unchanged(this.clips, state.clips);
       this.marking = same(this.marking, state.marking ?? null);
       this.heard = same(this.heard, state.heard);
-      if (state.turns) this.turns = same(this.turns, state.turns);
       this.cards = state.cards ?? "";
       this.jobs = state.jobs;
       kept = true;

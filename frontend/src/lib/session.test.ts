@@ -73,6 +73,26 @@ describe("a video's state in its session", () => {
     expect(here.clips[0].rejected).toBe(true);
   });
 
+  // The Go side sends the turns only when they changed, so turns a state
+  // carries are taken whatever becomes of the state. Held while R's edit
+  // was written and then passed over as read before its answer, the
+  // turns after the first R were lost, and the next R turned the video
+  // preview only once its answer came, two frames late.
+  test("takes the turns of every state in turn, though the state is held or passed over", async () => {
+    const here = new EpisodeSession("/v.mp4", new JobStore());
+    here.take(state(5));
+    const turned = { clip: "a", parts: [{ part: 1, rotations: [], segments: [], cropMarks: [], cropLefts: [], cropSteps: [], glides: [] }] } as unknown as VideoState["turns"];
+    let answer!: (c: ClipEntry) => void;
+    const edited = here.edit("a", (c) => c, () => new Promise((done) => (answer = done)));
+    here.take(state(8, { turns: turned }));
+    here.take(state(9, { turns: undefined }));
+    answer(clip("a", { rev: 9 }));
+    await edited;
+    expect(here.turns).toEqual(turned);
+    here.take(state(4, { turns: { clip: "", parts: [] } }));
+    expect(here.turns).toEqual(turned);
+  });
+
   test("shows an edit at once, holds what comes while it is written, and takes the newest after", async () => {
     const here = new EpisodeSession("/v.mp4", new JobStore());
     here.take(state(5));
