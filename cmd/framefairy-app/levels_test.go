@@ -337,3 +337,34 @@ func TestALookAsksTheDiskNothingOnceAVideoIsMeasured(t *testing.T) {
 		t.Error("a look after a removal that failed did not measure the video")
 	}
 }
+
+// Every write of the measuring reaches the window, however close behind
+// the one before it: the first write where the clip timeline went comes
+// right after the last write somewhere else, and a clock here held it
+// back by up to half a second, #968. How often the window hears is the
+// video's news to decide.
+func TestEveryWriteOfTheMeasuringReachesTheWindow(t *testing.T) {
+	t.Parallel()
+	var told atomic.Int64
+	m := newMeasuring(engine.NewMachine(afero.NewMemMapFs()), func(string) { told.Add(1) })
+	t.Cleanup(m.shutDown)
+	m.measure = func(_ context.Context, _ string, _ func() (float64, float64), progress func(float64)) error {
+		for i := range 3 {
+			progress(float64(i))
+		}
+		return nil
+	}
+	path := "/videos/levels.mp4"
+	m.start(path)
+	m.mu.Lock()
+	run := m.running[path]
+	m.mu.Unlock()
+	if run == nil {
+		t.Fatal("no measuring started")
+	}
+	<-run.done
+	// Three writes, and once more when the measuring ends.
+	if n := told.Load(); n != 4 {
+		t.Errorf("the window was told %d times of 3 writes and the end, want 4", n)
+	}
+}

@@ -504,6 +504,12 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	}
 	n := start
 	moved := false
+	// Where the clip timeline looks is asked after every read, which is
+	// a lock and two numbers, and weighed again only when it moved. Asked
+	// at the writes alone, a click on the range picker waited up to
+	// levelsDefault before the measuring went there, #968.
+	from, to := focus()
+	first, filled := true, false
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		if st.has(n) {
 			return false
@@ -511,9 +517,21 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 		st.put(n, f)
 		n++
 		return true
-	}, func() bool {
-		tell()
-		if st.leave(n, focus) {
+	}, func(due bool) bool {
+		// The first read of a part is written at once, and the read that
+		// fills what the clip timeline shows, so the waveform where the
+		// view went shows without waiting for the next write.
+		fills := !filled && shown(start, from, to) && float64(n)*timed.FrameSeconds >= to
+		if due || first || fills {
+			tell()
+			first, filled = false, filled || fills
+		}
+		if now, until := focus(); now != from || until != to {
+			from, to, filled = now, until, false
+		} else if !due {
+			return true
+		}
+		if st.leave(n, func() (float64, float64) { return from, to }) {
 			moved = true
 			return false
 		}
@@ -604,11 +622,12 @@ func soundSeek(from, picture float64) (seek, lead float64) {
 }
 
 // readLevels turns 16 kHz mono float samples into a frame every 10 ms and
-// hands each to put, which says whether to go on. Every levelsDefault, or
-// every levelsReads reads, it asks tick, which says the same. It says
-// whether it reached the end.
+// hands each to put, which says whether to go on. After every read it
+// asks tick, which says the same, and due says whether levelsDefault has
+// passed since it last said so, or levelsReads reads. It says whether it
+// reached the end.
 func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) bool,
-	tick func() bool) (bool, error) {
+	tick func(due bool) bool) (bool, error) {
 	frame := make([]float32, 0, frameSamples)
 	samples := newSampleReader(r, frameSamples*4*200)
 	last, reads := time.Now(), 0
@@ -644,9 +663,9 @@ func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) 
 		}
 		if due {
 			last = time.Now()
-			if !tick() {
-				return false, nil
-			}
+		}
+		if !tick(due) {
+			return false, nil
 		}
 	}
 }
@@ -802,7 +821,7 @@ func (e *Engine) levelsAt(ctx context.Context, source string, start, count int, 
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		frames = append(frames, f)
 		return len(frames) < count
-	}, func() bool { return true })
+	}, func(bool) bool { return true })
 	if !end {
 		// Enough heard: ffmpeg is still writing, and is told to stop
 		// rather than left to write into a pipe nobody reads.

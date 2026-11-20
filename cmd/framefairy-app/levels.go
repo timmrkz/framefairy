@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"sync"
-	"time"
 
 	"github.com/rs/zerolog"
 
@@ -135,14 +134,13 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 	case <-ctx.Done():
 		return
 	}
-	// The interface is told twice a second at most, which is as often as
-	// the engine writes what it has.
-	var told time.Time
+	// The window is told each time the engine writes what it has: twice
+	// a second, and at once when the measuring starts where the clip
+	// timeline went, #968. How often the window hears is videoNews's to
+	// decide. A second clock here held that first write back by up to
+	// half a second.
 	err := m.measure(ctx, path, func() (float64, float64) { return m.lookingAt(path) }, func(float64) {
-		if time.Since(told) >= 500*time.Millisecond {
-			told = time.Now()
-			m.notify(path)
-		}
+		m.notify(path)
 	})
 	if err != nil && ctx.Err() == nil {
 		theLog.line(zerolog.WarnLevel, "levels").Str("video", filepath.Base(path)).Err(err).Msg("the loudness could not be measured")

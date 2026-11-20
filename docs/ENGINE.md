@@ -197,8 +197,9 @@ one reached it. `engine/levels.go` measures it on its own:
 hour takes seconds, but four hours still take the better part of a
 minute, and a playhead put near the end waited for all of it. So
 `MeasureLevels` is told what the clip timeline shows and measures that
-first, then on from there, then from the start. Every half second it asks
-again, and when the view has moved to a part not measured yet, it stops
+first, then on from there, then from the start. After every read of the
+sound it asks again, and when the view has moved to a part not measured
+yet, it stops
 ffmpeg and starts it again there, with `-ss` before the input so ffmpeg
 seeks rather than decodes its way there. It starts a fifth of a second
 early and `atrim` cuts that off by timestamp, `levelsLead`, which is
@@ -209,7 +210,10 @@ compressed audio is decoded together with the one before it, and ffmpeg
 between two of those half seconds is written when it ends. A run ends where it meets a part
 measured already, so nothing is measured twice.
 
-What it has is written every half second, frames first and the json
+What it has is written every half second, and at once after the first
+read of a part and the read that fills what the clip timeline shows, so
+a click on the range picker shows its waveform in about a tenth of a
+second rather than one. Frames are written first and the json
 after, which gives the parts measured as frame numbers and, once a run
 has reached the end of the audio, how many frames it has. So `ReadLevels`
 never hands out a reading the json does not vouch for, and the waveform
