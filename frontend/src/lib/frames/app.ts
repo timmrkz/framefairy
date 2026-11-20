@@ -211,7 +211,7 @@ export class AppFrames {
     q.set("n", String(++this.sent));
     if (w.moving) q.set("move", "1");
     this.place = w.rank;
-    this.placeMoving = w.moving;
+    this.placeMoving = !!w.moving;
     const asked = this.puller.pull(`/frames/look?${q}`, width, height);
     this.asking.set(w.rank, asked);
     const got = await asked;
@@ -420,9 +420,9 @@ export class AppFrames {
     // The place the Go side was told or asked last is where it knows the
     // hand to be, unless the hand let go there or took hold: a let-go the
     // Go side never heard leaves it thinking the hand still drags.
-    if (w.rank === this.place && w.moving === this.placeMoving) return;
+    if (w.rank === this.place && !!w.moving === this.placeMoving) return;
     this.place = w.rank;
-    this.placeMoving = w.moving;
+    this.placeMoving = !!w.moving;
     const { width, height } = this.size();
     const q = new URLSearchParams({
       path: this.path,
