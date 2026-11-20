@@ -737,10 +737,12 @@ messages, pull request text, code comments and chat replies.
   around it: the checkout and `.github/actions/prepare`. A pull request
   starts only the jobs whose code it changed: no Go changed, no Go tests,
   no interface changed, no interface tests, and the walks, which test
-  the whole app, for either. Every pull request runs `make lint` and the
+  the whole app, for either, and the Go tests on a Mac only for code
+  only a Mac builds. Every pull request runs `make lint` and the
   build, since the repository's rules read the docs too, and a push to
-  main runs everything. Within a Go job, Go's own test
-  cache, restored from main, runs only the packages that changed. No
+  main runs everything but the Mac's tests, which run there every night.
+  Within a Go job, Go's own test cache, restored from main, runs only
+  the packages that changed. No
   script picks, runs or reports a test. A check is added to a make
   target, run by a job of `ci.yml`, and a new kind of file joins one of
   the filters of its job `changes`, which `internal/workflows` holds to
@@ -802,14 +804,19 @@ request.
   runs on main.
 - **A Mac only for what is different on a Mac.** The account runs five Mac
   jobs at once, for every branch together, so each Mac job a push takes
-  is a push of someone else's that waits. A push takes two: the build
-  without warnings with the app opened from outside, and the Go tests of
-  what ships in the app, for what behaves differently there: decoding and
-  encoding through VideoToolbox, the disk's names, the keychain. Code
-  that never runs on a Mac, like the licence server, is tested on Linux
-  only, and so is anything new of that kind. The race detector runs on
-  Linux only, which covers the same Go code. Long fuzzing on a Mac runs
-  at night. A new Mac job needs a reason that can be said out loud.
+  is a push of someone else's that waits. A push takes one, the build to
+  update to, without warnings, and a second, the Go tests on a Mac, only
+  when it changes code only a Mac builds. What a Mac does differently is
+  in a file named for it, `*_darwin.go` or `*_darwin_test.go`, never
+  behind `runtime.GOOS` in a file every system builds, and
+  `internal/maccode` fails a pull request that breaks that, because the
+  filter that starts the Mac's tests looks for those names. What no file
+  says is the Mac's, its disk's names, the ffmpeg built for it and the
+  app opened from outside, runs every night on main, in
+  `mac-nightly.yml`, and by hand on a branch. Code that never runs on a
+  Mac, like the licence server, is tested on Linux only. The race
+  detector runs on Linux only, which covers the same Go code. A new Mac
+  job needs a reason that can be said out loud.
 - **Slow tests run side by side.** A test that takes over a second calls
   `t.Parallel()`, unless it changes what the whole process shares, an
   environment variable or a package variable, and then a comment says

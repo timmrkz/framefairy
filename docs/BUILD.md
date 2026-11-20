@@ -132,11 +132,13 @@ whose code it changed, by the filters of the job `changes` in `ci.yml`:
 
 | Changed | Starts |
 | --- | --- |
-| Go: any file outside `frontend/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `frontend/` a Go test reads, the filter `goread` | `linux`, `fuzz`, `macos` and the walks |
+| Go: any file outside `frontend/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `frontend/` a Go test reads, the filter `goread` | `linux`, `fuzz` and the walks |
+| code only a Mac builds, a `*_darwin*.go` file, the filter `mac` | `macos` too |
 | the interface: `frontend/`, the Makefile, `.github/workflows/`, `.github/actions/` and `.node-version` | `interface` and the walks |
 | only the docs, `docs/`, any `.md`, `.claude/` | only `build` |
 
-A push to main starts every job. Inside a Go job Go's own test cache
+A push to main starts every job but `macos`, which runs on main every
+night instead, see [On a Mac](#on-a-mac). Inside a Go job Go's own test cache
 picks the packages: CI restores it from main, so `go test ./...` runs
 again only the packages whose code or test files changed since, and says
 `(cached)` for the rest. The Mac's Go job keeps no results, `-count=1`
@@ -347,23 +349,29 @@ command, the one a person runs:
 | `linux (1/3)` to `linux (3/3)` | Linux, in the CI image | Go | `make unit UNITSHARD=1/3` to `3/3`, a third of the tests each by the first letters of their names. On one machine they took six minutes |
 | `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | Go or the interface | `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, `walk-times.tsv`, so a run that hangs is named in minutes. After the walks, the log says how busy the walkers were and what every run took, slowest first. Every walk walks in Chromium, and every night in WebKit too, see Two browsers in [TESTING.md](TESTING.md#two-browsers). On four machines the jobs took 181 to 226 seconds in Chromium, in three runs on 5 November, and 223 to 377 while every walk walked in WebKit |
 | `fuzz` | Linux, in the CI image | Go | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
-| `macos` | macOS | Go | `make unit` against the ffmpeg we ship, built by its script and kept until the script changes. On a Mac it leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
+| `macos` | macOS | code only a Mac builds | `make unit` against the ffmpeg we ship, built by its script and kept until the script changes. On a Mac it leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
 
-The app opened from outside is checked in `builds.yml`, by the job that
-builds the app to update to, not in `ci.yml`: after `make app WERROR=1`
-packs and uploads the build, a keychain of its own, then `make outside
-WERROR=1`, whose `make all` finds every package compiled and only links
-the programs again, without the channel's version, because only a build
-of one's own takes the local dispenser's test keys, then
-the app opened by macOS from an Unlock link, closed and open, with the
-local dispenser beside it, see
-[TESTING.md](TESTING.md#from-outside-the-app). It runs on every push to
-main and to a branch with an open pull request whose app changed against
-its channel's build. A build whose checks from outside fail is not
-published. They check the branch as pushed, not merged with main, and a
-pull request from a fork, or the first commit pushed before its pull
-request opened, gets none until it is built. See the decision record
-[2026-11-20-one-mac-app-build-per-push.md](decisions/2026-11-20-one-mac-app-build-per-push.md).
+### On a Mac
+
+A Mac is for what is different on a Mac, and the account runs five Mac
+jobs at once, for every branch together. What a Mac does differently is
+in files named for it, `*_darwin.go` and `*_darwin_test.go`, which
+`internal/maccode` holds every file to: a file only a Mac builds is named
+so, and no other file asks `runtime.GOOS` a question a Mac and Linux
+answer differently. So a pull request that changes no such file runs no
+Go test on a Mac, and one that does runs them all in `macos`.
+
+What no file says is the Mac's, its disk, which takes names in either
+case and has `/var` as a link, the ffmpeg built for the Mac, and what
+macOS does around the app, runs every night on main in
+`mac-nightly.yml`, two jobs: `unit`, `make unit` as `macos` runs it, and
+`outside`, a keychain of its own and then `make outside WERROR=1`, the
+app opened by macOS from an Unlock link, closed and open, with the local
+dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app).
+Run workflow on its Actions page runs it on any branch, for a change
+whose Mac side is worth knowing before the merge. See the decision
+record
+[2026-11-20-a-mac-only-for-mac-code.md](decisions/2026-11-20-a-mac-only-for-mac-code.md).
 
 Every job but `interface` starts from Go's build cache as main left it
 after its last push, one cache for each job and for each machine of
@@ -376,8 +384,9 @@ it used about 214. Every run says in its log how much of the cache it
 used. The modules have a cache of their own, the zips Go downloaded, one
 for each `go.sum`. The build to update to in
 `builds.yml` keeps a cache of its own, `go-v2-app`, which it saves on
-main once its checks from outside passed, after the zip is uploaded, so
-no upload sits between a push and its build on the Updates page. setup-go keeps the cache by `go.sum`
+main after the zip is uploaded, so no upload sits between a push and its
+build on the Updates page, and which the app opened from outside in
+`mac-nightly.yml` starts from. setup-go keeps the cache by `go.sum`
 alone and saves it only when `go.sum` changes, so with it a job started
 from a cache weeks old and compiled nearly everything again: a minute on
 Linux and close to two on a Mac, the episode's decoder included.
@@ -418,14 +427,15 @@ because the app's tests run one after another, while the engine's run
 side by side.
 
 Every test runs on Linux under the race detector, with the same
-`FUZZTIME`, and every test of what runs on a Mac runs on a Mac too. The
-account runs five Mac jobs at once for every branch together, so a push
-takes two, `macos` in `ci.yml` and `build` in `builds.yml`, and the app
-is built once, in `build`, which opens it from outside too. The
+`FUZZTIME`, and every test runs on a Mac too, on a pull request that
+changes code only a Mac builds and every night on main. The account runs
+five Mac jobs at once for every branch together, so a push takes two at
+most, `macos` in `ci.yml` when the Mac's code changed and `build` in
+`builds.yml`, see [On a Mac](#on-a-mac). The
 two fuzz targets about paths are fuzzed on a Mac at night, because a
 case-insensitive filesystem is a different thing to explore. The others
 read text and numbers, which Go reads the same on both. The known inputs
-of every target run on a Mac in `make unit`.
+of every target run on a Mac in `make unit`, with the rest of the tests.
 
 No branch rule requires a check today. The Updates page does not read CI
 at all: it follows the builds of `builds.yml`, see
@@ -700,8 +710,9 @@ It also sets `CGO_ENABLED=1`, which the speech library needs, and
 `GOTOOLCHAIN` already set in the environment wins, which the cloud
 environment in [WORKFLOW.md](WORKFLOW.md) uses.
 
-CI checks the same on every pull request. The build in `builds.yml` builds with
-`WERROR=1`, and then a warning fails the build where it comes from:
+CI checks the same. The build to update to in `builds.yml` builds with
+`WERROR=1` on every push that changes the app, and so does the app
+opened from outside every night, and then a warning fails the build where it comes from:
 clang's, with `-Werror` in `CGO_CFLAGS` and `CGO_CXXFLAGS`, Apple's
 linker's, with `-Wl,-fatal_warnings` in `CGO_LDFLAGS`, and the interface
 build's, Vite's, Rolldown's, Svelte's and Node's, through
