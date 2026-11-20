@@ -473,3 +473,62 @@ func TestASearchAnswersWithTheCardsThatHoldWhatWasTypedFirst(t *testing.T) {
 		}
 	}
 }
+
+// The cards made ready to search are kept by the Episode with the stamp
+// of what they were made of: a letter typed while the stamp stays makes
+// no card, and a new stamp makes them again. Cards a read just made are
+// kept the same way.
+func TestTheCardsReadyToSearchAreKeptUntilTheirStampChanges(t *testing.T) {
+	t.Parallel()
+	ep := NewMachine(afero.NewMemMapFs()).Episode("/v/ep.mp4")
+	made := 0
+	cards := func(text string) func() ([]SentenceView, error) {
+		return func() ([]SentenceView, error) {
+			made++
+			return []SentenceView{{Start: 1, End: 2, Text: text}}, nil
+		}
+	}
+	for range 3 {
+		search, err := ep.SaidSearch("a", cards("alt"))
+		if err != nil || len(search.Answer("alt")) != 1 {
+			t.Fatalf("the cards of a do not answer alt: %v", err)
+		}
+	}
+	if made != 1 {
+		t.Errorf("three letters with one stamp made the cards %d times, want once", made)
+	}
+	search, _ := ep.SaidSearch("b", cards("neu"))
+	if made != 2 || len(search.Answer("neu")) != 1 || len(search.Answer("alt")) != 0 {
+		t.Errorf("a new stamp made the cards %d times in all, and they answer neu %v", made, search.Answer("neu"))
+	}
+	ep.KeepCards("c", []SentenceView{{Start: 1, End: 2, Text: "gelesen"}})
+	search, _ = ep.SaidSearch("c", cards("nie"))
+	if made != 2 || len(search.Answer("gelesen")) != 1 {
+		t.Errorf("the cards a read kept were made again, %d times in all", made)
+	}
+}
+
+// The cards are asked to be searched from several goroutines at once,
+// one letter after another and the cards read again, under the race
+// detector.
+func TestTheCardsReadyToSearchAreAskedFromEverywhereAtOnce(t *testing.T) {
+	t.Parallel()
+	ep := NewMachine(afero.NewMemMapFs()).Episode("/v/ep.mp4")
+	var wg sync.WaitGroup
+	for i := range 32 {
+		wg.Go(func() {
+			stamp := fmt.Sprint(i % 3)
+			if i%4 == 0 {
+				ep.KeepCards(stamp, []SentenceView{{Start: 1, End: 2, Text: "wort"}})
+				return
+			}
+			search, err := ep.SaidSearch(stamp, func() ([]SentenceView, error) {
+				return []SentenceView{{Start: 1, End: 2, Text: "wort"}}, nil
+			})
+			if err != nil || len(search.Answer("wort")) != 1 {
+				t.Errorf("goroutine %d found no wort: %v", i, err)
+			}
+		})
+	}
+	wg.Wait()
+}

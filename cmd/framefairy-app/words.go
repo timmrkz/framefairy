@@ -6,7 +6,6 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -96,10 +95,13 @@ func (s *FrameFairy) Sentences(path string) (cards []engine.SentenceView, err er
 	if !s.store.Known(path) {
 		return nil, errNotInLibrary
 	}
-	turn := s.said.begin()
+	// The stamp of what the cards are made of, taken before they are, so
+	// a file written while they are made changes it after, and the next
+	// search makes them again.
+	stamp := s.cardsStamp(path)
 	defer func() {
 		if err == nil {
-			s.said.keep(path, turn, cards)
+			s.store.machine.Episode(path).KeepCards(stamp, cards)
 		}
 	}()
 	began := time.Now()
@@ -131,11 +133,11 @@ func (s *FrameFairy) Sentences(path string) (cards []engine.SentenceView, err er
 
 // SearchSaid answers what is typed in the search in the clip column: the
 // cards of what was said that answer it, and the words to set in bold in
-// each, see engine.SaidSearch. It searches the cards Sentences sent last
-// for the video, the cards the window holds, made ready once, so a
-// letter typed reads no transcript and lays out no caption. Making the
-// cards of a video of four hours takes 12 ms. Cards not read yet are read
-// here.
+// each, see engine.SaidSearch. The cards are the ones Sentences would
+// send now, kept ready by the video's Episode until their stamp changes,
+// see engine.Episode.SaidSearch, so a letter typed reads no transcript
+// and lays out no caption. When they changed since the window read them,
+// it reads them again by the stamp in the video's state, and asks again.
 func (s *FrameFairy) SearchSaid(path, typed string) (found []engine.CardFound, err error) {
 	if !s.store.Known(path) {
 		return nil, errNotInLibrary
@@ -151,58 +153,20 @@ func (s *FrameFairy) SearchSaid(path, typed string) (found []engine.CardFound, e
 		theLog.line(level, "files").Str("video", filepath.Base(path)).Int("typed", len([]rune(typed))).
 			Int("found", len(found)).Float64("ms", float64(time.Since(began).Microseconds())/1000).Err(err).Msg("the transcript search answered")
 	}()
-	search := s.said.of(path)
-	if search == nil {
-		cards, err := s.Sentences(path)
-		if err != nil {
-			return nil, err
-		}
-		search = engine.NewSaidSearch(cards)
+	search, err := s.store.machine.Episode(path).SaidSearch(s.cardsStamp(path), func() ([]engine.SentenceView, error) {
+		return s.Sentences(path)
+	})
+	if err != nil {
+		return nil, err
 	}
 	return search.Answer(typed), nil
 }
 
-// saidSent is the cards Sentences sent last, for one video, made ready to
-// search, see SearchSaid. The window shows one video at a time, so one is
-// kept. turns counts the reads started, and turn is the read the cards
-// kept came from, so a read that comes back after a later one never takes
-// its place: the window keeps the later one too.
-type saidSent struct {
-	mu     sync.Mutex
-	turns  int
-	turn   int
-	path   string
-	search *engine.SaidSearch
-}
-
-// begin is the turn of a read of the cards that starts now.
-func (k *saidSent) begin() int {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	k.turns++
-	return k.turns
-}
-
-// keep keeps the cards of path read in turn, unless a later read's are
-// kept already.
-func (k *saidSent) keep(path string, turn int, cards []engine.SentenceView) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if turn < k.turn {
-		return
-	}
-	k.turn, k.path, k.search = turn, path, engine.NewSaidSearch(cards)
-}
-
-// of is the cards of path made ready to search, or nil when the cards
-// kept are another video's or there are none.
-func (k *saidSent) of(path string) *engine.SaidSearch {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.path != path {
-		return nil
-	}
-	return k.search
+// cardsStamp is the stamp of the cards Sentences makes for the video at
+// path, see engine.Episode.SaidStamp, from the same plans and the same
+// probe Sentences lays their captions out with.
+func (s *FrameFairy) cardsStamp(path string) string {
+	return s.saidStamp(path, s.plansOf(path), s.unprobed.source(path, s.probe))
 }
 
 // saidStamp is VideoState.Cards for the video at path with plans, on the

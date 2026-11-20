@@ -2401,8 +2401,8 @@ found is a place in the video, and I and O make a clip there.
   letters in order with gaps, found Verteidigungsministers for ernste in
   a transcript, found by Tim. The words that answer are bold. Go answers
   what is typed, `engine.SaidSearch` through `SearchSaid`, over the cards
-  it sent last, made ready once, and the window shows the cards it is
-  told, #927. Each answer stays until the next, so the list never
+  the video's Episode keeps ready until they change, and the window shows
+  the cards it is told, #927. Each answer stays until the next, so the list never
   empties between two letters. What is typed
   is read from the top of the list, wherever the hand had scrolled it.
   The field says in grey, before its cross, how many cards match, the

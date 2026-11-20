@@ -44,6 +44,10 @@ type Episode struct {
 	// reached.go. Guarded by the machine's held too.
 	reached [][2]float64
 	hearing *[2]float64
+	// said is the cards of what was said made ready to search, with the
+	// stamp of what they were made of, see SaidSearch. Guarded by the
+	// machine's held.
+	said *keptSaidSearch
 }
 
 // planSlot is where one plan file's read is kept, so held has a place

@@ -726,11 +726,11 @@ func TestAWordCorrectedWithTheSearchOpenReadsCorrectedInItsCard(t *testing.T) {
 	}
 }
 
-// The transcript search answers over the cards the window holds, the
-// ones Sentences sent last, issue #927: a word corrected since is found
-// as it was until the cards are read again, and then as it is now. A
-// search before any read of the cards reads them.
-func TestTheTranscriptSearchAnswersOverTheCardsSentLast(t *testing.T) {
+// The transcript search answers over the cards as they are, the ones
+// Sentences sends, issue #927: a word corrected in a clip is found as it
+// reads now, and no longer as it was. A search before any read of the
+// cards reads them.
+func TestTheTranscriptSearchAnswersOverTheCardsAsTheyAre(t *testing.T) {
 	e := newCaptionEditor(t)
 	finds := func(typed string) []string {
 		t.Helper()
@@ -759,31 +759,7 @@ func TestTheTranscriptSearchAnswersOverTheCardsSentLast(t *testing.T) {
 	if _, err := e.svc.SetWord(context.Background(), e.mine, e.plan, "01", at, "Pausenhof"); err != nil {
 		t.Fatal(err)
 	}
-	if got, gone := finds("schulhof"), finds("pausenhof"); len(got) != 1 || len(gone) != 0 {
-		t.Errorf("before the cards are read again, schulhof finds %v and pausenhof %v, want the cards the window holds", got, gone)
-	}
-	if _, err := e.svc.Sentences(e.mine); err != nil {
-		t.Fatal(err)
-	}
 	if got, gone := finds("pausenhof"), finds("schulhof"); len(got) != 1 || len(gone) != 0 {
-		t.Errorf("once the cards are read again, pausenhof finds %v and schulhof %v", got, gone)
-	}
-}
-
-// A read of the cards that comes back after a later one leaves the later
-// one's cards to search, the cards the window keeps too.
-func TestAnOlderReadOfTheCardsNeverTakesTheLatersPlace(t *testing.T) {
-	var k saidSent
-	first, second := k.begin(), k.begin()
-	k.keep("/v/ep.mp4", second, []engine.SentenceView{{Start: 1, End: 2, Text: "neu"}})
-	k.keep("/v/ep.mp4", first, []engine.SentenceView{{Start: 1, End: 2, Text: "alt"}})
-	if got := k.of("/v/ep.mp4").Answer("alt"); len(got) != 0 {
-		t.Errorf("alt, from the older read, finds %v", got)
-	}
-	if got := k.of("/v/ep.mp4").Answer("neu"); len(got) != 1 {
-		t.Errorf("neu, from the later read, finds %v", got)
-	}
-	if k.of("/v/other.mp4") != nil {
-		t.Error("another video's cards are searched as this one's")
+		t.Errorf("after the correction, pausenhof finds %v and schulhof %v", got, gone)
 	}
 }

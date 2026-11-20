@@ -1193,8 +1193,8 @@ export const api = {
   // heard, for searching it in the clip column.
   sentences: (path: string) => call<Sentence[] | null>("Sentences", path),
   // The cards that answer what is typed in the search in the clip
-  // column, and the words to set in bold in each. The Go side answers
-  // over the cards it sent last for the video.
+  // column, and the words to set in bold in each, over the cards as
+  // Sentences would send them now.
   searchSaid: (path: string, typed: string) => call<CardFound[] | null>("SearchSaid", path, typed),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),

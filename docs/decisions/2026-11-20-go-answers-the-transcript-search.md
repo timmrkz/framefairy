@@ -1,4 +1,4 @@
-# Go answers the transcript search, over the cards it sent last
+# Go answers the transcript search, over cards its Episode keeps ready
 
 Issue #927.
 
@@ -40,37 +40,45 @@ other simulation starts from the cards being kept somewhere.
 ### 2. Where state lives
 
 The cards are Go's, made by `SaidCards`, and the window keeps the copy
-it was sent, as it keeps the clips, see the row of the clips the window
-was last sent. Go keeps the cards it sent last too, made ready once, in
-the app's Go side beside `Sentences`, `saidSent` in
-`cmd/framefairy-app/words.go`. The window shows one video at a time, so
-one video's cards are kept. Names across the boundary: the call and
-`CardFound`. Cost: one small struct, one call, one pull request.
+it was sent, as it keeps the clips. Go keeps the cards it sent last too,
+made ready once, in the app's Go side beside `Sentences`, a struct of its
+own with a count of the reads so an old read never wins. Names across
+the boundary: the call and `CardFound`. But Where does it go in
+`docs/ARCHITECTURE.md` says what a video's files said is kept by its
+`engine.Episode`, by the files' stamp, never in a cache of the app's
+own, and the review of this change found this first version doing just
+that. Dropped for the next.
 
-### 3. What runs together
+### 3. What runs together, the Episode keeping them
 
 A letter shows in the frame after it is typed, and the round trip across
 the bridge is short beside a frame, but it is not nothing. So the window
 keeps the answer it has until the next comes, and never empties the
-list in between, and asks again at every letter. The engine's Episode
-could keep the cards with the reads they came from, the way
-`PlanSummary.Said` keeps a plan's captions, and the search would read
-them there. But the cards depend on the transcript, on every plan and on
-the look of each, and the Episode would need a key of all of that, which
-`Episode.SaidStamp` already works out from the files, a probe of the
-video included. Keeping the copy at the point it is sent needs no key.
+list in between, and asks again at every letter. The cards are worked
+out of the transcript's read and the plans' reads, and the Episode is
+where what is worked out of a read is kept, the way `PlanSummary.Said`
+keeps a plan's captions. Their key is `Episode.SaidStamp`, which the
+video's state already works out up to four times a second, `VideoState.Cards`.
+`Episode.SaidSearch(stamp, cards)` gives the cards of that stamp made
+ready, and makes them again only when the stamp changed. `Sentences`
+keeps the cards it just made with the stamp it took before making them,
+`Episode.KeepCards`, so the first letter after a read makes nothing.
+Measured on the caption editor's video in the app's tests, memory disk:
+the stamp 0.02 ms, a letter's whole answer 0.01 ms more. Names across
+the boundary: the call and `CardFound`, and on the Episode two methods.
 
 ### 4. What changes together
 
 An answer names cards, and it has to name cards the window holds. The
-window reads the cards again whenever the stamp changes, and asks the
-search again then. If Go searched cards newer than the window's, an
-answer could name a card the window lacks. Kept where `Sentences` sends
-them, the cards searched are the cards sent, and a read that comes back
-after a later one never takes its place, by a count of the reads
-started. The window passing the stamp with each letter, for Go to make
-the cards again when it differs, needs the probe the stamp needs on
-every letter. Dropped.
+window reads the cards again whenever the stamp in the video's state
+changes, and asks the search again then. Searched by the stamp of now,
+an answer can name a card a moment newer than the window's, which the
+window leaves out until its read of the new cards comes and it asks
+again, so it heals in one round trip, the same way it heals a new card
+the window has before the answer. Kept where `Sentences` sends them,
+version 2, the same holds, and a search before any read makes cards the
+window never got. Neither is exact, and the stamp is the simpler of the
+two.
 
 ### 5. What a test has to build
 
@@ -84,12 +92,13 @@ reach the real Go side through the bridge.
 
 ## What converges
 
-Every simulation but 1 keeps the cards ready before a letter comes, and
-2, 3 and 4 keep them where they are sent, the copy of what the window
-holds. Kept from 3: the window keeps an answer until the next one comes.
-Kept from 4: the count of reads, so an old read never wins. Kept from 5:
-the rule as one function of the engine, tested alone. Dropped: making
-the cards at every letter, and a key of the cards in the engine.
+Every simulation but 1 keeps the cards ready before a letter comes.
+Kept from 3: the Episode keeps them by `SaidStamp`, the home of what is
+worked out of a read, and the window keeps an answer until the next one
+comes. Kept from 4: an answer over cards a moment newer heals when the
+window reads them. Kept from 5: the rule as one function of the engine,
+tested alone. Dropped: making the cards at every letter, and a cache of
+the app's own, version 2, which this pull request first built.
 
 What the window still decides is only whether anything is typed, which
 is whether there is a question at all: with nothing typed the list is
@@ -100,9 +109,9 @@ every card, as it was before, with no call.
 ```
 interface   SaidList.svelte shows the cards Go names, bold where it says
                |  SearchSaid(path, typed) -> CardFound[]
-app Go      saidSent: the cards Sentences sent last, one video, made ready
-               |  NewSaidSearch(cards), Answer(typed)
-engine      SaidSearch: the rule, words in small letters, slips, bold
+app Go      SearchSaid: the stamp of the cards, Sentences to make them
+               |  Episode.SaidSearch(stamp, cards), KeepCards, Answer(typed)
+engine      Episode keeps them by stamp. SaidSearch is the rule
 ```
 
 Each uses only the one under it. The drawings in `docs/diagrams/` keep
@@ -112,9 +121,11 @@ their boxes: `words` is already among the files of a video in
 ## What follows
 
 - A letter costs 0.2 to 1.4 ms in Go on four hours of cards, and the
-  first letter after the cards are read 6 ms more. The window's rows are
+  stamp of the cards, and the first letter after the cards changed 6 ms
+  more. The window's rows are
   built from the answer, no longer from a match of every card.
-- The cards of one video are kept in memory twice, in the window and in
-  Go, about 1 MB for four hours.
+- The cards of each video searched are kept in memory twice, in the
+  window and in its Episode, about 1 MB for four hours, until the video
+  leaves the library.
 - It was wrong if a letter typed shows later than before, or if an
   answer names a card the window does not hold.

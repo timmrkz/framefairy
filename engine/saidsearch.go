@@ -56,6 +56,46 @@ type searchWord struct {
 	said         int
 }
 
+// keptSaidSearch is the cards made ready to search, and the stamp of the
+// cards, see Episode.SaidStamp.
+type keptSaidSearch struct {
+	stamp  string
+	search *SaidSearch
+}
+
+// SaidSearch is the video's cards of what was said made ready to search,
+// for the cards of the stamp, see SaidStamp. The ones made last are kept
+// with their stamp, as everything worked out of a read is, so a letter
+// typed reads no transcript and lays out no caption, and they are made
+// again by cards only once the stamp has changed. Making the cards of a
+// video of four hours takes 12 ms, answering a letter over them ready
+// takes 0.2 to 1.4. cards runs without the machine's lock held, since it
+// reads the video's files through this Episode.
+func (ep *Episode) SaidSearch(stamp string, cards func() ([]SentenceView, error)) (*SaidSearch, error) {
+	ep.m.held.Lock()
+	kept := ep.said
+	ep.m.held.Unlock()
+	if kept != nil && kept.stamp == stamp {
+		return kept.search, nil
+	}
+	made, err := cards()
+	if err != nil {
+		return nil, err
+	}
+	return ep.KeepCards(stamp, made), nil
+}
+
+// KeepCards keeps the cards of the stamp ready to search, the cards a read
+// of them just made, so the first letter typed after it does not make
+// them again, and gives them back. See SaidSearch.
+func (ep *Episode) KeepCards(stamp string, cards []SentenceView) *SaidSearch {
+	search := NewSaidSearch(cards)
+	ep.m.held.Lock()
+	defer ep.m.held.Unlock()
+	ep.said = &keptSaidSearch{stamp: stamp, search: search}
+	return search
+}
+
 // NewSaidSearch makes the cards ready to search. The work is done the
 // first time something is asked, so cards that are only read cost
 // nothing more.
