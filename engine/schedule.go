@@ -558,6 +558,9 @@ func (s *Schedule) plan() {
 			r.kind, r.target = j.kind, max(j.to, r.next-1)
 			return
 		}
+		if !ok && s.readsOn(r) {
+			return
+		}
 		s.stopRun()
 	}
 	if !ok {
@@ -807,6 +810,9 @@ func (s *Schedule) got(r *lookRun, at float64, picture []byte) error {
 	}
 	if r.kind == runAhead {
 		if frame >= r.target {
+			if _, ok := s.want(); !ok && s.readsOn(r) {
+				return nil
+			}
 			s.run = nil
 			s.looks.WakeLocked()
 			s.plan()
@@ -1058,6 +1064,35 @@ func (s *Schedule) readAhead() {
 	}
 	s.ahead = nil
 	a.done <- aheadDone{out: a.out}
+}
+
+// readsOn has the run under way read the next of the frames read ahead,
+// where reading on gets there sooner than a seek: the next word mostly
+// lies in the stretch the hand's run reads, and a stream of its own
+// decoded every frame up to it again from the key frame before. Under
+// the lock.
+func (s *Schedule) readsOn(r *lookRun) bool {
+	a := s.ahead
+	if a == nil || a.held || s.play != nil || len(s.waiting) > 0 || r.grid != a.grid || r.w != a.w || r.h != a.h {
+		return false
+	}
+	for len(a.todo) > 0 {
+		read := a.todo[0]
+		for read.from <= read.to && !a.wants[read.from] {
+			read.from++
+		}
+		if read.from > read.to {
+			a.todo = a.todo[1:]
+			continue
+		}
+		if read.from < r.next || s.keyBefore(r.grid, read.from) > r.next+lookSeek {
+			return false
+		}
+		a.todo = a.todo[1:]
+		r.kind, r.target = runAhead, read.to
+		return true
+	}
+	return false
 }
 
 // Near hands over the frames kept around a place the hand rests on, the

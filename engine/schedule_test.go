@@ -548,6 +548,43 @@ func TestTheHandStopsTheReadingAhead(t *testing.T) {
 	}
 }
 
+// The word after a hand at rest is read by the hand's own run reading
+// on, where that is sooner than a seek. A stream of its own decoded every
+// frame up to it again from the key frame before: a step a word on came
+// 18 % later than on main.
+func TestTheNextWordIsReadOnByTheHandsOwnRun(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	click := lookFor(s, rest(10))
+	st := dec.next(t)
+	read := aheadFor(s, aheadOf([]int{18}, nil))
+	until(s, func() bool { return s.ahead != nil })
+	for f := 9; f <= 10+lookAhead; f++ {
+		_ = st.give(t, f)
+	}
+	if got := <-click; got.seen.Frame != 10 {
+		t.Fatalf("the click got %+v, %v", got.seen, got.err)
+	}
+	for f := 11 + lookAhead; f < 18+lookAhead; f++ {
+		if err := st.give(t, f); err != nil {
+			t.Fatalf("the run stopped at %d: %v", f, err)
+		}
+	}
+	if err := st.give(t, 18+lookAhead); !errors.Is(err, errLookDone) {
+		t.Fatalf("the run read on past the word's frames: %v", err)
+	}
+	// Then the frames before the hand, and the reading ahead is done.
+	behind := dec.next(t)
+	for f := behind.from; f < 9; f++ {
+		_ = behind.give(t, f)
+	}
+	got := <-read
+	if got.err != nil || !slices.Equal(got.frames, []int{17, 18, 19, 20, 21, 22}) {
+		t.Fatalf("the reading ahead got %v, %v", got.frames, got.err)
+	}
+}
+
 // While the hand holds the playhead nothing is read ahead: a card's seek
 // stood between the hand and the frame under it, issue #596. Once it lets
 // go, the reading starts.
