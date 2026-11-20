@@ -1079,15 +1079,19 @@ func (s *Schedule) Near(ctx context.Context, l Hand, has func(frame int) bool) [
 
 // HasNear tells whether Near would hand over frames around the place of
 // a look the window had answered: a run reads around it, or frames around
-// it are kept. A hand that drags has none: the frames around each place
-// would be sent and let go of again.
+// it are kept. A drag faster than lookFast frames a step has none, the
+// frames around each place would be sent and let go of again. A slower
+// drag has: its next places are the frames read beside it, and each step
+// that finds its frame in the window shows it with no request. Without
+// them a slow drag waited for a look at every step, 10 ms in the cloud,
+// where the window that read its own frames took 1 ms.
 func (s *Schedule) HasNear(l Hand) bool {
-	if l.Moving {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if l.Moving && s.step > lookFast {
 		return false
 	}
 	from, to := max(0, l.Frame-lookBack), min(l.Grid.Count-1, l.Frame+lookAhead)
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if r := s.run; r != nil && r.kind != runAhead && r.sized(l) && r.target >= from && r.from <= to {
 		return true
 	}

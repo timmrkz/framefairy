@@ -317,9 +317,12 @@ closed for standing unused.
     in the simulation, see below.
   - The frames it decoded are kept, 192 MB of them, the ones used longest
     ago let go of first, and a place kept costs no decoding. The frames
-    around a place the hand rests on that the interface does not hold go
-    to it through `/frames/near` once the run has read them, when the
-    look says so, so a step there costs no request either.
+    around a place the hand rests on, or drags over slowly, that the
+    interface does not hold go to it through `/frames/near` once the run
+    has read them, when the look says so, so a step there costs no
+    request either. Without them a slow drag waited for a look at every
+    step, 10 ms in the cloud, where the window that read its own frames
+    took 1 ms.
   - What the hand is likely to ask for next is read while it rests,
     `engine.Ahead`, handed over through `/frames/ahead`: the first frame
     of the word after the playhead and of the word before, the way Shift

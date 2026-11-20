@@ -582,9 +582,6 @@ func TestTheFramesAroundAPlaceGoToTheWindow(t *testing.T) {
 	if s.HasNear(rest(300)) {
 		t.Fatal("the look says frames are near a place nothing was read around")
 	}
-	if s.HasNear(move(48, 50)) {
-		t.Fatal("a drag would be sent the frames around a place it passes over")
-	}
 	near := make(chan []Seen, 1)
 	go func() { near <- s.Near(context.Background(), rest(48), func(f int) bool { return f == 47 }) }()
 	for f := 49; f <= 48+lookAhead; f++ {
@@ -1009,6 +1006,43 @@ func TestTheSpanOfKeyFramesIsLearnedFromTheDecoder(t *testing.T) {
 				if got := s.keyBefore(lookGrid, k.from); got != k.key {
 					t.Fatalf("the key frame before %d is %d, want %d, where the decoder started for it", k.from, got, k.key)
 				}
+			}
+		})
+	}
+}
+
+// A slow drag is handed the frames read beside the hand, so each step
+// finds its frame in the window: without them every step waited for a
+// look, 10 ms in the cloud where the window that read its own frames
+// took 1 ms. A drag too fast to show the frames on its way is not: the
+// frames around each place would be sent and let go of again.
+func TestASlowDragIsHandedTheFramesBesideIt(t *testing.T) {
+	cases := []struct {
+		name string
+		from int
+		to   int
+		near bool
+	}{
+		{"slowly to the left", 60, 59, true},
+		{"slowly to the right", 60, 61, true},
+		{"fast to the left", 60, 40, false},
+		{"fast to the right", 40, 60, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dec := newHeldDecoder()
+			s := newSchedule(dec)
+			defer s.Close()
+			s.mu.Lock()
+			for f := 30; f <= 70; f++ {
+				s.kept.put(keptKey{grid: lookGrid, w: 4, h: 2, frame: f}, lookGrid.At(f), make([]byte, 32))
+			}
+			s.mu.Unlock()
+			<-lookFor(s, move(c.from, c.from+1))
+			h := move(c.to, c.from)
+			<-lookFor(s, h)
+			if got := s.HasNear(h); got != c.near {
+				t.Fatalf("the window is handed the frames near the hand: %v, want %v", got, c.near)
 			}
 		})
 	}
