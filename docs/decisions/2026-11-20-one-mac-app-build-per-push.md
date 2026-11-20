@@ -45,8 +45,9 @@ never counted.
 2. **What changes together.** The app the Updates page offers and the
    app the checks from outside open are one build, so one job builds it:
    the build of `builds.yml` runs `make app`, packs the zip, and then
-   `make outside` with the same version, channel and commit, which finds
-   `make all` done. `ci.yml` loses `outside`. What crosses is nothing
+   `make outside`, whose `make all` finds every package compiled and
+   only links the programs again, without the channel's version, since
+   only a build of one's own takes the local dispenser's test keys. `ci.yml` loses `outside`. What crosses is nothing
    new: the job already has the checkout, the cache and the tools
    `outside` needs. Two Mac jobs a push. A change to the checks from
    outside touches `builds.yml` and `internal/outside`, as a change to

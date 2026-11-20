@@ -184,15 +184,14 @@ jobs:
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
           security default-keychain -d user -s "$kc"
 
-      # The same version, channel and commit as the app above, so make all
-      # finds every program built and builds only the app with the probe.
+      # Built as a Mac of one's own builds it, with no version, channel or
+      # commit, because only such a build takes the local dispenser's test
+      # keys, and a build of a channel refuses them as a customer's app
+      # does. Go compiled every package above, so the programs are only
+      # linked again.
       - id: outside
         name: The app opened from outside
-        run: >-
-          make outside WERROR=1
-          BUILD_VERSION='${{ needs.which.outputs.version }}'
-          BUILD_CHANNEL='${{ needs.which.outputs.channel }}'
-          BUILD_COMMIT='${{ needs.which.outputs.commit }}'
+        run: make outside WERROR=1
 
       # Saved on main once everything passed, and on a branch only when
       # none was found, so the next build starts warm. After the zip, so

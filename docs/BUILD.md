@@ -352,8 +352,9 @@ command, the one a person runs:
 The app opened from outside is checked in `builds.yml`, by the job that
 builds the app to update to, not in `ci.yml`: after `make app WERROR=1`
 packs and uploads the build, a keychain of its own, then `make outside
-WERROR=1` with the same version, channel and commit, so `make all` finds
-everything built and only the app with the probe is built again, then
+WERROR=1`, whose `make all` finds every package compiled and only links
+the programs again, without the channel's version, because only a build
+of one's own takes the local dispenser's test keys, then
 the app opened by macOS from an Unlock link, closed and open, with the
 local dispenser beside it, see
 [TESTING.md](TESTING.md#from-outside-the-app). It runs on every push to
