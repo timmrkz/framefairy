@@ -516,7 +516,6 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 	chunkStart := window.Start
 	started := time.Now()
 	sumSquares, count := 0.0, 0
-	buf := make([]byte, frameSamples*4*50)
 
 	lastSave := time.Now()
 	// How far the audio has been heard and how far of it is written down.
@@ -658,15 +657,13 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 	endAt := int(math.Round((window.End - window.Start) * SampleRate))
 	read := 0
 	reachedEnd := false
-	carry := []byte{}
+	sound := newSampleReader(reader, frameSamples*4*50)
 	for !reachedEnd {
 		if ctx.Err() != nil {
 			break
 		}
-		n, readErr := reader.Read(buf)
-		data := append(carry, buf[:n]...)
-		whole := len(data) / 4 * 4
-		for i := 0; i < whole; i += 4 {
+		data, readErr := sound.Read()
+		for i := 0; i < len(data); i += 4 {
 			if read == endAt {
 				reachedEnd = true
 				break
@@ -674,7 +671,6 @@ func (e *Engine) transcribe(ctx context.Context, path string, window timed.Windo
 			pending = append(pending, math.Float32frombits(binary.LittleEndian.Uint32(data[i:])))
 			read++
 		}
-		carry = append([]byte{}, data[whole:]...)
 
 		// Loudness frames for everything that has arrived and is not yet
 		// measured. Frames are kept for the whole window.
