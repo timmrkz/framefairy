@@ -58,6 +58,13 @@ const levelsVersion = 2
 // instead, see Engine.levelsReads.
 const levelsDefault = 500 * time.Millisecond
 
+// levelsBridge is how many frames measured already a measuring reads
+// through, rather than stopping there and starting ffmpeg again after
+// them. 30 s of sound are decoded in about the time ffmpeg takes to start
+// and seek, and a hand swiped over parts not measured leaves many short
+// parts behind, #968.
+const levelsBridge = 3000
+
 // levelsFile is what logs/levels.json holds. The frames are in
 // logs/levels.frames, written before it, so a reader never sees a part the
 // frames do not reach.
@@ -449,14 +456,22 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 		if !ok {
 			break
 		}
-		if err := e.measureFrom(ctx, source, st, start, focus, tell); err != nil {
+		moved, err := e.measureFrom(ctx, source, st, start, focus, tell)
+		if err != nil {
 			return err
 		}
 		// A part that ended between two ticks is shown when it ends, not
 		// at the first tick of the next one. A short part is read in less
 		// than a tick, and then where the clip timeline looked went unseen
-		// until the measuring had moved on.
-		tell()
+		// until the measuring had moved on. A part left because the view
+		// moved is written but not told: nobody looks there any more, and
+		// telling it took the window's next news from the part the view
+		// went to, #968.
+		if moved {
+			_ = writeLevels(e.Files, logs, stamp, st)
+		} else {
+			tell()
+		}
 	}
 	if err := writeLevels(e.Files, logs, stamp, st); err != nil {
 		return err
@@ -487,11 +502,11 @@ func (s *levelState) loudest() (float32, bool) {
 	return loudest, measured
 }
 
-// measureFrom measures from frame start on, until it reaches a frame
-// measured already, the end of the audio, or a clip timeline that moved to
-// a part not measured yet.
+// measureFrom measures from frame start on, until it reaches a part
+// measured already longer than levelsBridge, the end of the audio, or a
+// clip timeline that moved to a part not measured yet, which moved says.
 func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState, start int,
-	focus func() (float64, float64), tell func()) error {
+	focus func() (float64, float64), tell func()) (moved bool, err error) {
 	run, stop := context.WithCancel(ctx)
 	defer stop()
 	cmd := e.Runner.Command(run, e.FFmpeg, audioFrom(source, start, e.pictureStart(ctx, source))...)
@@ -500,10 +515,12 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	cmd.Stderr = said
 	reading, err := e.Runner.StartReading(run, cmd, said)
 	if err != nil {
-		return renderErr("cannot start %s: %s", e.FFmpeg, err)
+		return false, renderErr("cannot start %s: %s", e.FFmpeg, err)
 	}
 	n := start
-	moved := false
+	// A part measured already that ends within levelsBridge is read
+	// through, up to skip, rather than measured again or stopped at.
+	skip := start
 	// Where the clip timeline looks is asked after every read, which is
 	// a lock and two numbers, and weighed again only when it moved. Asked
 	// at the writes alone, a click on the range picker waited up to
@@ -512,29 +529,39 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	first, filled := true, false
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		if st.has(n) {
-			return false
+			if n >= skip {
+				gap, ok := st.gap(n, n+levelsBridge)
+				if !ok {
+					return false
+				}
+				skip = gap
+			}
+			n++
+			return true
 		}
 		st.put(n, f)
 		n++
 		return true
 	}, func(due bool) bool {
-		// The first read of a part is written at once, and the read that
-		// fills what the clip timeline shows, so the waveform where the
-		// view went shows without waiting for the next write.
-		fills := !filled && shown(start, from, to) && float64(n)*timed.FrameSeconds >= to
-		if due || first || fills {
-			tell()
-			first, filled = false, filled || fills
-		}
+		changed := false
 		if now, until := focus(); now != from || until != to {
-			from, to, filled = now, until, false
-		} else if !due {
-			return true
+			from, to, filled, changed = now, until, false, true
 		}
-		if st.leave(n, func() (float64, float64) { return from, to }) {
+		if (changed || due) && st.leave(n, func() (float64, float64) { return from, to }) {
 			moved = true
 			return false
 		}
+		// The first read of a part where the clip timeline looks is
+		// written at once, and the read that fills what it shows, so the
+		// waveform where the view went shows without waiting for the next
+		// write.
+		in := shown(start, from, to)
+		fills := in && !filled && float64(n)*timed.FrameSeconds >= to
+		if due || (first && in) || fills {
+			tell()
+			filled = filled || fills
+		}
+		first = false
 		return true
 	})
 	if !end {
@@ -544,14 +571,14 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	}
 	left, waitErr := reading.Finish()
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return false, ctx.Err()
 	}
 	if left {
 		// Stopped once enough was read, so what was read stands.
 		e.Log.Warn("ffmpeg %s", tool.LeftBehind)
 	}
 	if readErr != nil && !errors.Is(readErr, context.Canceled) {
-		return readErr
+		return false, readErr
 	}
 	switch {
 	case end && n <= start && start > 0:
@@ -559,14 +586,14 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 		st.end = start
 		st.frames, st.got = st.frames[:min(start, len(st.frames))], st.got[:min(start, len(st.got))]
 	case end && waitErr != nil:
-		return renderErr("ffmpeg could not read the audio: %s", strings.TrimSpace(stderr.String()))
+		return false, renderErr("ffmpeg could not read the audio: %s", strings.TrimSpace(stderr.String()))
 	case end:
 		st.end = n
 		st.frames, st.got = st.frames[:min(n, len(st.frames))], st.got[:min(n, len(st.got))]
 	case moved:
 		e.Log.Detail("the clip timeline moved on, so the loudness is measured there next")
 	}
-	return nil
+	return moved, nil
 }
 
 // audioFrom is how ffmpeg reads the episode's audio as 16 kHz mono samples

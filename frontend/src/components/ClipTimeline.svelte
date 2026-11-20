@@ -868,11 +868,11 @@
     tell(from, to);
   }
 
+  // It is told the view as it is, nothing around it. What to measure
+  // after the view is Go's to decide: a view widened here by one on each
+  // side made Go fill three views before the one shown was written, #968.
   function tell(from: number, to: number) {
-    const shown = Math.max(to - from, 0.001);
-    const whole = Math.max(duration, to);
-    const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
-    void api.look(path, outer.from, outer.to).catch(() => {});
+    void api.look(path, from, to).catch(() => {});
   }
 
   // The loudness is read whole when the video opens, and again whenever
