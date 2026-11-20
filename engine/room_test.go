@@ -153,30 +153,52 @@ func TestAWindowHoldsItsClipsAtTheirShortest(t *testing.T) {
 // What the app adds up over a window has to be at least what the window
 // really sends, wherever the window starts, or a window the range picker
 // lets through is one the engine refuses.
+//
+// The weights a video's transcript read keeps are counted from lines with
+// no loudness, which is most of the read to measure, so the lines sent
+// here carry theirs, as a search's do: a recipe that wrote it would weigh
+// more than was counted.
 func TestTheWeightOfAWindowIsNeverLessThanWhatItSends(t *testing.T) {
 	tr := talk(1200)
-	weights := WeighLines(tr)
+	// Quiet, louder and loudest in turn, 8 s each, so the lines differ in
+	// loudness.
+	tr.Frames = make([]float32, 4800*100)
+	for i := range tr.Frames {
+		tr.Frames[i] = float32(-40 + 10*((i/800)%3))
+	}
+	read := newTranscriptRead(tr, true)
+	if said := read.Said(); said == nil || *said != [2]float64{0, 4799} {
+		t.Errorf("speech is said from %v, want from 0 to 4799 s", said)
+	}
+	for name, weights := range map[string][]LineWeight{"WeighLines": WeighLines(tr), "a read's Weighed": read.Weighed().Lines} {
+		weighsWhatItSends(t, name, tr, weights)
+	}
+}
+
+func weighsWhatItSends(t *testing.T, name string, tr *Transcript, weights []LineWeight) {
+	t.Helper()
 	// Counted the way the default recipe writes the transcript.
 	r, _ := RecipeNamed("")
 	lines := BuildLines(tr.Words, nil, nil)
 	if len(weights) != len(lines) {
-		t.Fatalf("%d weights for %d lines", len(weights), len(lines))
+		t.Fatalf("%s: %d weights for %d lines", name, len(weights), len(lines))
 	}
+	levels := tr.Levels()
 	for _, span := range [][2]int{{0, 1200}, {0, 9}, {3, 12}, {95, 105}, {990, 1200}, {500, 501}} {
-		part := BuildLines(tr.Words[span[0]*2:span[1]*2], nil, nil)
+		part := BuildLines(tr.Words[span[0]*2:span[1]*2], levels, nil)
 		sent := runes.Len(r.Transcript(part, PlanOptions{}))
 		counted := 0
 		for _, w := range weights[span[0]:span[1]] {
 			counted += w.Chars
 		}
 		if counted < sent {
-			t.Errorf("lines %d to %d: counted %d, sends %d", span[0], span[1], counted, sent)
+			t.Errorf("%s, lines %d to %d: counted %d, sends %d", name, span[0], span[1], counted, sent)
 		}
 		// A line is counted with the widest number it could have, and the
 		// first line of a window sends no pause before it, so the count is
 		// a little over. A little.
 		if counted > sent+4*(span[1]-span[0])+20 {
-			t.Errorf("lines %d to %d: counted %d, far over the %d it sends", span[0], span[1], counted, sent)
+			t.Errorf("%s, lines %d to %d: counted %d, far over the %d it sends", name, span[0], span[1], counted, sent)
 		}
 	}
 	if len(WeighLines(&Transcript{})) != 0 {

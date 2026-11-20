@@ -39,10 +39,13 @@ type RoomAndLines struct {
 // the parts heard and the rate, with no room. Weighing every line of a
 // long video is the slow part, so what reads it often keeps it for as
 // long as t is the same, see TranscriptRead.Weighed.
-func Weigh(t *Transcript) RoomAndLines {
+func Weigh(t *Transcript) RoomAndLines { return weigh(t, nil) }
+
+// weigh is Weigh with t's lines built already, with no loudness, or nil.
+func weigh(t *Transcript, lines []Line) RoomAndLines {
 	r := RoomAndLines{Rate: SpokenChars}
 	if t != nil {
-		r.Lines = WeighLines(t)
+		r.Lines = weighLines(t, lines)
 		r.Heard = t.Heard
 		r.Rate = RateOf(r.Lines)
 	}
