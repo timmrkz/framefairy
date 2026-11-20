@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -714,13 +715,13 @@ func TestCIStopsTheRunOfAnOutdatedCommit(t *testing.T) {
 	}
 }
 
-// A push takes two Mac jobs, see A Mac only for what is different on a
-// Mac in CLAUDE.md: the Go tests on a Mac in ci.yml, and the build to
-// update to in builds.yml, which opens the same app from outside. The
-// account runs five Mac jobs at once for every branch together, and
-// when a third job built the same app again, two pushes close together
-// filled the queue. A Mac named in a matrix and one in a workflow a job
-// calls count too.
+// A push takes two Mac jobs at most, see A Mac only for what is
+// different on a Mac in CLAUDE.md: the Go tests on a Mac in ci.yml, when
+// it changed code only a Mac builds, and the build to update to in
+// builds.yml. The account runs five Mac jobs at once for every branch
+// together, and when a push took three, two pushes close together filled
+// the queue. A Mac named in a matrix and one in a workflow a job calls
+// count too.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestAPushTakesTwoMacJobs(t *testing.T) {
@@ -741,7 +742,7 @@ func TestAPushTakesTwoMacJobs(t *testing.T) {
 		}
 	}
 	if len(macs) != 2 {
-		t.Errorf("a push or a pull request starts %d Mac jobs, %v, where it should take two: the Go tests and the build that opens the app from outside", len(macs), macs)
+		t.Errorf("a push or a pull request starts %d Mac jobs, %v, where it should take two at most: the Go tests when the Mac's code changed, and the build to update to", len(macs), macs)
 	}
 }
 
@@ -818,41 +819,96 @@ func readYAML(t *testing.T, path string, v any) {
 	}
 }
 
-// The checks from outside the app open the app the build to update to
-// built, in the same job, and only once its zip is uploaded, so they
-// never change what it holds.
+// What only a Mac can tell runs every night on main, and by hand on any
+// branch: every Go test on a Mac and the app opened from outside. No
+// workflow a push or a pull request starts opens the app from outside,
+// since it would take a Mac on every push for code most pushes never
+// touch.
 //
 // On the real disk: what is read is the repository's own workflows.
-func TestTheBuildOpensItsAppFromOutside(t *testing.T) {
+func TestWhatOnlyAMacTellsRunsEveryNight(t *testing.T) {
 	t.Parallel()
-	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "builds.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var wf struct {
+	type workflow struct {
+		On   map[string]any `yaml:"on"`
 		Jobs map[string]struct {
-			Steps []struct {
-				Uses string `yaml:"uses"`
-				Run  string `yaml:"run"`
+			RunsOn any `yaml:"runs-on"`
+			Steps  []struct {
+				Run string `yaml:"run"`
 			} `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
-	if err := yaml.Unmarshal(b, &wf); err != nil {
-		t.Fatal(err)
-	}
-	uploaded, outside := -1, -1
-	for i, s := range wf.Jobs["build"].Steps {
-		if strings.HasPrefix(s.Uses, "actions/upload-artifact@") {
-			uploaded = i
+	runsOnAMac := func(wf workflow, command string) bool {
+		for _, j := range wf.Jobs {
+			if !strings.Contains(fmt.Sprint(j.RunsOn), "macos") {
+				continue
+			}
+			for _, s := range j.Steps {
+				if strings.HasPrefix(s.Run, command) {
+					return true
+				}
+			}
 		}
-		if strings.HasPrefix(s.Run, "make outside") {
-			outside = i
+		return false
+	}
+	for _, f := range actionFiles(t) {
+		if !strings.Contains(filepath.ToSlash(f), "/workflows/") {
+			continue
+		}
+		var wf workflow
+		readYAML(t, f, &wf)
+		_, push := wf.On["push"]
+		_, pr := wf.On["pull_request"]
+		if (push || pr) && runsOnAMac(wf, "make outside") {
+			t.Errorf("%s opens the app from outside on a push", filepath.Base(f))
 		}
 	}
-	switch {
-	case outside < 0:
-		t.Error("the build in builds.yml does not run make outside, so the app it builds is never opened from outside")
-	case uploaded < 0 || outside < uploaded:
-		t.Errorf("make outside is step %d of the build, before the zip is uploaded at step %d", outside+1, uploaded+1)
+	var night workflow
+	readYAML(t, filepath.Join("..", "..", ".github", "workflows", "mac-nightly.yml"), &night)
+	for _, on := range []string{"schedule", "workflow_dispatch"} {
+		if _, ok := night.On[on]; !ok {
+			t.Errorf("mac-nightly.yml does not run on %s", on)
+		}
 	}
+	for _, command := range []string{"make unit", "make outside"} {
+		if !runsOnAMac(night, command) {
+			t.Errorf("mac-nightly.yml does not run %s on a Mac", command)
+		}
+	}
+}
+
+// A pull request runs the Go tests on a Mac when it changes a file only a
+// Mac builds, and only then. internal/maccode keeps every such file named
+// *_darwin.go or *_darwin_test.go, and the filter mac of the job changes
+// looks for exactly those names.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestThePullRequestsMacTestsFollowItsMacCode(t *testing.T) {
+	t.Parallel()
+	var wf struct {
+		Jobs map[string]struct {
+			If    string `yaml:"if"`
+			Steps []struct {
+				ID   string         `yaml:"id"`
+				With map[string]any `yaml:"with"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	readYAML(t, filepath.Join("..", "..", ".github", "workflows", "ci.yml"), &wf)
+	if got := wf.Jobs["macos"].If; got != "needs.changes.outputs.mac == 'true'" {
+		t.Errorf("the job macos runs if %q, not when the filter mac matched", got)
+	}
+	for _, s := range wf.Jobs["changes"].Steps {
+		if s.ID != "filter" {
+			continue
+		}
+		var filters map[string][]string
+		if err := yaml.Unmarshal([]byte(fmt.Sprint(s.With["filters"])), &filters); err != nil {
+			t.Fatal(err)
+		}
+		if got := filters["mac"]; !slices.Equal(got, []string{"**/*_darwin*.go"}) {
+			t.Errorf("the filter mac is %q, not the files internal/maccode keeps the Mac's code in", got)
+		}
+		return
+	}
+	t.Error("ci.yml has no step filter in its job changes")
 }
