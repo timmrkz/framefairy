@@ -56,7 +56,7 @@ names in the code. The docs that changed with it.
 
 <!--
 The tests that ensure it, and that they fail on main and pass here. The
-walks, the measurements before and after that the speed line stands on,
+walks, the measurements before and after that the Performance line stands on,
 and whether CI passed on the last commit. What could not be checked
 here, like WebKit on a Mac, is said. This section may be as long as the
 proof needs.

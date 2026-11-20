@@ -280,10 +280,10 @@ thing belongs. In short:
   too, that says whether the change makes the app or CI faster, slower
   or the same, and checks the pull request's own Performance line as a
   claim. And every review has a security section, that says whether the
-  change makes the app, the build or CI safer, less safe or leaves them
-  as they were: what it lets in from outside, what it runs or fetches,
-  what it lets out, and who could use it. A change that makes it less
-  safe is fixed in the same pull request before it is merged. Its brief
+  change makes the app, the build or CI safer, the same or less safe:
+  what it lets in from outside, what it runs or fetches, what it lets
+  out, and who could use it. A change that makes any of them less safe
+  is fixed in the same pull request before it is merged. Its brief
   carries Tim's own messages, the issue, the goals under The project above
   and the path of `docs/ARCHITECTURE.md`, never the session's summary of
   them. For an architectural change it carries the decision record too,
