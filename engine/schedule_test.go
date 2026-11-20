@@ -622,13 +622,13 @@ func TestTheFramesAroundAPlaceGoToTheWindow(t *testing.T) {
 	_ = st.give(t, 48)
 	<-click
 	if !s.AskNear(rest(48)) {
-		t.Fatal("the look says no frames are near the click, with its run still reading")
+		t.Fatal("the look says no frames are near the place the hand rests on")
 	}
-	if s.AskNear(rest(300)) {
-		t.Fatal("the look says frames are near a place nothing was read around")
-	}
+	// Nothing more is read until the window has drawn the frame and asks.
+	dec.none(t)
 	near := make(chan []Seen, 1)
 	go func() { near <- s.Near(context.Background(), rest(48), func(f int) bool { return f == 47 }) }()
+	// The frames after it, read on by the stream that made it.
 	for f := 49; f <= 48+lookAhead; f++ {
 		_ = st.give(t, f)
 	}
@@ -805,10 +805,10 @@ func TestTheScheduleWantsTheFramesTheHandNeedsFirst(t *testing.T) {
 		want work
 		none bool
 	}{
-		{name: "a click reads from the frame before it, for the arrow to the left",
-			hand: rest(110), want: work{kind: runHand, from: 109, to: 110 + lookAhead}},
-		{name: "a far click reads its own frame first",
-			hand: Hand{Grid: lookGrid, Frame: 110, W: 4, H: 2, Shown: 400}, want: work{kind: runHand, from: 110, to: 110 + lookAhead}},
+		{name: "a click reads from the frame before it, for the arrow to the left, and stops at its own",
+			hand: rest(110), want: work{kind: runHand, from: 109, to: 110}},
+		{name: "a far click reads its own frame first, and only it",
+			hand: Hand{Grid: lookGrid, Frame: 110, W: 4, H: 2, Shown: 400}, want: work{kind: runHand, from: 110, to: 110}},
 		{name: "a drag to the right reads every frame nearer than the picture",
 			hand: move(110, 104), step: 3, want: work{kind: runHand, from: 105, to: 110 + 2*lookAhead, key: true}},
 		{name: "a drag to the right from the span before reads from the key frame",

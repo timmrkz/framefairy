@@ -274,9 +274,10 @@ closed for standing unused.
     the window, which lets go of those first. Where the hand rests,
     nothing more is read around the place until the window has drawn
     its frame: it asks Near, tells where the hand is and hands over the
-    words beside once the frame is painted. Read at once, the decoder
-    took the processor from the window as it drew, and a far click came
-    up 13 ms later than on main. The window keeps 64 frames, two
+    words beside once the frame is painted, and the stream that made a
+    click's frame stops there and reads on to the frames after it only
+    then. Read at once, the decoder took the processor from the window
+    as it drew, and a far click came up 13 ms later than on main. The window keeps 64 frames, two
     places with the words beside each, and makes the words' frames it
     holds the ones used last when the frames read ahead come. With 40 it
     let go of them for the frames that came. The speed walk's presses,

@@ -751,9 +751,13 @@ func (s *Schedule) forHand(h Hand, after int) work {
 	case h.Moving || s.early:
 		return work{kind: runHand, from: s.nearer(h), to: to, key: true}
 	case h.Shown >= 0 && framesApart(h.Frame, h.Shown) > lookBack:
-		return work{kind: runHand, from: h.Frame, to: to}
+		return work{kind: runHand, from: h.Frame, to: h.Frame}
 	}
-	return work{kind: runHand, from: max(0, h.Frame-1), to: to}
+	// A hand at rest has the frames after its own read once its frame is
+	// drawn, see drawing: read on at once, they took the processor from
+	// the window drawing it. The stream stands at the frame and reads on
+	// to them then.
+	return work{kind: runHand, from: max(0, h.Frame-1), to: h.Frame}
 }
 
 // nearer is the first frame of a drag's run: the furthest from the hand
@@ -1233,8 +1237,8 @@ func (s *Schedule) Near(ctx context.Context, l Hand, has func(frame int) bool) [
 // each step that finds its frame in the window shows it with no request.
 // Without them a slow drag waited for a look at every step, 10 ms in the
 // cloud, where the window that read its own frames took 1 ms. Where the
-// hand rests, the window asks once it has drawn the frame, and nothing
-// more is read around the place until then, see drawing.
+// hand rests, the window always asks, once it has drawn the frame, and
+// nothing more is read around the place until then, see drawing.
 func (s *Schedule) AskNear(l Hand) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1247,6 +1251,11 @@ func (s *Schedule) AskNear(l Hand) bool {
 func (s *Schedule) hasNear(l Hand) bool {
 	if l.Moving && s.step > lookFast {
 		return false
+	}
+	if !l.Moving {
+		// What is around a resting place is read once its frame is drawn,
+		// and the window asks for it then.
+		return true
 	}
 	from, to := max(0, l.Frame-lookBack), min(l.Grid.Count-1, l.Frame+lookAhead)
 	if r := s.run; r != nil && r.kind != runAhead && r.sized(l) && r.target >= from && r.from <= to {
