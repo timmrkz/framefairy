@@ -246,11 +246,19 @@ func (ep *Episode) heardSoFar(modelDir string, silenceDB *float64) (heardSoFar, 
 		if t := ep.heldNow(at.stamp); t != nil {
 			return heardSoFar{done: t.Done, heard: t.Heard, said: t.Said()}, nil
 		}
+		// Kept in the work folder by the read before, and written by this
+		// one when it is not, see heardkept.go.
+		kept := heardStamp(at)
+		if h, ok := readKeptHeard(ep.m.Files, ep.source, kept); ok {
+			return h, nil
+		}
 		t, file, err := readSaved(ep.m.Files, at.video, LogsDir(ep.source), at.model, silenceDB)
 		if err != nil {
 			return heardSoFar{}, err
 		}
-		return heardSoFar{done: file.done(), heard: t.Heard, said: saidOf(BuildLines(t.Words, nil, nil))}, nil
+		h := heardSoFar{done: file.done(), heard: t.Heard, said: saidOf(BuildLines(t.Words, nil, nil))}
+		keepHeard(ep.m.Files, ep.source, kept, h)
+		return h, nil
 	})
 }
 

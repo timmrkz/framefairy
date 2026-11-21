@@ -49,6 +49,8 @@ episode.framefairy/
 │   ├── words.json     the transcript, reused on every later run
 │   ├── probe.json     what ffprobe said of the episode, reused while
 │   │                  neither the episode nor ffprobe changed
+│   ├── heard.json     what the transcript has heard, kept by the app
+│   │                  so a start need not read the words
 │   ├── clips.json     the plan
 │   ├── proof.txt      what each clip contains, in text
 │   ├── reply-*.json   each answer of the model, reused for the same prompt,

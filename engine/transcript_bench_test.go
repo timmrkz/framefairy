@@ -81,6 +81,25 @@ func BenchmarkOpeningALongVideo(b *testing.B) {
 	}
 }
 
+// BenchmarkAStartOfTheApp is what a start of the app asks of a video
+// already heard, as the library asks it of every video: its Status, on a
+// Machine of its own, as a new start has. After the first start, what is
+// heard is read from its work folder, see heardkept.go.
+func BenchmarkAStartOfTheApp(b *testing.B) {
+	for _, hours := range []float64{1, 2, 4} {
+		fsys, source := longVideo(b, hours)
+		NewMachine(fsys).Episode(source).Status("m", nil)
+		b.Run(fmt.Sprintf("%.0fh", hours), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if !NewMachine(fsys).Episode(source).Status("m", nil).Transcribed {
+					b.Fatal("the video is not transcribed")
+				}
+			}
+		})
+	}
+}
+
 // BenchmarkSavingAPartHeard times one save while a video is heard, every
 // 8 s: the transcript read, the new part joined in and both files
 // written, with the video heard up to a minute before its end.

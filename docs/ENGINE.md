@@ -820,6 +820,12 @@ read. The transcripts of the last ten videos asked about are kept. What
 `Status` says of a transcript, done, the parts heard and where its lines
 start and end, is kept for every video, so listing the library lets go
 of no transcript, and "no transcript yet" is kept by its stamp as well.
+It outlives the program too: the read that had to read the transcript
+writes it to `logs/heard.json` in the video's work folder, with the
+transcript's stamp and the revision of the build, which snaps the words
+by its own rules, and the next start reads it from there, a few hundred
+bytes instead of every word, `engine/heardkept.go`. See
+[decisions/2026-11-21-what-is-heard-kept-in-the-work-folder.md](decisions/2026-11-21-what-is-heard-kept-in-the-work-folder.md).
 It holds every plan of the video too, each by its own file's stamp,
 `Episode.Plans` and `Episode.Plan`, which the status, the clip list, the
 window, the caption look and the word counts of an edit read, and a plan
