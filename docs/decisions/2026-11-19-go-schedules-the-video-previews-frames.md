@@ -247,3 +247,55 @@ with Go deciding than with the window, measured the way
 `speed.mjs DRAG=1` measures drags in the cloud and the let-go line on
 Tim's Mac, or if the request per frame turns out to cost more than the
 decoding, which would bring back the channel of simulation 2.
+
+## How the steps went
+
+Steps 2 to 4 are one pull request, as Tim asked on 19 November: "I
+would have hoped you just made all of those changes in one pull
+request."
+
+- Step 2 put the schedule in `engine/schedule.go` and the route
+  `/frames/look`. Measured alone, a slow step back got slower, since
+  every place became a request, so step 3 came with it.
+- Step 3 kept the window's frames after all, as the record allowed: a
+  step back measured slower without them. The window shows a frame it
+  holds without asking, and the frames the Go side read around a place
+  go to it through `/frames/near` when the look says they are there.
+- Step 4 moved the reading ahead into the schedule, `/frames/ahead`.
+  The window hands over what to read, and held while the hand holds the
+  playhead, the app is sized or a play runs. Measured with the frames
+  read ahead kept only on the Go side, a step to the word beside got
+  slower than on main, since each became a request, so the answer
+  brings what was read, and the window keeps it, the way step 3 keeps
+  the frames around a place. The cards' frames are kept there for as
+  long as their cards are, and the Go side keeps them no longer than
+  any other frame.
+- The measurements found three more things, each fixed in the schedule
+  and tested in Go. A fast drag's runs read on past their place and were
+  sent the frames around it, which only kept the decoder from the next
+  place, so a hand that moves more than two frames at a time gets
+  neither: its run holds right after the place, and reads on once the
+  hand rests there or a play is cued there, with no second seek. A slow drag to the left stood still at the end of each
+  batch read behind it, so the next batch is read while the hand is
+  still among the frames of the one before. A run with its key frame
+  first made a picture of every frame between its key frame and its
+  place, so those are now decoded and not scaled.
+- Two more came up, one in CI and one in the measurements. Requests
+  reach the Go side in any order, since each is served on a goroutine of
+  its own, and an ask to read ahead sent a millisecond before the newest
+  came after it and took its place, so the frames of the word beside
+  were never read. Each look and each ask now says which window sent it
+  and how many it had sent before, `engine.Sent`, and the newest is the
+  one sent last. And a slow drag to the right stood still now and then:
+  its run read four frames past the place and ended, so the next place
+  past those was a seek of its own, where main had read on in the stream
+  it held. The run of a hand that holds the playhead now holds there
+  instead, and reads on from where it stands.
+- Step 5 found nothing to build. Tim's log of 12 November says a jump's
+  seek takes 0 ms, `moved ... 0 ms`, so an index of key frames would
+  save nothing, and its key frame came 15 to 16 ms after the open with
+  2 frames decoded, then about 3.4 ms a frame. Both are the graphics
+  chip's own time: ffmpeg hands VideoToolbox one frame and waits for it,
+  and several frames in the chip at once needs a change to ffmpeg itself.
+  The decoder already keeps the chip's session across a seek, since a
+  flush does not end it.

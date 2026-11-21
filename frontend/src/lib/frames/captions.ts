@@ -454,6 +454,7 @@ export type Tell = (text: string, video: string) => void;
 export class CaptionLayers {
   private ask: CaptionAsk | null = null;
   private askKey = "";
+  // The layers kept, the one drawn last at the end, see at.
   private kept = new Map<string, Layer>();
   // The layers on their way, each with what calls it off once it is no
   // longer wanted: a draft or a track that changed, a seek. Every ask
@@ -704,6 +705,12 @@ export class CaptionLayers {
       this.fetch(want);
       return this.lift ? this.lifted(this.lift) : this.last;
     }
+    // Drawn now, so the last to go when the layers kept are too many, see
+    // fetch. Kept in the order they came, the layer of a card clicked
+    // after a play, read before it, went first as the play's next layers
+    // came, and the frame on screen asked for its captions again.
+    this.kept.delete(want.key);
+    this.kept.set(want.key, have);
     const before = this.last;
     this.last = have;
     // The frame a word step came to.

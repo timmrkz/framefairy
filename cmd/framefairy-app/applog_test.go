@@ -152,11 +152,11 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 		logged(&recorded{ResponseWriter: httptest.NewRecorder()}, httptest.NewRequest("GET", target, nil), h)
 	}
 	pull := func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(make([]byte, 64)) }
-	serve("/frames/open?path=/videos/start.mp4&from=1.5&w=874&h=492", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"id":"1dcdec3203858e5a"}`))
+	serve("/frames/play?path=/videos/start.mp4&pieces=1:3&at=1.5&w=874&h=492&rate=48000&ch=2&cue=1", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"pictures":"1dcdec3203858e5a"}`))
 	})
-	serve("/frames/read?id=1dcdec3203858e5a&n=4&skip=0", pull)
-	serve("/frames/read?id=1dcdec3203858e5a&n=4&skip=1", func(w http.ResponseWriter, r *http.Request) {
+	serve("/frames/read?id=1dcdec3203858e5a&n=4", pull)
+	serve("/frames/read?id=1dcdec3203858e5a&n=16", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Frames-End", "1")
 		w.Header().Set("X-Frames-Error", "the picture could not be decoded")
 		w.WriteHeader(http.StatusOK)
@@ -181,12 +181,12 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 	})
 
 	lines := read()
-	has(t, find(lines, "open "), map[string]any{
-		"level": "debug", "from": "files", "video": "start.mp4", "msg": "open from 1.5 at 874x492",
-		"status": 200, "bytes": 25, "said": `{"id":"1dcdec3203858e5a"}`,
+	has(t, find(lines, "play "), map[string]any{
+		"level": "debug", "from": "files", "video": "start.mp4", "msg": "play of 1:3 from 1.5 at 874x492, 48000 Hz, 2 channels, cued",
+		"status": 200, "bytes": 31, "said": `{"pictures":"1dcdec3203858e5a"}`,
 	})
-	has(t, find(lines, "read n 4 skip 1"), map[string]any{
-		"level": "warn", "stream": "1dcdec", "msg": "read n 4 skip 1, failed: the picture could not be decoded", "status": 200,
+	has(t, find(lines, "read n 16"), map[string]any{
+		"level": "warn", "stream": "1dcdec", "msg": "read n 16, failed: the picture could not be decoded", "status": 200,
 	})
 	has(t, find(lines, "hold"), map[string]any{
 		"level": "warn", "video": "start.mp4", "status": 500, "said": "the video's decoder could not start",
@@ -203,10 +203,10 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 	if kept := string(theLog.recent.all()); strings.Contains(kept, `\u0000`) {
 		t.Errorf("the memory holds the bytes of a caption layer: %s", kept)
 	}
-	if find(lines, "read n 4 skip 0") != nil {
+	if find(lines, "read n 4") != nil {
 		t.Error("a pull that went as it should was written to the file")
 	}
-	if kept := string(theLog.recent.all()); !strings.Contains(kept, `"msg":"read n 4 skip 0"`) || strings.Contains(kept, "skip 1") {
+	if kept := string(theLog.recent.all()); !strings.Contains(kept, `"msg":"read n 4"`) || strings.Contains(kept, "read n 16") {
 		t.Errorf("the memory holds %s, want the pull that went as it should and only that", kept)
 	}
 	if find(lines, "close") != nil {

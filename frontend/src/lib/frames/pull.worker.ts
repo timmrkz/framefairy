@@ -3,8 +3,8 @@
 // with the buffers it had no frame for, all handed over rather than copied.
 import { pull } from "./pull";
 
-self.onmessage = async (e: MessageEvent<{ n: number; url: string; width: number; height: number; spare?: ArrayBuffer[] }>) => {
-  const { n, url, width, height, spare = [] } = e.data;
+self.onmessage = async (e: MessageEvent<{ n: number; url: string; width: number; height: number; spare?: ArrayBuffer[]; head?: number }>) => {
+  const { n, url, width, height, spare = [], head = 8 } = e.data;
   if (n < 0) {
     // The page asks once whether the Go side can be reached from here.
     const reached = await fetch(new URL("/frames/close?id=none", self.location.href).href).then(
@@ -14,6 +14,6 @@ self.onmessage = async (e: MessageEvent<{ n: number; url: string; width: number;
     self.postMessage({ n, reached });
     return;
   }
-  const got = await pull(new URL(url, self.location.href).href, width, height, spare);
+  const got = await pull(new URL(url, self.location.href).href, width, height, spare, head);
   self.postMessage({ n, got }, { transfer: [...got.frames.map((f) => f.data), ...got.spare] });
 };

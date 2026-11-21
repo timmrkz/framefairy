@@ -14,9 +14,27 @@ import (
 	"sync"
 	"time"
 
+	"framefairy/engine/runes"
 	"framefairy/internal/framewire"
 	"framefairy/internal/wake"
 )
+
+// tail keeps the last lines the decoder said that were not about a frame,
+// for the reason when it fails.
+type tail struct {
+	lines []string
+}
+
+func (t *tail) add(line string) {
+	t.lines = append(t.lines, line)
+	if len(t.lines) > 8 {
+		t.lines = t.lines[1:]
+	}
+}
+
+func (t *tail) String() string {
+	return runes.Scrub(strings.Join(t.lines, " "), 400)
+}
 
 // DecoderInfo starts a line the decoder writes only for the log: what it
 // opened and how, what it is doing and how long it took. Only its other
@@ -587,7 +605,6 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 		}
 		return fmt.Sprintf("next %d %d %.6f", id, ahead, from)
 	}
-	times := previewTimesOf(ctx)
 	f.mu.Lock()
 	if err := f.start(); err != nil {
 		f.mu.Unlock()
@@ -601,9 +618,6 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 		err = f.send(gone, "%s", next(id))
 	}
 	f.mu.Unlock()
-	// The decoder runs and has the request: at once where it ran already,
-	// after starting it where it did not.
-	times.mark(timeStarted)
 	if err != nil {
 		return f.refused(ctx, gone, err)
 	}
@@ -681,22 +695,14 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 			case framewire.Opened:
 				// The cursor is at from: a file opened, a cursor moved, or
 				// a cursor read on to it.
-				how, light := framewire.ReadOpened(rec.Body)
-				if times != nil && how == framewire.OpenedFile {
-					times.File.Store(true)
-				}
-				if times != nil && how == framewire.WentOn {
-					times.WentOn.Store(true)
-				}
+				_, light := framewire.ReadOpened(rec.Body)
 				if kind == pictureCursor {
 					f.mu.Lock()
 					f.light = light
 					f.mu.Unlock()
 				}
-				times.mark(timeOpened)
 			case framewire.Frame:
 				stood(rec)
-				times.mark(timeFirst)
 				if err := got(rec.At, rec.Body); err != nil {
 					finish()
 					return err

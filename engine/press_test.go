@@ -1,0 +1,548 @@
+package engine
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+
+	"framefairy/internal/framewire"
+)
+
+// Presses of the arrow keys, simulated the way the drags are, see
+// drag_test.go: the decoder of Tim's Mac on the fake clock of a
+// testing/synctest bubble, and a window that keeps frames, tells and
+// asks the way app.ts does. A hand at rest steps from word to word with
+// Shift and an arrow, and from frame to frame with an arrow alone, with a
+// pause between two presses that a person makes to look.
+
+// pressKept is how many frames the window keeps, KEPT_FRAMES in app.ts.
+const pressKept = 64
+
+// pressPaint is how long the window takes from a frame it has to the
+// moment it is on screen and it asks Near, see afterPaint in app.ts: up to
+// a frame of the page to the next paint, half of one on the whole.
+const pressPaint = 8 * time.Millisecond
+
+// pressWindow is the window of a press walk.
+type pressWindow struct {
+	s     *Schedule
+	grid  framewire.Grid
+	w, h  int
+	ctx   context.Context
+	words []int
+	all   sync.WaitGroup
+
+	mu sync.Mutex
+	// kept are the frames the window holds, the one used last at the end.
+	kept []int
+	// ever are the frames the window was ever sent, to count the ones
+	// sent again.
+	ever  map[int]bool
+	sent  uint64
+	hand  int
+	shown int
+	// waits is how long each press waited for its frame, and missed the
+	// presses whose frame the window did not hold.
+	waits  []time.Duration
+	missed []int
+	frames int
+	again  int
+	asked  int
+	nearAt int
+	// nearAsking says a Near is on its way, and nearNext is the place to
+	// ask next once it is back: the window asks one at a time, for the
+	// newest place, see near in app.ts.
+	nearAsking bool
+	nearNext   *Hand
+}
+
+func (w *pressWindow) keep(f int) {
+	w.frames++
+	if w.ever[f] {
+		w.again++
+	}
+	w.ever[f] = true
+	w.use(f)
+}
+
+// use makes a kept frame the one used last, or keeps a new one, letting
+// go of the one used longest ago once there are more than pressKept.
+func (w *pressWindow) use(f int) {
+	if i := slices.Index(w.kept, f); i >= 0 {
+		w.kept = slices.Delete(w.kept, i, i+1)
+	}
+	w.kept = append(w.kept, f)
+	if len(w.kept) > pressKept {
+		w.kept = w.kept[1:]
+	}
+}
+
+func (w *pressWindow) has(f int) bool { return slices.Contains(w.kept, f) }
+
+// around are the frames the window holds around a place, the ones it
+// names with a look or a Near there, see keptHere in app.ts.
+func (w *pressWindow) around(at int) []int {
+	var out []int
+	for _, f := range w.kept {
+		if f >= at-16 && f <= at+8 {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func (w *pressWindow) next() Sent {
+	w.sent++
+	return Sent{Window: "sim", N: w.sent}
+}
+
+// press moves the playhead to a frame, the way a key does in the app:
+// the words beside the new place handed over to be read ahead, see
+// ClipTimeline's onahead, and then the kept frame shown at once and told,
+// or the frame asked for, see FrameQueue. The app's log shows them come in
+// that order, and the walk keeps to it.
+func (w *pressWindow) press(f int) {
+	w.mu.Lock()
+	w.hand = f
+	w.ahead()
+	w.mu.Unlock()
+	synctest.Wait()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.has(f) {
+		w.use(f)
+		w.shown = f
+		w.waits = append(w.waits, 0)
+		l := Hand{Grid: w.grid, Frame: f, W: w.w, H: w.h, Shown: f, Has: true, Holds: w.around(f), Sent: w.next()}
+		w.all.Go(func() { _, _ = w.s.Look(w.ctx, l) })
+		return
+	}
+	w.missed = append(w.missed, f)
+	l := Hand{Grid: w.grid, Frame: f, W: w.w, H: w.h, Shown: w.shown, Sent: w.next()}
+	began := time.Now()
+	w.all.Go(func() { w.look(l, began) })
+}
+
+func (w *pressWindow) look(l Hand, began time.Time) {
+	w.mu.Lock()
+	w.asked++
+	w.mu.Unlock()
+	seen, err := w.s.Look(w.ctx, l)
+	if err != nil {
+		return
+	}
+	w.mu.Lock()
+	w.keep(seen.Frame)
+	if w.hand == l.Frame {
+		w.shown = seen.Frame
+		w.waits = append(w.waits, time.Since(began)) //nolint:forbidigo // synctest bubble
+	}
+	if seen.Exact && w.s.HasNear(l) {
+		if l.Moving {
+			w.near(l)
+		} else {
+			w.drawn(l)
+		}
+	}
+	w.mu.Unlock()
+}
+
+// drawn asks Near for a resting place once its frame is on screen, see
+// pressPaint. Under the lock.
+func (w *pressWindow) drawn(l Hand) {
+	w.all.Go(func() {
+		time.Sleep(pressPaint) //nolint:forbidigo // synctest bubble
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.near(l)
+	})
+}
+
+// near asks the Go side for the frames around a place it does not hold
+// and keeps them, one ask at a time, see near in app.ts. Under the lock.
+func (w *pressWindow) near(l Hand) {
+	if w.nearAsking {
+		w.nearNext = &l
+		return
+	}
+	w.nearAsking = true
+	w.nearAt++
+	w.all.Go(func() {
+		for {
+			w.mu.Lock()
+			holds := w.around(l.Frame)
+			w.mu.Unlock()
+			near := w.s.Near(w.ctx, l, func(f int) bool { return slices.Contains(holds, f) })
+			w.mu.Lock()
+			for _, n := range near {
+				w.keep(n.Frame)
+			}
+			next := w.nearNext
+			w.nearNext = nil
+			if next == nil || w.ctx.Err() != nil {
+				w.nearAsking = false
+				w.mu.Unlock()
+				return
+			}
+			l = *next
+			w.nearAt++
+			w.mu.Unlock()
+		}
+	})
+}
+
+// ahead hands over the first frames of the words either side of the
+// playhead, see ClipTimeline's onahead. Under the lock.
+func (w *pressWindow) ahead() {
+	var frames []int
+	if i := slices.IndexFunc(w.words, func(f int) bool { return f > w.hand }); i >= 0 {
+		frames = append(frames, w.words[i])
+	}
+	for i := len(w.words) - 1; i >= 0; i-- {
+		if w.words[i] < w.hand {
+			frames = append(frames, w.words[i])
+			break
+		}
+	}
+	a := Ahead{Grid: w.grid, W: w.w, H: w.h, Frames: frames, Has: slices.Clone(w.kept), Sent: w.next()}
+	w.all.Go(func() {
+		seen, err := w.s.Ahead(w.ctx, a)
+		if err != nil {
+			return
+		}
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		// The words' frames it holds already are made the ones used last
+		// before the frames that came are kept, see app.ts.
+		for _, g := range a.Keep() {
+			if w.has(g) {
+				w.use(g)
+			}
+		}
+		for _, n := range seen {
+			w.keep(n.Frame)
+		}
+	})
+}
+
+// pressWalk is what a press walk did.
+type pressWalk struct {
+	presses, asked         int
+	decoded, frames, again int
+	// missed are the frames pressed to that the window did not hold, the
+	// first press left out.
+	missed []int
+	// missedWords are the ones of them a word key went to.
+	missedWords []int
+	waits       []time.Duration
+	told        []simEvent
+	began       time.Time
+}
+
+// log writes what the decoder did, press by press.
+func (p pressWalk) log(t *testing.T) {
+	t.Helper()
+	var b strings.Builder
+	for _, e := range p.told {
+		if !strings.Contains(e.what, "made") {
+			fmt.Fprintf(&b, "%6d ms %s\n", e.at.Sub(p.began).Milliseconds(), e.what)
+		}
+	}
+	t.Log("\n" + b.String())
+}
+
+func (p pressWalk) String() string {
+	slices.Sort(p.waits)
+	most := time.Duration(0)
+	if len(p.waits) > 0 {
+		most = p.waits[len(p.waits)-1]
+	}
+	return fmt.Sprintf("%d presses, %d found their frame missing %v, %d frames decoded, %d sent to the window, %d of them again, the longest wait %v",
+		p.presses, len(p.missed), p.missed, p.decoded, p.frames, p.again, most)
+}
+
+// walkPresses presses the keys of a walk over words on a new schedule,
+// from the first frame, resting rest between two presses.
+func walkPresses(t *testing.T, v simVideo, words []int, keys string, rest time.Duration) pressWalk {
+	t.Helper()
+	var p pressWalk
+	grid := framewire.Grid{Num: 25, Den: 1, Count: 30000}
+	synctest.Test(t, func(t *testing.T) {
+		dec := newSimDecoder(v)
+		s := newSchedule(dec)
+		ctx, cancel := context.WithCancel(context.Background())
+		w := &pressWindow{s: s, grid: grid, w: v.w, h: v.h, ctx: ctx, words: words, ever: map[int]bool{}, shown: -1, hand: -1}
+		began := time.Now()
+		at := words[0]
+		w.press(at)
+		dec.tell("press %d", at)
+		time.Sleep(rest) //nolint:forbidigo // synctest bubble
+		for _, k := range keys {
+			switch k {
+			case 'W':
+				i := slices.IndexFunc(words, func(f int) bool { return f > at })
+				at = words[i]
+			case 'w':
+				for i := len(words) - 1; i >= 0; i-- {
+					if words[i] < at {
+						at = words[i]
+						break
+					}
+				}
+			case 'R':
+				at++
+			case 'L':
+				at--
+			default:
+				t.Fatalf("no key %q", k)
+			}
+			w.mu.Lock()
+			missed := len(w.missed)
+			w.mu.Unlock()
+			w.press(at)
+			dec.tell("press %c to %d", k, at)
+			w.mu.Lock()
+			if len(w.missed) > missed && (k == 'W' || k == 'w') {
+				p.missedWords = append(p.missedWords, at)
+			}
+			w.mu.Unlock()
+			time.Sleep(rest) //nolint:forbidigo // synctest bubble
+		}
+		cancel()
+		s.Close()
+		w.all.Wait()
+		dec.streams.Wait()
+		synctest.Wait()
+		w.mu.Lock()
+		p = pressWalk{missedWords: p.missedWords, presses: len(keys), missed: w.missed[1:], asked: w.asked, frames: w.frames, again: w.again, waits: w.waits[1:], began: began}
+		w.mu.Unlock()
+		dec.mu.Lock()
+		p.decoded = dec.decoded
+		p.told = dec.told
+		dec.mu.Unlock()
+	})
+	return p
+}
+
+// The keys of the speed walk, speed.mjs: Shift and the right arrow 8
+// times, the left arrow 3, the right arrow 3, Shift and the left arrow 7,
+// and Shift and the right arrow then the left arrow 4 times.
+const pressSpeedWalk = "WWWWWWWWLLLRRRwwwwwwwWLWLWLWL"
+
+// The words of the cloud's walk video, by their first frame.
+var pressWords = []int{0, 18, 25, 35, 75, 84, 93, 104, 115, 130, 142, 155, 170}
+
+// A word key pressed finds the frame of its word in the window, at any
+// pace a person reads at: the words beside are read first while the hand
+// rests and handed over as soon as they are read, and the window keeps
+// them. Before, a word key pressed every 150 ms found its frame missing
+// at 9 words in 21: the words came only once the frames behind the hand
+// were read too, a read of them could wait on a stream still decoding
+// from a key frame far back, and the window let go of them for the
+// frames that came after.
+func TestAWordKeyFindsItsFrameInTheWindow(t *testing.T) {
+	for _, rest := range []time.Duration{150 * time.Millisecond, 200 * time.Millisecond, 300 * time.Millisecond} {
+		t.Run(rest.String(), func(t *testing.T) {
+			t.Parallel()
+			p := walkPresses(t, everyKey("a key frame every 2 s", 50), pressWords, pressSpeedWalk, rest)
+			if len(p.missedWords) > 0 {
+				p.log(t)
+				t.Errorf("the word keys to frames %v found them missing: %v", p.missedWords, p)
+			}
+		})
+	}
+}
+
+// The decoder reads each frame a press walk wants about once, and the
+// window is sent each about once. For the 29 presses of the speed walk
+// it decoded 587 frames and sent 126, 41 of them again, and now 239 and
+// 74, 5 of them again: a read of the words ahead was stopped and started
+// again with each press of a key, a new stream that seeks, the frames
+// behind the hand were decoded again from the key frame before them
+// although most of them were kept, here or in the window, and the window
+// let go of frames it was sent for the next ones.
+func TestAPressWalkDecodesEachFrameAboutOnce(t *testing.T) {
+	p := walkPresses(t, everyKey("a key frame every 2 s", 50), pressWords, pressSpeedWalk, 300*time.Millisecond)
+	if p.decoded > 260 || p.again > 10 {
+		p.log(t)
+		t.Errorf("the decoder decoded %d frames and sent %d again, want 260 and 10 at most: %v", p.decoded, p.again, p)
+	}
+}
+
+// drag moves the hand over frames one at a time, holding the playhead,
+// a frame of the page apart, and lets go at the last, the way a slow drag
+// of the playhead does in the app: an Ahead held with what the window
+// keeps when the hand presses, then a look at each place, and an Ahead
+// let go at the end. It returns how long each place waited for its frame.
+func (w *pressWindow) drag(frames []int) []time.Duration {
+	w.mu.Lock()
+	a := Ahead{Grid: w.grid, W: w.w, H: w.h, Has: slices.Clone(w.kept), Held: true, Sent: w.next()}
+	w.mu.Unlock()
+	_, _ = w.s.Ahead(w.ctx, a)
+	var waits []time.Duration
+	for i, f := range frames {
+		w.mu.Lock()
+		w.hand = f
+		moving := i > 0
+		if w.has(f) {
+			w.use(f)
+			w.shown = f
+			l := Hand{Grid: w.grid, Frame: f, W: w.w, H: w.h, Moving: moving, Shown: f, Has: true, Sent: w.next()}
+			if !moving {
+				l.Holds = w.around(f)
+			}
+			w.all.Go(func() { _, _ = w.s.Look(w.ctx, l) })
+			w.mu.Unlock()
+			waits = append(waits, 0)
+		} else {
+			w.mu.Unlock()
+			began := time.Now()
+			w.all.Go(func() { w.dragLook(f, moving) })
+			synctest.Wait()
+			// The frame came before the next frame of the page, or the
+			// hand waits on at the next place: what it waited is counted
+			// from here until it is there.
+			w.mu.Lock()
+			if w.has(f) {
+				waits = append(waits, time.Since(began)) //nolint:forbidigo // synctest bubble
+			} else {
+				waits = append(waits, -1)
+			}
+			w.mu.Unlock()
+		}
+		time.Sleep(16 * time.Millisecond) //nolint:forbidigo // synctest bubble
+		w.mu.Lock()
+		if waits[len(waits)-1] < 0 && w.has(f) {
+			waits[len(waits)-1] = 16 * time.Millisecond
+		}
+		w.mu.Unlock()
+	}
+	w.mu.Lock()
+	w.hand = -1
+	a = Ahead{Grid: w.grid, W: w.w, H: w.h, Has: slices.Clone(w.kept), Sent: w.next()}
+	w.mu.Unlock()
+	w.all.Go(func() { _, _ = w.s.Ahead(w.ctx, a) })
+	synctest.Wait()
+	return waits
+}
+
+// dragLook asks for a place the hand drags over until its frame is in
+// the window or the hand left it, keeping the frames that came on the way.
+func (w *pressWindow) dragLook(f int, moving bool) {
+	for {
+		w.mu.Lock()
+		if w.hand != f {
+			w.mu.Unlock()
+			return
+		}
+		l := Hand{Grid: w.grid, Frame: f, W: w.w, H: w.h, Moving: moving, Shown: w.shown, Sent: w.next()}
+		w.mu.Unlock()
+		seen, err := w.s.Look(w.ctx, l)
+		if err != nil {
+			return
+		}
+		w.mu.Lock()
+		w.keep(seen.Frame)
+		w.shown = seen.Frame
+		if seen.Exact && !moving {
+			w.drawn(l)
+		}
+		w.mu.Unlock()
+		if seen.Exact {
+			return
+		}
+	}
+}
+
+// A slow drag to the right finds the frames ahead of the hand as it gets
+// there, over frames a drag to the left went over just before. The window
+// held most of them when the hand pressed and let go of them, the oldest
+// first, for the frames that came as it dragged. Before, the Go side
+// counted them held for the whole drag and read none of them, and the
+// hand waited for a stream from the key frame before each one it found
+// missing: the slow drag to the right of the speed walk waited over 50 ms
+// at 2 to 11 of about 300 places from its second round on, and never in
+// its first.
+func TestASlowDragFindsTheFramesTheWindowHeld(t *testing.T) {
+	grid := framewire.Grid{Num: 25, Den: 1, Count: 30000}
+	v := everyKey("a key frame every 2 s", 50)
+	synctest.Test(t, func(t *testing.T) {
+		dec := newSimDecoder(v)
+		s := newSchedule(dec)
+		ctx, cancel := context.WithCancel(context.Background())
+		w := &pressWindow{s: s, grid: grid, w: v.w, h: v.h, ctx: ctx, ever: map[int]bool{}, shown: -1, hand: -1}
+		var left, right []int
+		for f := 300; f >= 100; f-- {
+			left = append(left, f)
+		}
+		for f := 100; f <= 300; f++ {
+			right = append(right, f)
+		}
+		w.drag(left)
+		waits := w.drag(right)
+		cancel()
+		s.Close()
+		w.all.Wait()
+		dec.streams.Wait()
+		synctest.Wait()
+		var long []int
+		for i, d := range waits {
+			if d < 0 || d > 50*time.Millisecond {
+				long = append(long, right[i])
+			}
+		}
+		if len(long) > 0 {
+			t.Errorf("the drag to the right waited over 50 ms at %d of %d places: %v", len(long), len(right), long)
+		}
+	})
+}
+
+// A far click has its frame drawn before the decoder reads around it: the
+// window asks Near once the frame is on screen, see app.ts, and the frames
+// before the place wait for that. Read at once, they took the processor
+// from the window as it drew the frame clicked, and in the cloud the
+// picture came up 13 ms later than on main.
+func TestTheFramesAroundAClickWaitForItsFrameToBeDrawn(t *testing.T) {
+	grid := framewire.Grid{Num: 25, Den: 1, Count: 30000}
+	v := everyKey("a key frame every 2 s", 50)
+	synctest.Test(t, func(t *testing.T) {
+		dec := newSimDecoder(v)
+		s := newSchedule(dec)
+		defer s.Close()
+		ctx := context.Background()
+		l := Hand{Grid: grid, Frame: 434, W: v.w, H: v.h, Shown: 0, Sent: Sent{Window: "sim", N: 1}}
+		seen, err := s.Look(ctx, l)
+		if err != nil || !seen.Exact || seen.Frame != 434 {
+			t.Fatalf("the look at 434 answered %+v, %v", seen, err)
+		}
+		if !s.HasNear(l) {
+			t.Fatal("the frames around the click are not offered to the window")
+		}
+		// The window draws the frame meanwhile.
+		time.Sleep(time.Second) //nolint:forbidigo // synctest bubble
+		dec.mu.Lock()
+		var early []int
+		for _, m := range dec.made {
+			if m.frame != 434 {
+				early = append(early, m.frame)
+			}
+		}
+		dec.mu.Unlock()
+		if len(early) > 0 {
+			t.Errorf("before the window asked for them, the decoder made frames %v around the click", early)
+		}
+		near := s.Near(ctx, l, func(int) bool { return false })
+		var frames []int
+		for _, n := range near {
+			frames = append(frames, n.Frame)
+		}
+		if !slices.Contains(frames, 433) || !slices.Contains(frames, 434-lookBack) {
+			t.Errorf("Near handed over %v, want the %d frames before 434 among them", frames, lookBack)
+		}
+	})
+}

@@ -96,8 +96,7 @@ removed. Nothing is prepared before the first play.
    spliced the new program into the running play in 366 lines, and was
    closed for it. Loop was the first exception, 2.150 and 2.183, which
    changes only where the play ends. That end is the play's own: the
-   next play builds its program again, `Program.changedWhilePlaying`.
-   Kept, a loop switched off in the second time through sent the next
+   next play builds its program again. Kept, a loop switched off in the second time through sent the next
    play round the clip's end once more. Then the play kept the pieces it
    started with while an edge or a cut was dragged, because starting it
    again at every step of the hand stuttered. Tim found the cost of that
@@ -106,22 +105,14 @@ removed. Nothing is prepared before the first play.
    had taken back. No rule of the product makes that case not happen, an
    undo while the clip plays is an ordinary thing to do, so rule 7 lets
    the machinery in. Now every change of the clip while it plays, an edge
-   or a cut dragged, an undo or a redo, is spliced in ahead of the
-   playhead, `changed` in `lib/frames/queue.ts` and `Program.spliced` in
-   `lib/frames/plan.ts`. The play keeps what it worked out up to the
-   first piece the change reaches, which runs on to where it ends now,
-   the pieces after it are the new ones, and nothing that plays moves,
-   stops or jumps. So a change further on, the clip's end with the
-   playhead a moment before a cut, touches nothing the decoders already
-   work on. A play cut short keeps what was fed and stops at the new end,
-   the sound faded out there by the sound card, so a later change, the
-   end put back, dragged on past the playhead or the loop switched on, is
-   weighed against what was really fed. Only where the decoders or the
-   sound card were fed past the place the two programs part does the play
-   start again from the playhead, a moment's stop: the next cut moved or
-   taken away within about two seconds ahead of the playhead, where the
-   piece after it is decoded already, or a run already flushed. An edge of
-   the clip dragged past
+   or a cut dragged, an undo or a redo, is a new play that takes over
+   from the one under way a moment ahead of the sound heard, `changed` in
+   `lib/frames/queue.ts`. The Go side works out the moment the play under
+   way stands at there and plays the new pieces from it, and its first
+   frames are the ones it decoded already, so nothing that plays moves,
+   stops or jumps. Where the new pieces do not hold that moment, the play
+   goes on as it was and the pieces are the next play's. An edge of the
+   clip dragged past
    the playhead leaves the playhead outside the clip, on the video,
    Tim's rule on #277, so the play goes on as a play of the video,
    straight on to the episode's end, `playOn`. Paused, the playhead goes
@@ -245,78 +236,170 @@ closed for standing unused.
   program's life, for the tests. Issue #924, the first step of
   [the decision record](decisions/2026-11-19-go-schedules-the-video-previews-frames.md)
   that moves the choice of the next frame from the interface to Go.
-- Not built yet: keeping the frames around the playhead it has already
-  decoded, so a step back, a step on and a drag over them cost nothing,
-  and while paused decoding the frames on either side of the playhead
-  before they are asked for. The interface keeps the frames it was given,
-  which covers a step back, so this waits until the marks say it is
-  needed, with plan row 2.157. The interface asks for the frames a step
-  goes to next, plan row 2.269: paused with nothing under the hand, the
-  first frame of the word after the playhead and of the word before, the
-  way Shift and an arrow walk, once the frame the hand asked for has
-  come, see `AppFrames.ahead`, and the layers of their captions, which a
-  step waits for before its frame is put up. After them come the first frames of
-  the clips on the cards, the card under the pointer first and then the
-  cards nearest the one chosen, with their captions, so a card clicked
-  puts up its clip from what was read, issue #383. They are read once the
-  workspace is on screen, a clip a search finds or Mark In makes as it
-  comes, and kept for as long as the card is there, apart from the frames
-  a play or a step keeps, as many frames as 400 MB holds at the size
-  frames are read at, counted again when that size changes, `CARDS_BYTES`
-  in `lib/frames/app.ts`. They are read only while paused, never on a
-  second decoder beside a play, and read again when a workspace is woken,
-  whose video preview opens with frames of its own. A workspace asleep
-  reads none. Their captions wait while a word stepped onto is lifted
-  out and bounces, which comes first. Everything read ahead goes one at a time, so a click
-  that comes before it is in waits behind one read and not three. A
-  jump forward in an open stream brings
-  the frame before it too, for the arrow to the left. The decoder is told
-  the moment before which nothing is wanted, `next` with a skip, so the
-  frames a jump passes are decoded but never scaled. A frame asked of
-  the stream while such a read is on its way, somewhere in what it
-  skips, never comes from it, so it is asked of another stream. It was
-  handed the frame before it, and the video preview showed that frame
-  and said it showed the one asked for, issue #358. While the playhead
-  is dragged, each place it passes shows its frame alone and cues no
-  play, `FrameQueue.grip`, and the play is cued where the hand lets go.
-  A place the hand moves to that needs a stream of its own opens it with
-  `key`, and the decoder hands over the key frame its seek lands on
-  before it decodes on to the frame asked for, issue #281. The place a
-  press lands on does not, so a click shows the frame clicked and nothing
-  before it. The queue puts that key frame up only when it is nearer the
-  playhead than the frame on screen, and the exact frame still follows
-  and takes its place. The frame asked for is the next frame the decoder
-  hands over after the key frame: the frames between are decoded and let
-  go unscaled, the way a jump lets them go. So a hand that outruns the decoder sees a frame
-  near it at the cost of the key frame and the few frames stored next to
-  it, not the frame of a place it left long ago, and a place it has
-  already left costs its key frame alone, since the queue lets go of that
-  stream sooner. Where the hand rests, and once it lets go, the frame on
-  screen is the exact one, as before. A hand dragging slowly to the left,
-  a frame or two back from the place before, asks for frames no stream
-  reaches, since a stream only reads on. Each step was a stream of its
-  own, a seek with its key frame first that the frame on screen was
-  nearer than, and the picture stood for each, up to seconds, where a
-  slow drag to the right read on and kept up, issue #596. Such a step
-  opens its stream 15 frames before the place, `BACK` in
-  `lib/frames/app.ts`, with no key frame first, and every frame from
-  there comes and is kept, so the next 15 steps back find their frames
-  kept. The app's log says how each drag
-  went once the hand lets go: how far the frame on screen was from the
-  playhead as the hand moved, the key frames put up, how long the frame
-  under the hand took after letting go, how long the picture stood while
-  the hand had moved on, against the 50 ms below, and how the frames
-  came, kept, from a stream reading on or from a new one. The decoder's own lines say
-  when an open asked for the key frame first and when it came. An open
-  that finds a cursor already standing between the key frame and the
-  frame asked for reads on from there instead, which is cheaper, and then
-  no key frame comes: the open says it went on, and the page counts it
-  apart from the key frames that came, `keyWentOn` and `keyCame` in
-  `AppFrames.stats`, with the frames it read on to in `wentOnRanks`,
-  issue #511.
-- The routes the interface reads from, `/frames/open`, `/frames/sound`,
-  `/frames/read` and `/frames/close`, stay as they are. The interface
-  cannot tell whether a frame came from it or from the ffmpeg program.
+- **While the video preview stands still, Go decides which frames the
+  decoder makes**, `engine.Schedule` in `engine/schedule.go`, one for each
+  video, which the interface asks where the hand is through
+  `/frames/look`: the frame under it, whether the hand moves, and which
+  frame is on screen. The newest place wins: a look for a place the hand
+  has left is answered with nothing as a newer one comes, and the decoder
+  stops working for it between two frames. The newest is the one the
+  interface sent last, not the one that came last: Go serves each
+  request on a goroutine of its own, so each look and each ask to read
+  ahead carries the window's name and how many it had sent, `engine.Sent`,
+  and one sent before the newest is answered with nothing when it comes.
+  Before, the interface chose
+  the streams, parked a place behind a stream that had not given its
+  first frame, and a let-go waited up to 950 ms on Tim's Mac, issue #924.
+  - What the decoder does next is one rule, `plan`, asked again after
+    every frame it makes, every look and every change of what has the
+    decoder, see
+    [the decision record](decisions/2026-11-20-the-video-preview-keeps-up-with-the-hand.md).
+    It wants, the most wanted first: the frame under the hand, then the
+    frames on the side the hand drags to, then a few on either side,
+    four after and 15 before, `lookAhead` and `lookBack`, whatever the
+    hand does, since nobody knows where it goes next. A hand at rest has
+    the frames of the words beside read before the 15 before it: those
+    cost the frames from the key frame before them, and a word key
+    pressed next waited for them, a step a word on took 32 % longer. The
+    words' frames go to the window as soon as they are read, not once
+    the frames behind are read too, which came hundreds of milliseconds
+    later. A read of the words ahead under way goes on when the hand
+    moves onto a frame the window holds, rather than being stopped and
+    started again as a new stream that seeks, and only a run that has
+    handed a frame reads on to them: one still decoding from the key
+    frame before it stands nowhere near. The frames behind read from
+    the first one missing, so a stream that stands before them reads on
+    to it, and the frames around the place the window says it holds
+    count as there, so none is decoded again for it. The window names
+    them with the look that tells where the hand is on a frame it holds,
+    and with Near, so Go never keeps an old list of them. Where the hand
+    rests on a frame it looked for, nothing more is read until the window
+    has drawn it and asks Near: from the answer on, no stream starts, and
+    the one under way ends at the frame it was for, and once the window
+    asks, the next reads on from there. Read at once, the decoder took
+    the processor from the window as it drew. The window keeps 64 frames, two places
+    with the words beside each, and makes the words' frames it holds the
+    ones used last when the frames read ahead come, the ones the answer
+    names. With 40 it let go of them for the frames that came. The speed
+    walk's presses, simulated in `engine/press_test.go` with a window
+    that waits for paint and asks one Near at a time as the app does,
+    decoded 587 frames and now 239.
+    A hand that moves further at a step than `lookFast`, eight frames, has
+    only its own frame read. The run under way goes on where reading on is the
+    quickest way to what is wanted, and is stopped between two frames
+    where a seek to a key frame is quicker. That holds for a read of the
+    frames behind the hand whose end moves on too: it once started a
+    new stream at every frame while the frames by the hand were let go
+    of. A drag that stood still in
+    Tim's reports of 19 and 20 November had runs started over at each
+    move of the hand, one of them 216 frames decoded with none shown.
+  - Every frame a run makes that is nearer the hand than the frame on
+    screen goes up at once, so the picture walks toward a hand the
+    decoder cannot keep up with, but none before the key frame before
+    the hand: that is another stretch of the video, which the picture
+    would jump to and away from as soon as the key frame comes. A drag's
+    run starts at the furthest of those frames, or at the key frame
+    before the hand where that is nearer. A run that has yet to reach
+    the hand goes on as the hand moves on, since its frames on the way
+    are nearer too.
+  - A picture more than a key frame span from the hand takes a frame
+    just made of any stretch, as long as it lies between the picture
+    and the hand. A hand that moves further than a span at a look lets
+    the run under way hand over its key frame before a run for its new
+    place starts. A hand that drags across hours on the range picker
+    reaches a new stretch at every look, about as often as a key frame
+    takes, so each run was stopped before its key frame came. Two such
+    drags in Tim's report of 21 November stood still for up to 436 ms.
+  - Where the key frames are is learned from the decoder: the key frame
+    it hands first for a frame says no key frame lies between the two,
+    and the shortest gap between two key frames seen is the span once it
+    is less than twice the longest stretch seen. Until then a span is a
+    second, what Tim's videos have. A video with a key frame every two
+    seconds, or every 250 frames as x264 makes unless told otherwise,
+    was read as if it had one every second.
+  - What is read around the hand fits in the frames kept, at any size of
+    the video preview, and each run around a place is read once until
+    the hand moves. At 2560 by 1440 and more, fewer frames fit than were
+    read around the hand, each run let go of what the one before read,
+    and the decoder never rested.
+  - A click or a step opens from the frame before its place and reads
+    four frames past it, so the arrow keys find theirs. A click further
+    than 15 frames from the frame on screen opens at its place instead
+    and reads the frame before it last: read first, it held the frame
+    clicked back by a frame, and it may lie a whole seek further back,
+    before the place's key frame.
+  - A hand that drags to the left has the span of key frames it drags
+    into read whole, from its key frame, every frame kept, and once its
+    own frame is there the span before it, so the steps back find their
+    frames kept, where a span fits in the frames kept. Each step back was a seek of its own, and the picture
+    stood for each, issue #596.
+  - The window tells Go where the hand is on every move, also over the
+    frames it keeps itself, with a look marked `kept`. That look is
+    answered with no content, and Go reads around the place before the
+    hand gets further. A frame on screen of the place at another size,
+    from before the app was sized, is no frame kept: a look then waits
+    for the frame at the new size. Without it, a
+    hand that moved over kept frames was somewhere Go did not know, and
+    the frames past them were read only once the hand got there. A
+    let-go is told too, also where the frame under the hand is on
+    screen and nothing is asked: a click after a drag was taken for a
+    drag, every frame on the way to it was made and sent, and it came
+    83 % later than on main. A video the
+    video preview lets go of leaves no hand behind: a drag Go never saw
+    end had the first look of the next video answered with frames on the
+    way.
+  - With the key frame first, the decoder makes a picture of the key
+    frame and of the frames from the run's first frame on only. The
+    frames between are decoded and not scaled.
+  - A drag is written to the log as one line once the hand lets go,
+    `schedule` with every place the hand went to and the longest a look
+    waited, so a drag that lagged on someone's Mac can be played again
+    in the simulation, see below.
+  - The frames it decoded are kept, 192 MB of them, the ones used longest
+    ago let go of first, and a place kept costs no decoding. The frames
+    around a place the hand rests on, or drags over slowly, that the
+    interface does not hold go to it through `/frames/near` once the run
+    has read them, when the look says so, so a step there costs no
+    request either. Without them a slow drag waited for a look at every
+    step, 10 ms in the cloud, where the window that read its own frames
+    took 1 ms.
+  - What the hand is likely to ask for next is read while it rests,
+    `engine.Ahead`, handed over through `/frames/ahead`: the first frame
+    of the word after the playhead and of the word before, the way Shift
+    and an arrow walk, plan row 2.269, with the frame before each and four
+    after, where the arrows step from there, and then the first frames of
+    the clips on the cards, the likeliest first, as many as 400 MB holds,
+    so a card clicked puts up its clip from what was read, issue #383.
+    The answer brings the frames read that the interface does not hold
+    yet, and it keeps them, the cards' for as long as their cards are
+    there, so a step or a card clicked shows its frame with no request.
+    They are read only when the decoder has nothing to do for the hand,
+    stopped by its next look between two frames, and not at all while
+    the hand holds the playhead, the app is sized or a play runs, a
+    second decoder seeking in the file the play decodes. The interface
+    hands them over held then.
+  The app's log says how each drag went once the hand lets go: how far
+  the frame on screen was from the playhead as the hand moved, the
+  frames put up on the way, how long the frame under the hand took after
+  letting go, how long the picture stood while the hand had moved on,
+  against the 50 ms below, and how many looks were sent, sent a frame on
+  the way, or were overtaken.
+- **A play is worked out here too**, `engine.Play`, run by the same
+  schedule, which gives the decoder to the play while it runs and takes
+  it back for the hand's next look. The window says which pieces, whether
+  they loop and where the playhead is. Go works out which frame is drawn
+  where, with the code that cuts the render, reads the frames a piece at a
+  time with the next piece read ahead before its cut, and cuts and fades
+  the sound at the sample. Each frame is sent stamped with where on the
+  play's clock it is drawn, the moment it stands for and whether it is the
+  first or last of its piece. A play cued at a paused playhead takes the
+  frames kept for it and its sound at once, and waits for the space bar
+  before it takes the decoder, so looks and the reading ahead go on until
+  then. See [the decision
+  record](decisions/2026-11-19-go-plays-the-video-preview.md).
+- The routes the interface reads from are `/frames/look`, `/frames/near`
+  and `/frames/ahead` for a paused video preview, `/frames/play`, `/frames/play/go`, `/frames/play/hold` and
+  `/frames/play/loop` for a play, `/frames/read` for what a play sends, and `/frames/close`.
 
 ### The Go side
 
@@ -340,14 +423,14 @@ closed for standing unused.
 
 ### The interface
 
-- **The program**, `plan.ts`: which pieces play in which order, and where
-  each starts and ends, counted on the frames the engine names.
-- **The clock**, the sound card's, as now. The playhead is the sound
-  heard.
-- **Two picture streams and a sound stream**, as the two decoders are
-  now: the second stream is asked for the next piece while the first
-  plays, so the frame after a cut is already waiting.
-- **Drawing**: each frame onto the one canvas when the clock reaches it.
+- **A play**, `play.ts`: asks the Go side for a play of the clip's
+  pieces and pulls its frames, a few ahead, and its sound, a second
+  ahead, each stamped with where on the play's clock it goes. Which
+  frames, the cuts and the fades are the Go side's.
+- **The clock**, the sound card's, as now. The playhead is the moment
+  the frame due stands for, moved on with the sound heard.
+- **Drawing**: each frame onto the one canvas when the clock reaches it,
+  and never past the first or last frame of a piece without drawing it.
 - **The size of a frame** is the canvas's, no larger than the file's
   own picture. No frame is asked for before the stylesheet has laid the
   canvas out and told it its size, one frame after the workspace is on
@@ -360,12 +443,15 @@ closed for standing unused.
   the size has stood still for 150 ms.
   Asked at every step, each was a stream of frames and one of sound
   opened and closed again on the Go side.
-- **A paused frame** is the frame that holds the playhead. Paused on a
-  piece, the play from the playhead is cued, its first frame drawn and
-  the frames after it read ahead, the next piece's too. Whether the cue's
-  first frame holds the playhead is asked of the cue's own plan, never
-  worked out apart: a playhead a hair before a piece's end is in the cut
-  for the plan, and is then a still of its own. Under a dragging hand, a
+- **A paused frame** is the frame that holds the playhead, a look. A
+  play paused in its middle keeps its frames and its sound and gives the
+  decoder back to the hand and the reading ahead, `engine.Play.Hold`,
+  and takes it again as the space bar goes on. Once the frame
+  is up, the play from the playhead is cued on the Go side, which
+  says which frame the play starts with. Where that is the frame up, the
+  cue is kept and the space bar starts it at once. A playhead in a cut or
+  a hair before a piece's end starts its play on another frame, and
+  cues nothing. Under a dragging hand, a
   frame that comes after the hand has moved on is put up while the next
   one is on its way, but only a frame that held the playhead, never one
   read ahead of it. Both kept the frames after a cut off the screen while

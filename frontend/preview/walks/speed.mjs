@@ -123,12 +123,13 @@ try {
   const times = new Map();
   const captions = new Map();
   // How the frames of each kind of press came, from the moment it went
-  // down until the next: a stream opened, read on in an open one, or kept.
+  // down until the next: a look at the Go side, a frame it sent on the
+  // way, or kept.
   const ways = new Map();
   const how = () =>
     page.evaluate(() => {
       const s = window.__appFrames?.stats;
-      return [s?.streams ?? 0, s?.continued ?? 0, s?.kept ?? 0];
+      return [s?.looks ?? 0, s?.near ?? 0, s?.kept ?? 0];
     });
   const press = async (name, key) => {
     const before = await playhead(page);
@@ -280,14 +281,14 @@ try {
       if (drags.includes("fast")) console.log(`fast, right and back: ${await drag(30, [1, -1])}\n`);
     }
   } else {
-    const seen = { streams: 0, continued: 0, kept: 0, parked: 0, ahead: 0, aheadLost: 0, size: "" };
+    const seen = { looks: 0, near: 0, overtaken: 0, kept: 0, ahead: 0, size: "" };
     const count = async () => {
       const s = await page.evaluate(() => {
         const s = window.__appFrames?.stats;
-        return s ? { streams: s.streams, continued: s.continued, kept: s.kept, parked: s.parked, ahead: s.ahead, aheadLost: s.aheadLost, size: s.first } : null;
+        return s ? { looks: s.looks, near: s.near, overtaken: s.overtaken, kept: s.kept, ahead: s.ahead, size: s.first } : null;
       });
       if (!s) return;
-      for (const k of ["streams", "continued", "kept", "parked", "ahead", "aheadLost"]) seen[k] += s[k];
+      for (const k of ["looks", "near", "overtaken", "kept", "ahead"]) seen[k] += s[k];
       seen.size ||= s.size;
     };
     for (let r = 0; r < rounds; r++) {
@@ -318,18 +319,18 @@ try {
     const q = (xs, p) => xs[Math.min(xs.length - 1, Math.floor(p * xs.length))];
     const rows = [...times].map(([name, xs]) => {
       const ok = xs.filter((x) => x >= 0).sort((a, b) => a - b);
-      const [opened, readOn, kept] = ways.get(name) ?? [0, 0, 0];
+      const [looks, near, kept] = ways.get(name) ?? [0, 0, 0];
       const cs = captions.get(name).filter((x) => x >= 0).sort((a, b) => a - b);
       const ms = (v) => (v === undefined ? "-" : String(Math.round(v)));
-      return [name, String(xs.length), ms(q(ok, 0.5)), ms(q(ok, 0.9)), ms(ok[ok.length - 1]), String(xs.length - ok.length), ms(q(cs, 0.5)), ms(q(cs, 0.9)), String(opened), String(readOn), String(kept)];
+      return [name, String(xs.length), ms(q(ok, 0.5)), ms(q(ok, 0.9)), ms(ok[ok.length - 1]), String(xs.length - ok.length), ms(q(cs, 0.5)), ms(q(cs, 0.9)), String(looks), String(near), String(kept)];
     });
-    const head = ["What", "Presses", "Median ms", "90th ms", "Most ms", "Never", "Captions median ms", "Captions 90th ms", "Opened", "Read on", "Kept"];
+    const head = ["What", "Presses", "Median ms", "90th ms", "Most ms", "Never", "Captions median ms", "Captions 90th ms", "Looks", "On the way", "Kept"];
     const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
     const line = (r) => "| " + r.map((c, i) => (i === 0 ? c.padEnd(widths[i]) : c.padStart(widths[i]))).join(" | ") + " |";
     console.log(line(head));
     console.log("| " + widths.map((w, i) => (i === 0 ? "-".repeat(w) : "-".repeat(w - 1) + ":")).join(" | ") + " |");
     for (const r of rows) console.log(line(r));
-    console.log(`frames at ${stats?.size}, ${stats?.streams} streams opened, ${stats?.continued} frames waited for on an open stream, ${stats?.kept} from the kept frames, ${stats?.parked} parked, ${stats?.ahead} read ahead, ${stats?.aheadLost} of them let go of before the hand asked for them`);
+    console.log(`frames at ${stats?.size}, ${stats?.looks} looks at the Go side, ${stats?.near} frames it sent on the way, ${stats?.overtaken} looks overtaken, ${stats?.kept} from the kept frames, ${stats?.ahead} handed to the Go side to read ahead`);
     const sorted = (xs) => xs.filter((x) => x >= 0).sort((a, b) => a - b);
     const a = sorted(apart);
     const z = sorted(settled);

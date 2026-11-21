@@ -22,7 +22,7 @@
 //   startWait.
 
 // Where the moment heard on an animation frame came from, see heard in
-// plan.ts: the output timestamp, the output timestamp held back to the
+// heard.ts: the output timestamp, the output timestamp held back to the
 // sound card's own time, or that time less its latency.
 export type Source = "stamp" | "held" | "plain";
 

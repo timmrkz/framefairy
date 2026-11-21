@@ -803,15 +803,11 @@ func logged(rec *recorded, r *http.Request, serve func(http.ResponseWriter, *htt
 	var what string
 	switch r.URL.Path {
 	case "/frames/read":
-		first := h.Get("X-Frames-Times") != ""
 		ended := h.Get("X-Frames-End") != ""
-		if !first && !ended && !failed && took < slowPull {
+		if !ended && !failed && took < slowPull {
 			level = zerolog.TraceLevel
 		}
-		what = fmt.Sprintf("read n %s skip %s", q.Get("n"), q.Get("skip"))
-		if first {
-			what += ", first frame, times " + h.Get("X-Frames-Times")
-		}
+		what = "read n " + q.Get("n")
 		if l := h.Get("X-Frames-Light"); l != "" {
 			what += ", light " + l
 		}
@@ -821,7 +817,7 @@ func logged(rec *recorded, r *http.Request, serve func(http.ResponseWriter, *htt
 		case h.Get("X-Frames-Closed") != "":
 			what += ", the stream was closed"
 		case ended:
-			what += ", the video ended"
+			what += ", the play ended"
 		}
 	case "/frames/captions":
 		// One for every frame drawn while a clip plays, so a layer drawn
@@ -845,10 +841,17 @@ func logged(rec *recorded, r *http.Request, serve func(http.ResponseWriter, *htt
 		if a := q.Get("ahead"); a != "" {
 			what += " ahead " + a
 		}
-	case "/frames/open":
-		what = fmt.Sprintf("open from %s at %sx%s", q.Get("from"), q.Get("w"), q.Get("h"))
-	case "/frames/sound":
-		what = fmt.Sprintf("sound from %s at %s Hz, %s channels", q.Get("from"), q.Get("rate"), q.Get("ch"))
+	case "/frames/play":
+		what = fmt.Sprintf("play of %s from %s at %sx%s, %s Hz, %s channels", q.Get("pieces"), q.Get("at"), q.Get("w"), q.Get("h"), q.Get("rate"), q.Get("ch"))
+		if q.Get("loop") == "1" {
+			what += ", looped"
+		}
+		if q.Get("cue") == "1" {
+			what += ", cued"
+		}
+		if q.Get("after") != "" {
+			what += ", taking over at " + q.Get("place")
+		}
 	case "/frames/close":
 		// The frames' worker asks this of no stream to see that it
 		// reaches the Go side at all, see pull.worker.ts.

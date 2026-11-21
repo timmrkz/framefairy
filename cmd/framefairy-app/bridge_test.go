@@ -2201,14 +2201,18 @@ func leftIn(dir string) string {
 // seek, so what a walk saw depended on the walks before it: a drag that
 // should have shown its key frame showed none, issue #552. The next
 // stream starts a decoder again, with its cursors warmed as the app's
-// first are. A hold the walk before took is kept, so its release finds it.
+// first are, and the frames the schedules kept go with them. A hold the
+// walk before took is kept, so its release finds it.
 func freshDecoders(p *previews) {
 	p.mu.Lock()
-	streams, decoders := p.open, p.decoders
-	p.open, p.decoders = nil, nil
+	streams, decoders, schedules := p.open, p.decoders, p.schedules
+	p.open, p.decoders, p.schedules = nil, nil, nil
 	p.mu.Unlock()
 	for _, s := range streams {
 		s.stop()
+	}
+	for _, s := range schedules {
+		s.Close()
 	}
 	for _, d := range decoders {
 		d.Close()

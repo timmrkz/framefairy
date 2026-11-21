@@ -320,6 +320,32 @@ describe("the layers of the captions", () => {
     expect(layers.ready(84, [10, 20])).toBeNull();
   });
 
+  // A card clicked after a play put up its frame with the layer read
+  // for it, which was the oldest kept once it was no card any more, and
+  // the play cued there took its place, so the frame on screen asked for
+  // its captions again, found by the walk of the cards read ahead.
+  it("keeps the layer drawn last while the frames of a play take the rest", async () => {
+    const { asked, answer } = answering();
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    const played = { path: "/v.mp4", clip: "a", track: "abc", drafts: {} };
+    layers.set(played);
+    layers.coming(0, [10, 20]);
+    answer.shift()!();
+    await layers.rested();
+    expect(layers.at(0, [10, 20])).not.toBeNull();
+    for (let i = 1; i < 60; i++) {
+      layers.coming(i, [10, 20]);
+      answer.shift()!();
+      await layers.rested();
+      // The frame on screen is drawn again on every frame of the screen,
+      // and asks for nothing.
+      layers.at(0, [10, 20]);
+      expect(asked.length).toBe(i + 1);
+    }
+    expect(layers.ready(0, [10, 20])).toBeNull();
+    expect(layers.ready(1, [10, 20])).not.toBeNull();
+  });
+
   it("keeps no layer that did not come, and asks for it once more", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     try {

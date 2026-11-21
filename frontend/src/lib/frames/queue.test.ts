@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { movieOf } from "./movie";
-import { FrameQueue, GoSound, GoSoundStream, SOUND_CHUNK, soundChunks, type Shown } from "./queue";
+import { GoPlay } from "./play";
+import { FrameQueue, type Shown } from "./queue";
 
 // The queue without a browser: a canvas that draws nothing, no sound card
 // and no decoders, so the queue never opens and every play stays starting. That is
@@ -138,141 +139,45 @@ describe("the pieces changed while playing", () => {
   });
 });
 
-describe("soundChunks", () => {
-  // What the Go side sends for a pull of a sound stream: chunks of
-  // SOUND_CHUNK moments, each after the moment it starts at, the last of a
-  // stream shorter.
-  const chunk = (at: number, values: number[]) => {
-    const b = new Uint8Array(8 + values.length * 4);
-    const v = new DataView(b.buffer);
-    v.setFloat64(0, at, true);
-    values.forEach((x, i) => v.setFloat32(8 + i * 4, x, true));
-    return b;
-  };
-  const join = (...parts: Uint8Array[]) => {
-    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-    let at = 0;
-    for (const p of parts) {
-      out.set(p, at);
-      at += p.length;
-    }
-    return out;
-  };
-  test("takes the samples of whole chunks and of a short last one, without the moments", () => {
-    const first = Array.from({ length: SOUND_CHUNK * 2 }, (_, i) => i / 4096);
-    const last = [0.5, -0.5, 0.25, -0.25];
-    const got = soundChunks(join(chunk(1, first), chunk(1 + SOUND_CHUNK / 48000, last)), 2);
-    expect(got.length).toBe(first.length + last.length);
-    expect(Array.from(got.subarray(0, 3))).toEqual(first.slice(0, 3).map((x) => Math.fround(x)));
-    expect(Array.from(got.subarray(first.length))).toEqual(last);
-  });
-  test("an answer with no chunk holds no samples", () => {
-    expect(soundChunks(new Uint8Array(0), 2).length).toBe(0);
-  });
-});
-
-describe("GoSoundStream", () => {
-  // The Go side stood in for: a stream of moments numbered from where it
-  // was opened, one chunk a read, in one channel, so a moment says where
-  // it is. It closes the stream after the first read, the way it closes
-  // one nobody has read from for 20 seconds.
-  test("a stream the Go side closed is opened again where it got to, with nothing lost or twice", async () => {
-    const opened: number[] = [];
-    const streams = new Map<string, { at: number; reads: number }>();
-    const was = globalThis.fetch;
-    globalThis.fetch = (async (input: string) => {
-      const url = new URL(input, "http://x");
-      if (url.pathname === "/frames/sound") {
-        const at = Math.round(Number(url.searchParams.get("from")) * 48000);
-        opened.push(at);
-        const id = String(opened.length);
-        streams.set(id, { at, reads: 0 });
-        return new Response(JSON.stringify({ id }));
-      }
-      const s = streams.get(url.searchParams.get("id") ?? "");
-      if (url.pathname === "/frames/read") {
-        if (!s || s.reads === 1) return new Response("gone", { status: 404 });
-        s.reads++;
-        const b = new Uint8Array(8 + SOUND_CHUNK * 4);
-        const v = new DataView(b.buffer);
-        for (let i = 0; i < SOUND_CHUNK; i++) v.setFloat32(8 + i * 4, s.at + i, true);
-        s.at += SOUND_CHUNK;
-        return new Response(b);
-      }
-      return new Response(null, { status: 204 });
-    }) as typeof fetch;
-    try {
-      const stream = new GoSoundStream("/ep.mp4", 4800, 48000, 1);
-      const first = await stream.take(1000);
-      const second = await stream.take(1000);
-      expect(opened).toEqual([4800, 4800 + SOUND_CHUNK]);
-      expect(first[0]).toBe(4800);
-      expect(Array.from(second.subarray(0, 3))).toEqual([5800, 5801, 5802]);
-      expect(second[999]).toBe(6799);
-    } finally {
-      globalThis.fetch = was;
-    }
-  });
-});
-
-describe("GoSound", () => {
-  test("a stream that fails is dropped, and the next packet is read from a stream of its own", async () => {
-    // The Go side stood in for: moments numbered from where a stream was
-    // opened, one channel, and the first stream fails on every read.
-    const opened: number[] = [];
-    const was = globalThis.fetch;
-    globalThis.fetch = (async (input: string) => {
-      const url = new URL(input, "http://x");
-      if (url.pathname === "/frames/sound") {
-        opened.push(Math.round(Number(url.searchParams.get("from")) * 48000));
-        return new Response(JSON.stringify({ id: String(opened.length) }));
-      }
-      if (url.pathname === "/frames/read") {
-        const id = Number(url.searchParams.get("id"));
-        if (id === 1) return new Response("broken", { status: 500 });
-        const b = new Uint8Array(8 + SOUND_CHUNK * 4);
-        const v = new DataView(b.buffer);
-        for (let i = 0; i < SOUND_CHUNK; i++) v.setFloat32(8 + i * 4, opened[id - 1] + i, true);
-        return new Response(b);
-      }
-      return new Response(null, { status: 204 });
-    }) as typeof fetch;
-    try {
-      const out: { timestamp: number; first: number }[] = [];
-      const errors: string[] = [];
-      const sound = new GoSound(
-        "/ep.mp4",
-        48000,
-        1,
-        (s) => {
-          const one = new Float32Array(s.numberOfFrames);
-          s.copyTo(one, { planeIndex: 0, format: "f32-planar" });
-          out.push({ timestamp: s.timestamp, first: one[0] });
-        },
-        (e) => errors.push(e),
-        () => {},
-      );
-      sound.decode(1, new Uint8Array(0), 0, 960);
-      sound.decode(2, new Uint8Array(0), 960, 960);
-      sound.decode(3, new Uint8Array(0), 1920, 960);
-      await sound.flush();
-      expect(errors).toEqual(["the sound stopped, it answered 500"]);
-      expect(opened).toEqual([0, 960]);
-      expect(out).toEqual([
-        { timestamp: 2, first: 960 },
-        { timestamp: 3, first: 1920 },
-      ]);
-    } finally {
-      globalThis.fetch = was;
-    }
-  });
-});
-
 // Found by Tim testing #385: a video gone back to from the sidebar went
 // black for a frame before its picture came back. Its workspace was woken
 // with its own frame on the canvas, and the new queue cleared it, setting
 // the canvas to the size it had, and drew it again over nothing when its
 // captions came.
+describe("a play whose loop was switched off as it went round", () => {
+  // L pressed again just before the end: the Go side says the play ends at
+  // the end of this time through, but the clock may have gone round by
+  // then, with the first frame of the next time through on screen. The
+  // playhead read the clip's start, 0.000 s, in a walk in CI.
+  test("ends at the end of its last piece", () => {
+    vi.stubGlobal("window", { setTimeout: () => 0 });
+    try {
+      const q = new FrameQueue(
+        canvas(),
+        "/episode.mp4",
+        movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+      );
+      const inside = q as unknown as {
+        goPlay: unknown;
+        due: unknown;
+        at: number;
+        state: string;
+        wanted: { pieces: { start: number; end: number }[]; loop: boolean };
+        end(): void;
+      };
+      inside.wanted = { pieces: [{ start: 0, end: 24.8 }], loop: false };
+      inside.state = "playing";
+      inside.goPlay = { shots: [], end: 24.8, picturesEnded: true };
+      inside.due = { at: 24.8, moment: 0, begins: 0, edge: true };
+      inside.at = 0;
+      inside.end();
+      expect(inside.at).toBeCloseTo(24.8);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("a workspace woken again", () => {
   function woken() {
     let writes = 0;
@@ -659,9 +564,9 @@ describe("sound handed to the sound card late", () => {
   });
 });
 
-describe("a frame decoded for a play", () => {
-  // A play asks for what lies over each frame as it comes out of the
-  // decoder, before its turn on screen, so its captions are on their way
+describe("a frame that came for a play", () => {
+  // A play asks for what lies over each frame as it comes from the Go
+  // side, before its turn on screen, so its captions are on their way
   // while the frames before it are shown, issue #288. The order is read,
   // not the time it takes, so no machine is too busy for it, issue #338.
   test("asks for what lies over it before it is shown", () => {
@@ -670,8 +575,7 @@ describe("a frame decoded for a play", () => {
       "/episode.mp4",
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
-    const inside = q as unknown as { video: unknown; frameOut(slot: unknown, frame: unknown): void };
-    inside.video = { width: 2, height: 2, samples: { count: 3, timescale: 25, start: 0, step: 1 } };
+    const inside = q as unknown as { goPlay: unknown; listenTo(play: unknown): void };
     const asked: number[] = [];
     const drawn: number[] = [];
     q.over = {
@@ -681,9 +585,11 @@ describe("a frame decoded for a play", () => {
       },
       coming: (frame) => asked.push(frame),
     };
-    const slot = { fed: new Map([[80000, 2]]), run: { id: 1, lastRank: 2 }, firstRank: 0, coming: 1, keeper: { offer: () => true }, ready: [] as unknown[] };
-    inside.frameOut(slot, { timestamp: 80000, close() {} });
-    expect(slot.ready).toHaveLength(1);
+    const play = { shots: [] as unknown[], onShots: (came: number) => void came, more() {} };
+    inside.goPlay = play;
+    inside.listenTo(play);
+    play.shots.push({ at: 0.08, moment: 0.08, begins: 2 / 25, edge: false, frame: { close() {} } });
+    play.onShots(1);
     expect(asked).toEqual([2 / 25]);
     expect(drawn).toEqual([]);
   });
@@ -721,85 +627,61 @@ describe("the clock a play runs on", () => {
     expect(queue().playClock(3.2, 3.04, () => false)).toBe(3.2);
   });
 
-  // The play as the clock is told it: frames 0.2 s apart from 35 s, of
-  // one run, with the frame of rank 102 on screen. asked is how many
-  // frames the run's decoder has been asked for and not given yet.
+  // The play as the clock is told it, at 35.4 s on its clock: the frames
+  // come from the Go side and not drawn yet, each by where on the clock
+  // it is drawn and where it begins in the video, and whether the Go side
+  // has sent the last.
   function standing(
-    k: number,
-    ready: number[] = [],
-    thisPlay = true,
-    asked = 1,
+    shots: { at: number; begins: number }[],
+    picturesEnded = false,
     over: FrameQueue["over"] = null,
-    sound: { handedTo: number; soundDone: boolean } | null = null,
+    sound: { handedTo: number; soundEnded: boolean } | null = null,
   ) {
     const inside = queue() as unknown as {
-      k: number;
-      shown: unknown;
-      slots: unknown;
-      putFor: number;
-      ticket: number;
+      reached: number;
       over: FrameQueue["over"];
       video: unknown;
-      unshown(plan: unknown): { at: number; ready: () => boolean };
+      unshown(play: unknown): { at: number; ready: () => boolean };
     };
     inside.over = over;
     inside.video = { width: 2, height: 2, samples: { count: 3000, timescale: 25, start: 0, step: 1 } };
-    inside.k = k;
-    inside.putFor = thisPlay ? inside.ticket : inside.ticket - 1;
-    inside.shown = { run: 0, rank: 102 };
-    inside.slots = [{ run: { id: 0 }, ready: ready.map((rank) => ({ rank })), decoder: { decodeQueueSize: asked } }];
-    // A play with sound, started at 35 s of the program on the sound
-    // card's 10 s, which has been handed the sound up to handedTo.
-    if (sound) Object.assign(inside, { sound: { sampleRate: 48000 }, aplan: {}, c0: 10, m0: 35 * 48000, ...sound });
-    return inside.unshown({
-      need: (k: number) => (k >= 0 && k < 10 ? { run: 0, rank: 100 + k } : null),
-      at: (k: number) => (k >= 0 && k < 10 ? 35 + k * 0.2 : NaN),
-    });
+    inside.reached = 35.4;
+    // A play with sound, started at 35 s of the clock on the sound card's
+    // 10 s, which has been handed the sound up to handedTo.
+    if (sound) Object.assign(inside, { sound: { sampleRate: 48000 }, c0: 10, m0: 35 * 48000, handedTo: sound.handedTo });
+    return inside.unshown({ shots, picturesEnded, soundEnded: sound ? sound.soundEnded : true });
   }
 
-  test("is told of the frame after the one on screen", () => {
-    for (const k of [2, 3]) {
-      const next = standing(k);
-      expect(next.at).toBeCloseTo(35.6);
-      expect(next.ready()).toBe(false);
-    }
-  });
-
-  // A pause puts up the frame that holds the playhead, which can be the
-  // one after the frame the play had due, see hold. The walk's clock
-  // stood on the frame due, which never came again since the one after it
-  // was up, and held the sound card for good: four walks hung in CI after
-  // a pause and a play on.
-  test("is told of the frame past one a pause put up ahead of the one due", () => {
-    expect(standing(1).at).toBeCloseTo(35.6);
-  });
-
-  // Each plan counts its runs from 0, so the frame on screen from before
-  // this play says nothing of the frames of this one.
-  test("is told of the frame due when the frame on screen is from before the play", () => {
-    expect(standing(1, [], false).at).toBeCloseTo(35.2);
-  });
-
-  // A frame no decoder is working on never comes: the decoder gave
-  // nothing for it, or its run has no decoder. Stood on, the play froze
-  // with the sound card held and the walk hung, as four did once in
-  // pull request #589. The clock is told of no frame, so a walk goes by
-  // the sound card's time the way the app plays, and its own checks see
-  // what is wrong.
-  test("is told of no frame when no decoder is working on it", () => {
-    expect(standing(2, [], true, 0).at).toBe(Infinity);
-  });
-
-  test("is told when the frame is decoded and waiting", () => {
-    const next = standing(2, [103]);
+  test("is told of the first frame come and not drawn yet", () => {
+    const next = standing([
+      { at: 35.6, begins: 103 / 25 },
+      { at: 35.8, begins: 104 / 25 },
+    ]);
     expect(next.at).toBeCloseTo(35.6);
     expect(next.ready()).toBe(true);
+  });
+
+  // A frame still on its way holds the walk's clock where it is, so a
+  // busy machine shows every frame, late, rather than skipping one.
+  test("stands where it is while the next frame is on its way", () => {
+    const next = standing([]);
+    expect(next.at).toBe(35.4);
+    expect(next.ready()).toBe(false);
+  });
+
+  // Once the Go side has sent the last frame no frame comes, and stood
+  // on, the play froze with the sound card held and the walk hung, as
+  // four did once in pull request #589. The clock is told of no frame, so
+  // a walk goes by the sound card's time the way the app plays, and its
+  // own checks see what is wrong.
+  test("is told of no frame once the Go side sent the last", () => {
+    expect(standing([], true).at).toBe(Infinity);
   });
 
   // A clock that goes on to a frame as soon as it is ready, the walk's,
   // drew a frame a refresh, faster than its captions came, and the frame
   // stood without them. The captions of the frame are asked for as it is
-  // asked, by the moment it starts at in the episode.
+  // asked, by the moment it starts at in the video.
   test("is told the frame is ready only once its captions are here", () => {
     const asked: number[] = [];
     let here = false;
@@ -808,23 +690,190 @@ describe("the clock a play runs on", () => {
       coming() {},
       ready: (frame: number) => (asked.push(frame), here ? null : new Promise<void>(() => {})),
     };
-    const next = standing(2, [103], true, 1, over);
+    const next = standing([{ at: 35.6, begins: 103 / 25 }], false, over);
     expect(next.ready()).toBe(false);
     here = true;
     expect(next.ready()).toBe(true);
     expect(asked).toEqual([103 / 25, 103 / 25]);
   });
 
-  // The walk's clock goes on as fast as the frames are decoded, and the
-  // sound comes as it is decoded, on a busy machine later than the
-  // frames. A clock that went on to a frame before its sound was on the
-  // sound card played silence there, which a walk heard in CI as a play
-  // with sound in 288 of 675 quanta. The play started at 35 s of the
-  // program on the sound card's 10 s, and the frame due starts at 35.6 s.
+  // The walk's clock goes on as fast as the frames come, and the sound
+  // comes as it is pulled, on a busy machine later than the frames. A
+  // clock that went on to a frame before its sound was on the sound card
+  // played silence there, which a walk heard in CI as a play with sound
+  // in 288 of 675 quanta. The play started at 35 s of the clock on the
+  // sound card's 10 s, and the frame due is drawn at 35.6 s.
   test("is told the frame is ready only once its sound is on the sound card", () => {
-    const at = (handedTo: number, soundDone = false) => standing(2, [103], true, 1, null, { handedTo, soundDone }).ready();
+    const at = (handedTo: number, soundEnded = false) => standing([{ at: 35.6, begins: 103 / 25 }], false, null, { handedTo, soundEnded }).ready();
     expect(at(10.5)).toBe(false);
     expect(at(10.6)).toBe(true);
     expect(at(-Infinity, true)).toBe(true);
+  });
+});
+
+// The Go side closes a play nobody has pulled from for a while: a cue
+// left standing while the app stood paused, or a play paused for long.
+describe("a play the Go side closed", () => {
+  function closed(state: string) {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const inside = q as unknown as { state: string; goPlay: unknown; at: number; startFrom: number; listenTo(play: unknown): void };
+    let shut = 0;
+    const play = { shots: [] as unknown[], gone: true, onShots: (came: number) => void came, close: () => shut++, more() {} };
+    inside.state = state;
+    inside.at = 61;
+    inside.goPlay = play;
+    inside.listenTo(play);
+    play.onShots(0);
+    return { inside, shut: () => shut };
+  }
+
+  // Cued again, the cue was made again every time it was closed, for as
+  // long as the app stood paused.
+  test("cued is dropped, and the space bar starts a play of its own", () => {
+    const { inside, shut } = closed("cued");
+    expect(inside.state).toBe("paused");
+    expect(inside.goPlay).toBe(null);
+    expect(shut()).toBe(1);
+  });
+
+  // A stop the person hears, so a walk counts it.
+  test("playing starts again from the playhead, and counts as a start", () => {
+    const { inside, shut } = closed("playing");
+    expect(inside.state).toBe("starting");
+    expect(inside.startFrom).toBe(61);
+    expect(shut()).toBe(1);
+    expect((inside as unknown as { stats: { starts: number } }).stats.starts).toBe(1);
+  });
+});
+
+// A clip changed while it plays: the new play was taken at once on the
+// Go side, which stopped the play under way while the window still pulled
+// from it, and the window, told it was closed, started the play again.
+describe("a play taking over from the one under way", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function underWay() {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    type Inside = {
+      app: unknown;
+      goPlay: unknown;
+      state: string;
+      c0: number | null;
+      m0: number;
+      audio: { currentTime: number; sampleRate: number };
+      stats: { starts: number };
+      pump(): void;
+      previewSize(): unknown;
+      takeOver(was: unknown, at: number, pieces: unknown, loop: boolean): Promise<void>;
+    };
+    const inside = q as unknown as Inside;
+    const said: string[] = [];
+    const was = { shots: [], close: () => said.push("old closed") };
+    inside.app = {};
+    inside.goPlay = was;
+    inside.state = "playing";
+    inside.c0 = 0;
+    inside.m0 = 61 * 48000;
+    inside.audio = { currentTime: 0.1, sampleRate: 48000 };
+    inside.pump = () => {};
+    inside.previewSize = () => ({ width: 2, height: 2 });
+    return { inside, was, said };
+  }
+
+  function next(said: string[]) {
+    return { shots: [], moment: 61.25, go: () => said.push("new let go"), close: () => said.push("new closed") } as unknown as GoPlay;
+  }
+
+  test("comes as a cue, and takes the decoder only once it is the one drawn", async () => {
+    const { inside, was, said } = underWay();
+    const asks: { cue: boolean }[] = [];
+    vi.spyOn(GoPlay, "open").mockImplementation(async (_app, ask) => {
+      asks.push(ask);
+      said.push("asked");
+      return next(said);
+    });
+    await inside.takeOver(was, 61.25, [{ start: 60, end: 64 }], false);
+    expect(asks.map((a) => a.cue)).toEqual([true]);
+    expect(said).toEqual(["asked", "new let go", "old closed"]);
+    expect(inside.goPlay).not.toBe(was);
+    expect(inside.stats.starts).toBe(0);
+  });
+
+  test("whose place the sound passed while it was asked for, is asked for again further on", async () => {
+    const { inside, was, said } = underWay();
+    const places: number[] = [];
+    vi.spyOn(GoPlay, "open").mockImplementation(async (_app, ask) => {
+      places.push(ask.after?.at ?? NaN);
+      // The answer came after the sound had passed the first place.
+      if (places.length === 1) inside.audio.currentTime = 0.3;
+      return next(said);
+    });
+    await inside.takeOver(was, 61.25, [{ start: 60, end: 64 }], false);
+    expect(places.length).toBe(2);
+    expect(places[1]).toBeGreaterThan(61.3);
+    expect(said).toEqual(["new closed", "new let go", "old closed"]);
+    expect(inside.stats.starts).toBe(0);
+  });
+});
+
+// A paused play held the Go side's decoder, so nothing was read ahead
+// while it stood. Closed and cued again instead, the space bar after a
+// pause started a play of its own, 55 ms later than going on.
+describe("a play paused", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  test("gives the Go side's decoder back, keeps the rest, and takes the decoder again as it goes on", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.stubGlobal("window", globalThis);
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const inside = q as unknown as { state: string; goPlay: unknown; at: number; c0: number | null; audio: unknown; out: unknown };
+    const said: string[] = [];
+    const gain = { value: 1, cancelScheduledValues() {}, setValueAtTime() {}, linearRampToValueAtTime() {} };
+    inside.audio = { currentTime: 3, suspend: () => Promise.resolve(), resume: () => Promise.resolve() };
+    inside.out = { gain };
+    const play = {
+      shots: [],
+      held: false,
+      close: () => said.push("close"),
+      more() {},
+      hold() {
+        play.held = true;
+        said.push("hold");
+      },
+      go() {
+        play.held = false;
+        said.push("go");
+      },
+    };
+    inside.goPlay = play;
+    inside.state = "playing";
+    inside.at = 61;
+    inside.c0 = 0;
+    // The page's frames are not run here: nothing is drawn.
+    (inside as unknown as { loop(): void }).loop = () => {};
+    q.pause();
+    vi.runAllTimers();
+    expect(said).toEqual(["hold"]);
+    expect(inside.goPlay).toBe(play);
+    q.play();
+    expect(said).toEqual(["hold", "go"]);
+    expect(inside.state).toBe("playing");
   });
 });

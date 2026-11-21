@@ -1492,10 +1492,10 @@ export async function addHEVC(url, page) {
   });
   await page.locator("aside ol li[data-key] button.pick").first().click();
   await settle(page);
-  // The frames on screen came through the Go side's streams, or this walk
+  // The frames on screen came through the Go side, or this walk
   // proves nothing about them.
-  const streams = await page.evaluate(() => window.__appFrames?.stats.streams ?? 0);
-  if (!streams) throw new Error("the picture of the HEVC episode did not come from the Go side");
+  const fromGo = await page.evaluate(() => window.__appFrames?.stats.fromGo ?? 0);
+  if (!fromGo) throw new Error("the picture of the HEVC episode did not come from the Go side");
   if (process.env.VERBOSE) console.log("frames read in the", await page.evaluate(() => window.__appFrames.puller.where));
   await page.evaluate(() => document.body.focus());
 }
