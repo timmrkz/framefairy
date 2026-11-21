@@ -58,6 +58,50 @@ describe("AppFrames", () => {
     app.close();
   });
 
+  // Issue #970: on letting go of a drag the Go side was first handed the
+  // words of the place the drag left, and began reading them, and the
+  // words of the place the hand rests on only a moment later.
+  test("read nothing after a drag until the words of the place it let go of come", () => {
+    const asked: URL[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      if (url.startsWith("/frames/ahead")) asked.push(new URL(url, "http://x"));
+      return new Promise(() => {});
+    });
+    const { app } = frames(() => ({ width: 4, height: 2 }));
+    app.paused = () => true;
+    app.ahead([10]);
+    app.grip(true);
+    void app.frame(60, 0);
+    void app.frame(70, 0);
+    const was = asked.length;
+    app.grip(false);
+    expect(asked.length).toBe(was);
+    app.ahead([72]);
+    const after = asked.slice(was);
+    expect(after.length).toBe(1);
+    expect(after[0].searchParams.get("held")).toBe(null);
+    expect(after[0].searchParams.get("frames")).toBe("72");
+    app.close();
+  });
+
+  // A press that moves nothing leaves the words where they are: they are
+  // the words of the place it rests on.
+  test("read the words beside at once after a press that moved nothing", () => {
+    const asked: URL[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      if (url.startsWith("/frames/ahead")) asked.push(new URL(url, "http://x"));
+      return new Promise(() => {});
+    });
+    const { app } = frames(() => ({ width: 4, height: 2 }));
+    app.paused = () => true;
+    app.ahead([10]);
+    app.grip(true);
+    const was = asked.length;
+    app.grip(false);
+    expect(asked.slice(was).map((u) => [u.searchParams.get("held"), u.searchParams.get("frames")])).toEqual([[null, "10"]]);
+    app.close();
+  });
+
   // Issue #886: a dragged app edge read the cards' frames again at every
   // size it passed. They wait until the size comes to rest.
   test("wait while the app is resized, and are read once its size rests", () => {

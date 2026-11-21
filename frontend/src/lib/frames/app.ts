@@ -86,6 +86,12 @@ export class AppFrames {
   private cardKept = new Map<number, Picture>();
   private aheadSent = "";
   private aheadAsk: Promise<void> | null = null;
+  // Whether the hand dragged the playhead since the words beside were
+  // handed over: they are the words of a place it left, so a hand that
+  // lets go reads nothing ahead until the words of the place it rests on
+  // come, see ahead. Sent at once, the Go side began reading the old
+  // words and stopped a moment later, issue #970.
+  private wordsLeft = false;
   // Whether a play is on its way, which holds the reading ahead until the
   // video preview stands still again, see hold, and whether it has begun
   // since, see began.
@@ -188,6 +194,7 @@ export class AppFrames {
         },
       };
       asked?.add(w);
+      if (this.dragging) this.wordsLeft = true;
       this.route(w);
     });
   }
@@ -271,6 +278,7 @@ export class AppFrames {
   // engine.Ahead. Each call replaces the ones before.
   ahead(ranks: number[]) {
     this.aheadWanted = ranks.filter((r) => r >= 0);
+    this.wordsLeft = false;
     this.aheadNow();
   }
 
@@ -324,6 +332,7 @@ export class AppFrames {
     // A play that ran and stopped lets the reading go on.
     if (this.playingSoon && this.played && this.paused()) this.playingSoon = false;
     const held = this.dragging || this.sizing || this.playingSoon || !this.paused();
+    if (!held && this.wordsLeft) return;
     const { width, height } = this.size();
     const q = new URLSearchParams({
       path: this.path,
