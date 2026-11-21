@@ -1,0 +1,36 @@
+# Tells of a run on a schedule that failed on main, in an issue of its
+# own. Called by the job tell of every workflow on a schedule, which needs
+# every other job of it and runs only when one of them failed on main.
+# The github context here is the caller's, so the workflow, the run and
+# the commit named are the ones that failed. See
+# docs/decisions/2026-11-21-a-failed-night-tells-of-itself.md.
+name: Tell of a failure
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  tell:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # framefairy-release opens the workflow's issue, or adds the run to
+      # the one that is open. See cmd/framefairy-release/failed.go.
+      - name: Tell of the failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT: ${{ github.sha }}
+        run: go run ./cmd/framefairy-release failed -workflow "$WORKFLOW" -run "$RUN" -commit "$COMMIT"

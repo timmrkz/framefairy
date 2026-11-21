@@ -123,25 +123,13 @@ jobs:
           fi
 
   # A run that fails on main tells of itself, in an issue of its own, see
-  # cmd/framefairy-release/failed.go. A run by hand on a branch is its
-  # session's to read, and a run that was stopped is no failure.
+  # tell.yml. A run by hand on a branch is its session's to read, and a
+  # run that was stopped is no failure.
   tell:
     needs: [image, go, npm, upstream]
     if: failure() && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
       issues: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Tell of the failure
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: go run ./cmd/framefairy-release failed -workflow "$GITHUB_WORKFLOW" -run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" -commit "$GITHUB_SHA"
+    uses: ./.github/workflows/tell.yml
