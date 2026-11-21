@@ -302,6 +302,14 @@ closed for standing unused.
     before the hand where that is nearer. A run that has yet to reach
     the hand goes on as the hand moves on, since its frames on the way
     are nearer too.
+  - A picture more than a key frame span from the hand takes a frame
+    just made of any stretch, as long as it lies between the picture
+    and the hand. A hand that moves further than a span at a look lets
+    the run under way hand over its key frame before a run for its new
+    place starts. A hand that drags across hours on the range picker
+    reaches a new stretch at every look, about as often as a key frame
+    takes, so each run was stopped before its key frame came. Two such
+    drags in Tim's report of 21 November stood still for up to 436 ms.
   - Where the key frames are is learned from the decoder: the key frame
     it hands first for a frame says no key frame lies between the two,
     and the shortest gap between two key frames seen is the span once it

@@ -431,7 +431,22 @@ func (s *Schedule) onTheWay(l Hand, f int) bool {
 	if l.Shown >= 0 && framesApart(f, l.Frame) >= framesApart(l.Shown, l.Frame) {
 		return false
 	}
-	return f > l.Frame || f >= s.keyBefore(l.Grid, l.Frame)
+	return f > l.Frame || f >= s.keyBefore(l.Grid, l.Frame) || s.flying()
+}
+
+// towardFar tells whether a frame a run just made moves a picture that is
+// more than a span of key frames from the hand toward it, whatever
+// stretch it is of: between the picture and the hand, so the picture
+// does not pass the hand and come back. A hand that drags a little less
+// than a span at a look leaves each stretch just before its key frame
+// comes, and on Tim's Mac the picture of such a drag over the range
+// picker stood still for want of a frame of its own stretch. Frames kept
+// from before are held to onTheWay, see best. Under the lock.
+func (s *Schedule) towardFar(l Hand, f int) bool {
+	if l.Shown < 0 || framesApart(l.Shown, l.Frame) <= s.span(l.Grid) {
+		return false
+	}
+	return min(l.Shown, l.Frame) < f && f < max(l.Shown, l.Frame)
 }
 
 // overtake answers every look that waits with ErrOvertaken: the hand went
@@ -593,6 +608,9 @@ func (s *Schedule) plan() {
 		s.sides = append(s.sides, j)
 	}
 	if r := s.run; r != nil {
+		if ok && s.landing(r) {
+			return
+		}
 		if ok && s.goesOn(r, j) {
 			r.kind, r.target = j.kind, max(j.to, r.next-1)
 			return
@@ -786,6 +804,32 @@ func (s *Schedule) nearer(h Hand) int {
 	return max(k, h.Frame-framesApart(h.Shown, h.Frame)+1)
 }
 
+// flying tells whether the hand drags further at a move than a span of
+// key frames: no stretch it is in lasts until the decoder has its key
+// frame, so a frame of a stretch it left is as good as any nearer than
+// the picture. On Tim's Mac a look came every 10 ms and a key frame took
+// 15 ms, and a drag across a three hour video on the range picker started
+// a new stream at every look and stood still for up to 436 ms. Under the
+// lock.
+func (s *Schedule) flying() bool {
+	return s.handSet && s.hand.Moving && s.step > s.span(s.hand.Grid)
+}
+
+// landing tells whether the run under way for a flying hand goes on until
+// it hands over its first frame, the key frame it opened at, which is
+// nearer the hand than the picture: stopped for the next place, as a
+// slower drag's would be, the hand would be gone again before that
+// place's key frame came. A click's run hands nothing before its own
+// frame, a span of decoding away, and is stopped. Under the lock.
+func (s *Schedule) landing(r *lookRun) bool {
+	if r.kind != runHand || !r.key || r.gave || !s.flying() || !r.sized(s.hand) {
+		return false
+	}
+	h := s.hand
+	first := s.keyBefore(r.grid, r.from)
+	return h.Shown < 0 || framesApart(first, h.Frame) < framesApart(h.Shown, h.Frame)
+}
+
 // goesOn tells whether the run under way does the job: it reads the
 // frames of the job by reading on, on the same grid at the same size,
 // with no key frame worth seeking to on the way. A job before the run's
@@ -893,9 +937,15 @@ func (s *Schedule) answer(r *lookRun, frame int) {
 	kept := s.waiting[:0]
 	for _, w := range s.waiting {
 		l := w.look
-		near := frame == l.Frame || s.early && s.onTheWay(l, frame)
+		near := frame == l.Frame || s.early && (s.onTheWay(l, frame) || s.towardFar(l, frame))
 		if r.sized(l) && near {
-			if seen, ok := s.best(l); ok {
+			seen, ok := s.best(l)
+			if made, has := s.keptSeen(r, frame); has && (!ok || framesApart(frame, l.Frame) < framesApart(seen.Frame, l.Frame)) {
+				// Further from a flying hand than best looks, or of a
+				// stretch best passes over.
+				seen, ok = made, true
+			}
+			if ok {
 				seen.Kept = false
 				w.answer <- lookAnswer{seen: seen}
 				if seen.Exact && !l.Moving && l.Frame == s.hand.Frame {
@@ -907,6 +957,16 @@ func (s *Schedule) answer(r *lookRun, frame int) {
 		kept = append(kept, w)
 	}
 	s.waiting = kept
+}
+
+// keptSeen is a frame a run made, as a look is answered with it. Under
+// the lock.
+func (s *Schedule) keptSeen(r *lookRun, frame int) (Seen, bool) {
+	k, ok := s.kept.get(keptKey{grid: r.grid, w: r.w, h: r.h, frame: frame})
+	if !ok {
+		return Seen{}, false
+	}
+	return Seen{Frame: frame, At: k.at, Picture: k.picture}, true
 }
 
 // ended takes the end of a run's stream. A run that read what it was for,

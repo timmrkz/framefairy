@@ -135,7 +135,13 @@ after every frame. It wants, the most wanted first:
    frames nearer the hand than the picture, so each one it makes moves
    the picture. A frame before the key frame before the hand is not put
    up on the way: it is of another stretch of the video, which the
-   picture would leave again as soon as the key frame comes. A drag to the left reads the whole key frame span it
+   picture would leave again as soon as the key frame comes, unless the
+   picture is more than a span from the hand and the frame was just made
+   between the two. A hand that moves further than a span at a look has
+   the run under way hand over its key frame before the next starts:
+   Tim's drags across hours on the range picker reached a new stretch
+   at every look, as often as a key frame takes, and every run was
+   stopped before its key frame came. A drag to the left reads the whole key frame span it
    drags into, since it wants those frames one after another and a run
    that read only the nearest would seek back to the same key frame for
    the rest.

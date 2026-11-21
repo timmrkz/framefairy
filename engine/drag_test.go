@@ -2,9 +2,13 @@ package engine
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"io/fs"
 	"math/rand/v2"
+	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -446,6 +450,14 @@ type simDrag struct {
 // and then let go and rested on for half a second.
 func drag(t *testing.T, grid framewire.Grid, v simVideo, paths ...simPath) simDrag {
 	t.Helper()
+	return dragEvery(t, simTick, grid, v, paths...)
+}
+
+// dragEvery is drag with the hand moving to its next place every tick,
+// for a drag from a report, whose places came as fast as the window
+// looked.
+func dragEvery(t *testing.T, tick time.Duration, grid framewire.Grid, v simVideo, paths ...simPath) simDrag {
+	t.Helper()
 	var d simDrag
 	synctest.Test(t, func(t *testing.T) {
 		dec := newSimDecoder(v)
@@ -457,7 +469,7 @@ func drag(t *testing.T, grid framewire.Grid, v simVideo, paths ...simPath) simDr
 			for i, f := range p {
 				w.to(f, i < len(p)-1)
 				d.hands = append(d.hands, simMark{time.Now(), f, i < len(p)-1})
-				time.Sleep(simTick) //nolint:forbidigo // synctest bubble
+				time.Sleep(tick) //nolint:forbidigo // synctest bubble
 			}
 			w.to(p[len(p)-1], false)
 			time.Sleep(time.Second / 2) //nolint:forbidigo // synctest bubble
@@ -783,6 +795,68 @@ func TestTheDecoderRestsAtAnySizeOfTheVideoPreview(t *testing.T) {
 			}
 			if late > 0 {
 				t.Errorf("the decoder made %d frames in the last 250 ms of half a second the hand rested", late)
+			}
+		})
+	}
+}
+
+// reportedDrags are drags from Tim's reports, the places the hand went
+// through as the schedule wrote them to the log, see dragLog, after a
+// first line that says how often the hand reached a new place: the
+// drag's length by its places, or by its moves where the log kept only
+// the first 500 places.
+//
+//go:embed testdata/drags/*.txt
+var reportedDrags embed.FS
+
+// The drags of Tim's report of 21 November 2026, played the way they
+// came, keep the decoder busy and move a picture that is more than a span
+// from the hand at least every 50 ms, the first and the fifth target.
+// Two of them crossed the whole of a three hour video on the range
+// picker, a new stretch of key frames at every look, and the picture
+// stood still on his Mac for up to 436 ms, and here for up to 374 ms. The
+// other targets are said, not held: four of the drags on the clip
+// timeline miss the second by the same before and after, at most 64 ms,
+// where on his Mac the picture waited up to 137 ms.
+func TestTheDragsOfTimsReportsKeepThePictureNearTheHand(t *testing.T) {
+	grid := framewire.Grid{Num: 25, Den: 1, Count: 389420}
+	names, err := fs.Glob(reportedDrags, "testdata/drags/*.txt")
+	if err != nil || len(names) == 0 {
+		t.Fatalf("no reported drags: %v", err)
+	}
+	for _, name := range names {
+		t.Run(strings.TrimSuffix(path.Base(name), ".txt"), func(t *testing.T) {
+			t.Parallel()
+			b, err := reportedDrags.ReadFile(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			head, places, _ := strings.Cut(string(b), "\n")
+			var ms int
+			if _, err := fmt.Sscanf(head, "every %d ms", &ms); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			var p simPath
+			for _, f := range strings.Split(strings.TrimSpace(places), ",") {
+				n, err := strconv.Atoi(f)
+				if err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+				p = append(p, n)
+			}
+			v := everyKey("a key frame a second", 25)
+			v.w, v.h = 1472, 828
+			d := dragEvery(t, time.Duration(ms)*time.Millisecond, grid, v, p)
+			t.Log(d.String())
+			for _, m := range d.misses(false) {
+				t.Error(m)
+			}
+			if d.farLong > 50*time.Millisecond {
+				t.Errorf("the picture stood still %v while it was more than a span from the hand, %v in", d.farLong, d.farAt)
+			}
+			if t.Failed() {
+				t.Logf("the longest stand-still a span from the hand, %v in:\n%s", d.farAt, d.around(d.farAt))
+				t.Logf("the longest stand-still, %v in:\n%s", d.standAt, d.around(d.standAt))
 			}
 		})
 	}
