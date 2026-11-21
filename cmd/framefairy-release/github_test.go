@@ -183,6 +183,21 @@ func (f *fakeGitHub) comment(number int, body string) error {
 	return f.failing()
 }
 
+func (f *fakeGitHub) editIssue(number int, body string) error {
+	f.did = append(f.did, fmt.Sprintf("edit #%d %s", number, body))
+	return f.failing()
+}
+
+func (f *fakeGitHub) closeIssue(number int, why string) error {
+	for title, n := range f.issues {
+		if n == number {
+			delete(f.issues, title)
+		}
+	}
+	f.did = append(f.did, fmt.Sprintf("close #%d %s", number, why))
+	return f.failing()
+}
+
 // A build is published for main or a pull request only when that
 // channel's history holds its commit. A tag named main, pushed at any
 // commit, reads to GitHub like a push to main, #838.
@@ -370,6 +385,8 @@ func TestGitHubIsAskedWhatTheToolNeeds(t *testing.T) {
 		gh.rename(as[0], "channels-a.json"),
 		gh.cancel(44),
 		gh.comment(22, "Failed again"),
+		gh.editIssue(22, "Now"),
+		gh.closeIssue(22, "Done"),
 	} {
 		if err != nil {
 			t.Error(err)
@@ -385,6 +402,9 @@ func TestGitHubIsAskedWhatTheToolNeeds(t *testing.T) {
 		`PATCH /repos/o/r/releases/assets/3 application/json {"name":"channels-a.json"}`,
 		`POST /repos/o/r/actions/runs/44/cancel`,
 		`POST /repos/o/r/issues/22/comments application/json {"body":"Failed again"}`,
+		`PATCH /repos/o/r/issues/22 application/json {"body":"Now"}`,
+		`POST /repos/o/r/issues/22/comments application/json {"body":"Done"}`,
+		`PATCH /repos/o/r/issues/22 application/json {"state":"closed","state_reason":"completed"}`,
 		`POST /repos/o/r/issues application/json {"body":"B","labels":["tests"],"title":"T"}`,
 	}
 	if n, err := gh.newIssue("T", "B", []string{"tests"}); err != nil || n != 23 {

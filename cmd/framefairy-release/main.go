@@ -40,6 +40,10 @@
 //	framefairy-release failed -workflow W -run URL -commit X
 //	    open the issue that says a scheduled run of W failed on main, or
 //	    add the run to the one that is open, see failed.go
+//	framefairy-release behind -status N -table F
+//	    keep the issue of the tools the app ships that are behind their
+//	    newest release, from how scripts/upstream.sh --behind ended and
+//	    what it wrote, see behind.go
 //
 // Every command but key, check and sign asks GitHub, with GH_TOKEN and
 // GH_REPO, through the interface in github.go.
@@ -100,6 +104,8 @@ func main() {
 		err = unstick(gitHubFromEnv(), time.Now(), os.Stdout)
 	case "failed":
 		err = failedCommand(args, gitHubFromEnv(), time.Now(), os.Stdout)
+	case "behind":
+		err = behindCommand(args, gitHubFromEnv(), time.Now(), os.Stdout)
 	default:
 		usage()
 	}
@@ -110,7 +116,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick | failed, see the head of main.go")
+	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick | failed | behind, see the head of main.go")
 	os.Exit(2)
 }
 

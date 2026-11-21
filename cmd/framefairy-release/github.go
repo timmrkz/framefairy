@@ -71,6 +71,10 @@ type gitHub interface {
 	newIssue(title, body string, labels []string) (int, error)
 	// comment adds a comment to an issue.
 	comment(number int, body string) error
+	// editIssue writes an issue's body again.
+	editIssue(number int, body string) error
+	// closeIssue closes an issue as done, with a comment that says why.
+	closeIssue(number int, why string) error
 }
 
 type job struct {
@@ -496,4 +500,17 @@ func (g *restGitHub) newIssue(title, body string, labels []string) (int, error) 
 func (g *restGitHub) comment(number int, body string) error {
 	fields, _ := json.Marshal(map[string]string{"body": body})
 	return g.call(http.MethodPost, "issues/"+strconv.Itoa(number)+"/comments", bytes.NewReader(fields), "application/json", nil)
+}
+
+func (g *restGitHub) editIssue(number int, body string) error {
+	fields, _ := json.Marshal(map[string]string{"body": body})
+	return g.call(http.MethodPatch, "issues/"+strconv.Itoa(number), bytes.NewReader(fields), "application/json", nil)
+}
+
+func (g *restGitHub) closeIssue(number int, why string) error {
+	if err := g.comment(number, why); err != nil {
+		return err
+	}
+	fields, _ := json.Marshal(map[string]string{"state": "closed", "state_reason": "completed"})
+	return g.call(http.MethodPatch, "issues/"+strconv.Itoa(number), bytes.NewReader(fields), "application/json", nil)
 }
