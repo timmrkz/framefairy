@@ -88,35 +88,80 @@
     reflected?.size(pixels[0], pixels[1], now);
   }
 
+  // The band's size in points, while it is on the page, or null.
+  let box: [number, number] | null = null;
+
+  // The canvas gets a pixel for every pixel of the screen under the band,
+  // and one pixel while the band is not seen, out of the page with its
+  // workspace asleep or hidden with the video's file gone, so a kept
+  // workspace keeps a few bytes and not megabytes, which is what the band
+  // held before it was drawn on every pixel. Nothing is laid out from it.
+  function fit() {
+    if (!box || !shown) {
+      if (pixels && reflected) reflected.size(1, 1, now);
+      pixels = null;
+      return;
+    }
+    laid = band(box[0], box[1]);
+    pixels = [Math.max(1, Math.round(box[0] * devicePixelRatio)), Math.max(1, Math.round(box[1] * devicePixelRatio))];
+    lay();
+  }
+
+  $effect(() => {
+    void shown;
+    fit();
+  });
+
+  // The colour of the app behind the band, which the reflection is laid
+  // over, see laid in reflection.ts: --ink-0, as the stylesheet gives it
+  // to the canvas, painted on a pixel and read back in sRGB, whatever way
+  // the token is written.
+  function ground(): [number, number, number] {
+    const pixel = document.createElement("canvas");
+    pixel.width = pixel.height = 1;
+    const g = pixel.getContext("2d", { willReadFrequently: true });
+    if (!g) return [0, 0, 0];
+    g.fillStyle = getComputedStyle(canvas).color;
+    g.fillRect(0, 0, 1, 1);
+    const [r, gr, b] = g.getImageData(0, 0, 1, 1).data;
+    return [r, gr, b];
+  }
+
   onMount(() => {
-    // The colour of the app behind the band, which the reflection is laid
-    // over, see laid in reflection.ts.
-    const [r, g, b] = (getComputedStyle(canvas).color.match(/[\d.]+/g) ?? []).map(Number);
     // For the walk "reflection": the canvas is opaque, the reflection
     // laid over the ground, so what is seen of each colour is read from
     // the cells it is drawn from rather than from the canvas.
     (window as { __reflectionCells?: Float32Array }).__reflectionCells = now;
     let gone = false;
-    void reflectedOn(canvas, [r || 0, g || 0, b || 0]).then((it) => {
+    void reflectedOn(canvas, ground()).then((it) => {
       if (gone) return;
       reflected = it;
       lay();
     });
     // The canvas is told how large the stylesheet lays it out, which is
-    // how far its blur reaches in cells, and given a pixel for every pixel
-    // of the screen there. Nothing is laid out from it.
+    // how far its blur reaches in cells. A workspace put away, see
+    // App.svelte, is out of the page and has no size.
     const watch = new ResizeObserver((entries) => {
-      const box = entries[entries.length - 1].contentRect;
-      // Nothing measured while the workspace is put away, see App.svelte.
-      if (!canvas.isConnected || !box.width || !box.height) return;
-      laid = band(box.width, box.height);
-      pixels = [Math.max(1, Math.round(box.width * devicePixelRatio)), Math.max(1, Math.round(box.height * devicePixelRatio))];
-      lay();
+      const seen = entries[entries.length - 1].contentRect;
+      box = canvas.isConnected && seen.width && seen.height ? [seen.width, seen.height] : null;
+      fit();
     });
     watch.observe(canvas);
+    // A screen of another scale, the app moved to it or its scale
+    // changed, gives the band another number of pixels at the same size
+    // in points, which the ResizeObserver does not hear.
+    let scale: MediaQueryList | null = null;
+    const rescaled = () => {
+      scale?.removeEventListener("change", rescaled);
+      scale = matchMedia(`(resolution: ${devicePixelRatio}dppx)`);
+      scale.addEventListener("change", rescaled);
+      fit();
+    };
+    rescaled();
     return () => {
       gone = true;
       watch.disconnect();
+      scale?.removeEventListener("change", rescaled);
       cancelAnimationFrame(request);
     };
   });
@@ -140,7 +185,8 @@
     height: var(--reflection-h);
     pointer-events: none;
     /* The colour of the app behind the band, which the reflection is
-       laid over in its own pixels, read from here as the canvas starts. */
+       laid over in its own pixels, read from here as the canvas starts,
+       see ground. */
     color: var(--ink-0);
   }
 
