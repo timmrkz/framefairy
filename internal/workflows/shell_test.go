@@ -124,7 +124,6 @@ var longSteps = map[string]int{
 	"ci-image.yml image: The image, unless it is there":               11,
 	"mac-nightly.yml outside: A keychain of its own":                  6,
 	"conflicts.yml tell: step 1":                                      22,
-	"security.yml upstream: Newer releases of what we ship":           17,
 	"speechbench.yml macos: A recorded talk":                          8,
 	"tools.yml release: Make the release and attach everything to it": 9,
 }
