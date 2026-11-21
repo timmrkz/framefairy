@@ -46,7 +46,9 @@ export type About = "clip" | "video";
 // it is about the video, about "video": it skips ahead or back through the
 // episode and stays there, through the clip and its cuts, the way a play
 // on the video does. Found by Tim, who sped through a dimmed clip with
-// shift and the right arrow and had the clip light up under him. Every
+// shift and the right arrow and had the clip light up under him. So does
+// a step taken on the video while paused, Tim on #938: moving along the
+// clip timeline, a clip passed over is not active. Every
 // other gesture, a click, a drag, a step or a seek, is decided by the
 // frame it lands in: from the frame that holds the
 // clip's start to the frame that holds the moment a frame before its end,
@@ -176,7 +178,8 @@ export type ArrowKey = {
   frame: number;
   back: boolean;
   shift: boolean;
-  // Playing through the clip from the video, where Shift skips.
+  // On the video, where the clip is not active: Shift skips, over the
+  // clip and its cuts.
   through: boolean;
   // The whole clip, from its first piece's start to its last piece's end.
   clip: Piece | null;

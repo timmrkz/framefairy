@@ -647,6 +647,9 @@ export default [
     steps: [
       ["cut at", 0.5],
       ["shift in a cut"],
+      // And on the video, a step goes over the clip and its cut, Tim on
+      // #938.
+      ["skip over a clip"],
     ],
   },
 ];

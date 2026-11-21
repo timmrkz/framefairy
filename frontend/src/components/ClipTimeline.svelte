@@ -1049,7 +1049,10 @@
     if (document.activeElement?.getAttribute("role") === "slider") return;
     const back = event.key === "ArrowLeft";
     event.preventDefault();
-    const through = playing && dimmed;
+    // On the video the clip is not active, so a step goes over it, cuts
+    // and all, and stays on the video, paused as well as playing. Tim on
+    // #938: only a clip that is active is walked by its words.
+    const through = dimmed;
     // Where the key goes is lib/playhead.ts, arrowStep.
     const to = arrowStep({
       time,
@@ -1086,7 +1089,7 @@
     if (playing || scrubbing || gripping || !onahead) return;
     const times: number[] = [];
     for (const back of [false, true]) {
-      const to = arrowStep({ time, frame, back, shift: true, through: false, clip: wholeClip, lit, looping });
+      const to = arrowStep({ time, frame, back, shift: true, through: dimmed, clip: wholeClip, lit, looping });
       if (to && to !== "clip" && to.word) times.push(Math.max(0, Math.min(to.to, duration)));
     }
     if (times.length) onahead(times);

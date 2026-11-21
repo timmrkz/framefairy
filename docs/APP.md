@@ -790,19 +790,20 @@ that to work around, because the app decides every frame it draws.
 The playhead is either on the chosen clip or on the video, and the gesture
 that put it there decides, never a clock. Picking a clip puts it
 on the clip, at its start. So does a click on the clip's start edge, a
-trim, a click on a caption, and a click, a drag or a step into any frame
-of the clip, cuts included, from the frame that holds its start. A click
+trim, a click on a caption, and a click or a drag into any frame of the
+clip, cuts included, from the frame that holds its start. A click
 on the end edge, a landing in the frame that holds the moment a frame
 before its end, and the clip playing to its end, leave it on the clip at
 its end. Any frame before or after the clip is on the video, and so is
 having no clip chosen. It goes by frames and not by seconds because what
 is on screen is a frame: a clip's start kept to the millisecond can lie a
-hair before its frame, and a step onto that frame is on the clip. A step
-taken while the episode plays on the video is the one exception: an arrow,
+hair before its frame, and a click on that frame is on the clip. A step
+taken on the video, playing or paused, is the one exception: an arrow,
 with Shift or without, skips through the episode and leaves the playhead
-on the video, through the clip and its cuts, so a hand that skips ahead
-through a dimmed clip does not light it up. Paused, or on the clip, a step
-lands where its frame says.
+on the video, through the clip and its cuts, so a hand that moves along
+the clip timeline past a dimmed clip does not light it up. Tim on #938:
+a clip passed over is not active. On the clip, a step lands where its
+frame says.
 
 On the clip, the space bar plays the clip from the playhead: its cuts are
 jumped and it stops at its end, or with loop on goes back to its start.

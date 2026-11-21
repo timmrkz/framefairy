@@ -2845,6 +2845,41 @@ export const steps = {
     const [from, to] = await press("Shift+ArrowLeft");
     if (Math.abs(from - to - 5) > 0.002) walk.wrong = `Shift and the left arrow at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not 5 s back`;
   },
+  // ["skip over a clip"]
+  //                    clicks the clip timeline a second after the chosen
+  //                    clip's end, which puts the playhead on the video,
+  //                    and presses Shift and the left arrow until the
+  //                    playhead is before the clip's start: every press
+  //                    goes 5 s back, over the clip and its cuts alike,
+  //                    and the clip stays dimmed. Tim on #938: moving
+  //                    along the clip timeline, a clip passed over is not
+  //                    active
+  async "skip over a clip"(walk, arg, s) {
+    const { page, watch } = walk;
+    const t = await timeline(page);
+    if (!t?.cuts.length) {
+      walk.wrong = "the clip on the clip timeline has no cut to skip over";
+      return;
+    }
+    await clickOnTrack(page, await xOf(page, t.end + 1), high((await handles(page)).track));
+    await settle(page);
+    await page.evaluate(() => document.body.focus());
+    const dimmed = () => page.evaluate(() => !!document.querySelector(".clip-timeline .chosen.dim"));
+    if (!(await dimmed())) {
+      walk.wrong = `a click a second after the clip's end at ${t.end.toFixed(3)} s left the clip lit`;
+      return;
+    }
+    for (let from = await playhead(page); from >= t.start && from > 0; ) {
+      await page.keyboard.press("Shift+ArrowLeft");
+      await settle(page);
+      await watch.step("press", s, page);
+      const to = await playhead(page);
+      if (Math.abs(from - to - Math.min(5, from)) > 0.002) walk.wrong = `Shift and the left arrow on the video at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not 5 s back, with the clip from ${t.start.toFixed(3)} to ${t.end.toFixed(3)} s`;
+      else if (!(await dimmed())) walk.wrong = `Shift and the left arrow on the video from ${from.toFixed(3)} to ${to.toFixed(3)} s lit the clip it passed over`;
+      if (walk.wrong) return;
+      from = to;
+    }
+  },
   // ["skips in sight", n]
   //                    clicks the clip timeline a second after the chosen
   //                    clip's end, presses Shift and the right arrow n
