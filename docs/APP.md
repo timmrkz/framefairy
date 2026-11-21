@@ -539,7 +539,7 @@ of a clip is on the start of a frame: the engine puts it there as the
 clip enters the plan, from a search, by hand or from a gesture,
 `PieceOnFrames` in `engine/render.go`, and the render cuts on that frame.
 So on a clip edge the frame that holds the playhead is the frame the
-short has there, and both sides are held to `lib/frame.cases.json`. A
+short has there, and both sides are held to `lib/testdata/frame.cases.json`. A
 piece plays and ends with the frame that holds the moment a frame before
 its end, the short's last. A clip picked shows the short's first frame,
 and the playhead on the clip's end shows its last.

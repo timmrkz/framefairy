@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { columnLevels, HeldLoudness, laid, LoudnessLooks, loudnessOf, silent, type Loudness } from "./loudness";
-import cases from "./loudness.cases.json";
+import cases from "./testdata/loudness.cases.json";
 
 const FRAME = 0.01;
 

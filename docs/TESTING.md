@@ -1635,6 +1635,13 @@ use it. The end-to-end tests
 are the walks, against the real Go side through the bridge, and the
 rules every walk checks after every step are in `walks/rules.mjs`.
 
+Test data lives in a folder named `testdata`, Go's own name for it,
+beside the tests that read it, and nowhere else. Videos and sounds are
+in `internal/fixtures/testdata/`. The cases both Go and the interface
+tests read, like `frame.cases.json` and `loudness.cases.json`, are in
+`frontend/src/lib/testdata/`, which ci.yml's filter `goread` names, so a
+change to one starts the tests of both sides.
+
 A bubble fails its test with a deadlock when a goroutine started in it is
 still blocked as the test ends. lumberjack, which keeps the app's log,
 starts one with the first line it writes, and it never ends, so a test in

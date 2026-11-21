@@ -8,13 +8,13 @@ import (
 	"testing"
 )
 
-// updateLoudnessCases writes the bytes of frontend/src/lib/loudness.cases.json
+// updateLoudnessCases writes the bytes of frontend/src/lib/testdata/loudness.cases.json
 // again from what the engine makes, with go test ./engine -run
 // TestTheWindowReadsThePiecesTheEngineMakes -update-loudness-cases.
-var updateLoudnessCases = flag.Bool("update-loudness-cases", false, "write the bytes of frontend/src/lib/loudness.cases.json from the engine")
+var updateLoudnessCases = flag.Bool("update-loudness-cases", false, "write the bytes of frontend/src/lib/testdata/loudness.cases.json from the engine")
 
 // loudnessCases is a loudness, readings measured over it, and the bytes a
-// look at a view is answered with, in frontend/src/lib/loudness.cases.json.
+// look at a view is answered with, in frontend/src/lib/testdata/loudness.cases.json.
 // The window's own tests lay the same bytes over the same loudness, so the
 // layout the engine writes and the one the window reads cannot drift apart
 // unseen: each side's tests would stay green with a copy of its own.
@@ -34,7 +34,7 @@ type loudnessCases struct {
 	After string `json:"after"`
 }
 
-const loudnessCasesFile = "../frontend/src/lib/loudness.cases.json"
+const loudnessCasesFile = "../frontend/src/lib/testdata/loudness.cases.json"
 
 // putRuns hands a schedule runs of readings, each byte as the dB it stands
 // for.

@@ -722,7 +722,7 @@ was found later:
   preview's grid ends on. So the
   frame that holds an edge, which is what the video preview shows, is the
   frame the render cuts on, both held to
-  `frontend/src/lib/frame.cases.json`. The read starts half a frame before the first
+  `frontend/src/lib/testdata/frame.cases.json`. The read starts half a frame before the first
   frame, where no rounding to the microsecond can move it past a frame,
   and runs a frame longer than the piece. The picture keeps the piece's
   number of frames, `trim=end_frame`, and the sound is cut to the sample
