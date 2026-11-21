@@ -110,7 +110,10 @@ whatever version the machine came with.
 3. **CI checks the pull request**, see below. With auto-fix switched on for
    the pull request, Claude fixes failed checks by itself.
 4. **Review** the diff in the session or on GitHub. Comment on lines to ask
-   for changes. Merge when it is right.
+   for changes. Merge when it is right. When you let the session merge
+   instead, it does so only while the pull request is exactly as you last
+   saw it. A commit pushed after that waits for you to try it and say
+   merge again.
 5. **In the app:** Updates, at the foot of the sidebar, following main,
    brings the merged change in. A change to the command line or to `make`
    itself is tried from the checkout instead:
@@ -283,7 +286,8 @@ checks that its pull request merges
 right after opening it and before it says it is ready, and when it does
 not, merges `main` in at once, without asking, resolves the conflict,
 reads `CLAUDE.md` again and pushes. The merge is tested like a change of
-the session's own, the tests of what it touches first and CI after. A
+the session's own, the tests of what it touches first and CI after,
+and it ends any go to merge you gave before it. A
 pull request that still merges is left alone: merging `main` into it
 would only add a commit, a CI run and a build to take, and change
 nothing being tested.
