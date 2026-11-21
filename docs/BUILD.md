@@ -266,8 +266,8 @@ lines they run on Linux, and the counts go to Codecov, see
 Nobody waits on a run at night, so one that fails on main tells of
 itself. Every workflow on a schedule, the three nightlies and the
 weekly `security.yml`, ends with a job `tell`, which runs only when
-another of its jobs failed on main and has `framefairy-release failed`
-open an issue, "Nightly on a Mac failed on main" for example, labelled
+another of its jobs failed on main and calls `tell.yml`, where
+`framefairy-release failed` opens an issue, "Nightly on a Mac failed on main" for example, labelled
 `tests` and `priority/critical`. While that issue is open, every night
 that fails again adds a line to it, with the run, the commit and the
 jobs that failed. It is closed by the fix, never by a night that
@@ -690,7 +690,8 @@ scan made once is out of date the week after.
   four libraries it is built with, llama.cpp, the speech library and Node
   with their newest releases, and
   the same workflow keeps one issue open while anything is behind and
-  closes it once everything is current. llama.cpp makes a build a day, so
+  closes it once everything is current, through `framefairy-release
+  behind`, which reads how `upstream.sh` ended. llama.cpp makes a build a day, so
   it counts only once it is a month behind. ffmpeg is the one that matters
   most: it reads a video somebody else made.
 - **One pin for each tool CI installs**, #591. Node is `.node-version`,

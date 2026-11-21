@@ -24,12 +24,17 @@ new PR", a failed nightly opens or updates one issue by itself.
 
 1. **Who may know about whom.** The workflow that failed knows it
    failed, so it tells: a last job, `tell`, needs every other job, runs
-   when one failed on main, and runs a command of
-   `cmd/framefairy-release`, the program the workflows already run to
-   ask GitHub, through its `gitHub` interface, its REST client and the
-   fake its tests use. The command opens one issue for the workflow, or
-   adds the run to the open one as a comment. A guard in
-   `internal/workflows` holds every workflow on a schedule to it.
+   when one failed on main, and calls `tell.yml`, one workflow that
+   every workflow on a schedule calls, the way they call
+   `ci-image.yml`. It runs a command of `cmd/framefairy-release`, the
+   program the workflows already run to ask GitHub, through its
+   `gitHub` interface, its REST client and the fake its tests use. The
+   command opens one issue for the workflow, or adds the run to the open
+   one as a comment. A guard in `internal/workflows` holds every
+   workflow on a schedule to it. Written out in each workflow instead,
+   the same 24 lines four times, the pins, the time limit and the step
+   would drift apart, which the first round of this pull request did
+   and the review caught.
 2. **What changes together.** Telling of a failure is not about a
    build, so a program of its own, `cmd/framefairy-ci`, holds it. But it
    needs what `framefairy-release` has already: the token, the REST
@@ -54,6 +59,13 @@ new PR", a failed nightly opens or updates one issue by itself.
    before are lost, it holds a token that writes issues while being code
    we did not write, and what it decides is tested by no `go test`.
 
+`security.yml` kept an issue of its own already, for the tools the app
+ships that are behind their newest release, in 17 lines of shell around
+`gh`, from before the rule that a workflow decides nothing in shell.
+That is the same thing, one issue a workflow keeps, done a second way.
+So it moves into the same program as a command, `behind`, beside
+`failed`, in this pull request.
+
 ## What converges
 
 1 and 4 both tell from GitHub's own word that a run failed, with one
@@ -68,11 +80,14 @@ history of the nights.
 every workflow on a schedule   a last job tell: needs every other job,
                                if: failure() && github.ref == 'refs/heads/main',
                                issues: write, actions: read
+tell.yml                       called by tell, runs framefairy-release failed
 framefairy-release failed      the open issue "<workflow> failed on main" a
                                workflow opened: a comment with the run, the
                                commit and the failed jobs. None open: a new
                                issue, tests, priority/critical, size/medium
 internal/workflows             TestAScheduledRunThatFailsTellsOfItself
+framefairy-release behind      the weekly issue of tools behind upstream,
+                               from security.yml, in place of its shell
 ```
 
 A run stopped by a newer one is no failure, `failure()` is false for it.
@@ -89,6 +104,11 @@ failing test is, so a session picks it before older work. A failure
 that comes again lands in the same issue, one line a night. A run that
 fails costs one Linux job of about a minute more, to compile the command.
 A run that passes costs nothing, `tell` is skipped.
+
+A run that fails before any job starts, a startup failure, runs no
+`tell` either. The likely cause is a called workflow asking for more
+than its caller grants, which the guard checks for `tell.yml`. Any other
+such run is found by the weekly look at main's runs.
 
 It was wrong if a failure on main reaches no issue, or if issues opened
 this way are closed without a fix more than once a month because what

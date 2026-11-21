@@ -50,7 +50,7 @@ func failedLine(when time.Time, runURL, commit string, jobs []job) string {
 // failedBody is the issue a first failure opens, laid out the way
 // .github/ISSUE_TEMPLATE/issue.md says.
 func failedBody(workflow, line string) string {
-	return workflow + " failed on main, in a run nobody was waiting on. The workflow opened this issue itself, and adds a line under Seen each time it fails again while the issue is open.\n\n" +
+	return workflow + " failed on main, in a run nobody was waiting on. The workflow opened this issue itself, and adds a comment with the run each time it fails again while the issue is open.\n\n" +
 		"## Seen\n\n" + line + "\n\n" +
 		"## Cause\n\n" +
 		"Not known yet. The log of a failed job comes first: its last lines name the test that failed and what it printed.\n\n" +
