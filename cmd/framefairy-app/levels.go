@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"path/filepath"
 	"runtime/debug"
 	"sync"
-	"time"
 
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
+	"framefairy/engine/timed"
 )
 
 // measuring measures the loudness of each episode, the waveform of the clip
@@ -29,7 +30,12 @@ type measuring struct {
 
 	// measure is what measures one episode, engine.MeasureLevels in the
 	// app. A test hands in its own, so it decides when a measuring writes.
-	measure func(ctx context.Context, path string, focus func() (float64, float64), progress func(float64)) error
+	measure func(ctx context.Context, path string, look engine.LevelsLook, progress func(float64)) error
+	// base is the loudness of an episode as the window reads it whole,
+	// and length how many readings its sound has, as the probe says: what
+	// a measuring's schedule starts from, see engine.LoudnessSchedule.
+	base   func(path string) []byte
+	length func(ctx context.Context, path string) int
 
 	mu      sync.Mutex
 	running map[string]*measure
@@ -58,13 +64,34 @@ type measuring struct {
 type measure struct {
 	stop context.CancelFunc
 	done chan struct{}
+	// live answers the clip timeline's looks with what the measuring
+	// brings, see lookLoudness.
+	live *engine.LoudnessSchedule
 }
+
+// lookOf is what a measuring is told of the clip timeline: where it looks,
+// as the window said last, and where each reading goes as it is measured.
+type lookOf struct {
+	m    *measuring
+	path string
+	live *engine.LoudnessSchedule
+}
+
+func (l lookOf) View() (float64, float64)        { return l.m.lookingAt(l.path) }
+func (l lookOf) Put(first int, frames []float32) { l.live.Put(first, frames) }
 
 func newMeasuring(machine *engine.Machine, notify func(string)) *measuring {
 	m := &measuring{machine: machine, notify: notify, running: map[string]*measure{},
 		looking: map[string][2]float64{}, shut: map[string]int{}, settled: map[string]bool{}, slots: make(chan struct{}, 2)}
-	m.measure = func(ctx context.Context, path string, focus func() (float64, float64), progress func(float64)) error {
-		return engine.NewEngine(engineLog("levels", path), m.machine).MeasureLevels(ctx, path, focus, progress)
+	m.measure = func(ctx context.Context, path string, look engine.LevelsLook, progress func(float64)) error {
+		return engine.NewEngine(engineLog("levels", path), m.machine).MeasureLevels(ctx, path, look, progress)
+	}
+	m.length = func(ctx context.Context, path string) int {
+		info, err := engine.NewEngine(engineLog("levels", path), m.machine).Probe(ctx, path)
+		if err != nil {
+			return 0
+		}
+		return int(math.Ceil(info.Duration / timed.FrameSeconds))
 	}
 	return m
 }
@@ -97,7 +124,7 @@ func (m *measuring) start(path string) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	run := &measure{stop: cancel, done: make(chan struct{})}
+	run := &measure{stop: cancel, done: make(chan struct{}), live: engine.NewLoudnessSchedule()}
 	m.running[path] = run
 	go m.run(ctx, path, run)
 }
@@ -135,19 +162,44 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 	case <-ctx.Done():
 		return
 	}
-	// The interface is told twice a second at most, which is as often as
-	// the engine writes what it has.
-	var told time.Time
-	err := m.measure(ctx, path, func() (float64, float64) { return m.lookingAt(path) }, func(float64) {
-		if time.Since(told) >= 500*time.Millisecond {
-			told = time.Now()
-			m.notify(path)
-		}
-	})
+	// The window is answered with each reading as it comes, by the
+	// schedule, see lookLoudness, and told once the measuring has ended,
+	// when it reads the loudness whole again. Told twice a second, it read
+	// all of it each time, 3 MB for four hours, issue #968.
+	var base []byte
+	if m.base != nil {
+		base = m.base(path)
+	}
+	length := 0
+	if m.length != nil {
+		length = m.length(ctx, path)
+	}
+	run.live.Start(base, length)
+	err := m.measure(ctx, path, lookOf{m: m, path: path, live: run.live}, nil)
+	run.live.Ended()
 	if err != nil && ctx.Err() == nil {
 		theLog.line(zerolog.WarnLevel, "levels").Str("video", filepath.Base(path)).Err(err).Msg("the loudness could not be measured")
 	}
 	m.notify(path)
+}
+
+// lookLoudness answers where the clip timeline of an episode looks with
+// the loudness of its view the window does not hold, see
+// engine.LoudnessSchedule.Look. An episode not being measured has nothing
+// new: the window read it whole when it opened, and again once its
+// measuring ended.
+func (m *measuring) lookLoudness(ctx context.Context, path string, v engine.View) ([]byte, error) {
+	if m == nil {
+		return nil, engine.ErrNothingNew
+	}
+	m.look(path, v.From, v.To)
+	m.mu.Lock()
+	run := m.running[path]
+	m.mu.Unlock()
+	if run == nil {
+		return nil, engine.ErrNothingNew
+	}
+	return run.live.Look(ctx, v)
 }
 
 // look says what the clip timeline of an episode shows, from and to, which

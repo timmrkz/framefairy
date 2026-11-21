@@ -393,16 +393,32 @@ func (s *levelState) done() bool {
 	return s.end >= 0 && !left
 }
 
+// LevelsLook is where the clip timeline looks, which the measuring goes to
+// first, and is handed every reading as it is measured, the way
+// LoudnessSchedule answers the window with them.
+type LevelsLook interface {
+	View() (from, to float64)
+	Put(first int, frames []float32)
+}
+
+// nowhere looks at nothing and is handed nothing: a measuring from the
+// start, for the disk alone.
+type nowhere struct{}
+
+func (nowhere) View() (float64, float64) { return 0, 0 }
+func (nowhere) Put(int, []float32)       {}
+
 // MeasureLevels measures the loudness of the whole episode, writing what it
 // has every half second, and tells progress how many seconds of it are
-// measured. It measures what focus says the clip timeline shows first, and
-// follows it when it moves. A focus that is nil, or shows nothing, has it
-// measure from the start. An episode measured already is left as it is,
-// and one measured in part carries on.
-func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() (from, to float64),
+// measured. It measures where look says the clip timeline looks first,
+// follows it when it moves, and hands look each reading as it is measured.
+// A look that is nil, or shows nothing, has it measure from the start. An
+// episode measured already is left as it is, and one measured in part
+// carries on.
+func (e *Engine) MeasureLevels(ctx context.Context, source string, look LevelsLook,
 	progress func(measured float64)) error {
-	if focus == nil {
-		focus = func() (float64, float64) { return 0, 0 }
+	if look == nil {
+		look = nowhere{}
 	}
 	had := ReadLevels(e.Files, source)
 	if had.Done {
@@ -438,18 +454,21 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 		// timeline draws the video as silent rather than as not measured,
 		// and nothing asks ffmpeg for a sound that is not there, #831.
 		st.end = int(math.Round(duration / timed.FrameSeconds))
+		silence := make([]float32, st.end)
 		for n := range st.end {
+			silence[n] = noSoundDB
 			if !st.has(n) {
 				st.put(n, noSoundDB)
 			}
 		}
+		look.Put(0, silence)
 	}
 	for {
-		start, ok := st.next(focus())
+		start, ok := st.next(look.View())
 		if !ok {
 			break
 		}
-		if err := e.measureFrom(ctx, source, st, start, focus, tell); err != nil {
+		if err := e.measureFrom(ctx, source, st, start, look, tell); err != nil {
 			return err
 		}
 		// A part that ended between two ticks is shown when it ends, not
@@ -491,7 +510,7 @@ func (s *levelState) loudest() (float32, bool) {
 // measured already, the end of the audio, or a clip timeline that moved to
 // a part not measured yet.
 func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState, start int,
-	focus func() (float64, float64), tell func()) error {
+	look LevelsLook, tell func()) error {
 	run, stop := context.WithCancel(ctx)
 	defer stop()
 	cmd := e.Runner.Command(run, e.FFmpeg, audioFrom(source, start, e.pictureStart(ctx, source))...)
@@ -504,21 +523,41 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	}
 	n := start
 	moved := false
+	// What a read brought is handed to look after the read, so the window
+	// is answered with it at once, rather than at the next write to the
+	// disk and the news of it, issue #968.
+	fresh := make([]float32, 0, 256)
+	hand := func() {
+		look.Put(n-len(fresh), fresh)
+		fresh = fresh[:0]
+	}
+	// Where the clip timeline looks is asked after every read, a lock and
+	// two numbers, and weighed again only when it moved, or at a write.
+	from, to := look.View()
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		if st.has(n) {
 			return false
 		}
 		st.put(n, f)
+		fresh = append(fresh, f)
 		n++
 		return true
-	}, func() bool {
-		tell()
-		if st.leave(n, focus) {
+	}, func(due bool) bool {
+		hand()
+		changed := false
+		if now, until := look.View(); now != from || until != to {
+			from, to, changed = now, until, true
+		}
+		if due {
+			tell()
+		}
+		if (changed || due) && st.leave(n, func() (float64, float64) { return from, to }) {
 			moved = true
 			return false
 		}
 		return true
 	})
+	hand()
 	if !end {
 		// Stopped before the end: ffmpeg is still writing, and is told to
 		// stop rather than left to write into a pipe nobody reads.
@@ -604,11 +643,12 @@ func soundSeek(from, picture float64) (seek, lead float64) {
 }
 
 // readLevels turns 16 kHz mono float samples into a frame every 10 ms and
-// hands each to put, which says whether to go on. Every levelsDefault, or
-// every levelsReads reads, it asks tick, which says the same. It says
-// whether it reached the end.
+// hands each to put, which says whether to go on. After every read it
+// asks tick, which says the same, and due says whether levelsDefault has
+// passed since it last said so, or levelsReads reads. It says whether it
+// reached the end.
 func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) bool,
-	tick func() bool) (bool, error) {
+	tick func(due bool) bool) (bool, error) {
 	frame := make([]float32, 0, frameSamples)
 	samples := newSampleReader(r, frameSamples*4*200)
 	last, reads := time.Now(), 0
@@ -644,9 +684,9 @@ func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) 
 		}
 		if due {
 			last = time.Now()
-			if !tick() {
-				return false, nil
-			}
+		}
+		if !tick(due) {
+			return false, nil
 		}
 	}
 }
@@ -802,7 +842,7 @@ func (e *Engine) levelsAt(ctx context.Context, source string, start, count int, 
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		frames = append(frames, f)
 		return len(frames) < count
-	}, func() bool { return true })
+	}, func(bool) bool { return true })
 	if !end {
 		// Enough heard: ffmpeg is still writing, and is told to stop
 		// rather than left to write into a pipe nobody reads.

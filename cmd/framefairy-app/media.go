@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"framefairy/engine"
@@ -170,14 +172,36 @@ func (s *FrameFairy) serveLoudness(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// Look says what the clip timeline of an episode shows, from and to in
-// seconds, so its loudness is measured there first. The window says it
-// on every move of the view and waits for nothing: what it draws, it
-// already has.
-func (s *FrameFairy) Look(path string, from, to float64) error {
+// serveLoudnessLook answers where the clip timeline looks with the
+// loudness of its view the window does not hold, the way serveLook answers
+// where the hand is with a frame: at once when it is measured, or the
+// moment the measuring brings some of it. Nothing new, or a newer look
+// that took its place, is answered with no content. See
+// engine.LoudnessSchedule.
+func (s *FrameFairy) serveLoudnessLook(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	path := q.Get("path")
 	if !s.store.Known(path) {
-		return errNotInLibrary
+		http.NotFound(w, r)
+		return
 	}
-	s.levels.look(path, from, to)
-	return nil
+	from, errFrom := strconv.ParseFloat(q.Get("from"), 64)
+	to, errTo := strconv.ParseFloat(q.Get("to"), 64)
+	has, errHas := strconv.ParseUint(q.Get("has"), 10, 32)
+	count, errCount := strconv.Atoi(q.Get("count"))
+	if errors.Join(errFrom, errTo, errHas, errCount) != nil || math.IsNaN(from) || math.IsNaN(to) || count < 0 {
+		http.Error(w, "the view is not one", http.StatusBadRequest)
+		return
+	}
+	body, err := s.levels.lookLoudness(r.Context(), path, engine.View{From: from, To: to, Has: uint32(has), Count: count, Sent: sentOf(q)})
+	switch {
+	case err != nil:
+		// Nothing new, a newer look in its place, or called off as the
+		// window went.
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(body)
+	}
 }

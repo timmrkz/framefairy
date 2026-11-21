@@ -95,6 +95,10 @@ func (s *FrameFairy) tellWindow(w emitter) {
 	s.report.said = func(d ReportDraft) { reportDraftEvent.to(w, d) }
 	// How far the loudness is measured is in the video's state.
 	s.levels = newMeasuring(s.store.machine, s.told)
+	s.levels.base = func(path string) []byte {
+		b, _ := s.loudness(path)
+		return b
+	}
 	// The models changed outside the app, see tellSetup.
 	s.setupNews = quietly(func(state SetupState) { setupEvent.to(w, state) })
 }

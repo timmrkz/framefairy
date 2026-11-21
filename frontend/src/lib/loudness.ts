@@ -160,3 +160,122 @@ export class HeldLoudness {
     void this.read();
   }
 }
+
+// How long the head of a piece is, see engine.LoudnessSchedule.piece.
+const PIECE_HEAD = 24;
+
+// A piece of the loudness, as Go answers a look with it: the version it
+// was answered at, the readings it covers, from first to the one before
+// last, whether the view is measured whole, and the loudness it makes laid
+// over what the window holds.
+export interface Piece {
+  version: number;
+  whole: boolean;
+  loudness: Loudness;
+}
+
+// The loudness held, with a piece laid over it: each level's bytes of the
+// piece's readings copied into place. A piece of a loudness of another
+// length is all of it, and is the loudness. Bytes that do not add up are no
+// piece, and what is held stays as it was. It decides nothing about the
+// readings: Go worked out every level of them.
+export function laid(held: Loudness, bytes: Uint8Array): Piece | null {
+  if (bytes.length < PIECE_HEAD) return null;
+  const head = new DataView(bytes.buffer, bytes.byteOffset, PIECE_HEAD);
+  const count = head.getUint32(0, true);
+  const version = head.getUint32(8, true);
+  const first = head.getUint32(12, true);
+  const last = head.getUint32(16, true);
+  const whole = bytes[20] === 1;
+  if (count !== held.count) {
+    if (first !== 0 || last !== count) return null;
+    const all = new Uint8Array(HEAD + bytes.length - PIECE_HEAD);
+    all.set(bytes.subarray(0, HEAD));
+    all.set(bytes.subarray(PIECE_HEAD), HEAD);
+    const l = loudnessOf(all);
+    return l === silent && count ? null : { version, whole, loudness: l };
+  }
+  let at = PIECE_HEAD;
+  if (last > first) {
+    for (let k = 0; k < held.levels.length; k++) {
+      const from = Math.floor(first / 2 ** k);
+      const size = Math.floor((last - 1) / 2 ** k) - from + 1;
+      if (at + size > bytes.length || from + size > held.levels[k].length) return null;
+      held.levels[k].set(bytes.subarray(at, at + size), from);
+      at += size;
+    }
+  }
+  if (at !== bytes.length) return null;
+  // A new object over the same levels, so what draws from it draws again.
+  return { version, whole, loudness: { ...held } };
+}
+
+// The looks of one clip timeline at its loudness, the way the video
+// preview looks for its frames: every move of the view is a look, which
+// takes the place of the one before, and Go answers it with the readings
+// of the view the window does not hold, at once where they are measured
+// and the moment the measuring brings them where not. A view not measured
+// whole is looked at again with what came, until it is. Issue #968.
+export class LoudnessLooks {
+  private readonly name = Math.random().toString(36).slice(2, 12);
+  private sent = 0;
+  private view = { path: "", from: 0, to: 0 };
+  // The version of the loudness the window holds, 0 since it read it
+  // whole, see HeldLoudness.
+  private has = 0;
+
+  constructor(
+    private held: () => Loudness,
+    private got: (path: string, l: Loudness) => void,
+    private ask: (q: URLSearchParams) => Promise<Uint8Array | null> = askPiece,
+  ) {}
+
+  // The loudness was read whole: it is of no version.
+  readWhole() {
+    this.has = 0;
+  }
+
+  // The view moved, or the video changed.
+  look(path: string, from: number, to: number) {
+    this.view = { path, from, to };
+    void this.send();
+  }
+
+  private async send() {
+    const view = this.view;
+    if (!view.path) return;
+    const q = new URLSearchParams({
+      path: view.path,
+      from: String(view.from),
+      to: String(view.to),
+      has: String(this.has),
+      count: String(this.held().count),
+      win: this.name,
+      n: String(++this.sent),
+    });
+    let bytes: Uint8Array | null;
+    try {
+      bytes = await this.ask(q);
+    } catch {
+      // The video is gone, or the app quits: the next move asks again.
+      return;
+    }
+    if (!bytes || this.view.path !== view.path) return;
+    const piece = laid(this.held(), bytes);
+    if (!piece || piece.version < this.has) return;
+    this.has = piece.version;
+    this.got(view.path, piece.loudness);
+    // A view not measured whole is asked again, unless a newer look
+    // already asks for the view as it is now.
+    if (!piece.whole && this.view === view) void this.send();
+  }
+}
+
+// Asks Go for the loudness of a view, /frames/levels/look: null when the
+// window holds all there is of it, or a newer look took its place.
+async function askPiece(q: URLSearchParams): Promise<Uint8Array | null> {
+  const r = await fetch(`/frames/levels/look?${q}`);
+  if (r.status === 204) return null;
+  if (!r.ok) throw new Error(`the loudness of the view was answered with ${r.status}`);
+  return new Uint8Array(await r.arrayBuffer());
+}

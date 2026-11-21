@@ -165,7 +165,7 @@ func TestMeasuringUnderEverythingAtOnce(t *testing.T) {
 				case 0:
 					s.levels.start(path)
 				case 1:
-					_ = s.Look(path, 0, 20)
+					s.levels.look(path, 0, 20)
 					rec := httptest.NewRecorder()
 					s.serveFrames(rec, httptest.NewRequest("GET", "/frames/levels?path="+url.QueryEscape(path), nil))
 				case 2:
@@ -218,9 +218,7 @@ func TestMeasuringUnderEverythingAtOnce(t *testing.T) {
 func TestWhereTheClipTimelineLooksIsMeasuredFirst(t *testing.T) {
 	s, paths, _ := levelsLibrary(t, 1)
 	path := paths[0]
-	if err := s.Look(path, 12, 15); err != nil {
-		t.Fatal(err)
-	}
+	s.levels.look(path, 12, 15)
 	if from, to := s.levels.lookingAt(path); from != 12 || to != 15 {
 		t.Errorf("the measuring looks at %v to %v, the clip timeline at 12 to 15", from, to)
 	}
@@ -267,7 +265,7 @@ func TestALookAsksTheDiskNothingOnceAVideoIsMeasured(t *testing.T) {
 	// Each run waits for the test to say how it ends.
 	ends := make(chan error)
 	var runs atomic.Int64
-	m.measure = func(ctx context.Context, _ string, _ func() (float64, float64), _ func(float64)) error {
+	m.measure = func(ctx context.Context, _ string, _ engine.LevelsLook, _ func(float64)) error {
 		runs.Add(1)
 		select {
 		case err := <-ends:

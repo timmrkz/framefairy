@@ -51,7 +51,7 @@ func TestSamplesCutBetweenReadsComeBackWhole(t *testing.T) {
 		var got []float32
 		e := &Engine{}
 		end, err := e.readLevels(context.Background(), &cutReader{data: raw, size: size},
-			func(f float32) bool { got = append(got, f); return true }, func() bool { return true })
+			func(f float32) bool { got = append(got, f); return true }, func(bool) bool { return true })
 		if err != nil || !end {
 			t.Fatal(size, err, end)
 		}
@@ -95,6 +95,6 @@ func BenchmarkMeasureSoundReadInPieces(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		e.readLevels(context.Background(), &cutReader{data: raw, size: 65537},
-			func(float32) bool { return true }, func() bool { return true })
+			func(float32) bool { return true }, func(bool) bool { return true })
 	}
 }

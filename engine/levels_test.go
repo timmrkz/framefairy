@@ -37,7 +37,7 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 	end, err := e.readLevels(context.Background(), &raw, func(f float32) bool {
 		frames = append(frames, f)
 		return true
-	}, func() bool { return true })
+	}, func(bool) bool { return true })
 	if err != nil || !end {
 		t.Fatal(err, end)
 	}
@@ -238,7 +238,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 		return view[0], view[1]
 	}
 	var first, moved [][2]int
-	err := e.MeasureLevels(context.Background(), source, focus, func(float64) {
+	err := e.MeasureLevels(context.Background(), source, viewAt(focus), func(float64) {
 		l := ReadLevels(disk, source)
 		if first == nil && len(l.Parts) > 0 {
 			first = l.Parts
@@ -307,7 +307,7 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 	// shows and on from there.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := e.MeasureLevels(ctx, source, func() (float64, float64) { return 15, 16 },
+	if err := e.MeasureLevels(ctx, source, viewAt(func() (float64, float64) { return 15, 16 }),
 		func(measured float64) {
 			if measured > 0 {
 				cancel()
@@ -603,3 +603,10 @@ func TestTheLoudnessSaidOfWhatWasMeasured(t *testing.T) {
 		t.Errorf("speech is said to be %v dB at the loudest, not -12", loudest)
 	}
 }
+
+// viewAt is a clip timeline that looks where focus says and keeps none of
+// the readings.
+type viewAt func() (float64, float64)
+
+func (v viewAt) View() (float64, float64) { return v() }
+func (viewAt) Put(int, []float32)         {}

@@ -315,7 +315,7 @@ func TestAnEpisodeAddedAgainTakesWork(t *testing.T) {
 func measuringBy(s *FrameFairy) *atomic.Int64 {
 	started := new(atomic.Int64)
 	s.levels = newMeasuring(s.store.machine, func(string) {})
-	s.levels.measure = func(ctx context.Context, path string, _ func() (float64, float64), _ func(float64)) error {
+	s.levels.measure = func(ctx context.Context, path string, _ engine.LevelsLook, _ func(float64)) error {
 		started.Add(1)
 		<-ctx.Done()
 		return afero.WriteFile(s.store.files, filepath.Join(engine.WorkDir(path), "logs", "levels.json"), []byte("{}"), 0o644)

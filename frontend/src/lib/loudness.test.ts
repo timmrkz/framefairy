@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { columnLevels, HeldLoudness, loudnessOf, silent, type Loudness } from "./loudness";
+import { columnLevels, HeldLoudness, laid, LoudnessLooks, loudnessOf, silent, type Loudness } from "./loudness";
 
 const FRAME = 0.01;
 
@@ -179,5 +179,101 @@ describe("HeldLoudness", () => {
     held.want("a.mp4", "2", true);
     await settle();
     expect(asked).toBe(2);
+  });
+});
+
+// A piece as engine.LoudnessSchedule answers a look: the head of the
+// loudness, the version, the first reading and the one after the last, a
+// byte that says whether the view is measured whole, three of nothing,
+// then each level's bytes of those readings, cut from what Go holds.
+function piece(all: number[], first: number, last: number, version: number, whole: boolean): Uint8Array {
+  const held = loudnessOf(sent(all));
+  const parts: Uint8Array[] = [];
+  if (last > first) {
+    held.levels.forEach((level, k) => parts.push(level.slice(Math.floor(first / 2 ** k), Math.floor((last - 1) / 2 ** k) + 1)));
+  }
+  const bytes = new Uint8Array(24 + parts.reduce((sum, p) => sum + p.length, 0));
+  bytes.set(sent(all).subarray(0, 8));
+  const head = new DataView(bytes.buffer);
+  head.setUint32(8, version, true);
+  head.setUint32(12, first, true);
+  head.setUint32(16, last, true);
+  bytes[20] = whole ? 1 : 0;
+  let at = 24;
+  for (const p of parts) {
+    bytes.set(p, at);
+    at += p.length;
+  }
+  return bytes;
+}
+
+describe("laid", () => {
+  // A piece laid over what the window holds gives the waveform of all
+  // the readings, the levels above the piece included, the same as the
+  // whole read again.
+  test("a piece over what is held is the whole read again", () => {
+    const before = speech(1000, 3);
+    const after = before.slice();
+    const fresh = speech(130, 9);
+    after.splice(300, fresh.length, ...fresh);
+    const held = loudnessOf(sent(before));
+    const got = laid(held, piece(after, 300, 430, 7, false));
+    expect(got?.version).toBe(7);
+    expect(got?.whole).toBe(false);
+    const want = loudnessOf(sent(after));
+    expect(got?.loudness.levels.map((l) => Array.from(l))).toEqual(want.levels.map((l) => Array.from(l)));
+    for (const [from, to, columns] of [[0, 10, 200], [2.5, 4.5, 300], [3, 3.6, 900]] as const) {
+      expect(columnLevels(got!.loudness, from, to, columns)).toEqual(columnLevels(want, from, to, columns));
+    }
+  });
+
+  // A window holding a loudness of another length is sent all of it,
+  // which is the loudness.
+  test("all of a loudness of another length is the loudness", () => {
+    const all = speech(777, 5);
+    const got = laid(loudnessOf(sent(speech(10, 1))), piece(all, 0, 777, 2, true));
+    expect(got?.loudness.count).toBe(777);
+    expect(got?.loudness.levels.map((l) => Array.from(l))).toEqual(loudnessOf(sent(all)).levels.map((l) => Array.from(l)));
+  });
+
+  // Bytes that do not add up are no piece, and what is held stays.
+  test("a piece cut short changes nothing", () => {
+    const held = loudnessOf(sent(speech(100, 2)));
+    const was = Array.from(held.levels[0]);
+    expect(laid(held, piece(speech(100, 4), 10, 50, 1, false).subarray(0, 40))).toBeNull();
+    expect(Array.from(held.levels[0])).toEqual(was);
+  });
+});
+
+describe("LoudnessLooks", () => {
+  // Every move of the view is a look with what the window holds. A view
+  // not measured whole is looked at again with the version that came,
+  // until it is, and an answer older than what is held is dropped.
+  test("a view is looked at again until it is measured whole", async () => {
+    let held = loudnessOf(sent(speech(500, 1)));
+    const asked: URLSearchParams[] = [];
+    const answers = [piece(speech(500, 2), 100, 200, 3, false), piece(speech(500, 3), 100, 200, 4, true)];
+    let got = 0;
+    let both: () => void;
+    const answered = new Promise<void>((r) => (both = r));
+    const looks = new LoudnessLooks(
+      () => held,
+      (_, l) => {
+        held = l;
+        if (++got === 2) both();
+      },
+      async (q) => {
+        asked.push(q);
+        return answers.shift() ?? null;
+      },
+    );
+    looks.look("/v.mp4", 1, 2);
+    await answered;
+    expect(asked.map((q) => [q.get("from"), q.get("to"), q.get("has"), q.get("count")])).toEqual([
+      ["1", "2", "0", "500"],
+      ["1", "2", "3", "500"],
+    ]);
+    expect(Number(asked[1].get("n"))).toBeGreaterThan(Number(asked[0].get("n")));
+    expect(Array.from(held.levels[0].subarray(100, 200))).toEqual(speech(500, 3).slice(100, 200));
   });
 });
