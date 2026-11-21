@@ -252,6 +252,9 @@ func (d *simDecoder) Stream(ctx context.Context, grid framewire.Grid, from float
 	return nil
 }
 
+// Give takes nothing back: every frame is a piece of the one picture.
+func (d *simDecoder) Give([]byte) {}
+
 // simWindow asks the schedule for where the hand is the way the app does,
 // see app.ts: a look for each place the hand moves to that the window
 // does not hold, a frame on the way drawn and the place asked again, and

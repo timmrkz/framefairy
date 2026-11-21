@@ -316,3 +316,46 @@ func TestAHeldPlayGivesTheDecoderBackAndGoesOnFromWhereItWas(t *testing.T) {
 	}
 	p.Stop()
 }
+
+// A play's frames go back to the decoder once the window has written
+// them, and not before, however soon the schedule lets go of them: read
+// into while it is written, a frame of a play would show half of a later
+// one. Issue #969.
+func TestAPlaysFramesGoBackToTheDecoderOnceWritten(t *testing.T) {
+	t.Parallel()
+	d := newHeldDecoder()
+	s := newSchedule(d)
+	keepOnly(s, 1)
+	_, frames, ended := playOf(s, []PlayPiece{{1, 1.2}}, 1)
+	st := d.next(t)
+	for f := 25; f < 30; f++ {
+		_ = st.give(t, f)
+	}
+	if err := <-ended; err != nil {
+		t.Fatalf("the play ended with %v", err)
+	}
+	close(frames)
+	var played []PlayFrame
+	for f := range frames {
+		played = append(played, f)
+	}
+	if len(played) != 5 {
+		t.Fatalf("the play brought %d frames", len(played))
+	}
+	for _, f := range played {
+		if d.given(f.Picture) || f.Picture[0] != byte(f.Frame) {
+			t.Fatalf("frame %d went back to the decoder before it was written, and reads %d", f.Frame, f.Picture[0])
+		}
+		s.Give(f.Picture)
+	}
+	// All but the last, which the schedule keeps for a play started there
+	// again.
+	for _, f := range played[:4] {
+		if !d.given(f.Picture) {
+			t.Errorf("frame %d did not go back to the decoder once written", f.Frame)
+		}
+	}
+	if d.given(played[4].Picture) {
+		t.Error("frame 29 went back to the decoder while the schedule keeps it")
+	}
+}

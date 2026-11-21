@@ -181,8 +181,15 @@ func TestWhatWasHeardIsReadAgainWhenTheTranscriptIsWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := m.Episode(source).Status("/models/modell", nil)
-	if st.Covered != 13 || !st.Transcribed || st.Said == nil || st.Said[1] < 5 {
-		t.Errorf("heard to %v, done %v, said %v, once written again", st.Covered, st.Transcribed, st.Said)
+	if st.Covered != 13 || !st.Transcribed {
+		t.Errorf("heard to %v, done %v, once written again", st.Covered, st.Transcribed)
+	}
+	// And where the lines end, once the video is opened.
+	if _, err := m.Episode(source).Transcript("/models/modell", nil); err != nil {
+		t.Fatal(err)
+	}
+	if opened := m.Episode(source).Status("/models/modell", nil); opened.Said == nil || opened.Said[1] < 5 {
+		t.Errorf("said %v once written again and opened", opened.Said)
 	}
 	// What one caller does with it is not what the next one reads.
 	st.Heard[0][1] = 0

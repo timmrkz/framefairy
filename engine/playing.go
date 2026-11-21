@@ -35,7 +35,8 @@ type PlayAsk struct {
 }
 
 // PlayFrame is a frame of a play: its shot and its picture, see
-// framewire.Picture, which nobody may change.
+// framewire.Picture, which nobody may change. Whoever is handed it gives
+// its picture back with Schedule.Give once it is written out.
 type PlayFrame struct {
 	Shot
 	Picture []byte
@@ -211,7 +212,8 @@ func (p *Play) Stop() {
 // another is one stream of the decoder, and the next run's stream starts
 // while this one plays, so a cut never waits for a seek. Each frame the
 // decoder makes is kept, so a play started again where this one stood, a
-// clip changed under it, starts at once.
+// clip changed under it, starts at once. A frame handed to got is got's
+// to give back, whatever it answers.
 func (p *Play) Pictures(ctx context.Context, got func(PlayFrame) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -233,6 +235,12 @@ func (p *Play) Pictures(ctx context.Context, got func(PlayFrame) error) error {
 	runs := playRuns{shots: NewShots(p.grid, p, p.p0)}
 	cur := p.startRun(ctx, runs.next())
 	next := p.startRun(ctx, runs.next())
+	// The frames on their way when the play ends go to nobody.
+	defer func() {
+		cancel()
+		go p.drop(cur)
+		go p.drop(next)
+	}()
 	for cur != nil {
 		for f := range cur.out {
 			if err := got(f); err != nil {
@@ -249,6 +257,17 @@ func (p *Play) Pictures(ctx context.Context, got func(PlayFrame) error) error {
 		cur, next = next, p.startRun(ctx, runs.next())
 	}
 	return nil
+}
+
+// drop gives back the frames of a run nobody takes, once its stream has
+// stopped.
+func (p *Play) drop(r *playRun) {
+	if r == nil {
+		return
+	}
+	for f := range r.out {
+		p.s.Give(f.Picture)
+	}
 }
 
 // playRuns cuts the shots of a play into runs of frames that follow one
@@ -297,11 +316,14 @@ func (p *Play) startRun(ctx context.Context, shots []Shot) *playRun {
 	}
 	r := &playRun{out: make(chan PlayFrame, playDepth)}
 	key := func(frame int) keptKey { return keptKey{grid: p.grid, w: p.w, h: p.h, frame: frame} }
+	// A frame sent is counted as sent under the lock it was kept under,
+	// see keptFrames.lend, and one that could not be sent is given back.
 	send := func(ctx context.Context, f PlayFrame) error {
 		select {
 		case r.out <- f:
 			return nil
 		case <-ctx.Done():
+			p.s.Give(f.Picture)
 			return ctx.Err()
 		}
 	}
@@ -315,6 +337,9 @@ func (p *Play) startRun(ctx context.Context, shots []Shot) *playRun {
 			for ; i < len(shots); i++ {
 				p.s.mu.Lock()
 				k, ok := p.s.kept.get(key(shots[i].Frame))
+				if ok {
+					p.s.kept.lend(k.picture)
+				}
 				p.s.mu.Unlock()
 				if !ok {
 					break
@@ -349,10 +374,13 @@ func (p *Play) startRun(ctx context.Context, shots []Shot) *playRun {
 			err := p.s.frames.Stream(held, p.grid, p.grid.At(shots[i].Frame), p.w, p.h, false, nil, func(at float64, picture []byte) error {
 				frame := p.grid.Holding(at)
 				if frame != shots[i].Frame {
+					// Nobody keeps it or reads it.
+					p.s.frames.Give(picture)
 					return nil
 				}
 				p.s.mu.Lock()
 				p.s.kept.put(key(frame), at, picture)
+				p.s.kept.lend(picture)
 				p.s.mu.Unlock()
 				if err := send(held, PlayFrame{Shot: shots[i], Picture: picture}); err != nil {
 					return err

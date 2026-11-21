@@ -1,11 +1,13 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"framefairy/internal/framewire"
@@ -18,9 +20,16 @@ import (
 // gives it a frame, so no test waits on the clock.
 
 // heldDecoder is a decoder whose streams hand over a frame when the test
-// gives one, and say so once the schedule has taken it.
+// gives one, and say so once the schedule has taken it. It reads a frame
+// into a buffer given back, see Give, where it has one, the way the
+// episode's decoder does.
 type heldDecoder struct {
 	opened chan *heldStream
+
+	mu sync.Mutex
+	// free are the buffers given back, and made counts the ones made new.
+	free [][]byte
+	made int
 }
 
 type heldStream struct {
@@ -57,7 +66,13 @@ func (d *heldDecoder) Stream(ctx context.Context, grid framewire.Grid, from floa
 				f.took <- f.end
 				return f.end
 			}
-			err := got(grid.At(f.frame), make([]byte, width*height*4))
+			// Every byte of a frame is its number, so a test sees what
+			// was read into a buffer.
+			picture := d.buffer(width * height * 4)
+			for i := range picture {
+				picture[i] = byte(f.frame)
+			}
+			err := got(grid.At(f.frame), picture)
 			f.took <- err
 			if err != nil {
 				s.ended <- err
@@ -65,6 +80,33 @@ func (d *heldDecoder) Stream(ctx context.Context, grid framewire.Grid, from floa
 			}
 		}
 	}
+}
+
+// buffer is a buffer given back, or a new one.
+func (d *heldDecoder) buffer(size int) []byte {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for i, b := range d.free {
+		if len(b) == size {
+			d.free = slices.Delete(d.free, i, i+1)
+			return b
+		}
+	}
+	d.made++
+	return make([]byte, size)
+}
+
+func (d *heldDecoder) Give(frame []byte) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.free = append(d.free, frame)
+}
+
+// given says whether the buffer of picture was given back.
+func (d *heldDecoder) given(picture []byte) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.ContainsFunc(d.free, func(b []byte) bool { return &b[0] == &picture[0] })
 }
 
 // give hands over a frame and says what the schedule made of it: nil to
@@ -405,7 +447,7 @@ func TestAFailedStreamSaysWhy(t *testing.T) {
 // The frames kept are held to their bytes, the one used longest ago let
 // go of first.
 func TestTheKeptFramesLetTheOldestGo(t *testing.T) {
-	k := newKeptFrames(3 * 8)
+	k := newKeptFrames(3*8, nil)
 	key := func(f int) keptKey { return keptKey{grid: lookGrid, w: 2, h: 1, frame: f} }
 	for f := range 3 {
 		k.put(key(f), 0, make([]byte, 8))
@@ -421,6 +463,251 @@ func TestTheKeptFramesLetTheOldestGo(t *testing.T) {
 		if _, ok := k.get(key(f)); !ok {
 			t.Errorf("frame %d was let go of", f)
 		}
+	}
+}
+
+// keepOnly has the schedule keep no more than so many frames of 4 by 2,
+// so a test sees frames let go of without filling lookKeptBytes.
+func keepOnly(s *Schedule, frames int) {
+	s.mu.Lock()
+	s.kept.most = frames * 4 * 2 * 4
+	s.mu.Unlock()
+}
+
+// A frame sent to the window goes back to the decoder only once it is
+// written: read into while the window copies it, the video preview would
+// show half of one frame and half of another. A frame nobody was sent
+// goes back as soon as the schedule lets go of it.
+func TestAFrameSentGoesBackToTheDecoderOnlyOnceWritten(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	keepOnly(s, 1)
+	click := lookFor(s, rest(48))
+	st := dec.next(t)
+	_ = st.give(t, 47)
+	_ = st.give(t, 48)
+	sent := <-click
+	if sent.err != nil || sent.seen.Frame != 48 {
+		t.Fatalf("the click got %+v, %v", sent.seen, sent.err)
+	}
+	if dec.mu.Lock(); len(dec.free) != 1 {
+		t.Fatalf("%d buffers went back once frame 47 was let go of, want 1", len(dec.free))
+	}
+	dec.mu.Unlock()
+	// Another place: frame 48 is let go of while the window still writes
+	// it.
+	far := lookFor(s, rest(300))
+	st = dec.next(t)
+	_ = st.give(t, 299)
+	_ = st.give(t, 300)
+	if got := <-far; got.err != nil || got.seen.Frame != 300 {
+		t.Fatalf("the second click got %+v, %v", got.seen, got.err)
+	}
+	if dec.given(sent.seen.Picture) || !bytes.Equal(sent.seen.Picture, bytes.Repeat([]byte{48}, len(sent.seen.Picture))) {
+		t.Fatalf("frame 48 went back to the decoder while the window was writing it, and reads %v", sent.seen.Picture)
+	}
+	s.Give(sent.seen.Picture)
+	if !dec.given(sent.seen.Picture) {
+		t.Fatal("frame 48 did not go back to the decoder once written")
+	}
+}
+
+// aroundAPlace is a click on frame 48 and the frames around it the
+// window was handed and wrote, all kept, the click's from 47 and Near's
+// from 33 to 52.
+func aroundAPlace(t *testing.T, dec *heldDecoder, s *Schedule) {
+	t.Helper()
+	click := lookFor(s, rest(48))
+	st := dec.next(t)
+	_ = st.give(t, 47)
+	_ = st.give(t, 48)
+	got := <-click
+	s.Give(got.seen.Picture)
+	near := make(chan []Seen, 1)
+	go func() { near <- s.Near(context.Background(), rest(48), func(f int) bool { return f == 47 }) }()
+	st = dec.next(t)
+	for f := 49; f <= 48+lookAhead; f++ {
+		_ = st.give(t, f)
+	}
+	behind := dec.next(t)
+	for f := behind.from; f <= 46; f++ {
+		_ = behind.give(t, f)
+	}
+	for _, n := range <-near {
+		s.Give(n.Picture)
+	}
+}
+
+// letAllGo clicks far from frame 48 with room for one frame, so the
+// schedule lets go of every frame it kept around it.
+func letAllGo(t *testing.T, dec *heldDecoder, s *Schedule) {
+	t.Helper()
+	keepOnly(s, 1)
+	far := lookFor(s, rest(300))
+	st := dec.next(t)
+	_ = st.give(t, 299)
+	_ = st.give(t, 300)
+	if got := <-far; got.err != nil || got.seen.Frame != 300 {
+		t.Fatalf("the far click got %+v, %v", got.seen, got.err)
+	}
+}
+
+// writtenBack says every frame sent goes back to the decoder only once
+// the window gives it back, still reading as the frame it is until then.
+func writtenBack(t *testing.T, dec *heldDecoder, s *Schedule, sent []Seen) {
+	t.Helper()
+	for _, f := range sent {
+		if dec.given(f.Picture) || !bytes.Equal(f.Picture, bytes.Repeat([]byte{byte(f.Frame)}, len(f.Picture))) {
+			t.Fatalf("frame %d went back to the decoder while the window was writing it, and reads %v", f.Frame, f.Picture)
+		}
+	}
+	for _, f := range sent {
+		s.Give(f.Picture)
+		if !dec.given(f.Picture) {
+			t.Fatalf("frame %d did not go back to the decoder once written", f.Frame)
+		}
+	}
+}
+
+// The frames Near hands over, and the frames read ahead, go back to the
+// decoder only once written, as a look's do. Issue #969.
+func TestFramesNearAndAheadGoBackToTheDecoderOnlyOnceWritten(t *testing.T) {
+	t.Run("near", func(t *testing.T) {
+		dec := newHeldDecoder()
+		s := newSchedule(dec)
+		defer s.Close()
+		click := lookFor(s, rest(48))
+		st := dec.next(t)
+		_ = st.give(t, 47)
+		_ = st.give(t, 48)
+		got := <-click
+		s.Give(got.seen.Picture)
+		near := make(chan []Seen, 1)
+		go func() { near <- s.Near(context.Background(), rest(48), func(f int) bool { return f == 47 }) }()
+		st = dec.next(t)
+		for f := 49; f <= 48+lookAhead; f++ {
+			_ = st.give(t, f)
+		}
+		behind := dec.next(t)
+		for f := behind.from; f <= 46; f++ {
+			_ = behind.give(t, f)
+		}
+		sent := <-near
+		if len(sent) == 0 {
+			t.Fatal("Near handed over no frames")
+		}
+		letAllGo(t, dec, s)
+		writtenBack(t, dec, s, sent)
+	})
+	t.Run("ahead", func(t *testing.T) {
+		dec := newHeldDecoder()
+		s := newSchedule(dec)
+		defer s.Close()
+		aroundAPlace(t, dec, s)
+		// The word beside frame 46 is all kept, 45 to 50, and handed over
+		// at once.
+		got, err := s.Ahead(context.Background(), aheadOf([]int{46}, nil))
+		if err != nil || len(got) != 6 {
+			t.Fatalf("the read ahead gave %d frames, %v, want the 6 of the word", len(got), err)
+		}
+		letAllGo(t, dec, s)
+		writtenBack(t, dec, s, got)
+	})
+}
+
+// The frames an Ahead took that nobody is sent are lent to nobody, so
+// they go back to the decoder once the schedule lets go of them, with no
+// window to give them back: an Ahead held and then overtaken by a newer
+// one, and an Ahead whose request ended while it read. Issue #969.
+func TestFramesAnAheadTookGoBackWhenNobodyIsSentThem(t *testing.T) {
+	kept := func(s *Schedule, frames ...int) [][]byte {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		var out [][]byte
+		for _, f := range frames {
+			if k, ok := s.kept.peek(keptKey{grid: lookGrid, w: 4, h: 2, frame: f}); ok {
+				out = append(out, k.picture)
+			}
+		}
+		return out
+	}
+	// Lent to nobody: the schedule gives it back as soon as it lets go
+	// of it, see TestAFrameSentGoesBackToTheDecoderOnlyOnceWritten.
+	lentToNobody := func(t *testing.T, s *Schedule, pictures [][]byte) {
+		t.Helper()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, p := range pictures {
+			if n := s.kept.readers[&p[0]]; n != 0 {
+				t.Fatalf("frame %d is still lent to %d windows that were never sent it", p[0], n)
+			}
+		}
+	}
+	t.Run("held and overtaken", func(t *testing.T) {
+		dec := newHeldDecoder()
+		s := newSchedule(dec)
+		defer s.Close()
+		aroundAPlace(t, dec, s)
+		taken := kept(s, 45, 46, 47, 48, 49, 50)
+		held := aheadOf([]int{46}, nil)
+		held.Held = true
+		if got, err := s.Ahead(context.Background(), held); got != nil || err != nil {
+			t.Fatalf("a held read ahead gave %v, %v", got, err)
+		}
+		if got, err := s.Ahead(context.Background(), aheadOf(nil, nil)); len(got) != 0 || err != nil {
+			t.Fatalf("an empty read ahead gave %v, %v", got, err)
+		}
+		lentToNobody(t, s, taken)
+	})
+	t.Run("ended by its request", func(t *testing.T) {
+		dec := newHeldDecoder()
+		s := newSchedule(dec)
+		defer s.Close()
+		aroundAPlace(t, dec, s)
+		// The word beside 50 is kept up to 52, and 53 and 54 are read.
+		taken := kept(s, 49, 50, 51, 52)
+		ctx, cancel := context.WithCancel(context.Background())
+		ended := make(chan error, 1)
+		go func() {
+			_, err := s.Ahead(ctx, aheadOf([]int{50}, nil))
+			ended <- err
+		}()
+		reading := dec.next(t)
+		cancel()
+		if err := <-ended; !errors.Is(err, context.Canceled) {
+			t.Fatalf("the read ahead ended with %v", err)
+		}
+		<-reading.ended
+		lentToNobody(t, s, taken)
+	})
+}
+
+// Over a drag, the decoder reads its frames into the buffers of the frames
+// the schedule let go of, and makes no new memory for every frame: a frame
+// of the video preview of a Mac is several megabytes, at 30 frames a
+// second while the hand moves. Issue #969.
+func TestADragReadsIntoTheFramesLetGoOf(t *testing.T) {
+	dec := newHeldDecoder()
+	s := newSchedule(dec)
+	defer s.Close()
+	keepOnly(s, 4)
+	for f := 20; f < 480; f += 20 {
+		click := lookFor(s, rest(f))
+		st := dec.next(t)
+		_ = st.give(t, f-1)
+		_ = st.give(t, f)
+		got := <-click
+		if got.err != nil || got.seen.Frame != f {
+			t.Fatalf("the click on %d got %+v, %v", f, got.seen, got.err)
+		}
+		s.Give(got.seen.Picture)
+	}
+	// The four frames kept and the one on its way to them.
+	dec.mu.Lock()
+	defer dec.mu.Unlock()
+	if dec.made > 5 {
+		t.Fatalf("the decoder made %d buffers for 46 frames, want no more than 5", dec.made)
 	}
 }
 

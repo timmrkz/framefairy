@@ -1085,12 +1085,14 @@
   // too: FrameQueue.ahead drops what it was asked already, so this needs
   // no guard of its own.
   //
-  // Outside a clip nothing is read ahead. A skip lands SKIP seconds away,
-  // further than a stream reads on, so the frames there would cost a seek
-  // each, back and on, at every move of the playhead, a click too, and
-  // the decoder would be busy with them when the hand goes somewhere else.
-  // Where the keys go is arrowStep's, the one onKey asks, and only a step
-  // onto a word is read ahead.
+  // Outside a clip nothing is read ahead, and no words are handed over,
+  // so the words of the place before are not read either: a hand that
+  // let go of a drag waits for them, see AppFrames.ahead. A skip lands
+  // SKIP seconds away, further than a stream reads on, so the frames
+  // there would cost a seek each, back and on, at every move of the
+  // playhead, a click too, and the decoder would be busy with them when
+  // the hand goes somewhere else. Where the keys go is arrowStep's, the
+  // one onKey asks, and only a step onto a word is read ahead.
   $effect(() => {
     if (playing || scrubbing || gripping || !onahead) return;
     const times: number[] = [];
@@ -1098,7 +1100,7 @@
       const to = arrowStep({ time, frame, back, shift: true, through: false, clip: wholeClip, pieces: drawnPieces, lit, inCuts, looping });
       if (to && to !== "clip" && to.word) times.push(Math.max(0, Math.min(to.to, duration)));
     }
-    if (times.length) onahead(times);
+    onahead(times);
   });
 
   // A swipe or a pinch is one line in the log, from where the view stood

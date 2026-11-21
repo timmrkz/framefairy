@@ -240,7 +240,11 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	seen, err := p.schedule(dec).Look(r.Context(), hand)
+	sched := p.schedule(dec)
+	seen, err := sched.Look(r.Context(), hand)
+	// Written, or not, the picture goes back for the decoder's next
+	// frames, see engine.Schedule.Give.
+	defer sched.Give(seen.Picture)
 	switch {
 	case errors.Is(err, engine.ErrOvertaken), errors.Is(err, engine.ErrShown):
 		w.WriteHeader(http.StatusNoContent)
@@ -263,10 +267,19 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) 
 	if seen.Kept {
 		w.Header().Set("X-Frames-Kept", "1")
 	}
-	if seen.Exact && p.schedule(dec).HasNear(hand) {
+	if seen.Exact && sched.HasNear(hand) {
 		w.Header().Set("X-Frames-Near", "1")
 	}
 	writeSeen(w, dec, []engine.Seen{seen})
+}
+
+// give hands the pictures of frames a schedule sent back to it, once
+// they are written or could not be: the window's end of the answer
+// copies them before Write returns, see writeFrames.
+func give(sched *engine.Schedule, seen []engine.Seen) {
+	for _, f := range seen {
+		sched.Give(f.Picture)
+	}
 }
 
 // writeSeen writes frames a schedule sent, each as writeFrames writes one.
@@ -370,7 +383,9 @@ func (p *previews) serveNear(st *store, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	has := frameList(r.URL.Query().Get("has"), hand.Grid, 64)
-	near := p.schedule(dec).Near(r.Context(), hand, func(f int) bool { return slices.Contains(has, f) })
+	sched := p.schedule(dec)
+	near := sched.Near(r.Context(), hand, func(f int) bool { return slices.Contains(has, f) })
+	defer give(sched, near)
 	if r.Context().Err() != nil {
 		return
 	}
@@ -399,7 +414,9 @@ func (p *previews) serveAhead(st *store, w http.ResponseWriter, r *http.Request)
 	ahead := engine.Ahead{Grid: hand.Grid, W: hand.W, H: hand.H,
 		Frames: frameList(q.Get("frames"), hand.Grid, 16), Cards: frameList(q.Get("cards"), hand.Grid, 256),
 		Has: frameList(q.Get("has"), hand.Grid, 512), Held: q.Get("held") == "1", Sent: hand.Sent}
-	seen, err := p.schedule(dec).Ahead(r.Context(), ahead)
+	sched := p.schedule(dec)
+	seen, err := sched.Ahead(r.Context(), ahead)
+	defer give(sched, seen)
 	switch {
 	case errors.Is(err, engine.ErrOvertaken):
 		w.WriteHeader(http.StatusNoContent)

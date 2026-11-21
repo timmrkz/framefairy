@@ -77,12 +77,13 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	play := p.schedule(dec).Play(engine.PlayAsk{Grid: hand.Grid, W: hand.W, H: hand.H, Pieces: pieces, Loop: loop, Moment: at,
+	sched := p.schedule(dec)
+	play := sched.Play(engine.PlayAsk{Grid: hand.Grid, W: hand.W, H: hand.H, Pieces: pieces, Loop: loop, Moment: at,
 		Cue: q.Get("cue") == "1"})
 	grid := hand.Grid
 	// The pictures are the schedule's, kept for a play started there
-	// again, so none is given back.
-	pictures, s := p.startStamped("play", dec.Light, nil, func(ctx context.Context, got func(previewFrame) error) error {
+	// again, and go back to it once written.
+	pictures, s := p.startStamped("play", dec.Light, sched.Give, func(ctx context.Context, got func(previewFrame) error) error {
 		return play.Pictures(ctx, func(f engine.PlayFrame) error {
 			edge := 0.0
 			if f.Edge {

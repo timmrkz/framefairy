@@ -86,8 +86,8 @@ func TestListingTheLibraryLetsGoOfNoTranscript(t *testing.T) {
 	list := func() []*keptRead[heardSoFar] {
 		var reads []*keptRead[heardSoFar]
 		for _, video := range videos {
-			if st := m.Episode(video).Status("/models/modell", nil); !st.Transcribed || st.Covered != 3 || st.Said == nil {
-				t.Fatalf("%s listed as heard to %v, done %v, said %v", video, st.Covered, st.Transcribed, st.Said)
+			if st := m.Episode(video).Status("/models/modell", nil); !st.Transcribed || st.Covered != 3 {
+				t.Fatalf("%s listed as heard to %v, done %v", video, st.Covered, st.Transcribed)
 			}
 			ep := m.Episode(video)
 			m.held.Lock()
