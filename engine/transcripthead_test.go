@@ -68,17 +68,17 @@ func (f readCountedFile) Read(p []byte) (int, error) {
 func TestAStartReadsOnlyTheHeadOfEachTranscript(t *testing.T) {
 	t.Parallel()
 	fsys, source := longVideo(t, 0.5)
-	disk := newReadCounted(fsys)
-	started := NewMachine(disk).Episode(source).Status("m", nil)
+	reads := newReadCounted(fsys)
+	started := NewMachine(reads).Episode(source).Status("m", nil)
 	words := filepath.Join(LogsDir(source), TranscriptName(nil))
 	size, err := fsys.Stat(words)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if read := disk.bytesOf(words); read > 4096 || read*100 > int(size.Size()) {
+	if read := reads.bytesOf(words); read > 4096 || read*100 > int(size.Size()) {
 		t.Errorf("the start read %d bytes of a transcript of %d", read, size.Size())
 	}
-	if read := disk.bytesOf(framesPath(words)); read > 0 {
+	if read := reads.bytesOf(framesPath(words)); read > 0 {
 		t.Errorf("the start read %d bytes of the loudness", read)
 	}
 
