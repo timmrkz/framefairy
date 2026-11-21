@@ -126,10 +126,6 @@
      away, so half the height is enough to read it, and the two together
      read as one thing at two distances. */
   --wave-min: 112px;
-  /* The row under the clip timeline. It holds the clip's title and why it
-     was chosen on two lines, and it is that tall whether a clip is chosen
-     or not, so selecting one never moves the tracks above it. */
-  --row-h: 44px;
   /* A card in the clip list: a clip, one on its way and one taken out,
      so a card becomes its clip, and a clip its note, without a jump. */
   --card-h: 56px;

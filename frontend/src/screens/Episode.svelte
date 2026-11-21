@@ -3879,8 +3879,8 @@
     /* Everything down the height that is neither the picture nor a track:
        four spaces, one under the picture, two around the line that parts
        the workspace from the clip up close, one over the row at the foot,
-       the line itself, and the row. */
-    --down: calc(4 * var(--gap) + 1px + var(--row-h));
+       the line itself, and the row of controls, as tall as a control. */
+    --down: calc(4 * var(--gap) + 1px + var(--control-h));
     /* How tall the picture would be if it were as wide as the middle
        column. */
     --widest: calc(var(--mid-w) / var(--ar));
@@ -4304,10 +4304,14 @@
     border-top: 1px solid var(--line);
   }
 
-  /* As tall as the layout counted on, whether a clip is chosen or not, so
-     choosing one never moves the two tracks above it. */
+  /* As tall as a control, whether a clip is chosen or not, so choosing one
+     never moves the two tracks above it, and the controls stand one gap
+     under the clip timeline like everything else in the workspace. The
+     row was once taller than its controls, from when it held the clip's
+     title on two lines, and the room left over stood above the controls
+     as half again a gap, found by Tim. */
   .detail .row {
-    height: var(--row-h);
+    height: var(--control-h);
   }
 
   /* A button in the row that cannot be pressed is dimmed by its colours,

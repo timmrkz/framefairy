@@ -1320,7 +1320,9 @@ function fitProblem() {
   const viewer = box(".viewer");
   const range = box(".track[aria-label='The range picker']");
   const timeline = box(".clip-timeline");
-  if (!settings || !middle || !clips || !viewer || !range || !timeline) return `${at} a part of the workspace is missing`;
+  const row = box(".detail > .row");
+  const control = box(".detail > .row > button");
+  if (!settings || !middle || !clips || !viewer || !range || !timeline || !row || !control) return `${at} a part of the workspace is missing`;
   // Each pair is what it is and what it should be, a strip of nothing or
   // a part pushed off the app wherever they differ.
   const lines = {
@@ -1344,6 +1346,10 @@ function fitProblem() {
     "the range picker's foot": [range.bottom, stage.bottom],
     "the clip timeline's left edge": [timeline.left, detail.left],
     "the clip timeline's right edge": [timeline.right, detail.right],
+    // The controls stand one gap under the clip timeline, and the row is
+    // only as tall as they are, so no room is left over above them.
+    "the controls under the clip timeline": [control.top, timeline.bottom + gap],
+    "the row of controls' foot": [row.bottom, control.bottom],
   };
   for (const [what, [is, want]] of Object.entries(lines)) {
     if (Math.abs(is - want) > 0.5) return `${at} ${what} is at ${is}, not ${want}`;
@@ -1418,7 +1424,7 @@ async function resizeProblem(page) {
     const spans = Math.max(least, Math.floor((width * 2) / 5));
     const ar = token("--ar", document.querySelector("section[style*='--ar']"));
     const widest = (width - spans - 2 * token("--gap")) / ar;
-    const down = 4 * token("--gap") + 1 + token("--row-h");
+    const down = 4 * token("--gap") + 1 + token("--control-h");
     const above = token("--bar-h") + token("--gap") + token("--edge");
     return [Math.round((least * 5) / 2), Math.round(widest + down + 1.5 * token("--wave-min") + above)];
   }, 1500);
