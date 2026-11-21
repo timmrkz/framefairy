@@ -230,9 +230,13 @@ export class LoudnessLooks {
     private ask: (q: URLSearchParams) => Promise<Uint8Array | null> = askPiece,
   ) {}
 
-  // The loudness was read whole: it is of no version.
+  // The loudness was read whole: it is of no version, and is as old as
+  // the disk, which the measuring writes to every half second. So the view
+  // is looked at again, and Go answers with what the measuring brought
+  // since, rather than the view waiting for the hand to move.
   readWhole() {
     this.has = 0;
+    void this.send();
   }
 
   // The view moved, or the video changed.

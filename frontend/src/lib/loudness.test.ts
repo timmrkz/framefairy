@@ -276,4 +276,40 @@ describe("LoudnessLooks", () => {
     expect(Number(asked[1].get("n"))).toBeGreaterThan(Number(asked[0].get("n")));
     expect(Array.from(held.levels[0].subarray(100, 200))).toEqual(speech(500, 3).slice(100, 200));
   });
+
+  // The loudness read whole is as old as the disk, so the view is looked
+  // at again with nothing held, and what the measuring brought since comes
+  // without the hand having to move.
+  test("a whole read looks at the view again", async () => {
+    let held = loudnessOf(sent(speech(500, 1)));
+    const asked: URLSearchParams[] = [];
+    const answers = [piece(speech(500, 2), 100, 200, 4, true), piece(speech(500, 3), 100, 200, 6, true)];
+    let got = 0;
+    let next: () => void = () => {};
+    const looks = new LoudnessLooks(
+      () => held,
+      (_, l) => {
+        held = l;
+        got++;
+        next();
+      },
+      async (q) => {
+        asked.push(q);
+        return answers.shift() ?? null;
+      },
+    );
+    let answered = new Promise<void>((r) => (next = r));
+    looks.look("/v.mp4", 1, 2);
+    await answered;
+    held = loudnessOf(sent(speech(500, 1)));
+    answered = new Promise<void>((r) => (next = r));
+    looks.readWhole();
+    await answered;
+    expect(got).toBe(2);
+    expect(asked.map((q) => [q.get("from"), q.get("to"), q.get("has")])).toEqual([
+      ["1", "2", "0"],
+      ["1", "2", "0"],
+    ]);
+    expect(Array.from(held.levels[0].subarray(100, 200))).toEqual(speech(500, 3).slice(100, 200));
+  });
 });

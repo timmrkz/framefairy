@@ -878,8 +878,9 @@
   }
 
   // The loudness is read whole when the video opens, and again whenever
-  // Go's stamp of it changes, which is once a measuring has ended, never
-  // while the view moves. A clip timeline out of the page reads nothing
+  // Go's stamp of it changes, which is when more is heard before all is
+  // measured, and once the measuring has ended, never while the view
+  // moves. A clip timeline out of the page reads nothing
   // until it is back, see HeldLoudness.
   const holding = new HeldLoudness((of, got) => {
     if (of !== path) return;

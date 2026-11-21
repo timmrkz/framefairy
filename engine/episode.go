@@ -278,7 +278,7 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 	for _, p := range st.MeasuredParts {
 		st.Measured += p[1] - p[0]
 	}
-	st.Loudness = loudnessStamp(st.MeasuredParts, st.MeasuredAll, st.Heard)
+	st.Loudness = loudnessStamp(st.MeasuredAll, st.Heard)
 	st.Plans = ep.Plans()
 	for _, plan := range st.Plans {
 		for _, c := range plan.clips {
@@ -295,19 +295,18 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 	return st
 }
 
-// loudnessStamp is EpisodeStatus.Loudness: the parts measured, and the
-// parts heard unless every part is measured, which Levels.Over then lays
-// over all of the transcript's.
-func loudnessStamp(measured [][2]float64, all bool, heard [][2]float64) string {
-	var b strings.Builder
-	b.WriteString("measured")
-	for _, p := range measured {
-		fmt.Fprintf(&b, " %.2f-%.2f", p[0], p[1])
-	}
+// loudnessStamp is EpisodeStatus.Loudness, which tells the window to read
+// the loudness again whole: whether every part is measured, and the parts
+// heard until then, which Levels.Over lays over what is not measured. What
+// the measuring brings reaches the window through its looks, see
+// LoudnessSchedule, so a part measured changes nothing here: it made the
+// window read 3 MB again for every half second of measuring, #968.
+func loudnessStamp(all bool, heard [][2]float64) string {
 	if all {
-		return b.String()
+		return "measured"
 	}
-	b.WriteString(" heard")
+	var b strings.Builder
+	b.WriteString("heard")
 	for _, p := range heard {
 		fmt.Fprintf(&b, " %.2f-%.2f", p[0], p[1])
 	}

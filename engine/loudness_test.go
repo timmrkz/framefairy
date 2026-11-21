@@ -71,23 +71,24 @@ func BenchmarkLoudnessTwoHours(b *testing.B) {
 	}
 }
 
-// The clip timeline reads the loudness again when the stamp changes and
-// only then, so it changes with everything Loudness gives and with
-// nothing else: more measured, more heard while the measuring has not
-// reached the end, and not what is heard once it has.
-func TestTheLoudnessStampChangesWithTheLoudness(t *testing.T) {
-	some := loudnessStamp([][2]float64{{0, 10}}, false, nil)
-	if more := loudnessStamp([][2]float64{{0, 12}}, false, nil); more == some {
-		t.Error("more measured kept the stamp")
-	}
-	if heard := loudnessStamp([][2]float64{{0, 10}}, false, [][2]float64{{0, 30}}); heard == some {
+// The clip timeline reads the loudness again whole when the stamp changes
+// and only then, so it changes with what the looks do not bring: more
+// heard while the measuring has not reached the end, and the end itself.
+// More measured keeps it, because the looks bring that, and so does more
+// heard once all is measured, #968.
+func TestTheLoudnessStampChangesWithWhatTheLooksDoNotBring(t *testing.T) {
+	some := loudnessStamp(false, nil)
+	if heard := loudnessStamp(false, [][2]float64{{0, 30}}); heard == some {
 		t.Error("more heard before the end was measured kept the stamp")
 	}
-	all := loudnessStamp([][2]float64{{0, 60}}, true, [][2]float64{{0, 30}})
-	if heard := loudnessStamp([][2]float64{{0, 60}}, true, [][2]float64{{0, 45}}); heard != all {
+	all := loudnessStamp(true, [][2]float64{{0, 30}})
+	if all == loudnessStamp(false, [][2]float64{{0, 30}}) {
+		t.Error("the end of the measuring kept the stamp")
+	}
+	if heard := loudnessStamp(true, [][2]float64{{0, 45}}); heard != all {
 		t.Errorf("more heard once all was measured changed the stamp, %q to %q", all, heard)
 	}
-	if again := loudnessStamp([][2]float64{{0, 10}}, false, nil); again != some {
+	if again := loudnessStamp(false, nil); again != some {
 		t.Errorf("the same loudness gave %q and %q", some, again)
 	}
 }
