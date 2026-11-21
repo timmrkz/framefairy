@@ -993,6 +993,9 @@ export interface SetupState {
   // is a default rather than a decision.
   chosen: boolean;
   ready: boolean;
+  // Whether the app opens on its setup rather than on the workspace, as
+  // the Go side decides it.
+  needsSetup: boolean;
   // The job of a model install in hand, so the app, opened again while one
   // runs, picks it up rather than starting a second.
   installing?: string;

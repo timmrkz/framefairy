@@ -117,6 +117,9 @@ type SetupState struct {
 	Chosen bool `json:"chosen"`
 	// Ready is true when nothing more is needed to make a short.
 	Ready bool `json:"ready"`
+	// NeedsSetup is true when the app opens on its setup rather than on
+	// the workspace, see needsSetup.
+	NeedsSetup bool `json:"needsSetup"`
 	// Installing is the id of a model install in hand, so the interface,
 	// opened again while one runs, picks it up rather than starting a
 	// second.
@@ -203,7 +206,17 @@ func (s *FrameFairy) Setup(ctx context.Context) SetupState {
 	// choice, Ready said yes for a model chosen and not downloaded yet
 	// while another was, though a search cannot start until it is.
 	state.Ready = state.HasSpeech && state.canPlan()
+	state.NeedsSetup = state.needsSetup()
 	return state
+}
+
+// needsSetup says whether the app opens on its setup: until the one
+// question is answered, while no speech model is here, and while the
+// local way is chosen with no model on the machine. It asks less than
+// Ready does: a key gone missing or a llama-server not found leaves the
+// app on the workspace, and the settings say how that choice stands.
+func (state *SetupState) needsSetup() bool {
+	return !state.Chosen || !state.HasSpeech || (state.Planner == "local" && !state.HasLocalModel)
 }
 
 // canPlan says whether the choice of what finds clips can find them now,

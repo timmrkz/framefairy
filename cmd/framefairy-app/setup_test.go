@@ -722,3 +722,43 @@ func TestTheCaptionFontsAreCounted(t *testing.T) {
 		t.Errorf("the fonts row says %+v", c)
 	}
 }
+
+// The app opens on its setup until the question is answered and the
+// models that answer needs are here, and on the workspace after that,
+// even when the choice does not stand ready yet.
+func TestTheAppOpensOnItsSetupUntilTheModelsAreHere(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name  string
+		state SetupState
+		setup bool
+	}{
+		{"nothing chosen", SetupState{HasSpeech: true, HasLocalModel: true, Planner: "local"}, true},
+		{"no speech model", SetupState{Chosen: true, Planner: "api", HasKey: true}, true},
+		{"local with no model", SetupState{Chosen: true, HasSpeech: true, Planner: "local"}, true},
+		{"local with its model", SetupState{Chosen: true, HasSpeech: true, Planner: "local", HasLocalModel: true}, false},
+		{"the api with a key", SetupState{Chosen: true, HasSpeech: true, Planner: "api", HasKey: true}, false},
+		{"the api with no key", SetupState{Chosen: true, HasSpeech: true, Planner: "api"}, false},
+	} {
+		if got := c.state.needsSetup(); got != c.setup {
+			t.Errorf("%s: opens on its setup %v, want %v", c.name, got, c.setup)
+		}
+	}
+}
+
+// Setup sends that decision to the window, so the window decides nothing.
+//
+// On the real disk: Setup looks for the speech model where the speech library loads it.
+func TestSetupSaysWhetherTheAppOpensOnIt(t *testing.T) {
+	s := emptyMachine(t)
+	if state := s.Setup(context.Background()); !state.NeedsSetup {
+		t.Error("a machine with nothing on it opened on the workspace")
+	}
+	placeSpeechModel(t, engine.SpeechModels()[0].Name)
+	if err := s.ChoosePlanner("api"); err != nil {
+		t.Fatal(err)
+	}
+	if state := s.Setup(context.Background()); state.NeedsSetup {
+		t.Error("a speech model and the api chosen, and the app still opens on its setup")
+	}
+}
