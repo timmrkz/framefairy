@@ -610,17 +610,14 @@ func soundSeek(from, picture float64) (seek, lead float64) {
 func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) bool,
 	tick func() bool) (bool, error) {
 	frame := make([]float32, 0, frameSamples)
-	buf := make([]byte, frameSamples*4*200)
-	carry := []byte{}
+	samples := newSampleReader(r, frameSamples*4*200)
 	last, reads := time.Now(), 0
 	for {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		n, err := r.Read(buf)
-		data := append(carry, buf[:n]...)
-		whole := len(data) / 4 * 4
-		for i := 0; i < whole; i += 4 {
+		data, err := samples.Read()
+		for i := 0; i < len(data); i += 4 {
 			frame = append(frame, math.Float32frombits(binary.LittleEndian.Uint32(data[i:])))
 			if len(frame) == frameSamples {
 				if !put(frameDB(frame)) {
@@ -629,7 +626,6 @@ func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) 
 				frame = frame[:0]
 			}
 		}
-		carry = append([]byte{}, data[whole:]...)
 		if errors.Is(err, io.EOF) {
 			// A last part shorter than a frame is measured as it is, so
 			// the levels reach the end of the audio.
