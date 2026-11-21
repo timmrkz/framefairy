@@ -431,13 +431,15 @@ func (s *Schedule) onTheWay(l Hand, f int) bool {
 	if l.Shown >= 0 && framesApart(f, l.Frame) >= framesApart(l.Shown, l.Frame) {
 		return false
 	}
-	return f > l.Frame || f >= s.keyBefore(l.Grid, l.Frame) || s.flying()
+	return f > l.Frame || f >= s.keyBefore(l.Grid, l.Frame)
 }
 
-// towardFar tells whether a frame a run just made moves a picture that is
-// more than a span of key frames from the hand toward it, whatever
-// stretch it is of: between the picture and the hand, so the picture
-// does not pass the hand and come back. A hand that drags a little less
+// towardFar tells whether a frame a run for the hand just made moves a
+// picture that is more than a span of key frames from the hand toward it,
+// whatever stretch it is of: between the picture and the hand, so the
+// picture does not pass the hand and come back. A frame read ahead, of
+// the words beside or the cards, is no frame of the hand's way, and once
+// flashed up on a far drag on the clip timeline. A hand that drags a little less
 // than a span at a look leaves each stretch just before its key frame
 // comes, and on Tim's Mac the picture of such a drag over the range
 // picker stood still for want of a frame of its own stretch. Frames kept
@@ -937,10 +939,10 @@ func (s *Schedule) answer(r *lookRun, frame int) {
 	kept := s.waiting[:0]
 	for _, w := range s.waiting {
 		l := w.look
-		near := frame == l.Frame || s.early && (s.onTheWay(l, frame) || s.towardFar(l, frame))
+		near := frame == l.Frame || s.early && (s.onTheWay(l, frame) || r.kind == runHand && s.towardFar(l, frame))
 		if r.sized(l) && near {
 			seen, ok := s.best(l)
-			if made, has := s.keptSeen(r, frame); has && (!ok || framesApart(frame, l.Frame) < framesApart(seen.Frame, l.Frame)) {
+			if made, has := s.keptSeen(r, frame); has && frame != l.Frame && (!ok || framesApart(frame, l.Frame) < framesApart(seen.Frame, l.Frame)) {
 				// Further from a flying hand than best looks, or of a
 				// stretch best passes over.
 				seen, ok = made, true
