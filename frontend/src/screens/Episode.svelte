@@ -3894,7 +3894,11 @@
     --wave-h: calc(var(--tracks) - var(--picker-h));
     --pic-w: calc(var(--pic-h) * var(--ar));
 
-    padding: var(--gap) var(--edge) var(--edge) var(--gap);
+    /* A gap on every side but the foot, where the reflection of the video
+       preview shows. The right was once the edge, twice the gap, and the
+       clips stood further from the side of the app than from anything
+       else, found by Tim. */
+    padding: var(--gap) var(--gap) var(--edge);
     display: flex;
     flex-direction: column;
     gap: var(--gap);

@@ -138,10 +138,10 @@
   /* The two columns beside the picture, the settings and the clips, are
      measured from the app's own edges, so the picture stands in the middle
      of the app: the settings with the rail in front of them on the left,
-     the clips with the edge after them on the right. Each side is a fifth
-     of the app's width, so both grow as the app grows and give the picture
-     the room as it shrinks, and never so little that the settings are
-     under their smallest. The open sidebar is the left side, the rail and
+     the clips with a gap after them on the right, the same as the gap
+     after the rail. Each side is a fifth of the app's width, so both grow
+     as the app grows and give the picture the room as it shrinks, and
+     never so little that the settings are under their smallest. The open sidebar is the left side, the rail and
      the settings column, so it covers that column and nothing else.
 
      The two sides are rounded once, together, and then split, the left the
@@ -158,14 +158,17 @@
   --spans: max(calc(2 * (var(--rail) + var(--gap) + var(--settings-w))), calc(100dvw * 2 / 5));
   --span-l: calc(var(--spans) / 2);
   --side-w: calc(var(--span-l) - var(--rail) - var(--gap));
-  --clips-w: calc(var(--spans) - var(--span-l) - var(--edge));
+  --clips-w: calc(var(--spans) - var(--span-l) - var(--gap));
   /* One space between two things, everywhere: the columns of the
      workspace, the video preview and the range picker under it, a row and
      the next. A different number needs a reason, and inside a control is
      the usual one. */
   --gap: 12px;
   /* Between the edge of the app and what is in it, which is not a gap
-     between two things and so is its own number. */
+     between two things and so is its own number: on the pages beside the
+     workspace, and at the workspace's foot, where the reflection of the
+     video preview shows. The workspace's right side is a gap, the same
+     as the gap after the rail on its left. */
   --edge: 24px;
   /* The reflection of the video preview at the foot of the workspace, as
      Tim set it in the mockups of #717: a band as tall as this along the

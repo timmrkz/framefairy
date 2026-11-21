@@ -1331,9 +1331,9 @@ function fitProblem() {
     // .settings in Episode.svelte, so its words start at the edge.
     "the settings' left edge": [settings.left + parseFloat(getComputedStyle(document.querySelector(".stage").firstElementChild).paddingLeft), stage.left],
     "the columns' top under the bar": [stage.top, main.top + gap],
-    "the columns' right edge": [stage.right, W - edge],
+    "the columns' right edge": [stage.right, W - gap],
     "the clip panel's left edge": [detail.left, stage.left],
-    "the clip panel's right edge": [detail.right, W - edge],
+    "the clip panel's right edge": [detail.right, W - gap],
     "the clip panel under the columns": [detail.top, stage.bottom + gap],
     "the clip panel's foot": [detail.bottom, H - edge],
     "the video preview after the settings": [middle.left, settings.right + gap],
@@ -1444,12 +1444,12 @@ async function resizeProblem(page) {
       await page.setViewportSize({ width, height });
       const parts = await workspaceParts(page);
       // The two sides measured from the app's own edges, the rail and a
-      // space in front of the settings and the edge after the clips, so
+      // space in front of the settings and a space after the clips, so
       // the picture stands in the middle of the app.
       const [left, right] = await page.evaluate(() => {
         const [l, , r] = getComputedStyle(document.querySelector(".stage")).gridTemplateColumns.split(" ").map(parseFloat);
         const token = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
-        return [token("--rail") + token("--gap") + l, r + token("--edge")];
+        return [token("--rail") + token("--gap") + l, r + token("--gap")];
       });
       if (Math.abs(left - right) > 1) return `at ${width} by ${height} the sides beside the picture are ${left} and ${right} wide from the app's edges`;
       for (const [k, b] of Object.entries(parts)) {
