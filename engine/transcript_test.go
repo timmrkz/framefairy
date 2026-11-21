@@ -1440,3 +1440,20 @@ func TestTheLevelIsMeasuredAllOverTheVideo(t *testing.T) {
 		}
 	}
 }
+
+// HeardParts is every part of the episode its transcript has heard, in
+// seconds, in order and apart, read from its files the way Coverage reads
+// them. The engine asks Episode.Transcript instead.
+func HeardParts(fsys afero.Fs, source, asrModelDir string) [][2]float64 {
+	file, _, _, ok := readEpisodeTranscript(fsys, source, asrModelDir)
+	if !ok {
+		return nil
+	}
+	return file.heard()
+}
+
+// Unheard is what of a span of the episode its transcript has not heard
+// yet, in order. A gap too short to hold a word is left.
+func Unheard(fsys afero.Fs, source, asrModelDir string, span timed.Window) []timed.Window {
+	return gapsIn(HeardParts(fsys, source, asrModelDir), span)
+}

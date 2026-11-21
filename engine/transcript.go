@@ -158,8 +158,10 @@ func meanOfFrames(frames []float32) float64 {
 
 // Coverage says how far the transcript reaches from the start of the
 // episode without a gap, in seconds, and whether it has heard all of it.
-// What is heard further on, where a search or a clip made by hand needed
-// it first, is in HeardParts.
+// It reads the files the way another program would, every word and the
+// loudness, which is what a test checks them by. The engine and the app
+// ask the transcript the video's Episode holds instead, read once after
+// each save for everyone, see Episode.Transcript and Project.unheard.
 func Coverage(fsys afero.Fs, source, asrModelDir string) (float64, bool) {
 	file, _, _, ok := readEpisodeTranscript(fsys, source, asrModelDir)
 	if !ok {
@@ -170,22 +172,6 @@ func Coverage(fsys afero.Fs, source, asrModelDir string) (float64, bool) {
 		covered = parts[0][1]
 	}
 	return covered, file.done()
-}
-
-// HeardParts is every part of the episode its transcript has heard, in
-// seconds, in order and apart.
-func HeardParts(fsys afero.Fs, source, asrModelDir string) [][2]float64 {
-	file, _, _, ok := readEpisodeTranscript(fsys, source, asrModelDir)
-	if !ok {
-		return nil
-	}
-	return file.heard()
-}
-
-// Unheard is what of a span of the episode its transcript has not heard
-// yet, in order. A gap too short to hold a word is left.
-func Unheard(fsys afero.Fs, source, asrModelDir string, span timed.Window) []timed.Window {
-	return gapsIn(HeardParts(fsys, source, asrModelDir), span)
 }
 
 // Unheard is what of a clip's pieces its transcript has not heard yet, in
@@ -277,28 +263,41 @@ func readEpisodeTranscript(fsys afero.Fs, source, asrModelDir string) (transcrip
 	return readTranscriptFile(fsys, path, stamp, filepath.Base(filepath.Clean(asrModelDir)))
 }
 
-// sliceTranscript cuts a window out of the episode's transcript, so no part
-// of the audio is ever heard twice. It has to have heard all of the window.
-// The noise floor is the video's, see videoLevel.
+// sliceTranscript cuts a window out of the episode's transcript file, so
+// no part of the audio is ever heard twice. It has to have heard all of
+// the window. The noise floor is the video's, see videoLevel.
 func sliceTranscript(fsys afero.Fs, path string, stamp sourceStamp, model string, window timed.Window,
 	silenceDB *float64) (*Transcript, bool) {
 	file, words, frames, ok := readTranscriptFile(fsys, path, stamp, model)
-	if !ok || len(gapsIn(file.heard(), window)) > 0 {
+	if !ok {
 		return nil, false
 	}
-	first := max(0, int(math.Round((window.Start-float64(file.From))/timed.FrameSeconds)))
-	last := min(len(frames), int(math.Round((window.End-float64(file.From))/timed.FrameSeconds)))
+	whole := &Transcript{RawWords: words, Frames: frames, Start: float64(file.From), Mean: float64(file.Mean),
+		Heard: file.heard()}
+	return whole.slice(window, silenceDB)
+}
+
+// slice cuts a window out of the episode's transcript as it was read, see
+// readSaved, the same as sliceTranscript cuts it out of its file. It has
+// to have heard all of the window. The words are snapped again to the
+// frames of the window, with the floor silenceDB says, see fromStored.
+func (t *Transcript) slice(window timed.Window, silenceDB *float64) (*Transcript, bool) {
+	if len(gapsIn(t.Heard, window)) > 0 {
+		return nil, false
+	}
+	first := max(0, int(math.Round((window.Start-t.Start)/timed.FrameSeconds)))
+	last := min(len(t.Frames), int(math.Round((window.End-t.Start)/timed.FrameSeconds)))
 	if first >= last {
 		return nil, false
 	}
 	var inside []timed.Cue
-	for _, w := range words {
+	for _, w := range t.RawWords {
 		if w.Start >= window.Start && w.End <= window.End {
 			inside = append(inside, w)
 		}
 	}
-	start := float64(file.From) + float64(first)*timed.FrameSeconds
-	return fromStored(inside, frames[first:last], start, float64(file.Mean), silenceDB), true
+	start := t.Start + float64(first)*timed.FrameSeconds
+	return fromStored(inside, t.Frames[first:last], start, t.Mean, silenceDB), true
 }
 
 func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model string) (transcriptFile, []timed.Cue,

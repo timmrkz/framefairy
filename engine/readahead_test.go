@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -558,6 +559,42 @@ func TestOnlyARequestThatStartsWithTheTranscriptIsReadAhead(t *testing.T) {
 	}
 }
 
+// The lines read ahead are cut out of the transcript the machine holds,
+// and they are the lines the search reads from the transcript's file once
+// that much of its window is heard: for a window heard from its start,
+// one that starts inside what is heard, and after the next save. A window
+// heard whole is left to the search.
+func TestTheLinesReadAheadAreTheLinesOfTheTranscriptFile(t *testing.T) {
+	t.Parallel()
+	v := videoReadAhead(t, NewMachine(afero.NewMemMapFs()), t.Name())
+	check := func(req PlanRequest, heardTo float64) {
+		t.Helper()
+		heard, ok := v.p.heardSoFar(req)
+		if !ok || heard.whole {
+			t.Fatalf("%v heard to %v s: ok %v, whole %v", req, heardTo, ok, heard.whole)
+		}
+		sliced, ok := sliceTranscript(v.files, v.path, v.stamp, "parakeet",
+			timed.Window{Start: req.From, End: heardTo}, heard.opts.SilenceDB)
+		if !ok {
+			t.Fatalf("no transcript of %v to %v s in the file", req.From, heardTo)
+		}
+		want := searchLines(sliced, heard.opts)
+		if len(want) < 2 || !reflect.DeepEqual(heard.lines, want) {
+			t.Errorf("%v heard to %v s: read ahead %d lines %v, the file's %d lines %v",
+				req, heardTo, len(heard.lines), heard.lines, len(want), want)
+		}
+	}
+	v.hear(0, 40)
+	check(PlanRequest{From: 0, To: 60}, 40)
+	check(PlanRequest{From: 12, To: 60}, 40)
+	v.hear(40, 50)
+	check(PlanRequest{From: 0, To: 60}, 50)
+	v.hear(50, 60)
+	if heard, ok := v.p.heardSoFar(PlanRequest{From: 0, To: 60}); !ok || !heard.whole || heard.lines != nil {
+		t.Errorf("a window heard whole: ok %v, whole %v, %d lines", ok, heard.whole, len(heard.lines))
+	}
+}
+
 // A search loads the model while it hears only when some of its window
 // is still to be heard. A window heard already goes straight to finding.
 // It is the engine's to decide, so every search does the same, #610.
@@ -579,6 +616,40 @@ func TestASearchReadsAheadOnlyOfAWindowStillToBeHeard(t *testing.T) {
 	if !v.p.readsAhead(timed.Window{Start: 30, End: 90}) {
 		t.Error("a window reaching past what is heard is not read ahead")
 	}
+}
+
+// Before it hears, a search asks whether it reads ahead and what of its
+// window is left to hear. Both ask the transcript the machine holds, so
+// its file is read once for both, and not again while it is not written.
+func TestASearchReadsTheTranscriptOnceBeforeItHears(t *testing.T) {
+	t.Parallel()
+	files := &countedOpens{Fs: afero.NewMemMapFs(), name: TranscriptName(nil)}
+	v := videoReadAhead(t, NewMachine(files), t.Name())
+	v.hear(0, 40)
+	window := timed.Window{Start: 0, End: 60}
+	files.opens.Store(0)
+	for range 2 {
+		if !v.p.readsAhead(window) || len(v.p.unheard(window)) != 1 {
+			t.Fatal("a window heard to 40 s of 60 is heard")
+		}
+	}
+	if n := files.opens.Load(); n != 1 {
+		t.Errorf("the transcript was read %d times, want once", n)
+	}
+}
+
+// countedOpens counts how often the file called name is opened.
+type countedOpens struct {
+	afero.Fs
+	name  string
+	opens atomic.Int32
+}
+
+func (c *countedOpens) Open(path string) (afero.File, error) {
+	if filepath.Base(path) == c.name {
+		c.opens.Add(1)
+	}
+	return c.Fs.Open(path)
 }
 
 // heldRecognizer hears nothing until it is let go, so a test sees what a
