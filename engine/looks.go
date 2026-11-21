@@ -54,18 +54,24 @@ func (ls *looks[L, A]) add(l L) *lookWaiter[L, A] {
 
 // wait waits for the answer of a look added, with mu, the keeper's lock,
 // let go, and says whether it was answered. A look called off before its
-// answer is taken from those that wait.
+// answer is taken from those that wait. One answered as it was called off
+// has its answer all the same, which may hold what the keeper wants back,
+// see Schedule.Give.
 func (ls *looks[L, A]) wait(ctx context.Context, mu sync.Locker, w *lookWaiter[L, A]) (got A, answered bool, err error) {
 	select {
 	case a := <-w.answer:
 		return a.got, true, a.err
 	case <-ctx.Done():
 		mu.Lock()
+		defer mu.Unlock()
 		if i := slices.Index(ls.waiting, w); i >= 0 {
 			ls.waiting = slices.Delete(ls.waiting, i, i+1)
+			return got, false, ctx.Err()
 		}
-		mu.Unlock()
-		return got, false, ctx.Err()
+		// Taken from those that wait only as it was answered, under the
+		// same lock.
+		a := <-w.answer
+		return a.got, true, a.err
 	}
 }
 

@@ -154,6 +154,9 @@ func (s *Schedule) endDrag() {
 type framesSource interface {
 	Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int, key bool,
 		skip func() float64, got func(at float64, frame []byte) error) error
+	// Give takes back a frame Stream handed over, for a later frame to be
+	// read into, once nobody reads it any more.
+	Give(frame []byte)
 }
 
 // NewSchedule is the schedule of the video whose decoder this is. What it
@@ -165,7 +168,7 @@ func NewSchedule(f *EpisodeFrames) *Schedule {
 }
 
 func newSchedule(frames framesSource) *Schedule {
-	return &Schedule{frames: frames, kept: newKeptFrames(lookKeptBytes), keys: map[framewire.Grid][]keyFrame{}}
+	return &Schedule{frames: frames, kept: newKeptFrames(lookKeptBytes, frames.Give), keys: map[framewire.Grid][]keyFrame{}}
 }
 
 // Hand is where the hand is: a frame of the grid, at a size, and what it
@@ -215,13 +218,25 @@ func (s Sent) before(t Sent) bool {
 // Seen is a frame sent for a look: which frame of the grid, where it
 // starts, its picture, see framewire.Picture, which nobody may change,
 // whether it is the frame of the place, or one on the way to it, and
-// whether it was kept, so nothing was decoded for it.
+// whether it was kept, so nothing was decoded for it. Whoever is sent it
+// gives its picture back with Schedule.Give once it is written out.
 type Seen struct {
 	Frame   int
 	At      float64
 	Picture []byte
 	Exact   bool
 	Kept    bool
+}
+
+// Give takes back the picture of a frame the schedule sent, a Seen or a
+// PlayFrame, once it is written out to the window, or could not be: the
+// schedule gives it to the decoder, which reads a later frame into it,
+// once it keeps it no more either. Whoever is sent a frame gives it back
+// once, and one never given back is cleaned up as any other memory is.
+func (s *Schedule) Give(picture []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.kept.written(picture)
 }
 
 // ErrOvertaken answers a look that a newer look took the place of. Its
@@ -345,6 +360,7 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 	}
 	if seen, ok := s.best(l); ok {
 		s.drawing = seen.Exact && !l.Moving
+		s.kept.lend(seen.Picture)
 		s.plan()
 		s.mu.Unlock()
 		return seen, nil
@@ -449,7 +465,7 @@ func (s *Schedule) LetFramesGo() {
 	s.handSet = false
 	s.drawing = false
 	s.looks.WakeLocked()
-	s.kept = newKeptFrames(lookKeptBytes)
+	s.kept.clear()
 }
 
 // Close stops the decoder's work for the hand and answers every look that
@@ -462,11 +478,11 @@ func (s *Schedule) Close() {
 	s.handSet = false
 	if a := s.ahead; a != nil {
 		s.ahead = nil
-		a.done <- aheadDone{err: ErrOvertaken}
+		a.end(&s.kept, ErrOvertaken)
 	}
 	s.stopPlay()
 	s.stopRun()
-	s.kept = newKeptFrames(lookKeptBytes)
+	s.kept.clear()
 }
 
 // stopRun stops the decoder's work between two frames. Under the lock.
@@ -881,7 +897,7 @@ func (s *Schedule) got(r *lookRun, at float64, picture []byte) error {
 	r.next = max(r.next, frame+1)
 	s.kept.put(keptKey{grid: r.grid, w: r.w, h: r.h, frame: frame}, at, picture)
 	if a := s.ahead; a != nil {
-		a.take(r.grid, r.w, r.h, frame, at, picture)
+		a.take(&s.kept, r.grid, r.w, r.h, frame, at, picture)
 	}
 	// A frame of a run the schedule has stopped is shown too, where it is
 	// nearer: it was made, and the hand that left its place may be near.
@@ -926,6 +942,7 @@ func (s *Schedule) answer(r *lookRun, frame int) {
 				if seen.Exact && !l.Moving && l.Frame == s.hand.Frame {
 					s.drawing = true
 				}
+				s.kept.lend(seen.Picture)
 				return seen, true
 			}
 		}
@@ -1060,14 +1077,28 @@ type aheadDone struct {
 	err error
 }
 
-// take hands a frame over to the window, once, where it is one it wants.
-// Under the lock.
-func (a *aheadWork) take(grid framewire.Grid, w, h, frame int, at float64, picture []byte) {
+// take hands a kept frame over to the window, once, where it is one it
+// wants, and counts it as sent, see keptFrames.lend. Under the lock.
+func (a *aheadWork) take(k *keptFrames, grid framewire.Grid, w, h, frame int, at float64, picture []byte) {
 	if grid != a.grid || w != a.w || h != a.h || !a.wants[frame] {
 		return
 	}
 	delete(a.wants, frame)
+	k.lend(picture)
 	a.out = append(a.out, Seen{Frame: frame, At: at, Picture: picture, Exact: true, Kept: true})
+}
+
+// end answers the Ahead, and where it has no answer, why: the frames it
+// took then go to nobody and are written by nobody. Under the lock.
+func (a *aheadWork) end(k *keptFrames, err error) {
+	if err != nil {
+		for _, f := range a.out {
+			k.written(f.Picture)
+		}
+		a.done <- aheadDone{err: err}
+		return
+	}
+	a.done <- aheadDone{out: a.out}
 }
 
 // Ahead reads the frames of a while the hand rests and returns them once
@@ -1123,14 +1154,14 @@ func (s *Schedule) Ahead(ctx context.Context, a Ahead) ([]Seen, error) {
 	s.lastAhead = a.Sent
 	if old := s.ahead; old != nil {
 		s.ahead = nil
-		old.done <- aheadDone{err: ErrOvertaken}
+		old.end(&s.kept, ErrOvertaken)
 	}
 	if r := s.run; r != nil && r.kind == runAhead {
 		s.stopRun()
 	}
 	for f := range work.wants {
 		if k, ok := s.kept.peek(keptKey{grid: a.Grid, w: a.W, h: a.H, frame: f}); ok {
-			work.take(a.Grid, a.W, a.H, f, k.at, k.picture)
+			work.take(&s.kept, a.Grid, a.W, a.H, f, k.at, k.picture)
 		}
 	}
 	slices.SortFunc(work.out, func(x, y Seen) int { return x.Frame - y.Frame })
@@ -1152,6 +1183,13 @@ func (s *Schedule) Ahead(ctx context.Context, a Ahead) ([]Seen, error) {
 			s.ahead = nil
 			if r := s.run; r != nil && r.kind == runAhead {
 				s.stopRun()
+			}
+			work.end(&s.kept, ctx.Err())
+		}
+		// Answered as the request ended: nobody writes what it took.
+		if d := <-work.done; d.err == nil {
+			for _, f := range d.out {
+				s.kept.written(f.Picture)
 			}
 		}
 		s.mu.Unlock()
@@ -1181,7 +1219,7 @@ func (s *Schedule) readAhead() {
 		return
 	}
 	s.ahead = nil
-	a.done <- aheadDone{out: a.out}
+	a.end(&s.kept, nil)
 }
 
 // answerAhead hands the window the frames read ahead once none is left
@@ -1205,7 +1243,7 @@ func (s *Schedule) answerAhead() {
 		}
 	}
 	s.ahead = nil
-	a.done <- aheadDone{out: a.out}
+	a.end(&s.kept, nil)
 }
 
 // readingAhead tells whether the run under way reads frames ahead that
@@ -1298,6 +1336,7 @@ func (s *Schedule) Near(ctx context.Context, l Hand, has func(frame int) bool) [
 			continue
 		}
 		if k, ok := s.kept.peek(keptKey{grid: l.Grid, w: l.W, h: l.H, frame: f}); ok {
+			s.kept.lend(k.picture)
 			near = append(near, Seen{Frame: f, At: k.at, Picture: k.picture, Exact: true, Kept: true})
 		}
 	}
@@ -1362,18 +1401,28 @@ type keptFrame struct {
 }
 
 // keptFrames holds the frames decoded last, up to most bytes, the frame
-// used longest ago let go of first. A frame kept is never changed: the
-// buffer the decoder handed over is the schedule's for good, and nobody
-// gives it back for a later frame.
+// used longest ago let go of first. A frame kept is never changed. Once
+// it is let go of, and nobody writes it out any more, its buffer goes
+// back to the decoder, which reads a later frame into it rather than into
+// new memory, see lend.
 type keptFrames struct {
 	most  int
 	bytes int
 	order list.List
 	at    map[keptKey]*list.Element
+	// readers counts, by a picture's first byte, the frames sent with it
+	// that are not written out yet, see lend, and dropped are the
+	// pictures let go of while one still was: each goes back to the
+	// decoder once the last is written.
+	readers map[*byte]int
+	dropped map[*byte][]byte
+	// give hands a picture nobody keeps or writes any more back to the
+	// decoder, see EpisodeFrames.Give. Nil keeps nothing.
+	give func(picture []byte)
 }
 
-func newKeptFrames(most int) keptFrames {
-	return keptFrames{most: most, at: map[keptKey]*list.Element{}}
+func newKeptFrames(most int, give func([]byte)) keptFrames {
+	return keptFrames{most: most, at: map[keptKey]*list.Element{}, readers: map[*byte]int{}, dropped: map[*byte][]byte{}, give: give}
 }
 
 func (k *keptFrames) get(key keptKey) (keptFrame, bool) {
@@ -1394,21 +1443,76 @@ func (k *keptFrames) put(key keptKey, at float64, picture []byte) {
 
 func (k *keptFrames) remove(key keptKey) {
 	if e, ok := k.at[key]; ok {
-		k.bytes -= len(e.Value.(keptFrame).picture)
-		k.order.Remove(e)
-		delete(k.at, key)
+		k.letGo(e)
 	}
 }
 
 // fit lets the frames used longest ago go until the rest fit.
 func (k *keptFrames) fit() {
 	for k.bytes > k.most && k.order.Len() > 1 {
-		e := k.order.Back()
-		f := e.Value.(keptFrame)
-		k.order.Remove(e)
-		delete(k.at, f.key)
-		k.bytes -= len(f.picture)
+		k.letGo(k.order.Back())
 	}
+}
+
+// letGo lets a kept frame go, and gives its picture back unless a frame
+// sent with it is still being written.
+func (k *keptFrames) letGo(e *list.Element) {
+	f := e.Value.(keptFrame)
+	k.order.Remove(e)
+	delete(k.at, f.key)
+	k.bytes -= len(f.picture)
+	if len(f.picture) == 0 {
+		return
+	}
+	if k.readers[&f.picture[0]] > 0 {
+		k.dropped[&f.picture[0]] = f.picture
+		return
+	}
+	if k.give != nil {
+		k.give(f.picture)
+	}
+}
+
+// lend counts a kept picture as sent, to be written out by whoever it
+// was sent to, who gives it back with written once it is: until then it
+// is not given to the decoder, whose next frame would be read into it
+// while it is written.
+func (k *keptFrames) lend(picture []byte) {
+	if len(picture) > 0 {
+		k.readers[&picture[0]]++
+	}
+}
+
+// written takes back a picture lend counted, and gives it to the decoder
+// where it was let go of and this was the last frame sent with it. One
+// that was never counted, or was cleared since, is left alone.
+func (k *keptFrames) written(picture []byte) {
+	if len(picture) == 0 {
+		return
+	}
+	at := &picture[0]
+	n := k.readers[at]
+	if n == 0 {
+		return
+	}
+	if n > 1 {
+		k.readers[at] = n - 1
+		return
+	}
+	delete(k.readers, at)
+	if p, ok := k.dropped[at]; ok {
+		delete(k.dropped, at)
+		if k.give != nil {
+			k.give(p)
+		}
+	}
+}
+
+// clear lets go of every frame kept, and gives none back: the memory is
+// what the schedule lets go of, see LetFramesGo. A frame sent and written
+// later is then nobody's, and is cleaned up as any other memory is.
+func (k *keptFrames) clear() {
+	*k = newKeptFrames(k.most, k.give)
 }
 
 // peek is get without making the frame the one used last.

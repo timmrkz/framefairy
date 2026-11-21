@@ -21,6 +21,8 @@ func (idleSource) Stream(ctx context.Context, grid framewire.Grid, from float64,
 	return ctx.Err()
 }
 
+func (idleSource) Give([]byte) {}
+
 // benchSchedule is a schedule that keeps frames 0 to 61 of a video
 // preview of 1012 by 570, all of them one buffer.
 func benchSchedule(b *testing.B) (*Schedule, framewire.Grid) {
