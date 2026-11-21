@@ -122,7 +122,7 @@ var longSteps = map[string]int{
 	".github/actions/prepare/action.yml: pinned-go":                   6,
 	"ci-image.yml image: tag":                                         6,
 	"ci-image.yml image: The image, unless it is there":               11,
-	"ci.yml outside: A keychain of its own":                           6,
+	"mac-nightly.yml outside: A keychain of its own":                  6,
 	"conflicts.yml tell: step 1":                                      22,
 	"security.yml upstream: Newer releases of what we ship":           17,
 	"speechbench.yml macos: A recorded talk":                          8,

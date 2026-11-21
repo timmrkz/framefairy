@@ -22,8 +22,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -92,17 +90,7 @@ func Dump(w io.Writer, parent int, framed bool) {
 	part("\n== hangdump: the programs process %d started, %d of them, before go test's -timeout\n%s%s",
 		parent, len(pids), said, states(pids))
 
-	// Every program is sampled at once, so a slow one, or one sample
-	// never comes back from, holds up none of the others.
-	if runtime.GOOS == "darwin" {
-		var wg sync.WaitGroup
-		for _, pid := range pids {
-			wg.Go(func() {
-				part("\n== process %d:\n%s", pid, sample(pid))
-			})
-		}
-		wg.Wait()
-	}
+	stacks(pids, part)
 	part("\n== hangdump: end\n")
 }
 
@@ -151,28 +139,4 @@ func states(pids []int) string {
 		return fmt.Sprintf("%sps: %v\n", out, err)
 	}
 	return string(out)
-}
-
-// sample is the stack of every thread of pid, sampled for a second by
-// macOS's sample tool, or why there is none.
-//
-// sample writes its report to a file, read back and removed here.
-func sample(pid int) string {
-	dir, err := os.MkdirTemp("", "hangdump-")
-	if err != nil {
-		return fmt.Sprintf("no sample: %v\n", err)
-	}
-	defer os.RemoveAll(dir)
-	report := filepath.Join(dir, "sample.txt")
-	var said bytes.Buffer
-	cmd := exec.Command("sample", strconv.Itoa(pid), "1", "-mayDie", "-file", report)
-	cmd.Stdout, cmd.Stderr = &said, &said
-	if err := cmd.Run(); err != nil {
-		return fmt.Sprintf("no sample: %v, %s\n", err, said.String())
-	}
-	b, err := os.ReadFile(report)
-	if err != nil {
-		return fmt.Sprintf("no sample: %v, %s\n", err, said.String())
-	}
-	return string(b)
 }

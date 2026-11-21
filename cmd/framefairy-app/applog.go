@@ -99,9 +99,8 @@ func runID() string {
 }
 
 func appLogPath() string {
-	home, err := os.UserHomeDir()
-	if runtime.GOOS == "darwin" && err == nil {
-		return filepath.Join(home, "Library", "Logs", "Frame Fairy", "app.log")
+	if path := systemLogPath(); path != "" {
+		return path
 	}
 	dir, err := os.UserCacheDir()
 	if err != nil {

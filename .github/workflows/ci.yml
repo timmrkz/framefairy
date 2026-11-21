@@ -4,11 +4,17 @@
 #
 # A pull request starts only the jobs whose code it changed: the Go jobs
 # when Go changed, the interface's tests when the interface changed, and
-# the jobs that test the whole app, the build, the walks and the app
-# opened from outside, when either did. What counts as which is the two
+# the jobs that test the whole app, the build and the walks, when either
+# did, and the Go tests on a Mac when code only a Mac builds changed, a
+# *_darwin.go or *_darwin_test.go file, or go.mod or go.sum, which bring
+# the modules' own code only a Mac builds. What counts as which is the
 # filters of the job changes, below. A change to the docs alone starts
-# nothing. A push to main starts every job. Inside a Go job Go's own test
-# cache, restored from main, runs only the packages whose code changed.
+# nothing. A push to main starts every job but the Mac's. The Go tests on
+# a Mac and the app opened from outside run every night on main instead,
+# and on any branch by hand, see mac-nightly.yml and
+# docs/decisions/2026-11-20-a-mac-only-for-mac-code.md. Inside a Go job
+# Go's own test cache, restored from main, runs only the packages whose
+# code changed.
 #
 # No branch rule requires a check, so nothing waits on a job that was
 # never started.
@@ -41,12 +47,10 @@ concurrency:
 #
 # A Go test waits on signals, never on the clock, so one whose signal never
 # comes hangs. go test ends it after UNITTIMEOUT and prints every
-# goroutine, well under a job's five minutes. The checks from outside the
-# app end the same way after OUTSIDETIMEOUT.
+# goroutine, well under a job's five minutes.
 env:
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
   UNITTIMEOUT: 4m
-  OUTSIDETIMEOUT: 2m
 
 jobs:
   # What the pull request changed, by the files GitHub lists for it. Go is
@@ -65,6 +69,7 @@ jobs:
       go: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' }}
       interface: ${{ github.event_name == 'push' || steps.filter.outputs.interface == 'true' }}
       app: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' || steps.filter.outputs.interface == 'true' }}
+      mac: ${{ steps.filter.outputs.mac == 'true' }}
     steps:
       - id: filter
         if: github.event_name == 'pull_request'
@@ -82,6 +87,10 @@ jobs:
               - 'frontend/src/lib/{api.ts,*.cases.json}'
             interface:
               - '{frontend/**,.github/workflows/**,.github/actions/**,.node-version,Makefile}'
+            # One line: with predicate-quantifier every, two lines must
+            # both match.
+            mac:
+              - '{**/*_darwin*.go,go.mod,go.sum}'
 
   # The machine the Linux jobs run on, with every system package they use,
   # so none waits on the Ubuntu mirror, see ci-image.yml.
@@ -247,12 +256,18 @@ jobs:
           key: fuzz-v3-${{ runner.os }}-${{ github.sha }}
           save: ${{ github.ref == 'refs/heads/main' }}
 
-  # The Go tests on Tim's platform, against the ffmpeg we ship, which
-  # encodes through VideoToolbox as a customer's does. make unit on a Mac
-  # leaves out the race detector and the licence server, see the Makefile.
+  # The Go tests on a Mac, against the ffmpeg we ship, when a pull request
+  # changed code only a Mac builds. Every other line of Go is built and
+  # tested on Linux, and internal/maccode keeps everything that behaves
+  # differently on a Mac in a *_darwin file. A change to go.mod or go.sum
+  # runs them too, since a module brings code only a Mac builds, like the
+  # speech library for the Mac. They run on main every night, see
+  # mac-nightly.yml, which saves the cache this job starts from. make unit
+  # on a Mac leaves out the race detector and the licence server, see the
+  # Makefile.
   macos:
     needs: changes
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.mac == 'true'
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -262,49 +277,4 @@ jobs:
           key: go-v2-macos-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-v2-macos-${{ runner.os }}-
           ffmpeg: true
-      - id: tests
-        run: make unit
-      - if: steps.tests.outcome == 'success'
-        uses: ./.github/actions/save
-        with:
-          key: go-v2-macos-${{ runner.os }}-${{ github.sha }}
-          save: ${{ github.ref == 'refs/heads/main' }}
-
-  # The app built on a Mac with no warning allowed, WERROR=1, and then
-  # opened from outside it: a link in the letter a buyer gets, handed to
-  # macOS with the app closed and with it open, with the local dispenser
-  # beside it. See From outside the app in docs/TESTING.md. Its cache is
-  # the one builds.yml starts from too, since both build the app with the
-  # same flags, WERROR=1 among them.
-  outside:
-    needs: changes
-    if: needs.changes.outputs.app == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/prepare
-        with:
-          key: go-v2-app-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v2-app-${{ runner.os }}-
-          node: npm
-          ffmpeg: true
-          llama: true
-      # Unlock writes the key to the default keychain. A locked one puts a
-      # box on screen that nobody here can answer, so this one is made
-      # unlocked, never locks again and becomes the default.
-      - name: A keychain of its own
-        run: |
-          kc="$RUNNER_TEMP/outside.keychain-db"
-          security create-keychain -p outside "$kc"
-          security set-keychain-settings "$kc"
-          security unlock-keychain -p outside "$kc"
-          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
-          security default-keychain -d user -s "$kc"
-      - id: outside
-        run: make outside WERROR=1
-      - if: steps.outside.outcome == 'success'
-        uses: ./.github/actions/save
-        with:
-          key: go-v2-app-${{ runner.os }}-${{ github.sha }}
-          save: ${{ github.ref == 'refs/heads/main' }}
+      - run: make unit

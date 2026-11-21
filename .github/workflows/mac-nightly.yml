@@ -1,0 +1,84 @@
+# What only a Mac can tell, once a night on main, so a pull request does
+# not wait a Mac for it. See docs/decisions/2026-11-20-a-mac-only-for-mac-code.md.
+#
+# A pull request runs the Go tests on a Mac only when it changed code only
+# a Mac builds, a *_darwin file, see the job macos in ci.yml. Every other
+# line is tested on Linux. What no file says is the Mac's is checked here:
+# the Mac's disk, which takes names in either case and has /var as a
+# link, the ffmpeg we build for the Mac, and what macOS does around the
+# app, a link that opens it, the keychain, quitting and starting again.
+#
+# Run workflow, on the Actions page or through the API, runs it on any
+# branch. A session starts it on its branch when its change touches what
+# only this tests, see On a Mac in docs/BUILD.md.
+name: Nightly on a Mac
+
+on:
+  schedule:
+    - cron: "37 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+# A Go test waits on signals, never on the clock, so one whose signal never
+# comes hangs. go test ends it after UNITTIMEOUT, and the checks from
+# outside the app after OUTSIDETIMEOUT, and prints every goroutine.
+env:
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+  UNITTIMEOUT: 4m
+  OUTSIDETIMEOUT: 2m
+
+jobs:
+  # Every Go test on a Mac, against the ffmpeg we ship, as the job macos
+  # of ci.yml runs them. This saves the cache that job starts from.
+  unit:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/prepare
+        with:
+          key: go-v2-macos-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v2-macos-${{ runner.os }}-
+          ffmpeg: true
+      - id: tests
+        run: make unit
+      - if: steps.tests.outcome == 'success'
+        uses: ./.github/actions/save
+        with:
+          key: go-v2-macos-${{ runner.os }}-${{ github.sha }}
+          save: ${{ github.ref == 'refs/heads/main' }}
+
+  # The app opened from outside, see From outside the app in
+  # docs/TESTING.md. It builds the app the way a Mac of one's own does,
+  # with the probe, and starts from the cache the build to update to keeps
+  # in builds.yml.
+  outside:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/prepare
+        with:
+          key: go-v2-app-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v2-app-${{ runner.os }}-
+          node: npm
+          ffmpeg: true
+          llama: true
+      # Unlock writes the key to the default keychain. A locked one puts a
+      # box on screen that nobody here can answer, so this one is made
+      # unlocked, never locks again and becomes the default.
+      - name: A keychain of its own
+        run: |
+          kc="$RUNNER_TEMP/outside.keychain-db"
+          security create-keychain -p outside "$kc"
+          security set-keychain-settings "$kc"
+          security unlock-keychain -p outside "$kc"
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -d user -s "$kc"
+      - run: make outside WERROR=1

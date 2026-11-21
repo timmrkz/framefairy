@@ -225,17 +225,20 @@ the same one you run on your Mac, see
   against the real Go side, `make walks`, every walk, on four machines.
 - **fuzz**, when Go changed: `make fuzz` on Linux, going on from the
   fuzz cache main left.
-- **macos**, when Go changed: `make unit` against our own ffmpeg, which
-  on a Mac leaves out the race detector, which Linux runs.
-- **outside**, when Go or the interface changed: `make outside
-  WERROR=1` on a Mac, which fails on a warning from clang, the linker or
-  the interface build, see No build warnings on macOS in
-  [BUILD.md](BUILD.md#no-build-warnings-on-macos), then the app opened
-  by macOS from a link, see
-  [TESTING.md](TESTING.md#from-outside-the-app).
+- **macos**, when code only a Mac builds changed, a `*_darwin*.go`
+  file, or `go.mod` or `go.sum`: `make unit` against our own ffmpeg, which on a Mac leaves out
+  the race detector, which Linux runs.
+- **build** of `builds.yml`, the build to update to, when the app
+  changed: `make app WERROR=1` on a Mac, which fails on a warning from
+  clang, the linker or the interface build, see No build warnings on
+  macOS in [BUILD.md](BUILD.md#no-build-warnings-on-macos).
 
-A push to `main` runs every job. A pull request of docs alone runs only
-**build**.
+A push to `main` runs every job but **macos**. A pull request of docs
+alone runs only **build**. Every night `mac-nightly.yml` runs on main
+what only a Mac can tell, every Go test and the app opened by macOS from
+a link, see [TESTING.md](TESTING.md#from-outside-the-app), and Run
+workflow runs it on a branch, see On a Mac in
+[BUILD.md](BUILD.md#on-a-mac).
 
 ### When main moves
 

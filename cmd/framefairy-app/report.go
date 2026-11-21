@@ -4,12 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -63,18 +61,6 @@ type aboutMachine struct {
 	Video     string `json:"video,omitempty"`
 }
 
-// asked runs a short command for a report and gives what it said, or
-// nothing.
-func asked(name string, args ...string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, name, args...).Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
 func machine(video string) aboutMachine {
 	a := aboutMachine{
 		Made: time.Now().Format(time.RFC3339), Build: runningVersion(), Run: theLog.run,
@@ -83,10 +69,7 @@ func machine(video string) aboutMachine {
 	if video != "" {
 		a.Video = filepath.Base(video)
 	}
-	if runtime.GOOS == "darwin" {
-		a.OSVersion = asked("sw_vers", "-productVersion")
-		a.Chip = asked("sysctl", "-n", "machdep.cpu.brand_string")
-	}
+	a.OSVersion, a.Chip = systemAbout()
 	return a
 }
 

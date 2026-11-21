@@ -36,7 +36,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -115,31 +114,7 @@ func FontFolders() []string {
 			dirs = append(dirs, dir)
 		}
 	}
-	switch runtime.GOOS {
-	case "darwin":
-		if home != "" {
-			add(filepath.Join(home, "Library", "Fonts"))
-		}
-		add("/Library/Fonts")
-		add("/System/Library/Fonts")
-		// The fonts Font Book downloads when one is asked for, which the
-		// system keeps among its assets, one folder for each version of
-		// the catalogue.
-		assets, _ := filepath.Glob("/System/Library/AssetsV2/com_apple_MobileAsset_Font*")
-		for _, dir := range assets {
-			add(dir)
-		}
-	case "windows":
-		add(filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "Windows", "Fonts"))
-		add(filepath.Join(os.Getenv("WINDIR"), "Fonts"))
-	default:
-		if home != "" {
-			add(filepath.Join(home, ".local", "share", "fonts"))
-			add(filepath.Join(home, ".fonts"))
-		}
-		add("/usr/local/share/fonts")
-		add("/usr/share/fonts")
-	}
+	systemFontFolders(home, add)
 	return dirs
 }
 

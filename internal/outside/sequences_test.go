@@ -2,7 +2,7 @@ package outside
 
 // The sequences make outside runs on a Mac: what starts outside the app,
 // step by step, and what has to come of it. This file is the whole of what
-// a sequence does. How a step is done is in run_test.go, and is the same
+// a sequence does. How a step is done is in run_darwin_test.go, and is the same
 // for every sequence. See From outside the app in docs/TESTING.md.
 //
 // A step is a list, its verb first. The verbs that do something:

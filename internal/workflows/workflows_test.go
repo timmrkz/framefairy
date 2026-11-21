@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -712,4 +713,204 @@ func TestCIStopsTheRunOfAnOutdatedCommit(t *testing.T) {
 	if wf.Concurrency.Cancel != true {
 		t.Errorf("ci.yml says cancel-in-progress: %v, so a newer commit waits for the run of an older one", wf.Concurrency.Cancel)
 	}
+}
+
+// A push takes two Mac jobs at most, see A Mac only for what is
+// different on a Mac in CLAUDE.md: the Go tests on a Mac in ci.yml, when
+// it changed code only a Mac builds, and the build to update to in
+// builds.yml. The account runs five Mac jobs at once for every branch
+// together, and when a push took three, two pushes close together filled
+// the queue. A Mac named in a matrix and one in a workflow a job calls
+// count too.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestAPushTakesTwoMacJobs(t *testing.T) {
+	t.Parallel()
+	var macs []string
+	for _, f := range actionFiles(t) {
+		if !strings.Contains(filepath.ToSlash(f), "/workflows/") {
+			continue
+		}
+		var wf struct {
+			On map[string]any `yaml:"on"`
+		}
+		readYAML(t, f, &wf)
+		_, push := wf.On["push"]
+		_, pr := wf.On["pull_request"]
+		if push || pr {
+			macs = append(macs, macJobs(t, f)...)
+		}
+	}
+	if len(macs) != 2 {
+		t.Errorf("a push or a pull request starts %d Mac jobs, %v, where it should take two at most: the Go tests when the Mac's code changed, and the build to update to", len(macs), macs)
+	}
+}
+
+// macJobs names the Mac jobs a run of the workflow at path starts: one
+// for each job on a Mac, one for each Mac in a job's matrix, and the
+// Mac jobs of a workflow of this repository a job calls.
+//
+// On the real disk: what is read is the repository's own workflows.
+func macJobs(t *testing.T, path string) []string {
+	t.Helper()
+	var wf struct {
+		Jobs map[string]struct {
+			RunsOn   any    `yaml:"runs-on"`
+			Uses     string `yaml:"uses"`
+			Strategy struct {
+				Matrix any `yaml:"matrix"`
+			} `yaml:"strategy"`
+		} `yaml:"jobs"`
+	}
+	readYAML(t, path, &wf)
+	var macs []string
+	for name, j := range wf.Jobs {
+		name = filepath.Base(path) + " " + name
+		switch {
+		case strings.HasPrefix(j.Uses, "./.github/workflows/"):
+			macs = append(macs, macJobs(t, filepath.Join("..", "..", j.Uses))...)
+		case strings.Contains(fmt.Sprint(j.RunsOn), "${{"):
+			for range countMacs(j.Strategy.Matrix) {
+				macs = append(macs, name)
+			}
+		case strings.Contains(fmt.Sprint(j.RunsOn), "macos"):
+			macs = append(macs, name)
+		}
+	}
+	return macs
+}
+
+// countMacs counts the values of a matrix that name a Mac.
+func countMacs(v any) int {
+	switch v := v.(type) {
+	case string:
+		if strings.Contains(v, "macos") {
+			return 1
+		}
+	case []any:
+		n := 0
+		for _, e := range v {
+			n += countMacs(e)
+		}
+		return n
+	case map[string]any:
+		n := 0
+		for k, e := range v {
+			if k != "exclude" {
+				n += countMacs(e)
+			}
+		}
+		return n
+	}
+	return 0
+}
+
+// readYAML reads the workflow at path into v.
+//
+// On the real disk: what is read is the repository's own workflows.
+func readYAML(t *testing.T, path string, v any) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal(b, v); err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+}
+
+// What only a Mac can tell runs every night on main, and by hand on any
+// branch: every Go test on a Mac and the app opened from outside. No
+// workflow a push or a pull request starts opens the app from outside,
+// since it would take a Mac on every push for code most pushes never
+// touch.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestWhatOnlyAMacTellsRunsEveryNight(t *testing.T) {
+	t.Parallel()
+	type workflow struct {
+		On   map[string]any `yaml:"on"`
+		Jobs map[string]struct {
+			RunsOn any `yaml:"runs-on"`
+			Steps  []struct {
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	runsOnAMac := func(wf workflow, command string) bool {
+		for _, j := range wf.Jobs {
+			if !strings.Contains(fmt.Sprint(j.RunsOn), "macos") {
+				continue
+			}
+			for _, s := range j.Steps {
+				if strings.HasPrefix(s.Run, command) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for _, f := range actionFiles(t) {
+		if !strings.Contains(filepath.ToSlash(f), "/workflows/") {
+			continue
+		}
+		var wf workflow
+		readYAML(t, f, &wf)
+		_, push := wf.On["push"]
+		_, pr := wf.On["pull_request"]
+		if (push || pr) && runsOnAMac(wf, "make outside") {
+			t.Errorf("%s opens the app from outside on a push", filepath.Base(f))
+		}
+	}
+	var night workflow
+	readYAML(t, filepath.Join("..", "..", ".github", "workflows", "mac-nightly.yml"), &night)
+	for _, on := range []string{"schedule", "workflow_dispatch"} {
+		if _, ok := night.On[on]; !ok {
+			t.Errorf("mac-nightly.yml does not run on %s", on)
+		}
+	}
+	for _, command := range []string{"make unit", "make outside"} {
+		if !runsOnAMac(night, command) {
+			t.Errorf("mac-nightly.yml does not run %s on a Mac", command)
+		}
+	}
+}
+
+// A pull request runs the Go tests on a Mac when it changes code only a
+// Mac builds, and only then. internal/maccode keeps every such file of
+// ours named *_darwin.go or *_darwin_test.go, and the modules' own come in
+// through go.mod and go.sum, so the filter mac of the job changes looks
+// for exactly those. It is one pattern, since the filter needs every line
+// of it to match.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestThePullRequestsMacTestsFollowItsMacCode(t *testing.T) {
+	t.Parallel()
+	var wf struct {
+		Jobs map[string]struct {
+			If    string `yaml:"if"`
+			Steps []struct {
+				ID   string         `yaml:"id"`
+				With map[string]any `yaml:"with"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	readYAML(t, filepath.Join("..", "..", ".github", "workflows", "ci.yml"), &wf)
+	if got := wf.Jobs["macos"].If; got != "needs.changes.outputs.mac == 'true'" {
+		t.Errorf("the job macos runs if %q, not when the filter mac matched", got)
+	}
+	for _, s := range wf.Jobs["changes"].Steps {
+		if s.ID != "filter" {
+			continue
+		}
+		var filters map[string][]string
+		if err := yaml.Unmarshal([]byte(fmt.Sprint(s.With["filters"])), &filters); err != nil {
+			t.Fatal(err)
+		}
+		if got := filters["mac"]; !slices.Equal(got, []string{"{**/*_darwin*.go,go.mod,go.sum}"}) {
+			t.Errorf("the filter mac is %q, not the files internal/maccode keeps the Mac's code in", got)
+		}
+		return
+	}
+	t.Error("ci.yml has no step filter in its job changes")
 }

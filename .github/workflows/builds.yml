@@ -117,8 +117,7 @@ jobs:
           ref: ${{ needs.which.outputs.sha }}
 
       # Go, Node, the two programs we ship beside the app, and Go's build
-      # cache, the one ci.yml's job outside saves on main after every
-      # push, from the same make with the same flags, WERROR=1 among them.
+      # cache, the one this job saves on main after every push, below.
       # setup-go keys its cache by go.sum alone and saves it only when
       # go.sum changes, so the build started from one days old and
       # compiled ever more again: make app went from 58 s to 113 s in the
@@ -140,15 +139,6 @@ jobs:
           BUILD_CHANNEL='${{ needs.which.outputs.channel }}'
           BUILD_COMMIT='${{ needs.which.outputs.commit }}'
 
-      # Saved here only when none was found, so the next build starts
-      # warm. Otherwise the job outside saves it: an upload here would sit
-      # between every push and its build on the Updates page.
-      - if: steps.prepare.outputs.matched-key == ''
-        uses: ./.github/actions/save
-        with:
-          key: go-v2-app-${{ runner.os }}-${{ needs.which.outputs.sha }}
-          save: true
-
       # One entry at the top, Frame Fairy.app, which is what Wails' updater
       # asks of a zip. --norsrc, because ditto otherwise adds a ._ file
       # beside every file for its extended attributes, and the updater
@@ -167,3 +157,12 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 3
+
+      # Saved after the upload, so no upload sits between a push and its
+      # build on the Updates page: on main, where every build starts from
+      # it, and on a branch only when none was found. The job outside of
+      # mac-nightly.yml starts from it too.
+      - uses: ./.github/actions/save
+        with:
+          key: go-v2-app-${{ runner.os }}-${{ needs.which.outputs.sha }}
+          save: ${{ needs.which.outputs.channel == 'main' || steps.prepare.outputs.matched-key == '' }}

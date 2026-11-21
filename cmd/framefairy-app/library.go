@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -14,10 +13,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/rs/zerolog"
-	"github.com/spf13/afero"
 
 	"framefairy/engine"
-	"framefairy/engine/fileio"
 	"framefairy/internal/framewire"
 )
 
@@ -463,19 +460,7 @@ func (s *FrameFairy) Reveal(path string) error {
 // showInFolder shows a file in Finder, Explorer or the file manager, for
 // a file the app has already judged.
 func showInFolder(path string) error {
-	switch runtime.GOOS {
-	case "darwin":
-		return startReaped(exec.Command("open", "-R", path))
-	case "windows":
-		// One argument, not two: with a space after the comma Explorer
-		// opens its default folder and selects nothing.
-		return startReaped(exec.Command("explorer", "/select,"+path))
-	}
-	dir := path
-	if fileio.IsFile(afero.NewOsFs(), path) {
-		dir = filepath.Dir(path)
-	}
-	return startReaped(exec.Command("xdg-open", dir))
+	return startReaped(showCommand(path))
 }
 
 // startReaped starts a program that finishes by itself and waits for it

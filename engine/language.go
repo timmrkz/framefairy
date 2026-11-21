@@ -5,7 +5,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -361,17 +360,7 @@ func (m LanguageModel) FitsIn(total int64) Fit {
 // MachineMemory is how much memory this machine has, in bytes, or zero
 // when it will not say. Zero is an answer: it means nothing is hidden and
 // nothing is promised, which is better than guessing on somebody's behalf.
-func MachineMemory() int64 {
-	switch runtime.GOOS {
-	case "darwin":
-		// Asked of the kernel itself: the sysctl command it was asked
-		// through was a program started for every read of the setup.
-		return systemMemory()
-	case "linux":
-		return memTotal("/proc/meminfo")
-	}
-	return 0
-}
+func MachineMemory() int64 { return systemMemory() }
 
 // memTotal reads MemTotal out of a meminfo file, which is in kibibytes.
 func memTotal(path string) int64 {

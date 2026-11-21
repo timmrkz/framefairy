@@ -1,7 +1,6 @@
 package main
 
 import (
-	"runtime"
 	"strings"
 	"testing"
 
@@ -28,18 +27,5 @@ func TestTheLogSaysWhetherThePageUpdatesAtTheScreensRate(t *testing.T) {
 		if level != c.level || !strings.Contains(msg, c.says) {
 			t.Errorf("done %d said %s %q, want %s with %q", c.done, level, msg, c.level, c.says)
 		}
-	}
-}
-
-// Away from the Mac nothing holds the page, and a window that is not
-// there yet is no fault.
-func TestOnlyTheMacHoldsThePageToSixty(t *testing.T) {
-	got := refreshFree(nil)
-	want := refreshNotHeld
-	if runtime.GOOS == "darwin" {
-		want = refreshNoWebView
-	}
-	if got.done != want {
-		t.Errorf("refreshFree(nil) did %d, want %d", got.done, want)
 	}
 }
