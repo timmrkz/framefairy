@@ -75,8 +75,10 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("/frames/levels answered %d for a file that is not in the library", rec.Code)
 	}
-	if err := svc.Look(other, 0, 10); err == nil {
-		t.Error("Look took a file that is not in the library")
+	rec = httptest.NewRecorder()
+	svc.serveFrames(rec, httptest.NewRequest("GET", "/frames/levels/look?from=0&to=10&has=0&count=0&path="+url.QueryEscape(other), nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("/frames/levels/look answered %d for a file that is not in the library", rec.Code)
 	}
 	if _, err := svc.State(ctx, other); err == nil {
 		t.Error("State answered for a file that is not in the library")

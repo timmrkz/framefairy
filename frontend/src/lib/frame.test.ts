@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import cases from "./frame.cases.json";
+import cases from "./testdata/frame.cases.json";
 import { frameAt } from "./flow";
 import { rankAt, type Samples } from "./frames/movie";
 

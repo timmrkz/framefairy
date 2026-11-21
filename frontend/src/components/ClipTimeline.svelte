@@ -73,7 +73,7 @@
   import Info from "./Info.svelte";
   import { rotationAt } from "../lib/rotate";
   import { afterRest } from "../lib/rest";
-  import { columnLevels, HeldLoudness, silent } from "../lib/loudness";
+  import { columnLevels, HeldLoudness, LoudnessLooks, silent } from "../lib/loudness";
 
   let {
     path,
@@ -855,34 +855,47 @@
   }
 
   // The Go side is told where the view is, so the loudness is measured
-  // there first. It is not on the path of a frame: the waveform is drawn
-  // from the loudness in hand. The words Shift and an arrow walk come
-  // with the clip's captions, see inCuts, so a view asks for none: it
-  // asked for ten minutes of them after every swipe, issue #932.
+  // there first, and answers with the readings of the view the window
+  // does not hold, the way the video preview is answered with a frame,
+  // see LoudnessLooks. The waveform is drawn from the loudness in hand.
+  // The words Shift and an arrow walk come with the clip's captions, see
+  // inCuts, so a view asks for none: it asked for ten minutes of them
+  // after every swipe, issue #932.
   //
-  // It is told on every move, a swipe's too, because telling it costs Go
-  // a map write, issue #937.
+  // It is told on every move, a swipe's too, because a look of a view
+  // the window holds costs Go a few numbers, issue #937.
   function load(from: number, to: number) {
     view = { from, to };
     loaded = true;
     tell(from, to);
   }
 
+  // The view as it is, nothing around it. What to measure after the view
+  // is Go's to decide: a view widened here by one on each side made Go
+  // fill three views before the one shown, #968.
   function tell(from: number, to: number) {
-    const shown = Math.max(to - from, 0.001);
-    const whole = Math.max(duration, to);
-    const outer = { from: Math.max(0, from - shown), to: Math.min(whole, to + shown) };
-    void api.look(path, outer.from, outer.to).catch(() => {});
+    looks.look(path, from, to);
   }
 
   // The loudness is read whole when the video opens, and again whenever
-  // Go's stamp of it changes, never while the view moves. A clip timeline
-  // out of the page reads nothing until it is back, see HeldLoudness.
+  // Go's stamp of it changes, which is when more is heard before all is
+  // measured, and once the measuring has ended, never while the view
+  // moves. A clip timeline out of the page reads nothing
+  // until it is back, see HeldLoudness.
   const holding = new HeldLoudness((of, got) => {
     if (of !== path) return;
     loudness = got;
+    looks.readWhole();
     drawn = true;
   });
+  const looks = new LoudnessLooks(
+    () => loudness,
+    (of, got) => {
+      if (of !== path) return;
+      loudness = got;
+      drawn = true;
+    },
+  );
   $effect(() => {
     holding.want(path, loudnessStamp, inPage);
   });

@@ -2008,18 +2008,20 @@ export const steps = {
       }
     });
     const asked = [];
+    let looked = 0;
     const listen = (r) => {
-      if (new URL(r.url()).pathname === "/frames/levels") asked.push(r.url());
+      const at = new URL(r.url()).pathname;
+      if (at === "/frames/levels") asked.push(r.url());
+      if (at === "/frames/levels/look") looked++;
     };
     page.on("request", listen);
     const line = await page.locator(".clip-timeline").boundingBox();
     await page.mouse.move(line.x + line.width / 2, line.y + line.height * 0.3);
-    const looks = () => page.evaluate(() => window.__calls.filter((c) => c.name === "Look").length);
     for (let i = 0; i < 3 * arg && !walk.wrong; i++) {
-      const told = await looks();
+      const told = looked;
       await page.mouse.wheel(i < arg ? 120 : -120, 0);
       await nextPaint(page, 1);
-      if ((await looks()) === told) {
+      if (looked === told) {
         walk.wrong = `step ${i + 1} of the swipe told the Go side nothing of where the clip timeline looks`;
         break;
       }

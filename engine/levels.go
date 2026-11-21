@@ -11,6 +11,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -305,11 +307,14 @@ type levelState struct {
 	got    []bool
 	// end is how many frames the audio has, or -1 while nobody knows.
 	end int
-	// fresh is the frames put since they were last written, from and to,
-	// the second not included, see writeLevels. whole says the frames
-	// file holds nothing of this measuring yet, so it is written whole.
-	fresh [2]int
-	whole bool
+	// fresh is the frames put since they were last written, as runs from
+	// and to, the second not included, one for each place being measured,
+	// see writeLevels. whole says the frames file holds nothing of this
+	// measuring yet, so it is written whole, and written how far the parts
+	// written last reach, which the file holds at least.
+	fresh   [][2]int
+	whole   bool
+	written int
 }
 
 func (s *levelState) put(n int, f float32) {
@@ -318,11 +323,30 @@ func (s *levelState) put(n int, f float32) {
 		s.got = append(s.got, false)
 	}
 	s.frames[n], s.got[n] = f, true
-	if s.fresh[1] <= s.fresh[0] {
-		s.fresh = [2]int{n, n + 1}
-	} else {
-		s.fresh = [2]int{min(s.fresh[0], n), max(s.fresh[1], n+1)}
+	// A frame is put once, so it is in no run yet. Several places are
+	// measured at once, and one run from the first to the last fresh frame
+	// rewrote all that lies between them at every write.
+	for i, r := range s.fresh {
+		switch n {
+		case r[1]:
+			s.fresh[i][1]++
+			return
+		case r[0] - 1:
+			s.fresh[i][0]--
+			return
+		}
 	}
+	s.fresh = append(s.fresh, [2]int{n, n + 1})
+}
+
+// ends says the sound ends at frame n at the latest, and drops what lies
+// past it.
+func (s *levelState) ends(n int) {
+	if s.end >= 0 {
+		n = min(n, s.end)
+	}
+	s.end = n
+	s.frames, s.got = s.frames[:min(n, len(s.frames))], s.got[:min(n, len(s.got))]
 }
 
 func (s *levelState) has(n int) bool { return n < len(s.got) && s.got[n] }
@@ -393,16 +417,32 @@ func (s *levelState) done() bool {
 	return s.end >= 0 && !left
 }
 
+// LevelsLook is where the clip timeline looks, which the measuring goes to
+// first, and is handed every reading as it is measured, the way
+// LoudnessSchedule answers the window with them.
+type LevelsLook interface {
+	View() (from, to float64)
+	Put(first int, frames []float32)
+}
+
+// nowhere looks at nothing and is handed nothing: a measuring from the
+// start, for the disk alone.
+type nowhere struct{}
+
+func (nowhere) View() (float64, float64) { return 0, 0 }
+func (nowhere) Put(int, []float32)       {}
+
 // MeasureLevels measures the loudness of the whole episode, writing what it
 // has every half second, and tells progress how many seconds of it are
-// measured. It measures what focus says the clip timeline shows first, and
-// follows it when it moves. A focus that is nil, or shows nothing, has it
-// measure from the start. An episode measured already is left as it is,
-// and one measured in part carries on.
-func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() (from, to float64),
+// measured. It measures where look says the clip timeline looks first,
+// follows it when it moves, and hands look each reading as it is measured.
+// A look that is nil, or shows nothing, has it measure from the start. An
+// episode measured already is left as it is, and one measured in part
+// carries on.
+func (e *Engine) MeasureLevels(ctx context.Context, source string, look LevelsLook,
 	progress func(measured float64)) error {
-	if focus == nil {
-		focus = func() (float64, float64) { return 0, 0 }
+	if look == nil {
+		look = nowhere{}
 	}
 	had := ReadLevels(e.Files, source)
 	if had.Done {
@@ -427,36 +467,82 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 	}
 	// What was measured before is in the frames file already. Without it,
 	// the file is of a measuring of the file before it changed, or of none.
-	st.fresh, st.whole = [2]int{}, len(had.Parts) == 0
+	st.fresh, st.whole = nil, len(had.Parts) == 0
+	if len(had.Parts) > 0 {
+		st.written = had.Parts[len(had.Parts)-1][1]
+	}
+	m := &measuring{st: st, at: map[int]int{}}
+	// tell is called with m.mu held, by whichever measurer writes.
 	tell := func() {
 		if err := writeLevels(e.Files, logs, stamp, st); err == nil && progress != nil {
 			progress(st.measured())
 		}
 	}
-	if duration, ok := e.soundless(ctx, source); ok {
+	duration, soundless := e.soundless(ctx, source)
+	if !soundless {
+		m.length = int(math.Ceil(duration / timed.FrameSeconds))
+	}
+	if soundless {
 		// No sound to measure, so it is silence all through: the clip
 		// timeline draws the video as silent rather than as not measured,
 		// and nothing asks ffmpeg for a sound that is not there, #831.
 		st.end = int(math.Round(duration / timed.FrameSeconds))
+		silence := make([]float32, st.end)
 		for n := range st.end {
+			silence[n] = noSoundDB
 			if !st.has(n) {
 				st.put(n, noSoundDB)
 			}
 		}
+		look.Put(0, silence)
 	}
-	for {
-		start, ok := st.next(focus())
-		if !ok {
-			break
-		}
-		if err := e.measureFrom(ctx, source, st, start, focus, tell); err != nil {
-			return err
-		}
-		// A part that ended between two ticks is shown when it ends, not
-		// at the first tick of the next one. A short part is read in less
-		// than a tick, and then where the clip timeline looked went unseen
-		// until the measuring had moved on.
-		tell()
+	run, stop := context.WithCancel(ctx)
+	defer stop()
+	var (
+		wg     sync.WaitGroup
+		once   sync.Once
+		failed error
+	)
+	for id := range e.measurers() {
+		wg.Go(func() {
+			defer func() {
+				m.mu.Lock()
+				delete(m.at, id)
+				m.mu.Unlock()
+			}()
+			for {
+				from, to := look.View()
+				m.mu.Lock()
+				start, ok := m.claim(id, from, to)
+				m.mu.Unlock()
+				if !ok {
+					return
+				}
+				moved, err := e.measureFrom(run, source, m, id, start, look, tell)
+				if err != nil {
+					once.Do(func() { failed = err })
+					stop()
+					return
+				}
+				// A part that ended between two ticks is written when it
+				// ends, not at the first tick of the next one. The
+				// measurer that left for the view has it as its place
+				// already, so no other leaves for it too.
+				m.mu.Lock()
+				if !moved {
+					delete(m.at, id)
+				}
+				tell()
+				m.mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if failed != nil {
+		return failed
 	}
 	if err := writeLevels(e.Files, logs, stamp, st); err != nil {
 		return err
@@ -490,8 +576,9 @@ func (s *levelState) loudest() (float32, bool) {
 // measureFrom measures from frame start on, until it reaches a frame
 // measured already, the end of the audio, or a clip timeline that moved to
 // a part not measured yet.
-func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState, start int,
-	focus func() (float64, float64), tell func()) error {
+func (e *Engine) measureFrom(ctx context.Context, source string, m *measuring, id, start int,
+	look LevelsLook, tell func()) (moved bool, err error) {
+	st := m.st
 	run, stop := context.WithCancel(ctx)
 	defer stop()
 	cmd := e.Runner.Command(run, e.FFmpeg, audioFrom(source, start, e.pictureStart(ctx, source))...)
@@ -500,25 +587,73 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	cmd.Stderr = said
 	reading, err := e.Runner.StartReading(run, cmd, said)
 	if err != nil {
-		return renderErr("cannot start %s: %s", e.FFmpeg, err)
+		return false, renderErr("cannot start %s: %s", e.FFmpeg, err)
 	}
 	n := start
-	moved := false
+	// What a read brought is handed to look after the read, so the window
+	// is answered with it at once, rather than at the next write to the
+	// disk and the news of it, issue #968.
+	fresh := make([]float32, 0, 256)
+	hand := func() {
+		look.Put(n-len(fresh), fresh)
+		fresh = fresh[:0]
+	}
+	// Where the clip timeline looks is asked after every read, a lock and
+	// two numbers, and weighed again only when it moved, or at a write.
+	from, to := look.View()
+	// An ffmpeg measures at the priority of the work somebody waits on
+	// only while it is in the view. Out of it, it gives way to the
+	// hearing, which takes every fast core while it runs, and with cores
+	// to spare it runs as fast as ever. It is lowered once and for good:
+	// a program cannot be raised again without the system's leave.
+	low := false
+	lower := func() {
+		if low {
+			return
+		}
+		low = true
+		if err := tool.Lower(cmd.Process); err != nil {
+			e.Log.Detail("ffmpeg measures at the usual priority: %s", err)
+		}
+	}
+	if !shown(start, from, to) {
+		lower()
+	}
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
 		if st.has(n) {
+			// Measured already, by a measurer that started there.
 			return false
 		}
 		st.put(n, f)
+		fresh = append(fresh, f)
 		n++
+		m.at[id] = n
 		return true
-	}, func() bool {
-		tell()
-		if st.leave(n, focus) {
+	}, func(due bool) bool {
+		changed := false
+		if now, until := look.View(); now != from || until != to {
+			from, to, changed = now, until, true
+		}
+		if !shown(n, from, to) {
+			lower()
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		hand()
+		if due {
+			tell()
+		}
+		if (changed || due) && m.leave(id, n, from, to) {
 			moved = true
 			return false
 		}
 		return true
 	})
+	m.mu.Lock()
+	hand()
+	m.mu.Unlock()
 	if !end {
 		// Stopped before the end: ffmpeg is still writing, and is told to
 		// stop rather than left to write into a pipe nobody reads.
@@ -526,30 +661,158 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	}
 	left, waitErr := reading.Finish()
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return false, ctx.Err()
 	}
 	if left {
 		// Stopped once enough was read, so what was read stands.
 		e.Log.Warn("ffmpeg %s", tool.LeftBehind)
 	}
 	if readErr != nil && !errors.Is(readErr, context.Canceled) {
-		return readErr
+		return false, readErr
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	switch {
 	case end && n <= start && start > 0:
-		// Nothing past start: the audio ends before it.
-		st.end = start
-		st.frames, st.got = st.frames[:min(start, len(st.frames))], st.got[:min(start, len(st.got))]
+		// Nothing past start: the audio ends before it, or where it
+		// ends, if another measurer found that already.
+		st.ends(start)
 	case end && waitErr != nil:
-		return renderErr("ffmpeg could not read the audio: %s", strings.TrimSpace(stderr.String()))
+		return false, renderErr("ffmpeg could not read the audio: %s", strings.TrimSpace(stderr.String()))
 	case end:
-		st.end = n
-		st.frames, st.got = st.frames[:min(n, len(st.frames))], st.got[:min(n, len(st.got))]
+		st.ends(n)
 	case moved:
 		e.Log.Detail("the clip timeline moved on, so the loudness is measured there next")
 	}
-	return nil
+	return moved, nil
 }
+
+// measurers is how many ffmpeg measure the loudness of a video at once,
+// unless the engine says otherwise, see Engine.levelsMeasurers. Decoding
+// the sound is one core's work for each, so half the cores measure a four
+// hour video in a few seconds, where one took half a minute. The hearing
+// takes every fast core while it runs, see asr.Mix, so an ffmpeg out of
+// the clip timeline's view runs at a lower priority and gives way to it,
+// see measureFrom, #968.
+func (e *Engine) measurers() int {
+	if e.levelsMeasurers > 0 {
+		return e.levelsMeasurers
+	}
+	return min(max(1, runtime.GOMAXPROCS(0)/2), 8)
+}
+
+// measuring is the loudness of a video measured by several ffmpeg at
+// once: what they have between them, and where each of them is. Every
+// measurer does what it does with them with mu held.
+type measuring struct {
+	mu sync.Mutex
+	st *levelState
+	// at is the frame each measurer puts next, by its number.
+	at map[int]int
+	// length is how many frames the probe says the video has, or 0 when
+	// it said nothing. The measuring itself finds the end of the sound,
+	// st.end, which may differ by a packet.
+	length int
+}
+
+// inView says whether a measurer other than id is in what the clip
+// timeline shows, from to to.
+func (m *measuring) inView(id int, from, to float64) bool {
+	for other, at := range m.at {
+		if other != id && shown(at, from, to) {
+			return true
+		}
+	}
+	return false
+}
+
+// leave says whether measurer id, at frame at, goes to what the clip
+// timeline shows: a part not measured yet that no other measurer is in.
+// It takes that place at once, so no other measurer leaves for it too.
+func (m *measuring) leave(id, at int, from, to float64) bool {
+	if m.inView(id, from, to) || !m.st.leave(at, func() (float64, float64) { return from, to }) {
+		return false
+	}
+	want, _ := m.st.next(from, to)
+	m.at[id] = want
+	return true
+}
+
+// claim is where measurer id starts next, and takes that place. The view
+// comes first, when it shows a part not measured yet that no measurer is
+// in. Then the longest work left: a part nobody measures, from its start,
+// or the half still ahead of a measurer, from its middle, so two share it.
+// Half a part is shared only when it is longer than levelsShare, about
+// what an ffmpeg takes to start. It says false when there is nothing worth
+// starting for.
+func (m *measuring) claim(id int, from, to float64) (int, bool) {
+	st := m.st
+	if want, ok := st.next(from, to); ok && shown(want, from, to) && !m.inView(id, from, to) {
+		m.at[id] = want
+		return want, true
+	}
+	length := m.length
+	if st.end >= 0 {
+		length = st.end
+	}
+	best, work := 0, 0
+	var at []int
+	for other, n := range m.at {
+		if other != id {
+			at = append(at, n)
+		}
+	}
+	slices.Sort(at)
+	n := 0
+	for n < length {
+		gap, ok := st.gap(n, length)
+		if !ok {
+			break
+		}
+		end := gap
+		for end < length && !st.has(end) {
+			end++
+		}
+		// The measurers in this part, in order, each with the frames up
+		// to the next one or to the part's end ahead of it.
+		first := end
+		for i, p := range at {
+			if p < gap || p >= end {
+				continue
+			}
+			first = min(first, p)
+			next := end
+			if i+1 < len(at) && at[i+1] < end {
+				next = at[i+1]
+			}
+			if half := (next - p) / 2; half > levelsShare && half > work {
+				best, work = p+half, half
+			}
+		}
+		if first > gap && first-gap > work {
+			best, work = gap, first-gap
+		}
+		n = end
+	}
+	if work == 0 && st.end < 0 && len(at) == 0 {
+		// Where the sound ends is not known yet, and the probe said
+		// nothing or too little: one measurer from the first gap on,
+		// which finds it.
+		var ok bool
+		if best, ok = st.next(from, to); !ok {
+			return 0, false
+		}
+	} else if work == 0 {
+		return 0, false
+	}
+	m.at[id] = best
+	return best, true
+}
+
+// levelsShare is how many frames, 30 s, a measurer must have ahead of it
+// before another starts half way along them: 30 s of sound decode in about
+// the time an ffmpeg takes to start and seek.
+const levelsShare = 3000
 
 // audioFrom is how ffmpeg reads the episode's audio as 16 kHz mono samples
 // from frame start on, for the loudness and for the transcription alike,
@@ -604,11 +867,12 @@ func soundSeek(from, picture float64) (seek, lead float64) {
 }
 
 // readLevels turns 16 kHz mono float samples into a frame every 10 ms and
-// hands each to put, which says whether to go on. Every levelsDefault, or
-// every levelsReads reads, it asks tick, which says the same. It says
-// whether it reached the end.
+// hands each to put, which says whether to go on. After every read it
+// asks tick, which says the same, and due says whether levelsDefault has
+// passed since it last said so, or levelsReads reads. It says whether it
+// reached the end.
 func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) bool,
-	tick func() bool) (bool, error) {
+	tick func(due bool) bool) (bool, error) {
 	frame := make([]float32, 0, frameSamples)
 	samples := newSampleReader(r, frameSamples*4*200)
 	last, reads := time.Now(), 0
@@ -644,9 +908,9 @@ func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) 
 		}
 		if due {
 			last = time.Now()
-			if !tick() {
-				return false, nil
-			}
+		}
+		if !tick(due) {
+			return false, nil
 		}
 	}
 }
@@ -667,29 +931,40 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 	if len(parts) > 0 {
 		reach = parts[len(parts)-1][1]
 	}
-	from, to := st.fresh[0], min(st.fresh[1], reach)
-	// A frames file that is gone or shorter than where the new frames go,
+	// A frames file that is gone or shorter than the parts written last,
 	// removed while the measuring ran or cut off by a power cut, would
 	// read as 0 dB in the hole, loud and never measured again. It is
-	// written whole instead.
-	if info, err := fsys.Stat(framesAt); err != nil || info.Size() < int64(from)*4 {
+	// written whole instead. New frames past its end are no hole: what
+	// lies between is in no part, and is read as not measured.
+	if info, err := fsys.Stat(framesAt); err != nil || info.Size() < int64(st.written)*4 {
 		st.whole = true
 	}
+	runs := st.fresh
 	flags := os.O_WRONLY | os.O_CREATE
 	if st.whole {
-		from, to = 0, reach
+		// The parts alone: frames between them are measured later, by
+		// another measurer, and written then.
+		runs = parts
 		flags |= os.O_TRUNC
 	}
-	if to > from || st.whole {
+	if len(runs) > 0 || st.whole {
 		f, err := fsys.OpenFile(framesAt, flags, 0o644)
 		if err != nil {
 			return err
 		}
-		raw := make([]byte, 4*(to-from))
-		for i, frame := range st.frames[from:to] {
-			binary.LittleEndian.PutUint32(raw[4*i:], math.Float32bits(frame))
+		for _, r := range runs {
+			from, to := r[0], min(r[1], reach)
+			if to <= from {
+				continue
+			}
+			raw := make([]byte, 4*(to-from))
+			for i, frame := range st.frames[from:to] {
+				binary.LittleEndian.PutUint32(raw[4*i:], math.Float32bits(frame))
+			}
+			if _, err = f.WriteAt(raw, int64(from)*4); err != nil {
+				break
+			}
 		}
-		_, err = f.WriteAt(raw, int64(from)*4)
 		if closeErr := f.Close(); err == nil {
 			err = closeErr
 		}
@@ -697,7 +972,7 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 			return err
 		}
 	}
-	st.fresh, st.whole = [2]int{}, false
+	st.fresh, st.whole, st.written = st.fresh[:0], false, reach
 	file := levelsFile{Version: levelsVersion, Source: stamp, Parts: parts, Done: st.done()}
 	if st.end >= 0 {
 		file.End = st.end
@@ -802,7 +1077,7 @@ func (e *Engine) levelsAt(ctx context.Context, source string, start, count int, 
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		frames = append(frames, f)
 		return len(frames) < count
-	}, func() bool { return true })
+	}, func(bool) bool { return true })
 	if !end {
 		// Enough heard: ffmpeg is still writing, and is told to stop
 		// rather than left to write into a pipe nobody reads.

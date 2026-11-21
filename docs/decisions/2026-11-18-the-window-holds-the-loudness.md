@@ -1,5 +1,7 @@
 # The window holds the loudness, and Go sends it
 
+Partly replaced by [The waveform keeps up with the hand](2026-11-21-the-waveform-keeps-up-with-the-hand.md).
+
 Issue #909.
 
 ## The problem

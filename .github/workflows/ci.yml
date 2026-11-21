@@ -84,7 +84,7 @@ jobs:
               - '!**/*.md'
               - '!.claude/**'
             goread:
-              - 'frontend/src/lib/{api.ts,*.cases.json}'
+              - 'frontend/src/lib/{api.ts,testdata/*.cases.json}'
             interface:
               - '{frontend/**,.github/workflows/**,.github/actions/**,.node-version,Makefile}'
             # One line: with predicate-quantifier every, two lines must

@@ -630,11 +630,20 @@ function loudnessBytes(): Uint8Array {
   }
   return bytes;
 }
-// /frames/levels is the one route under /frames/ the stub answers, since
-// the loudness it measures lives here. Every other goes to the Go side.
+// /frames/levels and its look are the routes under /frames/ the stub
+// answers, since the loudness it measures lives here. Every other goes to
+// the Go side. A look tells where the clip timeline looks, which is where
+// the measuring goes first, the way the Go side measures, and is answered
+// with nothing new: the window reads the stub's loudness whole as it
+// grows.
 const fetchOfThePage = window.fetch.bind(window);
 window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+  if (url.pathname === "/frames/levels/look") {
+    levelsAdvance();
+    levelFocus = [Number(url.searchParams.get("from")) || 0, Number(url.searchParams.get("to")) || 0];
+    return Promise.resolve(new Response(null, { status: 204 }));
+  }
   if (url.pathname !== "/frames/levels") return fetchOfThePage(input, init);
   return late("Loudness", Promise.resolve(new Response(loudnessBytes())));
 };
@@ -2032,13 +2041,6 @@ const Answers = {
         const part = Number(args[4]);
         own[key] = part < 0 ? "" : reads.filter((_, i) => i !== part).join(" ");
         return Promise.resolve(clipOf(String(args[2])));
-      }
-      case "Look": {
-        // Where the clip timeline looks is where the measuring goes first,
-        // the way the Go side measures, see measuring.look.
-        levelsAdvance();
-        levelFocus = [Number(args[1]) || 0, Number(args[2]) || 0];
-        return Promise.resolve(null);
       }
       // What a gesture makes of a clip, and saving it. The engine works this
       // out in engine/shape.go. This is a small stand-in with the same

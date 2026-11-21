@@ -120,7 +120,7 @@ func until(s *Schedule, ok func() bool) {
 // waits goes on once the hand's look for h waits on the schedule.
 func waits(s *Schedule, h Hand) {
 	until(s, func() bool {
-		return slices.ContainsFunc(s.waiting, func(w *lookWaiter) bool { return reflect.DeepEqual(w.look, h) })
+		return slices.ContainsFunc(s.looking.waiting, func(w *lookWaiter[Hand, Seen]) bool { return reflect.DeepEqual(w.look, h) })
 	})
 }
 
@@ -856,7 +856,7 @@ func TestTheSamePlaceAskedTwiceAnswersBoth(t *testing.T) {
 	st := dec.next(t)
 	waits(s, rest(48))
 	cue := lookFor(s, rest(48))
-	until(s, func() bool { return len(s.waiting) == 2 })
+	until(s, func() bool { return len(s.looking.waiting) == 2 })
 	_ = st.give(t, 47)
 	_ = st.give(t, 48)
 	for _, got := range []looked{<-still, <-cue} {

@@ -1165,8 +1165,6 @@ export const api = {
     call<ClipEntry>("Reshape", path, plan, clip, g, playhead),
   fonts: () => call<CaptionFont[]>("Fonts"),
   captionStart: () => call<CaptionStart>("CaptionStart"),
-  // Where the clip timeline looks, so the loudness is measured there first.
-  look: (path: string, from: number, to: number) => call<void>("Look", path, from, to),
   render: (path: string, req: RenderRequest) => call<Job>("Render", path, req),
   // Search: looks for clips in a window, hearing the episode that far first.
   // click names the press, so a Cancel pressed after it stops it whichever

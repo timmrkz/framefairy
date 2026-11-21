@@ -11,7 +11,7 @@ import (
 
 // Where an edge is kept and which frame the render cuts it on, against
 // the same table the video preview is held to, in
-// frontend/src/lib/frame.cases.json, so the two never count a frame
+// frontend/src/lib/testdata/frame.cases.json, so the two never count a frame
 // apart. See PieceOnFrames.
 type frameCases struct {
 	// An edge at a moment, as a search or a hand puts it, the moment the
@@ -37,7 +37,7 @@ type frameCases struct {
 // On the real disk: what is read is the repository's testdata.
 func readFrameCases(t *testing.T) frameCases {
 	t.Helper()
-	data, err := os.ReadFile("../frontend/src/lib/frame.cases.json")
+	data, err := os.ReadFile("../frontend/src/lib/testdata/frame.cases.json")
 	if err != nil {
 		t.Fatal(err)
 	}
