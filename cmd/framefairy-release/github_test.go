@@ -31,6 +31,8 @@ type fakeGitHub struct {
 	release  map[string]asset
 	data     map[string][]byte
 	stuck    []waitingRun
+	jobs     map[int64][]job // a run to its jobs that failed
+	issues   map[string]int  // the open issues a workflow opened, by title
 	down     bool
 	// What was done, in order, for the tests to read.
 	did []string
@@ -159,6 +161,28 @@ func (f *fakeGitHub) cancel(run int64) error {
 	return f.failing()
 }
 
+func (f *fakeGitHub) failedJobs(run int64) ([]job, error) { return f.jobs[run], f.failing() }
+
+func (f *fakeGitHub) openIssue(title string) (int, error) { return f.issues[title], f.failing() }
+
+func (f *fakeGitHub) newIssue(title, body string, labels []string) (int, error) {
+	if err := f.failing(); err != nil {
+		return 0, err
+	}
+	if f.issues == nil {
+		f.issues = map[string]int{}
+	}
+	f.ids++
+	f.issues[title] = int(f.ids)
+	f.did = append(f.did, fmt.Sprintf("open #%d %q %v\n%s", f.ids, title, labels, body))
+	return int(f.ids), nil
+}
+
+func (f *fakeGitHub) comment(number int, body string) error {
+	f.did = append(f.did, fmt.Sprintf("comment #%d\n%s", number, body))
+	return f.failing()
+}
+
 // A build is published for main or a pull request only when that
 // channel's history holds its commit. A tag named main, pushed at any
 // commit, reads to GitHub like a push to main, #838.
@@ -269,11 +293,18 @@ func TestGitHubIsAskedWhatTheToolNeeds(t *testing.T) {
 			"/repos/o/r/contents/engine/doc.go":             `{"encoding":"base64","content":"Y29uc3QgVmVyc2lv\nbiA9ICIwLjMuMCIK\n"}`,
 			"/repos/o/r/releases/tags/dev":                  `{"id":1,"upload_url":"` + srv.URL + `/uploads/1/assets{?name,label}","assets":[{"id":3,"name":"channels.json","created_at":"2026-11-14T10:00:00Z","updated_at":"2026-11-14T11:00:00Z"}]}`,
 			"/repos/o/r/actions/workflows/publish.yml/runs": `{"workflow_runs":[{"id":44,"created_at":"2026-11-14T10:00:00Z"}]}`,
+			"/repos/o/r/actions/runs/6/jobs": `{"jobs":[{"name":"unit","conclusion":"failure","html_url":"u"},{"name":"outside","conclusion":"timed_out","html_url":"o"},` +
+				`{"name":"image","conclusion":"success","html_url":"i"},{"name":"late","conclusion":null,"html_url":"l"},{"name":"stopped","conclusion":"cancelled","html_url":"s"}]}`,
+			"/repos/o/r/issues": `[{"number":20,"title":"Nightly on a Mac failed on main","pull_request":{}},{"number":21,"title":"Nightly on a Mac failed"},` +
+				`{"number":22,"title":"Nightly on a Mac failed on main"}]`,
 			"/stored/3": `the list`,
 		}[r.URL.Path]
 		switch {
 		case r.URL.Path == "/repos/o/r/releases/assets/3" && r.Method == http.MethodGet:
 			http.Redirect(w, r, srv.URL+"/stored/3", http.StatusFound)
+		case r.URL.Path == "/repos/o/r/issues" && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"number":23}`))
 		case r.Method != http.MethodGet:
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte("{}"))
@@ -316,6 +347,18 @@ func TestGitHubIsAskedWhatTheToolNeeds(t *testing.T) {
 	check("a file of the release, where it is stored", string(b), "the list", err)
 	w, err := gh.waiting()
 	check("the publish runs that wait", len(w), 1, err)
+	js, err := gh.failedJobs(6)
+	check("the jobs of a run that failed or ran out of time", js, []job{{name: "unit", url: "u"}, {name: "outside", url: "o"}}, err)
+	// A pull request of the same title is no issue, and nor is one whose
+	// title only starts the same.
+	i, err := gh.openIssue("Nightly on a Mac failed on main")
+	check("the open issue of that title a workflow opened", i, 22, err)
+	mu.Lock()
+	asked := heard[len(heard)-1]
+	mu.Unlock()
+	if want := "GET /repos/o/r/issues?creator=github-actions%5Bbot%5D&page=1&per_page=100&state=open"; asked != want {
+		t.Errorf("the open issues were asked for as %q, want %q, only those a workflow opened", asked, want)
+	}
 	if _, err := gh.compare("x", "y"); !errors.Is(err, errNotFound) {
 		t.Errorf("a compare GitHub had no answer to said %v", err)
 	}
@@ -326,6 +369,7 @@ func TestGitHubIsAskedWhatTheToolNeeds(t *testing.T) {
 		gh.upload("channels.json", []byte("new")),
 		gh.rename(as[0], "channels-a.json"),
 		gh.cancel(44),
+		gh.comment(22, "Failed again"),
 	} {
 		if err != nil {
 			t.Error(err)
@@ -340,6 +384,11 @@ func TestGitHubIsAskedWhatTheToolNeeds(t *testing.T) {
 		`POST /uploads/1/assets?name=channels.json application/json new`,
 		`PATCH /repos/o/r/releases/assets/3 application/json {"name":"channels-a.json"}`,
 		`POST /repos/o/r/actions/runs/44/cancel`,
+		`POST /repos/o/r/issues/22/comments application/json {"body":"Failed again"}`,
+		`POST /repos/o/r/issues application/json {"body":"B","labels":["tests"],"title":"T"}`,
+	}
+	if n, err := gh.newIssue("T", "B", []string{"tests"}); err != nil || n != 23 {
+		t.Errorf("a new issue read as #%d, %v, want #23", n, err)
 	}
 	if !slices.Equal(heard, want) {
 		t.Errorf("GitHub heard\n  %s\nwant\n  %s", strings.Join(heard, "\n  "), strings.Join(want, "\n  "))

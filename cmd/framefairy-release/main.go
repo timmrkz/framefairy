@@ -1,5 +1,6 @@
 // Command framefairy-release decides, signs and lists the builds the app
-// updates itself to, and makes the update key. It is not shipped. Tim
+// updates itself to, makes the update key, and tells of a scheduled run
+// that failed on main. It is not shipped. Tim
 // runs it once, to make the key, and the workflows run the rest, one
 // command a step: every decision about a build is made here, in Go, and
 // none in the workflows' shell. See docs/UPDATES.md and
@@ -36,6 +37,9 @@
 //	    nobody can reach any more
 //	framefairy-release unstick
 //	    cancel a publish that has waited half an hour for its environment
+//	framefairy-release failed -workflow W -run URL -commit X
+//	    open the issue that says a scheduled run of W failed on main, or
+//	    add the run to the one that is open, see failed.go
 //
 // Every command but key, check and sign asks GitHub, with GH_TOKEN and
 // GH_REPO, through the interface in github.go.
@@ -94,6 +98,8 @@ func main() {
 		err = channelsCommand(gitHubFromEnv())
 	case "unstick":
 		err = unstick(gitHubFromEnv(), time.Now(), os.Stdout)
+	case "failed":
+		err = failedCommand(args, gitHubFromEnv(), time.Now(), os.Stdout)
 	default:
 		usage()
 	}
@@ -104,7 +110,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick, see the head of main.go")
+	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick | failed, see the head of main.go")
 	os.Exit(2)
 }
 

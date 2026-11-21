@@ -914,3 +914,74 @@ func TestThePullRequestsMacTestsFollowItsMacCode(t *testing.T) {
 	}
 	t.Error("ci.yml has no step filter in its job changes")
 }
+
+// A workflow that runs on a schedule runs where nobody waits on it, so
+// when it fails on main it tells of itself: its last job, tell, needs
+// every other job, runs only when one of them failed on main, and has
+// framefairy-release open the workflow's issue or add the run to it. A
+// run by hand on a branch is its session's to read, and a run that was
+// stopped is no failure. See failed.go in cmd/framefairy-release.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestAScheduledRunThatFailsTellsOfItself(t *testing.T) {
+	t.Parallel()
+	type workflow struct {
+		On   map[string]any `yaml:"on"`
+		Jobs map[string]struct {
+			Needs       any               `yaml:"needs"`
+			If          string            `yaml:"if"`
+			Permissions map[string]string `yaml:"permissions"`
+			Steps       []struct {
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	scheduled := 0
+	for _, f := range actionFiles(t) {
+		if !strings.Contains(filepath.ToSlash(f), "/workflows/") {
+			continue
+		}
+		var wf workflow
+		readYAML(t, f, &wf)
+		if _, ok := wf.On["schedule"]; !ok {
+			continue
+		}
+		scheduled++
+		name := filepath.Base(f)
+		tell, ok := wf.Jobs["tell"]
+		if !ok {
+			t.Errorf("%s runs on a schedule and has no job tell, so a failure on main reaches nobody", name)
+			continue
+		}
+		var needs []string
+		switch n := tell.Needs.(type) {
+		case string:
+			needs = []string{n}
+		case []any:
+			for _, x := range n {
+				needs = append(needs, fmt.Sprint(x))
+			}
+		}
+		for job := range wf.Jobs {
+			if job != "tell" && !slices.Contains(needs, job) {
+				t.Errorf("%s: tell does not need %s, so its failure is told by nobody", name, job)
+			}
+		}
+		if want := "failure() && github.ref == 'refs/heads/main'"; tell.If != want {
+			t.Errorf("%s: tell runs if %q, want %q", name, tell.If, want)
+		}
+		if tell.Permissions["issues"] != "write" {
+			t.Errorf("%s: tell may not write issues", name)
+		}
+		told := false
+		for _, s := range tell.Steps {
+			told = told || strings.HasPrefix(s.Run, "go run ./cmd/framefairy-release failed ")
+		}
+		if !told {
+			t.Errorf("%s: tell does not run framefairy-release failed", name)
+		}
+	}
+	if scheduled < 4 {
+		t.Errorf("found %d workflows on a schedule, fewer than the four there are", scheduled)
+	}
+}

@@ -263,6 +263,18 @@ same night the Go tests, the interface's tests and the walks count the
 lines they run on Linux, and the counts go to Codecov, see
 [Coverage](TESTING.md#coverage).
 
+Nobody waits on a run at night, so one that fails on main tells of
+itself. Every workflow on a schedule, the three nightlies and the
+weekly `security.yml`, ends with a job `tell`, which runs only when
+another of its jobs failed on main and has `framefairy-release failed`
+open an issue, "Nightly on a Mac failed on main" for example, labelled
+`tests` and `priority/critical`. While that issue is open, every night
+that fails again adds a line to it, with the run, the commit and the
+jobs that failed. It is closed by the fix, never by a night that
+passes. A run that was stopped, and a run by hand on a branch, tell
+nobody. See the decision record
+[2026-11-21-a-failed-night-tells-of-itself.md](decisions/2026-11-21-a-failed-night-tells-of-itself.md).
+
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.
 
