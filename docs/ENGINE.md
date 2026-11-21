@@ -196,10 +196,9 @@ one reached it. `engine/levels.go` measures it on its own:
 `logs/levels.json`. Audio decodes at a few hundred times real time, so an
 hour takes seconds, but four hours still take the better part of a
 minute, and a playhead put near the end waited for all of it. So
-`MeasureLevels` is told what the clip timeline shows, the view as it is
-and nothing around it, and measures that first, then on from there, then from the start. After every read of the
-sound it asks again, and when the view has moved to a part not measured
-yet, it stops
+`MeasureLevels` is told what the clip timeline shows and measures that
+first, then on from there, then from the start. Every half second it asks
+again, and when the view has moved to a part not measured yet, it stops
 ffmpeg and starts it again there, with `-ss` before the input so ffmpeg
 seeks rather than decodes its way there. It starts a fifth of a second
 early and `atrim` cuts that off by timestamp, `levelsLead`, which is
@@ -208,17 +207,9 @@ early and `atrim` cuts that off by timestamp, `levelsLead`, which is
 compressed audio is decoded together with the one before it, and ffmpeg
 9 drops the first packet after the seek point whole. A part that ends
 between two of those half seconds is written when it ends. A run ends where it meets a part
-measured already, so nothing is measured twice. A part measured already
-that ends within `levelsBridge`, 30 s, is read through instead, frames
-kept as they are: decoding 30 s takes about as long as starting ffmpeg
-again, and a hand dragged over parts not measured leaves many short ones
-behind. A part left because the view moved is written but the window is
-not told of it, so its next news is of the part the view went to.
+measured already, so nothing is measured twice.
 
-What it has is written every half second, and at once after the first
-read of a part where the clip timeline looks and the read that fills
-what it shows, so a click on the range picker shows its waveform once
-ffmpeg has started and read the view, not at the next half second. Frames are written first and the json
+What it has is written every half second, frames first and the json
 after, which gives the parts measured as frame numbers and, once a run
 has reached the end of the audio, how many frames it has. So `ReadLevels`
 never hands out a reading the json does not vouch for, and the waveform

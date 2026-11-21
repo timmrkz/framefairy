@@ -37,7 +37,7 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 	end, err := e.readLevels(context.Background(), &raw, func(f float32) bool {
 		frames = append(frames, f)
 		return true
-	}, func(bool) bool { return true })
+	}, func() bool { return true })
 	if err != nil || !end {
 		t.Fatal(err, end)
 	}
@@ -289,57 +289,6 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 				t.Logf("frame %d (%.2f s): %.2f from the start, %.2f jumped", i, float64(i)*timed.FrameSeconds, whole.Frames[i], jumped.Frames[i])
 			}
 		}
-	}
-}
-
-// A click on the range picker, where nothing is measured yet, is
-// followed by the next read of the sound, not the next write, and the
-// first read of a part is written at once, so its waveform shows without
-// waiting for a write either. The writes here never come by the count,
-// so all the measuring writes is the first read of each part and what it
-// writes at the end of one, #968.
-//
-// On the real disk: ffmpeg measures the episode.
-func TestAClickWhereNothingIsMeasuredIsFollowedAtOnce(t *testing.T) {
-	t.Parallel()
-	source := sweep(t)
-	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
-	e.levelsReads = math.MaxInt
-	e.FFmpeg = "ffmpeg"
-
-	var mu sync.Mutex
-	view := [2]float64{50, 51}
-	focus := func() (float64, float64) {
-		mu.Lock()
-		defer mu.Unlock()
-		return view[0], view[1]
-	}
-	var first, clicked [][2]int
-	err := e.MeasureLevels(context.Background(), source, focus, func(float64) {
-		l := ReadLevels(disk, source)
-		if first == nil && len(l.Parts) > 0 {
-			first = l.Parts
-			mu.Lock()
-			view = [2]float64{20, 21}
-			mu.Unlock()
-		}
-		if clicked == nil && covers(l.Parts, 20, 21) {
-			clicked = l.Parts
-		}
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A read is at most 2 s of the sound, see readLevels.
-	if len(first) != 1 || first[0][0] != int(50/timed.FrameSeconds) || first[0][1] > int(52/timed.FrameSeconds) {
-		t.Fatalf("first written %v, want the first read from 50 s", partSeconds(first))
-	}
-	if clicked == nil || covers(clicked, 0, 1) || covers(clicked, 54, 60) {
-		t.Errorf("when the view went to 20 s the parts were %v, want it there within a read, "+
-			"before the start and the end", partSeconds(clicked))
-	}
-	if l := ReadLevels(disk, source); !l.Done || len(l.Parts) != 1 {
-		t.Errorf("done %v, parts %v", l.Done, partSeconds(l.Parts))
 	}
 }
 

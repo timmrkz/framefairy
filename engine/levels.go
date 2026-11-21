@@ -58,13 +58,6 @@ const levelsVersion = 2
 // instead, see Engine.levelsReads.
 const levelsDefault = 500 * time.Millisecond
 
-// levelsBridge is how many frames measured already a measuring reads
-// through, rather than stopping there and starting ffmpeg again after
-// them. 30 s of sound are decoded in about the time ffmpeg takes to start
-// and seek, and a hand swiped over parts not measured leaves many short
-// parts behind, #968.
-const levelsBridge = 3000
-
 // levelsFile is what logs/levels.json holds. The frames are in
 // logs/levels.frames, written before it, so a reader never sees a part the
 // frames do not reach.
@@ -456,22 +449,14 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 		if !ok {
 			break
 		}
-		moved, err := e.measureFrom(ctx, source, st, start, focus, tell)
-		if err != nil {
+		if err := e.measureFrom(ctx, source, st, start, focus, tell); err != nil {
 			return err
 		}
 		// A part that ended between two ticks is shown when it ends, not
 		// at the first tick of the next one. A short part is read in less
 		// than a tick, and then where the clip timeline looked went unseen
-		// until the measuring had moved on. A part left because the view
-		// moved is written but not told: nobody looks there any more, and
-		// telling it took the window's next news from the part the view
-		// went to, #968.
-		if moved {
-			_ = writeLevels(e.Files, logs, stamp, st)
-		} else {
-			tell()
-		}
+		// until the measuring had moved on.
+		tell()
 	}
 	if err := writeLevels(e.Files, logs, stamp, st); err != nil {
 		return err
@@ -502,11 +487,11 @@ func (s *levelState) loudest() (float32, bool) {
 	return loudest, measured
 }
 
-// measureFrom measures from frame start on, until it reaches a part
-// measured already longer than levelsBridge, the end of the audio, or a
-// clip timeline that moved to a part not measured yet, which moved says.
+// measureFrom measures from frame start on, until it reaches a frame
+// measured already, the end of the audio, or a clip timeline that moved to
+// a part not measured yet.
 func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState, start int,
-	focus func() (float64, float64), tell func()) (moved bool, err error) {
+	focus func() (float64, float64), tell func()) error {
 	run, stop := context.WithCancel(ctx)
 	defer stop()
 	cmd := e.Runner.Command(run, e.FFmpeg, audioFrom(source, start, e.pictureStart(ctx, source))...)
@@ -515,53 +500,23 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	cmd.Stderr = said
 	reading, err := e.Runner.StartReading(run, cmd, said)
 	if err != nil {
-		return false, renderErr("cannot start %s: %s", e.FFmpeg, err)
+		return renderErr("cannot start %s: %s", e.FFmpeg, err)
 	}
 	n := start
-	// A part measured already that ends within levelsBridge is read
-	// through, up to skip, rather than measured again or stopped at.
-	skip := start
-	// Where the clip timeline looks is asked after every read, which is
-	// a lock and two numbers, and weighed again only when it moved. Asked
-	// at the writes alone, a click on the range picker waited up to
-	// levelsDefault before the measuring went there, #968.
-	from, to := focus()
-	first, filled := true, false
+	moved := false
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		if st.has(n) {
-			if n >= skip {
-				gap, ok := st.gap(n, n+levelsBridge)
-				if !ok {
-					return false
-				}
-				skip = gap
-			}
-			n++
-			return true
+			return false
 		}
 		st.put(n, f)
 		n++
 		return true
-	}, func(due bool) bool {
-		changed := false
-		if now, until := focus(); now != from || until != to {
-			from, to, filled, changed = now, until, false, true
-		}
-		if (changed || due) && st.leave(n, func() (float64, float64) { return from, to }) {
+	}, func() bool {
+		tell()
+		if st.leave(n, focus) {
 			moved = true
 			return false
 		}
-		// The first read of a part where the clip timeline looks is
-		// written at once, and the read that fills what it shows, so the
-		// waveform where the view went shows without waiting for the next
-		// write.
-		in := shown(start, from, to)
-		fills := in && !filled && float64(n)*timed.FrameSeconds >= to
-		if due || (first && in) || fills {
-			tell()
-			filled = filled || fills
-		}
-		first = false
 		return true
 	})
 	if !end {
@@ -571,14 +526,14 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 	}
 	left, waitErr := reading.Finish()
 	if ctx.Err() != nil {
-		return false, ctx.Err()
+		return ctx.Err()
 	}
 	if left {
 		// Stopped once enough was read, so what was read stands.
 		e.Log.Warn("ffmpeg %s", tool.LeftBehind)
 	}
 	if readErr != nil && !errors.Is(readErr, context.Canceled) {
-		return false, readErr
+		return readErr
 	}
 	switch {
 	case end && n <= start && start > 0:
@@ -586,14 +541,14 @@ func (e *Engine) measureFrom(ctx context.Context, source string, st *levelState,
 		st.end = start
 		st.frames, st.got = st.frames[:min(start, len(st.frames))], st.got[:min(start, len(st.got))]
 	case end && waitErr != nil:
-		return false, renderErr("ffmpeg could not read the audio: %s", strings.TrimSpace(stderr.String()))
+		return renderErr("ffmpeg could not read the audio: %s", strings.TrimSpace(stderr.String()))
 	case end:
 		st.end = n
 		st.frames, st.got = st.frames[:min(n, len(st.frames))], st.got[:min(n, len(st.got))]
 	case moved:
 		e.Log.Detail("the clip timeline moved on, so the loudness is measured there next")
 	}
-	return moved, nil
+	return nil
 }
 
 // audioFrom is how ffmpeg reads the episode's audio as 16 kHz mono samples
@@ -649,12 +604,11 @@ func soundSeek(from, picture float64) (seek, lead float64) {
 }
 
 // readLevels turns 16 kHz mono float samples into a frame every 10 ms and
-// hands each to put, which says whether to go on. After every read it
-// asks tick, which says the same, and due says whether levelsDefault has
-// passed since it last said so, or levelsReads reads. It says whether it
-// reached the end.
+// hands each to put, which says whether to go on. Every levelsDefault, or
+// every levelsReads reads, it asks tick, which says the same. It says
+// whether it reached the end.
 func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) bool,
-	tick func(due bool) bool) (bool, error) {
+	tick func() bool) (bool, error) {
 	frame := make([]float32, 0, frameSamples)
 	samples := newSampleReader(r, frameSamples*4*200)
 	last, reads := time.Now(), 0
@@ -690,9 +644,9 @@ func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) 
 		}
 		if due {
 			last = time.Now()
-		}
-		if !tick(due) {
-			return false, nil
+			if !tick() {
+				return false, nil
+			}
 		}
 	}
 }
@@ -848,7 +802,7 @@ func (e *Engine) levelsAt(ctx context.Context, source string, start, count int, 
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		frames = append(frames, f)
 		return len(frames) < count
-	}, func(bool) bool { return true })
+	}, func() bool { return true })
 	if !end {
 		// Enough heard: ffmpeg is still writing, and is told to stop
 		// rather than left to write into a pipe nobody reads.
