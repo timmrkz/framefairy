@@ -354,13 +354,18 @@ export const steps = {
     }
     let x = middle(box);
     if (how === "at the playhead") {
-      // The playhead's grip is its line and four pixels either side.
-      const line = await page.evaluate(() => {
+      // The playhead's grip is its line and four pixels either side of
+      // the line, see .playhead::before in app.css. Counted from the
+      // middle of the line, it came a pixel short on either side, and the
+      // overlap with the handle, a frame of the walks' video from the
+      // line, was 0.6 px wide or nothing, depending on the clip
+      // timeline's width.
+      const [line, left, right] = await page.evaluate(() => {
         const b = document.querySelector(".clip-timeline .playhead").getBoundingClientRect();
-        return b.left + b.width / 2;
+        return [b.left + b.width / 2, b.left - 4, b.right + 4];
       });
-      const from = Math.max(line - 4, box.x + 1);
-      const to = Math.min(line + 4, box.x + box.w - 1);
+      const from = Math.max(left + 0.5, box.x + 1);
+      const to = Math.min(right - 0.5, box.x + box.w - 1);
       if (!(to > from)) {
         walk.wrong = `the playhead's line at ${line.toFixed(1)} is not on the ${which} edge's handle, ${box.x.toFixed(1)} to ${(box.x + box.w).toFixed(1)}`;
         return;

@@ -47,8 +47,27 @@ export const steps = {
       // the reflection leaves out. The frame's upper half is the
       // reflection's lower half, the reflection being upside down.
       // Each pixel counts as much as it is seen, so the reflection's cells
-      // faded out at its sides and top, whose colours are rounded to a
-      // few steps, count for little.
+      // faded out at its sides and top count for little. The reflection's
+      // canvas is opaque, laid over the colour of the app, so its colours
+      // and how much of them is seen are read from the cells it is drawn
+      // from, red, green and blue already multiplied by it, see
+      // __reflectionCells in Reflection.svelte. That they are drawn as
+      // they are is the walk "screen light"'s and reflection.test.ts's.
+      const cells = window.__reflectionCells;
+      if (!cells) return { wrong: "the reflection has no cells" };
+      const COLS = 64;
+      const ROWS = 36;
+      const reflectedMean = (q) => {
+        let sum = 0;
+        let seen = 0;
+        for (let row = ROWS / 2; row < ROWS; row++)
+          for (let col = (q * COLS) / 4; col < ((q + 1) * COLS) / 4; col++) {
+            const i = (row * COLS + col) * 4;
+            sum += (cells[i] + cells[i + 1] + cells[i + 2]) / 3;
+            seen += cells[i + 3] / 255;
+          }
+        return seen ? sum / seen : 0;
+      };
       const mean = (g, x0, y0, w, h) => {
         const d = g.getImageData(x0, y0, w, h).data;
         let sum = 0;
@@ -59,7 +78,6 @@ export const steps = {
         }
         return seen ? sum / seen : 0;
       };
-      const rg = r.getContext("2d");
       const sg = screen.getContext("2d");
       const sw = screen.width;
       const sh = screen.height;
@@ -72,7 +90,7 @@ export const steps = {
       const reflected = [];
       const shown = [];
       for (let q = 0; q < 4; q++) {
-        reflected.push(mean(rg, (q * r.width) / 4, r.height / 2, r.width / 4, r.height / 2));
+        reflected.push(reflectedMean(q));
         shown.push(mean(sg, fx + Math.round((q * fw) / 4), fy, Math.round(fw / 4), Math.round(fh / 2)));
       }
       const say = (v) => v.map((x) => x.toFixed(0)).join(", ");

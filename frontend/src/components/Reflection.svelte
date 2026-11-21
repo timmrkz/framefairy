@@ -92,6 +92,10 @@
     // The colour of the app behind the band, which the reflection is laid
     // over, see laid in reflection.ts.
     const [r, g, b] = (getComputedStyle(canvas).color.match(/[\d.]+/g) ?? []).map(Number);
+    // For the walk "reflection": the canvas is opaque, the reflection
+    // laid over the ground, so what is seen of each colour is read from
+    // the cells it is drawn from rather than from the canvas.
+    (window as { __reflectionCells?: Float32Array }).__reflectionCells = now;
     let gone = false;
     void reflectedOn(canvas, [r || 0, g || 0, b || 0]).then((it) => {
       if (gone) return;
