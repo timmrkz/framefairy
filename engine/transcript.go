@@ -307,10 +307,6 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 	if err != nil || decodeTranscript(data, &file) != nil {
 		return file, nil, nil, false
 	}
-	if file.Version < oldestTranscript || file.Version > transcriptVersion ||
-		file.Source != stamp || file.Model != model {
-		return file, nil, nil, false
-	}
 	raw, err := afero.ReadFile(fsys, framesPath(path))
 	if err != nil {
 		return file, nil, nil, false
@@ -319,24 +315,50 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 	if !ok {
 		return file, nil, nil, false
 	}
+	parts, ok := file.fit(stamp, model, len(frames))
+	if !ok {
+		return file, nil, nil, false
+	}
+	words := make([]timed.Cue, 0, len(file.Words))
+	for _, w := range file.Words {
+		// Only the words of what it heard. A file of version 2 stopped
+		// where a search waited kept words up to where it stopped, and the
+		// word across that edge is heard again, whole.
+		if inParts(parts, w.Start) {
+			words = append(words, timed.Cue(w))
+		}
+	}
+	return file, words, frames, true
+}
+
+// fit says whether the head of a transcript file is one this program
+// reads, of the video at stamp heard by model, with frames readings of its
+// loudness beside it, and the parts it heard, cut to what the frames
+// reach. Both readTranscriptFile and readTranscriptHead go by it, so a
+// start that reads only the head says what a whole read says.
+func (file *transcriptFile) fit(stamp sourceStamp, model string, frames int) ([][2]float64, bool) {
+	if file.Version < oldestTranscript || file.Version > transcriptVersion ||
+		file.Source != stamp || file.Model != model {
+		return nil, false
+	}
 	// The parts are what the file says it heard, in order and apart. A
 	// file that says otherwise was not written here.
 	parts := file.heard()
 	last := 0.0
 	for _, p := range parts {
 		if p[0] < last || p[1] <= p[0] || math.IsNaN(p[0]) || math.IsInf(p[1], 0) {
-			return file, nil, nil, false
+			return nil, false
 		}
 		last = p[1]
 	}
 	if file.Version >= 3 && float64(file.From) != 0 {
-		return file, nil, nil, false
+		return nil, false
 	}
 	// And no more than the frames reach. The words and the frames are two
 	// files written one after the other, so a machine that stops in
 	// between, or a copy made by hand, can leave them out of step. What
 	// the frames do not reach is heard again.
-	reach := float64(file.From) + float64(len(frames))*timed.FrameSeconds
+	reach := float64(file.From) + float64(frames)*timed.FrameSeconds
 	if last > reach+0.005 {
 		var within [][2]num.Float
 		for _, p := range parts {
@@ -351,16 +373,7 @@ func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model str
 		}
 		parts = file.heard()
 	}
-	words := make([]timed.Cue, 0, len(file.Words))
-	for _, w := range file.Words {
-		// Only the words of what it heard. A file of version 2 stopped
-		// where a search waited kept words up to where it stopped, and the
-		// word across that edge is heard again, whole.
-		if inParts(parts, w.Start) {
-			words = append(words, timed.Cue(w))
-		}
-	}
-	return file, words, frames, true
+	return parts, true
 }
 
 // inParts says whether a moment is in one of the parts heard. A word may

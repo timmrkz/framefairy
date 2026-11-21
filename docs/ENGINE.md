@@ -820,12 +820,14 @@ read. The transcripts of the last ten videos asked about are kept. What
 `Status` says of a transcript, done, the parts heard and where its lines
 start and end, is kept for every video, so listing the library lets go
 of no transcript, and "no transcript yet" is kept by its stamp as well.
-It outlives the program too: the read that had to read the transcript
-writes it to `logs/heard.json` in the video's work folder, with the
-transcript's stamp and the revision of the build, which snaps the words
-by its own rules, and the next start reads it from there, a few hundred
-bytes instead of every word, `engine/heardkept.go`. See
-[decisions/2026-11-21-what-is-heard-kept-in-the-work-folder.md](decisions/2026-11-21-what-is-heard-kept-in-the-work-folder.md).
+A start of the app reads only the head of each transcript for it,
+`readTranscriptHead` in `engine/transcripthead.go`: the file up to its
+words, which come last, and how long the loudness beside it is, a few
+hundred bytes, by the same rules as a whole read, `transcriptFile.fit`.
+Where the lines start and end needs every word snapped to the sound, so
+`Status` says it, with whether nobody speaks, only of a transcript the
+episode holds, which the app's `State` reads first. See
+[decisions/2026-11-21-a-start-reads-the-head-of-each-transcript.md](decisions/2026-11-21-a-start-reads-the-head-of-each-transcript.md).
 It holds every plan of the video too, each by its own file's stamp,
 `Episode.Plans` and `Episode.Plan`, which the status, the clip list, the
 window, the caption look and the word counts of an edit read, and a plan

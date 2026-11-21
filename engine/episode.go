@@ -182,7 +182,10 @@ type EpisodeStatus struct {
 	// words as they are placed on the sound, not as the recogniser timed
 	// them. I after the last line and O before the first make no clip, so
 	// where the parts around the playhead are heard the app offers
-	// neither there, see MarkingOf.
+	// neither there, see MarkingOf. It and Speechless are said only of a
+	// transcript the episode holds, which the app's State reads first:
+	// the library, which shows neither, reads only the head of each
+	// transcript, see Episode.heardSoFar.
 	Said *[2]float64 `json:"said,omitempty"`
 	// Speechless says the whole video is transcribed and nobody speaks in
 	// it: no clip can be found in it, which the clip list says for as long
@@ -265,7 +268,7 @@ func (ep *Episode) Status(asrModelDir string, silenceDB *float64) EpisodeStatus 
 			span := *said
 			st.Said = &span
 		}
-		st.Speechless = t.done && t.said == nil
+		st.Speechless = t.lined && t.done && t.said == nil
 		if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
 			st.Covered = st.Heard[0][1]
 		}

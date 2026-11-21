@@ -212,12 +212,13 @@ func (ep *Episode) forgetPlansBut(files []string) {
 }
 
 // heardSoFar is what Status says of a transcript: whether it is done, the
-// parts heard, and from the first line to the last. Shared and not to be
-// changed.
+// parts heard, and, when lined says it was worked out, from the first
+// line to the last. Shared and not to be changed.
 type heardSoFar struct {
 	done  bool
 	heard [][2]float64
 	said  *[2]float64
+	lined bool
 }
 
 // Heard is every part of the episode its transcript has heard, in order
@@ -235,30 +236,35 @@ func (ep *Episode) Heard(modelDir string, silenceDB *float64) [][2]float64 {
 // stamp as the transcript, for every video asked about and with no cap:
 // it is a few numbers. So the library, which asks it of every video, lets
 // go of no transcript a workspace holds and reads none again that did
-// not change. When the transcript itself is held for the stamp, it is
-// taken from that, and otherwise read for itself.
+// not change.
+//
+// When the transcript itself is held for the stamp, all of it is taken
+// from that, where its lines start and end too. Otherwise only the head
+// of the transcript file is read, which says whether it is done and the
+// parts heard: where the lines start and end needs every word snapped to
+// the sound, and only a video that is opened shows it, see State in the
+// app, which holds the transcript first. A start of the app read every
+// word of every video in the library for it, issue #953.
 func (ep *Episode) heardSoFar(modelDir string, silenceDB *float64) (heardSoFar, error) {
 	at, err := ep.transcriptStamp(modelDir, silenceDB)
 	if err != nil {
 		return heardSoFar{}, err
 	}
+	// Asked before what is kept, which may be the head alone, read before
+	// the transcript was held.
+	if t := ep.heldNow(at.stamp); t != nil {
+		return heardSoFar{done: t.Done, heard: t.Heard, said: t.Said(), lined: true}, nil
+	}
 	return held(ep, &ep.heard, at.stamp, nil, func() (heardSoFar, error) {
-		if t := ep.heldNow(at.stamp); t != nil {
-			return heardSoFar{done: t.Done, heard: t.Heard, said: t.Said()}, nil
-		}
-		// Kept in the work folder by the read before, and written by this
-		// one when it is not, see heardkept.go.
-		kept := heardStamp(at)
-		if h, ok := readKeptHeard(ep.m.Files, ep.source, kept); ok {
-			return h, nil
+		path := filepath.Join(LogsDir(ep.source), TranscriptName(nil))
+		if file, ok := readTranscriptHead(ep.m.Files, path, at.video, at.model); ok {
+			return heardSoFar{done: file.done(), heard: file.heard()}, nil
 		}
 		t, file, err := readSaved(ep.m.Files, at.video, LogsDir(ep.source), at.model, silenceDB)
 		if err != nil {
 			return heardSoFar{}, err
 		}
-		h := heardSoFar{done: file.done(), heard: t.Heard, said: saidOf(BuildLines(t.Words, nil, nil))}
-		keepHeard(ep.m.Files, ep.source, kept, h)
-		return h, nil
+		return heardSoFar{done: file.done(), heard: t.Heard, said: saidOf(BuildLines(t.Words, nil, nil)), lined: true}, nil
 	})
 }
 
