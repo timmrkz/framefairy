@@ -449,17 +449,21 @@ input[type="password"] {
 
 /* The playhead, on the range picker and on the clip timeline: one
    playhead seen at two distances, so one rule draws it. A line and
-   nothing else, running 12 px past the track's top and bottom border,
-   further than a keyframe or a thumbnail stands out of the clip
-   timeline, so it is seen going on past a mark on its frame and is never
-   taken for one. Asked for by Tim in place of a head, plan row 2.234.
+   nothing else, running past the track's top and bottom border further
+   than a keyframe or a thumbnail stands out of the clip timeline, 8 px,
+   so it is seen going on past a mark on its frame and is never taken for
+   one. Asked for by Tim in place of a head, plan row 2.234. It stops two
+   pixels short of the gap round the track, so it never touches what
+   stands beyond it: the video preview, the line under the range picker
+   and the controls under the clip timeline. It ran the whole gap once,
+   and Tim saw it reach into them.
    It is dragged left and right and taken hold of a few pixels either
    side of the line, and goes white while it is held. Each track keeps
    only where it stands. */
 .playhead {
   position: absolute;
-  top: -12px;
-  bottom: -12px;
+  top: calc(2px - var(--gap));
+  bottom: calc(2px - var(--gap));
   width: 2px;
   margin-left: -1px;
   background: var(--accent-hi);

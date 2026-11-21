@@ -1354,6 +1354,19 @@ function fitProblem() {
   for (const [what, [is, want]] of Object.entries(lines)) {
     if (Math.abs(is - want) > 0.5) return `${at} ${what} is at ${is}, not ${want}`;
   }
+  // The playhead on each track runs past its borders and stops short of
+  // whatever stands round it: the video preview over the range picker,
+  // the line under it, and the controls under the clip timeline. One
+  // that ran the whole gap touched them, found by Tim.
+  for (const head of document.querySelectorAll(".playhead")) {
+    const h = head.getBoundingClientRect();
+    if (!h.height) continue;
+    const onRange = h.top < detail.top;
+    const [over, under] = onRange ? [viewer.bottom, detail.top] : [detail.top + 1, control.top];
+    const track = onRange ? range : timeline;
+    if (h.top <= over + 0.5 || h.bottom >= under - 0.5) return `${at} the playhead on the ${onRange ? "range picker" : "clip timeline"} runs from ${h.top} to ${h.bottom}, into what stands at ${over} and ${under}`;
+    if (h.top >= track.top - 8 || h.bottom <= track.bottom + 8) return `${at} the playhead on the ${onRange ? "range picker" : "clip timeline"} runs from ${h.top} to ${h.bottom}, no further past its track than a keyframe`;
+  }
   // The picture grows until it runs out of width or height, whichever
   // comes first, and keeps its shape.
   if (Math.abs(viewer.width - middle.width) > 0.5 && Math.abs(viewer.height - (range.top - gap - stage.top)) > 0.5) {
