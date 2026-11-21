@@ -914,3 +914,89 @@ func TestThePullRequestsMacTestsFollowItsMacCode(t *testing.T) {
 	}
 	t.Error("ci.yml has no step filter in its job changes")
 }
+
+// A workflow that runs on a schedule runs where nobody waits on it, so
+// when it fails on main it tells of itself: its last job, tell, needs
+// every other job, runs only when one of them failed on main, and calls
+// tell.yml, the one place that has framefairy-release open the
+// workflow's issue or add the run to it. A run by hand on a branch is its
+// session's to read, and a run that was stopped is no failure. See
+// failed.go in cmd/framefairy-release.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestAScheduledRunThatFailsTellsOfItself(t *testing.T) {
+	t.Parallel()
+	type workflow struct {
+		On          map[string]any    `yaml:"on"`
+		Permissions map[string]string `yaml:"permissions"`
+		Jobs        map[string]struct {
+			Needs       any               `yaml:"needs"`
+			If          string            `yaml:"if"`
+			Uses        string            `yaml:"uses"`
+			Permissions map[string]string `yaml:"permissions"`
+			Steps       []struct {
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	root := filepath.Join("..", "..", ".github", "workflows")
+	var tellYML workflow
+	readYAML(t, filepath.Join(root, "tell.yml"), &tellYML)
+	told := false
+	for _, j := range tellYML.Jobs {
+		for _, s := range j.Steps {
+			told = told || strings.HasPrefix(s.Run, "go run ./cmd/framefairy-release failed ")
+		}
+	}
+	if _, called := tellYML.On["workflow_call"]; !called || !told {
+		t.Error("tell.yml is not a workflow to call that runs framefairy-release failed")
+	}
+	scheduled := 0
+	for _, f := range actionFiles(t) {
+		if !strings.Contains(filepath.ToSlash(f), "/workflows/") {
+			continue
+		}
+		var wf workflow
+		readYAML(t, f, &wf)
+		if _, ok := wf.On["schedule"]; !ok {
+			continue
+		}
+		scheduled++
+		name := filepath.Base(f)
+		tell, ok := wf.Jobs["tell"]
+		if !ok {
+			t.Errorf("%s runs on a schedule and has no job tell, so a failure on main reaches nobody", name)
+			continue
+		}
+		var needs []string
+		switch n := tell.Needs.(type) {
+		case string:
+			needs = []string{n}
+		case []any:
+			for _, x := range n {
+				needs = append(needs, fmt.Sprint(x))
+			}
+		}
+		for job := range wf.Jobs {
+			if job != "tell" && !slices.Contains(needs, job) {
+				t.Errorf("%s: tell does not need %s, so its failure is told by nobody", name, job)
+			}
+		}
+		if want := "failure() && github.ref == 'refs/heads/main'"; tell.If != want {
+			t.Errorf("%s: tell runs if %q, want %q", name, tell.If, want)
+		}
+		if tell.Uses != "./.github/workflows/tell.yml" {
+			t.Errorf("%s: tell uses %q, not tell.yml", name, tell.Uses)
+		}
+		// A called workflow may ask for no more than its caller grants,
+		// or the run fails before any job starts and tells nobody.
+		for what, may := range tellYML.Permissions {
+			if tell.Permissions[what] != may {
+				t.Errorf("%s: tell grants %s %q, tell.yml asks for %q", name, what, tell.Permissions[what], may)
+			}
+		}
+	}
+	if scheduled < 4 {
+		t.Errorf("found %d workflows on a schedule, fewer than the four there are", scheduled)
+	}
+}

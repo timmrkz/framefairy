@@ -62,6 +62,23 @@ type gitHub interface {
 	waiting() ([]waitingRun, error)
 	// cancel stops a run of a workflow.
 	cancel(run int64) error
+	// failedJobs are the jobs of a run that failed or ran out of time.
+	failedJobs(run int64) ([]job, error)
+	// openIssue is the number of the open issue with exactly this title
+	// that a workflow opened, 0 when there is none.
+	openIssue(title string) (int, error)
+	// newIssue opens an issue and gives its number.
+	newIssue(title, body string, labels []string) (int, error)
+	// comment adds a comment to an issue.
+	comment(number int, body string) error
+	// editIssue writes an issue's body again.
+	editIssue(number int, body string) error
+	// closeIssue closes an issue as done, with a comment that says why.
+	closeIssue(number int, why string) error
+}
+
+type job struct {
+	name, url string
 }
 
 type pull struct {
@@ -423,4 +440,77 @@ func (g *restGitHub) waiting() ([]waitingRun, error) {
 
 func (g *restGitHub) cancel(run int64) error {
 	return g.call(http.MethodPost, "actions/runs/"+strconv.FormatInt(run, 10)+"/cancel", nil, "", nil)
+}
+
+func (g *restGitHub) failedJobs(run int64) ([]job, error) {
+	var jobs struct {
+		Jobs []struct {
+			Name       string  `json:"name"`
+			Conclusion *string `json:"conclusion"`
+			URL        string  `json:"html_url"`
+		} `json:"jobs"`
+	}
+	// latest leaves out the tries before a job was run again.
+	if err := g.get("actions/runs/"+strconv.FormatInt(run, 10)+"/jobs?filter=latest&per_page=100", &jobs); err != nil {
+		return nil, err
+	}
+	var failed []job
+	for _, j := range jobs.Jobs {
+		if j.Conclusion != nil && (*j.Conclusion == "failure" || *j.Conclusion == "timed_out") {
+			failed = append(failed, job{name: j.Name, url: j.URL})
+		}
+	}
+	return failed, nil
+}
+
+// workflowAuthor is who an issue a workflow opens with its own token
+// belongs to. Only its issues are looked through, so an issue a person
+// gave the same title is never written into.
+const workflowAuthor = "github-actions[bot]"
+
+func (g *restGitHub) openIssue(title string) (int, error) {
+	for page := 1; ; page++ {
+		var got []struct {
+			Number int
+			Title  string
+			Pull   *struct{} `json:"pull_request"`
+		}
+		q := url.Values{"state": {"open"}, "creator": {workflowAuthor}, "per_page": {"100"}, "page": {strconv.Itoa(page)}}
+		if err := g.get("issues?"+q.Encode(), &got); err != nil {
+			return 0, err
+		}
+		for _, i := range got {
+			if i.Pull == nil && i.Title == title {
+				return i.Number, nil
+			}
+		}
+		if len(got) < 100 {
+			return 0, nil
+		}
+	}
+}
+
+func (g *restGitHub) newIssue(title, body string, labels []string) (int, error) {
+	fields, _ := json.Marshal(map[string]any{"title": title, "body": body, "labels": labels})
+	var made struct{ Number int }
+	err := g.call(http.MethodPost, "issues", bytes.NewReader(fields), "application/json", &made)
+	return made.Number, err
+}
+
+func (g *restGitHub) comment(number int, body string) error {
+	fields, _ := json.Marshal(map[string]string{"body": body})
+	return g.call(http.MethodPost, "issues/"+strconv.Itoa(number)+"/comments", bytes.NewReader(fields), "application/json", nil)
+}
+
+func (g *restGitHub) editIssue(number int, body string) error {
+	fields, _ := json.Marshal(map[string]string{"body": body})
+	return g.call(http.MethodPatch, "issues/"+strconv.Itoa(number), bytes.NewReader(fields), "application/json", nil)
+}
+
+func (g *restGitHub) closeIssue(number int, why string) error {
+	if err := g.comment(number, why); err != nil {
+		return err
+	}
+	fields, _ := json.Marshal(map[string]string{"state": "closed", "state_reason": "completed"})
+	return g.call(http.MethodPatch, "issues/"+strconv.Itoa(number), bytes.NewReader(fields), "application/json", nil)
 }

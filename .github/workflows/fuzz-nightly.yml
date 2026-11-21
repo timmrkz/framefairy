@@ -105,3 +105,15 @@ jobs:
         with:
           key: fuzz-v2-${{ runner.os }}-nightly-${{ github.run_id }}
           save: true
+
+  # A run that fails on main tells of itself, in an issue of its own, see
+  # tell.yml. A run by hand on a branch is its session's to read, and a
+  # run that was stopped is no failure.
+  tell:
+    needs: [image, linux, macos]
+    if: failure() && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    uses: ./.github/workflows/tell.yml

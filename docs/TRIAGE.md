@@ -35,7 +35,9 @@ this order, because what happens now comes first:
 
 1. **Main's CI runs of the last seven days**, the nightly runs among
    them, the walks and the fuzzing, which no pull request waits on.
-   Every red run is matched to an issue. A red run with none gets one.
+   Every red run is matched to an issue. A run on a schedule that failed
+   has opened its own, see the end of Tests in
+   [BUILD.md](BUILD.md#tests). A red run with none gets one.
 2. **Labels.** Every open issue without a priority or a size gets one
    from the table in [WORKFLOW.md](WORKFLOW.md#priority-and-size). An
    issue whose facts changed is looked at again, a flaky test seen
