@@ -179,7 +179,7 @@
   4	sequences.mjs SEQUENCE=the licence row stands on whole pixels, on one line and on two
   3	sequences.mjs SEQUENCE=A report takes ten pictures and says why it leaves out the eleventh
   3	sequences.mjs SEQUENCE=A screen recording is attached, shown by its first frame and its length, and goes in the report
-  3	sequences.mjs SEQUENCE=Shift and an arrow in a cut of the clip walk to the next word, not 5 seconds
+  3	sequences.mjs SEQUENCE=Shift and an arrow in a cut of the clip walk to the caption's next word, not into the cut nor 5 seconds
   3	sequences.mjs SEQUENCE=Shift and an arrow outside a clip turn the clip timeline's page, the way a play does
   3	sequences.mjs SEQUENCE=Tab from the report's field goes to Report, with pictures and without
   3	sequences.mjs SEQUENCE=a build from a channel lists its channels and no Nothing

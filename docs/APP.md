@@ -1832,9 +1832,8 @@ bubble scrolled by those eight pixels.
       they took before, and a second is nothing in particular. It lands in
       the middle of a word as often as not, it walks four words at a time
       where someone speaks quickly and none at all across a pause.
-      While the episode plays on the video, they walk the words of the
-      transcript and stay on the video, see the place of the playhead
-      above. Found by Tim, who skipped ahead through a dimmed clip and
+      While the episode plays on the video, they skip 5 seconds and stay
+      on the video, cuts and all, see the place of the playhead above. Found by Tim, who skipped ahead through a dimmed clip and
       had it light up.
       - **It walks the words the caption lights up, not the words the
         transcript holds.** They are not the same list. A correction that
@@ -1847,11 +1846,10 @@ bubble scrolled by those eight pixels.
         quarter of a second elsewhere. Reading the caption makes all three
         right at once, and keeps them right, because whatever lights up is
         what these keys walk.
-      - **In a cut they walk the words heard there**, because the caption
-        lights nothing in a cut. Go sends them with the clip's captions,
-        with the word either side of each cut, `CaptionsView.InCuts`. The
-        clip timeline asked for ten minutes of the transcript after every
-        swipe for them before, #932.
+      - **From a cut they go to the caption's next word, or its last**,
+        never onto a word the cut took out. A cut takes words out of the
+        short on purpose, so they are not in the video preview and there
+        is nothing to step to, Tim on #938.
       - **Which word to go to is decided by the word the playhead is in,
         never by how far it is from one.** The playhead is not where it was
         put: the picture answers with the frame it is showing, which can be

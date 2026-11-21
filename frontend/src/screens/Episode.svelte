@@ -3606,7 +3606,6 @@
         captions={captions?.captions ?? []}
         captionTrack={captions?.track}
         captionPieces={captions?.pieces}
-        inCuts={captions?.inCuts ?? []}
         captionLook={shownCaptions
           ? {
               text: shownCaptions.style.primary,

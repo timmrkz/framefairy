@@ -2881,9 +2881,9 @@ export const steps = {
   //                    right arrow, then clicks there again and presses
   //                    Shift and the left arrow: a cut is inside the clip,
   //                    so each press lands on the next or the last word
-  //                    heard in the cut, as Go's captions of the clip name
-  //                    them, never the 5 s a skip outside a clip goes, nor
-  //                    the second a press with no words goes
+  //                    the caption shows either side of the cut, never on
+  //                    a word the cut took out, Tim on #938, nor the 5 s
+  //                    a skip outside a clip goes
   async "shift in a cut"(walk, arg, s) {
     const { page, watch } = walk;
     const state = await engineState(page, watch.at);
@@ -2892,38 +2892,42 @@ export const steps = {
       walk.wrong = `the clip has ${pieces.length} piece, so no cut to press in`;
       return;
     }
-    const heard = state.inCuts ?? [];
-    if (!heard.length) {
-      walk.wrong = `Go names no word heard in the cut from ${pieces[0].end.toFixed(3)} to ${pieces[1].start.toFixed(3)} s`;
+    // The caption's words on the episode's clock: the captions are on the
+    // clip's clock, the pieces they were made for with the cuts taken out.
+    const made = state.pieces ?? [];
+    const inEpisode = (t) => {
+      let sum = 0;
+      for (const p of made) {
+        if (t < sum + p.end - p.start) return p.start + Math.max(t - sum, 0);
+        sum += p.end - p.start;
+      }
+      return made.at(-1)?.end ?? t;
+    };
+    const words = (state.captions ?? []).flatMap((c) => c.lines.flatMap((l) => l.words)).map((w) => ({ start: inEpisode(w.start), text: w.text }));
+    const after = words.find((w) => w.start >= pieces[1].start - 0.001);
+    const before = words.findLast((w) => w.start < pieces[0].end);
+    if (!after || !before) {
+      walk.wrong = `the caption shows no word ${after ? "before" : "after"} the cut from ${pieces[0].end.toFixed(3)} to ${pieces[1].start.toFixed(3)} s`;
       return;
     }
+    const fps = await rate(page);
     const middle = (pieces[0].end + pieces[1].start) / 2;
-    const at = () => playhead(page);
-    // The word a press from t goes to: forward the next word to begin,
-    // back the word before the one t is in, or the word just said when t
-    // is in the silence after it. The playhead lands inside it, a frame
-    // in, or on the first frame the clip shows of it when the word runs
-    // into the piece after the cut.
-    const wordFrom = (t, back) => {
-      let here = -1;
-      while (here + 1 < heard.length && heard[here + 1].start <= t) here++;
-      if (!back) return heard[here + 1];
-      return here >= 0 && t < heard[here].end ? heard[here - 1] : heard[here];
-    };
-    for (const [key, back] of [["Shift+ArrowRight", false], ["Shift+ArrowLeft", true]]) {
+    for (const [key, word] of [["Shift+ArrowRight", after], ["Shift+ArrowLeft", before]]) {
       await clickOnTrack(page, await xOf(page, middle), high((await handles(page)).track));
       await settle(page);
-      const from = await at();
+      const from = await playhead(page);
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press(key);
       await settle(page);
       await watch.step("press", s, page);
-      const to = await at();
-      const word = wordFrom(from, back);
-      const words = JSON.stringify(heard.map((w) => [w.start, w.end, w.text]));
+      const to = await playhead(page);
+      // Into the word, on the first frame the picture lights it on, which
+      // can begin up to a frame before the word does.
+      const next = words[words.indexOf(word) + 1];
+      const into = to >= word.start - 1 / fps - 0.001 && (!next || to < next.start);
       if (from < pieces[0].end || from > pieces[1].start) walk.wrong = `the click in the cut from ${pieces[0].end.toFixed(3)} to ${pieces[1].start.toFixed(3)} s put the playhead at ${from.toFixed(3)} s`;
-      else if (!word) walk.wrong = `${key} in the cut at ${from.toFixed(3)} s has no word to go to among the words heard there, ${words}`;
-      else if (!(to >= word.start - 0.001 && to < word.end)) walk.wrong = `${key} in the cut at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not into "${word.text}" from ${word.start.toFixed(3)} to ${word.end.toFixed(3)} s, of the words heard there, ${words}`;
+      else if (to > pieces[0].end && to < pieces[1].start) walk.wrong = `${key} in the cut at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, still in the cut, onto a word it took out`;
+      else if (!into) walk.wrong = `${key} in the cut at ${from.toFixed(3)} s went to ${to.toFixed(3)} s, not into "${word.text}" at ${word.start.toFixed(3)} s, the caption's word on that side of the cut`;
       if (walk.wrong) return;
     }
   },

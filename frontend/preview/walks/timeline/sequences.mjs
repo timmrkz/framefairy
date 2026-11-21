@@ -641,7 +641,9 @@ export default [
     // Found by the review of #677: a cut is inside the clip, and Shift and
     // an arrow there walk to the next word. With the 5 s skip outside a
     // clip, a press in a cut skipped 5 s, and while the clip played left it.
-    name: "Shift and an arrow in a cut of the clip walk to the next word, not 5 seconds",
+    // Tim on #938: the word is one the short shows, never one the cut
+    // took out.
+    name: "Shift and an arrow in a cut of the clip walk to the caption's next word, not into the cut nor 5 seconds",
     steps: [
       ["cut at", 0.5],
       ["shift in a cut"],

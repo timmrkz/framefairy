@@ -169,8 +169,8 @@ export const SKIP = 5;
 // video tool steps: a frame at a time, and with Shift by words on a clip,
 // which is the thing the picture shows, and SKIP seconds anywhere else,
 // transcribed or not. "clip" is out of the clip's words without loop,
-// where the clip beside it takes over, and null is nowhere to go. The
-// component puts the place in the episode.
+// where the clip beside it takes over. The component puts the place in
+// the episode.
 export type ArrowKey = {
   time: number;
   frame: number;
@@ -178,18 +178,15 @@ export type ArrowKey = {
   shift: boolean;
   // Playing through the clip from the video, where Shift skips.
   through: boolean;
-  // The whole clip, from its first piece's start to its last piece's end,
-  // and its pieces, cuts left out.
+  // The whole clip, from its first piece's start to its last piece's end.
   clip: Piece | null;
-  pieces: Piece[];
-  // The words the caption lights, and the words heard in the clip's cuts
-  // with the word either side of each, see CaptionsView.inCuts.
+  // The words the caption lights, the only words a step lands on: a word
+  // a cut takes out is not in the short, so there is nothing to step to.
   lit: Word[];
-  inCuts: Word[];
   looping: boolean;
 };
 
-export function arrowStep(k: ArrowKey): { to: number; word: boolean } | "clip" | null {
+export function arrowStep(k: ArrowKey): { to: number; word: boolean } | "clip" {
   const sign = k.back ? -1 : 1;
   // A step is never shorter than a frame at 240 a second, so a video that
   // says no rate still moves.
@@ -201,17 +198,16 @@ export function arrowStep(k: ArrowKey): { to: number; word: boolean } | "clip" |
   // begins a little before that. Read exactly, the first press after
   // picking a clip walked the transcript and jumped out of the clip.
   if (k.through || !insideClip(k.clip ? [k.clip] : [], k.time, step)) return { to: k.time + sign * SKIP, word: false };
-  // In a cut the caption lights nothing, so the words heard there are
-  // walked, which Go sends with the captions.
-  const walk = k.lit.length && insideClip(k.pieces, k.time, step) ? k.lit : k.inCuts;
-  const to = wordStep(walk, k.time, k.back, step);
+  // Until the captions come there is no word to go to, so a step is a
+  // second.
+  if (!k.lit.length) return { to: k.time + sign, word: false };
+  // From a cut too, the next word is the next one the short says.
+  const to = wordStep(k.lit, k.time, k.back, step);
   if (to !== null) return { to, word: true };
   // Out of words. With loop on, the clip comes round the way a play of it
   // does: past its last word is its first word, and before its first its
   // last. Without, at its ends is the clip beside it, because the words
   // go on even where this clip does not.
-  if (walk === k.lit && k.looping) return { to: intoWord(k.back ? k.lit[k.lit.length - 1] : k.lit[0], step), word: true };
-  if (walk === k.lit) return "clip";
-  if (!walk.length) return { to: k.time + sign, word: false };
-  return null;
+  if (k.looping) return { to: intoWord(k.back ? k.lit[k.lit.length - 1] : k.lit[0], step), word: true };
+  return "clip";
 }

@@ -482,10 +482,6 @@ export interface CaptionsView {
   // what the hand changed, and this says how they go with the captions
   // the clip timeline holds, see spliced in lib/splice.ts.
   splice?: Splice;
-  // The words heard in the clip's cuts, with the word either side of each
-  // cut, on the episode's clock, which Shift and an arrow walk where the
-  // caption lights nothing. None for a clip without cuts.
-  inCuts?: Word[] | null;
 }
 
 // How the captions of a step of a drag go with the captions held from

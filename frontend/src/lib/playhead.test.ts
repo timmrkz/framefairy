@@ -298,22 +298,13 @@ describe("a play moves the playhead once a frame", () => {
 });
 
 describe("an arrow key on the clip timeline", () => {
-  // A clip of two pieces at 25 frames a second, with a cut from 14 to 16.
+  // A clip of two pieces at 25 frames a second, 10 to 14 and 16 to 20,
+  // with a cut from 14 to 16. The cut took "geschnitten" out, from 15 to
+  // 15.5, so the caption lights only these.
   const frame = 0.04;
-  const pieces = [
-    { start: 10, end: 14 },
-    { start: 16, end: 20 },
-  ];
   const clip = { start: 10, end: 20 };
   const lit = [
     { start: 10.5, end: 11, text: "Und" },
-    { start: 18, end: 18.6, text: "da" },
-  ];
-  // The words heard in the cut, with the word either side of it, the
-  // way Go sends them with the captions.
-  const inCuts = [
-    { start: 10.5, end: 11, text: "Und" },
-    { start: 15, end: 15.5, text: "geschnitten" },
     { start: 18, end: 18.6, text: "da" },
   ];
   const key = (o: Partial<ArrowKey>): ArrowKey => ({
@@ -323,9 +314,7 @@ describe("an arrow key on the clip timeline", () => {
     shift: false,
     through: false,
     clip,
-    pieces,
     lit,
-    inCuts,
     looping: false,
     ...o,
   });
@@ -358,13 +347,13 @@ describe("an arrow key on the clip timeline", () => {
     expect(arrowStep(key({ shift: true, time: 19, back: true }))).toEqual({ to: 18.04, word: true });
   });
 
-  // The caption lights nothing in a cut, so the words heard there count.
-  test("with Shift walks the words heard in a cut", () => {
-    expect(arrowStep(key({ shift: true, time: 14.5 }))).toEqual({ to: 15.04, word: true });
-  });
-
-  test("with Shift in a clip whose caption lights no word walks the words heard in its cuts", () => {
-    expect(arrowStep(key({ shift: true, time: 12, lit: [] }))).toEqual({ to: 15.04, word: true });
+  // Tim: the steps are for the words the video preview shows, and a word
+  // a cut took out is not shown, so from a cut a step goes to the word
+  // the short says next, or said last, and never into the cut.
+  test("with Shift from a cut walks to the words the caption lights either side, never the words cut out", () => {
+    expect(arrowStep(key({ shift: true, time: 14.5 }))).toEqual({ to: 18.04, word: true });
+    expect(arrowStep(key({ shift: true, time: 15.2 }))).toEqual({ to: 18.04, word: true });
+    expect(arrowStep(key({ shift: true, time: 15.2, back: true }))).toEqual({ to: 10.54, word: true });
   });
 
   test("out of the caption's words goes round with loop on, and hands over to the clip beside without", () => {
@@ -373,8 +362,8 @@ describe("an arrow key on the clip timeline", () => {
     expect(arrowStep(key({ shift: true, time: 19 }))).toBe("clip");
   });
 
-  test("with Shift before the captions arrive steps a second, and past the last word heard goes nowhere", () => {
-    expect(arrowStep(key({ shift: true, time: 12, lit: [], inCuts: [] }))).toEqual({ to: 13, word: false });
-    expect(arrowStep(key({ shift: true, time: 14.5, inCuts: [inCuts[0]] }))).toBeNull();
+  test("with Shift before the captions arrive steps a second", () => {
+    expect(arrowStep(key({ shift: true, time: 12, lit: [] }))).toEqual({ to: 13, word: false });
+    expect(arrowStep(key({ shift: true, time: 15.2, lit: [], back: true }))).toEqual({ to: 14.2, word: false });
   });
 });
