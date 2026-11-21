@@ -226,6 +226,8 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	// ends at 60 s, and follows the view to 30 s rather than finishing
 	// the end first.
 	e.levelsReads = 2
+	// One measurer, whose way is what is tested.
+	e.levelsMeasurers = 1
 	e.FFmpeg = "ffmpeg"
 
 	// The playhead near the end when the episode is added, and then moved
@@ -302,6 +304,8 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 	e := NewEngine(runlog.New(&bytes.Buffer{}, false, false), NewMachine(disk))
 	// Every 2 reads, see above.
 	e.levelsReads = 2
+	// One measurer, whose way is what is tested.
+	e.levelsMeasurers = 1
 	e.FFmpeg = "ffmpeg"
 	// Cut off at the first write, which is part of what the clip timeline
 	// shows and on from there.
@@ -610,3 +614,72 @@ type viewAt func() (float64, float64)
 
 func (v viewAt) View() (float64, float64) { return v() }
 func (viewAt) Put(int, []float32)         {}
+
+// Several measurers share a video: the first takes it from the start, the
+// next the half still ahead of it, and so on, the longest work left first.
+// A part nobody measures is taken from its start, and a view where nothing
+// is measured, that no measurer is in, comes before all of it. Half a part
+// is not worth an ffmpeg once it is shorter than levelsShare, #968.
+func TestMeasurersShareTheLongestWorkLeft(t *testing.T) {
+	at := func(s float64) int { return int(s / timed.FrameSeconds) }
+	seconds := func(n int) float64 { return float64(n) * timed.FrameSeconds }
+	m := &measuring{st: &levelState{end: -1}, at: map[int]int{}, length: at(600)}
+	for _, c := range []struct {
+		id       int
+		from, to float64
+		want     float64
+	}{
+		{0, 0, 0, 0},
+		// Half of what is ahead of the first.
+		{1, 0, 0, 300},
+		{2, 0, 0, 150},
+		// The view at 400 s, where the measurer from 300 s is not yet.
+		{3, 400, 460, 400},
+		// A measurer in the view already: the longest work left is the
+		// 200 s ahead of the measurer from 400 s.
+		{4, 400, 460, 500},
+	} {
+		if got, ok := m.claim(c.id, c.from, c.to); !ok || got != at(c.want) {
+			t.Fatalf("measurer %d starts at %v s, ok %v, want %v", c.id, seconds(got), ok, c.want)
+		}
+	}
+
+	// Measured from 0 to 590 s: the 10 s left are nobody's, and taken
+	// from their start, and then there is nothing worth an ffmpeg.
+	m = &measuring{st: &levelState{end: -1}, at: map[int]int{}, length: at(600)}
+	for n := range at(590) {
+		m.st.put(n, -20)
+	}
+	if got, ok := m.claim(0, 0, 0); !ok || got != at(590) {
+		t.Fatalf("the part left starts at %v s, want 590", seconds(got))
+	}
+	if got, ok := m.claim(1, 0, 0); ok {
+		t.Fatalf("half of 10 s is shared, from %v s", seconds(got))
+	}
+
+	// Where the sound ends is unknown and the probe said nothing: one
+	// measurer, from the first gap, which finds the end.
+	m = &measuring{st: &levelState{end: -1}, at: map[int]int{}}
+	if got, ok := m.claim(0, 0, 0); !ok || got != 0 {
+		t.Fatalf("with no length the first starts at %v, ok %v", got, ok)
+	}
+	if _, ok := m.claim(1, 0, 0); ok {
+		t.Fatal("with no length a second measurer starts")
+	}
+}
+
+// Only one measurer leaves for a view where nothing is measured, and the
+// place is its own at once, so the others go on where they are.
+func TestOneMeasurerLeavesForTheView(t *testing.T) {
+	at := func(s float64) int { return int(s / timed.FrameSeconds) }
+	m := &measuring{st: &levelState{end: -1}, at: map[int]int{0: at(10), 1: at(310)}, length: at(600)}
+	if !m.leave(0, at(10), 200, 260) {
+		t.Fatal("no measurer left for the view")
+	}
+	if m.at[0] != at(200) {
+		t.Errorf("the measurer that left is at %d, not the view", m.at[0])
+	}
+	if m.leave(1, at(310), 200, 260) {
+		t.Error("a second measurer left for the same view")
+	}
+}

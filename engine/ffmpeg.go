@@ -127,6 +127,10 @@ type Engine struct {
 	// changed it wait.
 	checkpointEvery time.Duration
 	levelsReads     int
+	// levelsMeasurers is how many ffmpeg measure the loudness at once,
+	// when not the default, see measurers. A test about where one
+	// measurer goes sets it to 1.
+	levelsMeasurers int
 	// stuck, when set, says a render has stopped making frames, and its
 	// encoder is given up then as well as after encoderStall of the
 	// clock. A test sets it, so it waits for no stall of the clock.
