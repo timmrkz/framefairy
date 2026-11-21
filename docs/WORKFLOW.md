@@ -286,7 +286,8 @@ checks that its pull request merges
 right after opening it and before it says it is ready, and when it does
 not, merges `main` in at once, without asking, resolves the conflict,
 reads `CLAUDE.md` again and pushes. The merge is tested like a change of
-the session's own, the tests of what it touches first and CI after. A
+the session's own, the tests of what it touches first and CI after,
+and it ends any go to merge you gave before it. A
 pull request that still merges is left alone: merging `main` into it
 would only add a commit, a CI run and a build to take, and change
 nothing being tested.
