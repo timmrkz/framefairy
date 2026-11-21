@@ -53,8 +53,9 @@ type Schedule struct {
 	// and again.
 	sides []work
 	// The looks of the hand's place that wait for a frame nearer it than
-	// the one they show.
-	waiting []*lookWaiter
+	// the one they show, and where the newest look stood among what its
+	// window sent, see Sent.
+	looking looks[Hand, Seen]
 	// The decoder's work: one stream at a time.
 	run  *lookRun
 	kept keptFrames
@@ -77,9 +78,8 @@ type Schedule struct {
 	drawing bool
 	// The play that has the decoder, see Play.
 	play *Play
-	// Where the newest look of the hand and the newest Ahead stood among
-	// what their window sent, see Sent.
-	lastLook, lastAhead Sent
+	// Where the newest Ahead stood among what its window sent, see Sent.
+	lastAhead Sent
 	// looks wakes whoever waits whenever a look starts to wait or a run
 	// starts or ends, so a test goes on once the schedule has it. Only the
 	// tests wait on it.
@@ -262,16 +262,6 @@ const (
 	lookCardBytes = 400 << 20
 )
 
-type lookWaiter struct {
-	look   Hand
-	answer chan lookAnswer
-}
-
-type lookAnswer struct {
-	seen Seen
-	err  error
-}
-
 // What a run of the decoder reads for: the frame under the hand, the
 // frames around it, see around, or what the hand is likely to ask for
 // next, see Ahead.
@@ -314,15 +304,13 @@ func (r *lookRun) sized(l Hand) bool {
 // made next that is nearer the place than the frame on screen. A newer
 // look of another place answers it with ErrOvertaken.
 func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
-	w := &lookWaiter{look: l, answer: make(chan lookAnswer, 1)}
 	s.mu.Lock()
-	if l.Sent.before(s.lastLook) {
+	if !s.looking.newest(l.Sent) {
 		// The window has sent a newer look, which took this one's place
 		// before it came.
 		s.mu.Unlock()
 		return Seen{}, ErrOvertaken
 	}
-	s.lastLook = l.Sent
 	s.logDrag(l)
 	s.drawing = false
 	// A Near for the place before gives up waiting, see Near.
@@ -361,25 +349,18 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 		s.mu.Unlock()
 		return seen, nil
 	}
-	s.waiting = append(s.waiting, w)
+	w := s.looking.add(l)
 	s.plan()
 	s.looks.WakeLocked()
 	s.mu.Unlock()
 	asked := time.Now()
-	select {
-	case a := <-w.answer:
+	seen, answered, err := s.looking.wait(ctx, &s.mu, w)
+	if answered {
 		s.mu.Lock()
 		s.waited(l, time.Since(asked))
 		s.mu.Unlock()
-		return a.seen, a.err
-	case <-ctx.Done():
-		s.mu.Lock()
-		if i := slices.Index(s.waiting, w); i >= 0 {
-			s.waiting = slices.Delete(s.waiting, i, i+1)
-		}
-		s.mu.Unlock()
-		return Seen{}, ctx.Err()
 	}
+	return seen, err
 }
 
 func sameSize(a, b Hand) bool {
@@ -453,12 +434,7 @@ func (s *Schedule) towardFar(l Hand, f int) bool {
 
 // overtake answers every look that waits with ErrOvertaken: the hand went
 // elsewhere. Under the lock.
-func (s *Schedule) overtake() {
-	for _, w := range s.waiting {
-		w.answer <- lookAnswer{err: ErrOvertaken}
-	}
-	s.waiting = nil
-}
+func (s *Schedule) overtake() { s.looking.overtake() }
 
 // LetFramesGo empties the frames the schedule kept, once the video's
 // workspace is asleep: the decoder stays open a while for a video that
@@ -595,7 +571,7 @@ func (s *Schedule) plan() {
 	if s.play != nil {
 		return
 	}
-	if s.drawing && len(s.waiting) == 0 {
+	if s.drawing && !s.looking.any() {
 		// Nothing new starts before the window asks Near, and the run
 		// under way ends at its end: the hand's run at the frame it was
 		// for, a read ahead at once, put back for later, see stopRun.
@@ -936,9 +912,7 @@ func (s *Schedule) got(r *lookRun, at float64, picture []byte) error {
 // nearer their place than the frame they show, or rather the kept frame
 // nearest it, see best. Under the lock.
 func (s *Schedule) answer(r *lookRun, frame int) {
-	kept := s.waiting[:0]
-	for _, w := range s.waiting {
-		l := w.look
+	s.looking.answer(func(l Hand) (Seen, bool) {
 		near := frame == l.Frame || s.early && (s.onTheWay(l, frame) || r.kind == runHand && s.towardFar(l, frame))
 		if r.sized(l) && near {
 			seen, ok := s.best(l)
@@ -949,16 +923,14 @@ func (s *Schedule) answer(r *lookRun, frame int) {
 			}
 			if ok {
 				seen.Kept = false
-				w.answer <- lookAnswer{seen: seen}
 				if seen.Exact && !l.Moving && l.Frame == s.hand.Frame {
 					s.drawing = true
 				}
-				continue
+				return seen, true
 			}
 		}
-		kept = append(kept, w)
-	}
-	s.waiting = kept
+		return Seen{}, false
+	})
 }
 
 // keptSeen is a frame a run made, as a look is answered with it. Under
@@ -994,15 +966,12 @@ func (s *Schedule) ended(r *lookRun, err error) {
 	if !failed {
 		why = errors.New("the video ended before the frame asked for")
 	}
-	kept := s.waiting[:0]
-	for _, w := range s.waiting {
-		if r.sized(w.look) && w.look.Frame >= r.next {
-			w.answer <- lookAnswer{err: why}
-			continue
+	s.looking.fail(func(l Hand) error {
+		if r.sized(l) && l.Frame >= r.next {
+			return why
 		}
-		kept = append(kept, w)
-	}
-	s.waiting = kept
+		return nil
+	})
 	if r.kind != runAhead {
 		s.handSet = false
 	}
@@ -1195,7 +1164,7 @@ func (s *Schedule) Ahead(ctx context.Context, a Ahead) ([]Seen, error) {
 // or says the reading is done. Under the lock.
 func (s *Schedule) readAhead() {
 	a := s.ahead
-	if a == nil || a.held || s.run != nil || s.play != nil || len(s.waiting) > 0 {
+	if a == nil || a.held || s.run != nil || s.play != nil || s.looking.any() {
 		return
 	}
 	for len(a.todo) > 0 {
@@ -1246,7 +1215,7 @@ func (s *Schedule) answerAhead() {
 // seeks while the one stopped ends. Under the lock.
 func (s *Schedule) readingAhead(r *lookRun) bool {
 	a := s.ahead
-	return r.kind == runAhead && a != nil && !a.held && s.play == nil && len(s.waiting) == 0 &&
+	return r.kind == runAhead && a != nil && !a.held && s.play == nil && !s.looking.any() &&
 		r.grid == a.grid && r.w == a.w && r.h == a.h && r.next <= r.target
 }
 
@@ -1263,7 +1232,7 @@ func (s *Schedule) readsOn(r *lookRun) bool {
 	// key pressed 150 ms after the one before waited for frames read on
 	// from a stream that was still decoding from the key frame 23 frames
 	// back.
-	if a == nil || a.held || !r.gave || s.play != nil || len(s.waiting) > 0 || r.grid != a.grid || r.w != a.w || r.h != a.h {
+	if a == nil || a.held || !r.gave || s.play != nil || s.looking.any() || r.grid != a.grid || r.w != a.w || r.h != a.h {
 		return false
 	}
 	for len(a.todo) > 0 {
