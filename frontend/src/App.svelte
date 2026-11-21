@@ -735,10 +735,7 @@
       .catch(() => {});
     api
       .setup()
-      .then(
-        (s) =>
-          (settingUp = !s.chosen || !s.hasSpeech || (s.planner === "local" && !s.hasLocalModel)),
-      )
+      .then((s) => (settingUp = s.needsSetup))
       // A machine that cannot answer is not a machine to hold in a setup
       // screen it can never leave.
       .catch(() => (settingUp = false))

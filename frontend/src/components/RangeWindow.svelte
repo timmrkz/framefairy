@@ -707,6 +707,9 @@
     inset: 0;
     z-index: 3;
     pointer-events: none;
+    /* Cut to the range picker's outline, so nothing of a frame lies
+       past its round corners. */
+    clip-path: inset(0 round var(--radius-m));
   }
 
   /* Going, nothing in it moves on: the breath and the motes stop where
@@ -724,14 +727,57 @@
 
   .window.first {
     --left: var(--radius-m);
-    border-top-left-radius: var(--radius-m);
-    border-bottom-left-radius: var(--radius-m);
   }
 
   .window.last {
     --right: var(--radius-m);
-    border-top-right-radius: var(--radius-m);
-    border-bottom-right-radius: var(--radius-m);
+  }
+
+  /* The whole video, the range picker's own outline. */
+  .window.first.last {
+    border-radius: var(--radius-m);
+  }
+
+  /* A frame that reaches one end of the video takes the range picker's
+     own outline on that side, round corners and all, drawn whole and cut
+     to the frame. Its own corners would be its own: a frame narrower
+     than a round corner shrinks the corner with it, and its straight
+     line at the other side ran over the range picker's round corner,
+     the last minutes of a whole video's transcription, Tim's report of
+     21 November. The line at its other side is its own, and what of it
+     lies past the round corner is cut by .part and .searched. */
+  .window.first:not(.last) {
+    border-left-width: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+
+  .window.last:not(.first) {
+    border-right-width: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .window.first:not(.last)::before,
+  .window.last:not(.first)::before {
+    content: "";
+    position: absolute;
+    top: calc(-1 * var(--frame-line));
+    bottom: calc(-1 * var(--frame-line));
+    width: 100cqw;
+    box-sizing: border-box;
+    border: var(--frame-line) solid;
+    border-color: inherit;
+    border-radius: var(--radius-m);
+    pointer-events: none;
+  }
+
+  .window.first:not(.last)::before {
+    left: 0;
+  }
+
+  .window.last:not(.first)::before {
+    right: 0;
   }
 
   /* The motes are cut to the inside of the window's own line, corners

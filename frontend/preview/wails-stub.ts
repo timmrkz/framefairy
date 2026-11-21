@@ -1378,6 +1378,9 @@ const Answers = {
         const keys: Record<string, string> = answer.keys;
         return Promise.resolve({
           ...answer,
+          // Whether the app opens on its setup, decided the way setup.go
+          // decides it.
+          needsSetup: !answer.chosen || !answer.hasSpeech || (answer.planner === "local" && !answer.hasLocalModel),
           language: answer.language.map((m) => ({
             ...m,
             standing: !m.installed

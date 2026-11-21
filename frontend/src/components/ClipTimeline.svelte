@@ -44,7 +44,6 @@
     type Gesture,
     type ClipEntry,
     type LitWord,
-    type Word,
     type CaptionCue,
     type CropMark,
     type Framing,
@@ -98,7 +97,6 @@
     captions = [],
     captionTrack = "",
     captionPieces,
-    inCuts = [],
     arriving = false,
     captionLook = null,
     oncaptiontime,
@@ -145,11 +143,6 @@
     // Where the picture's first frame begins in the file, which is where
     // its frames are counted from, see frameAt in lib/flow.ts.
     frameStart?: number;
-    // The words heard in the clip's cuts, with the word either side of
-    // each, as Go sends them with the clip's captions, see
-    // CaptionsView.inCuts. Shift and an arrow walk these in a cut, where
-    // the caption lights nothing.
-    inCuts?: Word[];
     // The words the caption lights up, on the episode's clock. Shift and
     // an arrow key step through these, because these are the words anyone
     // can see. They are not the words of the transcript: a correction that
@@ -858,9 +851,9 @@
   // there first, and answers with the readings of the view the window
   // does not hold, the way the video preview is answered with a frame,
   // see LoudnessLooks. The waveform is drawn from the loudness in hand.
-  // The words Shift and an arrow walk come with the clip's captions, see
-  // inCuts, so a view asks for none: it asked for ten minutes of them
-  // after every swipe, issue #932.
+  // The words Shift and an arrow walk are the caption's, see lit, so a
+  // view asks for none: it asked for ten minutes of them after every
+  // swipe, issue #932.
   //
   // It is told on every move, a swipe's too, because a look of a view
   // the window holds costs Go a few numbers, issue #937.
@@ -1056,7 +1049,10 @@
     if (document.activeElement?.getAttribute("role") === "slider") return;
     const back = event.key === "ArrowLeft";
     event.preventDefault();
-    const through = playing && dimmed;
+    // On the video the clip is not active, so a step goes over it, cuts
+    // and all, and stays on the video, paused as well as playing. Tim on
+    // #938: only a clip that is active is walked by its words.
+    const through = dimmed;
     // Where the key goes is lib/playhead.ts, arrowStep.
     const to = arrowStep({
       time,
@@ -1065,9 +1061,7 @@
       shift: event.shiftKey,
       through,
       clip: wholeClip,
-      pieces: drawnPieces,
       lit,
-      inCuts,
       looping,
     });
     if (to === "clip") onwalkclip?.(back);
@@ -1097,7 +1091,7 @@
     if (playing || scrubbing || gripping || !onahead) return;
     const times: number[] = [];
     for (const back of [false, true]) {
-      const to = arrowStep({ time, frame, back, shift: true, through: false, clip: wholeClip, pieces: drawnPieces, lit, inCuts, looping });
+      const to = arrowStep({ time, frame, back, shift: true, through: dimmed, clip: wholeClip, lit, looping });
       if (to && to !== "clip" && to.word) times.push(Math.max(0, Math.min(to.to, duration)));
     }
     onahead(times);

@@ -482,10 +482,6 @@ export interface CaptionsView {
   // what the hand changed, and this says how they go with the captions
   // the clip timeline holds, see spliced in lib/splice.ts.
   splice?: Splice;
-  // The words heard in the clip's cuts, with the word either side of each
-  // cut, on the episode's clock, which Shift and an arrow walk where the
-  // caption lights nothing. None for a clip without cuts.
-  inCuts?: Word[] | null;
 }
 
 // How the captions of a step of a drag go with the captions held from
@@ -660,6 +656,10 @@ export interface HeardView {
   saved: [number, number][];
   heard: [number, number][];
   unheard: [number, number][];
+  // The part of unheard Transcribe whole video works on, the one it hears
+  // or the one it hears next, or null while the whole video is not being
+  // transcribed.
+  whole?: [number, number] | null;
 }
 
 // A clip in a state sent, by its key and its hash, see VideoState.order.
@@ -993,6 +993,9 @@ export interface SetupState {
   // is a default rather than a decision.
   chosen: boolean;
   ready: boolean;
+  // Whether the app opens on its setup rather than on the workspace, as
+  // the Go side decides it.
+  needsSetup: boolean;
   // The job of a model install in hand, so the app, opened again while one
   // runs, picks it up rather than starting a second.
   installing?: string;

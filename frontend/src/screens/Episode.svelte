@@ -521,13 +521,9 @@
   // so it is plain the work is only on hold, Tim's report of 23 October.
   // The look comes from its own job and not from whether a search runs:
   // a search with a model in the cloud does not hold up the hearing, found
-  // by the second review of #458.
-  const wholePart = $derived.by((): [number, number] | null => {
-    if (!wholeWork || wholeStopping) return null;
-    const edge = wholeHearing?.progress?.covered ?? -1;
-    const gap = (edge >= 0 && unheard.find(([a]) => Math.abs(a - edge) < 0.5)) || unheard[0];
-    return gap ?? null;
-  });
+  // by the second review of #458. Which part it is, the Go side says, see
+  // HeardView.
+  const wholePart = $derived(!wholeWork || wholeStopping ? null : (session.heard.whole ?? null));
   // The clip list and the cards of what was said take turns in one
   // scrolled column, so each keeps its own place: the clip list comes back
   // where it was, the chosen clip in view, and the cards open at the
@@ -3610,7 +3606,6 @@
         captions={captions?.captions ?? []}
         captionTrack={captions?.track}
         captionPieces={captions?.pieces}
-        inCuts={captions?.inCuts ?? []}
         captionLook={shownCaptions
           ? {
               text: shownCaptions.style.primary,
