@@ -13,7 +13,7 @@
 // video preview.
 
 import { COLS, ROWS, band, laid, painted, raster, spread, type Raster } from "./reflection";
-import { gpuDevice } from "./screen";
+import { BUFFER, gpuCanvas, onGPU, ownDevice, TEXTURE, type OnGPU } from "./gpu";
 
 export interface Reflected {
   // Gives the canvas wide by high pixels, as many as the screen has under
@@ -24,17 +24,13 @@ export interface Reflected {
   draw(from: Float32Array): void;
 }
 
-// The canvas's drawing, the graphics chip's where there is one. A canvas
-// keeps the first kind of context it is asked for, so the device is in
-// hand before the canvas is asked for WebGPU.
+// The canvas's drawing, the graphics chip's where there is one, see
+// gpuCanvas in gpu.ts.
 export async function reflectedOn(canvas: HTMLCanvasElement, ground: readonly [number, number, number]): Promise<Reflected> {
-  const flat = (globalThis as { __flatScreen?: boolean }).__flatScreen === true;
-  const gpu = flat
-    ? null
-    : await GPUReflected.open(canvas, ground).catch((e) => {
-        console.warn("reflection: no WebGPU canvas,", e);
-        return null;
-      });
+  const gpu = await GPUReflected.open(canvas, ground).catch((e) => {
+    console.warn("reflection: no WebGPU canvas,", e);
+    return null;
+  });
   return gpu ?? new FlatReflected(canvas, ground);
 }
 
@@ -104,12 +100,6 @@ fn cell(c: f32, r: f32) -> vec3f {
 }
 `;
 
-// GPUTextureUsage's COPY_SRC, COPY_DST, TEXTURE_BINDING and
-// RENDER_ATTACHMENT, and GPUBufferUsage's MAP_READ, COPY_DST and UNIFORM:
-// TypeScript knows the types, not the values.
-const TEXTURE = { copySrc: 0x01, copyDst: 0x02, binding: 0x04, attachment: 0x10 };
-const BUFFER = { mapRead: 0x01, copyDst: 0x08, uniform: 0x40 };
-
 // Draws the reflection with one device, on a target of one format.
 class Painter {
   private pipeline: GPURenderPipeline;
@@ -165,7 +155,7 @@ class Painter {
   }
 }
 
-class GPUReflected implements Reflected {
+class GPUReflected implements Reflected, OnGPU {
   private painter!: Painter;
   // What was drawn last, to draw again on a device that comes back.
   private last: Float32Array | null = null;
@@ -177,35 +167,24 @@ class GPUReflected implements Reflected {
     private ground: readonly [number, number, number],
     device: GPUDevice,
   ) {
-    this.setUp(device);
+    onGPU(this, device);
   }
 
   static async open(canvas: HTMLCanvasElement, ground: readonly [number, number, number]): Promise<GPUReflected | null> {
-    const device = await gpuDevice();
-    if (!device) return null;
-    const ctx = canvas.getContext("webgpu") as GPUCanvasContext | null;
-    if (!ctx) {
-      device.destroy();
-      return null;
-    }
-    return new GPUReflected(canvas, ctx, ground, device);
+    const gpu = await gpuCanvas(canvas);
+    return gpu ? new GPUReflected(canvas, gpu.ctx, ground, gpu.device) : null;
   }
 
-  private setUp(device: GPUDevice) {
+  // The device is the one every canvas shares, see gpu.ts, which sets the
+  // reflection up again on a new one when it was lost.
+  setUp(device: GPUDevice) {
     const format = navigator.gpu.getPreferredCanvasFormat();
     this.ctx.configure({ device, format, alphaMode: "opaque" });
     this.painter = new Painter(device, format, this.ground);
-    device.onuncapturederror = (e) => this.complain(e.error.message);
-    // A GPU can be lost, to sleep or to a driver that restarts. The canvas
-    // cannot become a 2D canvas then, so a new device is asked for.
-    void device.lost.then(async (info) => {
-      if (info.reason === "destroyed") return;
-      console.warn("reflection: the GPU was lost,", info.message);
-      const next = await gpuDevice().catch(() => null);
-      if (!next) return;
-      this.setUp(next);
-      if (this.last) this.draw(this.last);
-    });
+  }
+
+  restored() {
+    if (this.last) this.draw(this.last);
   }
 
   private complain(what: string) {
@@ -272,7 +251,7 @@ async function checkReflected(
   wide: number,
   high: number,
 ): Promise<{ gpu: Uint8Array; cpu: Uint8Array } | null> {
-  const device = await gpuDevice();
+  const device = await ownDevice();
   if (!device) return null;
   const painter = new Painter(device, "rgba8unorm", ground);
   const drawn = device.createTexture({
