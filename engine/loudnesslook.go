@@ -43,9 +43,18 @@ type LoudnessSchedule struct {
 	chunks  []uint32
 	// gotIn is how many readings of each chunk were measured here.
 	gotIn []int
+	// told is the version each chunk had when the window, toldTo, was
+	// last sent it. A window's version alone cannot say what it holds: an
+	// answer carries the view of its look, not every chunk measured
+	// before it, so a view measured while the window looked elsewhere was
+	// told nothing was new.
+	told   []uint32
+	toldTo string
 	// started says Start has laid out the loudness: a look before it
-	// waits.
+	// waits. ended says the measuring has ended: a look is answered at
+	// once, with what there is.
 	started bool
+	ended   bool
 	// waits wakes whoever waits whenever a look starts to wait, so a test
 	// goes on once the schedule has it. Only the tests wait on it.
 	waits wake.Wake
@@ -57,7 +66,8 @@ const loudnessChunk = 1000
 // View is where the clip timeline looks, from and to in seconds, and what
 // its window holds: the version of the loudness it was last answered
 // with, 0 for none since it read the loudness whole, and how many
-// readings that loudness has.
+// readings that loudness has. Which chunks the window was sent the
+// schedule keeps itself, by Sent.Window, see LoudnessSchedule.told.
 type View struct {
 	From, To float64
 	Has      uint32
@@ -134,7 +144,9 @@ func (s *LoudnessSchedule) grow(count int, readings []byte) {
 	copy(chunks, s.chunks)
 	gotIn := make([]int, len(chunks))
 	copy(gotIn, s.gotIn)
-	s.held, s.count, s.levels, s.got, s.chunks, s.gotIn = held, count, levels, got, chunks, gotIn
+	told := make([]uint32, len(chunks))
+	copy(told, s.told)
+	s.held, s.count, s.levels, s.got, s.chunks, s.gotIn, s.told = held, count, levels, got, chunks, gotIn, told
 }
 
 // pairMax is the loudest of the two readings of level under i of the level
@@ -206,12 +218,18 @@ func (s *LoudnessSchedule) set(n int, b byte) {
 	}
 }
 
-// Ended says the measuring has ended: a look that waits for readings it
-// will not bring is answered with what there is.
+// Ended says the measuring has ended, however it ended, before it started
+// too: a look that waits, and every look from now on, is answered at once
+// with what there is, or with ErrNothingNew, never left to wait for
+// readings no measuring will bring.
 func (s *LoudnessSchedule) Ended() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.looking.answer(func(v View) ([]byte, bool) { return s.piece(v), true })
+	s.ended = true
+	if s.started {
+		s.answer()
+	}
+	s.looking.fail(func(View) error { return ErrNothingNew })
 }
 
 // Look answers a view with the loudness of it the window does not hold,
@@ -227,6 +245,11 @@ func (s *LoudnessSchedule) Look(ctx context.Context, v View) ([]byte, error) {
 	}
 	s.looking.overtake()
 	s.view = v
+	s.seen(v)
+	if s.ended && !s.started {
+		s.mu.Unlock()
+		return nil, ErrNothingNew
+	}
 	if !s.started {
 		w := s.looking.add(v)
 		s.waits.WakeLocked()
@@ -239,7 +262,7 @@ func (s *LoudnessSchedule) Look(ctx context.Context, v View) ([]byte, error) {
 		s.mu.Unlock()
 		return p, nil
 	}
-	if s.measured(v) {
+	if s.ended || s.measured(v) {
 		s.mu.Unlock()
 		return nil, ErrNothingNew
 	}
@@ -264,6 +287,16 @@ func (s *LoudnessSchedule) answer() {
 	})
 }
 
+// seen takes what a look says of its window: a window of another name, or
+// one that read the loudness whole since, Has 0, holds nothing it was
+// sent here. Under the lock.
+func (s *LoudnessSchedule) seen(v View) {
+	if v.Sent.Window != s.toldTo || v.Has == 0 {
+		s.toldTo = v.Sent.Window
+		clear(s.told)
+	}
+}
+
 // span is the readings a view shows, from and to, the second not
 // included. Under the lock.
 func (s *LoudnessSchedule) span(v View) (int, int) {
@@ -273,8 +306,8 @@ func (s *LoudnessSchedule) span(v View) (int, int) {
 }
 
 // news says whether the window of a view lacks readings of it: it holds a
-// loudness of another length, or one from before readings of the view
-// changed. Under the lock.
+// loudness of another length, or a chunk of the view changed since it was
+// last sent it. Under the lock.
 func (s *LoudnessSchedule) news(v View) bool {
 	if v.Count != s.count {
 		return true
@@ -284,7 +317,7 @@ func (s *LoudnessSchedule) news(v View) bool {
 		return false
 	}
 	for c := first / loudnessChunk; c <= (last-1)/loudnessChunk; c++ {
-		if s.chunks[c] > v.Has {
+		if s.chunks[c] > s.told[c] {
 			return true
 		}
 	}
@@ -345,6 +378,9 @@ func (s *LoudnessSchedule) piece(v View) []byte {
 	if last > first {
 		for k, level := range s.levels {
 			at += copy(out[at:], level[first>>k:(last-1)>>k+1])
+		}
+		for c := first / loudnessChunk; c <= (last-1)/loudnessChunk; c++ {
+			s.told[c] = s.chunks[c]
 		}
 	}
 	return out

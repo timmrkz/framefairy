@@ -59,6 +59,12 @@ type measuring struct {
 	// see look. start reads the disk again, and forgets an episode the
 	// disk says is not measured whole.
 	settled map[string]bool
+	// failed keeps the schedule of a measuring that failed part way, so
+	// the clip timeline is still answered with what it measured: its
+	// stamp does not change, so the window reads nothing whole, see
+	// engine.EpisodeStatus.Loudness. A measuring that ends by itself
+	// measured all, and the stamp says so.
+	failed map[string]*engine.LoudnessSchedule
 }
 
 type measure struct {
@@ -82,7 +88,8 @@ func (l lookOf) Put(first int, frames []float32) { l.live.Put(first, frames) }
 
 func newMeasuring(machine *engine.Machine, notify func(string)) *measuring {
 	m := &measuring{machine: machine, notify: notify, running: map[string]*measure{},
-		looking: map[string][2]float64{}, shut: map[string]int{}, settled: map[string]bool{}, slots: make(chan struct{}, 2)}
+		looking: map[string][2]float64{}, shut: map[string]int{}, settled: map[string]bool{},
+		failed: map[string]*engine.LoudnessSchedule{}, slots: make(chan struct{}, 2)}
 	m.measure = func(ctx context.Context, path string, look engine.LevelsLook, progress func(float64)) error {
 		return engine.NewEngine(engineLog("levels", path), m.machine).MeasureLevels(ctx, path, look, progress)
 	}
@@ -126,6 +133,7 @@ func (m *measuring) start(path string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	run := &measure{stop: cancel, done: make(chan struct{}), live: engine.NewLoudnessSchedule()}
 	m.running[path] = run
+	delete(m.failed, path)
 	go m.run(ctx, path, run)
 }
 
@@ -134,12 +142,18 @@ func (m *measuring) mayStartLocked(path string) bool {
 }
 
 func (m *measuring) run(ctx context.Context, path string, run *measure) {
+	// However the run ends, before its slot came, in a panic or called
+	// off, the looks that wait on it are answered, not left to wait for
+	// good.
+	var err error
+	defer run.live.Ended()
 	defer func() {
 		// A measuring that goes wrong ends itself, not the app, and the
 		// waveform stays as the transcription measures it.
 		if r := recover(); r != nil {
 			theLog.line(zerolog.ErrorLevel, "levels").Str("video", filepath.Base(path)).Str("stack", string(debug.Stack())).
 				Msgf("measuring the loudness stopped unexpectedly: %v", r)
+			err = fmt.Errorf("measuring the loudness stopped unexpectedly: %v", r)
 		}
 		m.mu.Lock()
 		if m.running[path] == run {
@@ -150,6 +164,9 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 			// asks start, which reads the disk.
 			if ctx.Err() == nil {
 				m.settled[path] = true
+				if err != nil {
+					m.failed[path] = run.live
+				}
 			}
 		}
 		m.mu.Unlock()
@@ -175,7 +192,7 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 		length = m.length(ctx, path)
 	}
 	run.live.Start(base, length)
-	err := m.measure(ctx, path, lookOf{m: m, path: path, live: run.live}, nil)
+	err = m.measure(ctx, path, lookOf{m: m, path: path, live: run.live}, nil)
 	run.live.Ended()
 	if err != nil && ctx.Err() == nil {
 		theLog.line(zerolog.WarnLevel, "levels").Str("video", filepath.Base(path)).Err(err).Msg("the loudness could not be measured")
@@ -194,12 +211,15 @@ func (m *measuring) lookLoudness(ctx context.Context, path string, v engine.View
 	}
 	m.look(path, v.From, v.To)
 	m.mu.Lock()
-	run := m.running[path]
+	live := m.failed[path]
+	if run := m.running[path]; run != nil {
+		live = run.live
+	}
 	m.mu.Unlock()
-	if run == nil {
+	if live == nil {
 		return nil, engine.ErrNothingNew
 	}
-	return run.live.Look(ctx, v)
+	return live.Look(ctx, v)
 }
 
 // look says what the clip timeline of an episode shows, from and to, which
@@ -244,6 +264,7 @@ func (m *measuring) closeEpisode(path string) (reopen func()) {
 	m.shut[path]++
 	run := m.running[path]
 	delete(m.looking, path)
+	delete(m.failed, path)
 	m.mu.Unlock()
 	defer func() {
 		// Forgotten after the run has ended, which may have settled it.

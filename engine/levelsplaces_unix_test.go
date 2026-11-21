@@ -8,9 +8,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"slices"
-	"strconv"
-	"strings"
 	"testing"
 
 	"framefairy/engine/runlog"
@@ -51,28 +48,11 @@ func TestAVideoIsMeasuredInPlacesSideBySide(t *testing.T) {
 	if got, want := w.bytes["levels.frames"], 4*len(side.Frames); got != want {
 		t.Errorf("%d bytes written for %d frames of 4 bytes", got, len(side.Frames))
 	}
-	raw, err := os.ReadFile(starts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var at []float64
-	for line := range strings.Lines(string(raw)) {
-		seek := 0.0
-		if f := strings.Fields(line); slices.Contains(f, "-ss") {
-			seek, _ = strconv.ParseFloat(f[slices.Index(f, "-ss")+1], 64)
-		}
-		at = append(at, seek)
-	}
-	// The first from the start, the next from the middle of what is ahead
-	// of it, the third from a quarter, less what the decoder reads before
-	// a place and throws away. The three take their places before any
-	// reads, in any order.
-	near := func(want float64) func(float64) bool {
-		return func(s float64) bool { return math.Abs(s-want) < 1 }
-	}
-	if len(at) < 3 || !slices.Contains(at[:3], 0) || !slices.ContainsFunc(at[:3], near(150)) ||
-		!slices.ContainsFunc(at[:3], near(75)) {
-		t.Errorf("ffmpeg started at %v s, want at 0, about 150 and about 75 first", at)
+	// Where each ffmpeg starts hangs on which measurer claims first, so it
+	// is held by TestMeasurersShareTheLongestWorkLeft on a table, not
+	// here. It is logged for a failure to show.
+	if raw, err := os.ReadFile(starts); err == nil {
+		t.Logf("ffmpeg started with %s", raw)
 	}
 
 	// The same video measured by one ffmpeg.

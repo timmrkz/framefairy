@@ -601,6 +601,24 @@ func (e *Engine) measureFrom(ctx context.Context, source string, m *measuring, i
 	// Where the clip timeline looks is asked after every read, a lock and
 	// two numbers, and weighed again only when it moved, or at a write.
 	from, to := look.View()
+	// An ffmpeg measures at the priority of the work somebody waits on
+	// only while it is in the view. Out of it, it gives way to the
+	// hearing, which takes every fast core while it runs, and with cores
+	// to spare it runs as fast as ever. It is lowered once and for good:
+	// a program cannot be raised again without the system's leave.
+	low := false
+	lower := func() {
+		if low {
+			return
+		}
+		low = true
+		if err := tool.Lower(cmd.Process); err != nil {
+			e.Log.Detail("ffmpeg measures at the usual priority: %s", err)
+		}
+	}
+	if !shown(start, from, to) {
+		lower()
+	}
 	end, readErr := e.readLevels(run, bufio.NewReaderSize(reading.Stdout, 1<<20), func(f float32) bool {
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -617,6 +635,9 @@ func (e *Engine) measureFrom(ctx context.Context, source string, m *measuring, i
 		changed := false
 		if now, until := look.View(); now != from || until != to {
 			from, to, changed = now, until, true
+		}
+		if !shown(n, from, to) {
+			lower()
 		}
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -669,8 +690,10 @@ func (e *Engine) measureFrom(ctx context.Context, source string, m *measuring, i
 // measurers is how many ffmpeg measure the loudness of a video at once,
 // unless the engine says otherwise, see Engine.levelsMeasurers. Decoding
 // the sound is one core's work for each, so half the cores measure a four
-// hour video in a few seconds, where one took half a minute, and leave the
-// rest to the hearing that runs beside it, #968.
+// hour video in a few seconds, where one took half a minute. The hearing
+// takes every fast core while it runs, see asr.Mix, so an ffmpeg out of
+// the clip timeline's view runs at a lower priority and gives way to it,
+// see measureFrom, #968.
 func (e *Engine) measurers() int {
 	if e.levelsMeasurers > 0 {
 		return e.levelsMeasurers

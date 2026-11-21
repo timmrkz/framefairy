@@ -266,8 +266,13 @@ export class LoudnessLooks {
     }
     if (!bytes || this.view.path !== view.path) return;
     const piece = laid(this.held(), bytes);
-    if (!piece || piece.version < this.has) return;
-    this.has = piece.version;
+    // Answers can come back in another order than they were sent. One of
+    // the same length is laid in place either way, and Go counts its
+    // readings as sent, so it is drawn. Only an older loudness of another
+    // length is dropped, since it would take the place of a newer one.
+    if (!piece) return;
+    if (piece.version < this.has && piece.loudness.count !== this.held().count) return;
+    this.has = Math.max(this.has, piece.version);
     this.got(view.path, piece.loudness);
     // A view not measured whole is asked again, unless a newer look
     // already asks for the view as it is now.

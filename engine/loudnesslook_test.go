@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"strconv"
 	"testing"
 
 	"framefairy/engine/timed"
@@ -149,14 +150,90 @@ func TestTheWindowIsAnsweredWithTheLoudnessOfItsView(t *testing.T) {
 func TestANewerViewOvertakesOneThatWaits(t *testing.T) {
 	s := NewLoudnessSchedule()
 	s.Start(nil, 60000)
-	old := lookOn(s, View{From: 100, To: 110, Count: 60000, Has: s.version})
-	newer := lookOn(s, View{From: 200, To: 210, Count: 60000, Has: s.version})
+	whole := <-lookOn(s, View{From: 0, To: 10})
+	version, _, _, _, _ := pieceOf(t, whole.got)
+	old := lookOn(s, View{From: 100, To: 110, Count: 60000, Has: version})
+	newer := lookOn(s, View{From: 200, To: 210, Count: 60000, Has: version})
 	if a := <-old; !errors.Is(a.err, ErrOvertaken) {
 		t.Errorf("the older look was answered with %v", a.err)
 	}
 	s.Ended()
-	if a := <-newer; a.err != nil {
-		t.Errorf("the newer look, once the measuring ended: %v", a.err)
+	if a := <-newer; !errors.Is(a.err, ErrNothingNew) {
+		t.Errorf("the newer look, once the measuring ended with nothing of it: %v", a.err)
+	}
+}
+
+// A view measured while the window looked at another is news when the
+// window looks at it: its version says only what came with its answers,
+// and each answer carried the view of its look. Found by the review of
+// #974: such a view was told nothing was new and stayed empty.
+func TestAViewMeasuredWhileTheWindowLookedElsewhereIsSentWhenLookedAt(t *testing.T) {
+	at := func(s float64) int { return int(s / timed.FrameSeconds) }
+	count := at(600)
+	s := NewLoudnessSchedule()
+	s.Start(nil, count)
+	window := Sent{Window: "w", N: 1}
+	next := func() Sent { window.N++; return window }
+	a := <-lookOn(s, View{From: 0, To: 10, Sent: next()})
+	version, _, _, _, _ := pieceOf(t, a.got)
+	waitA := lookOn(s, View{From: 100, To: 110, Has: version, Count: count, Sent: next()})
+	readings := make([]float32, at(10))
+	for i := range readings {
+		readings[i] = -20
+	}
+	s.Put(at(300), readings)
+	s.Put(at(100), readings)
+	a = <-waitA
+	if a.err != nil {
+		t.Fatalf("the view the window waited on: %v", a.err)
+	}
+	version, _, _, _, _ = pieceOf(t, a.got)
+	b := <-lookOn(s, View{From: 300, To: 310, Has: version, Count: count, Sent: next()})
+	if b.err != nil {
+		t.Fatalf("a view measured while the window looked elsewhere was answered with %v", b.err)
+	}
+	_, first, last, _, levels := pieceOf(t, b.got)
+	if !bytes.Equal(levels[0], wantBytes(readings)) || first != at(300) || last != at(310) {
+		t.Errorf("the view came as readings %d to %d, not the ones measured", first, last)
+	}
+	// Sent once, it is nothing new the next time.
+	if again := <-lookOn(s, View{From: 300, To: 310, Has: version, Count: count, Sent: next()}); !errors.Is(again.err, ErrNothingNew) {
+		t.Errorf("the view sent already was answered with %v", again.err)
+	}
+	// A window that read the loudness whole holds what the disk had, so
+	// it is sent the view again.
+	if whole := <-lookOn(s, View{From: 300, To: 310, Count: count, Sent: next()}); whole.err != nil {
+		t.Errorf("the view, after the window read the loudness whole, was answered with %v", whole.err)
+	}
+}
+
+// Once the measuring has ended, however it ended, no look waits for
+// readings no measuring will bring: one that waits is answered, and one
+// that comes after is answered at once. Found by the review of #974.
+func TestNoLookWaitsOnceTheMeasuringHasEnded(t *testing.T) {
+	s := NewLoudnessSchedule()
+	early := lookOn(s, View{From: 0, To: 10})
+	s.Ended()
+	if a := <-early; !errors.Is(a.err, ErrNothingNew) {
+		t.Errorf("a look that waited for a measuring that never started was answered with %v", a.err)
+	}
+	s = NewLoudnessSchedule()
+	s.Start(nil, 60000)
+	a := <-lookOn(s, View{From: 0, To: 10})
+	version, _, _, _, _ := pieceOf(t, a.got)
+	waiting := lookOn(s, View{From: 100, To: 110, Has: version, Count: 60000})
+	s.Ended()
+	if a := <-waiting; !errors.Is(a.err, ErrNothingNew) {
+		t.Errorf("a look that waited was answered with %v", a.err)
+	}
+	after := lookOn(s, View{From: 200, To: 210, Has: version, Count: 60000})
+	select {
+	case a := <-after:
+		if !errors.Is(a.err, ErrNothingNew) {
+			t.Errorf("a look after the end was answered with %v", a.err)
+		}
+	default:
+		t.Fatal("a look after the measuring ended waits")
 	}
 }
 
@@ -166,4 +243,26 @@ func wantBytes(frames []float32) []byte {
 		out[i] = loudnessByte(f)
 	}
 	return out
+}
+
+// A look at a 60 s view of a 4 h 20 min video, measured while the window
+// looked elsewhere: answered at once, from memory.
+func BenchmarkALookAtAViewMeasuredMeanwhile(b *testing.B) {
+	count := int(15600 / timed.FrameSeconds)
+	s := NewLoudnessSchedule()
+	s.Start(nil, count)
+	readings := make([]float32, count)
+	for i := range readings {
+		readings[i] = float32(-60 + i%40)
+	}
+	s.Put(0, readings)
+	n := uint64(0)
+	for b.Loop() {
+		n++
+		// A window of another name holds nothing it was sent here.
+		v := View{From: 9000, To: 9060, Has: 1, Count: count, Sent: Sent{Window: strconv.FormatUint(n, 10), N: 1}}
+		if _, err := s.Look(context.Background(), v); err != nil {
+			b.Fatal(err)
+		}
+	}
 }

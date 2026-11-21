@@ -1,14 +1,14 @@
 import { describe, expect, test } from "vitest";
 import { columnLevels, HeldLoudness, laid, LoudnessLooks, loudnessOf, silent, type Loudness } from "./loudness";
+import cases from "./loudness.cases.json";
 
 const FRAME = 0.01;
 
 // The bytes the Go side sends for these readings, laid out the way
 // engine.Loudness lays them out: a head with the count, 10 ms a reading,
 // -90 dB and two steps a decibel, the readings, then each level the
-// loudest of two of the one before, down to one. Whether Go lays them out
-// so is held by the walks, which draw what the real Go side sends and
-// find no waveform at all when the two differ, see loudnessOf.
+// loudest of two of the one before, down to one. That Go lays them out
+// so is held by loudness.cases.json, see "the pieces the engine makes".
 function sent(readings: number[], floor = -90, steps = 2): Uint8Array {
   const levels = [readings];
   while (levels[levels.length - 1].length > 1) {
@@ -245,10 +245,37 @@ describe("laid", () => {
   });
 });
 
+// The bytes the engine answers a look with, written by the engine's
+// TestTheWindowReadsThePiecesTheEngineMakes, laid over the loudness the
+// window holds, so the layout Go writes and the one read here cannot drift
+// apart unseen.
+describe("the pieces the engine makes", () => {
+  const readings = (runs: number[][]): number[] => {
+    const out = new Array<number>(cases.count).fill(0);
+    for (const [from, to, b] of runs) out.fill(b, from, to);
+    return out;
+  };
+  const bytes = (hex: string) => Uint8Array.from(hex.match(/../g) ?? [], (h) => parseInt(h, 16));
+  const levelsOf = (l: Loudness) => l.levels.map((level) => Array.from(level));
+
+  test("the loudness the engine holds is read as these readings", () => {
+    const after = loudnessOf(bytes(cases.after));
+    expect(after.count).toBe(cases.count);
+    expect(levelsOf(after)).toEqual(levelsOf(loudnessOf(sent(readings([...cases.before, ...cases.put])))));
+  });
+
+  test("a piece laid over what the window holds is what the engine holds", () => {
+    const held = loudnessOf(sent(readings(cases.before)));
+    const piece = laid(held, bytes(cases.piece));
+    expect(piece).not.toBeNull();
+    expect(levelsOf(piece!.loudness)).toEqual(levelsOf(loudnessOf(bytes(cases.after))));
+  });
+});
+
 describe("LoudnessLooks", () => {
   // Every move of the view is a look with what the window holds. A view
   // not measured whole is looked at again with the version that came,
-  // until it is, and an answer older than what is held is dropped.
+  // until it is.
   test("a view is looked at again until it is measured whole", async () => {
     let held = loudnessOf(sent(speech(500, 1)));
     const asked: URLSearchParams[] = [];

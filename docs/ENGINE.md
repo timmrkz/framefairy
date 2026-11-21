@@ -206,8 +206,11 @@ what is ahead of another ffmpeg, when that half is longer than 30 s,
 `levelsShare`, about what an ffmpeg takes to start. After every read an
 ffmpeg asks where the clip timeline looks, and when the view has moved
 to a part not measured yet that no other ffmpeg is in, it stops and
-starts again there. An hour took 11.7 s with one ffmpeg and 3.3 s with
-four, measured in a cloud session. It starts a fifth of a second
+starts again there. An ffmpeg out of the view runs at a lower priority,
+`tool.Lower`, so it gives way to the hearing, which takes every fast core
+while it runs, and with cores to spare it runs as fast as ever. An hour
+took 11.7 s with one ffmpeg and 3.3 s with four, measured in a cloud
+session. It starts a fifth of a second
 early and `atrim` cuts that off by timestamp, `levelsLead`, which is
 `soundLead` counted in frames, one number for both: the first
 40 ms after a seek came out up to 4 dB off, because a packet of

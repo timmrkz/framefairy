@@ -198,9 +198,18 @@ before, 11834 ms, 1 % slower, inside the spread.
 - A click where the waveform is measured is answered from memory. One
   where it is not gets its first readings after an ffmpeg start and a
   read, and the rest as they come.
-- The whole video is measured on half the cores, at most eight. That is
-  more of the machine for the seconds it runs, beside the hearing, which
-  uses the other half.
+- The whole video is measured on half the cores, at most eight. The
+  hearing takes every fast core while it runs, all eight of an M2 Max,
+  so an ffmpeg out of the view runs at a lower priority and gives way to
+  it. With the cores free, as they are once the hearing is done, the
+  measuring runs as fast as ever. The review of #974 found the first
+  draft of this said the hearing had the other half, which was wrong.
+- What the window holds is state, and Go keeps it: which chunks of the
+  loudness it sent to which window, `LoudnessSchedule.told`, the way
+  `telling.sent` keeps the clips a window was sent. A version number
+  from the window alone could not say it, and a view measured while the
+  window looked elsewhere was told nothing was new, found by the same
+  review.
 - `/frames/levels` stays, for opening a video: the window reads the
   whole loudness once and the looks keep it up to date.
 - It is wrong if Tim still waits for the waveform after a click on a
