@@ -63,16 +63,17 @@ type Schedule struct {
 	keys map[framewire.Grid][]keyFrame
 	// What to read while the hand rests, see Ahead.
 	ahead *aheadWork
-	// held are the frames the window said it holds with its newest
-	// Ahead, of the grid and size heldOf says: the frames around the hand
-	// are not read again for it, see want. Forgotten once the hand drags,
-	// see Look.
+	// held are the frames around the hand's place the window said it
+	// holds, with the look that told the place or with Near, of the grid
+	// and size heldOf says: they are not read again for it, see want.
+	// Forgotten when the hand moves on.
 	held   map[int]bool
 	heldOf keptKey
 	// drawing says the window draws the frame of the place the hand rests
-	// on and asks Near once it is on screen: nothing more is read until
-	// then, so the decoder takes no processor from the window as it draws.
-	// In the cloud a far click came up 13 ms later than on main without it.
+	// on, from the moment its look was answered until the window asks Near
+	// once the frame is on screen: no stream starts and the one under way
+	// ends at its end, see plan, so the decoder takes no processor from
+	// the window as it draws.
 	drawing bool
 	// The play that has the decoder, see Play.
 	play *Play
@@ -185,6 +186,10 @@ type Hand struct {
 	// once. A frame on screen of the place at another size, from before
 	// the app was sized, is no such frame.
 	Has bool
+	// Holds are the frames around the place the window holds at this
+	// size, with a look that has the frame of a resting hand: they are not
+	// read again for it, see want. For a place it looks at, Near says it.
+	Holds []int
 	// Sent is where the look stands among what its window sent.
 	Sent Sent
 }
@@ -320,6 +325,14 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 	s.lastLook = l.Sent
 	s.logDrag(l)
 	s.drawing = false
+	// A Near for the place before gives up waiting, see Near.
+	s.looks.WakeLocked()
+	if !s.handSet || !sameSize(s.hand, l) || s.hand.Frame != l.Frame {
+		s.held = nil
+	}
+	if l.Has && !l.Moving {
+		s.hold(l, func(f int) bool { return slices.Contains(l.Holds, f) })
+	}
 	same := s.handSet && sameSize(s.hand, l)
 	if !same || s.hand.Frame != l.Frame {
 		s.overtake()
@@ -335,13 +348,6 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 		s.early = s.early || l.Moving
 	}
 	s.hand, s.handSet = l, true
-	if l.Moving {
-		// A hand that drags fills the window with the frames it passes,
-		// and the window lets go of the ones it used longest ago for
-		// them: what it held when the hand pressed is the first to go.
-		// Its newest Ahead says again what it holds once the hand lets go.
-		s.held = nil
-	}
 	// The hand takes the playhead from a play.
 	s.stopPlay()
 	if l.Has {
@@ -350,6 +356,7 @@ func (s *Schedule) Look(ctx context.Context, l Hand) (Seen, error) {
 		return Seen{}, ErrShown
 	}
 	if seen, ok := s.best(l); ok {
+		s.drawing = seen.Exact && !l.Moving
 		s.plan()
 		s.mu.Unlock()
 		return seen, nil
@@ -448,6 +455,7 @@ func (s *Schedule) LetFramesGo() {
 	s.endDrag()
 	s.handSet = false
 	s.drawing = false
+	s.looks.WakeLocked()
 	s.kept = newKeptFrames(lookKeptBytes)
 }
 
@@ -571,8 +579,13 @@ func (s *Schedule) plan() {
 		return
 	}
 	if s.drawing && len(s.waiting) == 0 {
-		// The run under way, the hand's reading on, goes on. Nothing new
-		// starts before the window asks Near.
+		// Nothing new starts before the window asks Near, and the run
+		// under way ends at its end: the hand's run at the frame it was
+		// for, a read ahead at once, put back for later, see stopRun.
+		// Once the window asks, a run reads on from where it ended.
+		if r := s.run; r != nil && (r.kind != runHand || r.next > r.target) {
+			s.stopRun()
+		}
 		return
 	}
 	j, ok := s.want()
@@ -784,8 +797,8 @@ func (s *Schedule) goesOn(r *lookRun, j work) bool {
 	if !r.sized(s.hand) || r.kind == runAhead {
 		return false
 	}
-	if j.kind == runBefore {
-		return r.kind == runBefore && r.target == j.to
+	if j.kind == runBefore && r.kind != runBefore {
+		return false
 	}
 	if j.key && !r.key && !r.gave {
 		// A click the hand now drags from: its frames on the way are
@@ -885,6 +898,9 @@ func (s *Schedule) answer(r *lookRun, frame int) {
 			if seen, ok := s.best(l); ok {
 				seen.Kept = false
 				w.answer <- lookAnswer{seen: seen}
+				if seen.Exact && !l.Moving && l.Frame == s.hand.Frame {
+					s.drawing = true
+				}
 				continue
 			}
 		}
@@ -956,6 +972,30 @@ type Ahead struct {
 	Sent Sent
 }
 
+// word is the first and last frame read for the word that starts at f:
+// the frame before it, for a step back, and the frames a hand that walks
+// on from it reaches first.
+func (a Ahead) word(f int) (from, to int) {
+	return max(0, f-1), min(a.Grid.Count-1, f+lookAhead)
+}
+
+// Keep are the frames read for the words beside, the ones the window
+// holds already too: it keeps them as the ones used last, so the frames
+// that come make room by letting others go, and a word key pressed next
+// finds its frame there.
+func (a Ahead) Keep() []int {
+	var out []int
+	for _, f := range a.Frames {
+		from, to := a.word(f)
+		for g := from; g <= to; g++ {
+			if !slices.Contains(out, g) {
+				out = append(out, g)
+			}
+		}
+	}
+	return out
+}
+
 type aheadWork struct {
 	grid framewire.Grid
 	w, h int
@@ -1013,8 +1053,9 @@ func (s *Schedule) Ahead(ctx context.Context, a Ahead) ([]Seen, error) {
 	inGrid := func(f int) bool { return f >= 0 && f < a.Grid.Count }
 	for _, f := range a.Frames {
 		read := aheadSpan{from: -1}
-		for g := f - 1; g <= f+lookAhead; g++ {
-			if !inGrid(g) || has[g] || work.wants[g] {
+		from, to := a.word(f)
+		for g := from; g <= to; g++ {
+			if has[g] || work.wants[g] {
 				continue
 			}
 			work.wants[g] = true
@@ -1049,11 +1090,6 @@ func (s *Schedule) Ahead(ctx context.Context, a Ahead) ([]Seen, error) {
 		return nil, ErrOvertaken
 	}
 	s.lastAhead = a.Sent
-	if !a.Held {
-		// The window hands it over once it drew the frame, see app.ts.
-		s.drawing = false
-	}
-	s.held, s.heldOf = has, keptKey{grid: a.Grid, w: a.W, h: a.H}
 	if old := s.ahead; old != nil {
 		s.ahead = nil
 		old.done <- aheadDone{err: ErrOvertaken}
@@ -1192,25 +1228,33 @@ func (s *Schedule) readsOn(r *lookRun) bool {
 // runs for its frame and the frames around it have ended: lookBack frames
 // before it and lookAhead after, and of those only the ones has says the
 // window does not hold. The window keeps them, so the arrow keys and a
-// slow drag find their frames with no request, see app.ts. A newer look
-// of the hand ends the run, and Near with it.
+// slow drag find their frames with no request, see app.ts. It is also
+// the window saying the frame of the place is on screen: nothing is read
+// around a resting place before, see drawing. Once the hand moves on,
+// Near hands over what is kept by then.
 func (s *Schedule) Near(ctx context.Context, l Hand, has func(frame int) bool) []Seen {
 	from, to := max(0, l.Frame-lookBack), min(l.Grid.Count-1, l.Frame+lookAhead)
 	s.mu.Lock()
-	if s.drawing {
+	here := func() bool { return s.handSet && sameSize(s.hand, l) && s.hand.Frame == l.Frame }
+	if here() {
 		// The frame is on screen: the frames around the place are read
-		// now, and handed over once they are.
+		// now, but for the ones the window holds, and handed over once
+		// they are.
+		s.hold(l, has)
 		s.drawing = false
 		s.plan()
 	}
 	for {
 		r := s.run
-		if r == nil || r.kind == runAhead || !r.sized(l) || r.target < from || r.from > to {
+		if !here() || r == nil || r.kind == runAhead || !r.sized(l) || r.target < from || r.from > to {
+			// The hand went on, or the runs around the place have ended.
 			break
 		}
+		changed := s.looks.WaitLocked()
 		s.mu.Unlock()
 		select {
 		case <-r.done:
+		case <-changed:
 		case <-ctx.Done():
 			return nil
 		}
@@ -1229,26 +1273,30 @@ func (s *Schedule) Near(ctx context.Context, l Hand, has func(frame int) bool) [
 	return near
 }
 
-// AskNear tells whether the window is to ask Near for the frames around
-// the place of a look it had answered: a run reads around it, or frames
-// around it are kept. A drag faster than lookFast frames a step has none,
-// the frames around each place would be sent and let go of again. A
-// slower drag has: its next places are the frames read beside it, and
-// each step that finds its frame in the window shows it with no request.
-// Without them a slow drag waited for a look at every step, 10 ms in the
-// cloud, where the window that read its own frames took 1 ms. Where the
-// hand rests, the window always asks, once it has drawn the frame, and
-// nothing more is read around the place until then, see drawing.
-func (s *Schedule) AskNear(l Hand) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ask := s.hasNear(l)
-	s.drawing = ask && !l.Moving && s.handSet && s.hand.Frame == l.Frame && sameSize(s.hand, l)
-	return ask
+// hold takes the frames around the place of l that has says the window
+// holds, see held. Under the lock.
+func (s *Schedule) hold(l Hand, has func(frame int) bool) {
+	s.held, s.heldOf = map[int]bool{}, keptKey{grid: l.Grid, w: l.W, h: l.H}
+	for f := max(0, l.Frame-lookBack); f <= min(l.Grid.Count-1, l.Frame+lookAhead); f++ {
+		if has(f) {
+			s.held[f] = true
+		}
+	}
 }
 
-// hasNear is AskNear's answer. Under the lock.
-func (s *Schedule) hasNear(l Hand) bool {
+// HasNear tells whether Near would hand over frames around the place of
+// a look the window had answered: a run reads around it, or frames around
+// it are kept. A drag faster than lookFast frames a step has none, the
+// frames around each place would be sent and let go of again. A slower
+// drag has: its next places are the frames read beside it, and each step
+// that finds its frame in the window shows it with no request. Without
+// them a slow drag waited for a look at every step, 10 ms in the cloud,
+// where the window that read its own frames took 1 ms. A hand at rest
+// always has: nothing is read around its place until the window asks,
+// see drawing.
+func (s *Schedule) HasNear(l Hand) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if l.Moving && s.step > lookFast {
 		return false
 	}

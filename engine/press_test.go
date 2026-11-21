@@ -23,6 +23,11 @@ import (
 // pressKept is how many frames the window keeps, KEPT_FRAMES in app.ts.
 const pressKept = 64
 
+// pressPaint is how long the window takes from a frame it has to the
+// moment it is on screen and it asks Near, see afterPaint in app.ts: up to
+// a frame of the page to the next paint, half of one on the whole.
+const pressPaint = 8 * time.Millisecond
+
 // pressWindow is the window of a press walk.
 type pressWindow struct {
 	s     *Schedule
@@ -49,6 +54,11 @@ type pressWindow struct {
 	again  int
 	asked  int
 	nearAt int
+	// nearAsking says a Near is on its way, and nearNext is the place to
+	// ask next once it is back: the window asks one at a time, for the
+	// newest place, see near in app.ts.
+	nearAsking bool
+	nearNext   *Hand
 }
 
 func (w *pressWindow) keep(f int) {
@@ -74,6 +84,18 @@ func (w *pressWindow) use(f int) {
 
 func (w *pressWindow) has(f int) bool { return slices.Contains(w.kept, f) }
 
+// around are the frames the window holds around a place, the ones it
+// names with a look or a Near there, see keptHere in app.ts.
+func (w *pressWindow) around(at int) []int {
+	var out []int
+	for _, f := range w.kept {
+		if f >= at-16 && f <= at+8 {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func (w *pressWindow) next() Sent {
 	w.sent++
 	return Sent{Window: "sim", N: w.sent}
@@ -96,7 +118,7 @@ func (w *pressWindow) press(f int) {
 		w.use(f)
 		w.shown = f
 		w.waits = append(w.waits, 0)
-		l := Hand{Grid: w.grid, Frame: f, W: w.w, H: w.h, Shown: f, Has: true, Sent: w.next()}
+		l := Hand{Grid: w.grid, Frame: f, W: w.w, H: w.h, Shown: f, Has: true, Holds: w.around(f), Sent: w.next()}
 		w.all.Go(func() { _, _ = w.s.Look(w.ctx, l) })
 		return
 	}
@@ -120,22 +142,58 @@ func (w *pressWindow) look(l Hand, began time.Time) {
 		w.shown = seen.Frame
 		w.waits = append(w.waits, time.Since(began)) //nolint:forbidigo // synctest bubble
 	}
-	w.mu.Unlock()
-	if seen.Exact && w.s.AskNear(l) {
-		w.mu.Lock()
-		w.nearAt++
-		w.mu.Unlock()
-		near := w.s.Near(w.ctx, l, func(f int) bool {
-			w.mu.Lock()
-			defer w.mu.Unlock()
-			return w.has(f) && f >= l.Frame-16 && f <= l.Frame+8
-		})
-		w.mu.Lock()
-		for _, n := range near {
-			w.keep(n.Frame)
+	if seen.Exact && w.s.HasNear(l) {
+		if l.Moving {
+			w.near(l)
+		} else {
+			w.drawn(l)
 		}
-		w.mu.Unlock()
 	}
+	w.mu.Unlock()
+}
+
+// drawn asks Near for a resting place once its frame is on screen, see
+// pressPaint. Under the lock.
+func (w *pressWindow) drawn(l Hand) {
+	w.all.Go(func() {
+		time.Sleep(pressPaint) //nolint:forbidigo // synctest bubble
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.near(l)
+	})
+}
+
+// near asks the Go side for the frames around a place it does not hold
+// and keeps them, one ask at a time, see near in app.ts. Under the lock.
+func (w *pressWindow) near(l Hand) {
+	if w.nearAsking {
+		w.nearNext = &l
+		return
+	}
+	w.nearAsking = true
+	w.nearAt++
+	w.all.Go(func() {
+		for {
+			w.mu.Lock()
+			holds := w.around(l.Frame)
+			w.mu.Unlock()
+			near := w.s.Near(w.ctx, l, func(f int) bool { return slices.Contains(holds, f) })
+			w.mu.Lock()
+			for _, n := range near {
+				w.keep(n.Frame)
+			}
+			next := w.nearNext
+			w.nearNext = nil
+			if next == nil || w.ctx.Err() != nil {
+				w.nearAsking = false
+				w.mu.Unlock()
+				return
+			}
+			l = *next
+			w.nearAt++
+			w.mu.Unlock()
+		}
+	})
 }
 
 // ahead hands over the first frames of the words either side of the
@@ -161,11 +219,9 @@ func (w *pressWindow) ahead() {
 		defer w.mu.Unlock()
 		// The words' frames it holds already are made the ones used last
 		// before the frames that came are kept, see app.ts.
-		for _, f := range frames {
-			for g := f - 1; g <= f+lookAhead; g++ {
-				if w.has(g) {
-					w.use(g)
-				}
+		for _, g := range a.Keep() {
+			if w.has(g) {
+				w.use(g)
 			}
 		}
 		for _, n := range seen {
@@ -337,8 +393,11 @@ func (w *pressWindow) drag(frames []int) []time.Duration {
 			w.use(f)
 			w.shown = f
 			l := Hand{Grid: w.grid, Frame: f, W: w.w, H: w.h, Moving: moving, Shown: f, Has: true, Sent: w.next()}
-			w.mu.Unlock()
+			if !moving {
+				l.Holds = w.around(f)
+			}
 			w.all.Go(func() { _, _ = w.s.Look(w.ctx, l) })
+			w.mu.Unlock()
 			waits = append(waits, 0)
 		} else {
 			w.mu.Unlock()
@@ -390,6 +449,9 @@ func (w *pressWindow) dragLook(f int, moving bool) {
 		w.mu.Lock()
 		w.keep(seen.Frame)
 		w.shown = seen.Frame
+		if seen.Exact && !moving {
+			w.drawn(l)
+		}
 		w.mu.Unlock()
 		if seen.Exact {
 			return
@@ -458,21 +520,21 @@ func TestTheFramesAroundAClickWaitForItsFrameToBeDrawn(t *testing.T) {
 		if err != nil || !seen.Exact || seen.Frame != 434 {
 			t.Fatalf("the look at 434 answered %+v, %v", seen, err)
 		}
-		if !s.AskNear(l) {
+		if !s.HasNear(l) {
 			t.Fatal("the frames around the click are not offered to the window")
 		}
 		// The window draws the frame meanwhile.
 		time.Sleep(time.Second) //nolint:forbidigo // synctest bubble
 		dec.mu.Lock()
-		var early []string
-		for _, e := range dec.told {
-			if strings.Contains(e.what, "stream from") && !strings.Contains(e.what, "stream from 434") {
-				early = append(early, e.what)
+		var early []int
+		for _, m := range dec.made {
+			if m.frame != 434 {
+				early = append(early, m.frame)
 			}
 		}
 		dec.mu.Unlock()
 		if len(early) > 0 {
-			t.Errorf("before the window asked for them, the decoder read around the click: %v", early)
+			t.Errorf("before the window asked for them, the decoder made frames %v around the click", early)
 		}
 		near := s.Near(ctx, l, func(int) bool { return false })
 		var frames []int

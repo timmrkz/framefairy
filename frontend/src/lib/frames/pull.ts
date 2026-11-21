@@ -29,6 +29,9 @@ export type Pulled = {
   kept: boolean;
   // The Go side holds frames around a look's place, see AppFrames.near.
   near: boolean;
+  // The frames of the words an Ahead asked for that the app holds
+  // already, which it keeps as used last, see AppFrames.aheadNow.
+  keep: number[];
   // Each frame's pixels, see Picture. They are bytes rather than a
   // Picture so they can come from a Worker, see pictures.
   frames: { at: number; data: ArrayBuffer; stamp: number[] }[];
@@ -48,7 +51,7 @@ export function pictures(got: Pulled, width: number, height: number): { at: numb
 // many bytes come before each frame.
 export async function pull(url: string, width: number, height: number, spare: ArrayBuffer[] = [], head = 8): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
-  if (!res) return { status: 0, end: false, error: "", closed: false, light: "", exact: false, kept: false, near: false, frames: [], spare };
+  if (!res) return { status: 0, end: false, error: "", closed: false, light: "", exact: false, kept: false, near: false, keep: [], frames: [], spare };
   const out: Pulled = {
     status: res.status,
     end: !!res.headers.get("X-Frames-End"),
@@ -58,6 +61,11 @@ export async function pull(url: string, width: number, height: number, spare: Ar
     exact: !!res.headers.get("X-Frames-Exact"),
     kept: !!res.headers.get("X-Frames-Kept"),
     near: !!res.headers.get("X-Frames-Near"),
+    keep: (res.headers.get("X-Frames-Keep") ?? "")
+      .split(",")
+      .filter((x) => x !== "")
+      .map(Number)
+      .filter((x) => Number.isInteger(x) && x >= 0),
     frames: [],
     spare: [],
   };

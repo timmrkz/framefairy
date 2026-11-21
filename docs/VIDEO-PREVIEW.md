@@ -269,23 +269,28 @@ closed for standing unused.
     handed a frame reads on to them: one still decoding from the key
     frame before it stands nowhere near. The frames behind read from
     the first one missing, so a stream that stands before them reads on
-    to it, and the frames the window said it holds count as there, so
-    none is decoded again for it, until the hand drags: a drag fills
-    the window, which lets go of those first. Where the hand rests,
-    nothing more is read around the place until the window has drawn
-    its frame: it asks Near, tells where the hand is and hands over the
-    words beside once the frame is painted, and the stream that made a
-    click's frame stops there and reads on to the frames after it only
-    then. Read at once, the decoder took the processor from the window
-    as it drew, and a far click came up 13 ms later than on main. The window keeps 64 frames, two
-    places with the words beside each, and makes the words' frames it
-    holds the ones used last when the frames read ahead come. With 40 it
-    let go of them for the frames that came. The speed walk's presses,
-    simulated in `engine/press_test.go`, decoded 587 frames and now 239.
+    to it, and the frames around the place the window says it holds
+    count as there, so none is decoded again for it. The window names
+    them with the look that tells where the hand is on a frame it holds,
+    and with Near, so Go never keeps an old list of them. Where the hand
+    rests on a frame it looked for, nothing more is read until the window
+    has drawn it and asks Near: from the answer on, no stream starts, and
+    the one under way ends at the frame it was for, and once the window
+    asks, the next reads on from there. Read at once, the decoder took
+    the processor from the window as it drew. The window keeps 64 frames, two places
+    with the words beside each, and makes the words' frames it holds the
+    ones used last when the frames read ahead come, the ones the answer
+    names. With 40 it let go of them for the frames that came. The speed
+    walk's presses, simulated in `engine/press_test.go` with a window
+    that waits for paint and asks one Near at a time as the app does,
+    decoded 587 frames and now 239.
     A hand that moves further at a step than `lookFast`, eight frames, has
     only its own frame read. The run under way goes on where reading on is the
     quickest way to what is wanted, and is stopped between two frames
-    where a seek to a key frame is quicker. A drag that stood still in
+    where a seek to a key frame is quicker. That holds for a read of the
+    frames behind the hand whose end moves on too: it once started a
+    new stream at every frame while the frames by the hand were let go
+    of. A drag that stood still in
     Tim's reports of 19 and 20 November had runs started over at each
     move of the hand, one of them 216 frames decoded with none shown.
   - Every frame a run makes that is nearer the hand than the frame on

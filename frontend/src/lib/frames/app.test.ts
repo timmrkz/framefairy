@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { AppFrames } from "./app";
 import type { VideoTrack } from "./movie";
 import { Picture } from "./picture";
+import { frames as framePool } from "./pool";
 
 describe("AppFrames", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -74,7 +75,8 @@ describe("AppFrames", () => {
 
   // The frames a step with the arrow keys goes to are kept here: the
   // frame on screen is shown at once, and the Go side is only told where
-  // the hand is, so it reads the frames around it.
+  // the hand is, and which frames around it are kept here, so it reads
+  // the others.
   test("a place kept here is shown at once, and the Go side told where it is", async () => {
     const asked: string[] = [];
     vi.stubGlobal("fetch", (url: string) => {
@@ -84,6 +86,8 @@ describe("AppFrames", () => {
     const { app, picture } = frames(() => ({ width: 4, height: 2 }));
     app.paused = () => true;
     const was = asked.length;
+    app.keep(39, picture(39, 4, 2));
+    app.keep(90, picture(90, 4, 2));
     app.keep(40, picture(40, 4, 2));
     const f = await app.frame(40, 0);
     expect(f).not.toBe(null);
@@ -94,6 +98,7 @@ describe("AppFrames", () => {
     expect(told.searchParams.get("frame")).toBe("40");
     expect(told.searchParams.get("shown")).toBe("40");
     expect(told.searchParams.get("kept")).toBe("1");
+    expect(told.searchParams.get("has")).toBe("39,40");
     app.close();
   });
 
@@ -146,6 +151,7 @@ function frames(size: () => { width: number; height: number }, rate = 25) {
         exact: false,
         kept: false,
         near: false,
+        keep: [],
         spare: [],
         frames: [],
       })),
@@ -164,14 +170,14 @@ function goSide(rate = 25) {
   );
   const { app } = frames(() => ({ width: 4, height: 2 }), rate);
   app.paused = () => false;
-  const asked: { url: string; give: (ranks: number[], times?: string, exact?: boolean) => void; shut: () => void; overtaken: () => void }[] = [];
+  const asked: { url: string; give: (ranks: number[], times?: string, exact?: boolean, keep?: number[]) => void; shut: () => void; overtaken: () => void }[] = [];
   const came: (() => void)[] = [];
   (app as unknown as { puller: unknown }).puller = {
     pull: (url: string) =>
       new Promise((done) => {
         asked.push({
           url,
-          give: (ranks, times = "", exact = false) =>
+          give: (ranks, times = "", exact = false, keep = []) =>
             done({
               status: 200,
               end: false,
@@ -182,13 +188,14 @@ function goSide(rate = 25) {
               exact,
               kept: false,
               near: false,
+              keep,
               spare: [],
               frames: ranks.map((r) => ({ at: r / rate, frame: new Picture(new Uint8Array(4 * 2 * 4).fill(r), 4, 2, (r * 1e6) / rate) })),
             }),
           // Closed on the Go side, to make room for newer streams.
-          shut: () => done({ status: 200, end: false, error: "", closed: true, times: "", light: "", exact: false, kept: false, near: false, spare: [], frames: [] }),
+          shut: () => done({ status: 200, end: false, error: "", closed: true, times: "", light: "", exact: false, kept: false, near: false, keep: [], spare: [], frames: [] }),
           // A newer look took this one's place.
-          overtaken: () => done({ status: 204, end: false, error: "", closed: false, times: "", light: "", exact: false, kept: false, near: false, spare: [], frames: [] }),
+          overtaken: () => done({ status: 204, end: false, error: "", closed: false, times: "", light: "", exact: false, kept: false, near: false, keep: [], spare: [], frames: [] }),
         });
         for (const c of came.splice(0)) c();
       }),
@@ -302,7 +309,12 @@ describe("the frames read while the hand rests", () => {
     expect(await rankOf(app.frame(60, 0))).toBe(60);
     expect(await rankOf(app.frame(150, 0))).toBe(150);
     // Only where the hand is goes to the Go side, with no frame asked for.
-    expect(asked.slice(before).map((a) => new URL(a.url, "http://x").searchParams.get("shown"))).toEqual(["60", "150"]);
+    expect(
+      asked
+        .slice(before)
+        .filter((a) => a.url.startsWith("/frames/look?"))
+        .map((a) => new URL(a.url, "http://x").searchParams.get("shown")),
+    ).toEqual(["60", "150"]);
     before = asked.length;
     app.ahead([70]);
     await pulls(before + 1);
@@ -319,7 +331,8 @@ describe("the frames read while the hand rests", () => {
   // A word's frames held here are not sent again, and the frames that
   // come with them make room by letting go of the frames used longest
   // ago. The word's frame, kept first, was let go of for them, and the
-  // word key found it missing.
+  // word key found it missing. The Go side names the frames read for the
+  // words, see engine.Ahead.Keep.
   test("keep the frame of a word held here, whatever comes with them", async () => {
     const { app, asked, pulls, rankOf } = goSide();
     app.paused = () => true;
@@ -328,13 +341,28 @@ describe("the frames read while the hand rests", () => {
     for (let r = 200; r < 263; r++) app.keep(r, pic(r));
     app.ahead([60]);
     await pulls(1);
-    asked[0].give([300, 301, 302, 303, 304, 305]);
+    asked[0].give([300, 301, 302, 303, 304, 305], "", false, [59, 60, 61, 62, 63, 64]);
     await app.rested();
     // Shown from here at once, with no look at the Go side.
     const kept = app.stats.kept;
     const shown = app.frame(60, 0);
     expect(app.stats.kept).toBe(kept + 1);
     expect(await rankOf(shown)).toBe(60);
+    app.close();
+  });
+
+  // Each pull once took as many kept buffers as the n of its URL said,
+  // which is where the ask stands among what the app sent, not how many
+  // frames it asks for: the hundredth look took the whole pool, and the
+  // play that came next found it empty.
+  test("take one kept buffer for a look, whatever its number", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(null, { status: 204 })));
+    const took = vi.spyOn(framePool, "takeUpTo");
+    const samples = { count: 200, timescale: 25, start: 0, step: 1 };
+    const app = new AppFrames("/v.mp4", { kind: "video", width: 4, height: 2, samples, frame: 1 / 25 }, () => ({ width: 4, height: 2 }), () => {});
+    await app.puller.pull("/frames/look?n=100", 4, 2);
+    expect(took).toHaveBeenCalledWith(4 * 2 * 4, 1);
+    took.mockRestore();
     app.close();
   });
 

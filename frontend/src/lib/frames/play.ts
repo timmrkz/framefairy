@@ -131,7 +131,7 @@ export class GoPlay {
     if (this.pullingPictures || this.picturesEnded || this.closed || this.shots.length >= want) return;
     this.pullingPictures = true;
     const { width, height } = this.size;
-    void this.app.puller.pull(`/frames/read?id=${this.pictures}&n=${BATCH}`, width, height, 32).then((got) => {
+    void this.app.puller.pull(`/frames/read?id=${this.pictures}&n=${BATCH}`, width, height, 32, BATCH).then((got) => {
       this.pullingPictures = false;
       if (this.closed) {
         for (const { frame } of got.frames) frame.close();

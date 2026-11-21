@@ -168,10 +168,40 @@ frames and a new one starts.
 
 The window tells Go where the hand is on every move, also over frames
 it keeps itself, so Go reads around a place before the hand gets
-further. Each drag is written to the log as one line once the hand lets
-go, with every place it went to, so a drag that lagged on someone's Mac
-can be played in the simulation. Tim's two reports could not be: their
-lines name no frame for a look.
+further. With the look that tells it, a hand at rest on a frame the
+window holds names the frames around it the window holds, and those are
+not read again. The window's list is never kept in Go beyond the place
+it came with: a copy kept from what was read ahead went stale over
+presses that read nothing ahead. Each drag is written to the log as
+one line once the hand lets go, with every place it went to, so a drag
+that lagged on someone's Mac can be played in the simulation. Tim's two
+reports could not be: their lines name no frame for a look.
+
+While the window draws the frame of a click, the decoder reads nothing
+else, so it takes no processor from the drawing. Go holds from the
+moment it answers a look of a hand at rest, and the window asks Near
+once the frame is painted, the one signal from the window that a frame
+is on screen. The run under way ends at the frame it was for while Go
+holds, and the next reads on from there. Four other ways were tried:
+
+- The window holds back what it sends until the frame is painted, its
+  tells, its words to read ahead and Near. That is a fetch policy in the
+  window, and the window had to copy the shape of a read ahead, four
+  frames after a word, to keep the right frames. The hold is Go's, and
+  the answer of a read ahead names the frames the window keeps.
+- Go holds once the window asks whether to ask Near. That came after
+  the answer on another goroutine, so the click's run had read on before
+  it, and a hold that never ended a run let one decode to the end of the
+  video.
+- The run under way waits between two frames while Go holds, and goes
+  on once the window asks, in one stream. The simulated presses and
+  clicks decoded as many frames as with a run that ends and a next that
+  reads on, and a run that waits keeps a stream open on a window that
+  may never ask, one hidden before it painted.
+- A look that tells Go where the hand is on a frame the window holds
+  holds too, and the window asks Near after it as well. The window was
+  sent the frames before every word it stepped to, let go of others for
+  them, and the simulated presses decoded more frames than without it.
 
 ## How it is proven
 

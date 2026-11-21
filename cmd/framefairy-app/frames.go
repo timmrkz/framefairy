@@ -213,7 +213,8 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 // where frames around it are worth asking for, see serveNear. A look a
 // newer one took the place of is answered with no content, and so is one
 // with kept, whose window holds the frame of the place at this size: it
-// only says where the hand is, for the frames around it to be read. One the decoder failed has
+// only says where the hand is, for the frames around it to be read, and
+// has names the frames around it the window holds. One the decoder failed has
 // X-Frames-Error and no frame.
 func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -226,6 +227,7 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) 
 		shown = -1
 	}
 	hand.Shown, hand.Moving, hand.Has = shown, q.Get("move") == "1", q.Get("kept") == "1"
+	hand.Holds = frameList(q.Get("has"), hand.Grid, 32)
 	frame := hand.Frame
 	dec, err := p.decoder(st.machine, path)
 	if err != nil {
@@ -256,7 +258,7 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) 
 	if seen.Kept {
 		w.Header().Set("X-Frames-Kept", "1")
 	}
-	if seen.Exact && p.schedule(dec).AskNear(hand) {
+	if seen.Exact && p.schedule(dec).HasNear(hand) {
 		w.Header().Set("X-Frames-Near", "1")
 	}
 	writeSeen(w, dec, []engine.Seen{seen})
@@ -340,6 +342,15 @@ func frameList(text string, grid framewire.Grid, most int) []int {
 	return out
 }
 
+// intList writes a list of frames the way frameList reads one, "1,2,3".
+func intList(frames []int) string {
+	text := make([]string, len(frames))
+	for i, f := range frames {
+		text[i] = strconv.Itoa(f)
+	}
+	return strings.Join(text, ",")
+}
+
 // serveNear answers with the frames kept around a place the hand rests on
 // that the window does not hold, has, once the decoder has read them,
 // each as writeFrames writes one. See engine.Schedule.Near.
@@ -380,9 +391,10 @@ func (p *previews) serveAhead(st *store, w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	seen, err := p.schedule(dec).Ahead(r.Context(), engine.Ahead{Grid: hand.Grid, W: hand.W, H: hand.H,
+	ahead := engine.Ahead{Grid: hand.Grid, W: hand.W, H: hand.H,
 		Frames: frameList(q.Get("frames"), hand.Grid, 16), Cards: frameList(q.Get("cards"), hand.Grid, 256),
-		Has: frameList(q.Get("has"), hand.Grid, 512), Held: q.Get("held") == "1", Sent: hand.Sent})
+		Has: frameList(q.Get("has"), hand.Grid, 512), Held: q.Get("held") == "1", Sent: hand.Sent}
+	seen, err := p.schedule(dec).Ahead(r.Context(), ahead)
 	switch {
 	case errors.Is(err, engine.ErrOvertaken):
 		w.WriteHeader(http.StatusNoContent)
@@ -391,6 +403,7 @@ func (p *previews) serveAhead(st *store, w http.ResponseWriter, r *http.Request)
 		w.Header().Set("X-Frames-Error", runes.Scrub(err.Error(), 300))
 		w.WriteHeader(http.StatusOK)
 	default:
+		w.Header().Set("X-Frames-Keep", intList(ahead.Keep()))
 		writeSeen(w, dec, seen)
 	}
 }

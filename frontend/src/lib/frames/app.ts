@@ -37,7 +37,6 @@ const KEPT_FRAMES = 64;
 const KEPT_BYTES = 192 << 20;
 // How many frames after a word's first the Go side reads ahead with it,
 // lookAhead in engine/schedule.go, and the one before it.
-const AHEAD_AFTER = 4;
 
 // A frame asked for. gone is set when the one who asked no longer wants
 // it, a newer still. seq numbers the asks in the order they were made.
@@ -249,12 +248,12 @@ export class AppFrames {
     if (got.exact) {
       if (got.kept) this.tookKept(rank);
       w.done(sent.frame);
-      // Where the hand rests, the Go side reads nothing more around the
-      // place until it is asked, see engine.Schedule.AskNear: the frame is
-      // drawn first.
+      // Where the hand rests, the Go side reads nothing around the place
+      // until the frame is drawn and it is asked, see
+      // engine.Schedule.Near.
       if (got.near) {
         if (w.moving) this.near(rank);
-        else this.painted(() => this.near(rank));
+        else this.drawn(rank);
       }
       return;
     }
@@ -343,20 +342,13 @@ export class AppFrames {
     q.set("has", this.keptHere(width, height).join(","));
     q.set("win", this.name);
     q.set("n", String(++this.sent));
-    const words = this.aheadWanted.slice();
-    // Handed over once the frame on screen is drawn, unless it stops the
-    // reading, see afterPaint.
-    const sent = new Promise<Got>((done) => {
-      const send = () => done(this.puller.pull(`/frames/ahead?${q}`, width, height));
-      if (held) send();
-      else this.painted(send);
-    }).then((got) => {
+    const sent = this.puller.pull(`/frames/ahead?${q}`, width, height).then((got) => {
       // The words' frames held here already, which the Go side did not
       // send again, are made the ones used last before the frames that
       // came are kept: kept as they were, the frames that came made room
       // by letting them go, and a word key pressed next found its frame
-      // missing.
-      for (const r of words) for (let f = r - 1; f <= r + AHEAD_AFTER; f++) this.used(f);
+      // missing. The Go side names them, see engine.Ahead.Keep.
+      for (const r of got.keep) this.used(r);
       const cards = new Set(this.cardOrder);
       for (const { at, frame } of got.frames) {
         const rank = rankOf(this.track.samples, at);
@@ -426,7 +418,7 @@ export class AppFrames {
     this.nearAsk = true;
     this.nearNext = -1;
     const { width, height } = this.size();
-    const has = this.keptHere(width, height).filter((r) => r >= rank - 16 && r <= rank + 8);
+    const has = this.around(rank, width, height);
     const q = new URLSearchParams({ path: this.path, frame: String(rank), w: String(width), h: String(height), grid: this.gridText, has: has.join(",") });
     void this.puller
       .pull(`/frames/near?${q}`, width, height)
@@ -467,15 +459,25 @@ export class AppFrames {
     q.set("win", this.name);
     q.set("n", String(++this.sent));
     if (w.moving) q.set("move", "1");
+    else q.set("has", this.around(w.rank, width, height).join(","));
     q.set("kept", "1");
-    // A hand at rest is told once its frame is drawn, see afterPaint: the
-    // Go side reads around the place from then on.
-    const send = () =>
-      void this.puller.pull(`/frames/look?${q}`, width, height).then((got) => {
-        for (const { frame } of got.frames) frame.close();
-      });
-    if (w.moving) send();
-    else this.painted(send);
+    void this.puller.pull(`/frames/look?${q}`, width, height).then((got) => {
+      for (const { frame } of got.frames) frame.close();
+    });
+  }
+
+  // The ranks of the frames kept here around a place at this size, which
+  // the Go side need not read for it, see engine.Hand.Holds.
+  private around(rank: number, width: number, height: number): number[] {
+    return this.keptHere(width, height).filter((r) => r >= rank - 16 && r <= rank + 8);
+  }
+
+  // Asks Near for the place the hand rests on once its frame is on
+  // screen, see afterPaint, unless the video preview closed by then.
+  private drawn(rank: number) {
+    this.painted(() => {
+      if (!this.closed) this.near(rank);
+    });
   }
 
   route(w: Waiter) {
@@ -614,25 +616,26 @@ class Puller {
       this.trace(`the frames' worker stopped: ${e.message}, the page reads them now`);
       this.worker = null;
       this.where = "page";
-      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, light: "", exact: false, kept: false, near: false, frames: [], spare: [] });
+      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, light: "", exact: false, kept: false, near: false, keep: [], frames: [], spare: [] });
       this.waiting.clear();
     };
     this.worker = w;
     this.where = "worker";
   }
 
-  async pull(url: string, width: number, height: number, head = 8): Promise<Got> {
-    const got = await this.pulled(url, width, height, head);
+  async pull(url: string, width: number, height: number, head = 8, frames = 1): Promise<Got> {
+    const got = await this.pulled(url, width, height, head, frames);
     for (const b of got.spare ?? []) framePool.give(b);
     return { ...got, frames: pictures(got, width, height) };
   }
 
   // A pull is handed as many kept buffers as frames it asks for, see
-  // pool.ts.
-  private async pulled(url: string, width: number, height: number, head: number): Promise<Pulled> {
+  // pool.ts. The n of a look's URL is where it stands among what the app
+  // sent, and was once taken for how many frames it asks: every look
+  // took the whole pool, and a play found it empty.
+  private async pulled(url: string, width: number, height: number, head: number, frames: number): Promise<Pulled> {
     await this.ready;
-    const asked = Number(new URL(url, location.href).searchParams.get("n") ?? 1) || 1;
-    const spare = framePool.takeUpTo(width * height * 4, asked);
+    const spare = framePool.takeUpTo(width * height * 4, frames);
     const w = this.worker;
     if (!w) return pull(url, width, height, spare, head);
     const n = this.count++;
@@ -652,11 +655,11 @@ function bytes(f: Picture): number {
   return f.width * f.height * 4;
 }
 
-// Calls back once the frame of the page after this one is painted. The Go
-// side is handed what to read around a resting hand from then on: read at
-// once, the decoder took the processor from the app as it drew the frame
-// the hand went to, and in the cloud a step a word on came up 2 ms and a
-// far click 13 ms later than when the app read its own frames.
+// Calls back once the frame drawn now is on screen: the animation frame
+// comes before the paint, the timeout after it. The Go side reads around a
+// resting hand only from then on, see engine.Schedule.Near: read at once,
+// the decoder took the processor from the app as it drew the frame the
+// hand went to.
 function afterPaint(then: () => void) {
   requestAnimationFrame(() => setTimeout(then, 0));
 }

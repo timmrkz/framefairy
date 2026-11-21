@@ -250,10 +250,12 @@ func TestACuedPlayWaitsForGoBeforeItTakesTheDecoder(t *testing.T) {
 		t.Fatalf("the cue starts with %+v", f)
 	}
 	// The hand's look still has the decoder.
-	for f := 99; f <= 100; f++ {
-		if err := run.give(t, f); err != nil {
-			t.Fatalf("frame %d of the look: %v", f, err)
-		}
+	if err := run.give(t, 99); err != nil {
+		t.Fatalf("frame 99 of the look: %v", err)
+	}
+	// The run ends at the look's frame while the window draws it.
+	if err := run.give(t, 100); !errors.Is(err, errLookDone) {
+		t.Fatalf("frame 100 of the look: %v", err)
 	}
 	if got := <-looking; got.err != nil || got.seen.Frame != 100 {
 		t.Fatalf("the look was answered with %+v", got)
@@ -290,10 +292,12 @@ func TestAHeldPlayGivesTheDecoderBackAndGoesOnFromWhereItWas(t *testing.T) {
 	looking := lookFor(s, rest(100))
 	waits(s, rest(100))
 	run := d.next(t)
-	for f := 99; f <= 100; f++ {
-		if err := run.give(t, f); err != nil {
-			t.Fatalf("frame %d of the look: %v", f, err)
-		}
+	if err := run.give(t, 99); err != nil {
+		t.Fatalf("frame 99 of the look: %v", err)
+	}
+	// The run ends at the look's frame while the window draws it.
+	if err := run.give(t, 100); !errors.Is(err, errLookDone) {
+		t.Fatalf("frame 100 of the look: %v", err)
 	}
 	if got := <-looking; got.err != nil || got.seen.Frame != 100 {
 		t.Fatalf("the look was answered with %+v", got)

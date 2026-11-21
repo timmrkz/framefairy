@@ -65,7 +65,7 @@ func BenchmarkALookAtAKeptFrameAndItsNearFrames(b *testing.B) {
 		if _, err := s.Look(ctx, l); err != nil {
 			b.Fatal(err)
 		}
-		_ = s.AskNear(l)
+		_ = s.HasNear(l)
 		_ = s.Near(ctx, l, func(int) bool { return false })
 	}
 }
