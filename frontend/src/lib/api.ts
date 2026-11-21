@@ -660,6 +660,10 @@ export interface HeardView {
   saved: [number, number][];
   heard: [number, number][];
   unheard: [number, number][];
+  // The part of unheard Transcribe whole video works on, the one it hears
+  // or the one it hears next, or null while the whole video is not being
+  // transcribed.
+  whole?: [number, number] | null;
 }
 
 // A clip in a state sent, by its key and its hash, see VideoState.order.

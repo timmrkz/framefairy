@@ -103,6 +103,32 @@ type HeardView struct {
 	// Unheard is what of the video Heard does not hold, gaps under a
 	// second left out, see engine.NotHeard.
 	Unheard [][2]float64 `json:"unheard"`
+	// Whole is the part of Unheard that Transcribe whole video works on,
+	// see wholePart, which the range picker frames, or nil while the
+	// whole video is not being transcribed.
+	Whole *[2]float64 `json:"whole"`
+}
+
+// wholePart is the part of unheard the video's transcription to its end
+// works on, of the jobs of the video: the part it hears, which begins
+// where its hearing has reached, or while it waits its turn the part it
+// hears next, the first. It is nil while no such transcription runs or
+// waits, and once it was told to stop.
+func wholePart(jobs []Job, unheard [][2]float64) *[2]float64 {
+	j := wholeJob(jobs)
+	if j == nil || len(unheard) == 0 {
+		return nil
+	}
+	part := unheard[0]
+	if j.State == JobRunning && j.Step == engine.StepHearing && j.Progress != nil && j.Progress.Covered > 0 {
+		// What is heard reaches the edge of the hearing, so the part it
+		// hears begins there, give or take the rounding of the two.
+		edge := j.Progress.Covered
+		if i := slices.IndexFunc(unheard, func(g [2]float64) bool { return math.Abs(g[0]-edge) < 0.5 }); i >= 0 {
+			part = unheard[i]
+		}
+	}
+	return &part
 }
 
 // heardView is what of the video at path is heard, from its status, on
@@ -176,6 +202,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 	}
 	st.Clips = s.clipsOf(plans, info, st.Status.Heard)
 	st.Heard = s.heardView(path, st.Status, info.Duration)
+	st.Heard.Whole = wholePart(st.Jobs, st.Heard.Unheard)
 	st.Cards = s.saidStamp(path, plans, info)
 	searchesEnded(st.Jobs, st.Status, info.Duration)
 	if !st.Status.Missing {

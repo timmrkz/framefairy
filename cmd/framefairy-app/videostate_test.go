@@ -19,6 +19,8 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/runlog"
+	"framefairy/engine/timed"
 )
 
 // newsOf is a videoNews whose reads are counted, each read giving the
@@ -936,6 +938,47 @@ func TestAVideoStandsAsItsFilesAndSearchSay(t *testing.T) {
 	} {
 		if got := standing(c.st, c.search); got != c.want {
 			t.Errorf("%s stands as %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// The range picker frames the part Transcribe whole video works on, and
+// the Go side says which: the part its hearing has reached while it
+// hears, the first part not heard while it waits its turn, and none
+// while it does not run or was told to stop.
+func TestTheStateSaysWhichPartTheWholeVideoHears(t *testing.T) {
+	t.Parallel()
+	unheard := [][2]float64{{600, 900}, {1200, 1800}, {2400, 3600}}
+	whole := func(state, step string, covered float64) Job {
+		j := Job{JobRecord: engine.TranscribeRecord(timed.Window{}, false), State: state}
+		j.Step = step
+		if covered > 0 {
+			j.Progress = &runlog.Event{Kind: runlog.EventProgress, From: covered - 30, Covered: covered}
+		}
+		return j
+	}
+	part := Job{JobRecord: engine.TranscribeRecord(timed.Window{Start: 1200, End: 1260}, false), State: JobRunning}
+	part.Step = engine.StepHearing
+	stopping := whole(JobRunning, engine.StepHearing, 1200.2)
+	stopping.Stopping = true
+	for _, c := range []struct {
+		name    string
+		jobs    []Job
+		unheard [][2]float64
+		want    *[2]float64
+	}{
+		{"nothing runs", nil, unheard, nil},
+		{"only a part of a clip is heard", []Job{part}, unheard, nil},
+		{"waits its turn", []Job{whole(JobQueued, "", 0)}, unheard, &[2]float64{600, 900}},
+		{"waits behind a search", []Job{whole(JobRunning, engine.StepWaiting, 1200.2)}, unheard, &[2]float64{600, 900}},
+		{"hears the second part", []Job{part, whole(JobRunning, engine.StepHearing, 1200.2)}, unheard, &[2]float64{1200, 1800}},
+		{"hears where no part begins", []Job{whole(JobRunning, engine.StepHearing, 300)}, unheard, &[2]float64{600, 900}},
+		{"told to stop", []Job{stopping}, unheard, nil},
+		{"everything is heard", []Job{whole(JobRunning, engine.StepHearing, 3600)}, nil, nil},
+	} {
+		got := wholePart(c.jobs, c.unheard)
+		if (got == nil) != (c.want == nil) || (got != nil && *got != *c.want) {
+			t.Errorf("%s: the part framed is %v, want %v", c.name, got, c.want)
 		}
 	}
 }

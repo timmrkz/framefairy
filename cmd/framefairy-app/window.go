@@ -198,16 +198,22 @@ func searchHolds(jobs []Job) bool {
 	return false
 }
 
-// wholeHeard says whether the whole video is being transcribed: its
-// transcription runs or waits its turn, and was not told to stop.
+// wholeHeard says whether the whole video is being transcribed, see
+// wholeJob.
 func wholeHeard(jobs []Job) bool {
-	for _, j := range jobs {
+	return wholeJob(jobs) != nil
+}
+
+// wholeJob is the video's transcription to its end among jobs, while it
+// runs or waits its turn and was not told to stop, or nil.
+func wholeJob(jobs []Job) *Job {
+	for i := range jobs {
 		// A part of a clip and the stretch around one are about that clip.
-		if j.Hears() == engine.HearsWhole && j.going() && !j.Stopping {
-			return true
+		if j := &jobs[i]; j.Hears() == engine.HearsWhole && j.going() && !j.Stopping {
+			return j
 		}
 	}
-	return false
+	return nil
 }
 
 // placedWindow is where the app puts a video's window, with the settings
