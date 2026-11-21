@@ -936,8 +936,10 @@ export const steps = {
   //                    are brighter, and a green of BT.2020 lies outside
   //                    BT.709. A word lifted out and grown by 1.15 and 2
   //                    is held to laidPart's on every pixel, so the GPU
-  //                    grows it round its middle. Says so and checks
-  //                    nothing without WebGPU
+  //                    grows it round its middle, and the reflection
+  //                    under the video preview is held to painted's on
+  //                    every pixel. Says so and checks nothing without
+  //                    WebGPU
   async "screen light"(walk) {
     const { page } = walk;
     // A pixel of 10 bits a colour, red lowest, as the Go side sends
@@ -1013,6 +1015,15 @@ export const steps = {
       }),
     );
     if (lifted) console.log(`        a word grown on the GPU is at most ${most.toFixed(4)} from laidPart's, over every pixel`);
+    // The reflection under the video preview, drawn by the GPU on every
+    // pixel of a band, is the same as painted draws it on the processor,
+    // the noise that keeps it smooth and all, to a step: the two round
+    // the same mix in their own floats.
+    const reflected = await page.evaluate(() => window.__checkReflected?.(600, 50) ?? null);
+    if (reflected) {
+      console.log(`        the reflection drawn on the GPU is at most ${reflected.worst} steps from painted's, ${reflected.off} of ${reflected.of} channels a step off`);
+      if (reflected.worst > 1 || reflected.off > reflected.of / 1000) problems.push(`the reflection drawn on the GPU is ${reflected.worst} steps from painted's at worst, ${reflected.off} of ${reflected.of} channels off`);
+    }
     // The canvas of standard video is in the standard mode, the one
     // the rest of the app is drawn in. In the extended mode it turned
     // the Mac's HDR on, and Tim's pictures on #201 showed the captions

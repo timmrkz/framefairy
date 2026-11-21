@@ -494,11 +494,18 @@ rather than darkening the foot of the app. It reads the frame the video
 preview already has, 9216 of its pixels, and nothing else, and blurs and
 fades those 64 by 36 cells itself, so playback does no work for it but
 that, see `frontend/src/lib/frames/reflection.ts` and
-`frontend/src/components/Reflection.svelte`. The stylesheet only
-stretches the cells over the band, with no filter and no mask: a blur
-there is worked out anew over the whole band every time the reflection
-changes, which without a graphics chip took more of the processor than
-the video. How tall and wide it is are the `--reflection-` tokens in
+`frontend/src/components/Reflection.svelte`. The cells are drawn on
+every pixel of the screen under the band, laid over the colour of the
+app and mixed with a noise of less than one of the 256 steps a screen
+has, so the faint shade never falls into bands. The graphics chip draws
+them where the app has WebGPU, see `frontend/src/lib/frames/reflected.ts`,
+so the processor's work stays the blur on the cells, and the processor
+draws them where it has none. Stretched as a canvas of 64 by 36, its
+few steps fell into flat blocks that stepped from cell to cell, and Tim
+saw them as pixels. No filter and no mask in the stylesheet either: a
+blur there is worked out anew over the whole band every time the
+reflection changes, which without a graphics chip took more of the
+processor than the video. How tall and wide it is are the `--reflection-` tokens in
 `app.css`, how blurred and how strong are `BLUR` and `STRENGTH` in
 `reflection.ts`. A button in
 the row under the clip timeline that cannot be pressed is dimmed by its

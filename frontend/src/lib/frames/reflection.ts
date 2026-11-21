@@ -10,13 +10,13 @@
 // never read back from the GPU and never decoded again. The blur and the
 // fade are worked out here, on those cells, and the cells are then drawn
 // on every pixel of the band, with noise to keep a faint shade from
-// falling into bands, see painted. Not by a filter and a mask in the
-// stylesheet: the
-// browser would then blur the band anew, its full size and as far again
-// as the blur reaches around it, every time a cell changes, which is 30
-// times a second while a video plays. Without a graphics chip, as on a
-// computer with a weak one, that took more of the processor than playing
-// the video did.
+// falling into bands, by the graphics chip where there is one, see
+// reflected.ts, and by painted here where there is none. Not by a filter
+// and a mask in the stylesheet: the browser would then blur the band
+// anew, its full size and as far again as the blur reaches around it,
+// every time a cell changes, which is 30 times a second while a video
+// plays. Without a graphics chip, as on a computer with a weak one, that
+// took more of the processor than playing the video did.
 
 import { toSDR, type Light } from "./light";
 
@@ -232,31 +232,43 @@ for (let y = 0; y < TILE; y++)
     noise[y * TILE + x] = (Math.floor(n * 255) + 0.5) / 256;
   }
 
-const opaque = new Float32Array(COLS * ROWS * 3);
+// What spread made, laid over the ground, the colour of the app behind the
+// band: each cell's red, green, blue and an alpha of 255, in steps of 0 to
+// 255 and not yet cut to whole ones. Mixed as numbers and cut once, where
+// each pixel is drawn: a canvas that kept the band's own transparency
+// stored its colours already multiplied by it, in 256 steps, and a faint
+// reflection had a handful of steps left before the screen rounded it
+// again. The graphics chip draws from these, see reflected.ts.
+export function laid(from: Float32Array, ground: readonly [number, number, number], into: Float32Array) {
+  for (let i = 0; i < from.length; i += 4) {
+    const rest = 1 - from[i + 3] / 255;
+    into[i] = Math.min(255, from[i] + ground[0] * rest);
+    into[i + 1] = Math.min(255, from[i + 1] + ground[1] * rest);
+    into[i + 2] = Math.min(255, from[i + 2] + ground[2] * rest);
+    into[i + 3] = 255;
+  }
+}
+
+const opaque = new Float32Array(COLS * ROWS * 4);
 const line = new Float32Array(COLS * 3);
 
-// What spread made, laid over the ground, the colour of the app behind the
-// band, as the pixels of an opaque canvas of r's size, each one word of
-// red, green, blue and alpha from the lowest byte up, the way ImageData's
-// bytes are read on a little-endian machine, which every machine the app
-// runs on is. Mixed as numbers and cut to whole steps once, at the end: a
-// canvas that kept the band's own transparency stored its colours
-// already multiplied by it, in 256 steps, and a faint reflection had a
-// handful of steps left before the screen rounded it again.
+// The cells laid over the ground, drawn on the processor, as the pixels of
+// an opaque canvas of r's size, each one word of red, green, blue and
+// alpha from the lowest byte up, the way ImageData's bytes are read on a
+// little-endian machine, which every machine the app runs on is. Where
+// the graphics chip cannot draw it, see reflected.ts.
 export function painted(from: Float32Array, ground: readonly [number, number, number], r: Raster, into: Uint32Array) {
-  for (let i = 0, o = 0; i < from.length; i += 4, o += 3) {
-    const rest = 1 - from[i + 3] / 255;
-    opaque[o] = Math.min(255, from[i] + ground[0] * rest);
-    opaque[o + 1] = Math.min(255, from[i + 1] + ground[1] * rest);
-    opaque[o + 2] = Math.min(255, from[i + 2] + ground[2] * rest);
-  }
+  laid(from, ground, opaque);
   const { wide, high, row, down, middle } = r;
   const step = COLS / wide;
   for (let y = 0; y < high; y++) {
-    const above = row[y] * COLS * 3;
-    const below = above + COLS * 3;
+    const above = row[y] * COLS * 4;
     const f = down[y];
-    for (let k = 0; k < COLS * 3; k++) line[k] = opaque[above + k] + (opaque[below + k] - opaque[above + k]) * f;
+    for (let c = 0; c < COLS; c++)
+      for (let k = 0; k < 3; k++) {
+        const a = above + c * 4 + k;
+        line[c * 3 + k] = opaque[a] + (opaque[a + COLS * 4] - opaque[a]) * f;
+      }
     const tile = (y % TILE) * TILE;
     const start = y * wide;
     // Before the first middle, the first cell's colour.

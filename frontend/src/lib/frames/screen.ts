@@ -226,7 +226,9 @@ const TEXTURE = {
 };
 const BUFFER = { mapRead: 0x01, copySrc: 0x04, copyDst: 0x08, uniform: 0x40 };
 
-async function gpuDevice(): Promise<GPUDevice | null> {
+// A device of the graphics chip, or null where the webview has none. The
+// video preview and the reflection under it each ask for their own.
+export async function gpuDevice(): Promise<GPUDevice | null> {
   if (typeof navigator === "undefined" || !navigator.gpu) return null;
   const adapter = await navigator.gpu.requestAdapter();
   return adapter ? adapter.requestDevice() : null;
