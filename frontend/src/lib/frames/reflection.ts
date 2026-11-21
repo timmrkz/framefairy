@@ -5,11 +5,13 @@
 // of the app by the stylesheet, see Reflection.svelte. Tim picked it from
 // the mockups of #717.
 //
-// It costs playback nothing it would notice: the frame is read on the
-// processor where it already is, at COLS by ROWS cells of four pixels
-// each, 9216 pixels however large the video, never read back from the GPU
-// and never decoded again. The blur and the fade are worked out here, on
-// those cells, and not by a filter and a mask in the stylesheet: the
+// The frame is read on the processor where it already is, at COLS by
+// ROWS cells of four pixels each, 9216 pixels however large the video,
+// never read back from the GPU and never decoded again. The blur and the
+// fade are worked out here, on those cells, and the cells are then drawn
+// on every pixel of the band, with noise to keep a faint shade from
+// falling into bands, see painted. Not by a filter and a mask in the
+// stylesheet: the
 // browser would then blur the band anew, its full size and as far again
 // as the blur reaches around it, every time a cell changes, which is 30
 // times a second while a video plays. Without a graphics chip, as on a
@@ -189,16 +191,97 @@ export function spread(from: Float32Array, b: Band, into: Float32Array) {
   }
 }
 
-// What spread made, as the bytes a canvas takes, whose red, green and blue
-// are not multiplied by the alpha.
-export function painted(from: Float32Array, into: Uint8ClampedArray) {
-  for (let i = 0; i < from.length; i += 4) {
-    const a = from[i + 3];
-    const k = a > 0 ? 255 / a : 0;
-    into[i] = from[i] * k;
-    into[i + 1] = from[i + 1] * k;
-    into[i + 2] = from[i + 2] * k;
-    into[i + 3] = a;
+// The pixels the reflection is drawn on, wide by high pixels of the
+// canvas: the row of cells above each row of pixels and how far it is on
+// the way to the next, and the pixel each cell's middle falls on across,
+// so a pixel is the mix of the four cells round it, and along a row the
+// colour moves by the same amount from one pixel to the next between two
+// middles. Before the first middle and after the last it stays.
+export type Raster = { wide: number; high: number; row: Int32Array; down: Float32Array; middle: Int32Array };
+
+export function raster(wide: number, high: number): Raster {
+  const row = new Int32Array(high);
+  const down = new Float32Array(high);
+  for (let y = 0; y < high; y++) {
+    // The middle of pixel y, in cells, from the middle of the first.
+    const v = Math.min(ROWS - 1, Math.max(0, ((y + 0.5) * ROWS) / high - 0.5));
+    row[y] = Math.min(ROWS - 2, Math.floor(v));
+    down[y] = v - row[y];
+  }
+  // The first pixel whose middle is at or past the middle of cell c.
+  const middle = new Int32Array(COLS);
+  for (let c = 0; c < COLS; c++) middle[c] = Math.min(wide, Math.max(0, Math.ceil(((c + 0.5) * wide) / COLS - 0.5)));
+  return { wide, high, row, down, middle };
+}
+
+// The noise added to every pixel before it is cut to the 256 steps a
+// screen has, from nothing to a whole step, the same for a pixel every
+// time it is drawn so it never flickers. A reflection is faint, its
+// brightest a few dozen steps over the ground, so rounded alone it fell
+// into bands a step apart, their edges stepping from cell to cell, and
+// Tim saw them as pixels. The noise turns the edge of every band into a
+// mix of the steps on either side, which the eye takes as the shade in
+// between. It is interleaved gradient noise, Jimenez 2014: next to no
+// pattern, and no two neighbours alike. Never a whole step, so the
+// ground, a whole number, is cut to itself and the band has no edge.
+const TILE = 64;
+const noise = new Float32Array(TILE * TILE);
+for (let y = 0; y < TILE; y++)
+  for (let x = 0; x < TILE; x++) {
+    const n = (52.9829189 * ((0.06711056 * x + 0.00583715 * y) % 1)) % 1;
+    noise[y * TILE + x] = (Math.floor(n * 255) + 0.5) / 256;
+  }
+
+const opaque = new Float32Array(COLS * ROWS * 3);
+const line = new Float32Array(COLS * 3);
+
+// What spread made, laid over the ground, the colour of the app behind the
+// band, as the pixels of an opaque canvas of r's size, each one word of
+// red, green, blue and alpha from the lowest byte up, the way ImageData's
+// bytes are read on a little-endian machine, which every machine the app
+// runs on is. Mixed as numbers and cut to whole steps once, at the end: a
+// canvas that kept the band's own transparency stored its colours
+// already multiplied by it, in 256 steps, and a faint reflection had a
+// handful of steps left before the screen rounded it again.
+export function painted(from: Float32Array, ground: readonly [number, number, number], r: Raster, into: Uint32Array) {
+  for (let i = 0, o = 0; i < from.length; i += 4, o += 3) {
+    const rest = 1 - from[i + 3] / 255;
+    opaque[o] = Math.min(255, from[i] + ground[0] * rest);
+    opaque[o + 1] = Math.min(255, from[i + 1] + ground[1] * rest);
+    opaque[o + 2] = Math.min(255, from[i + 2] + ground[2] * rest);
+  }
+  const { wide, high, row, down, middle } = r;
+  const step = COLS / wide;
+  for (let y = 0; y < high; y++) {
+    const above = row[y] * COLS * 3;
+    const below = above + COLS * 3;
+    const f = down[y];
+    for (let k = 0; k < COLS * 3; k++) line[k] = opaque[above + k] + (opaque[below + k] - opaque[above + k]) * f;
+    const tile = (y % TILE) * TILE;
+    const start = y * wide;
+    // Before the first middle, the first cell's colour.
+    let x = 0;
+    for (let c = -1; c < COLS; c++) {
+      const end = c + 1 < COLS ? middle[c + 1] : wide;
+      const k = Math.max(0, c) * 3;
+      const n = Math.min(COLS - 1, c + 1) * 3;
+      // Where pixel x lies between the middles of cell c and the next.
+      const at = c < 0 || c + 1 >= COLS ? 0 : (x + 0.5) * step - 0.5 - c;
+      const by = c < 0 || c + 1 >= COLS ? 0 : step;
+      let red = line[k] + (line[n] - line[k]) * at;
+      let green = line[k + 1] + (line[n + 1] - line[k + 1]) * at;
+      let blue = line[k + 2] + (line[n + 2] - line[k + 2]) * at;
+      const dr = (line[n] - line[k]) * by;
+      const dg = (line[n + 1] - line[k + 1]) * by;
+      const db = (line[n + 2] - line[k + 2]) * by;
+      for (; x < end; x++) {
+        const d = noise[tile + (x & (TILE - 1))];
+        into[start + x] = (0xff000000 | (((blue + d) | 0) << 16) | (((green + d) | 0) << 8) | ((red + d) | 0)) >>> 0;
+        red += dr;
+        green += dg;
+        blue += db;
+      }
+    }
   }
 }
 

@@ -2,8 +2,9 @@
   // The faint reflection of the video preview at the foot of the
   // workspace, as if the video shone towards the person in front of it.
   // The frame on screen is made small, upside down, blurred and faded in
-  // lib/frames/reflection.ts, and the stylesheet only stretches it along
-  // the bottom edge of the app, with the numbers from app.css. It lies
+  // lib/frames/reflection.ts, and drawn along the bottom edge of the app
+  // on a pixel of the canvas for every pixel of the screen, where the
+  // stylesheet lays it out with the numbers from app.css. It lies
   // behind everything in the workspace, so nothing that is read or worked
   // with changes, and it shows only in the room between them.
   //
@@ -12,7 +13,7 @@
   // second and stops once it has arrived, so a paused video costs nothing.
   import { onMount } from "svelte";
   import type { Picture } from "../lib/frames/picture";
-  import { COLS, ROWS, band, clear, ease, mirrored, painted, share, spread, type Band } from "../lib/frames/reflection";
+  import { COLS, ROWS, band, clear, ease, mirrored, painted, raster, share, spread, type Band, type Raster } from "../lib/frames/reflection";
 
   let { shown = true }: { shown?: boolean } = $props();
 
@@ -20,6 +21,8 @@
   let canvas: HTMLCanvasElement;
   let g: CanvasRenderingContext2D | null = null;
   let image: ImageData | null = null;
+  // The same pixels as one word each, which is how they are drawn.
+  let pixels: Uint32Array | null = null;
   // The frame's cells, and what is drawn and what it settles towards, the
   // cells blurred and faded over the band the stylesheet lays out, which
   // the canvas is told of. Clear until the first frame.
@@ -27,6 +30,10 @@
   const now = new Float32Array(COLS * ROWS * 4);
   const goal = new Float32Array(COLS * ROWS * 4);
   let laid: Band | null = null;
+  // The canvas's own pixels, as many as the screen gives the band, and the
+  // colour of the app behind it, which the reflection is laid over.
+  let drawn: Raster | null = null;
+  let ground: [number, number, number] = [0, 0, 0];
   // Whether the cells changed since they were spread over the band.
   let fresh = false;
   let request = 0;
@@ -52,13 +59,7 @@
     fresh = false;
   }
 
-  // A new band shows at once, on the next step: only a change of picture
-  // is settled on.
-  function settle(at = false) {
-    if (at) {
-      spreadCells();
-      now.set(goal);
-    }
+  function settle() {
     if (!request) {
       last = performance.now();
       request = requestAnimationFrame(step);
@@ -75,24 +76,45 @@
     last = t;
     if (fresh) spreadCells();
     const left = ease(now, goal, share(dt / 1000));
-    if (g && image) {
-      painted(now, image.data);
-      g.putImageData(image, 0, 0);
-    }
+    draw();
     if (left >= 0.5) request = requestAnimationFrame(step);
   }
 
+  function draw() {
+    if (!g || !image || !pixels || !drawn) return;
+    painted(now, ground, drawn, pixels);
+    g.putImageData(image, 0, 0);
+  }
+
   onMount(() => {
-    g = canvas.getContext("2d");
-    image = new ImageData(COLS, ROWS);
+    // Opaque: the reflection is laid over the colour of the app here, see
+    // painted in reflection.ts.
+    g = canvas.getContext("2d", { alpha: false });
+    const [r, gr, b] = (getComputedStyle(canvas).color.match(/[\d.]+/g) ?? []).map(Number);
+    ground = [r || 0, gr || 0, b || 0];
     // The canvas is told how large the stylesheet lays it out, which is
-    // how far its blur reaches in cells. Nothing is laid out from it.
+    // how far its blur reaches in cells, and given a pixel for every pixel
+    // of the screen there. Nothing is laid out from it.
     const watch = new ResizeObserver((entries) => {
       const box = entries[entries.length - 1].contentRect;
       // Nothing measured while the workspace is put away, see App.svelte.
       if (!canvas.isConnected || !box.width || !box.height) return;
       laid = band(box.width, box.height);
-      settle(true);
+      const wide = Math.max(1, Math.round(box.width * devicePixelRatio));
+      const high = Math.max(1, Math.round(box.height * devicePixelRatio));
+      if (!drawn || drawn.wide !== wide || drawn.high !== high) {
+        drawn = raster(wide, high);
+        image = new ImageData(wide, high);
+        pixels = new Uint32Array(image.data.buffer);
+        // A canvas given a new size is cleared to black, so it is drawn
+        // again before the screen shows it, not on the next step.
+        canvas.width = wide;
+        canvas.height = high;
+      }
+      // A new band shows at once: only a change of picture is settled on.
+      spreadCells();
+      now.set(goal);
+      draw();
     });
     watch.observe(canvas);
     return () => {
@@ -102,8 +124,7 @@
   });
 </script>
 
-<canvas class="reflection" class:hidden={!shown} bind:this={canvas} width={COLS} height={ROWS} aria-hidden="true"
-></canvas>
+<canvas class="reflection" class:hidden={!shown} bind:this={canvas} width="1" height="1" aria-hidden="true"></canvas>
 
 <style>
   /* Along the bottom edge of the workspace, under the middle of the app,
@@ -120,6 +141,9 @@
     width: var(--reflection-w);
     height: var(--reflection-h);
     pointer-events: none;
+    /* The colour of the app behind the band, which the reflection is
+       laid over in its own pixels, read from here as the canvas starts. */
+    color: var(--ink-0);
   }
 
   /* On a whole pixel, see Everything lands on a whole pixel in CLAUDE.md. */
