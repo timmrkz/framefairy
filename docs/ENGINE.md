@@ -196,18 +196,37 @@ one reached it. `engine/levels.go` measures it on its own:
 `logs/levels.json`. Audio decodes at a few hundred times real time, so an
 hour takes seconds, but four hours still take the better part of a
 minute, and a playhead put near the end waited for all of it. So
-`MeasureLevels` is told what the clip timeline shows and measures that
-first, then on from there, then from the start. Every half second it asks
-again, and when the view has moved to a part not measured yet, it stops
-ffmpeg and starts it again there, with `-ss` before the input so ffmpeg
-seeks rather than decodes its way there. It starts a fifth of a second
+`MeasureLevels` runs several ffmpeg at once, half the cores and eight at
+most, each from a place of its own, with `-ss` before the input so
+ffmpeg seeks rather than decodes its way there. Sound has no key frames,
+so any place is a place to start. It is told what the clip timeline
+shows, and one ffmpeg measures that first. The others take the longest
+work left: a part nobody measures, from its start, or the second half of
+what is ahead of another ffmpeg, when that half is longer than 30 s,
+`levelsShare`, about what an ffmpeg takes to start. After every read an
+ffmpeg asks where the clip timeline looks, and when the view has moved
+to a part not measured yet that no other ffmpeg is in, it stops and
+starts again there. An hour took 11.7 s with one ffmpeg and 3.3 s with
+four, measured in a cloud session. It starts a fifth of a second
 early and `atrim` cuts that off by timestamp, `levelsLead`, which is
 `soundLead` counted in frames, one number for both: the first
 40 ms after a seek came out up to 4 dB off, because a packet of
 compressed audio is decoded together with the one before it, and ffmpeg
 9 drops the first packet after the seek point whole. A part that ends
-between two of those half seconds is written when it ends. A run ends where it meets a part
+between two writes is written when it ends. A run ends where it meets a part
 measured already, so nothing is measured twice.
+
+Every read is handed to the video's `LoudnessSchedule`,
+`engine/loudnesslook.go`, which holds the loudness the way `Loudness`
+lays it out and keeps the levels for zooming out right as each reading
+comes. The clip timeline looks at it through `/frames/levels/look` with
+its view and the version of what it holds, the way the video preview
+looks for a frame, through the same code, `looks` in `engine/looks.go`.
+A view the window lacks readings of is answered at once with the bytes
+of the view in each level, one not measured yet the moment the
+measuring brings some, and a newer look answers the one before as
+overtaken. See
+[the decision record](decisions/2026-11-21-the-waveform-keeps-up-with-the-hand.md).
 
 What it has is written every half second, frames first and the json
 after, which gives the parts measured as frame numbers and, once a run
@@ -228,8 +247,8 @@ view from: a byte a reading, -90 to 0 dB in half decibels, and after
 them the loudest of every two, four, eight and so on, for zooming out,
 about as long again, after a head that says how to read them. Two hours
 are 1.4 MB, made in about 2 ms. `EpisodeStatus.Loudness` is a stamp that
-changes whenever these bytes would, which tells the window to read them
-again. See
+changes whenever the files would give other bytes, which tells the window
+to read them again whole, once the measuring has ended. See
 [the decision record](decisions/2026-11-18-the-window-holds-the-loudness.md).
 
 ## How words get their timing

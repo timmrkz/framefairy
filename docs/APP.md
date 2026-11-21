@@ -2227,6 +2227,15 @@ bubble scrolled by those eight pixels.
       It asked the Go side for each view and drew empty track until the
       answer came, Tim's report of 17 November, issue #909. See
       [the decision record](decisions/2026-11-18-the-window-holds-the-loudness.md).
+    - **A click on a part not measured yet is measured at once.** Every
+      move of the view is a look, `/frames/levels/look`, the way the video
+      preview looks for a frame. Go answers it from memory with the
+      readings of the view the clip timeline does not hold, or the moment
+      the measuring brings them, while several ffmpeg measure the rest of
+      the video side by side. The waveform of a click on a part not
+      measured waited 300 to 430 ms for the disk, a notice and a read of
+      the whole loudness, Tim's report of 21 November, issue #968. See
+      [the decision record](decisions/2026-11-21-the-waveform-keeps-up-with-the-hand.md).
     - **Every clip is on it, not only the chosen one.** The other clips
       are the same marks the range picker draws, across the middle of the
       track where the captions run, in the app's colour and green once
