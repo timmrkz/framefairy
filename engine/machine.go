@@ -73,8 +73,11 @@ type Machine struct {
 	// measured is the ink of the caption blocks libass measured, see
 	// measureMany, and previewTracks the caption files of the video
 	// preview, see previewTrack, each made the first time it is asked for.
-	captionsOnce  sync.Once
-	measured      *inkCache
+	captionsOnce sync.Once
+	measured     *inkCache
+	// inkPath is where the ink is kept between runs, which UseSystem
+	// names, see inkkept.go. Empty, it is kept in memory only.
+	inkPath       string
 	previewTracks *trackCache
 	// measureTurns is how many frames of measuring are drawn at once on
 	// the machine, by every ask together, see measureBlocks.
@@ -140,6 +143,7 @@ func (m *Machine) UseSystem() {
 	m.network = http.DefaultTransport
 	m.useMedia(SystemMedia(runtime.GOOS))
 	m.useFaces()
+	m.inkPath = InkFile()
 }
 
 // useFaces hands the machine the face detector the program carries, in
@@ -234,7 +238,7 @@ func (m *Machine) LearnFrom(before *Machine) {
 // captions is the machine's caches of caption work, made once.
 func (m *Machine) captions() (*inkCache, *trackCache) {
 	m.captionsOnce.Do(func() {
-		m.measured = &inkCache{boxes: map[string]inkBox{}}
+		m.measured = &inkCache{boxes: map[string]inkBox{}, files: m.Files, path: m.inkPath}
 		m.previewTracks = newTrackCache()
 	})
 	return m.measured, m.previewTracks

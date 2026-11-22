@@ -224,6 +224,18 @@ gets its whole file. The folder keeps the
 an earlier run left half written. A file half written a moment ago is
 another ask's, made beside it, and stays. The caption file is never what makes the work folder: a folder without its mark gets no caption file, and one gone by the moment the file is written gets none either, `ErrNoWorkFolder`. The folders the file and its face go in are made one at a time inside the work folder, `foldersIn`, and never with everything above them, so a deletion that crosses the write leaves the folder gone, which CI's run of that walk caught. The video preview went on asking for captions after Tim's folder was deleted in Finder, and wrote the folder back before the app let the video go, which main's walk for 2.247 found on #201.
 
+Where libass puts the ink of each block of words, which the pill and the
+box are drawn from, is measured once and kept: on the `Machine` while the
+program runs, and in `~/.framefairy/captions/ink.json` between runs,
+`engine/inkkept.go`. The file is stamped with a hash of ffmpeg's bytes and
+of the faces the program carries, so a new ffmpeg or a new face measures
+again, and an update that changes neither keeps the ink. The first
+caption file of a clip after a start took about 400 ms in a cloud
+session while it measured, and takes about 4 ms with the ink kept. Only
+the programs name the file, in `Machine.UseSystem`, so a test keeps its
+ink in memory. See [the decision
+record](decisions/2026-11-22-the-caption-ink-kept-between-runs.md).
+
 The decoder draws the file twice, over black and over white, and takes
 colour and coverage from the two, `framewire.Layer`: red, green and blue
 with the alpha multiplied in, in full range, and only the box that has any
