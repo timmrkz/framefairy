@@ -475,5 +475,15 @@ func TestAFirstLookThatGoesWrongHoldsNoCall(t *testing.T) {
 		if !<-known {
 			t.Error("the video in the library is not known after a first look that went wrong")
 		}
+		// The library answers again after it, and so does every look,
+		// which takes the lock the look held.
+		if !svc.reconciling.TryLock() {
+			t.Fatal("a first look that went wrong left the library locked, so it never answers again")
+		}
+		svc.reconciling.Unlock()
+		svc.setupNews = nil
+		if got := len(svc.Library()); got != len(eps) {
+			t.Errorf("the library after a first look that went wrong has %d videos, want %d", got, len(eps))
+		}
 	})
 }

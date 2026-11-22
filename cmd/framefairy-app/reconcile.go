@@ -169,9 +169,11 @@ func (s *FrameFairy) lookFirst() {
 		answered()
 	}()
 	var steps lookSteps
-	s.reconciling.Lock()
-	follow := s.look(nil, &steps)
-	s.reconciling.Unlock()
+	follow := func() bool {
+		s.reconciling.Lock()
+		defer s.reconciling.Unlock()
+		return s.look(nil, &steps)
+	}()
 	restoring := time.Now()
 	s.restoreJobs(s.store.Episodes())
 	jobs := time.Since(restoring)
