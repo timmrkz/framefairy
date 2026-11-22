@@ -68,7 +68,7 @@ machines. But Windows runs Chromium, and its walks would be gone before
 Windows ships. `SLOW` and the coverage counts would go with Chromium.
 Turning all 239 sequences to WebKit at once is one pull request that
 fixes everything WebKit finds, since its walks run before it merges. How
-much that is was counted in the first pull request, in one run of every walk in WebKit, at
+much that it was counted in the first pull request, in one run of every walk in WebKit, at
 c5f788b, a commit made for it and taken out again:
 
 | part | sequences | failed or did not end in WebKit |

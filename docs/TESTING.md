@@ -652,7 +652,7 @@ that line, and `at once`, the list and that line in the frame after a
 pick. `a build made on the Mac follows nothing until a channel is chosen,
 and then follows it` is the user's test with `make install`. Against
 the code before the fix it fails at the first `channel`: the list names
-the pull request a build before it picked.
+a pull request an older build had picked.
 
 Each sequence starts from the bridge's episode as it was first searched,
 in a page of its own.

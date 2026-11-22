@@ -39,7 +39,7 @@ archive has no Intel half, and the download page says which Mac it is for.
 The download would be 14.4 GB and it wants about 18 GB of free memory. That
 is not an installer, and it is not most machines.
 
-So finding clips is a choice the user makes, once, and the app asks it
+So finding clips is a choice the customer makes, once, and the app asks it
 plainly:
 
 - **An API key for a model in the cloud**, Anthropic's or OpenAI's.
@@ -139,7 +139,7 @@ sizes and the checksums are read off the real files through the Hugging
 Face API rather than guessed, which matters: the first one was guessed once
 and was a gigabyte out. Nothing on the list is somebody else's quantisation
 of somebody's model, so what is fetched is what its maker meant to release,
-and its licence is between the user and that maker. On top of the checksum
+and its licence is between the customer and that maker. On top of the checksum
 the installer checks that what arrived begins with `GGUF`, because a page
 saying no, saved under a model's name, is the thing that gets past
 everything else.
@@ -182,7 +182,7 @@ never stops would have filled the disk first. See `downloadRoom` in
 
 **A consequence worth having.** Because no model ships, we never
 redistribute one. The app fetches a model from whoever published it, the way
-`make models` does for the command line, so its licence is between the user and Google
+`make models` does for the command line, so its licence is between the customer and Google
 rather than something we have to carry.
 
 ### 3. ffmpeg: an LGPL build, without libx264, encoding through the system
@@ -387,7 +387,7 @@ shipping at all.
 two shapes of it and we want the lighter one:
 
 - **`.dmg`**, a disk image, which is barely an installer. It mounts, shows
-  the `.app` beside a shortcut to Applications, and the user drags it
+  the `.app` beside a shortcut to Applications, and the customer drags it
   across. That drag is the installation.
 - **`.pkg`**, a real installer that runs scripts and asks for an
   administrator password. It is only needed to write outside the app's own
@@ -694,7 +694,7 @@ exception that has to be justified.
 **Starting another program is not one of the things it restricts.** A child
 process is its own process with its own signature, so running our own
 ffmpeg needs no entitlement, and neither does running `llama-server`,
-whether it is the one we ship beside ffmpeg or one the user already had.
+whether it is the one we ship beside ffmpeg or one the customer already had.
 
 ### What building our own ffmpeg really costs
 
@@ -715,7 +715,7 @@ whether it is the one we ship beside ffmpeg or one the user already had.
 
 ### What does bite, and it is not an entitlement
 
-macOS privacy prompts. Episodes live in the user's Desktop, Documents or
+macOS privacy prompts. Episodes live in the customer's Desktop, Documents or
 Downloads. A file chosen through the open dialog is granted implicitly, but
 the app remembers the path and reads it again on the next launch, and that
 is the moment macOS asks. The words in that prompt come from purpose

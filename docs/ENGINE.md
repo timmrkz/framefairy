@@ -471,7 +471,7 @@ length. The clips appear once the second answer is in, not one by one. The
 answer to the second ask is saved in the reply file as `fit`, and the one
 to asking once more as `refit`, so a search that reuses the reply is
 fitted the same way without asking. The second
-ask is not recorded for training. What the user does with the fitted clip
+ask is not recorded for training. What a person does with the fitted clip
 is.
 
 ## Lines, cuts and captions

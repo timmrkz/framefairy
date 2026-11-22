@@ -9,8 +9,8 @@ short and only about what rarely changes.
 A line is added only for a new kind of thing: a new part, a new home for
 state, a new boundary. Such a change is simulated five times first, see
 Changing the architecture at the end. A pull request that fixes
-code this file names rewrites the rows that name it and removes its
-line under Not to copy. `internal/naming` checks that every path the file names exists.
+code listed under Not to copy removes its line there and rewrites the
+rows that name it. `internal/naming` checks that every path the file names exists.
 
 ## Bird's eye view
 
@@ -288,7 +288,8 @@ other side relies on, and the pull request says so.
 
 ## Not to copy
 
-Code that breaks this map today, each with an issue that fixes it. A session
+Code that breaks this map today. Each has an open issue, found by
+searching the issues for its path. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
 - Rules of the engine in `frontend/src/lib/flow.ts`, its frames held to

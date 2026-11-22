@@ -407,8 +407,8 @@ and fewer rules in the interface. Each is listed on the issue as it opens.
 6. **One channel, and the moves gone**: a video's jobs only in its
    state, how a search ended from Go, stopped work forgotten by Go, the
    transcription said stopping by Go, one `startJob`, `EpisodeSession`'s
-   moves, `WorkMoves`, `onchange` from them and both polls gone. The answers that came one frame
-   after another with it. It may split in two or three once it is worked out.
+   moves, `WorkMoves`, `onchange` from them and both polls gone. It also
+   fixes the answers that came one frame after another. It may split in two or three once it is worked out.
 7. **The architecture's own lines**: the move row and the "what is on
    screen" row rewritten, and invariant 5 held by the design. Each
    earlier pull request already changes the lines it makes wrong, so
