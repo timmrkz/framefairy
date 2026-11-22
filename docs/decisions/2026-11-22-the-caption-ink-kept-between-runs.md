@@ -53,14 +53,39 @@ videos would be measured twice, and its logs folder is watched too.
 
 ### 2. What runs together
 
-Nothing is kept if nothing waits: the captions could show without their
-pill and gain it once measured. Two drawings of the same caption in a
-row break One drawing of the captions, and Tim would see the pill jump
-in. Measuring ahead while idle, every clip of every open video after a
-start, moves the cost onto the machine at the moment a search or the
-hearing wants it, and pays it again every start. Dropped. What comes
-back: the ink must be there before the clip is clicked, which only a
-kept answer gives.
+The cost is not the measuring, it is the ffmpeg started for it: a
+process, a filter graph and a PNG pipe for a few blocks of words. libass
+already runs beside the video preview, in the frames decoder of each
+video, which links the libass of the ffmpeg we build and has the caption
+faces loaded to draw the captions. So the decoder could measure: the
+engine sends it the blocks over `internal/framewire`, it lays each out
+with libass and sends back the box of its ink, with no process started
+and nothing kept. That would make every measuring cheap, the first after
+a start, and a corrected word too, which keeping does not.
+
+Worked through on the code, it loses:
+
+- The decoder is "anything but decoding" in ARCHITECTURE.md, and
+  measuring would be a second job for it, with a message each way on the
+  wire and a caller in the engine that knows a decoder runs.
+- There is a decoder only for a video open in the video preview of the
+  app. The command line, the thumbnails and a render of a video not open
+  still measure with ffmpeg. Two ways to measure the same ink is two
+  answers that can drift, which One drawing of the captions forbids.
+- The decoder of a video starts as the video opens, the moment its first
+  caption file is wanted, so the first captions would wait for the
+  decoder to start instead of for ffmpeg.
+- The ffmpeg way would stay for the rest, so the first caption file of a
+  render after a start would still wait for it.
+
+What comes back: the first captions after a start need an answer that
+is there before anything starts, which only a kept answer gives. A
+cheaper measuring can come later under it, and keeping would hide less
+of it, but it is a change of its own.
+
+Dropped too: the captions showing without their pill and gaining it
+once measured, which is two drawings of one caption, and measuring ahead
+while idle, which pays the whole cost again every start.
 
 ### 3. Who may know about whom
 
@@ -78,7 +103,11 @@ is already in the key by the name of its copy. The faces the program
 carries change only with the program, and ffmpeg only when it is built
 again, but its file's time changes with every update. So the file is
 stamped with a hash of ffmpeg's bytes and of the faces the program
-carries, read once a run, the first time ink is measured. A stamp that
+carries, worked out once a run, the first time ink is measured. The
+ffmpeg beside the program was checked against the SHA-256 built into
+the program before it ran, so that sum is its hash and the file is not
+read again. Only an ffmpeg named in the environment, in a test or a
+build compared by hand, is read for it. A stamp that
 does not match reads nothing, and the next measuring writes the file
 again under the new stamp. An update that changes neither keeps the ink.
 
@@ -94,12 +123,14 @@ keeps.
 
 ## What converges
 
-1, 3 and 4 keep the ink on the machine, below every caller, by a stamp
-of what it depends on. 1 puts it in `~/.framefairy/captions/ink.json`,
-3 lets only the programs name it, 4 stamps it by content and not by
-time, so an update keeps it. 5 adds the fuzz target. Dropped from 1:
-the work folder, which needs a video the measuring does not have. From
-2: captions drawn twice, and measuring ahead.
+1, 3, 4 and 5 are one design seen from four sides: the ink kept on the
+machine, below every caller, by a stamp of what it depends on. 1 puts it
+in `~/.framefairy/captions/ink.json`, 3 lets only the programs name it,
+4 stamps it by content and not by time, so an update keeps it, and 5
+adds the fuzz target. 2 is the one other design, a cheap measuring in
+the frames decoder, and loses because it covers only a video open in
+the app and gives the ink a second way to be measured. Dropped from 1:
+the work folder, which needs a video the measuring does not have.
 
 ## The decision
 
@@ -116,7 +147,8 @@ measureMany(blocks)
   only when the stamp matches and every box is one libass can draw.
 - After a measuring that added a box, the whole cache is written, in
   one step, into a folder it makes. At most as many boxes as memory
-  keeps, 4096.
+  keeps, 4096, and a full cache makes room by one box, so the file
+  never loses the rest.
 - `Machine.UseSystem` names the file. A machine without it keeps the
   ink in memory only.
 - `docs/ARCHITECTURE.md` gains the row in Where state lives.
