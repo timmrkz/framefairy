@@ -228,6 +228,54 @@ func TestAFollowAskedWhileAnotherIsUnderWayIsFollowedByIt(t *testing.T) {
 	})
 }
 
+// A follow that has to know the watch is set waits for the one under way
+// to take its ask: a models folder just made is read only once it is
+// watched, so a model written into it in between is heard, issue #722,
+// also while the first start after an update sets the watch for seconds.
+func TestAFollowThatWaitsReturnsOnceItsAskIsWatched(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		files := afero.NewMemMapFs()
+		first := filepath.Join("/home", "tim", "Movies", "first.mp4")
+		added := filepath.Join("/home", "tim", "Shows", "added.mp4")
+		for _, v := range []string{first, added} {
+			if err := files.MkdirAll(filepath.Join(engine.WorkDir(v), "logs"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		shorts := func(string) []string { return nil }
+		gate := make(chan struct{})
+		ws := watchingWith(func([]string) {}, "", [2]watcher{
+			gatedWatcher{newHeldWatcher(), gate}, gatedWatcher{newHeldWatcher(), gate},
+		})
+		defer ws.stop()
+		over := make(chan struct{})
+		go func() {
+			ws.follow(files, []string{first}, shorts)
+			close(over)
+		}()
+		synctest.Wait()
+		watched := make(chan []string, 1)
+		go func() {
+			ws.followWaiting(files, []string{first, added}, shorts)
+			watched <- ws.watchList()
+		}()
+		synctest.Wait()
+		select {
+		case list := <-watched:
+			close(gate)
+			<-over
+			t.Fatalf("a follow that waits returned while the one under way still set the watch, with %q watched", list)
+		default:
+		}
+
+		close(gate)
+		<-over
+		if list := <-watched; !slices.Contains(list, engine.WorkDir(added)) {
+			t.Errorf("a follow that waits returned with %q watched, not the work folder of %s", list, added)
+		}
+	})
+}
+
 // Which paths in and over the models folder are the app's own download
 // at work, left unheard, and which can change the models the setup shows.
 func TestWhatTheWatchHearsOfTheModels(t *testing.T) {

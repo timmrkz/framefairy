@@ -87,9 +87,10 @@ func (s *FrameFairy) look(changed []string, steps *lookSteps) (follow bool) {
 	// models too, for whatever the watch could not hear.
 	if models, folder := s.watch.modelsIn(changed); models || changed == nil {
 		// A models folder made is watched before it is read, so a model
-		// written into it in between is heard, issue #722.
+		// written into it in between is heard, issue #722. This follow
+		// waits for one under way, which would only take its ask next.
 		if folder {
-			s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
+			s.watch.followWaiting(s.store.files, s.store.Episodes(), s.shortsOf)
 		}
 		s.tellSetup()
 	}
