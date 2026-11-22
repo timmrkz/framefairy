@@ -20,10 +20,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No cache: a job that holds a key or a token that writes builds
+      # from nothing that another run on main could have left.
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       # framefairy-release opens the workflow's issue, or adds the run to
       # the one that is open. See cmd/framefairy-release/failed.go.
       - name: Tell of the failure

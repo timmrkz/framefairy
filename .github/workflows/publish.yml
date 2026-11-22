@@ -87,10 +87,12 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No cache: a job that holds a key or a token that writes builds
+      # from nothing that another run on main could have left.
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Write the channel list from every entry
         run: go run ./cmd/framefairy-release channels
       - name: Cancel a publish stuck before the environment
@@ -121,10 +123,12 @@ jobs:
     steps:
       # main, the default for a workflow_run, never the branch.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No cache: a job that holds a key or a token that writes builds
+      # from nothing that another run on main could have left.
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
 
       # What the build is a build of, from GitHub's record of the run and
       # not from anything the build wrote, and only a commit its channel's
@@ -232,10 +236,12 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # No cache: a job that holds a key or a token that writes builds
+      # from nothing that another run on main could have left.
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Write the channel list from every entry
         run: go run ./cmd/framefairy-release channels
       - name: Cancel a publish stuck before the environment
