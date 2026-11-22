@@ -107,9 +107,9 @@ records are.
   decision.** When each fix gives one more state its own special case,
   the next state breaks it again. Replace the cases with one rule that
   every state goes through, owned by the side that holds the state and
-  asked again after every event. Marker dots moved four times, each fix
-  giving one more state its own frame, until one grid for the whole strip
-  ended it.
+  asked again after every event. One layout bug came back four times,
+  each fix giving one more state its own reference to lay out from,
+  until one reference shared by every state ended it.
 - **Count what the fixes added.** Flags, effects, counters, tickets,
   polls. When every fix adds one, no single rule owns the decision.
 - **Two places that decide one thing: delete one.** Making the second
@@ -119,11 +119,8 @@ records are.
   a part of the product that already solved the same shape of problem, and
   use it. When each fix makes new bugs, find the assumption that forced
   the design, and test it.
-- **The same test fix twice means one helper.** When the same mistake
-  shows up in a second test, put every test through one helper so the
-  next is fixed by construction. A reset between tests closes the product
-  the way it closes itself, rather than stopping its parts one by one and
-  missing the one nobody named.
+- **The same test fix twice means one helper** every test goes through,
+  see the testing skill.
 - **Fix the instruction that misled.** When agents keep making the same
   mistake, find the line in their instructions that pointed them there
   and correct it in place. A new rule beside a broken one is a second

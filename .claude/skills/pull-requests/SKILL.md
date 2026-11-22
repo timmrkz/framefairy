@@ -31,8 +31,7 @@ and the ci skill how CI runs them.
   the author's call too.
 - **One question at a time,** and only when the answer changes what gets
   built.
-- **Take only free work.** Check that no open pull request or other agent
-  holds the issue before starting.
+- **Take only free work,** see the maintenance skill.
 
 ## 2. The size of a change
 
@@ -174,8 +173,8 @@ Wherever numbers stand side by side, in a description, a reply or a doc:
 - **An independent review, once the work is done,** by an agent that did
   none of it, started as soon as everything is pushed, while CI still
   runs. The review skill says how.
-- **A rewrite is new work and gets a fresh review,** without being asked.
-  The review of the version before says nothing about the new one.
+- **A rewrite gets a fresh review,** without being asked, see the review
+  skill.
 - **The review is posted for the user as soon as it is back,** with its
   file and its findings by number, and the work on it starts in the same
   turn.

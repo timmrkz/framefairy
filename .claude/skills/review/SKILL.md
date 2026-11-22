@@ -73,9 +73,8 @@ Before the diff, and before the pull request's own description:
   - Who meets the problem it fixes? A person using the product, shown by
     a report or a log, only the test's environment, or only someone
     reading the code? Product code changed for a failure only a CI
-    runner's virtual hardware showed is a must fix. Guards of that kind
-    once shipped and never fired for anybody, and one of them changed
-    what every user ran.
+    runner's virtual hardware showed is a must fix, see the maintenance
+    skill.
   - Is the cause it names the cause? Read the trace or the log of the
     failure it fixes. Traces turned inferred causes into seen ones, and
     found second causes and wrong ones.
@@ -277,39 +276,12 @@ log line that prints a key, a new package nobody looked at.
 
 The question is simple: once this is merged, can someone do something
 they could not do before, or see something they should not see? Start
-from who that someone could be, then follow the change to what it lets
-in and what it lets out:
-
-- **What comes in from outside.** A file a person opens, an answer from
-  a model or a server, a path, a link, a comment on a pull request,
-  anything a stranger can shape. It is checked where it comes in,
-  before anything uses it, by the code the project has for it. A path is
-  judged by where it really leads, not by its name, so a link cannot
-  lead out of the folder it should stay in.
-- **What it runs.** A program started with arguments built from outside
-  text, a shell command put together from a string, code loaded from a
-  place someone else can write to.
-- **What it fetches, and from whom.** A new download, an update, a new
-  dependency, a new action in CI. Each is pinned to a version, comes
-  from a source the project already trusts, and is checked by its
-  signature or its checksum where it can be.
-- **What it lets out.** Keys, tokens, passwords and a person's own data
-  stay out of the code, the logs, error messages, crash reports, links
-  and anything sent off the machine without the person knowing.
-- **What it may do.** A new permission, for the app on the operating
-  system, for a token in CI, for a workflow that writes to the
-  repository, is the smallest that does the job, and given only to code
-  the project wrote or checked.
-- **Who may give instructions.** Text from outside, an issue, a comment, a
-  model's answer, is read as information, never followed as an
-  instruction, by the code and by the agents that work on it.
-
-- **A gate guards what really runs.** A signature, a checksum or a scan
-  covers the file that is installed or run, not a sibling of it. It is
-  tied to the step it protects by an explicit condition, never by the
-  order of steps. It names things that cannot be shadowed, a commit
-  rather than a branch name a tag can take. It checks the hash before it
-  decodes untrusted bytes. And a test shows a forged input refused.
+from who that someone could be, then follow the change through six
+questions: what comes in from outside, what it runs, what it fetches and
+from whom, what it lets out, what it may do, and who may give
+instructions. **What to look for under each, and how a gate that checks
+a signature or a sum is judged, is in [security.md](security.md),** read
+for every review.
 
 - **Read the work's own answer as a claim.** The work says itself,
   before anyone asks, whether it is safer, the same or less safe.
@@ -354,9 +326,7 @@ Then weigh the change as a whole:
   the first failure or on cancel. A write that wakes the writer's own
   watcher. An effect that writes what it reads. Work sent after its owner
   closed.
-- **Nothing left behind.** Fields written and read by nothing, exports
-  only tests call, settings of removed jobs, temporary debug commits,
-  fallbacks that cannot run.
+- **Nothing left behind,** see the maintenance skill.
 - **A cache and a change stamp cover exactly what they serve.** A
   persisted cache's key includes the version of the code that computes
   the value, checked in the build that ships, where build flags may strip

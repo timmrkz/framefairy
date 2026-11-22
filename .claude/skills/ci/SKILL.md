@@ -40,6 +40,9 @@ says how the tests are run.
   runner's own summary, which repeats every failure at the end, so the
   person or agent reading a red check sees the test and what it printed
   without scrolling.
+- **A table a job prints lines up in the terminal.** Every cell is padded
+  to its column and numbers stand to the right, so a column reads
+  straight down in a raw log, where markdown is not drawn.
 - **Warnings fail through each tool's own flag:** the compiler's
   warnings as errors, the linker's fatal warnings, the bundler's count of
   warnings. Never by searching the output for a word.
@@ -151,10 +154,8 @@ says how the tests are run.
   program a test started that still runs, name it with its command line,
   parent and age, stop it and fail the job. A leftover child once held a
   job for half an hour without saying which test started it.
-- **A hang dumps what it waited on.** Before the runner ends a hung test,
-  the stacks of every program the test started are written out, not only
-  the test's own threads, and first in the log. One such dump ended a
-  chain of guesses about a hang.
+- **A hang dumps what it waited on,** the stacks of every program the
+  test started, first in the log. The testing skill says why.
 
 ## 6. Skips and silent passes
 
@@ -202,9 +203,8 @@ says how the tests are run.
 - **Fuzzing is counted in executions, not seconds,** so a slow machine
   does the same work as a fast one. A crash found at night goes into the
   target's cases with its fix, and every run plays it from then on.
-- **Random tests take their seed from the commit,** so every push
-  explores new ground and a failure is reproduced from its commit. Every
-  seed that ever failed is kept and played on every run.
+- **Random tests take their seed from the commit,** and every seed that
+  failed is played on every run, see the testing skill.
 
 ## 8. Hearing how a run went
 
@@ -289,9 +289,9 @@ says how the tests are run.
   not, its limit. Re-home each item in the same change. A local script
   once was the only place a kind of file was parsed, and removing it
   dropped the check unseen.
-- **A pull request cannot weaken the check that judges it.** Workflows
-  that hold a write token, or judge a build, run from the main branch's
-  copy. Never use an event that runs a stranger's code with secrets, and
+- **Workflows that hold a write token run from the main branch's copy,**
+  and so do those that judge a build, so a branch cannot loosen its own
+  check. Never use an event that runs a stranger's code with secrets, and
   never take a permission change a stranger suggested in a comment.
 - **Pin everything, with its whole graph.** Tools in the language's lock
   file, actions by commit with the full version as a comment that a check
@@ -313,7 +313,44 @@ says how the tests are run.
 - **Build output never reaches the diff.** Ignore every program the build
   makes, and refuse large binaries in CI.
 
-## 11. Where other advice says otherwise
+## 11. CI holds the rules
+
+Everything in the testing skill that a tool can check, a tool checks, in CI, on
+every pull request. An agent is not asked to remember to run a command,
+and the user is not asked to catch what a machine can. A rule that is
+only written down slips. A rule a check enforces holds, and it protects
+the agent too, because the check fails before the user has to.
+
+What CI should hold, with established, widely used open-source tools,
+never a scanner of our own:
+
+| Rule | Checked by, for example |
+| --- | --- |
+| no sleep, timer or real clock in a test | a linter that bans the calls in test files: golangci-lint's `forbidigo`, ESLint's `no-restricted-globals` and `no-restricted-syntax`, `eslint-plugin-playwright`'s `no-wait-for-timeout`, Ruff's banned-api rule |
+| no poll with a deadline | the same linters, banning `Eventually`, `waitForFunction` with a timeout and the like |
+| no skipped, focused or disabled test slipping in | the skip and focus rules of the ESLint plugins for Playwright, Jest and Vitest, and the same ban on skip calls in other languages |
+| every test can fail | mutation testing: Stryker for JavaScript and TypeScript, Gremlins for Go, mutmut for Python |
+| no data race | the race detector of the language, on every run |
+| no test that touches the disk or the network without saying why | a check over the test files, or a sandbox that refuses them |
+| no retries | the runner's retry setting checked at zero |
+| no job over its limit | the job's own timeout in the workflow |
+
+- **Only new breaks fail.** Where old code still breaks a rule, the
+  check takes a baseline from the main branch, the linter's own
+  new-from-revision mode or its list of suppressions, so a pull request
+  fails only on what it adds, and the old breaks are an issue to burn
+  down. A list of suppressions counts per file and fails on one fewer
+  as well as one more, so a fix shrinks it in the same change.
+- **A pull request cannot weaken the check that judges it.** Changes to
+  the checks themselves, their configuration and their baselines are
+  visible in review and owned by the user, and a baseline only ever
+  shrinks.
+- **Where a rule has no check yet, push for one.** Log an issue that
+  names the rule, the tool that would hold it and what it would have
+  caught. Do not make up for it by asking anyone, agent or person, to run
+  a command by hand.
+
+## 12. Where other advice says otherwise
 
 | Common advice | Why not | Instead |
 | --- | --- | --- |
