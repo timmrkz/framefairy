@@ -1,11 +1,10 @@
 # Numbers and text get packages of their own
 
-Step 1 of splitting the engine into packages, after `engine/timed`
-(#621). Decided on 30 October 2026, in the pull request that makes it.
+Step 1 of splitting the engine into packages, after `engine/timed`. Decided on 30 October 2026, in the pull request that makes it.
 
 ## The problem
 
-Tim asked for the engine to be split into packages that follow the map
+The user asked for the engine to be split into packages that follow the map
 in [ARCHITECTURE.md](../ARCHITECTURE.md), one step at a time, and said go
 on this order on 30 October. The first part to stand alone, framing,
 cannot move while it uses helpers that live in the engine.
@@ -123,7 +122,7 @@ Two packages at the bottom of the engine, beside `engine/timed`:
 
 `shellQuote` stays in `engine/util.go` until step 3.
 
-The names are Go's, after Tim's word on 30 October: no name in Go code
+The names are Go's, after the user's word on 30 October: no name in Go code
 borrows another language's, because the code is not emulating one. A
 name says what the function does, `Trim` and `Quote`, the way the
 standard library names its own. `text` was the first name for the second
@@ -144,7 +143,7 @@ engine/runes    text, by its characters
 ## What follows
 
 - It costs one pull request of renames, about 450 uses in about 60
-  files, done by the type checker like #621.
+  files, done by the type checker like the split of `engine/timed`.
 - It buys the first obstacle to framing cleared whole, and an area's
   numbers and text now come from one place it can see.
 - It was wrong if a later step has to reach back into `num` or

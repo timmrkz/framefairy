@@ -176,7 +176,7 @@ long the video is. It used to be taken again over all that was heard
 after every part, so it moved while a video was heard, and with it where
 the words already heard start and end, the lines they make and the pauses
 the prompt marks. Text already written then changed under the model
-reading it, and a clip found early moved its edges, issue #762. Taken
+reading it, and a clip found early moved its edges. Taken
 from the first part saved instead, it depended on how fast the machine
 heard, and a slow one that saved room noise alone first found no pause in
 that video at all. Measured from the file, the same video has the same
@@ -271,7 +271,7 @@ after an onset moves back onto it. A word running into a pause ends where the
 sound stopped, and a word whose sound goes on past its end follows it to
 where it stops, however long that is, when it stops before the next word: a
 word lasts as long as its sound. Sound that runs on into the next word is left
-to that word: it is the next word said early, not this one held. In Tim's
+to that word: it is the next word said early, not this one held. In the user's
 episode "ich." ended a sentence and "Also," followed with no pause, and a
 word end that followed the sound gave "Also"'s first sound to "ich.", so a
 clip starting at "Also" opened its captions with "ich.". The sound stops
@@ -281,7 +281,7 @@ room noise dipping under the floor for a moment, and taken as the end it
 would carry the word over the whole pause after it whenever the noise
 dipped once. Sound that never stops before the next word, music or room
 noise, leaves the recogniser's end the same way. The sound was followed for
-0.4 s at most until November 2026. Tim dragged a clip's start into a word
+0.4 s at most until November 2026. The user dragged a clip's start into a word
 whose sound went on longer than that, still to be heard in the waveform,
 and the clip no longer said the word, so its caption went. A single quiet
 frame at a word start is left alone, because many words begin softly.
@@ -335,7 +335,7 @@ be asked in terms of the story while the engine keeps the milliseconds.
 | `stories-edit` | `stories`, then in the same conversation the clips as cut, measured | the same clips again, with the edges moved where the opening or the landing is wrong, the thinking split half and half between the two asks |
 | `stories` | a brief for any video, the transcript as sentences in paragraphs, a time at the start of each paragraph, three dots for a pause of a second or more, and the length asked for in words at the speaker's own rate | up to N clips, the strongest first, as runs of sentences |
 
-`middle` is what the app uses, since Tim's comparisons of 3 October, see
+`middle` is what the app uses, since the user's comparisons of 3 October, see
 [PROMPTS.md](PROMPTS.md). `lines` was before it. The others are tried with `--recipe` and
 compared with `--compare`, see [CLI.md](CLI.md#trying-other-ways-of-asking).
 A sentence in `stories` ends where a line ends one, or once it has run
@@ -357,11 +357,11 @@ between them, because there the pauses are the model's.
 **Tried and taken out: who speaks.** A `dialogue` recipe once told the
 voices apart with two small models through the speech library, pyannote's
 segmentation and NVIDIA's TitaNet, and showed the model a paragraph for
-every turn with the speaker's letter. On Tim's episode, at the same
+every turn with the speaker's letter. On the user's episode, at the same
 thinking, it cost 22 s more per 30 minutes (75 against 53) and not one
 clip opened differently: the model began the stories where the guest
 began telling them either way, and never on the question, though told a
-story often starts there. It is in the history of pull request 19.
+story often starts there. It is in the repository's history.
 
 **Every edge of a clip lands on a sentence**, `engine/edges.go`. Five
 searches cut the same story with three different first words and four
@@ -418,7 +418,7 @@ does not read the same question twice. After that it stays as it was.
 Answering without thinking, the model sometimes gives a clip back
 unchanged. Such a clip stays whole, flagged in the log, for a hand to trim
 in the app. An automatic cut was tried and taken out again: the engine
-cannot tell where the heart of a story is, and on Tim's episode it cut
+cannot tell where the heart of a story is, and on the user's episode it cut
 the setup off the mirror story when it cut from the start, and the payoff
 out of the umbrella story, twice, when it cut from the middle. A complete
 story of 38 s is worth more than one of 19 s without its core.
@@ -441,7 +441,7 @@ model in the cloud. The heart is grown to the sentences its lines are in
 before the edges are put on sentences, so no edge cuts a line of it:
 once a heart ended on a comma and the clip ended there.
 
-The first comparison, on the first 30 minutes of Tim's episode with six
+The first comparison, on the first 30 minutes of the user's episode with six
 clips asked for: `lines` took 88 s, asked twice and still left two clips
 off the length, 41 s and 57 s. `heart` took 77 s with its full thinking,
 `heart@1024` 36 s and `heart@0` 22 s, all asked once. `heart@1024` found
@@ -568,18 +568,18 @@ says where they go. Where the captions laid out again do not meet the
 ones before as they should, the clip is laid out whole.
 `TestCaptionsLaidOutNearAChangeAreTheWholeClipsCaptions` holds that the
 two are the same. Every caption of the clip laid out and sent on every
-step took 46 ms at a clip an hour long, and Tim found the drag slow. What
+step took 46 ms at a clip an hour long, and the user found the drag slow. What
 still grows with the clip is moving the captions after the change on its
 clock, every caption of it on a drag of the start: about 0.6 ms more at
 a clip an hour long than at one a minute long, in a cloud session. A clip once also kept the
 pieces it was found with, `found_segments`, to frame what was put back by
 the camera it showed. A clip used to be parted at every camera switch with
-a crop for each camera, which Tim never saw at work in his own two-camera
-podcast, #396. The crop as filmed, `crop_x`, is the whole
+a crop for each camera, which the user never saw at work in their own two-camera
+podcast. The crop as filmed, `crop_x`, is the whole
 clip's, kept on every piece, turned or not, because a part turned back
 plays with it. Only the crop on the picture turned, `crop_x_turned`, is
 shared by the pieces turned alike alone, and a piece standing as filmed
-has none, #413. A plan from before that plays
+has none. A plan from before that plays
 every piece with the crop of its first piece placed by hand, or of its
 first piece where none was, `oneCrop` in `engine/clips.go`, since a crop
 a person placed is a decision and one the analysis chose a guess. Its
@@ -605,20 +605,20 @@ caption appears, or until shortly after its last word when a pause follows.
 in the episode, not in the clip, so a cut in the pause between two
 captions leaves them two, and a caption whose hold runs into a cut goes
 where the cut begins. They used to be measured on the clip's clock, where
-a cut had made the pause short: Tim cut most of a pause out by hand and
+a cut had made the pause short: the user cut most of a pause out by hand and
 the two captions around it became one, held over the cut, in the clip
 timeline, the video preview and the render alike. A cut over words takes
 those words out of the captions and leaves the rest as they were. The last
 caption of a clip is held a second past its end, for the frames a render
 lands beyond it, only when it is on screen at the end. It used to be held
 whatever it was, so trimming the end over the last word made the caption
-before it stay to the end, and Tim saw two captions turn into one.
+before it stay to the end, and the user saw two captions turn into one.
 Moving words onto a clip's timeline is plain arithmetic, so nothing is
 estimated. A clip says a word, and captions it, when it holds more than a
 frame of the word's sound, or all of it, `HoldsWord` in `engine/words.go`.
 All of it counts however short the word is: several words typed into a
 short word share its time, and one may get less than a frame. The
-captions left those out, so the words Tim typed were gone and the frames
+captions left those out, so the words the user typed were gone and the frames
 they stood in showed no caption. So dragging an
 edge back over a word brings its caption in at the word's last sound, the
 first of it the edge reaches, and a word an edge cuts into is shown from
@@ -932,14 +932,14 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   step 5. The sound is cut at the same moments as before. A short of
   what OBS records, whose frames begin on Matroska's whole milliseconds,
   showed the frame before for one moment in three where a frame begins
-  exactly a hair after its moment, #266. A moment counted from its piece's
+  exactly a hair after its moment. A moment counted from its piece's
   start, rounded to a microsecond, came up to a microsecond early. And
   ffmpeg moves the times read after a seek back by the seek, rounded to
   the stream's ticks, a millisecond in Matroska, which moved such a frame
   a microsecond late. The moments are now counted from the grid's start,
   and every file is read with its own times, `-copyts`, `ownTimes`, and
   each picture and sound counted from its seek by the render itself,
-  `onOwnClock`, so nothing ffmpeg rounds moves a frame, #602.
+  `onOwnClock`, so nothing ffmpeg rounds moves a frame.
 - **Every track starting late.** A recording cut out of a longer one, or
   one written with its start held back, has no track that starts at zero.
   ffmpeg counts from where the earliest track starts, `-ss` included, and
@@ -961,9 +961,9 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   starts before the picture, 21 ms of AAC in MPEG-TS, and a frame with no
   time of its own got one ffmpeg guessed from where the decoder started.
   Read with the file's own times, every frame after a seek has the time
-  it has when the file is played from the start, #602, so where the
+  it has when the file is played from the start, so where the
   decoder starts moves no frame. MPEG-PS, .mpg and .vob, has no index
-  either, and is read the same way, #268. It puts several frames in a
+  either, and is read the same way. It puts several frames in a
   packet stamped with the time of the first, and ffmpeg gives the others
   times of its guessing, and the key frames among them too in MPEG-2
   with B-frames. So the piece is read from the key frame before the last
@@ -979,8 +979,8 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   frame on: the frames before it, decoded after frames it never read,
   came half a frame off or a frame apart, and a short of a DVD, of
   MPEG-2 with B-frames in MPEG-PS or in MPEG-TS, came out at 30 frames a
-  second for 29.97, #600. A short of a file whose every frame is a key
-  frame showed frames from four frames early, #601. Read only from the
+  second for 29.97. A short of a file whose every frame is a key
+  frame showed frames from four frames early. Read only from the
   first key frame inside each stretch, a .ts from OBS, a key frame every
   250 frames, had most of its stretches unread, and its frames left out
   went unseen. Every one of these is
@@ -996,7 +996,7 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   second: 50 for the phone's frames above, which average 29.75, so its
   short came out at 50 frames a second. A short of a variable file is
   made at the frames' average rate rounded to the nearest of 24, 25, 30,
-  50 and 60, `shortRate`, which was Tim's choice: 30 for the phone's and
+  50 and 60, `shortRate`, which was the user's choice: 30 for the phone's and
   for the one with frames left out, which averages about 28. Each frame of the
   short is still the frame that holds its moment. A file whose frames
   keep to their rate keeps its own rate exactly. The edges of a plan are
@@ -1061,7 +1061,7 @@ frame is what libass draws on it at any rate, read back from a short at
 
 Before, the pop was a curve in milliseconds, CSS's ease-out over 220 ms,
 written as 20 ms pieces, and libass sampled it wherever the frames fell.
-Tim's recording of a caption at 25 fps showed "Typen" pop fully, "mit"
+The user's recording of a caption at 25 fps showed "Typen" pop fully, "mit"
 rise and snap back, "so" and "einem" grow on one frame and settle at
 once: whether the peak landed on a frame was chance, a short word was cut
 on its way up, and the ease-out dropped most of the way in one frame
@@ -1074,12 +1074,12 @@ and its pill reach over the space to the next word for a frame or two,
 as in every caption tool. The pill and its word lie over the words
 beside them, a layer of their own coming forward, so no letter reaches
 into the pill: libass draws the line on layer 2, the pill on 3 and the
-word on 4. Tim saw the next word's letters drawn over the pill at its
+word on 4. The user saw the next word's letters drawn over the pill at its
 peak. `TestThePillAndItsWordLieOverTheLine` in `engine/pop_test.go`.
 
-#201 had made the bounce a few pixels in height only, the pill stretched
+An earlier change had made the bounce a few pixels in height only, the pill stretched
 up or down to keep off the other line and the word grown 3 pixels a side,
-so Tim saw the pill move up or down and the word not at all, plan row
+so the user saw the pill move up or down and the word not at all, plan row
 2.211. `TestTheWordAndItsPillPopTogether` in `engine/bounce_test.go`
 reads the pop back from a short and holds the word and its pill to
 `popScales` on every frame, in width and height, around one centre.
@@ -1093,13 +1093,13 @@ that reaches further, an accent over a capital, makes room for it too.
 Measured with accents, as `ÉÅÁgjpqy` once was, every pill stood high over
 its words, and stopped short of the other line on one side only, the
 pills of the top line of two stood high and those of the bottom line low,
-which Tim saw. Whatever a pill gives up on one side to keep off the other
+which the user saw. Whatever a pill gives up on one side to keep off the other
 line, it gives up on the other too, so it stays round the middle of its
 line. The pill used to open from 0.08
 inside its rest on every side and to reach only 0.10 past the tallest
 letter of the words themselves, so the first frame of a word, where a
 click on the word puts the playhead, showed it hugging the letters, which
-Tim saw on #201. `TestThePillLeavesRoomRoundItsWord` reads the pill back
+the user saw. `TestThePillLeavesRoomRoundItsWord` reads the pill back
 from a short, and holds it to at least 0.10 of the size of room round its
 word on its first frame and at rest.
 
@@ -1113,14 +1113,14 @@ other line over the width of the line, `wordsLaid.lineBand` in
 than that leaves room for, the tail of a "g" over the dots of an "Ä", the
 pill keeps 0.04 of the size over its own letters and touches the other
 line. For the few frames of its pop the pill grows over the other line
-like it grows over the words beside it. Tim saw the "g" of
-"wichtig" stand in the pill of "Leute" on the line under it on #201. The
-lines moved apart for it for a while, which he did not want, and then the
+like it grows over the words beside it. The user saw the "g" of
+"wichtig" stand in the pill of "Leute" on the line under it. The
+lines moved apart for it for a while, which they did not want, and then the
 pill stopped short word by word and jumped as it walked along a line.
-`TestThePillAtRestNeverReachesAnotherLine` reads his caption back from a
+`TestThePillAtRestNeverReachesAnotherLine` reads their caption back from a
 short and holds the pill at rest clear of the other line's letters.
 `TestEveryPillOfALineIsOneHeightAndClearOfTheOther` holds the rule on
-where libass puts the words, for his caption and for the one with "Ä".
+where libass puts the words, for their caption and for the one with "Ä".
 
 To place the pill, the tool renders each caption once per word with only that
 word visible, which gives the exact position of every word in the finished
@@ -1346,10 +1346,10 @@ and a cut carry the latest they cover, on the first frame after them, and
 the end the earliest, on the clip's last frame, a mark with `Last` set,
 which `MarksOnFrames` sends the window on that frame. A carried circle no
 circle beside it joins is carried all the same, `Alone`, until the edge
-reaches another keyframe, Tim's report of 12 November. Touching a carried mark, `realise`,
+reaches another keyframe, the user's report of 12 November. Touching a carried mark, `realise`,
 writes it where it stands and sets the others it covered `aside`, which
 are carried no more until a reshape leaves them inside a piece again,
-`unsetAside`. Tim agreed the cases on #778. A mark steers the pieces of the
+`unsetAside`. The user agreed the cases. A mark steers the pieces of the
 clip turned the way it was placed, `markedPieces`. A piece is given each mark
 at the moment of the video it would be at on the piece's stretch were
 nothing cut out, the clip's clock read from the piece's start, so a
@@ -1358,13 +1358,13 @@ the video preview need nothing new. A keyframe is a turning point: from its
 frame on the crop is the keyframe's until the next one, and before the first
 it is the piece's own, `cropRun.at`, on the frames of the video. A diamond
 switches the crop on its frame, so one keyframe where the camera switches is
-all a switch takes, Tim's ask on #750. From a circle, `glide`, the crop
+all a switch takes, the user's ask. From a circle, `glide`, the crop
 glides into the next circle, over the whole time between them, by
-smoothstep, `cropRun.gliding`. A glide runs only between circles, Tim's
+smoothstep, `cropRun.gliding`. A glide runs only between circles, the user's
 rule. A circle that starts a glide, after a diamond or the first, has no
 crop of its own: `opened` gives it the crop of the keyframe before it, or
 the piece's own, `FromClip`, before an edge or a cut carries anything, and
-`SetCrop` refuses a crop placed on it, Tim on #778.
+`SetCrop` refuses a crop placed on it, the user's decision.
 `SetCropGlide` turns one kind into the
 other. A piece that only switches is cropped by one crop whose left edge
 is an expression in the frame, `holdExpr`, nested by halving so a hundred
@@ -1381,7 +1381,7 @@ show, with the clip, and only looks up the step for the frame it
 shows, in `lib/keyframes.ts`. The clip timeline is sent where each glide
 runs, `Glides`, and only draws it. A crop placed by hand
 on a mark's frame moves that mark, and in a piece the marks steer it is
-placed nowhere else, Tim's rule on #750, so what moves is the mark lit
+placed nowhere else, the user's rule, so what moves is the mark lit
 under the playhead. A piece no mark steers has the clip's own crop,
 placed anywhere in it, `SetCrop`,
 on the pieces turned the way the one there is. Automatic
@@ -1398,10 +1398,10 @@ with its moment, `readSpan`, and the faces are looked for on those frames.
 A span shorter than a quarter of a second is not read. Framing used to
 look for camera switches in the same run, part the clip at each one and
 measure a crop for each camera, and to compare the frames either side of
-a cut to know whether the clip came back to the same camera. Tim never
-saw a crop change at a camera switch in his own podcast, which has two,
-and a clip now has one crop, #396.
-Framing decodes on the processor, on every machine. On Tim's M2 Max a
+a cut to know whether the clip came back to the same camera. The user never
+saw a crop change at a camera switch in their own podcast, which has two,
+and a clip now has one crop.
+Framing decodes on the processor, on every machine. On the user's M2 Max a
 clip framed on VideoToolbox took about four times as long, 4.0 s against
 1.0 s, one run each and different clips, likely because framing starts a
 few short ffmpeg runs and each one sets the system's decoder up again.
@@ -1554,7 +1554,7 @@ than budget. Any other model either company has can be named with `--model`.
 The tests stand a fake server in for both, in `engine/provider_test.go`, down
 to a whole search on a GPT model from transcript to plan.
 
-**A failure says why in words,** issue #311. A company's error is
+**A failure says why in words.** A company's error is
 JSON with a message for people inside, and that message is what is said,
 never the JSON around it: "Anthropic refused the request: Your credit
 balance is too low". A company that is busy on every try, a 429, a 5xx or
@@ -1567,7 +1567,7 @@ search says them as they are, without "planning failed" in front, since
 the first sentence is what the row of the search shows, the same as
 "not enough memory".
 
-**A missing model says the way on of each front end,** issue #411. A
+**A missing model says the way on of each front end.** A
 speech model that is not there, no clip model or several with none
 chosen, llama-server stopped by the system while it loads, and a model
 that does not fit beside another llama-server: in the app the way on is
@@ -1639,7 +1639,7 @@ counted from the start of a local search, whether a clip will need it or
 not, and a search with nothing to fit steps over it. A search with a
 recipe that never asks again, `middle` among them, has no fitting at all.
 A local model with a budget is taken to think to it, since every search
-of Tim's comparisons did and the budget follows the window, and the fill
+of the user's comparisons did and the budget follows the window, and the fill
 follows the tokens it has thought rather than the clock. The framing
 after the answer counts the clips that will still wait when the model
 stops: `middle` writes six in two seconds, so all of them wait, and
@@ -1693,7 +1693,7 @@ kept goes as the last hearing lets go of it, which is how the command
 line hears. One is in memory at a time, never two, as with the local
 model: a hearing of another waits for the one in use to be let go of,
 and a keep gives way to it and is asked again when the hearing ends. Loaded for each hearing,
-four copies of it on an M2 Max, it took about 5 s every time, Tim's
+four copies of it on an M2 Max, it took about 5 s every time, the user's
 report of 9 November 2026: a part of a dragged clip of 15 s, heard in
 under a second, took 5.7 s, and the stretch around a clip, stopped three
 times by those parts, loaded it again each time it carried on. Kept, it
@@ -1703,7 +1703,7 @@ a load took is in the log, `speech model loaded in`.
 
 **The model is loaded before the search needs it.** Loading took
 llama-server about 24 seconds when it was first measured, and 9.0 on
-Tim's M2 Max on 21 October 2026, 7.4 of them reading the model file,
+the user's M2 Max on 21 October 2026, 7.4 of them reading the model file,
 which is likely the difference between a file the system has to read
 from the disk and one it still holds. The running server belongs to the
 program rather than to one search, in `engine/modelhost.go`: a search
@@ -1783,23 +1783,23 @@ A server that runs already,
 transcript is read ahead of, which of the recipes is `middle`. A line
 read is never written out differently once more is heard, because the
 silence level is the video's and never moves, see Heard in parts. On
-Tim's Mac on 8 November, before that, the model read its transcript four
-times while a new video was heard, and reading ahead saved nothing, issue
-#762, most likely because the moving level moved its lines. Each search
+the user's Mac on 8 November, before that, the model read its transcript four
+times while a new video was heard, and reading ahead saved nothing,
+most likely because the moving level moved its lines. Each search
 says in its job's log how much was read ahead of it, and a read that
 finds a line written out differently is a warning in the app's log,
 which a report carries, because it points at a bug.
 The search's line in the log says how much of its prompt was new. Each
 read leaves two checkpoints, and llama-server keeps 32 by itself, about
 200 MiB each for Gemma 4, so it is told to keep three, the three the
-memory a model is judged by holds, `--ctx-checkpoints`. Issue #242.
+memory a model is judged by holds, `--ctx-checkpoints`.
 The server keeps no copies of earlier prompts either, `--cache-ram 0`.
 By itself it keeps up to 8 GiB of them, a copy of the slot whenever an
 ask keeps less than half of what the slot holds, and since the window
 moves on after every search, each search left a copy there until the
 app quit, counted nowhere. What a copy saved is read again instead: a
 window searched again after another, and a new video's transcript read
-ahead when the read gave way to a search of another video. Issue #433.
+ahead when the read gave way to a search of another video.
 
 **A model that does not fit is not started.** Before llama-server starts,
 what the model needs at the context it is started with, the same
@@ -1939,8 +1939,7 @@ its clips.
 
 Whether a clip was rendered is the note alone, `renderedOf`, read as
 `ClipView.Rendered` and counted by `Status`. A short is uploaded and then
-removed from its folder, and the clip was rendered all the same, issue
-#384.
+removed from its folder, and the clip was rendered all the same.
 
 It is written down rather than worked out from the settings because the
 settings say where the next short goes, not where the last one went: the

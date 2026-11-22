@@ -52,7 +52,7 @@ Cancel, because nothing could tell the two apart.
 
 A job is one piece of work a person started, or the app started for them:
 a **search**, a **clip** made by hand, a **render**, or the whole video
-**transcribed** to its end from its menu, issue #432. It is owned by the
+**transcribed** to its end from its menu. It is owned by the
 Go side. It has what it was asked for and a step it is in. An episode has
 at most one search at a time, and any number of clips and renders.
 
@@ -70,10 +70,10 @@ does: its record says stopped, what it heard stays, and the menu offers
 Transcribe video again, after a restart too. A search or a clip made by
 hand of the same video stops it the same way, and it is refused while
 they run, `stopTranscribing` and `makeWayForTranscribe` in `jobs.go`,
-Tim's report of 26 October, 12.27.
+the user's report of 26 October, 12.27.
 
 A transcription also hears a part of the video by itself, for the clip
-chosen, issue #745, `hearChosen` in `export.go`, from the state the app
+chosen, `hearChosen` in `export.go`, from the state the app
 reads of the video. What it hears is said by its record, `Hears` in
 `engine/jobs.go`, the one place that tells them apart:
 
@@ -183,7 +183,7 @@ work carries on from there. Hearing waits while a search waits to find
 too, and a search asks to find while it still holds the lane of hearing,
 letting it go once its ask is in line, see `engine.Turn`. It let go
 first, and the whole video waiting behind it heard for a moment in
-between, its frame lit up and went dim again, Tim's report of 25
+between, its frame lit up and went dim again, the user's report of 25
 October, 14.33. A clip made by hand asks to place its crop the same way.
 Work that is not a step of a search, a model
 being installed, is neither taken back nor held up. Nor is a search whose language model is in
@@ -316,7 +316,7 @@ tells whoever waits of every change, see `until` there and `wake` in
 and the episode's decoder use too. A job that will not stop is given
 `stopWait`, 15 s, and then the removal says so and deletes nothing, and
 the app quits anyway. The waits used to look at the list every 20, 50 or
-100 ms, so each took up to that much longer than the work, #394.
+100 ms, so each took up to that much longer than the work.
 
 A render called off with Cancel forgets its record on the job's own
 goroutine, in `runJob`, once its work has returned and before it says it
@@ -611,7 +611,7 @@ never wait on the clock. They wait on `until`, with no time limit, on a job's
 news, on the fake clock of a `testing/synctest` bubble, or on `clearing`,
 which is done once clearing a video let go has returned, and a job that
 never ends is left to `go test`'s own `-timeout`, `UNITTIMEOUT` in `make
-unit`. No other Go test waits on the clock either since #394, and
+unit`. No other Go test waits on the clock either, and
 `make lint` holds every one to it.
 `TestTheQueueGoesOnTheMomentAJobStops` holds that each wait of the app
 goes on the moment its job stops, and that a job that will not stop is
@@ -621,7 +621,7 @@ holds that none goes on while the job is still on its way out.
 ## Batches
 
 One pull request, a commit per batch, merged once it has been tested on
-Tim's machine and works.
+the user's machine and works.
 
 1. The design.
 2. The path tests and their driver, green on the old code.

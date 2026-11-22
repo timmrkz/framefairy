@@ -35,8 +35,8 @@ middle of its frame, so a seek to the moment took the frame after. And it
 has the short's colours as a player shows them, see `thumbnailColours`:
 a short keeps the BT.709 colours of HD video and every reader of a JPEG
 takes BT.601, so the colours are turned from one to the other, not only
-the range. Before both, Tim's thumbnail caught a word a frame further into
-its bounce than he had marked, and its purple came out darker than the
+the range. Before both, the user's thumbnail caught a word a frame further into
+its bounce than they had marked, and its purple came out darker than the
 short's. `TestAThumbnailIsTheFrameThatWasMarked` and
 `TestAThumbnailHasTheColoursOfTheShort` hold them.
 

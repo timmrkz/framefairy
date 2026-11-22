@@ -3,17 +3,17 @@
 Replaced by [a push walks in Chromium, the night in both browsers](2026-11-05-walks-in-chromium-on-a-push.md), for the browser of a push.
 
 How the tests are shared out once there is more than one way to run
-them. Decided on 31 October 2026, in the first pull request of #380.
+them. Decided on 31 October 2026, in the first pull request of the work on walks in WebKit.
 
 ## The problem
 
-Tim asked, on 31 October, after the report's field in #574: "I want to
+The user asked, on 31 October, after the work on the report's field: "I want to
 know how we structure the tests when there are multiple modalities to run
 tests. Which tests do we run which way then? And why?"
 
 The app runs in WebKit on a Mac and on Linux, and in WebView2, which is
 Chromium, on Windows, see [PACKAGING.md](../PACKAGING.md). The walks ran
-in Chromium alone. In #574 nearly every fault Tim met by hand was
+in Chromium alone. In the work on the report's field nearly every fault the user met by hand was
 WebKit's: the cursor revealed in the middle of the field, the cursor left
 drawn after a scroll, the focus left on nothing after a button. Every
 walk passed each time, and each fault was found again by hand in
@@ -43,7 +43,7 @@ variable and one CI row.
 
 ### 2. What changes together
 
-A WebKit set of its own, as #380 first proposed: a probe runner in Python
+A WebKit set of its own, as the issue first proposed: a probe runner in Python
 with WebKitGTK, keys modelled as `beforeinput`, `execCommand` and `input`.
 It changes on its own schedule, so a step fixed in one set is still broken
 in the other, and its keys are not keys, so the WebKit faults that come
@@ -68,7 +68,7 @@ machines. But Windows runs Chromium, and its walks would be gone before
 Windows ships. `SLOW` and the coverage counts would go with Chromium.
 Turning all 239 sequences to WebKit at once is one pull request that
 fixes everything WebKit finds, since its walks run before it merges. How
-much that is was counted in #633, in one run of every walk in WebKit, at
+much that is was counted in the first pull request, in one run of every walk in WebKit, at
 c5f788b, a commit made for it and taken out again:
 
 | part | sequences | failed or did not end in WebKit |
@@ -98,7 +98,7 @@ second image for the WebKit walks. A second image is a second thing to
 build, pin, cache and keep current, and the Linux jobs pull the image
 anyway. One image costs its size on every pull, which is measured on the
 first run and split if it slows the jobs that never walk. Kept at first:
-one image. Measured in #633, the browsers made Initialize containers take
+one image. Measured in the first pull request, the browsers made Initialize containers take
 73 to 80 s on every Linux job, where main took 23 to 30 s, so the image
 became two, `base` for the Go jobs and `walks` with the browsers, both
 built by `ci-image.yml` from one Dockerfile. Then it took 18 to 33 s.
@@ -121,7 +121,7 @@ a unit test.
 ## Measured, and decided again
 
 The first answer was every walk in both browsers, with WebKit on machines
-of its own. The first runs, in #633, showed what that costs. These are
+of its own. The first runs, in the first pull request, showed what that costs. These are
 the walk jobs of one push, as GitHub shows them. Main is its last three
 pushes, so its spread is the spread of those three. The pull request is
 one run of 6809cf0, the report in WebKit on a fifth job:
@@ -133,7 +133,7 @@ one run of 6809cf0, the report in WebKit on a fifth job:
 | slowest job (s) | 264 | 203 | 23 % faster, ± 37 % |
 
 Every part in both browsers would double the machine time and need about
-four more jobs, or make each job twice as long. Tim, on 31 October: "What
+four more jobs, or make each job twice as long. The user, on 31 October: "What
 I do not want to do is to slow down CI. What I do not want to do is to
 launch even more jobs." So a pull request walks each walk in one browser,
 WebKit, the fourth simulation. What that simulation dropped is kept at
@@ -159,7 +159,7 @@ One more way was weighed and dropped: Playwright's WebKit on the macOS
 job, the engine nearest the app, with the Mac's own behaviour. It is a
 Mac job more on every push, and the account runs five at once for every
 branch together, see Keeping the tests quick in CLAUDE.md. It is the next
-thing to weigh if WebKit on Linux passes what Tim then meets on his Mac.
+thing to weigh if WebKit on Linux passes what the user then meets on their Mac.
 
 ## The decision
 
@@ -194,19 +194,19 @@ move last. The nightly walks walk everything in Chromium.
   not built yet, so that is the cheap side to be late on.
 - `SLOW` and the walks' coverage need Chromium, so they run with
   `WALKBROWSER=chromium`, the coverage at night as before.
-- It is wrong if WebKit on Linux passes what Tim then meets on his Mac
+- It is wrong if WebKit on Linux passes what the user then meets on their Mac
   with no Mac-only cause. Then the Mac's own WebKit, through the macOS
   job, is the next thing to weigh, at the cost of the scarce Mac machines.
 - The nightly walks run with motion, `STILL=none`, and pull requests
   with reduced motion except for the steps `moving` names. Once every
   part is in WebKit, a fault in motion that only WebKit has is caught
-  only by those steps. Tim chose Chromium at night, so it stays that way.
+  only by those steps. The user chose Chromium at night, so it stays that way.
 
 ## Where it stands
 
 Every part and the random walks walk in WebKit since 2 November 2026.
 The timeline, playback, clips and search parts moved together with the
-random walks in one pull request, not one part at a time, because Tim
+random walks in one pull request, not one part at a time, because the user
 asked for the two steps that were left to go in together on that day.
 `walks/webkit.mjs` is gone with its last name, and `browserFor` asks
 only `WALKBROWSER`, `SLOW` and `WALKCOVERAGE`. What the parts found was

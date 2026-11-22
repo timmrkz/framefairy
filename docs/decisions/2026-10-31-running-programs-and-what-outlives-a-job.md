@@ -2,18 +2,18 @@
 
 Step 3 of splitting the engine into packages, after
 [the log of a run](2026-10-30-the-log-of-a-run.md), and the design of
-#607. Decided on 31 October 2026, in the first pull request that builds
+the issue on what outlives a job. Decided on 31 October 2026, in the first pull request that builds
 it. The step takes several pull requests, and each names this record.
 
 ## The problem
 
-Tim said go on step 3 on 31 October. The plan for the split gave it
+The user said go on step 3 on 31 October. The plan for the split gave it
 "files and running programs: `SafeChild`, `WriteAtomic`, running ffmpeg
 and ffprobe, and the narrow parts `Engine` holds. The caches that outlive
-a job move onto them, which closes #607." #607, from the architecture
+a job move onto them, which closes the issue." The issue, from the architecture
 review of 29 October, says the app makes a new `Engine` for every job and
 probe, so what an engine learns is thrown away, and what had to be shared
-became package variables instead. Tim, 29 October: objects made again
+became package variables instead. The user, 29 October: objects made again
 and again and thrown away are a design fault to fix.
 
 Measured on main at 7634f17:
@@ -68,9 +68,9 @@ the bottom parts down.
 
 ### 2. What changes together
 
-The stop of a program and the wait after it came in together in #337,
+The stop of a program and the wait after it came in together,
 for ffmpeg that went on sitting in VideoToolbox on CI's Mac after it was
-killed, and the wait became a seam in #548, so a test need not wait for
+killed, and the wait became a seam later, so a test need not wait for
 it. llama-server's stop reads the same wait. The three seams are one
 thing, how a program is stopped, and belong on one value. The caches change with the area they serve: the
 probe cache with the probes, the caption tracks with the video preview.
@@ -119,7 +119,7 @@ hide where it was made.
 ### 5. What a test has to build
 
 A test that stops a program sets the stop on its own value and runs
-beside the others with `t.Parallel()`, which is #607's last line. A test
+beside the others with `t.Parallel()`, which is the issue's last line. A test
 of a probe or a caption track makes its own object that outlives a job,
 so a cache filled by one test is never read by another. A test of
 running a program builds nothing of the engine. Framing, step 6, runs
@@ -191,7 +191,7 @@ records, the runner, what was learned about the machine, and every
 cache and seam that is a package variable today, each moved with its
 area. `NewEngine` takes it in place of the file system.
 
-The name, chosen on 1 November 2026 in that pull request, #644, is
+The name, chosen on 1 November 2026 in that pull request, is
 `engine.Machine`, for what it holds: this machine's disk, its records,
 the programs it runs and what was learned about it while the program
 runs. `Engine` embeds it, so an engine still reads `e.Files` and
@@ -245,7 +245,7 @@ The pull requests, in order, each one self-contained:
   area to do its work, or if the object that outlives a job grows rules
   of its own rather than holding what its areas own.
 
-## The keys and the network, #648
+## The keys and the network
 
 Added on 2 November 2026, in the pull request that moves them. Every
 other seam on the machine is the real thing when left empty, the way
@@ -253,7 +253,7 @@ other seam on the machine is the real thing when left empty, the way
 two seams that reach out of the program, into the keychain and to the
 companies. Today `testing.Testing()` in `engine/keys.go` swaps the
 keychain for none and blanks the companies' addresses in any test
-binary, which is a switch for tests in shipped code. Tim, 2 November:
+binary, which is a switch for tests in shipped code. The user, 2 November:
 the empty store is the safe one, and the programs hand in the keychain.
 
 Measured on main at 1251f2a: the keys are read and kept in 15 places
@@ -277,7 +277,7 @@ switch and the blanked addresses go, and no call changes its receiver.
 But it is state a test changes for the whole process, so every test that
 sets a key store or a transport runs alone, and a key one test keeps can
 be read by the next. That is what the row "Never a package variable" in
-`docs/ARCHITECTURE.md` and #607 take away. Loses.
+`docs/ARCHITECTURE.md` and the issue take away. Loses.
 
 ### B. What changes together: the machine keeps both, empty is safe
 
@@ -313,8 +313,8 @@ read in, the move of the first ones into the new item and the hint.
 The app never reads a key back, see `Copy` in `licence.go`, and C
 would make that a habit to keep instead of a thing that cannot be done.
 The licence seams become fields of `FrameFairy` with the app's other
-seams in #650, which needs no key store from outside the engine. Loses
-to B on what it opens, for a gain #650 brings anyway.
+seams in the change that moves them, which needs no key store from outside the engine. Loses
+to B on what it opens, for a gain that change brings anyway.
 
 ### D. Who may know about whom: the engine knows no keychain
 
@@ -361,7 +361,7 @@ hands its machine a network that carries the real addresses to a server
 of its own, `cloud` in `engine/provider_test.go`, and checks the address
 each request was meant for.
 
-## The app's caches and seams, #649 and #650
+## The app's caches and seams
 
 Added on 5 November 2026, in the pull request that moves them. The
 decision above already says each cache and seam goes onto a field, each
@@ -466,15 +466,15 @@ What stays a package variable on purpose, each with why:
   `main`, `fileio.locks` and `tool.sums`, see above, and the tables of
   the hyphenation, the fillers and the recipes.
 - The font shelf in `engine/machinefonts.go`, which is a cache and a
-  seam, and is what #607 has left. Its fonts are read by the caption
+  seam, and is what the issue has left. Its fonts are read by the caption
   code wherever a style is resolved, so moving it reaches every caller
   of `FontByName`, `FontBytes` and `InstallFont`, and is a change of its
-  own, made in #728, see the next section.
+  own, see the next section.
 
-## The font shelf, #728
+## The font shelf
 
-Added on 6 November 2026, after #720 left the shelf as the last package
-variable #607 names. Tim chose to keep #607 open for it and move it in a
+Added on 6 November 2026, after the previous step left the shelf as the last package
+variable the issue names. The user chose to keep the issue open for it and move it in a
 pull request of its own. Measured on main at 3b46bbc: `shelf` in
 `engine/machinefonts.go` holds the font folders, the faces found in them
 and the metrics read of each face. It is read by 35 lines of shipped code
@@ -547,7 +547,7 @@ B, with D's snapshot inside `Fonts`. The shelf becomes `Machine.Fonts`.
 `main` on the program's machine. The app's font list and the window's
 font requests ask the store's machine. Done when no package variable in
 `engine/` or `cmd/framefairy-app/` holds a cache or a seam, which closes
-#607.
+the issue.
 
 ### What was built, and where it left the design
 

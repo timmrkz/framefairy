@@ -2,13 +2,13 @@
 
 Which browser the walks of a pull request walk in, once WebKit was
 measured to be the slow one. Decided on 5 November 2026, in the pull
-request of #692. It replaces the browser of a push in
+request of the issue on the slow walks jobs. It replaces the browser of a push in
 [the walks in two browsers](2026-10-31-walks-in-two-browsers.md), and
 keeps everything else that record decided.
 
 ## The problem
 
-Tim, in #692: the walks jobs take four to six minutes, and each should
+The user, in the issue: the walks jobs take four to six minutes, and each should
 take under three on the machines we have, with the same coverage. On the
 pull request: "I want to know what's structurally wrong about our tests
 and how we can speed them up more so that the same coverage is produced
@@ -19,7 +19,7 @@ Linux. That WebKit is WPE, which draws every frame through OpenGL, and a
 machine with no graphics chip, CI's or a cloud session's, runs that on
 the processor, through Mesa's llvmpipe. Drawing was 37 % of the
 processor time of every walk in WebKit, measured once in a cloud session
-on 3 November, see #692. Every walk, walked in each browser once in a
+on 3 November, see the issue. Every walk, walked in each browser once in a
 cloud session of four cores, six walkers, at the same commit, the
 seconds the walkers walked together:
 
@@ -58,7 +58,7 @@ still help when WebKit walks at night.
 ### 3. Where state lives
 
 Walk a chosen set in WebKit on a push, the walks about typing, the cursor
-and focus, where #574's faults were, and the rest in Chromium. The set is
+and focus, where the faults of the work on the report's field were, and the rest in Chromium. The set is
 a list with no writer to keep it true, the reason the walks run whole,
 see [BUILD.md](../BUILD.md#why-the-walks-run-whole). Dropped.
 
@@ -76,8 +76,8 @@ fault found a day late.
 
 Drop WebKit altogether: one browser, one image, no second engine to
 keep walking. The quickest and the simplest, but the app on a Mac is
-WebKit, the Mac ships first, and nearly every fault Tim met in #574 was
-WebKit's alone. Without it a Mac-only fault is only found when Tim tries
+WebKit, the Mac ships first, and nearly every fault the user met in the work on the report's field was
+WebKit's alone. Without it a Mac-only fault is only found when the user tries
 the app. Kept as the answer if WebKit at night shows nothing for a long
 time.
 
@@ -117,7 +117,7 @@ Playwright      Chromium (Windows), every pull request and every night,
 - The CI image keeps both browsers while the night walks in WebKit. A
   push could take an image with Chromium alone, once Ubuntu's snapshot
   serves a rebuild in the time a job has.
-- It is wrong if WebKit at night finds faults Tim would have met before
+- It is wrong if WebKit at night finds faults the user would have met before
   the next morning, then a push needs WebKit again. It is wrong the
   other way if WebKit at night finds nothing for weeks, then the fifth
   simulation, no WebKit at all, is the next thing to weigh.

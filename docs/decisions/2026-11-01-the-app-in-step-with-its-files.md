@@ -4,7 +4,7 @@ A decision record, see `docs/decisions/README.md`. Written 1 November 2026, on m
 
 ## The problem
 
-Tim, 1 November 2026, in the thread on #608:
+The user, 1 November 2026, in the thread on the issue that asks for one holder per video:
 
 > The source of truth isn't Go. The source of truth are the files on the file system. And the files on the file system can potentially be written by many writers. We already had an issue where I was deleting files and folders in the file system, and the app did not recognize that and misbehaved. And then we had a bunch of bugs and issues that we had to fix, and now we worked around them.
 
@@ -22,23 +22,23 @@ Tim, 1 November 2026, in the thread on #608:
 | the person, in Finder or a terminal | deletes, moves, renames or replaces the video, its work folder, or the models | no |
 | a sync service, iCloud Drive or Dropbox, when the folder is in a synced place | any file, from another machine, and conflict copies such as `clips 2.json` | no |
 
-Tim's videos live in `~/Documents`, which iCloud syncs when Desktop and Documents is turned on. Whether it is on for him is not known.
+The user's videos live in `~/Documents`, which iCloud syncs when Desktop and Documents is turned on. Whether it is on for them is not known.
 
 **How our own programs write.** `fileio.Lock` takes a lock inside the program and an `flock` on `.<file>.lock` across programs, so the app and the command line edit one file at a time. 6 places take it, in 3 files. `fileio.Replace` writes beside the file, flushes it with `F_FULLFSYNC`, renames it over the old one and flushes the folder, so a reader sees all of the old or all of the new. 21 writes go through it or `replacePlan`, in 14 files. Every plan edit adds one to the plan's `revision`. This is the lock, rename and flush that git and SQLite use themselves. It is sound for the writers that take the lock. Finder, a terminal and a sync service do not take it.
 
 **How the app notices a change it did not make.** It does not watch the disk. There is no FSEvents and no fsnotify anywhere. `letGoOfRemoved` in `cmd/framefairy-app/library.go` looks for videos whose work folder is gone, and it runs only when the library is listed (as the app starts and when it comes back to the front) and when the app asks which video was open last (`Opened` in `chosen.go`). A change to a plan or a transcript made by the command line while the app is open reaches the interface only when something else makes Go read the video again.
 
-**What Go holds between questions.** The engine keeps what it read of a transcript, `heardKept` in `engine/heard.go`, since #663. The app keeps the whole transcript of the last few videos, `transcript` in `cmd/framefairy-app/words.go`. Both are keyed by the file's size and time. Plans are read again for every question: `LoadClips` is called from 11 places in 10 files, `PlanSummaries` from 7 in 5. #608 asks for one holder per video instead.
+**What Go holds between questions.** The engine keeps what it read of a transcript, `heardKept` in `engine/heard.go`. The app keeps the whole transcript of the last few videos, `transcript` in `cmd/framefairy-app/words.go`. Both are keyed by the file's size and time. Plans are read again for every question: `LoadClips` is called from 11 places in 10 files, `PlanSummaries` from 7 in 5. The issue asks for one holder per video instead.
 
-**How the interface hears.** Only through `VideoState`, sent by `told(path)` or the job queue, at most four times a second, always after the last change. `told` is called from 3 places. The interface shows the newest state and works nothing out for itself, as #606 makes it.
+**How the interface hears.** Only through `VideoState`, sent by `told(path)` or the job queue, at most four times a second, always after the last change. `told` is called from 3 places. The interface shows the newest state and works nothing out for itself, as the record on a video's state in Go makes it.
 
-**What went wrong, in Tim's own use** (his 102 report logs, 10 to 30 October):
+**What went wrong, in the user's own use** (their 102 report logs, 10 to 30 October):
 
 - 13 October: a work folder deleted in Finder, the video stayed in the list, and opening it wrote a folder back (plan row 2.247). Then a video deleted with its folder stayed with a red lamp, and the app opened on it after an update with "this file does not belong to a video in the library" (2.250). 8 such lines and 10 "No such file" lines that day.
 - 20 and 21 October: `start.mp4` was no longer where the library had it, 9 lines, shown as File not found with a toast.
 - 29 October: a language model file removed from `~/.framefairy/models`, found only when the model was next loaded.
 
-Each was fixed for its own case: a mark file `added.json` that tells a deleted folder from one never made, a guess about whether the video's own folder is there (`deletedOutside`), a list of the files the app writes back (`writtenBack`), and letting go first in `Opened`. That is the pattern Tim names. Nothing in the app says "the disk changed, look again".
+Each was fixed for its own case: a mark file `added.json` that tells a deleted folder from one never made, a guess about whether the video's own folder is there (`deletedOutside`), a list of the files the app writes back (`writtenBack`), and letting go first in `Opened`. That is the pattern the user names. Nothing in the app says "the disk changed, look again".
 
 No sighting in the logs is of two writers changing the same file at the same moment.
 
@@ -54,7 +54,7 @@ Each starts from a principle of its own and is worked through on the code as it 
 - **What moves.** `editPlan` (16 calls in 5 files) becomes applying a change. `LoadClips` (11 calls in 10 files) reads the merged document and then checks it, because a merged plan is as untrusted as a written one. The fuzz targets on the plan's JSON get a new input. The command line and `framefairy-train` read the new format.
 - **Names that cross.** The Automerge document type into the engine's plan code, and the library underneath it: `automerge-go` wraps the Rust core through cgo, and has no tagged release, its last version being from 30 October 2024. It has to build for macOS, Windows and Linux.
 - **What it solves.** Two writers changing one plan at the same moment, with neither edit lost. Today our programs never do that, because they wait for each other's lock. Only a writer that ignores the lock would: a second machine through a sync service, or a person editing a plan by hand.
-- **What it does not solve.** A video, a folder or a model deleted, moved or replaced. There is nothing to merge, and the app still has to notice. Every sighting in Tim's logs is of this kind. It needs simulation 2 or 3 beside it.
+- **What it does not solve.** A video, a folder or a model deleted, moved or replaced. There is nothing to merge, and the app still has to notice. Every sighting in the user's logs is of this kind. It needs simulation 2 or 3 beside it.
 - **Rules it meets.** "Plain files, no database" in CLAUDE.md: the plan stops being plain JSON. "Untrusted input": the checks in `LoadClips` stay and run after every merge.
 - **Next changes.** Every new field of a plan needs a merge rule. Two crops set at once on two machines still end with one of them, so most fields would be last writer wins anyway.
 - **Cost.** The plan format and everything that reads it, about 8 to 10 pull requests, and a native library in three builds.
@@ -63,12 +63,12 @@ Each starts from a principle of its own and is worked through on the code as it 
 
 **Principle: what runs together.** One loop that runs beside the app's work: whatever changed on the disk, and whoever changed it, it compares what is there with what Go holds and brings the rest in step. A change is a hint to look, never the news itself, the way a Kubernetes controller reconciles: what it acts on is the state it reads, so a missed or doubled hint does no harm.
 
-- **Layers.** The disk is the truth. The engine holds one `Episode` per video, the parsed plans, status and transcript by their file stamps, and reads a file again only when its stamp changed (#608). The app's Go side holds a watcher, and a `reconcile(path)` that reads the video's `Episode` again, lets the video go when its folder is gone, says File not found when the video is, and calls `told(path)`. The interface shows the newest `VideoState`, as now.
+- **Layers.** The disk is the truth. The engine holds one `Episode` per video, the parsed plans, status and transcript by their file stamps, and reads a file again only when its stamp changed, as the issue asks. The app's Go side holds a watcher, and a `reconcile(path)` that reads the video's `Episode` again, lets the video go when its folder is gone, says File not found when the video is, and calls `told(path)`. The interface shows the newest `VideoState`, as now.
 - **What moves.** `letGoOfRemoved` becomes part of `reconcile`, which runs as the app starts, when it comes back to the front, and on every hint from the watcher. The mark `added.json` stays, because it is how a deleted folder is told from one never made. `writtenBack` goes once nothing writes into a folder before its video is reconciled. The app's own transcript cache goes into the `Episode`.
 - **Names that cross.** A `Watcher` handed to the app's Go side: add a folder, remove a folder, and a channel of paths that changed. A test hands in its own and sends the path itself, so no test waits on the clock. `reconcile(path)` and `told(path)`, which already exists. `Episode` in the engine, with what changed since the last look.
-- **The watcher.** fsnotify v1.10.1 uses kqueue on macOS: one file descriptor per watched file and folder, and no watching of folders inside folders. FSEvents, which watches a whole tree cheaply, is not in fsnotify yet, and is reached from Go only through cgo. So each video watches a few folders: the one its video is in, its work folder, `logs/` and `jobs/`. How many descriptors that takes on Tim's folders is measured before choosing between the two.
+- **The watcher.** fsnotify v1.10.1 uses kqueue on macOS: one file descriptor per watched file and folder, and no watching of folders inside folders. FSEvents, which watches a whole tree cheaply, is not in fsnotify yet, and is reached from Go only through cgo. So each video watches a few folders: the one its video is in, its work folder, `logs/` and `jobs/`. How many descriptors that takes on the user's folders is measured before choosing between the two.
 - **Our own writes.** They come back as hints too. Reading by stamp makes that cheap, 0.1 ms for a plan, and `videoNews` already sends at most four states a second.
-- **What it solves.** Every sighting in Tim's logs, in one place, for every writer, and a plan changed by the command line shows in the app at once.
+- **What it solves.** Every sighting in the user's logs, in one place, for every writer, and a plan changed by the command line shows in the app at once.
 - **What it does not solve.** Two writers that ignore the lock writing one file at the same moment: the later write wins, as it does today. A sync service's conflict copy, `clips 2.json`, would be listed as another search, because `PlanSummaries` reads `clips*.json`. `reconcile` can tell such a name and say so.
 - **Cost.** 3 or 4 pull requests: the watcher and `reconcile` in place of `letGoOfRemoved`, the `Episode` holder, the models folder.
 
@@ -91,7 +91,7 @@ Each starts from a principle of its own and is worked through on the code as it 
 - **What moves.** Every reader and writer of a work folder: the 21 writes, the 11 `LoadClips`, the transcript readers, the job records, the command line, `framefairy-train`.
 - **What it solves.** A change across several files at once. None of the sightings is of that kind, because each file is already replaced whole.
 - **What it does not solve.** Finder and sync services: SQLite warns against keeping a database on a file system shared over a network, and a sync service copying an open database can break it. A deleted folder still needs noticing.
-- **Rules it meets.** "Plain files, no database" in CLAUDE.md, which Tim chose.
+- **Rules it meets.** "Plain files, no database" in CLAUDE.md, which the user chose.
 - **Cost.** The largest of the five.
 
 ### 5. Keep every change in order: an event log
@@ -105,15 +105,15 @@ Each starts from a principle of its own and is worked through on the code as it 
 
 ## What converges
 
-- **In all five, something has to notice changes our programs did not make.** Only 2 and 3 do. 1, 4 and 5 need one of them beside them. Every sighting in Tim's logs is this.
-- **In four of the five (2, 3, 4, 5), Go holds one view of a video that knows what changed:** #608's `Episode`, a database, or a log read into a state. In 1 it is the merged document.
+- **In all five, something has to notice changes our programs did not make.** Only 2 and 3 do. 1, 4 and 5 need one of them beside them. Every sighting in the user's logs is this.
+- **In four of the five (2, 3, 4, 5), Go holds one view of a video that knows what changed:** the issue's `Episode`, a database, or a log read into a state. In 1 it is the merged document.
 - **In all five, the interface hears through `VideoState` and `told`,** and nothing about it changes. "Go owns a video's state" is read as: Go is the only one that reads the disk for the interface, and the disk is the truth.
-- **Only 1 and 5 merge two writers at once.** No such writer is in the logs: our programs wait for each other's lock, and Tim uses one Mac. Kept for later, for a reason said below.
+- **Only 1 and 5 merge two writers at once.** No such writer is in the logs: our programs wait for each other's lock, and the user uses one Mac. Kept for later, for a reason said below.
 - **Only 3 is for one system. Only 4 writes files together.** Dropped.
 
 ## The decision
 
-Simulation 2: watch and reconcile, with #608's `Episode` as what Go holds. The lock, the rename and the flush of `editPlan` stay as they are.
+Simulation 2: watch and reconcile, with the issue's `Episode` as what Go holds. The lock, the rename and the flush of `editPlan` stay as they are.
 
 ```
 interface        EpisodeSession shows the newest VideoState               (unchanged)
@@ -130,10 +130,10 @@ Each layer uses only the ones under it. The watcher is in the app's Go side, bec
 
 ## What follows
 
-- **It costs** six pull requests of the usual size, the steps of #673 in order: (1) this record and `reconcile` in place of `letGoOfRemoved`, run as the app starts, as it comes to the front and on every change heard, (2) the watch on the folders of every video, in the same pull request as step 1, (3) the `Episode` holder, held by the files' stamps, which closes #608, (4) the shorts folder watched, (5) the models folder watched, (6) the special cases going, `writtenBack` and the early let-go in `Opened`.
+- **It costs** six pull requests of the usual size, the steps of the plan in order: (1) this record and `reconcile` in place of `letGoOfRemoved`, run as the app starts, as it comes to the front and on every change heard, (2) the watch on the folders of every video, in the same pull request as step 1, (3) the `Episode` holder, held by the files' stamps, which closes the issue, (4) the shorts folder watched, (5) the models folder watched, (6) the special cases going, `writtenBack` and the early let-go in `Opened`.
 - **It buys** one place where every change from outside lands, whoever made it, instead of a fix per case. The special cases `writtenBack` and the early let-go in `Opened` go.
 - **`docs/ARCHITECTURE.md` changes:** the State table names the outside writers and the `Episode`, Where does it go gets "notice a change made outside the app: `reconcile`", and invariant 5 says the disk is the truth and Go is its one reader for the interface.
-- **It would be wrong if** watching the folders takes more file descriptors than a Mac allows on Tim's folders (then FSEvents through cgo), or if a sync service ever loses an edit or makes a conflict copy in Tim's use. That is the day to take simulation 1 up again, with Automerge for the plan.
+- **It would be wrong if** watching the folders takes more file descriptors than a Mac allows on the user's folders (then FSEvents through cgo), or if a sync service ever loses an edit or makes a conflict copy in the user's use. That is the day to take simulation 1 up again, with Automerge for the plan.
 
 ## Steps 5 and 6, as built
 
@@ -145,10 +145,10 @@ The app looked at the disk only when the window asked, through `Library` or `Ope
 
 ### Step 5: the models watched
 
-A model deleted in Finder, or put there by hand, showed in the setup and the settings only once they were opened again. Tim's report logs have a language model removed from `~/.framefairy/models` on 29 October. Both screens read `Setup`, which looks in the models folder each time it is asked. Five ways to have them see a change at once:
+A model deleted in Finder, or put there by hand, showed in the setup and the settings only once they were opened again. The user's report logs have a language model removed from `~/.framefairy/models` on 29 October. Both screens read `Setup`, which looks in the models folder each time it is asked. Five ways to have them see a change at once:
 
 1. **A hint, and the interface asks again.** The watch hears the models folder, the window is told "the models changed", and the setup and the settings call `Setup` again. Two lines in each screen. But the interface then holds a rule, when to read again, and the screens already drift in what they take from `Setup`.
-2. **The state, sent whole.** The watch hears the models folder, and Go sends `SetupState` on a `setup` event, the way a video's state goes out on `video`. The screens take what comes, through the one function each already has for the answer of `Setup`. Go decides, the interface shows, as everywhere since #606. Cost: one event, one place in Go that sends it.
+2. **The state, sent whole.** The watch hears the models folder, and Go sends `SetupState` on a `setup` event, the way a video's state goes out on `video`. The screens take what comes, through the one function each already has for the answer of `Setup`. Go decides, the interface shows, as everywhere since Go owns a video's state. Cost: one event, one place in Go that sends it.
 3. **The engine watches.** `engine.Machine` watches its own models folder and says when it changed. Every program that makes a machine then pays for a watch, the command line too, which runs once and has nothing to keep in step, and the engine gains fsnotify. Dropped: the 1 November decision put the watch in the app's Go side for this reason.
 4. **No watch, a look on focus.** The screens read `Setup` again when the app comes back to the front, the way the library does. A model deleted in Finder is seen once the app is clicked. But the watch is there already, and a download that fails while the settings are open, or a model put in by a script, is missed until a click. Dropped: it is the case the issue names.
 5. **The models held by stamp.** The machine keeps what it read of the models folder by the folder's stamp, like a video's plans, so `Setup` reads nothing that did not change. That is a speed the setup does not need, it is asked a few times a session, and it does not tell the window either. It needs 1 or 2 beside it. Dropped.

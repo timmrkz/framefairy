@@ -1,6 +1,6 @@
 # A Mac only for Mac code
 
-Issue #963. Builds on
+An issue on the Mac jobs. Builds on
 [2026-11-08-one-make-target-per-ci-job.md](2026-11-08-one-make-target-per-ci-job.md),
 which it changes in one place: a pull request runs the Go tests on a Mac
 only when it changes code only a Mac builds, and what only a Mac can tell
@@ -8,7 +8,7 @@ otherwise runs every night.
 
 ## The problem
 
-Tim, 20 November: "sometimes it appears that we have a lot of resource
+The user, 20 November: "sometimes it appears that we have a lot of resource
 congestion", then "consolidate the Mac-related workflows so that we can
 run CI faster with fewer resources constraining other builds", and then:
 "there may be checks running in those Mac OS CI jobs that don't require
@@ -23,7 +23,7 @@ push to a pull request and to main took three:
 - `build` in `builds.yml`, `make app WERROR=1`, the app for the Updates
   page.
 
-Read from the jobs of #962's last commit, 142b06a, one run each, they took
+Read from the jobs of a pull request's last commit, 142b06a, one run each, they took
 230, 134 and 116 s, 480 s of Mac time a push. From the runs of CI on main,
 14 to 20 November, a Mac job of an outdated run waited 2491 s in the
 queue in all, and `outside` of run 3330 never got a Mac in 34 minutes.
@@ -40,7 +40,7 @@ What in them needs a Mac:
   app through Launch Services, Unlock writes the key to the keychain,
   and the app is quit and started again as a bundle. But the code that
   touches any of that changes in few pull requests.
-- `build` needs a Mac for the app Tim updates to, and is the one place a
+- `build` needs a Mac for the app the user updates to, and is the one place a
   Mac compiles the app with every warning an error.
 
 ## Five simulations
@@ -63,7 +63,7 @@ What in them needs a Mac:
    33 s later, measured on one run, and one whose checks from outside
    fail is not offered on the Updates page until they pass. The full
    suite still takes a Mac on every Go push, though only a few dozen of
-   its 2399 tests run code only a Mac runs. And Tim asked, at 20:01, why
+   its 2399 tests run code only a Mac runs. And the user asked, at 20:01, why
    the checks from outside run on every push at all, when most changes
    touch nothing they check.
 3. **Where state lives.** Which files are the Mac's is worked out where
@@ -77,7 +77,7 @@ What in them needs a Mac:
    on any branch by hand, and no push takes a Mac but the build. No rule
    to keep, but a change to the Mac's own code, the keychain or the
    window, reaches main untested, though it is the code most likely to
-   break there. Tim asked for build constraints instead.
+   break there. The user asked for build constraints instead.
 5. **What a test has to build.** The Mac's code moves into packages of
    its own, so the Mac job tests only those, in seconds. It moves about
    ten files out of the engine and the app, deep in both, and the job

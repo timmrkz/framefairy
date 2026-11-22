@@ -6,7 +6,7 @@ on 30 October 2026, in the pull request that makes it.
 
 ## The problem
 
-Tim said go on step 2 on 30 October. Framing, the first area meant to
+The user said go on step 2 on 30 October. Framing, the first area meant to
 stand alone, reports its progress through the engine's log, so it cannot
 leave the engine while the log lives there.
 
@@ -81,7 +81,7 @@ of asking the log.
 
 ### 4. What Go and its libraries already have
 
-The app logs with zerolog, by Tim's rule, and Go has `log/slog`. A
+The app logs with zerolog, by the user's rule, and Go has `log/slog`. A
 `slog.Handler` could take the lines, but not the progress line one piece
 of work holds, the steps with their durations, or the clips on the way:
 the log of a run is a progress report, not only a logger. Rewriting it

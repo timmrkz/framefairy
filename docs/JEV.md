@@ -182,7 +182,7 @@ of record in `docs/TRAINING.md`.
   point of the local model. Customers would need a TypeSafe account and key
   as well as, or instead of, an Anthropic one.
 - **Early access.** Prices, limits and the API can still change.
-- **German.** Tim's podcast is half German, and Jev is mostly English. This
+- **German.** The podcast the app started for is half German, and Jev is mostly English. This
   has to be measured on real episodes before anything else.
 - **No sense of the whole.** Each candidate is judged alone. Jev cannot
   know that the same story is told better at minute 40, or what the episode
@@ -197,7 +197,7 @@ of record in `docs/TRAINING.md`.
 1. **Do not replace the language model with Jev.**
 2. **A cheap experiment is worth it**, in `framefairy-train` and not in the
    app: take the clips already recorded on real episodes, run steps 1 to 3
-   over them and see whether Jev ranks the clips Tim kept above the ones he
+   over them and see whether Jev ranks the clips the user kept above the ones they
    removed, in German and in English. That answers the only open question,
    quality, for a few cents and without touching the product.
 3. **If Jev ranks well**, the first use is as a ranker behind the language

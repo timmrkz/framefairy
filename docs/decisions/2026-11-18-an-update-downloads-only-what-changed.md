@@ -1,10 +1,10 @@
 # An update downloads only what changed
 
-Issue #922, in one pull request, #923.
+An issue on the size of an update, in one pull request.
 
 ## The problem
 
-Tim, 18 November: "Could you investigate why the app is made up of 67
+The user, 18 November: "Could you investigate why the app is made up of 67
 megabytes to download when the app updates? Why is it just so much data
 that needs to be downloaded? And where can we maybe compress this amount
 of data?" And after the findings: "I want you to work on all of those
@@ -24,7 +24,7 @@ What an update was on main at 6268d4f, read from the zip on the release
 | `llama-server` | 6.3 | no |
 | the rest | 0.1 | the signature list |
 
-Three builds side by side, main, #905 and #919, differ in the app
+Three builds side by side, main and two pull requests, differ in the app
 program, the decoder and the signature list, nothing else. `ffmpeg`,
 `ffprobe` and the decoder each hold their own static copy of ffmpeg's
 libraries. Wails' updater takes one `.zip` or `.tar.gz`, hashes the bytes
@@ -71,7 +71,7 @@ than the program packed, because a change moves every address after it.
    app downloads the diff when it runs that build, the whole zip
    otherwise. Cost: a diff for every pair a person might update between,
    main to a pull request and back, or only the one pair, which misses
-   most updates Tim makes, from one pull request to another. Measured: a
+   most updates the user makes, from one pull request to another. Measured: a
    diff of the app program is no smaller than the program packed.
 3. **Where state lives.** The app keeps a store of files by their
    SHA-256, as git and OSTree do, and an update is a signed list of the

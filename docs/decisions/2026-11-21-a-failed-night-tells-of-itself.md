@@ -1,13 +1,13 @@
 # A run at night that fails tells of itself
 
-Issue #971. Builds on
+An issue on the runs at night that fail unseen. Builds on
 [2026-11-14-update-decisions-in-go.md](2026-11-14-update-decisions-in-go.md)
 and
 [2026-11-20-a-mac-only-for-mac-code.md](2026-11-20-a-mac-only-for-mac-code.md).
 
 ## The problem
 
-Since #965, a change that breaks the Mac's disk, the ffmpeg built for
+Since a Mac runs only for Mac code, a change that breaks the Mac's disk, the ffmpeg built for
 the Mac or the app opened from outside fails no pull request. It fails
 `mac-nightly.yml` on main the next night, a run nobody waits on. The
 same was true of `fuzz-nightly.yml`, `walks-nightly.yml` and the weekly
@@ -15,9 +15,9 @@ same was true of `fuzz-nightly.yml`, `walks-nightly.yml` and the weekly
 else. Sessions hear only the events of their own pull requests, and the
 weekly look at the issues in [TRIAGE.md](../TRIAGE.md) reads main's
 runs once in seven days. So "found the next morning", which the record
-of #965 promised, held only if someone looked.
+of that change promised, held only if someone looked.
 
-Tim, 21 November, on a card in the thread of #965: "Yes, one issue, in a
+The user, 21 November, on a card in the thread of that change: "Yes, one issue, in a
 new PR", a failed nightly opens or updates one issue by itself.
 
 ## Five simulations
@@ -45,7 +45,7 @@ new PR", a failed nightly opens or updates one issue by itself.
 3. **Where state lives.** What failed is in GitHub's record of runs
    already, so nothing is added: GitHub mails whoever last changed the
    schedule of a workflow when its run fails. It costs nothing, but it
-   reaches one inbox, Tim's, since sessions push as him, and he does not
+   reaches one inbox, the user's, since sessions push as them, and they do not
    work from mail. No session reads it, and nothing of it is an issue,
    which is where the order of work in CLAUDE.md starts.
 4. **What runs together.** One watcher workflow, on `workflow_run` of

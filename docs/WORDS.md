@@ -74,7 +74,7 @@ does, so no other caption changes, see `dropWords` in
 `engine/corrections.go`. It never changes what is said: the words said
 keep it, every other clip shows it, and a clip made again where a removed
 one was has it. Corrections and removals alike are the clip's, so a clip
-removed takes everything done to its words with it. Tim chose that.
+removed takes everything done to its words with it. The user chose that.
 
 **A clip's words** are not stored. A clip is its pieces, and its words are
 the words said that its pieces hold, `Said`: a word is in the clip

@@ -1,12 +1,12 @@
 # Go plays the video preview
 
-Issue #924, the last step of
+The issue of the lagging video preview, the last step of
 [Go decides which frames the video preview gets](2026-11-19-go-schedules-the-video-previews-frames.md),
 which said the play may need a record of its own.
 
 ## The problem
 
-Tim, 18 November: "if the front end is truly just a dumb rendering layer,
+The user, 18 November: "if the front end is truly just a dumb rendering layer,
 then there shouldn't be any performance issues in the front end". And on
 19 November, of the steps of that record: "I would have hoped you just
 made all of those changes in one pull request."

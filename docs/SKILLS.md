@@ -13,9 +13,11 @@ that names a person, the product, a word only this project uses, or an
 issue or a pull request by its number fails `make lint`. The one skill
 about this repository alone is `interface`, which says how to change this
 app's interface without seeing its window. It may use this project's
-words, and it too names no person and no number. A name the test does
-not know, of another person or another project, is still the review's to
-catch.
+words, and it too names no person and no number. The same test holds
+`CLAUDE.md`, the docs and the templates for issues and pull requests to
+naming no person and no issue, all but `docs/GUI-PLAN.md`, the history
+that does not change. A name the test does not know, of another person
+or another project, is still the review's to catch.
 
 | Skill | What it is for | Where it meets this repository |
 | --- | --- | --- |
@@ -58,7 +60,7 @@ or the doc of its part.
 | The skill says | Here it is |
 | --- | --- |
 | reports and logs from people using the product | the report bundles from the app's Report a Problem, in the project files, and the app's log, see [LOGGING.md](LOGGING.md) |
-| the issue tracker, and its template | the [GitHub issues](https://github.com/timmrkz/framefairy/issues) and `.github/ISSUE_TEMPLATE/issue.md` |
+| the issue tracker, and its template | the repository's GitHub issues and `.github/ISSUE_TEMPLATE/issue.md` |
 | a problem, with its incidents under it | an issue labelled `problem`, with sub-issues, see [Problems that come back](TRIAGE.md#problems-that-come-back) |
 | triage on a schedule | [Every week](TRIAGE.md#every-week) |
 | labels from an established scheme | `priority/critical`, `priority/important`, `priority/backlog` and `size/small`, `size/medium`, `size/large`, see [Priority and size](WORKFLOW.md#priority-and-size) |

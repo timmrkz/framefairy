@@ -1,19 +1,19 @@
 # The video preview keeps up with the hand
 
-20 November 2026, issue #924, pull request #936. It follows
+20 November 2026, for the issue of the lagging video preview, in one pull request. It follows
 [Go decides which frames the video preview gets](2026-11-19-go-schedules-the-video-previews-frames.md),
 which moved the choice of the next frame from the window to Go. This
 record is about how Go makes that choice while a hand drags.
 
 ## The problem
 
-Tim's reports of 19 November, 21.39, and 20 November, 15.02, both have
+The user's reports of 19 November, 21.39, and 20 November, 15.02, both have
 drags where the hand moved and the picture stood still. The second, on a
 build with the fix for the first, still had stand-stills of up to 558
 ms, 1010 of 1723 looks overtaken before a frame came, and one run that
 decoded 216 frames, about 800 ms of work, and showed none of them.
 
-Tim asked to step back: how should this work, for fast and slow drags
+The user asked to step back: how should this work, for fast and slow drags
 in any direction, when nobody can tell where the hand goes next.
 
 The code and the logs showed three flaws:
@@ -31,7 +31,7 @@ The code and the logs showed three flaws:
 ## What a drag demands, and what the decoder can do
 
 The costs are fitted from the decoder's own lines in the two reports, a
-25 fps video on Tim's M2 Max: 10 ms to open at a key frame, then 3.8 ms
+25 fps video on the user's M2 Max: 10 ms to open at a key frame, then 3.8 ms
 for each frame, one at a time. Making a picture of a frame at the size of
 the video preview costs more on top, which the reports do not tell
 apart, guessed at 1 ms.
@@ -60,7 +60,7 @@ The targets, each a check in the simulation:
 5. While the picture is more than a key frame span from the hand, it
    moves at least every 50 ms, with no allowance.
 
-The second and third are not quite what the proposal to Tim said. The
+The second and third are not quite what the proposal to the user said. The
 proposal held every stand-still to 50 ms. A hand that turns round into a
 stretch nobody read waits for the key frame before it on any schedule:
 the decoder reads only forward, and at a key frame every 25 frames that
@@ -101,7 +101,7 @@ built.
 ### C. Predict where the hand goes
 
 Decode where the hand will be, from its speed. It fails each time the
-hand turns or jumps, which Tim said it does, and then has the decoder
+hand turns or jumps, which the user said it does, and then has the decoder
 far from the hand. Dropped.
 
 ### D. Two decoders, one forward and one backward
@@ -112,12 +112,12 @@ cursor of `framefairy-frames` runs on a goroutine of its own, and a play
 already runs the next stream beside the one it shows. In the cloud, on
 the processor with four cores, two streams of 40 frames at once took
 1.18 to 1.49 times as long as one, in three runs, so two streams at once
-make more frames than one. On Tim's Mac the frames are decoded on the
+make more frames than one. On the user's Mac the frames are decoded on the
 graphics chip, whose one decoder the streams share, and that was not
 measured. D stays dropped for this change, on two grounds that hold:
 the planner of B already keeps the decoder busy on the frames wanted
 most, and D needs a second run in every rule of the schedule, which B
-has none of. Whether two streams at once on Tim's Mac make more frames
+has none of. Whether two streams at once on the user's Mac make more frames
 than one decides whether D is worth simulating, see What follows.
 
 ### E. Only key frames while the hand moves
@@ -139,7 +139,7 @@ after every frame. It wants, the most wanted first:
    picture is more than a span from the hand and the frame was just made
    between the two. A hand that moves further than a span at a look has
    the run under way hand over its key frame before the next starts:
-   Tim's drags across hours on the range picker reached a new stretch
+   The user's drags across hours on the range picker reached a new stretch
    at every look, as often as a key frame takes, and every run was
    stopped before its key frame came. A drag to the left reads the whole key frame span it
    drags into, since it wants those frames one after another and a run
@@ -180,7 +180,7 @@ not read again. The window's list is never kept in Go beyond the place
 it came with: a copy kept from what was read ahead went stale over
 presses that read nothing ahead. Each drag is written to the log as
 one line once the hand lets go, with every place it went to, so a drag
-that lagged on someone's Mac can be played in the simulation. Tim's two
+that lagged on someone's Mac can be played in the simulation. The user's two
 reports could not be: their lines name no frame for a look.
 
 While the window draws the frame of a click, the decoder reads nothing
@@ -273,10 +273,10 @@ decoding, for a frame decoded from it, on any schedule.
 
 - The next report of a drag that lags has its places in the log, and
   becomes a drag of its own in the simulation.
-- The cost of making a picture is a guess. A measurement of it on Tim's
+- The cost of making a picture is a guess. A measurement of it on the user's
   Mac settles the six slower drags either way.
 - The key frames of a video could be read from its file once, the way
   the engine already asks ffprobe for the key frame before a cut, so
   the planner knows them rather than learns them.
-- Two streams at once on Tim's Mac, from the decoder's lines in a
+- Two streams at once on the user's Mac, from the decoder's lines in a
   report, say whether D is worth simulating.

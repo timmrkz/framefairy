@@ -82,7 +82,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make motion` | opens every way the app shows work in hand on one page in the browser, for looking at a change to any of them without starting a job. Preview material, never in the app |
 | `make app` | assembles `bin/Frame Fairy.app` out of what is already in `bin/`. macOS only, and `make run` does it for you |
 | `make install` | `make app`, then copies the app to `/Applications`, where it updates itself from the channel picked in its settings. macOS only. See [UPDATES.md](UPDATES.md#end-to-end) |
-| `make update-key` | makes the key the builds to update to are signed with, once, on Tim's Mac: the public half into `cmd/framefairy-app/update-key.txt`, the private half to the clipboard. See [UPDATES.md](UPDATES.md#the-keys) |
+| `make update-key` | makes the key the builds to update to are signed with, once, on the user's Mac: the public half into `cmd/framefairy-app/update-key.txt`, the private half to the clipboard. See [UPDATES.md](UPDATES.md#the-keys) |
 | `make dispenser` | the licence dispenser on this machine, with a pretend Paddle, mail service and signer, and a dev page at `http://127.0.0.1:8090/dev` to try every sale and every failure by hand. See [LICENCE.md](LICENCE.md#on-this-machine) |
 | `make icon` | builds the `.icns` from `build/icon.png`. `make app` does it for you, so this is for looking at an icon you just changed |
 | `make ffmpeg` | builds the ffmpeg framefairy ships again, from scratch, throwing away the one that is there. `make` builds it by itself when it is missing or `scripts/build-ffmpeg.sh` changed, so this is for when the last one went wrong |
@@ -324,8 +324,8 @@ test to the part about the clock, each with that one rule:
   clock that measure, and the stalls a walk puts on the app on purpose.
   One more in a file fails, and so does one fewer, until
   `npm run lint -- --prune-suppressions` in `frontend/` counts again. No
-  walk, probe or interface test waits on the clock since #341 and #495.
-  Since #503 a walk counts browser frames only where the count is the
+  walk, probe or interface test waits on the clock.
+  A walk counts browser frames only where the count is the
   scenario: a hand held still on the clip timeline for about 0.7 s, and a
   Go side made slow on purpose. Everywhere else a watch ends on the app's
   own signals, the page settled, the picture standing, the sound card
@@ -435,7 +435,7 @@ from 29 October to 3 November, 179 had an Apple M1 with 3 cores and 24
 an M2 Pro with 5, where the `engine` package took a third less time. So
 a Mac run's seconds say more about the machine than about the code, and
 a claim that tests got slower or faster needs several runs of each side,
-with their spread, #592.
+with their spread.
 
 The jobs of the Go tests stop after 15 minutes. go test ends a package
 that runs over `UNITTIMEOUT`, 4m in CI, and prints every goroutine, so
@@ -513,7 +513,7 @@ writing, "text file busy", and a fork made by another test while the
 script was being written kept it open in the child until that child had
 started its own program. So now and then a stand-in was refused the first
 time it ran, which is how a stand-in ffmpeg was once asked one question
-in place of two, #410. `standin.Write` in `internal/standin` holds
+in place of two. `standin.Write` in `internal/standin` holds
 `syscall.ForkLock` for reading while the file is open. Every fork in Go
 creates its child while it holds the lock for writing, so no child is
 created while the file is open, and none can hold it.
@@ -578,7 +578,7 @@ is in none: setup-node finds it in the runner's tool cache at once.
 
 On some days the runners' Ubuntu mirror gave 18 to 40 kB a second, and
 the libraries Chromium needs, mostly fonts, held a walks job for up to
-twelve minutes, #462. Chromium itself comes from Playwright's own
+twelve minutes. Chromium itself comes from Playwright's own
 servers and was always fast. The Go tests of `linux` waited the same
 way, up to five minutes for their packages, and the fuzzing once
 fifteen. An image is downloaded from GitHub's container registry
@@ -640,7 +640,7 @@ scan made once is out of date the week after.
   holds back nothing else. The Go modules include the ones `go.mod`
   marks indirect, `allow: dependency-type: all`, because Dependabot
   leaves those alone otherwise, and `golang.org/x/text` kept a known
-  flaw for months that way, #844. The actions come in one pull request, majors
+  flaw for months that way. The actions come in one pull request, majors
   included. Every action is pinned to a commit, because a tag can be
   moved to other code and a commit cannot, and the comment beside it
   names the full version that commit is, `# v7.0.2` and never `# v7`.
@@ -654,8 +654,8 @@ scan made once is out of date the week after.
   before `Write` returns, `responsewriter_*.go` in Wails's
   `internal/assetserver/webview`: the app gives a frame's buffer back
   for the next frame right after, see `writeFrames`. It was left out before,
-  and sat on a beta with published security advisories for two months,
-  #843. The speech library's Go module is left out, because it moves
+  and sat on a beta with published security advisories for two months.
+  The speech library's Go module is left out, because it moves
   with a pin Dependabot cannot change. TypeScript stays below 7 until
   svelte-check, which checks the interface's types, accepts 7. An update
   needs no licence notice written, because the build writes the notices
@@ -672,7 +672,7 @@ scan made once is out of date the week after.
   in the build tools, but for those `frontend/audit-ci.jsonc` lets through
   by number and by the path it comes in on, each with why: a warning with
   no fix yet in a tool that never ships, like picomatch through vite,
-  vitest and the other build tools in #910. A warning that has a fix the package bringing it
+  vitest and the other build tools. A warning that has a fix the package bringing it
   does not accept yet is fixed instead, by pinning the fixed version in
   `overrides` in `frontend/package.json`, like minimatch 11 under ESLint,
   and the pin is taken out once that package accepts the fix. Either
@@ -680,7 +680,7 @@ scan made once is out of date the week after.
 - **No install scripts.** `frontend/.npmrc` says `ignore-scripts=true`,
   so no package of the interface runs code of its own while it is
   installed, in make, in CI or by hand. A hijacked release that runs on
-  install is how the npm worms of 2026 spread, and it would run on Tim's
+  install is how the npm worms of 2026 spread, and it would run on the user's
   Mac and in a session that can push before anybody had read it. None of
   our packages needs its script. `npm run` still runs the scripts in
   `package.json`, only their `pre` and `post` steps are skipped.
@@ -694,7 +694,7 @@ scan made once is out of date the week after.
   behind`, which reads how `upstream.sh` ended. llama.cpp makes a build a day, so
   it counts only once it is a month behind. ffmpeg is the one that matters
   most: it reads a video somebody else made.
-- **One pin for each tool CI installs**, #591. Node is `.node-version`,
+- **One pin for each tool CI installs.** Node is `.node-version`,
   which every `setup-node` reads with `node-version-file` and the CI
   image's `node:` tag repeats. Dependabot cannot move a `.node-version`,
   so it leaves the image's Node alone too, `scripts/upstream.sh` says
@@ -718,7 +718,7 @@ scan made once is out of date the week after.
   alerts, secret scanning with push protection, and private vulnerability
   reporting, so somebody who finds a hole has a place to say so.
 
-An issue or a pull request is what reaches Tim, because GitHub tells
+An issue or a pull request is what reaches the user, because GitHub tells
 whoever watches the repository. Nothing here polls or writes a message
 when nothing is wrong.
 

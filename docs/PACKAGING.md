@@ -337,7 +337,7 @@ So one thing is settled and **one thing is still to look at**: whether
 `h264_videotoolbox` at a generous quality is visibly worse than
 `libx264 -crf`. The product rule is that the picture stays as close to the
 original as possible, so this gets looked at on a real render rather than
-assumed. The first real renders on Tim's Mac, at `-q:v 73` for the default
+assumed. The first real renders on the user's Mac, at `-q:v 73` for the default
 `--crf 18`, showed blocks in the shadows, so the default asks for 85 now. A short is twenty to thirty seconds, so the bitrate can afford to
 be generous. `ffmpeg -L` on the finished build stays the final word on the
 licence.
@@ -423,7 +423,7 @@ inside the `.app` like any other file.
 
 ## One build, used for development too
 
-The rule is that what Tim runs every day and what a customer runs should be
+The rule is that what the user runs every day and what a customer runs should be
 the same thing. Most of it now is, and what is left is exactly where
 shipping bugs live:
 
@@ -448,12 +448,12 @@ without another change.
 
 The three that are still different are what batch 5.2 is for: `make run`
 building and launching the `.app` rather than a bare binary. The only thing
-a customer would then have that Tim does not is the signature.
+a customer would then have that the user does not is the signature.
 
 So `make run` builds and launches the `.app` rather than a bare binary.
 Then the daily loop exercises the bundled ffmpeg, the relocated libraries,
 the `Info.plist` and the privacy prompts, and the only thing a customer has
-that Tim does not is the signature. A bug in any of it shows up on the day
+that the user does not is the signature. A bug in any of it shows up on the day
 it is made rather than on the day of a release.
 
 ## The blocker to clear first
@@ -746,7 +746,7 @@ nothing.
   are not Apple's public API, both in `cmd/framefairy-app/refresh_darwin.go`:
   `_features` with `_setEnabled:forFeature:`, which lets the page update at
   the screen's own rate, and `_setWindowOcclusionDetectionEnabled:`, which
-  keeps a covered app drawn, #536. Each is asked for by name, and the log
+  keeps a covered app drawn. Each is asked for by name, and the log
   says when a WebKit no longer has it. That is fine for a build signed and
   notarised outside the App Store. The App Store refuses an app that calls
   WebKit's own API.

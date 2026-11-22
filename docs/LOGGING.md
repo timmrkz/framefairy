@@ -35,7 +35,7 @@ next line starting a new log that says how many files, bytes and lines
 went. Plan row 2.245. Under it are the last five toasts the app showed,
 read back from the lines the window marked `"toast":true`, newest
 first, a toast said again once, where it was said last, with Report on
-each. Issue #421.
+each.
 
 The report window has one field, for what happened, screenshots
 attached under it, and **Report**. The report is one zip file on the
@@ -46,7 +46,7 @@ Desktop, shown in Finder:
   as PNG so nothing else the file held travels
 - the screen recordings attached, as `recordings/1.mov` and on, under
   the ending they came with, each copied stream by stream without its
-  metadata, chapters or tracks of data, issue #326
+  metadata, chapters or tracks of data
 - the log and its older files, unpacked, in `logs/`
 - the trace lines of the last while, which are kept in memory, see
   Levels below, `logs/recent-frames.log`
@@ -57,7 +57,7 @@ Desktop, shown in Finder:
 
 Every name inside the zip is written one way, in small letters with a
 hyphen between words, an older file of the log too:
-`app-2026-10-09-10-00-00.000.log`. Tim found `Pictures` and
+`app-2026-10-09-10-00-00.000.log`. The user found `Pictures` and
 `What happened.txt` beside `logs` and `about.json`. Only the zip and the
 folder in it are called `Frame Fairy report` and the time, the way macOS
 names a screenshot, since that is the name a person sees on the Desktop.
@@ -177,7 +177,7 @@ play, a few MB at most. A report carries them as
 over every frame, and that is exactly what happened just before the
 person reported it, so nobody has to switch anything on beforehand and
 do it all again. An early version had a **Detailed Log** switch in the
-Help menu for this. Tim took it out: a menu tick that changes nothing
+Help menu for this. The user took it out: a menu tick that changes nothing
 on screen is a switch nobody can judge, and the one moment it is
 needed is the moment it is too late to tick it.
 
@@ -195,12 +195,12 @@ time went in ms: `waited` for the edit before it of the same video,
 writes to the disk, and `after` reading them again. Plan row 2.242.
 There is no line for a window that stood still with nothing pressed: a
 timer that looked for it four times a second wrote almost nothing but
-WebKit holding an app behind another to once a second, #541.
+WebKit holding an app behind another to once a second.
 
 When the app goes out of sight and comes back is a `window` line too,
 `the app went out of sight` and `the app came back into sight` with
 `away_ms`, from what macOS tells the window, so a glance in Mission
-Control at a covered app is two lines a second or two apart, #536. Coming
+Control at a covered app is two lines a second or two apart. Coming
 back also says what WebKit's processes used of the processor while the
 app was away, in ms, `web_cpu_ms` for the page and `gpu_cpu_ms` for its
 drawing, which is what keeping a covered app drawn costs. Either is left
@@ -297,6 +297,6 @@ a check found for it and the build running when that is the newest,
 the build ready for Relaunch, a check or a download that failed with
 the reason, and the channel's own entry when it was newer than the list
 and offered in its place, with both versions, or, at `debug`, why it
-was not taken when it could not be read or was refused. Before #420 nothing of it
+was not taken when it could not be read or was refused. Before this nothing of it
 reached the log, so a pick that came back as the build before could not
 be told apart from one that found nothing newer.

@@ -1,10 +1,10 @@
 # The system's media engine, handed in
 
-5 November 2026, for #656.
+5 November 2026, for the issue of the tests that hang on CI's Mac.
 
 ## The problem
 
-Tim, 5 November 2026: "when an issue comes up over and over again, we
+The user, 5 November 2026: "when an issue comes up over and over again, we
 have to like really fix it and not just move it away so that it fails
 somewhere else. For instance, why is it so important that we are
 encoding and decoding anything in CI? ... How does this verify our app?
@@ -28,11 +28,11 @@ Measured on main at c714bca:
   it, because a test's machine reaches the same media engine as the app.
   56 calls of `ffmpegtest.Need` in 24 test files run ffmpeg, and 6
   test files start the episode's decoder.
-- Every incident of #656, eleven failed runs since October, hung inside
+- Every incident of the issue, eleven failed runs since October, hung inside
   VideoToolbox, in `VTParavirtualizationGuestSendMessageWithIOSurfacesToHostAndCopyReplySync`,
   the call of GitHub's virtual Mac to the machine it runs on. None on
   Linux, where the same tests run ffmpeg's own code on the processor.
-  None in Tim's 104 report logs.
+  None in the user's 104 report logs.
 - The ffmpeg we build is LGPL, without libx264, so on a Mac it has no
   encoder of H.264 but Apple's. Its own encoder of MPEG-4 part 2,
   `mpeg4`, is in every ffmpeg.
@@ -125,7 +125,7 @@ VideoToolbox.
 - Crossing: nothing new.
 - What is given up: no test runs VideoToolbox any more. A change to what
   we hand it that Apple refuses shows first on a real Mac. What it is
-  handed is pinned by tests to what ran on Tim's Mac.
+  handed is pinned by tests to what ran on the user's Mac.
 - Cost: the tests of `encoderfails_test.go` and three tolerances in the
   decoder's tests that only allowed for the chip's rounding.
 
@@ -202,7 +202,7 @@ ffmpeg, VideoToolbox       outside
   log, which says where each video decodes.
 - Buys: no test of our code waits on Apple's media engine, on any
   machine, the checks from outside the app among them. A push stops
-  failing for #656 without a CI change.
+  failing for this hang without a CI change.
 - Wrong if: a short or the video preview breaks on a real Mac in a way
   a test of what we hand VideoToolbox would not have caught. Then the
   argument it needed is added to that test, not a run of VideoToolbox.

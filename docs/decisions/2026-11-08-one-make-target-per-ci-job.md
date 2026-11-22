@@ -1,11 +1,11 @@
 # One make target per CI job, started by what changed
 
-Issue #688, in one pull request, #758.
+The issue on CI's shell glue, in one pull request.
 
 ## The problem
 
-Tim, 3 November: CI runs on "a hot mess" of shell glue, much of it
-brittle, and its test selection hardly selects. Tim, 8 November: "why we
+The user, 3 November: CI runs on "a hot mess" of shell glue, much of it
+brittle, and its test selection hardly selects. The user, 8 November: "why we
 need any shell script to run tests, because we have a bunch of CI
 workflows in GitHub and we have a make file. So what else do we need to
 do other than just run a make file command either on or local machines
@@ -41,7 +41,7 @@ inside a Go job Go's own test cache, restored from main, already left
 1. **Who may know about whom.** A workflow knows only make targets, make
    only tools. Every pull request runs what main runs, no filter. Cost:
    about 14 % more Linux machine time, and Go tests on a pull request of
-   the interface alone, which Tim rules out.
+   the interface alone, which the user rules out.
 2. **What changes together.** The rule for when a job starts sits beside
    the job, as two path filters of one small job in `ci.yml`, Go and the
    interface. Cost: one action, `dorny/paths-filter`, and a few globs.
@@ -59,7 +59,7 @@ inside a Go job Go's own test cache, restored from main, already left
 
 One make target per job, the same command everywhere, and no script that
 decides or reports, came back in 1 to 4. 2 decides which jobs start and 3
-which Go packages run inside them, as Tim's rule asks. 4 is dropped for
+which Go packages run inside them, as the user's rule asks. 4 is dropped for
 its repeated setup, 5 for buying 12 s with a program.
 
 Asked of everything else the old CI carried, what it is for and whether
@@ -70,12 +70,12 @@ a tool already does it:
 | `changed.sh`, its test, `make changed`, the job `plan` | picking parts and packages | the two filters and Go's cache |
 | `test-failures.sh` and its test | naming a failed test on the check | gotestsum's summary, which `make unit` already ran, ends the log with it |
 | `leftovers.sh` | naming programs a test left running | removed, with its cost said under What follows |
-| `machine.sh` | the Mac's speed beside its test times, #592 | removed, #592 is closed |
+| `machine.sh` | the Mac's speed beside its test times, for an issue now closed | removed, the issue is closed |
 | `fuzz.sh` | running every fuzz target side by side | a recipe in `make fuzz`, with `git grep` and `xargs` |
 | `pins.sh` | every action pinned to a commit, one Node | `internal/workflows`, the Go test that already read every workflow |
 | `plan-frozen.sh` and its test | `docs/GUI-PLAN.md` never changes | one line of `make lint`, its git hash |
 | `lint-test.sh` and its fixtures | that the linters' settings catch a wait on the clock, the standard log and the inputs the app may not take | removed: a test of the tools' own settings, with its cost said under What follows |
-| `main-moved.sh`, its test, `main-moved.yml` | a comment when a pull request stops merging | `conflicts.yml`, a few lines around `git merge-tree`. GitHub sends no event for a conflict, so the comment is the only way to wake the session, and it did wake this one when #757 made #758 conflict |
+| `main-moved.sh`, its test, `main-moved.yml` | a comment when a pull request stops merging | `conflicts.yml`, a few lines around `git merge-tree`. GitHub sends no event for a conflict, so the comment is the only way to wake the session, and it did wake this one when another pull request made this one conflict |
 | `ci-packages.sh` | the CI image's system packages | in the Dockerfile |
 | the steps every job repeated | Go, Node, the cache, the ffmpeg we ship | `.github/actions/prepare`, once, and `.github/actions/save`, which keeps only what the job used of Go's cache |
 
@@ -143,8 +143,8 @@ It costs the name of a test that leaves a program running. `go test`
 waits for every program that holds its output before it ends, tried on
 Go 1.27: a test that started `sleep 40` and returned passed after 41 s.
 So such a program holds its job until it ends or the job's time limit
-does, 15 minutes, with the step that hung named but not the test. In
-#254 the job had no time limit, and waited half an hour. A program that
+does, 15 minutes, with the step that hung named but not the test. Once
+the job had no time limit, and waited half an hour. A program that
 holds no output is ended by GitHub with the job, and passes unseen.
 
 It was wrong if pull requests come back slower than before, if main
