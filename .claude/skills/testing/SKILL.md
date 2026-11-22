@@ -61,6 +61,30 @@ to use them, and what to push for where they are missing.
   section 12. Where CI has none yet, break the code by hand once and see
   the test fail, and push for the tool. The same holds when an existing
   test is rewritten: the rewrite must still fail where the old one did.
+- **Name the line whose removal must fail it.** For every behaviour a
+  change adds, name the one line, the gate, the guard, the call, whose
+  removal must make a test fail. Then remove it in a scratch copy and
+  watch the test fail. Reviewers who did this found, again and again, a
+  guard that carried most of a change and no test that missed it.
+- **Check what comes out, not that the code asked for it.** The sound
+  that reaches the output, the pixels painted, the file written. A test
+  that records the code starting a sound passes while nothing comes out.
+  A check on the request is enough only where a hard interface guarantees
+  the effect.
+- **An empty result cannot pass.** Check the length before looping over
+  results. Check that each setup step took effect before checking the
+  end state: a test of redo passed when the undo before it did nothing.
+  In a concurrency test, check that each side really ran. Never throw
+  away the answers of the requests a load test makes.
+- **Pick values no fallback can produce.** The path under test and every
+  default or fallback must give different answers. A hand-typed value
+  that happened to equal what the fallback computed made a test pass
+  while the code did the opposite of its name.
+- **The fixture can show the case, and the test says so.** Before
+  checking "picks a different row" or "lands right among items of
+  different heights", check that the fixture has two rows and unequal
+  heights. A list with one row passes a pick check whatever the code
+  does.
 - **No retries.** A test passes on its first try or it has failed. A
   retry, a runner's retry setting, a rerun in CI or a loop that reads or
   acts again until the answer suits it, wherever it is written, lets a
@@ -87,6 +111,13 @@ A reported bug is one case of a kind. The test covers the kind.
   every list in the product, so the fix and its test cover all of them,
   not only the one in the report. The same gesture behaves the same on
   every kind of element.
+- **Every path that shares the cause.** The undo of the action, every
+  writer of the same file, every other thing that moves the same view. A
+  fix in one of them is a partial fix, and reviews found the cause left
+  in a sibling path more often than almost anything else.
+- **One step for each sentence of the report.** "It holds still, and then
+  the page turns come back" is two checks. A test of the first half
+  leaves the second free to break.
 - **What must stay the same.** A change to one item leaves its neighbours
   where they were. A fix to one thing leaves the layout, the wording and
   the timing of the rest alone. Check what the fix must not touch as well
@@ -254,6 +285,42 @@ A helper that checks a condition again and again until it holds, like
 read a state the page already shows. To go on when something happens,
 await the event that says it happened.
 
+Where the event sits, and what the test does with it:
+
+- **Wait for the step to end, then compare.** A wait for the exact value
+  expected turns a wrong value into a hang with no message. Wait for the
+  event that says the step is over, then check the value and fail with
+  what it was.
+- **The event comes after the last stage that can drop the result.** A
+  signal sent before a filter, a merge or a later stage lets the test
+  read a state that never reached the screen.
+- **Wait on that step's own event, not on a general one.** A general
+  "caught up" marker can overtake the last event of a job, and a wait for
+  "the next event" hangs when nothing more happens, because events come
+  only on change. Where the code has no event for the step, it gains one.
+- **Read and act in one step.** A test that reads where something is and
+  then clicks there in a second call across a process boundary races the
+  product, which may have moved it in between. Do both in one call
+  inside the product, or hold its events between them.
+- **Prove that something did not happen without waiting.** A try-lock, a
+  file lock taken without blocking, or reasoning from what the code has
+  already decided, then one check. Never wait a while and see nothing.
+- **Time a reaction inside the product,** from the input event to the
+  first frame that shows it. A time taken in the test driver holds its
+  own round trips, which grow on a busy machine: one read 538 ms where
+  the page had answered in two frames.
+- **A framework's default timeout is a deadline nobody wrote.** Set it to
+  off, or to the runner's own limit, so a hang is ended where it is
+  reported best.
+- **A fake clock does not decide the order of threads.** It moves time,
+  it does not schedule. Give each step its own moment, or hold it with a
+  gate the test opens. Start from a state where no timer is due now, or
+  the scheduler picks the order the test asserts.
+- **A watchdog on something outside stays on the real clock.** A timer
+  that gives up on a stalled stream or a hung program must keep running
+  while a test holds the product's clock. It is tested under a fake clock
+  of its own.
+
 **A helper every step goes through is lean.** A function run after every
 step of every test, to let the app settle, is paid thousands of times a
 run. A callback in it that does nothing, or a duration hidden in it,
@@ -340,6 +407,27 @@ nothing more than a field, a parameter or an option:
   needed it got a sleep instead.
 - The interface the same: a module that keeps time takes its timer, or
   is tested under fake timers.
+- **Nothing handed in means the harmless thing.** When nothing is handed
+  in, a key store keeps no key, a network reaches nothing, a file system
+  writes nowhere real. Only the program's own entry point hands in the
+  real one, so a test that forgets to hand one in never writes into a
+  developer's keychain.
+- **A seam is a field of the thing that uses it,** never a package
+  variable or a global a test swaps. A global races with the tests that
+  need the real thing and forces them to run one at a time.
+- **Hooks in the product that only tests read are a cost** carried into
+  every build: markers, counters, globals. Keep them few and listed, and
+  never ask in shipped code whether it runs under a test.
+- **Every background task has an owner that hears it end,** and shutdown
+  waits for it. Work fired and forgotten leaves a test nothing but a
+  poll, and hides the bugs of its end: a cleanup on a goroutine of its
+  own was polled for twenty seconds, and once it had an end signal, a
+  real bug showed, quitting in the middle of a delete.
+- **Code that restarts or starts the program itself runs the test binary
+  again.** Hand the restarter in, and let the test's entry point leave at
+  once when it is started as a helper. A test that reached a real
+  restart once started copies of the suite until the machine stood
+  still.
 
 ### Test up to the boundary you own
 
@@ -409,6 +497,32 @@ behind it, and a test stands in for the adapter.
   accepting it because the arithmetic adds up. Why does one small image
   take 10 MB? Why does loading take half a minute? Design from what the
   product already knows.
+- **One contract for the channel between two halves.** Where a backend
+  and an interface, or two processes, talk by named messages, the names
+  and fields come from one definition, and a fast test holds both sides
+  to it: every message sent is heard, every one heard is sent, with the
+  same fields, found by their full names. A misspelled event once passed
+  every test because the test harness wired the halves with its own
+  copy of the names. The harness runs the product's own wiring.
+- **A format that crosses a boundary has one golden file.** Bytes one side
+  writes and the other reads are held together by a committed file the
+  writer's test writes and the reader's test reads, with expectations
+  typed by hand. Tests on each side that build their own bytes stay green
+  while the sides drift apart.
+- **A list of fields written by hand has a guard.** A cache key, a copy,
+  a serializer or an equality that names a type's fields one by one gets
+  a test that reads the type's fields and fails on one that is neither
+  handled nor on a list of those skipped on purpose.
+- **The producer says what it produced.** Never decide which files a run
+  wrote by comparing their times with the clock. File times are coarse,
+  and one such comparison lost a result in seven runs of twenty.
+- **A timeout says nothing about the input.** Code that gives up waiting
+  reports a wait that ran out, never that the file cannot be read. On a
+  slow machine a valid video was once marked as broken that way.
+- **The failure is counted where a test can read it.** Counters a test
+  reads count the bad event itself, the restart, the drop, the double
+  send. A restart counted as an ordinary start hid a stutter on every
+  edit.
 
 ## 6. When a test fails, or a bug is reported
 
@@ -476,6 +590,26 @@ happening there. A bug report asks the same.
    runner's virtual hardware and a stand-in are the test's environment,
    not machines people use, see step 4.
 
+**A failing test changes the test, not the product, unless a person
+meets the same failure,** and that evidence is named before any product
+code changes: a report or a log from someone using the product, a
+reproduction with real input on the kind of machine people use, or an
+ordinary gesture at a person's speed. Guards shipped for failures only a
+CI runner's virtual hardware had never once fired for a person, and one
+of them turned a feature off for everybody. The maintenance skill says
+how such issues are judged.
+
+- **CI tests the merge with the main branch,** not the branch alone. A
+  test that passes on an old branch and fails in CI is reproduced on a
+  local merge with the main branch before the runner is suspected.
+- **Before widening a tolerance, measure the distance to the nearest
+  wrong answer.** The tolerance stays well below it, or the check no
+  longer tells right from wrong. A pixel tolerance once grew past the
+  difference between two neighbouring frames and still passed.
+- **A task to make tests faster changes only tests,** the harness, the
+  fixtures and CI. A cost found in the product is a change of its own,
+  with its own tests and benchmarks.
+
 Never, to get green: loosen a check, raise a timeout, add a sleep or a
 retry, skip, quarantine or remove a test, or change the expected value to
 what the code now says without knowing why it changed.
@@ -538,6 +672,28 @@ thought of. Find that order with these, in this order:
 Debug logs added to see the order are step 1 done late: the trace
 should already hold them. A log line that would have explained the
 failure belongs in the trace or the product's logs for good.
+
+- **A hang dumps what the test waited on,** the stacks of every program
+  the test started and not only its own threads. Six hangs in a row said
+  only where the test waited, and the first dump of the other program
+  named the call that stopped.
+- **The next failure explains itself.** When a rare failure cannot be
+  explained yet, the change is to its message: what was left, by whom,
+  how old, where the steps had put things. Then the next failure brings
+  its cause along, instead of a hunt by load.
+- **The same kind of test fix twice means one helper.** When a second
+  test makes the same mistake, put every test through one helper, so the
+  next is right by construction. A reset between tests closes the
+  product the way it closes itself, then removes its files. Stopping the
+  parts one by one misses the one nobody named, and failed three times
+  that way.
+- **Everything a test puts into the product, it takes out.** A watcher,
+  an observer, a loop per frame left behind slows the product and makes
+  the very flakes it was there to find.
+- **A program a test writes and runs at once can be refused as busy**
+  when another test forks while the file is open. Write such programs
+  through one helper that keeps forks out while the file is open, or
+  commit them as fixtures.
 
 ### Red and hanging checks
 
@@ -612,6 +768,25 @@ every push, by the people waiting on CI and by the machines.
   goes, and look up what is already measured first. Then keep your eyes
   on the goal: once every wait is an event, a test that is no faster was
   already as fast as it could be.
+- **A shortcut never changes which product code runs.** A speed-up may
+  remove what the harness does twice. It may not turn off what the
+  product does, an animation, a detector, a code path. Measure the
+  coverage before and after, name every line lost, and keep a test with
+  the behaviour on. Reduced motion in random tests saved two seconds a
+  job and dropped code only those tests reached.
+- **A test that reads the whole repository defeats the cache.** A test
+  that walks the source or reads every doc ties its cached result to all
+  of it. Checks over the whole repository belong with the lint.
+- **A benchmark proves only the case it reaches,** against the right
+  base. Check that it reaches the case reported, compare with the merge
+  base of the branch, not a stale copy of the main branch, and run the
+  before and the after interleaved on one machine, so a busy moment hits
+  both.
+- **A probe that proved a fix is committed** as a test or a benchmark in
+  the same change. One kept outside the repository proves nothing the
+  next time the code changes.
+- How CI runs the tests, which jobs start, its caches and its limits, is
+  the ci skill.
 
 ## 9. Tests that last
 
@@ -646,7 +821,31 @@ A test is code we keep. It must still be right and readable in a year.
 - **Fuzz only what reads bytes from outside**: a file the product opens,
   an answer from a service, a key, a webhook, a path. Everything else
   gets its basics as a table, deterministic. A crash the fuzzer finds is
-  kept as a case with its fix, so every run plays it.
+  kept as a case with its fix, so every run plays it. A target whose only
+  input is the seed of a random generator gains nothing from fuzzing: run
+  it over fixed seeds.
+- **CI's seeds and fuzz budget are a smoke test.** When a change touches
+  code under a random or fuzz test, run many more seeds, or fuzz for a
+  minute, before calling it done. Sixteen seeds passed in CI while two
+  hundred showed fourteen failures. Every seed that failed is kept and
+  played on every run.
+- **A concurrency test fails without its lock.** The competing action
+  lands inside the window the lock guards, and removing the lock makes
+  the test fail. One where most actions land before or after the window
+  passes with the lock gone.
+- **No fatal assertion off the test's own thread.** In Go a `Fatal` from
+  another goroutine ends only that goroutine, and the test goes on or
+  hangs. Prepare inputs before starting workers, and give helpers a form
+  that records an error and returns.
+- **A fake keeps the real one's limits,** its pacing, its one request at
+  a time, its streams side by side. A fake more generous than the real
+  thing hides exactly the bugs of the real order. A simulation or a
+  harness used as proof is a test too: run it against a deliberately bad
+  version and see it fail.
+- **What the machine itself decides is tested where it ships.** Tests of
+  file permissions pass for nothing when CI runs as root, so they run as
+  a user without rights. Floating point can differ between processors,
+  so a rounding rule is tested on the processor the product ships on.
 
 ## 11. End-to-end and interface tests
 
@@ -683,6 +882,42 @@ A test is code we keep. It must still be right and readable in a year.
   from scratch, which costs seconds on every run. A new case goes into
   a test that is already there, and a new one says why no test there
   could take its steps.
+- **Read everything a rule judges at one moment.** In a product that
+  keeps changing by itself, read the button in the same frame as the
+  click, and the list and the backend's state in one evaluation. To line
+  up with the backend, ask it for a marker behind every event already
+  sent, and go on once the interface has heard the marker. A random test
+  that failed one run in three had four such causes and no bug.
+- **The barrier every step passes through is built from signals:** no
+  request in flight, no product timer due soon, nothing moving, each
+  heard as an event, never sampled. Logging and telemetry are not work
+  it waits for, and work the product delays on purpose tells it it is
+  coming. A barrier that sampled "quiet for 250 ms" cost a sixth of a
+  suite and returned before delayed saves had started.
+- **Motion is judged by the frames that were drawn,** "on every frame
+  drawn while it lasted", never by a count of frames or milliseconds a
+  busy machine cannot give. Better still, hand the component its frames
+  and step them.
+- **What hides a wait is tested with the wait held.** A read ahead, an
+  answer shown before it arrives, an order of answers: hold the
+  dependency's answer on purpose, act while it is held, then let it go.
+  A test that settles after every step proves only the case where the
+  answer comes at once.
+- **Set aside only what the product marks as spoiled.** Where the
+  environment spoils part of a measurement, sound fed late on a busy
+  machine for example, the product counts exactly where, the test sets
+  aside only those parts, and separate counters prove the product's own
+  mistakes stay at zero.
+- **Random walks find what scripts miss.** Seeded random steps, with
+  rules checked after every step, found real bugs within tens of steps.
+  The seed comes from the commit, a failure prints its seed and steps so
+  it can be replayed, every seed that failed is played on every run, and
+  a failure at a new seed is a bug, not a flake.
+- **Ask the platform for reduced motion by default,** with motion on for
+  the steps that check it, named in a list that fails on a name that is
+  not a step, and run everything with motion on at night.
+- **A table of named steps refuses a name twice.** Otherwise the second
+  silently never runs.
 
 ## 12. CI holds the rules
 
@@ -777,7 +1012,9 @@ wrong, and this skill wins:
 
 ## Before saying done
 
-1. The test guards a behaviour a person relies on, named in one sentence.
+1. The test guards a behaviour a person relies on, named in one sentence,
+   and the line whose removal makes it fail is named and was removed
+   once.
 2. It covers the kind, not only the case: every variant, every place, and
    what must stay the same.
 3. Nothing already tested it, or the old test was strengthened instead.
