@@ -877,3 +877,64 @@ describe("a play paused", () => {
     expect(inside.state).toBe("playing");
   });
 });
+
+// A cut made just as the playhead was put down: the play from the
+// playhead was cued on the clip as it was, and the clip changed while the
+// Go side opened it. The space bar then started the old cue, and the
+// video preview showed the frames of the new cut. Seen in a walk in CI.
+describe("a cue the clip changed under", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("is cued again on the clip as it is now", async () => {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const inside = q as unknown as {
+      app: unknown;
+      state: string;
+      ticket: number;
+      goPlay: unknown;
+      shown: { begins: number } | null;
+      previewSize(): unknown;
+      begin(play: unknown): void;
+      cue(at: number, ticket: number): Promise<void>;
+    };
+    const before = [
+      { start: 10.6, end: 12 },
+      { start: 13, end: 24.8 },
+    ];
+    const after = [
+      { start: 10.6, end: 10.8 },
+      { start: 11.8, end: 12 },
+      { start: 13, end: 24.8 },
+    ];
+    inside.app = {};
+    inside.previewSize = () => ({ width: 2, height: 2 });
+    inside.shown = { begins: 10.76 };
+    inside.begin = (play) => (inside.goPlay = play);
+    q.setProgram(before, false);
+    inside.state = "paused";
+    const asked: { pieces: { start: number; end: number }[] }[] = [];
+    const closed: number[] = [];
+    let answer: () => void = () => {};
+    vi.spyOn(GoPlay, "open").mockImplementation(async (_app, ask) => {
+      const n = asked.push(ask);
+      const play = { ask, first: 10.76, from: 0, end: 14, close: () => closed.push(n) } as unknown as GoPlay;
+      // The first is held until the clip has changed.
+      if (n === 1) await new Promise<void>((r) => (answer = r));
+      return play;
+    });
+    const cued = inside.cue(10.776, inside.ticket);
+    q.setProgram(after, false);
+    answer();
+    await cued;
+    expect(asked.map((a) => a.pieces)).toEqual([before, after]);
+    expect(closed).toEqual([1]);
+    expect(inside.state).toBe("cued");
+    expect((inside.goPlay as { ask: { pieces: unknown } }).ask.pieces).toEqual(after);
+  });
+});

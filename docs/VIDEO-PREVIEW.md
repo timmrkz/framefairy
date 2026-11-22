@@ -453,7 +453,9 @@ closed for standing unused.
   and takes it again as the space bar goes on. Once the frame
   is up, the play from the playhead is cued on the Go side, which
   says which frame the play starts with. Where that is the frame up, the
-  cue is kept and the space bar starts it at once. A playhead in a cut or
+  cue is kept and the space bar starts it at once. A clip changed while
+  the cue is on its way, a cut made as the playhead was put down, is
+  cued again as it is now. A playhead in a cut or
   a hair before a piece's end starts its play on another frame, and
   cues nothing. Under a dragging hand, a
   frame that comes after the hand has moved on is put up while the next

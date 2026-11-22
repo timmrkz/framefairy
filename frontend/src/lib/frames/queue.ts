@@ -622,7 +622,7 @@ export class FrameQueue {
       this.start(this.startFrom, "again");
       return "started";
     }
-    void this.takeOver(play, Math.max(this.reached, this.sounded()) + TAKE_OVER, list, loop);
+    this.takenOver = this.takeOver(play, Math.max(this.reached, this.sounded()) + TAKE_OVER, list, loop);
     return "taken";
   }
 
@@ -860,6 +860,11 @@ export class FrameQueue {
   // was switched off, see relooped, for the walks: until then the play
   // under way still loops, see program.
   looped: Promise<void> = Promise.resolve();
+  // Settles once the play of a changed clip has taken over from the one
+  // under way, or the queue has given up and started it again, see
+  // changed, for the walks: until then the sound must not pass the place
+  // it takes over at.
+  takenOver: Promise<void> = Promise.resolve();
 
   // Settles once the frames read ahead are in, the cards' among them, for
   // the walks, see AppFrames.rested.
@@ -1371,14 +1376,24 @@ export class FrameQueue {
   // hand's until it starts, see GoPlay.go. A playhead in a cut of the clip
   // or past its end starts a play on another frame than the one up, and
   // cues nothing.
-  private async cue(at: number, ticket: number) {
+  private async cue(at: number, ticket: number): Promise<void> {
     if (!this.app || this.state !== "paused") return;
+    const key = this.wantedKey;
     const play = await GoPlay.open(
       this.app,
       { pieces: this.pieces(), loop: this.wanted.loop, at, rate: this.sampleRate, channels: this.channels, cue: true },
       this.previewSize(),
     );
     if (!play || typeof play === "string") return;
+    // The clip or its loop changed while the Go side opened the cue, a
+    // cut made as the playhead was put down: it is cued again for what is
+    // wanted now. Kept, the space bar played the clip as it was, and the
+    // video preview showed the frames of the new cut.
+    if (key !== this.wantedKey) {
+      play.close();
+      if (ticket === this.ticket && !this.closed) return this.cue(at, ticket);
+      return;
+    }
     if (ticket !== this.ticket || this.closed || this.state !== "paused" || this.goPlay || play.first !== this.shown?.begins || play.from >= play.end) {
       play.close();
       return;

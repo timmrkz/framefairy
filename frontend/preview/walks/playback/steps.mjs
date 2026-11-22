@@ -373,13 +373,22 @@ export const steps = {
         return { starts, thrown: soundThrown, twice: soundTwice };
       });
     const before = await counts();
-    await page.keyboard.press("l");
     // The play is held at each press of L, see holdSound, and let go once
     // the app has settled on it. On the walk's clock a play runs on as
     // fast as its frames are decoded, so a play not held ran on into the
     // clip's end and round to its start between two presses, and the loop
-    // went off at the clip's start.
-    //
+    // went off at the clip's start. The first press too: the loop switched
+    // on takes over 150 ms of the play ahead of the sound, TAKE_OVER in
+    // lib/frames/queue.ts, which a sound card plays in 150 ms, and the
+    // walk's clock on a busy runner in a few. Not held, it passed the
+    // place three times while the Go side opened the new play, and the
+    // queue started the play again, #976. settle does not wait for the
+    // Go side to open it, so the hand lets go once it has, see takenOver.
+    await holdSound(page, true);
+    await page.keyboard.press("l");
+    await settle(page);
+    await page.evaluate(() => window.__frameQueue.takenOver);
+    await holdSound(page, false);
     // Each way is the sound's, not the playhead's. The loop switched off
     // ends the play after the time through the sound is in, see sounded
     // in lib/frames/queue.ts, and on a busy runner the picture came so
@@ -411,6 +420,7 @@ export const steps = {
     for (let i = 0; i < 5; i++) {
       await page.keyboard.press("l");
       await settle(page);
+      await page.evaluate(() => window.__frameQueue.takenOver);
       await holdSound(page, false);
       await playUntil(page, { most: 0.12, hold: i < 4, sound: true });
     }
@@ -575,6 +585,7 @@ export const steps = {
     await page.keyboard.press("Space");
     await page.keyboard.press("l");
     await settle(page);
+    await page.evaluate(() => window.__frameQueue.takenOver);
     await holdSound(page, false);
     // Round the end and half a second into the second time through, by
     // the playhead, where the sound card is held while the walk switches
@@ -584,6 +595,7 @@ export const steps = {
     await holdSound(page, true);
     await page.keyboard.press("l");
     await settle(page);
+    await page.evaluate(() => window.__frameQueue.takenOver);
     await holdSound(page, false);
     if (!round.playing) {
       walk.wrong = `the play stopped at ${round.at.toFixed(3)} with the loop on, before it went round`;
