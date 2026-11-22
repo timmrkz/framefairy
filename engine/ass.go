@@ -902,8 +902,14 @@ func (c *inkCache) get(key string) (*inkBox, bool) {
 func (c *inkCache) put(key string, box *inkBox) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.boxes) >= inkMost {
-		clear(c.boxes)
+	if _, there := c.boxes[key]; !there && len(c.boxes) >= inkMost {
+		// One box makes room, the first the map hands out, which Go
+		// picks at random. Clearing them all left the ink kept between
+		// runs with only the few measured after.
+		for old := range c.boxes {
+			delete(c.boxes, old)
+			break
+		}
 	}
 	c.boxes[key] = *box
 }

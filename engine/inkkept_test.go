@@ -116,6 +116,27 @@ func TestTheInkIsKeptForTheNextStart(t *testing.T) {
 	}
 }
 
+// A full cache makes room for a new box by one box, not by all of them:
+// the file kept for the next start has as many boxes as memory keeps, and
+// the new one among them. Clearing them all wrote a file of one box.
+func TestAFullInkCacheKeepsWhatItHad(t *testing.T) {
+	t.Parallel()
+	c := &inkCache{boxes: map[string]inkBox{}, files: afero.NewMemMapFs(), path: inkPath, stamp: "s"}
+	for i := range inkMost {
+		c.put(fmt.Sprintf("k%d", i), &inkBox{0, 0, 1, 1})
+	}
+	c.put("new", &inkBox{0, 0, 2, 2})
+	c.writeKept("s")
+	data, err := afero.ReadFile(c.files, inkPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, ok := parseKeptInk(data, "s")
+	if !ok || len(kept) != inkMost || kept["new"] != (inkBox{0, 0, 2, 2}) {
+		t.Errorf("a full cache kept %d boxes, %v, the new one %+v, want %d with it", len(kept), ok, kept["new"], inkMost)
+	}
+}
+
 // keptInk is the bytes of an ink file of stamp "s" with these boxes.
 func keptInk(t testing.TB, boxes map[string][4]int) []byte {
 	t.Helper()
