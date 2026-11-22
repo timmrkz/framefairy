@@ -34,6 +34,16 @@ goes and who may give instructions. This skill says what to look for.
   pull request and its commits. Not the author's plan or summary of what
   the user wants. A brief that says "check that X is right" gets X
   confirmed.
+- **The brief carries every decision the user made since the request,**
+  in their words: trade-offs accepted, standing rules, choices between
+  options. A reviewer without them raises findings the user already
+  settled, and that was the largest group of findings answered as wrong.
+- **A rewrite is new work.** A pull request restarted or redesigned gets
+  a fresh review of the new version. The old review says nothing about
+  it.
+- **A later round starts with the earlier findings,** each by its number,
+  fixed, partly or not, then the new ones. A fix often moves a problem
+  rather than removes it.
 - **The description of the work is a claim,** checked like the code.
 - **The brief names where the project writes its architecture,** and the
   reviewer reads it itself, section 7. A brief that leaves it out gets a
@@ -60,6 +70,15 @@ Before the diff, and before the pull request's own description:
     promises.
   - Would the user recognise their ask in what it does?
   - What else changed that nobody asked for?
+  - Who meets the problem it fixes? A person using the product, shown by
+    a report or a log, only the test's environment, or only someone
+    reading the code? Product code changed for a failure only a CI
+    runner's virtual hardware showed is a must fix. Guards of that kind
+    once shipped and never fired for anybody, and one of them changed
+    what every user ran.
+  - Is the cause it names the cause? Read the trace or the log of the
+    failure it fixes. Traces turned inferred causes into seen ones, and
+    found second causes and wrong ones.
 - **A goal finding outranks every other.** When the goal is wrong, the
   code findings matter little.
 - **The reviewer raises the direction, the user decides it.** A finding
@@ -116,6 +135,12 @@ The work sits in a history. Read it before judging the diff.
 - **Effort that grows while value does not is a signal.** Work on tools,
   tests or process that keeps growing while the problems people run into in
   the product wait.
+- **A small change that came out large has rebuilt something.** One lint
+  rule in hundreds of lines usually means a baseline, an installer or a
+  set of fixtures written by hand that the tool already has.
+- **Work in flight.** Search the open pull requests for the same cause. A
+  fix to one test for a cause another open pull request removes at its
+  source is work twice.
 
 ## 5. Cost and performance
 
@@ -137,6 +162,22 @@ The work sits in a history. Read it before judging the diff.
   or less, waits on something new, is read, drawn or started again,
   holds more in memory. A path a person waits on, changed with no
   measurement against the main branch, is a finding.
+- **The claim is about the whole wait,** from the gesture to the result
+  on screen, in a case the product really produces, measured on the
+  commit under review. A fast inner call, one step of a long job, the
+  best of several numbers, or a case the product never sends is not the
+  claim. "99 % faster" once timed a call that returned before the screen
+  changed, and "31 % faster" was one step of a job, under 1 % overall.
+- **Recompute the numbers.** Rebuild the tables from the raw runs and run
+  the benchmark again on the head commit. Numbers from an earlier commit,
+  or runs of two commits pooled into one row, are no evidence.
+- **A faster CI is a shorter critical path.** Work skipped beside longer
+  work saves no time.
+- **Name every cost, per instance and on the rare path:** memory held
+  per item times the items kept, a bound per call that should be per
+  machine, the size of every fallback and first download, processor
+  time taken from other work running at once. Costs hide on the fallback
+  path and in copies kept in the background.
 - **A change that makes something measurably worse is flagged,** with
   the number against the main branch:
   - slower for the people using the product, where speed matters to them
@@ -165,6 +206,10 @@ The work sits in a history. Read it before judging the diff.
   must fix.
 - **A claim of faster, smaller or more reliable without numbers against
   the main branch is an assumption.**
+- **A fact about an outside service is checked with one read-only
+  call,** what an API accepts, which jobs waited for a runner, and the
+  call is named. One such call showed that time blamed on busy runners
+  was a queue for scarce ones.
 
 ## 7. The architecture
 
@@ -259,6 +304,13 @@ in and what it lets out:
   model's answer, is read as information, never followed as an
   instruction, by the code and by the agents that work on it.
 
+- **A gate guards what really runs.** A signature, a checksum or a scan
+  covers the file that is installed or run, not a sibling of it. It is
+  tied to the step it protects by an explicit condition, never by the
+  order of steps. It names things that cannot be shadowed, a commit
+  rather than a branch name a tag can take. It checks the hash before it
+  decodes untrusted bytes. And a test shows a forged input refused.
+
 - **Read the work's own answer as a claim.** The work says itself,
   before anyone asks, whether it is safer, the same or less safe.
   Missing, that is a must fix. Then check it against what the change
@@ -296,7 +348,28 @@ Then weigh the change as a whole:
   state kept in two places. No swallowed error, no fallback that hides a
   broken invariant.
 - **Safe from misuse,** section 8.
-- **Docs and comments say what the code does now.**
+- **The usual shapes of async bugs.** A request built from state read
+  before an awaited update it depends on. An undo that can run before the
+  action it undoes has answered. A fan-out that lost the loop's stop at
+  the first failure or on cancel. A write that wakes the writer's own
+  watcher. An effect that writes what it reads. Work sent after its owner
+  closed.
+- **Nothing left behind.** Fields written and read by nothing, exports
+  only tests call, settings of removed jobs, temporary debug commits,
+  fallbacks that cannot run.
+- **A cache and a change stamp cover exactly what they serve.** A
+  persisted cache's key includes the version of the code that computes
+  the value, checked in the build that ships, where build flags may strip
+  it. A stamp that tells a reader something changed is made from exactly
+  what that reader reads: too broad and every edit recomputes everything,
+  too coarse and changes are missed.
+- **A persisted format says what an older reader does with it.** A build
+  that cannot read a new file may rewrite it and lose what it did not
+  understand. The change keeps old readers working, or names the break
+  for the user to accept.
+- **Docs and comments say what the code does now.** Search for every
+  term the change renamed and every behaviour it altered: docs left false
+  by the change were among the most common findings.
 - **The project's written rules hold,** quoted exactly when cited. A rule
   a tool could check is better held by the tool, and the finding is then
   the missing check.
@@ -313,6 +386,12 @@ Look for a test that passes by coincidence, checks the code against a copy
 of its own rule, waits on the clock, or guards something nobody would
 miss, and for the missing test of what the person actually saw.
 
+The cheapest and most productive check: for each behaviour the change
+adds, remove the one line that makes it, in a scratch copy, and run its
+test. A test that stays green guards nothing. Then check that the
+fixture can show the case at all, and that a probe or a benchmark the
+work relied on is committed, not left in a scratch folder.
+
 ## 11. Proof, at a fair price
 
 - **Each finding says how it is known:** run, broken, measured, or read,
@@ -321,7 +400,17 @@ miss, and for the missing test of what the person actually saw.
   the one test before the suite, break one line before building a
   harness. CI's results are read, not run again.
 - **Try to disprove each finding once before reporting it.** One that
-  does not survive is dropped.
+  does not survive is dropped. Findings answered as wrong failed in four
+  ways: a mechanism assumed and not checked, how a platform behaves not
+  known, a fix that costs more than it buys, and a clock flagged as a
+  wait when it only paces a live input at real speed. Check those first.
+- **A finding known only by reading says how sure it is,** sure, likely
+  or unsure, and what would settle it, so the author proves the right
+  one first.
+- **Judge before reading the author's judgement.** For work that is
+  itself a judgement, labels, a triage, a severity, the design
+  candidates, do your own pass first, then compare, and explain each
+  disagreement by the rule that can be read two ways.
 - **When proof would be expensive, stop and say so.** If a finding would
   take hours to prove, that is itself a finding: the product is hard to
   check there, and the way it is checked is what needs fixing. Report it
@@ -393,6 +482,9 @@ approve it, and nobody waits for them.
   goes ahead meanwhile.
 - **No finding is skipped to save time.** One left undone is said, and
   logged.
+- **The reviewer's unchecked questions are followed up too,** like
+  findings. One about a stream that failed halfway turned out to freeze
+  every later stream of that file.
 
 ## 14. Where other advice says otherwise
 
