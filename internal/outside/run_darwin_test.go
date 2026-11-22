@@ -109,6 +109,20 @@ func TestSequences(t *testing.T) {
 			return
 		}
 	}
+	// What a failed step says of the app finds the app's program: it sees
+	// the app that runs, and no crash report of it.
+	t.Run("a failed step sees the app that runs", func(t *testing.T) {
+		if err := m.quit(); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.start(nil); err != nil {
+			t.Fatal(err)
+		}
+		why := m.whyGone(t, time.Now())
+		if !strings.HasPrefix(why, "the app still runs, as ") || !strings.HasSuffix(why, "macOS wrote no crash report of it since the step began") {
+			t.Errorf("with the app running, a failed step would say %q", why)
+		}
+	})
 }
 
 // mac is what lasts from one sequence to the next: the dispenser, once
