@@ -161,9 +161,11 @@ func (m *mac) play(t *testing.T, seq sequence) {
 		if !ok {
 			t.Fatalf("step %d, %v: no such verb", i+1, s)
 		}
+		began := time.Now()
 		if err := do(m, s[1:]); err != nil {
-			say("error", seq.name, fmt.Sprintf("step %d, %v: %v", i+1, s, err))
-			t.Fatalf("step %d, %v: %v", i+1, s, err)
+			why := m.whyGone(t, began)
+			say("error", seq.name, fmt.Sprintf("step %d, %v: %v\n%s", i+1, s, err, why))
+			t.Fatalf("step %d, %v: %v\n%s", i+1, s, err, why)
 		}
 		t.Logf("step %d, %v", i+1, s)
 	}
@@ -662,6 +664,53 @@ func say(level, title, text string) {
 	esc := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
 	prop := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A", ":", "%3A", ",", "%2C")
 	fmt.Printf("::%s title=%s::%s\n", level, prop.Replace(title), esc.Replace(text))
+}
+
+// whyGone says what became of the app when a step failed: whether its
+// process still runs, and the crash reports macOS wrote of it since the
+// step began, which it shows whole. A crash outside Go, in Cocoa or in
+// WebKit, leaves nothing in the app's own log, and the step only sees its
+// connection end.
+//
+// On the real disk: the crash reports are what macOS wrote on this Mac.
+func (m *mac) whyGone(t *testing.T, since time.Time) string {
+	t.Helper()
+	out, err := exec.Command("plutil", "-extract", "CFBundleExecutable", "raw", "-o", "-", filepath.Join(m.app, "Contents", "Info.plist")).Output()
+	if err != nil {
+		return fmt.Sprintf("the app's program is not named in its Info.plist: %v", err)
+	}
+	exe := strings.TrimSpace(string(out))
+	var why []string
+	// pgrep ends with 1 when no process matches.
+	if pids, err := exec.Command("pgrep", "-f", filepath.Join(m.app, "Contents", "MacOS", exe)).Output(); err == nil {
+		why = append(why, "the app still runs, as "+strings.Join(strings.Fields(string(pids)), ", "))
+	} else {
+		why = append(why, "the app does not run")
+	}
+	home, _ := os.UserHomeDir()
+	var reports []string
+	for _, dir := range []string{filepath.Join(home, "Library", "Logs", "DiagnosticReports"), "/Library/Logs/DiagnosticReports"} {
+		names, err := crashReports(os.DirFS(dir), exe, since)
+		if err != nil {
+			why = append(why, fmt.Sprintf("%s cannot be read: %v", dir, err))
+		}
+		for _, name := range names {
+			path := filepath.Join(dir, name)
+			reports = append(reports, path)
+			b, err := os.ReadFile(path)
+			if err != nil {
+				t.Logf("%s: %v", path, err)
+				continue
+			}
+			t.Logf("macOS's crash report %s:\n%s", path, b)
+		}
+	}
+	if len(reports) == 0 {
+		why = append(why, "macOS wrote no crash report of it since the step began")
+	} else {
+		why = append(why, "macOS wrote "+strings.Join(reports, ", ")+", shown in the test's log")
+	}
+	return strings.Join(why, ", and ")
 }
 
 // On the real disk: the log is what the built app wrote on this Mac.

@@ -1441,6 +1441,12 @@ in front comes from `lsappinfo`, which needs no permission a runner does
 not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
 as well, and the test shows it when a check fails.
 
+A crash outside Go, in Cocoa or in WebKit, writes nothing to that log,
+and the step only sees its connection end. So a step that fails also
+says whether the app's process still runs, and shows every crash report
+macOS wrote of it in `~/Library/Logs/DiagnosticReports` since the step
+began. The error the check leaves on the pull request says both.
+
 No check waits on the clock, the same as every other test. Each waits to
 be told:
 
