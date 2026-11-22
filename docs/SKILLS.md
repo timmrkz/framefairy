@@ -18,6 +18,7 @@ this app's interface without seeing its window.
 | `testing` | how tests are written, fixed and reviewed, and how a bug is found before it is fixed | [The testing skill in this project](TESTING.md#the-testing-skill-in-this-project) |
 | `review` | how a pull request is reviewed by an agent that did none of the work, and how a review is answered | [The review skill in this project](WORKFLOW.md#the-review-skill-in-this-project) |
 | `ci` | how CI stays fast, trustworthy and cheap: which jobs a change starts, caches, scarce runners, nightly runs, measuring CI | [The ci skill in this project](#the-ci-skill-in-this-project) |
+| `maintenance` | how a code base stays easy to change: evidence before work, root causes, problems that come back, issues and triage, keeping the architecture | [The maintenance skill in this project](#the-maintenance-skill-in-this-project) |
 
 ## Copying them
 
@@ -46,3 +47,18 @@ or the doc of its part.
 | a run started by hand | `speechbench.yml`, and `mac-nightly.yml` on a branch |
 | the notice of a conflict | `conflicts.yml`, see [When main moves](WORKFLOW.md#when-main-moves) |
 | pins and the dependency bot | [Keeping up](BUILD.md#keeping-up), `security.yml` and Dependabot |
+
+## The maintenance skill in this project
+
+| The skill says | Here it is |
+| --- | --- |
+| reports and logs from people using the product | the report bundles from the app's Report a Problem, in the project files, and the app's log, see [LOGGING.md](LOGGING.md) |
+| the issue tracker, and its template | the [GitHub issues](https://github.com/timmrkz/framefairy/issues) and `.github/ISSUE_TEMPLATE/issue.md` |
+| a problem, with its incidents under it | an issue labelled `problem`, with sub-issues, see [Problems that come back](TRIAGE.md#problems-that-come-back) |
+| triage on a schedule | [Every week](TRIAGE.md#every-week) |
+| labels from an established scheme | `priority/critical`, `priority/important`, `priority/backlog` and `size/small`, `size/medium`, `size/large`, see [Priority and size](WORKFLOW.md#priority-and-size) |
+| a file of history that is kept, frozen by a check | `docs/GUI-PLAN.md`, held by its hash in `make lint` |
+| the architecture, and what not to copy | [ARCHITECTURE.md](ARCHITECTURE.md), its [Not to copy](ARCHITECTURE.md#not-to-copy) and [Changing the architecture](ARCHITECTURE.md#changing-the-architecture), with five candidates |
+| a decision record | `docs/decisions/`, see its README |
+| a test that reads the docs | `internal/naming` |
+| the unused-code check without the tests | `make lint`, see [No code nothing calls](BUILD.md#no-code-nothing-calls) |
