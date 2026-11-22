@@ -45,8 +45,9 @@ most questions with "nothing new", and that is the answer to write.
 
 ## What it may do
 
-- A new operating system permission, entitlement, linked framework or
-  purpose string. A privileged API reached through another name: a
+- A new permission the platform grants, such as an Apple entitlement or
+  usage description, or an Android manifest permission, or a newly
+  linked system framework. A privileged API reached through another name: a
   clipboard read through a second library, a lookup at run time by
   string. Does the linter or the signing step ban every name it goes by?
 - A workflow's `permissions`, a new secret, a new environment, a job-wide

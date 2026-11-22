@@ -1,6 +1,6 @@
 ---
 name: interface
-description: How to change a user interface you cannot see, in any project with one, a web page, a desktop app in a webview or a native window. A harness that renders the real interface, what to measure, how to prove a fix rather than claim it, and what a hand feels, a click answered in its frame, a drag that reshapes all it draws, work shown where it was started. Read it before changing anything a person sees, and above all when the user reports something that looks wrong. Where another interface skill says otherwise, this one wins.
+description: How to change a user interface you cannot see, in any project with one, a web page, or a web interface inside a desktop app. A harness that renders the real interface, what to measure, how to prove a fix rather than claim it, and what a hand feels, a click answered in its frame, a drag that reshapes all it draws, work shown where it was started. Read it before changing anything a person sees, and above all when the user reports something that looks wrong. Where another interface skill says otherwise, this one wins.
 ---
 
 # Changing an interface you cannot see
@@ -126,11 +126,11 @@ is before picking an instrument:
   stays about 2.5 s, a count going up 1 s, a time left moves in steps of
   five seconds, while a progress fill moves at once. A step the person
   does not act on is not a headline.
-- **A colour the person chose never marks a state.** Tell state by what
-  cannot clash, brightness, size, a shape. Try it against white, a strong
+- **A colour the person chose never marks a state,** and a dimmed colour
+  is just another colour. Tell state by what cannot clash, brightness, size, a shape. Try it against white, a strong
   green and a colour near the accent.
-- **Contrast is judged with daylight on the screen.** A fill under about
-  a quarter of the accent reads as none. A state told apart only by a
+- **Contrast is judged with daylight on the screen.** A faint fill reads
+  as none: measure the share at which it shows in daylight. A state told apart only by a
   shade of dark grey needs a look in a bright room.
 - **An element the keys never reach takes no focus,** or a click leaves
   a focus ring on it long after.
@@ -145,8 +145,10 @@ is before picking an instrument:
 - **A constraint in a comment is a claim.** Check it, by how other apps
   do it, before building on it. **Adapting has no end condition, that is
   the smell:** when work around something keeps growing, test the thing
-  everybody agreed was fixed. More opinions do not help while the
-  premise is wrong, a counterexample does.
+  everybody agreed was fixed. A cause has a fix, a symptom endless
+  mitigation. More opinions do not help while the premise is wrong,
+  since every briefing carries the framing and every answer comes from
+  the same box. A counterexample does.
 
 ## 6. When it only breaks on one engine
 
@@ -162,7 +164,8 @@ is before picking an instrument:
   box, not an animation's progress.
 - **Headless may not read a GPU canvas back.** Give probes a switch to a
   2D canvas. **Read the engine's source before building on what it is
-  said to do.** A rule built on a rumour about a clock froze the page.
+  said to do.** A rule built on a rumour that a browser clock steps back froze a
+  moving marker, and the source showed an estimate that never goes back.
 
 ## 7. What a hand feels
 
@@ -194,10 +197,11 @@ is before picking an instrument:
   release. Better, one answer holds everything drawn from the thing, in
   the shape the saved state is sent in, so no part is missed. Test with
   the button held, moving in steps and reading every part after each. A
-  number that changes only after the release is the bug.
+  number that changes only after the release is the bug. Then read every
+  frame across the release, as for a click.
 - **Work a click starts is shown where it will live,** from the moment it
-  is asked for, chosen and scrolled into view, and filled in as each part
-  becomes known. The finished thing replaces it with no jump. Nothing
+  is asked for. The control shows it is busy, and what it makes is
+  chosen, scrolled into view, and filled in as each part becomes known. The finished thing replaces it with no jump. Nothing
   appears whole after seconds of nothing. Check it with the view scrolled
   elsewhere and a stub as slow as the real thing, start-up included.
 - **Decide by state, not by distance.** What a gesture is about is a
@@ -205,7 +209,8 @@ is before picking an instrument:
   something: a distance can round back to where it started. Compare in
   the units the screen has, a pixel, a step, a row, not in a continuous
   value. A value taken through two conversions comes back a hair off, so
-  a jump meant to land in something lands a step into it.
+  a jump meant to land inside something aims one step in from its edge,
+  never at the edge.
 - **Answers do not come back in the order they were asked for.** Async
   work that paints carries a ticket, and an answer older than the newest
   one used is dropped. Compare against what is on screen, not what was
@@ -227,7 +232,9 @@ is before picking an instrument:
 - **Whole pixels.** Rows are whole pixels high, an element as tall as
   itself and not its line of text. Something on a half pixel moves the
   moment opacity, a transform or a filter puts it on its own surface,
-  which starts on a whole pixel. On a canvas, half a pixel is half the
+  which starts on a whole pixel. Measure what is painted, not the box
+  the layout reports: an odd-sized mark centred in an even box lands on a
+  half pixel, so fixes that trusted the box moved nothing. On a canvas, half a pixel is half the
   colour: draw in device pixels and round.
 - **Two things that move together move by the same means.** An animated
   `left` runs on the main thread, a `transform` on the compositor, so
@@ -244,13 +251,16 @@ is before picking an instrument:
 - **A floating thing is read whole, or it was not placed.** Open every
   popup at several window sizes, small ones above all, and compare its
   box with `innerWidth` and `innerHeight`. `scrollHeight` above
-  `clientHeight` means clipped only where `overflow` is not `visible`.
+  `clientHeight` means clipped only where `overflow` is not `visible`, or
+  a hover bridge past the box reads as hidden text.
 - **A floating list keeps what it hangs from in place.** A container
   that opens on hover stays open while a list or bubble of its own is
   open, since moving onto the list is leaving the container. When the
   list closes, the container asks where the pointer is rather than trust
   the old answer, and Escape closes one layer per press. Check it
-  unpinned, and every way a list closes, with the pointer on the trigger,
+  unpinned: hover it open, open the list, move onto a row step by step,
+  and read the container's width at every step. Then every way a list
+  closes, with the pointer on the trigger,
   the container and outside.
 
 ## 9. Before saying it is done
@@ -266,3 +276,12 @@ is before picking an instrument:
   would do it.
 - Name what could not be verified. A fix reported as certain and found
   broken costs more than one reported as unverified.
+
+## 10. Where other advice says otherwise
+
+| Common advice | Why not | Instead |
+| --- | --- | --- |
+| wait for `networkidle` or a fixed timeout in a probe | passes before the picture stands, or hangs | a settled signal or the thing itself, section 1 |
+| a screenshot as proof | catches the end state, not the frames between | read every frame, section 7 |
+| judge alignment by the layout's boxes | the box is not what is painted | measure the painted pixels, sections 2 and 8 |
+| test in Chromium only | the product ships another engine | test in the shipped engine, section 6 |

@@ -273,6 +273,9 @@ wide means a 2x shot:
 | Terminal | 16.0 pt | 16.0 pt |
 | Chrome | 20.0 pt | 20.0 pt |
 
+Six to ten points out both ways, on every window: the whole bug,
+invisible until written down.
+
 `App.svelte` said nothing the app sets moves the three buttons. False:
 Electron apps and VS Code move them, and `chrome_darwin.go` already reads
 the frame of `standardWindowButton:`, so setting it is the same call the
@@ -406,16 +409,18 @@ QuickTime does.
 **On the video**, the space bar plays the video straight on, through the
 chosen clip and its cuts, and stays on the video. The chosen clip is then
 dimmed wherever drawn, `.frame.dim`, `.clipmark.selected.dim` and
-`.chosen.dim` in `app.css`, in the frame the state changes.
+`.chosen.dim` in `app.css`, in the frame the state changes, so a person
+sees the clip's rules are not in play.
 
-**The whole clip dims, as one thing.** Everything drawn for the chosen clip
+**The whole clip dims, as one thing.** Bright caption blocks in a dim
+frame read as a clip half in play. Everything drawn for the chosen clip
 on the clip timeline, its frame, pieces, cuts, trim edges, caption blocks
 and thumbnails, sits in `.chosen`, which lays nothing out, and one rule
 dims it with the crop frame and the range picker mark, `opacity:
 var(--dimmed)`, a disabled button's brightness, so the caption colours stay
 the person's. The waveform is the video's and does not dim. It is lit whole
 while the hand is on the clip elsewhere. A new part drawn for the chosen
-clip goes inside `.chosen`. Prove it by reading every part's opacity, the
+clip goes inside `.chosen`, or it stays bright. Prove it by reading every part's opacity, the
 product down its ancestors, on the clip, on the video, and on the first
 animation frame after the click.
 
@@ -476,7 +481,8 @@ Loop is about the clip and changes no state: on the video with loop on,
 the space bar plays straight on. A clip chosen while the video plays
 leaves the playhead on the video, except one made there with I or O:
 making it is the gesture, `claim` in `Player.svelte`, or it comes up dimmed
-over the moment it was made from.
+over the moment it was made from. The play goes on as it began, and the
+next plays the clip.
 
 **Where a gesture lands is a frame, not a second.** Compared in seconds,
 one step right of a clip starting inside a frame landed on that frame's
@@ -491,7 +497,8 @@ the start of the frame the render cuts on, `PieceOnFrames` in
 `engine/render.go`, so for an edge this is the short's frame, and
 `lib/testdata/frame.cases.json` holds both sides to each other. A second
 rule for edges, the nearest frame, disagreed for about half the edges a
-search left between frames.
+search left between frames. A trim of the end on frames, leaving the
+playhead a frame before the end, is then at the end.
 
 **Why it is a state.** It was a distance, within half a frame of the start
 and before the end, and with the `<video>` element it broke three times: a
@@ -510,7 +517,7 @@ the Go side's frames and sound, the canvas and the sound card.
 `Player.svelte` makes one `FrameQueue` per video and drives it with
 `setProgram` (the clip's pieces, or null for the video straight on),
 `seek`, `play` and `pause`. What the queue reports, `Shown`, is the
-playhead. Since these lessons, which frame and which sound play where has
+playhead, and nothing else sets it while playing. Since these lessons, which frame and which sound play where has
 moved into Go, `engine.Play`, see [ARCHITECTURE.md](ARCHITECTURE.md) and
 [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), and some names below, `heardAt`,
 `VideoPlan`, `nextEdge`, `GoSound` and `plan.ts`, are gone. The numbers
@@ -521,7 +528,8 @@ is the quickest way to look at it alone. `frames()` in `open.mjs` opens it
 on a ten minute video by the same recipe, and `queueUntil` waits for a
 queue report. `?read` reads the frame number back from the canvas. `?hear`
 records every sample handed to the sound card, to match against the
-video's sound decoded by ffmpeg, cut and faded as the render does.
+video's sound decoded by ffmpeg, cut and faded as the render does, so a
+sample missing, doubled or from inside a cut shows.
 
 What the proofs read, the clip of three pieces with cuts off the frame
 edges, 25 frames a second:

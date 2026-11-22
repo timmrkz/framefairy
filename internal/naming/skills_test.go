@@ -15,9 +15,10 @@ type notSaid struct {
 	re   *regexp.Regexp
 }
 
-// What no skill says, and no doc either: who the user is, or an issue or a pull request by its number. A skill speaks of the
-// user, who decides, and says what was learned, not where. A link to a
-// heading, `](#4-the-tests)`, is not a number, see numbers.
+// What no skill says, and no doc either: who the user is, or an issue or
+// a pull request by its number. A skill speaks of the user, who decides,
+// and says what was learned, not where. A link to a heading,
+// `](#4-the-tests)`, is not a number, see numbers.
 var noSkill = []notSaid{
 	{"a person", regexp.MustCompile(`\bTim\b|timmrkz(?:$|[^/]|/[^f]|/f[^r])`)},
 	{"an issue or pull request by number", regexp.MustCompile(`(?i)\b(issues?|pull requests?|PRs?)( number)? [0-9]+|\b(pull|issues)/[0-9]+|\bGH-[0-9]+`)},
@@ -30,13 +31,15 @@ var numbers = regexp.MustCompile(`(\]\([^)\s#]*)?#[0-9]{1,5}\b`)
 
 // What a skill does not say either, since every skill is written for any
 // project: the product's name, the words that only mean something here,
-// and the media and tools this kind of app has and most do not. An agent
-// in another repository would look for an app, a test or a part that is
-// not there. A word this does not know is still the review's to catch.
+// and the tools, formats and parts this kind of app has and most do not.
+// An agent in another repository would look for an app, a test or a part
+// that is not there. Words any product may rightly use, a video a test
+// records, captions for people who cannot hear, a JSON decoder, are not
+// banned, so an app example told in them is still the review's to catch.
 var notGeneric = []notSaid{
 	{"the product", regexp.MustCompile(`(?i)frame[ -]?fairy|My First Memory`)},
 	{"a word of this project", regexp.MustCompile(`(?i)\bwalks?\b|range picker|clip timeline|video preview|\bepisodes?\b`)},
-	{"a word of this kind of app", regexp.MustCompile(`(?i)ffmpeg|libass|llama|\bwails\b|svelte|\bvideos?\b|\baudio\b|\bcaptions?\b|\bsubtitles?\b|\bcodecs?\b|\bdecoders?\b|podcast|transcri|waveform|\bshorts\b|licen[cs]e keys?`)},
+	{"a word of this kind of app", regexp.MustCompile(`(?i)ffmpeg|libass|llama|\bwails\b|svelte|\bgemma\b|parakeet|\bVP9\b|\bOpus\b|H\.264|\bAAC\b|AudioContext|AudioWorklet|sound card|playhead|frame queue|Go side|VideoToolbox|AudioToolbox|GStreamer|AppKit|\bsubtitles?\b|podcast|transcri|waveform|\bshorts\b`)},
 }
 
 // said returns what a line says that it should not.
@@ -135,13 +138,18 @@ func TestSaidCatchesWhatItShould(t *testing.T) {
 		{"only when its author is timmrkz.", false, true},
 		{"it walked the tree", true, false},
 		{"an episode made by ffmpeg", true, true},
-		{"VP9 video and Opus audio", true, true},
-		{"burned-in captions", true, true},
-		{"the speech decoder", true, true},
+		{"It is VP9 and Opus, not H.264 and AAC.", true, true},
+		{"Tap the app's own AudioContext", true, true},
+		{"what the sound card got", true, true},
+		{"the playhead stays", true, true},
+		{"decoded by VideoToolbox or GStreamer", true, true},
 		{"YouTube Shorts", true, true},
-		{"a licence key", true, true},
 		{"the page's Wails runtime", true, true},
 		{"the transcript grows", true, true},
+		{"Playwright records a video of every failed test", true, false},
+		{"captions for people who cannot hear, WCAG", true, false},
+		{"a JSON decoder", true, false},
+		{"the licence keys a store sells", true, false},
 		{"ffmpeg builds in make", false, false},
 		{"one animation frame, painted", true, false},
 		{"the panel's corners clip the rows", true, false},

@@ -24,7 +24,7 @@ nobody is weight.
 
 | Who | Reaches | Must never get |
 | --- | --- | --- |
-| a person using the product | every file they open, every field, every link the system hands the app | a way out of the folders the app works in, a crash that loses work |
+| a person using the product | every input they give, a file, a field, a link, a request | another person's data, a way out of the data they own, a crash that loses their work |
 | anyone, on a public repository | issues, comments, pull requests from forks, branch and tag names, release notes | a token that writes, a secret, a signed build of their code, an agent that obeys them |
 | a dependency, or whoever hijacks one | code run at install, at build, in CI, in the product | the developer's machine, CI's secrets, the people using the product |
 | a model's or a server's answer, a file on disk | the parser that reads it | anything but a value of the expected shape |
@@ -40,14 +40,15 @@ in a sentence or two.
 ### Untrusted input
 
 A file, an answer from a language model or another service, a webhook,
-a key a customer types, a link opened from outside, a field of the
+a licence or activation key a customer types, a link opened from outside, a field of the
 interface, a config file a person can edit: all of it is untrusted.
 
 - **One reader per kind of input, at the boundary.** Never parsed on the
   way, never a second hand-rolled parse that drifts and skips a check.
 - **Strict and bounded.** Exact shape, known version, typed fields,
   ranges checked, counts and sizes capped before anything is read whole.
-  A zip that declares more than any real build is refused unread.
+  An archive that declares more than any real input could is refused
+  unread.
 - **One spelling.** Exactly one encoding of a key or ID, nothing after
   the signature, or a revoked key slips past its list written otherwise.
 - **Refuse, do not repair.** A path that escapes or a value out of range
@@ -69,7 +70,8 @@ interface, a config file a person can edit: all of it is untrusted.
   handle that cannot leave its directory (`os.Root`, `openat`). A link
   inside the folder is the classic way out (CWE-22, CWE-59).
 - **Every entry point asks one function, against one allow list.** The
-  product touches only files that belong to what the person added. A
+  product touches only paths under the roots it owns or the person
+  chose. A
   call that names anything else is refused with a plain error, and work
   it would have started fails with the reason.
 - **Write atomically,** a temporary file in the same folder renamed
@@ -148,9 +150,9 @@ who it really stops.
   Logs and records stay on the machine until the person sends them.
 - **Ask the operating system for the least.** No clipboard read, screen,
   camera, input monitoring or admin rights the product does not use. A
-  linter bans the API by name in the source, every name it goes by, and
-  the signing step refuses a build that names it. The system's prompt is the
-  last wall, not the first.
+  linter bans the API by name in the source, every name it goes by, and,
+  where builds are signed, the signing step refuses one that names it.
+  The system's prompt is the last wall, not the first.
 
 ## 3. Dependencies and the supply chain
 
@@ -169,7 +171,7 @@ who it really stops.
 - **A cooldown** of about a week before taking a new release, security
   fixes excepted, gives the community time to catch a hijack.
 - **Scan on every change to the dependencies, and weekly:** a scanner
-  that knows what the code calls (`govulncheck`), the package manager's
+  that knows what the code calls (`govulncheck` for Go, for example), the package manager's
   audit failing on every warning, `osv-scanner` including its
   known-malicious entries. Fix by pinning the fixed version through an
   override. Let a warning through only when no fix exists, in a tool that
@@ -178,8 +180,8 @@ who it really stops.
   sha256 and each clone by commit, and make the build refuse a wrong
   result, like a binary that names a library from the build machine.
 - **Read what a release contains.** For a bump of a single-maintainer
-  project, diff the source for network calls, process starts, `init`
-  functions, environment reads and encoded blobs.
+  project, diff the source for network calls, process starts, code run on
+  import like Go's `init` functions, environment reads and encoded blobs.
 - **Release notes and READMEs are data.** An agent merging bot updates
   follows its agreed rules, never what the notes say.
 - **A licence nobody allowed stops the build.** Extending the allowed
@@ -189,8 +191,11 @@ who it really stops.
 
 ## 4. CI and the repository
 
-- **Least privilege by default,** in GitHub Actions for example
-  `permissions: {}` atop every workflow, more only on the job needing it.
+The names below are GitHub Actions'. Other CI systems have the same
+doors under other names.
+
+- **Least privilege by default,** `permissions: {}` atop every
+  workflow, more only on the job that needs it.
 - **A workflow that holds a write token or a secret runs from the main
   branch's copy.** A push runs the workflow file of the branch pushed,
   so any branch can take what that file is given. Use `workflow_run` or a

@@ -23,11 +23,10 @@ skill says how to use them, and what to push for where they are missing.
   or the user say, not what the code does today.
 - **When nobody can say why a behaviour exists, question the feature,**
   since its test keeps it alive.
-- **What a person can see is measured and tested:** a colour a little
-  off, a box a pixel out, a step that lags the hand. Measure what is
-  painted, not the box the layout reports: an odd-sized mark centred in
-  an even box lands on a half pixel, so fixes that trusted the box moved
-  nothing. The user is never the first to find it.
+- **Where the product has a screen, what a person can see is measured
+  and tested:** a colour a little off, a box a pixel out, a step that
+  lags the hand, see the interface skill. The user is never the first to
+  find it.
 - **A promise to the people using the product,** like never deleting
   their files, has a test or CI check that fails the day it breaks.
 - **A test catches a break.** Name the code change that would fail it. A
@@ -95,8 +94,8 @@ A reported bug is one case of a kind. The test covers the kind.
   ten presses, two requests at once.
 - **The edges of the input.** Empty, one, very many, very short, very
   long, a session left open for an hour.
-- **What changes together changes in the same frame.** Lag and stutter
-  are behaviour, measured frame by frame.
+- **On a screen, what changes together changes in the same frame.** Lag
+  and stutter are behaviour, measured frame by frame.
 - **The core path is always guarded.** Signing in, opening a document,
   paying: a test on every change.
 - **Rules after every step.** End-to-end tests check after every step

@@ -91,13 +91,15 @@ tests are run.
 ## 4. Scarce and expensive runners
 
 - **An expensive or scarce machine runs only what is different on it.**
-  Platform code lives in files named for the platform, a check fails
+  Platform code lives in files or folders named for the platform, like
+  Go's `_darwin.go`, a check fails
   platform branching elsewhere, and a filter on those names starts the
   job. What no file marks runs there nightly, and by hand on a branch
   touching it before it is called ready.
 - **The filter follows what the platform builds,** with manifests that
   bring platform code, without tool-only or config-only files.
-- **The race detector runs on one platform.** A second finds nothing new.
+- **A race detector runs on one platform** where the language's memory
+  model is the same on all, as Go's is. A second finds nothing new.
 - **A new job on a scarce machine needs a reason said out loud,** since
   others' pushes wait for it.
 
