@@ -1,378 +1,295 @@
 ---
 name: ci
-description: How to keep continuous integration fast, trustworthy and cheap in any project. Which jobs a change starts, caches, scarce runners, job limits, nightly runs, measuring CI speed on shared runners, hearing how a run went without polling, and keeping the pipeline safe. Read it before changing a workflow, a CI job, a cache, a test runner's settings or anything that decides which tests run, and before claiming CI got faster.
+description: How to keep continuous integration fast, trustworthy and cheap in any project. Which jobs a change starts, caches, scarce runners, job limits, nightly runs, measuring CI speed, hearing how a run went without polling, a safe pipeline. Read it before changing a workflow, job, cache, test runner setting or test selection, and before claiming CI got faster.
 ---
 
 # CI
 
-CI is where every change waits, and the user waits with it. It is also
-the proof that counts: a rule only holds once a machine checks it on
-every change. So CI has to be two things at once, fast enough that
-nobody is tempted to go round it, and strict enough that green means
-the change works. Everything below serves one of the two, and nothing
-below trades the second for the first.
+Every change waits on CI, and the user with it. CI is also the proof
+that counts. It must be fast enough that nobody goes round it and strict
+enough that green means the change works. Never trade strict for fast.
 
 **The user** is the person the agent works for, who decides what
-happens. The testing skill says how each test is written. This skill
-says how the tests are run.
+happens. The testing skill says how a test is written, this skill how
+tests are run.
 
 ## 1. One job, one command
 
-- **Every CI job runs one command a developer can run on their own
-  machine,** with only what its machine needs around it: the checkout,
-  one shared setup step and that command. The same command on a laptop,
-  in an agent's session and in CI. A failure in CI is then reproduced by
-  typing the same thing.
-- **No script picks, runs or reports tests.** Glue in a workflow runs
-  differently from a local run, cannot be tested, and redoes what the
-  tools already do. A new check joins a command, not a workflow step.
-- **A decision CI makes lives in a tested program,** in the project's
-  own language: whether to build, what to publish, which issue to open.
-  The hosting service sits behind an interface the program is handed, and
-  plain unit tests drive it with a fake. A workflow step only runs the
-  program, in a line or two. Shell that decides things is where the bugs
-  of a pipeline live, and a workflow that runs only from the main branch
-  shows its mistakes only after the merge.
+- **Every CI job runs one command a developer can run locally,** with
+  only the checkout and one shared setup step around it, so a failure is
+  reproduced by typing the same thing.
+- **No script picks, runs or reports tests.** Workflow glue runs unlike
+  a local run and is untested. A new check joins a command, not a step.
+- **A decision CI makes lives in a tested program** in the project's
+  language: whether to build, what to publish, which issue to open. The
+  hosting service sits behind an interface, faked in unit tests, and the
+  workflow only runs the program. Deciding shell is where pipeline bugs
+  live, and a main-only workflow shows them after the merge.
 - **A failure is never masked.** No `|| true`, no `continue-on-error` on
-  a step whose result matters. A step that ended in `|| true` once
-  recorded nothing for weeks and stayed green.
-- **The failing test is the last thing in the log.** Use the test
-  runner's own summary, which repeats every failure at the end, so the
-  person or agent reading a red check sees the test and what it printed
-  without scrolling.
-- **A table a job prints lines up in the terminal.** Every cell is padded
-  to its column and numbers stand to the right, so a column reads
-  straight down in a raw log, where markdown is not drawn.
-- **Warnings fail through each tool's own flag:** the compiler's
-  warnings as errors, the linker's fatal warnings, the bundler's count of
-  warnings. Never by searching the output for a word.
-- **A build machine installs nothing by itself.** What a job has is what
-  its workflow asked for, so a convenience that installs a missing tool
-  on a laptop is turned off in CI.
-- **A copied job becomes one reusable job.** The same job in four
-  workflows is four edits for every change and four chances to drift. A
-  guard test then checks the one call, not each copy.
+  a step that matters. One `|| true` stayed green for weeks recording
+  nothing.
+- **The failing test is the last thing in the log,** from the runner's
+  own summary of failures.
+- **A table a job prints lines up in the terminal,** padded and numbers
+  right-aligned, since a raw log draws no markdown.
+- **Warnings fail through each tool's own flag,** never by searching the
+  output for a word.
+- **A build machine installs nothing by itself.** What fetches missing
+  tools on a laptop is off in CI.
+- **A copied job becomes one reusable job,** and a guard test checks the
+  one call. Copies drift.
 
 ## 2. Run only what a change reaches
 
-- **Coarse path filters, from the CI tool itself.** A change to the
-  backend starts the backend's tests, a change to the interface starts
-  the interface's, and the end-to-end tests start for either. A doc-only
-  change runs only the checks that read docs, and the build. Prefer the
-  tool's own filter to a script of ours.
-- **Measure what selection buys before keeping it.** Sixteen scripts that
-  chose tests file by file bought 4 % against a couple of path filters
-  and the test runner's own cache, inside the noise. The cache already
-  skips most of what did not change.
-- **The filter fails open.** A file it does not know starts everything.
-  A file a test reads across a boundary, a doc, a fixture, a file of the
-  other side, starts that test. A test scans the test files for the paths
-  they read and fails when the filter misses one, because a miss shows
-  only as a test that passes on its pull request and fails on main.
+- **Coarse path filters, from the CI tool itself.** Backend changes start
+  backend tests, interface changes interface tests, end-to-end tests
+  start for either. A doc-only change runs the doc checks and the build.
+- **Measure what selection buys.** Sixteen scripts choosing tests per
+  file bought 4 % over path filters and the runner's cache, inside the
+  noise.
+- **The filter fails open.** An unknown file starts everything. A file a
+  test reads across a boundary starts that test, and a test scans the
+  test files for such paths the filter misses, which only show as red
+  main.
 - **The main branch runs everything.** Selection is for pull requests.
-- **Selection is guaranteed, never conventional.** Jobs are picked by
-  kind of file, or by a boundary a compiler or a linter enforces, like
-  platform code kept in files named for the platform. Never by test name
-  suffixes or lists someone has to remember. Where selection cannot be
-  guaranteed, everything runs.
-- **Correctness beats speed.** A speed-up that could let changed content
-  reuse an earlier pass is a correctness bug, however much it saves. A
-  change once rewrote file times so a test cache would survive fresh
-  checkouts, and a merged file kept its old size and time, so its test
-  would not have run at all. The diff already says what changed.
-- **Shards are split by patterns that never change,** like the first
-  letters of test names with a complementary skip so every test runs
-  once. A generated list of names changes every shard's list when one
-  test is added, and the cache is keyed on that list.
+- **Selection is guaranteed, never conventional:** by kind of file or by
+  a boundary a compiler or linter enforces, never by name suffixes or
+  remembered lists. Where it cannot be guaranteed, run everything.
+- **Correctness beats speed.** A speed-up that lets changed content reuse
+  an earlier pass is a bug, like rewriting file times to keep a test
+  cache across checkouts, which skips a merged file of the same size.
+- **Shard by patterns that never change,** like first letters of test
+  names with a complementary skip. A generated name list changes every
+  shard's cache key when one test is added.
 
 ## 3. Caches
 
-- **Use every cache there is,** for dependencies, the build and test
-  results, and never turn one off across the board to be safe.
+- **Use every cache there is.** Never turn one off wholesale to be
+  safe.
 - **A cache key changes with what the cache holds.** A build cache keyed
-  only on the lock file is saved once and then restored for weeks while
-  the code grows, and a job recompiles almost everything. One such cache
-  doubled a build step within days. Key the dependency cache on the lock
-  file and the build cache on each push, with restore keys that fall back
-  to the newest.
-- **Restore from main, save from main, and only after a job that ran to
-  the end.** A cancelled job's half cache is otherwise the first one
-  every later run finds.
-- **Prune to what was used.** Mark what was restored as old, and before
-  saving drop what the job did not touch, or the cache keeps everything
-  ever built. One restored three times what a fresh build needed.
+  only on the lock file went stale while the code grew and doubled a
+  build step within days. Key dependencies on the lock file, the build on
+  each push, restore keys falling back to the newest.
+- **Restore and save from main, only after a job that ran to the end,**
+  or a cancelled job's half cache is what later runs find.
+- **Prune to what was used** before saving. One cache held three times
+  what a fresh build needed.
 - **A step that runs only on a cache miss is untested when it changes.**
-  Force a miss for the change that touches it.
-- **Measure what a cache costs.** On some systems a test cache checks
-  every file the tests touched and costs more than it saves.
-- **A fuzz corpus or other state a job builds up lives in a cache keyed
-  on that state,** saved from main, so each run goes on from where the
-  last stopped instead of finding the same easy inputs again.
-- **System packages come in an image, not from a mirror at job time.**
-  Build one image from a recipe, tag it by a hash of the recipe and the
-  versions in it, pin its base by digest, and let the dependency bot move
-  it. A file the recipe reads joins the hash. Slow mirrors once held jobs
-  for twelve to fifteen minutes. Jobs that need no browser pull an image
-  without one.
-- **Data derived from the dependencies is made at build time,** licence
-  notices for example. Commit only the decision, the licences allowed,
-  and fail the build on anything else. A committed derived file turns
-  every dependency bump red.
+  Force a miss for that change.
+- **Measure what a cache costs.** Some test caches check every file the
+  tests touched and cost more than they save.
+- **State a job builds up, like a fuzz corpus, is cached on that
+  state** from main, so each run continues the last.
+- **System packages come in an image, not from a slow mirror at job
+  time.** Tag it by a hash of its recipe, the files it reads and its
+  versions, pin its base by digest, let the dependency bot move it. Jobs
+  that need no browser pull an image without one.
+- **Data derived from dependencies, like licence notices, is made at
+  build time.** Commit only the licences allowed and fail on any other.
+  A committed derived file turns every bump red.
 
 ## 4. Scarce and expensive runners
 
 - **An expensive or scarce machine runs only what is different on it.**
-  Platform code goes in files named for the platform, a check fails code
-  that branches on the platform anywhere else, and a filter on those
-  names starts the platform's job. What no file marks as the platform's
-  runs on that platform every night, and on a branch whose change
-  touches it, started by hand before the pull request is called ready.
-- **The filter follows what the platform builds,** dependency manifests
-  that bring platform code included, and keeps tool-only and config-only
-  files out.
-- **The race detector runs on one platform.** The same code finds nothing
-  new on a second and costs most of a job again.
-- **A new job on a scarce machine needs a reason that can be said out
-  loud.** Each one is a push of someone else's that waits.
+  Platform code lives in files named for the platform, a check fails
+  platform branching elsewhere, and a filter on those names starts the
+  job. What no file marks runs there nightly, and by hand on a branch
+  touching it before it is called ready.
+- **The filter follows what the platform builds,** with manifests that
+  bring platform code, without tool-only or config-only files.
+- **The race detector runs on one platform.** A second finds nothing new.
+- **A new job on a scarce machine needs a reason said out loud,** since
+  others' pushes wait for it.
 
 ## 5. Limits, shards and hangs
 
-- **Every job has a short limit, and a job that grows past it is split,**
-  never given a longer limit.
-- **The test runner's own timeout sits below the job's limit,** so the
-  runner, not the job, ends a hang and prints every thread when it does.
-  Each test or scenario says when it starts and ends, so a hang is named
-  by its last step.
-- **Split by the smallest independent unit, longest first.** One unit
-  that holds most of the work bounds the whole run. Share long tests
-  across shards by their recorded times, longest first to the shard with
-  the least, unknown ones at the median, with times read from CI's own
-  logs, not from a laptop. On a saturated runner, check the gain: shares
-  balanced from recorded times bought nothing when the times themselves
-  swung with what ran beside them.
-- **No test leaves a program running.** After the tests, look for any
-  program a test started that still runs, name it with its command line,
-  parent and age, stop it and fail the job. A leftover child once held a
-  job for half an hour without saying which test started it.
-- **A hang dumps what it waited on,** the stacks of every program the
-  test started, first in the log. The testing skill says why.
+- **Every job has a short limit.** One that outgrows it is split, never
+  given more.
+- **The runner's timeout sits below the job's limit,** so the runner ends
+  a hang and prints every thread. Each test logs start and end, naming a
+  hang by its last step.
+- **Split by the smallest independent unit, longest first,** since one
+  big unit bounds the run. Give long tests to the emptiest shard by times
+  from CI's logs, unknown ones at the median. On a saturated runner check
+  the gain: balancing bought nothing when the times swung with their
+  neighbours.
+- **No test leaves a program running.** After the tests, name any that
+  still runs with command line, parent and age, stop it and fail the
+  job.
+- **A hang dumps the stacks of every program the test started,** first in
+  the log, see the testing skill.
 
 ## 6. Skips and silent passes
 
-- **In CI, a missing prerequisite fails, never skips.** A test may skip
-  with its reason on a laptop without the tool. In CI a skip reads as a
-  pass, since nobody lists skips. Route every such skip through one
-  helper that fails when CI is set, and fails on a tool that is there but
-  broken.
+- **In CI, a missing prerequisite fails, never skips,** since a skip
+  reads as a pass. On a laptop it skips with its reason. One helper
+  decides, failing when CI is set or the tool is present but broken.
 - **A job far faster than its peers is a warning.** Twenty tests once
-  skipped for weeks on one platform, and the only sign was a job of one
-  minute beside one of five.
-- **Silence is not success.** Anything whose silence means all is well,
-  a nightly run, a notifier, a scanner, needs proof that it ran. A
-  nightly fuzz job ended within a second every night for days, because a
-  check before it failed, and never fuzzed.
-- **A check is tested like code.** A new lint rule or guard comes with
-  inputs that must fail and inputs that must pass, and the test checks
-  the exit code and the rule's name, so a linter that did not start
+  skipped for weeks, shown only by a one-minute job beside five-minute
+  ones.
+- **Silence is not success.** A nightly run, notifier or scanner needs
+  proof it ran. A nightly fuzz job once ended in a second for days.
+- **A check is tested like code,** with inputs that must fail and pass,
+  checking exit code and rule name, so a linter that never started
   cannot pass.
-- **A guard allows nothing it did not name.** It lists the shapes that
-  are allowed and fails on the rest. A list of forbidden shapes is walked
-  round by ordinary code: five plain rewrites of a forbidden comparison
-  passed one such check. A guard over every workflow reads them the way
+- **A guard allows nothing it did not name.** Five plain rewrites walked
+  round a list of forbidden shapes. A guard over workflows reads them as
   the platform does, matrix values and reusable workflows included.
 - **A list of exceptions fails on an entry that matches nothing,** so a
-  renamed test cannot leave a line behind that does nothing.
+  renamed test leaves no dead line.
 
 ## 7. Nights and schedules
 
-- **What is long or costly and blocks nothing runs at night or by
-  hand:** long fuzzing, coverage, a second browser engine, the full suite
-  of a scarce platform, benchmarks. A pull request waits only on the
-  fast variant. A change that only those reach starts them on its branch
-  before it is called ready.
-- **Every scheduled run reports its own failure.** A last job runs when
-  another failed on the main branch and opens one issue for that
-  workflow, or adds the run, the commit and the failed jobs to the one it
-  opened. It never closes the issue on a later pass, the fix does. A
-  guard test checks every scheduled workflow has that job. Moving a
-  check to the night is safe only once this is in place, because nobody
-  waits on a nightly run.
+- **What is long or costly and blocks nothing runs at night or by hand:**
+  long fuzzing, coverage, a second browser engine, a scarce platform's
+  full suite, benchmarks. A pull request waits on the fast variant. A
+  change only these reach starts them on its branch before it is called
+  ready.
+- **Every scheduled run reports its own failure.** A last job opens one
+  issue per workflow when a job failed on main, or adds the run, commit
+  and failed jobs to it. Only the fix closes it. A guard test checks
+  every scheduled workflow has it. Only then may a check move to the
+  night, where nobody waits on it.
 - **Coverage is counted on a schedule, never on a pull request,** and
-  never blocks a merge. A count of zero for a part every run is known to
-  reach fails, because it means the counting broke.
-- **Fuzzing is counted in executions, not seconds,** so a slow machine
-  does the same work as a fast one. A crash found at night goes into the
-  target's cases with its fix, and every run plays it from then on.
-- **Random tests take their seed from the commit,** and every seed that
-  failed is played on every run, see the testing skill.
+  blocks no merge. Zero for a part every run reaches fails.
+- **Fuzzing is counted in executions, not seconds,** so every machine
+  does the same work. A crash found at night goes into the target's cases
+  with its fix.
+- **Random tests take their seed from the commit,** and every failed seed
+  plays on every run, see the testing skill.
 
 ## 8. Hearing how a run went
 
-- **Events, never a poll.** An agent subscribes to its pull request's
-  events when it opens it and acts on each as it comes. It never sleeps
-  on a run, never sets up a recurring check and never writes a message
-  that says nothing happened.
-- **No workflow on a timer to fill a gap in events.** When the hosting
-  service sends no event for something, a pull request starting to
-  conflict for example, find the push that causes it and run there. A
-  workflow on every push to main can merge each open pull request in
-  memory, `git merge-tree`, and comment on those that no longer merge,
-  once for each pair of the branch's head and main's head, so one lost
-  comment is followed by the next push's.
-- **Some ends send nothing.** A green run may wake nobody, a job rerun by
-  hand sends no event and a delivery can be lost. When a decision waits
-  on a run, set one check for when its slowest job usually ends, not a
-  loop. Before saying a change is ready, read the checks of its current
-  head yourself, because an event may be about an older commit.
-- **A cancelled run counts as failed** on the hosting service. Rerun it
-  at once. Give each build one trigger, not a push trigger and an opened
-  trigger that cancel each other, and change a pull request's base
-  before pushing, not right after.
-- **A run for an old commit is cancelled when a new one comes,** on pull
-  requests and on main. Only what writes shared state, a publish, is
-  never stopped halfway. A group that queues instead can be held forever
-  by one run waiting on an approval, so a job cancels a run that has
-  waited past a limit.
-- **Messages a bot posts that agents act on are process docs.** When the
-  process changes, search for them and change them in the same change.
-  One bot message still told agents to run the whole suite after the
-  rule had changed, and it was the one they obeyed.
+- **Events, never a poll.** Subscribe to the pull request's events when
+  opening it and act on each. Never sleep on a run, set a recurring
+  check or write that nothing happened.
+- **No workflow on a timer to fill a gap in events.** Run on the push
+  that causes it. For conflicts, a workflow on every push to main merges
+  each open pull request in memory, `git merge-tree`, and comments on
+  those that no longer merge, once per pair of heads, so the next push
+  repeats a lost comment.
+- **Some ends send nothing:** a green run may wake nobody, a manual rerun
+  sends no event, a delivery can be lost. When a decision waits on a run,
+  set one check for when its slowest job usually ends. Before calling a
+  change ready, read its current head's checks yourself.
+- **A cancelled run counts as failed.** Rerun it at once. Give each build
+  one trigger, not two that cancel each other, and change a pull
+  request's base before pushing, not right after.
+- **A new commit cancels the old one's run,** on pull requests and on
+  main, except a publish, which writes shared state. A queueing group
+  can be held forever by a run awaiting approval, so a job cancels runs
+  waiting past a limit.
+- **Bot messages that agents act on are process docs,** changed with the
+  process. Agents obeyed one that outlived its rule.
 
 ## 9. Measuring CI speed
 
-- **Shared runners vary, so one run proves nothing.** One runner label
-  can serve two kinds of machine, and the same code took 88 s on one run
-  and 115 s on the next. Every timed job prints its machine, cores,
-  memory, image, and how long a fixed piece of work took that day. Read
-  times against it, compare like with like, and measure several runs on
-  each side.
-- **A speed claim clears the spread.** The before is measured more than
-  once, and a change smaller than its spread is no gain. Bundle or grow
-  the change until it clears it, or drop it.
-- **Shorten the critical path.** Work skipped beside longer work saves
-  no wall time. Compare against the last several runs on main.
+- **Shared runners vary, so one run proves nothing:** the same code took
+  88 s, then 115 s. Every timed job prints its machine, cores, memory,
+  image and the time of a fixed piece of work. Compare like with like.
+- **A speed claim clears the spread** of several before runs, or grows
+  until it does, or is dropped.
+- **Shorten the critical path.** Work saved beside longer work saves no
+  wall time. Compare with several recent runs on main.
 - **On a saturated runner, only work no longer done shortens a job.**
-  When parallel workers keep a machine near full, a test that waits less
-  only lets another use the time. Measure processor seconds by kind of
-  process, which vary less than wall time, and print them in each job's
-  summary. Making every wait an event made tests faster one by one and
-  left the jobs as slow as before.
-- **Break a job down by step before calling any of it fixed.** Split its
-  time from the log's timestamps: pulling the image, the toolchain, each
-  build, the tests. Then stop timing and read the code for work done
-  twice. Setup reported as one lump of 53 s hid builds that ran one after
-  another and could run side by side.
-- **Track the suite's time for every main commit,** so a slowdown points
-  at the commit that made it. A product change slows CI as often as a
-  test change: a blur added to the interface made nearly every end-to-end
-  test 70 % slower, because CI draws in software.
-- **Find the work no check needs.** Put a logger in front of each program
-  the tests start and compare each test's cost with what its assertion
-  reads. Tests that checked a file name rendered whole videos. Bulk data
-  a test reads across a process boundary travels as binary, never as a
-  list of numbers in text.
-- **End-to-end start-up is paid per scenario.** Keep one driver and one
-  browser per worker across scenarios, with a clean reset between them,
-  prepare an expensive starting state once per job and copy it to each
-  worker, and start a scenario that only needs data from that state
-  instead of building it through the interface.
-- **A new kind of test says its CI cost up front,** in jobs and machine
-  minutes, and is weighed like any other cost.
+  Shorter waits sped up each test and left the jobs as slow. Print
+  processor seconds per kind of process in each job's summary, steadier
+  than wall time.
+- **Break a job down by step before calling any of it fixed,** from the
+  log's timestamps, then read the code for work done twice. One 53 s
+  setup hid builds run in series that could run in parallel.
+- **Track the suite's time per main commit,** so a slowdown points at
+  its commit. Product changes slow CI too: a blur made nearly every
+  end-to-end test 70 % slower, as CI draws in software.
+- **Find the work no check needs.** Log each program the tests start and
+  compare a test's cost with what it asserts: tests checking a file name
+  rendered whole videos. Bulk data between processes goes as binary,
+  never as text.
+- **End-to-end start-up is paid per scenario.** Keep one driver and
+  browser per worker, reset between scenarios. Build an expensive
+  starting state once per job, copy it to each worker, and load it
+  directly, not through the interface.
+- **A new kind of test states its CI cost up front,** in jobs and machine
+  minutes.
 
 ## 10. Changing CI
 
-- **Prove it against main, with numbers.** A change to CI shows its job
-  times before and after, several runs each, with the spread. What does
-  not measure faster or more reliable is dropped.
-- **Before moving or removing a check, list everything it did.** What it
-  checked, what it ran against, the merged code or the branch, forks or
-  not, its limit. Re-home each item in the same change. A local script
-  once was the only place a kind of file was parsed, and removing it
-  dropped the check unseen.
-- **Workflows that hold a write token run from the main branch's copy,**
-  and so do those that judge a build, so a branch cannot loosen its own
-  check. Never use an event that runs a stranger's code with secrets, and
-  never take a permission change a stranger suggested in a comment.
-- **Pin everything, with its whole graph.** Tools in the language's lock
-  file, actions by commit with the full version as a comment that a check
-  verifies, images by digest. A tool fetched by name and version that
-  resolves its dependencies by range is not pinned. Never `@latest`.
-- **Then watch everything you pin.** Check that the dependency bot covers
-  every ecosystem, indirect dependencies and the framework itself.
-  Packages run no install scripts. Downloaded tools are checked against
-  their release checksums.
-- **An advisory is fixed by pinning the fixed version,** through the
-  package manager's override. An allow list keyed on the advisory's paths
-  breaks when the advisory data changes, and turned every pull request
-  red overnight once.
-- **Bot pull requests are merged by rules agreed in advance:** every
-  check green, mergeable, dependency files only, minor or patch, release
-  notes read. A major bump, a red check, a new licence or anything odd
-  goes to the user. Nobody pushes to a bot's branch. A merge made with
-  CI's own token starts no workflows, so it is made by someone visible.
+- **Prove it against main:** job times before and after, several runs
+  each, with the spread. Drop what is not faster or more reliable.
+- **Before moving or removing a check, list everything it did:** what it
+  checked, against merged code or the branch, forks or not, its limit.
+  Re-home each in the same change, or it is lost unseen.
+- **Workflows that hold a write token or judge a build run from the main
+  branch's copy,** so a branch cannot loosen its own check. Never use an
+  event that runs a stranger's code with secrets, and never take a
+  permission change a stranger suggested in a comment.
+- **Pin everything, with its whole graph:** tools in the lock file,
+  actions by commit with the version in a checked comment, images by
+  digest. A tool resolving dependencies by range is not pinned. Never
+  `@latest`.
+- **Then watch it:** the dependency bot covers every ecosystem, indirect
+  dependencies and the framework. Packages run no install scripts.
+  Downloaded tools are checked against release checksums.
+- **Fix an advisory by pinning the fixed version** through the package
+  manager's override. An allow list keyed on advisory paths breaks when
+  the advisory data changes.
+- **Bot pull requests merge by rules agreed in advance:** checks green,
+  mergeable, dependency files only, minor or patch, notes read. Anything
+  else goes to the user. Nobody pushes to a bot's branch. CI's own token
+  starts no workflows, so someone visible merges.
 - **Build output never reaches the diff.** Ignore every program the build
   makes, and refuse large binaries in CI.
 
 ## 11. CI holds the rules
 
-Everything in the testing skill that a tool can check, a tool checks, in CI, on
-every pull request. An agent is not asked to remember to run a command,
-and the user is not asked to catch what a machine can. A rule that is
-only written down slips. A rule a check enforces holds, and it protects
-the agent too, because the check fails before the user has to.
-
-What CI should hold, with established, widely used open-source tools,
-never a scanner of our own:
+Whatever in the testing skill a tool can check, a tool checks on every
+pull request, with established open-source tools, never a scanner of
+our own. A written rule slips, a checked one holds.
 
 | Rule | Checked by, for example |
 | --- | --- |
-| no sleep, timer or real clock in a test | a linter that bans the calls in test files: golangci-lint's `forbidigo`, ESLint's `no-restricted-globals` and `no-restricted-syntax`, `eslint-plugin-playwright`'s `no-wait-for-timeout`, Ruff's banned-api rule |
-| no poll with a deadline | the same linters, banning `Eventually`, `waitForFunction` with a timeout and the like |
-| no skipped, focused or disabled test slipping in | the skip and focus rules of the ESLint plugins for Playwright, Jest and Vitest, and the same ban on skip calls in other languages |
+| no sleep, timer or real clock in a test | linters banning the calls in tests: golangci-lint's `forbidigo`, ESLint's `no-restricted-globals` and `no-restricted-syntax`, `eslint-plugin-playwright`'s `no-wait-for-timeout`, Ruff's banned-api |
+| no poll with a deadline | the same, banning `Eventually`, `waitForFunction` with a timeout and the like |
+| no skipped, focused or disabled test | skip and focus rules of the ESLint plugins for Playwright, Jest and Vitest, the same ban elsewhere |
 | every test can fail | mutation testing: Stryker for JavaScript and TypeScript, Gremlins for Go, mutmut for Python |
-| no data race | the race detector of the language, on every run |
-| no test that touches the disk or the network without saying why | a check over the test files, or a sandbox that refuses them |
+| no data race | the language's race detector, every run |
+| no test touching disk or network without saying why | a check over the test files, or a sandbox |
 | no retries | the runner's retry setting checked at zero |
-| no job over its limit | the job's own timeout in the workflow |
+| no job over its limit | the job's own timeout |
 
-- **Only new breaks fail.** Where old code still breaks a rule, the
-  check takes a baseline from the main branch, the linter's own
-  new-from-revision mode or its list of suppressions, so a pull request
-  fails only on what it adds, and the old breaks are an issue to burn
-  down. A list of suppressions counts per file and fails on one fewer
-  as well as one more, so a fix shrinks it in the same change.
+- **Only new breaks fail.** Old breaks get a baseline from main, the
+  linter's new-from-revision mode or a suppression list, and an issue to
+  burn them down. A suppression list counts per file and fails on one
+  fewer too, so a fix shrinks it in the same change.
 - **A pull request cannot weaken the check that judges it.** Changes to
-  the checks themselves, their configuration and their baselines are
-  visible in review and owned by the user, and a baseline only ever
-  shrinks.
-- **Where a rule has no check yet, push for one.** Log an issue that
-  names the rule, the tool that would hold it and what it would have
-  caught. Do not make up for it by asking anyone, agent or person, to run
-  a command by hand.
+  checks, their configuration and baselines are visible in review and
+  owned by the user, and a baseline only shrinks.
+- **Where a rule has no check yet, log an issue** naming the rule, the
+  tool that would hold it and what it would have caught. Never ask anyone
+  to run a command by hand instead.
 
 ## 12. Where other advice says otherwise
 
 | Common advice | Why not | Instead |
 | --- | --- | --- |
-| a smart test selection from a dependency graph or per-test coverage | it costs more to keep than it saves, and a miss is a red main | coarse path filters, the runner's cache, a test of the filter, section 2 |
-| restore any cache that is close, to be fast | a stale or partial cache costs more than none, and a stale pass is a wrong answer | keys that change with the content, saved from main after a full job, section 3 |
-| give a slow job a longer limit | slow jobs stay slow and everybody waits | split it or remove the work, section 5 |
+| smart test selection by dependency graph or coverage | costs more to keep than it saves, a miss is a red main | path filters, the runner's cache, a test of the filter, section 2 |
+| restore any close cache | a stale pass is a wrong answer | content keys, saved from main after a full job, section 3 |
+| give a slow job a longer limit | everybody keeps waiting | split it or remove the work, section 5 |
 | skip a test when its tool is missing | in CI a skip reads as a pass | fail in CI, skip with a reason on a laptop, section 6 |
-| a scheduled workflow to catch what events miss | runner time spent all day for nothing | run on the push that causes it, section 8 |
-| judge a CI change by one run | runners differ by up to two times | several runs each side, the machine printed, the spread, section 9 |
-| coverage on every pull request | slows every job and adds a service that can fail every check | coverage at night, section 7 |
-| a script per check in the workflow | untested glue that runs differently from a laptop | one command per job, decisions in a tested program, section 1 |
+| a timed workflow to catch what events miss | runner time all day for nothing | run on the push that causes it, section 8 |
+| judge a CI change by one run | runners differ by up to two times | several runs per side, the machine, the spread, section 9 |
+| coverage on every pull request | slows every job, adds a service that can fail every check | at night, section 7 |
+| a script per check in the workflow | untested glue, unlike a laptop run | one command per job, decisions in a tested program, section 1 |
 
 ## Before saying done
 
 1. Every job runs one local command, and no step masks a failure.
-2. The change starts only the jobs it reaches, the filter fails open and
-   a test holds it.
+2. The change starts only the jobs it reaches, and the filter fails open
+   under a test.
 3. Caches are keyed on what they hold and saved from main.
-4. No job runs past its limit, and a hang is ended by the runner with
-   every stack written out.
+4. No job passes its limit, and the runner ends a hang with every stack.
 5. In CI, a missing prerequisite fails.
 6. Every scheduled run reports its own failure.
-7. A claim of faster has several runs on each side, the machine and the
+7. A claim of faster has several runs per side, the machine and the
    spread.
 8. Nothing a check did was lost on the way.
