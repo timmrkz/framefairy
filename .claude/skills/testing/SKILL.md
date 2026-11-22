@@ -47,8 +47,8 @@ skill says how to use them, and what to push for where they are missing.
   the same across the code, a CI tool's work, see section 12, so push for
   it where CI has none. A rewritten test still fails where the old one
   did.
-- **Check what comes out, not that the code asked for it:** the sound at
-  the output, the pixels painted, the file written. Checking the request
+- **Check what comes out, not that the code asked for it:** the bytes
+  sent, the pixels painted, the file written. Checking the request
   is enough only where a hard interface guarantees the effect.
 - **An empty result cannot pass.** Check the length before looping over
   results. Check each setup step took effect: a test of redo passed when
@@ -98,7 +98,7 @@ A reported bug is one case of a kind. The test covers the kind.
 - **What changes together changes in the same frame.** Lag and stutter
   are behaviour, measured frame by frame.
 - **The core path is always guarded.** Signing in, opening a document,
-  playing a file: a test on every change.
+  paying: a test on every change.
 - **Rules after every step.** End-to-end tests check after every step
   for a console error, a failed request, two items selected where one may
   be, so every new test gets them free.
@@ -290,8 +290,8 @@ A test is code we keep, still right and readable in a year.
   the test, not three helpers away. A line repeated in two tests is fine.
 - **Shared setup lives in one place, extended, not copied.** One fake per
   service, one set of end-to-end helpers. A second fake drifts.
-- **The name says the behaviour.** `TestTrimKeepsAWordWholeWhenAnEdgeLandsInIt`,
-  not `TestTrim3`.
+- **The name says the behaviour.** `TestRefundKeepsTheOrderWhenOneItemIsReturned`,
+  not `TestRefund3`.
 - **A failure says what went wrong:** what was asked, what came back,
   what was wanted.
 

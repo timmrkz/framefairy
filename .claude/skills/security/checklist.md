@@ -7,16 +7,15 @@ most questions with "nothing new", and that is the answer to write.
 
 ## What comes in from outside
 
-- A new file format, field, endpoint, link scheme, webhook, model answer
-  or config key. Is it read by the one reader made for it, strict on
+- A new file format, field, endpoint, link scheme, webhook, service or
+  language model response, or config key. Is it read by the one reader made for it, strict on
   shape and version, with every size and count capped?
 - A path from anywhere. Is it resolved through links and checked against
   the root, at this entry point, by the shared function? Does the test
   that tries every entry point have a line for it?
 - An ID or key from the interface. Is it only compared, never joined
   onto a path or a query?
-- Text written into another format: subtitles, HTML, a header, a log
-  line, a CSV. Is it encoded for that format where it is written?
+- Text written into another format: HTML, a header, a log line, a CSV. Is it encoded for that format where it is written?
 - A new parser of outside bytes with no fuzz target is a finding.
 
 ## What it runs
@@ -49,7 +48,7 @@ most questions with "nothing new", and that is the answer to write.
 - A new operating system permission, entitlement, linked framework or
   purpose string. A privileged API reached through another name: a
   clipboard read through a second library, a lookup at run time by
-  string. Does the linter or the signer ban every name it goes by?
+  string. Does the linter or the signing step ban every name it goes by?
 - A workflow's `permissions`, a new secret, a new environment, a job-wide
   token that a step reading untrusted bytes can see.
 - A new trigger. In which branch's copy does it run, and can a fork or a
@@ -68,8 +67,8 @@ most questions with "nothing new", and that is the answer to write.
 What reviews of signing and update work actually found:
 
 - **It covers the file that is installed or run,** not a sibling, a
-  slice, or a copy made before the last step changed it. A universal
-  binary was judged with offsets from the wrong slice.
+  slice, or a copy made before the last step changed it. A binary for
+  several processors was judged with offsets from the wrong slice.
 - **It is tied to the step it protects by an explicit condition,** not
   by the order of steps, which the next edit can change.
 - **It names things that cannot be shadowed:** a commit, not a branch

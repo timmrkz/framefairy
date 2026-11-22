@@ -58,7 +58,7 @@ a person meets the same failure. Beside that:
   the runner is suspected.
 - **Before widening a tolerance, measure the distance to the nearest
   wrong answer,** and stay well below it. A pixel tolerance once grew past
-  the difference between two neighbouring frames and still passed.
+  the difference between two states it had to tell apart, and passed.
 - **A task to make tests faster changes only tests,** the harness, the
   fixtures and CI. A cost found in the product is a change of its own.
 
@@ -73,8 +73,8 @@ did two halves of its work in an unforeseen order. Find that order, in
 these steps:
 
 1. **Read what the failure left,** before running anything: the trace
-   the runner keeps in CI too, the race detector's report, the goroutines
-   `go test -timeout` prints. Most flakes are explained there. A runner
+   the runner keeps in CI too, the race detector's report, the stacks a
+   hang dump prints, like Go's `go test -timeout`. Most flakes are explained there. A runner
    that keeps no trace yet is the first fix. Calls and console are nearly
    free, so on for every test. A film of the screen or page snapshots
    cost every run time, so on only for tests whose trace showed the need,
@@ -88,7 +88,7 @@ these steps:
    until the test lets it go: a request held with Playwright's
    `page.route` or a gate in the fake, a fake clock step, the browser's
    CPU throttling. A flake that fails every time is a bug with a test.
-4. **Try the orders systematically.** Go's race detector, and
+4. **Try the orders systematically.** In Go, the race detector, and
    `testing/synctest` for goroutines and timers. For async JavaScript,
    fast-check's `fc.scheduler()` in a unit test tries the orders promises
    resolve in and shrinks a failure to the shortest one.

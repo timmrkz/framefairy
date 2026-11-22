@@ -21,7 +21,7 @@ comes from a flaw found in a real update and release pipeline.
   sign step runs after it, tied by an explicit condition on its result,
   never by step order alone.
 - **The judge runs from the protected branch,** so a branch that loosens
-  the signer's lists changes nothing about how its own build is judged.
+  the signing step's lists changes nothing about how its own build is judged.
 - **Identity comes from the CI system's record of the run,** not from
   anything the build wrote, and a ref is compared by its commit, never by
   its name: a tag named like the main branch once made a branch's build
@@ -47,8 +47,8 @@ comes from a flaw found in a real update and release pipeline.
 
 ## Licences and payments
 
-- Verify every webhook's signature and every field's size before the
-  engine sees it. Replayed, late, reordered and duplicated events must
+- Verify every webhook's signature and every field's size before any
+  other code sees it. Replayed, late, reordered and duplicated events must
   never sell twice, so every step is idempotent.
 - The private key that signs licences lives on one machine that accepts
   no connections.

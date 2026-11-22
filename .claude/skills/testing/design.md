@@ -16,7 +16,7 @@ or an option:
 | random numbers | a source of randomness |
 | a network service, a model, a database | an interface, with a fake the test drives |
 | a program the code runs | its path or a runner |
-| hardware or a system service, a codec, a driver, a keychain | a value the program hands in, absent by default |
+| hardware or a system service, a printer, a driver, a keychain | a value the program hands in, absent by default |
 | the end of work | a channel, callback or event the caller gives |
 
 - The program hands in the real thing, a test one it drives.
@@ -46,8 +46,8 @@ or an option:
 
 ## Test up to the boundary you own
 
-The product owns what it hands to a system it does not own, a media
-engine, a driver, a keychain, a cloud service: the arguments, the
+The product owns what it hands to a system it does not own, a payment
+provider, a driver, a keychain, a cloud service: the arguments, the
 request, the order of calls. What the system does with them depends on
 the test machine, rarely one people use. In ports and adapters,
 Alistair Cockburn's hexagonal architecture, the real system is the
@@ -78,8 +78,8 @@ adapter behind a port, and a test stands in for it.
 - **One source for each piece of state.** State in two places is a bug
   waiting for an order of events no test finds.
 - **One mechanism, used everywhere, not a copy.** Copies drift, like a
-  countdown of 8 s in one place and 10 s elsewhere. One renderer for
-  preview and output makes a mismatch impossible, better than a test
+  countdown of 8 s in one place and 10 s elsewhere. One template for
+  the preview and the sent email makes a mismatch impossible, better than a test
   comparing two. A test that fails on a second copy keeps it so.
 - **One path for every input,** so one set of tests covers all. A special
   path needs its own tests and drifts.
@@ -108,7 +108,7 @@ adapter behind a port, and a test stands in for it.
   wrote by their times. File times are coarse, and that lost a result in
   seven runs of twenty.
 - **A timeout says nothing about the input.** Report a wait that ran out,
-  never an unreadable file. A slow machine once marked a valid video
+  never an unreadable file. A slow machine once marked a valid upload
   broken that way.
 - **The failure is counted where a test can read it:** the restart, the
   drop, the double send itself. A restart counted as an ordinary start

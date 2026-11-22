@@ -10,18 +10,12 @@ import (
 	"testing"
 )
 
-// The skills that are about this repository, its interface and its words.
-// Every other skill in .claude/skills/ is written for any project, so it
-// can be copied into another repository as it is, see docs/SKILLS.md.
-var ownSkills = []string{"interface"}
-
 type notSaid struct {
 	what string
 	re   *regexp.Regexp
 }
 
-// What no skill says, not even one about this repository: who the user
-// is, or an issue or a pull request by its number. A skill speaks of the
+// What no skill says, and no doc either: who the user is, or an issue or a pull request by its number. A skill speaks of the
 // user, who decides, and says what was learned, not where. A link to a
 // heading, `](#4-the-tests)`, is not a number, see numbers.
 var noSkill = []notSaid{
@@ -34,12 +28,15 @@ var noSkill = []notSaid{
 // `#942192`, since no issue here has that many.
 var numbers = regexp.MustCompile(`(\]\([^)\s#]*)?#[0-9]{1,5}\b`)
 
-// What a skill for any project does not say either: the product's name
-// and the words that only mean something here. An agent in another
-// repository would look for an app, a test or a part that is not there.
+// What a skill does not say either, since every skill is written for any
+// project: the product's name, the words that only mean something here,
+// and the media and tools this kind of app has and most do not. An agent
+// in another repository would look for an app, a test or a part that is
+// not there. A word this does not know is still the review's to catch.
 var notGeneric = []notSaid{
 	{"the product", regexp.MustCompile(`(?i)frame[ -]?fairy|My First Memory`)},
 	{"a word of this project", regexp.MustCompile(`(?i)\bwalks?\b|range picker|clip timeline|video preview|\bepisodes?\b`)},
+	{"a word of this kind of app", regexp.MustCompile(`(?i)ffmpeg|libass|llama|\bwails\b|svelte|\bvideos?\b|\baudio\b|\bcaptions?\b|\bsubtitles?\b|\bcodecs?\b|\bdecoders?\b|podcast|transcri|waveform|\bshorts\b|licen[cs]e keys?`)},
 }
 
 // said returns what a line says that it should not.
@@ -62,11 +59,14 @@ func said(line string, generic bool) []string {
 	return found
 }
 
+// Every skill in .claude/skills/ is written for any project, so its folder
+// can be copied into another repository as it is, see docs/SKILLS.md.
+//
 // On the real disk: what is read is the repository's own skills.
-func TestSkillsNameNoPersonOrNumberAndGenericOnesNoProduct(t *testing.T) {
+func TestSkillsAreGeneric(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join("..", "..", ".claude", "skills")
-	read := map[bool]int{}
+	read := map[string]bool{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
 			return err
@@ -75,15 +75,13 @@ func TestSkillsNameNoPersonOrNumberAndGenericOnesNoProduct(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		skill := strings.Split(filepath.ToSlash(rel), "/")[0]
-		generic := !slices.Contains(ownSkills, skill)
+		read[strings.Split(filepath.ToSlash(rel), "/")[0]] = true
 		text, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		read[generic]++
 		for n, line := range strings.Split(string(text), "\n") {
-			for _, s := range said(line, generic) {
+			for _, s := range said(line, true) {
 				t.Errorf(".claude/skills/%s:%d names %s: see docs/SKILLS.md", filepath.ToSlash(rel), n+1, s)
 			}
 		}
@@ -92,8 +90,8 @@ func TestSkillsNameNoPersonOrNumberAndGenericOnesNoProduct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if read[true] < 2 || read[false] < 1 {
-		t.Fatalf("read %d files of generic skills and %d of this repository's own, so this test reads the wrong folder", read[true], read[false])
+	if !read["testing"] || !read["interface"] {
+		t.Fatalf("read the skills %v without testing or interface, so this test reads the wrong folder", read)
 	}
 }
 
@@ -136,6 +134,18 @@ func TestSaidCatchesWhatItShould(t *testing.T) {
 		{"github.com/timmrkz/framefairy/issues/603", false, true},
 		{"only when its author is timmrkz.", false, true},
 		{"it walked the tree", true, false},
+		{"an episode made by ffmpeg", true, true},
+		{"VP9 video and Opus audio", true, true},
+		{"burned-in captions", true, true},
+		{"the speech decoder", true, true},
+		{"YouTube Shorts", true, true},
+		{"a licence key", true, true},
+		{"the page's Wails runtime", true, true},
+		{"the transcript grows", true, true},
+		{"ffmpeg builds in make", false, false},
+		{"one animation frame, painted", true, false},
+		{"the panel's corners clip the rows", true, false},
+		{"short and concrete", true, false},
 	}
 	for _, c := range cases {
 		got := said(c.line, c.generic)

@@ -8,7 +8,7 @@ Section 11 of the testing skill in detail.
   with one that fails on the main branch and passes with the fix.
 - **A test only proves what its fixture contains.** Make fixtures like
   real inputs, odd encodings, sizes and shapes included, and know what
-  one hides: a low frame rate hides what lasts less than a frame, one row
+  one hides: one page of results hides what only paging breaks, one row
   what only two rows break.
 - **Each shape of a thing,** simple and with every option. A test meant
   to cross a boundary fails unless it did.
@@ -19,9 +19,9 @@ Section 11 of the testing skill in detail.
   Typing, focus, hover, painting and timing differ.
 - **Only what the window can show:** a key or click does what the person
   meant, and the screen shows what the core sent. Rules, formats and long
-  lists of values go in unit tests of the core. Time, sound card and
-  timers run on a clock the test moves, so a minute of video plays as
-  fast as its frames can be drawn.
+  lists of values go in unit tests of the core. Time and timers run
+  on a clock the test moves, so a minute-long countdown runs as fast as
+  the page can draw it.
 - **Add a step, not a test,** since each test starts the product afresh.
   A new test says why no existing one could take its steps.
 - **Read everything a rule judges at one moment:** the button in the
@@ -41,8 +41,8 @@ Section 11 of the testing skill in detail.
   an answer shown early, an order of answers: hold the dependency's
   answer, act, then release it. Settling after every step proves only an
   instant answer.
-- **Set aside only what the product marks as spoiled,** like sound fed
-  late on a busy machine. The product counts where, the test sets aside
+- **Set aside only what the product marks as spoiled,** like a frame
+  dropped on a busy machine. The product counts where, the test sets aside
   only that, and separate counters keep the product's own mistakes at
   zero.
 - **Random exploration finds what scripts miss,** often within tens of

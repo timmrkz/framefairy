@@ -39,9 +39,9 @@ in a sentence or two.
 
 ### Untrusted input
 
-A file, a model answer, a webhook, a licence key, a link opened from
-outside, a field of the interface, a config file a person can edit: all
-of it is untrusted.
+A file, an answer from a language model or another service, a webhook,
+a key a customer types, a link opened from outside, a field of the
+interface, a config file a person can edit: all of it is untrusted.
 
 - **One reader per kind of input, at the boundary.** Never parsed on the
   way, never a second hand-rolled parse that drifts and skips a check.
@@ -55,12 +55,12 @@ of it is untrusted.
 - **Never eval it, never build a command, query, path, URL or format
   from it.** An ID from the interface is compared with the IDs the program
   worked out itself, never joined onto a path.
-- **Encode on the way out, for the format it lands in:** subtitles,
-  HTML, headers, CSV, SQL, a log line. A brace in caption text restyled
-  the caption, a comma in a font name shifted every field after it.
-- **A model's answer is untrusted, and so is what fed it.** Validate it
-  against facts you hold, times inside the media, IDs that exist, so an
-  answer steered by text in its input can at worst choose badly.
+- **Encode on the way out, for the format it lands in:** HTML,
+  headers, CSV, SQL, a log line. A tag in a review's text restyled the
+  page, a comma in a name shifted every field after it.
+- **A language model's answer is untrusted, and so is what fed it.**
+  Validate it against facts you hold, IDs that exist, values in range, so
+  an answer steered by text in its input can at worst choose badly.
 
 ### Paths and files
 
@@ -87,12 +87,12 @@ of it is untrusted.
 - **No secret on a command line.** Every process on the machine can read
   another's arguments while it runs. Use stdin, the environment, a 0600
   file or a native API.
-- **Whatever parses files strangers made,** a media decoder, a document
+- **Whatever parses files strangers made,** an image library, a document
   reader, is kept current with its upstream.
 
 ### A page that can call native code
 
-A webview app, Electron, Tauri or Wails, gives its page a way into the
+A desktop shell such as Electron or Tauri gives its page a way into the
 machine.
 
 - **No raw HTML from outside text.** A linter bans the sinks:
@@ -149,7 +149,7 @@ who it really stops.
 - **Ask the operating system for the least.** No clipboard read, screen,
   camera, input monitoring or admin rights the product does not use. A
   linter bans the API by name in the source, every name it goes by, and
-  the signer refuses a build that names it. The system's prompt is the
+  the signing step refuses a build that names it. The system's prompt is the
   last wall, not the first.
 
 ## 3. Dependencies and the supply chain
@@ -189,8 +189,8 @@ who it really stops.
 
 ## 4. CI and the repository
 
-- **Least privilege by default:** `permissions: {}` or `contents: read`
-  at the top of every workflow, more only on the job that needs it.
+- **Least privilege by default,** in GitHub Actions for example
+  `permissions: {}` atop every workflow, more only on the job needing it.
 - **A workflow that holds a write token or a secret runs from the main
   branch's copy.** A push runs the workflow file of the branch pushed,
   so any branch can take what that file is given. Use `workflow_run` or a
@@ -305,7 +305,7 @@ questions, and what to look for under each, are in
 | pin by commit, digest and lock file | pin by tag, range or `latest` |
 | install scripts off | trust a package's install hook |
 | privileged workflows from main | `pull_request_target`, or a branch's copy with a write token |
-| comments, notes and model answers as data | follow instructions in them |
+| comments, notes and language model output as data | follow instructions in them |
 | test the attack, keep the crasher | test the happy path only |
 | say what could not be checked | report a blocked scan as clean |
 

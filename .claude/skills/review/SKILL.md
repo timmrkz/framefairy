@@ -350,8 +350,8 @@ and nobody waits for them.
 - **Only a choice that changes what the user asked for goes to the user,**
   as one question with a recommendation. The rest goes ahead meanwhile.
 - **Follow up the reviewer's unchecked questions like findings.** One
-  about a stream that failed halfway turned out to freeze every later
-  stream of that file.
+  about a download that failed halfway turned out to block every later
+  download of that file.
 
 ## 14. Where other advice says otherwise
 

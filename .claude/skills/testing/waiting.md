@@ -1,6 +1,6 @@
 # Tests never wait, in detail
 
-Section 4 of the testing skill in detail. Time-based tests, all wrong:
+Section 4 of the testing skill in detail. Wrong, in Go and Playwright:
 
 ```go
 // Wrong: hopes the job is done after 100 ms.
@@ -17,8 +17,8 @@ for q.Find(id).State != Done {
 	time.Sleep(10 * time.Millisecond)
 }
 
-// Wrong: a test's own timeout. The runner ends a hang, and Go's
-// prints every goroutine.
+// Wrong: a test's own timeout. The runner ends a hang, and prints
+// every stack.
 select {
 case <-done:
 case <-time.After(2 * time.Second):

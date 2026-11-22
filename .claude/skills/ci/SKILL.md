@@ -203,7 +203,7 @@ tests are run.
   end-to-end test 70 % slower, as CI draws in software.
 - **Find the work no check needs.** Log each program the tests start and
   compare a test's cost with what it asserts: tests checking a file name
-  rendered whole videos. Bulk data between processes goes as binary,
+  built whole reports. Bulk data between processes goes as binary,
   never as text.
 - **End-to-end start-up is paid per scenario.** Keep one driver and
   browser per worker, reset between scenarios. Build an expensive
