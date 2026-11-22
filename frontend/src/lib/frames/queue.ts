@@ -1371,14 +1371,24 @@ export class FrameQueue {
   // hand's until it starts, see GoPlay.go. A playhead in a cut of the clip
   // or past its end starts a play on another frame than the one up, and
   // cues nothing.
-  private async cue(at: number, ticket: number) {
+  private async cue(at: number, ticket: number): Promise<void> {
     if (!this.app || this.state !== "paused") return;
+    const key = this.wantedKey;
     const play = await GoPlay.open(
       this.app,
       { pieces: this.pieces(), loop: this.wanted.loop, at, rate: this.sampleRate, channels: this.channels, cue: true },
       this.previewSize(),
     );
     if (!play || typeof play === "string") return;
+    // The clip or its loop changed while the Go side opened the cue, a
+    // cut made as the playhead was put down: it is cued again for what is
+    // wanted now. Kept, the space bar played the clip as it was, and the
+    // video preview showed the frames of the new cut.
+    if (key !== this.wantedKey) {
+      play.close();
+      if (ticket === this.ticket && !this.closed) return this.cue(at, ticket);
+      return;
+    }
     if (ticket !== this.ticket || this.closed || this.state !== "paused" || this.goPlay || play.first !== this.shown?.begins || play.from >= play.end) {
       play.close();
       return;
