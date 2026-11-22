@@ -603,7 +603,7 @@ job called off at the moment its turn came still ran, and a turn given up
 at the moment its lane came free still took it.
 
 The interface's harness has one fake search that goes through the same
-steps from the same kind of record, see the interface skill.
+steps from the same kind of record, see [The modes](INTERFACE.md#the-modes).
 
 The tests in `jobs_test.go`, `lanes_test.go`, `remove_test.go`,
 `steps_test.go`, `store_test.go`, `history_test.go` and `letgo_test.go`

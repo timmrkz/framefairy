@@ -1,22 +1,20 @@
 # Skills for any project
 
 The skills in `.claude/skills/` hold what this project learned about
-writing tests, reviewing work, keeping a product safe and keeping a
-code base easy to change. All but one are written for any project. They
-name no person, no product and no issue, and speak of **the user**, the
-person the agent works for, who decides what happens. So the folder of
+writing tests, reviewing work, keeping a product safe, keeping a code
+base easy to change and changing an interface nobody can see. All are
+written for any project. They name no person, no product and no issue,
+and speak of **the user**, the person the agent works for, who decides
+what happens. So the folder of
 each can be copied into another repository as it is, and an agent there
 follows it without wondering who or what it means.
 
 `internal/naming/skills_test.go` holds them to that: a file of a skill
 that names a person, the product, a word only this project uses, or an
-issue or a pull request by its number fails `make lint`. The one skill
-about this repository alone is `interface`, which says how to change this
-app's interface without seeing its window. It may use this project's
-words, and it too names no person and no number. The same test holds
-`CLAUDE.md`, the docs and the templates for issues and pull requests to
-naming no person and no issue, all but `docs/GUI-PLAN.md`, the history
-that does not change. A name the test does not know, of another person
+issue or a pull request by its number fails `make lint`. The same test
+holds `CLAUDE.md`, the docs and the templates for issues and pull
+requests to naming no person and no issue, all but `docs/GUI-PLAN.md`,
+the history that does not change. A name the test does not know, of another person
 or another project, is still the review's to catch.
 
 | Skill | What it is for | Where it meets this repository |
@@ -26,6 +24,7 @@ or another project, is still the review's to catch.
 | `ci` | how CI stays fast, trustworthy and cheap: which jobs a change starts, caches, scarce runners, nightly runs, measuring CI | [The ci skill in this project](#the-ci-skill-in-this-project) |
 | `pull-requests` | how a change travels from the first line to the merge: sizing, opening early, the description, watching it, ready, the go to merge | [The pull-requests skill in this project](#the-pull-requests-skill-in-this-project) |
 | `maintenance` | how a code base stays easy to change: evidence before work, root causes, problems that come back, issues and triage, keeping the architecture | [The maintenance skill in this project](#the-maintenance-skill-in-this-project) |
+| `interface` | how an interface nobody can see is changed: a harness that renders it, what to measure, proving a fix rather than claiming it, and what a hand feels | [The interface skill in this project](INTERFACE.md#the-interface-skill-in-this-project) |
 | `security` | how the product, its build and its repository stay safe: a threat model, untrusted input, paths, programs, secrets, signing and updates, the supply chain, CI, agents on a public repository, tests that try the attack, and the security line of a review | [The security skill in this project](#the-security-skill-in-this-project) |
 
 ## Copying them

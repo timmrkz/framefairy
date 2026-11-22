@@ -1,7 +1,7 @@
 // The frame queue on its own, for a probe: the episode the harness makes
 // for it, played onto one canvas, with what was drawn and what was heard
-// written down for the probe to read. See "The frame queue" in the
-// interface skill.
+// written down for the probe to read. See "The frame queue" in
+// docs/INTERFACE.md.
 //
 //   ?read   reads the frame number back from the picture of every frame
 //           drawn, which costs a read of the canvas each time

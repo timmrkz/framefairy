@@ -4,8 +4,8 @@
 //   npx vite build --config frontend/preview/vite.config.ts
 //   node frontend/preview/probe.mjs        (whatever you called yours)
 //
-// See .claude/skills/interface/SKILL.md for how to write one and, more to
-// the point, for what to measure.
+// See "The harness" in docs/INTERFACE.md for how to write one, and the
+// interface skill in .claude/skills/interface/ for what to measure.
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
 import { readFile, rename, rm, stat } from "node:fs/promises";
@@ -379,7 +379,7 @@ export async function rows(page, clip) {
 }
 
 // The frame queue on its own, see frontend/src/lib/frames/ and "The frame
-// queue" in the interface skill: one canvas playing the episode
+// queue" in docs/INTERFACE.md: one canvas playing the episode
 // framesEpisode() makes, and window.__queue to drive it. ?read and ?hear
 // write down what was drawn and what was heard, see preview/frames/main.ts.
 // The sound card is let go without a gesture,

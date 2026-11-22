@@ -65,6 +65,7 @@ thing belongs. In short:
 | training tool `framefairy-train` | `cmd/framefairy-train/`, `train/` | [docs/TRAINING.md](docs/TRAINING.md) |
 | build | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | interface tests | `frontend/preview/`, `cmd/framefairy-app/bridge_test.go` | [docs/TESTING.md](docs/TESTING.md) |
+| how the interface is changed without seeing it | `frontend/`, `frontend/preview/` | [the interface skill](.claude/skills/interface/SKILL.md), and where it meets this repository in [docs/INTERFACE.md](docs/INTERFACE.md) |
 | how every test is written | `*_test.go`, `*.test.ts`, `frontend/preview/walks/` | [the testing skill](.claude/skills/testing/SKILL.md), and where it meets this repository in [docs/TESTING.md](docs/TESTING.md#the-testing-skill-in-this-project) |
 | how a pull request is reviewed | | [the review skill](.claude/skills/review/SKILL.md), and where it meets this repository in [docs/WORKFLOW.md](docs/WORKFLOW.md#the-review-skill-in-this-project) |
 | how the app, the build and the repository stay safe | | [the security skill](.claude/skills/security/SKILL.md), and where it meets this repository in [docs/SKILLS.md](docs/SKILLS.md#the-security-skill-in-this-project) |
@@ -455,7 +456,8 @@ messages, pull request text, code comments and chat replies.
   while a job starts or stops. The control says what it is doing and takes no
   second click. The same frame, the same everywhere the work shows: the row of a
   search says Stopping the moment Cancel is pressed, not a second later
-  when the search has stopped. See the interface skill.
+  when the search has stopped. See the interface skill, and
+  [docs/INTERFACE.md](docs/INTERFACE.md#what-a-hand-feels) for this app.
 - **What is taken away is seen going.** A row that is removed keeps its
   place for a moment, says what became of it and offers itself back, and
   only then does the list close over it. Nothing vanishes under the
@@ -950,9 +952,11 @@ the skills listed last show their name without what they are for.
   waiting, and so is a session that reruns what CI has already passed.
 - The app cannot be started there, so there is no way to look at the
   window. Interface work goes through the skill in
-  `.claude/skills/interface/`, which has the preview harness in
-  `frontend/preview/`, what to measure and how to prove a fix instead of
-  claiming one. Read it before changing anything in `frontend/`.
+  `.claude/skills/interface/`, which says what to measure and how to
+  prove a fix instead of claiming one, and
+  [docs/INTERFACE.md](docs/INTERFACE.md), which has the preview harness
+  in `frontend/preview/` and what went wrong here. Read both before
+  changing anything in `frontend/`.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
   on Linux and on macOS, where the build has to be clean of warnings, and
   fuzzes on Linux, and drives the interface against the real Go side, see

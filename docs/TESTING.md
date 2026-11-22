@@ -29,8 +29,10 @@ has a third page, the preview's `preview/frames/`: one canvas playing an
 episode made for it, whose picture carries its frame number and whose
 sound can be laid over the episode's own sample by sample. The preview's
 own episode is made the same way, so the same is measured in the
-workspace. What it measures and how to read it is in the interface
-skill, under Playback and The frame queue.
+workspace. What it measures and how to read it is in
+[INTERFACE.md](INTERFACE.md), under
+[Playback](INTERFACE.md#playback-on-the-clip-or-on-the-video) and
+[The frame queue](INTERFACE.md#the-frame-queue).
 
 Adding a video runs against the bridge: a walk asks `/pick` for a test
 video, the bridge has the Add button's box hand it over, and the walk
