@@ -212,6 +212,51 @@ func TestAToolBesideTheProgramIsCheckedBeforeItRuns(t *testing.T) {
 	}
 }
 
+// The SHA-256 of the tool beside the program is the sum it was checked
+// against, and the file is not read for it again: what keeps the caption
+// ink between runs is stamped with it on every start. Any other file, one
+// the environment named, is read.
+//
+// On the real disk: a tool is a program that is found on the disk.
+func TestTheSumOfACheckedToolIsNotReadAgain(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	ffmpeg := filepath.Join(dir, "ffmpeg")
+	body := []byte("#!/bin/sh\necho the real one\n")
+	if err := standin.Write(ffmpeg, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	want := hex.EncodeToString(sum[:])
+	f := &Finder{sums: "ffmpeg=" + want, dir: dir, named: env()}
+	if got, err := f.SHA256(ffmpeg, "ffmpeg"); err != nil || got != want {
+		t.Fatalf("the checked tool's sum is %q, %v, want %q", got, err, want)
+	}
+	// Other bytes of the same size and time: a file read again would say
+	// so, the sum it was checked against does not.
+	info, err := os.Stat(ffmpeg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := standin.Write(ffmpeg, []byte("#!/bin/sh\necho the late one\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chtimes(ffmpeg, info.ModTime(), info.ModTime())
+	if got, _ := f.SHA256(ffmpeg, "ffmpeg"); got != want {
+		t.Errorf("the checked tool was read again, its sum is %q", got)
+	}
+
+	named := filepath.Join(t.TempDir(), "ffmpeg")
+	own := []byte("#!/bin/sh\necho somebody's own\n")
+	if err := standin.Write(named, own, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ownSum := sha256.Sum256(own)
+	if got, err := f.SHA256(named, "ffmpeg"); err != nil || got != hex.EncodeToString(ownSum[:]) {
+		t.Errorf("a tool named elsewhere has the sum %q, %v, want its own %x", got, err, ownSum)
+	}
+}
+
 // What the settings say about each tool: the version it says it is,
 // as each of them says it.
 func TestAToolSaysItsVersion(t *testing.T) {

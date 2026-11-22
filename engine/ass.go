@@ -665,7 +665,7 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	// What runs before measured, kept between runs, see inkkept.go.
 	stamp := ""
 	if keep {
-		stamp = e.inkStamp(ctx)
+		stamp = e.inkStamp(ctx, measured)
 		measured.readKept(stamp)
 	}
 	key := func(i int) string { return measureKey(blocks[i], s, width, size) }

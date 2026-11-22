@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -59,36 +58,26 @@ type inkFile struct {
 
 // inkStamp is what the ink measured by this engine depends on beyond its
 // key: the bytes of its ffmpeg, which carries libass and FreeType, and
-// those of the faces the program carries. It is worked out once a run,
-// see askOnce, and is empty when ffmpeg cannot be read, and then the ink
-// is kept in memory only.
-func (e *Engine) inkStamp(ctx context.Context) string {
+// those of the faces the program carries. The ffmpeg beside the program
+// is known by the sum it was checked against, see tool.Finder.SHA256, so
+// it is not read again. It is worked out once a run, see askOnce, and is
+// empty when the ink is not kept on the disk, or ffmpeg cannot be read,
+// and then the ink is kept in memory only.
+func (e *Engine) inkStamp(ctx context.Context, kept *inkCache) string {
+	if kept.path == "" {
+		return ""
+	}
 	key, ok := keyFor("ink stamp", e.FFmpeg, "")
 	if !ok {
 		return ""
 	}
 	stamp, err := askOnce(ctx, e.Machine, key, func(context.Context) (string, error) {
-		return hashOf(key.tool.path)
+		return e.Machine.Tools.SHA256(key.tool.path, "ffmpeg")
 	})
 	if err != nil {
 		return ""
 	}
 	return stamp + bundledFacesStamp()
-}
-
-// hashOf is the first 16 bytes of the SHA-256 of the file at path, in hex.
-// It reads the real disk, where ffmpeg is.
-func hashOf(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)[:16]), nil
 }
 
 // bundledFacesStamp is the hash of the faces the program carries, the

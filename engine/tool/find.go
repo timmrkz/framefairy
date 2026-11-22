@@ -256,6 +256,17 @@ func (f *Finder) Inspect(ctx context.Context, envVar, name string) State {
 	return s
 }
 
+// SHA256 is the SHA-256 of the tool at path, in hex. When path is the
+// tool name beside the program, checked to be it, the sum built in is the
+// answer and the file is not read again. Any other file, one the
+// environment named, is read for it.
+func (f *Finder) SHA256(path, name string) (string, error) {
+	if f != nil && path != "" && path == inFolder(runtime.GOOS, f.dir, name) && f.check(path, name) == nil {
+		return f.sum(name), nil
+	}
+	return fileSHA256(path)
+}
+
 func fileSHA256(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
