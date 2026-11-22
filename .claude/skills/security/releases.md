@@ -10,6 +10,12 @@ comes from a flaw found in a real update and release pipeline.
   built into the program. Parts fetched separately are checked through
   the hash of the whole, and a failure falls back to the whole download,
   never to trusting the part.
+- **Sign what a build claims to be,** its channel, version, commit, size
+  and hash together, and check the claim before downloading. A signature
+  over the file alone lets any build ever signed be offered as any
+  channel and any version.
+- **Every signature starts with a fixed line naming its use and format
+  version,** so a signature made for one thing never verifies another.
 - **Never run a build's code with the signing key in reach.** The step
   that reads the untrusted build holds no secret and no write token. The
   sign step runs after it, tied by an explicit condition on its result,

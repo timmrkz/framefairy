@@ -93,7 +93,7 @@ or the doc of its part.
 | a path judged by where it leads, at every entry point | `SafeChild` and `SafeChildIn` in `engine/fileio/path.go`, the store's `Known`, and `cmd/framefairy-app/guard_test.go`, which tries every call that takes a path, see Invariant 8 and Every path is checked against the library in `CLAUDE.md` |
 | encode on the way out | `EscapeASSText` and the style fields in `engine/ass.go`, `runes.Quote` and `runes.Scrub` in `engine/runes/` |
 | a fixed program from a known place | ffmpeg and llama-server from `bin/`, built by `make` |
-| loopback is not authentication | llama-server listens on 127.0.0.1 on a free port, without a key |
+| loopback is not authentication | llama-server on 127.0.0.1 on a free port, with a key of its own per server passed in its environment and the slot list off, see `newServerKey` in `engine/local.go` |
 | the keychain, never a file or a command line | `engine/keys.go` and `engine/keys_darwin.go` |
 | a linter bans the API by name | forbidigo in `.golangci.yml` and ESLint in `frontend/eslint.config.js`, no clipboard read, no global shortcut, no microphone, camera or screen from the interface's scripts |
 | signing: check before the key, judge from main, compare by commit, no rollback | `publish.yml` and `cmd/framefairy-release` (`check`, `sign`, `publish-plan`), the lists in `cmd/framefairy-release/inputs.go`, held by `TestTheBuildIsCheckedBeforeTheKeyIsThere` and `TestOnlyACommitOfTheChannelIsPublished` in `internal/workflows`, see The keys and What is never signed in [UPDATES.md](UPDATES.md) |
@@ -107,3 +107,4 @@ or the doc of its part.
 | only the user gives instructions | On GitHub, only the user gives instructions, in `CLAUDE.md` |
 | the work's security line | the Security line of [the pull request template](../.github/pull_request_template.md) |
 | crashers kept as seeds | each package's `testdata/fuzz/`, from `make fuzz` and `fuzz-nightly.yml` |
+| not kept yet | a cooldown for the dependency bot and `osv-scanner` in `security.yml`, `persist-credentials: false` on checkouts and a workflow linter, no cache restored in the job that signs. Secret scanning with push protection and private vulnerability reporting are settings of the repository, the user's to turn on |

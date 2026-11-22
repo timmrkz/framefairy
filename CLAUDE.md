@@ -215,7 +215,9 @@ thing belongs. In short:
 - **Ask at most one question at a time**, and only when the answer changes
   what gets built.
 - **Report plainly.** What changed, what to test and how, what is still open.
-  Name bugs you found on the way, including your own.
+  Name bugs you found on the way, including your own. A cause, a finding
+  or a choice that is hard to explain is said in 30 words or fewer first,
+  see Thirty words first in the pull-requests skill.
 - **Every change knows its performance.** Every pull request says on
   the Performance line of its bottom line whether it makes the app
   faster, slower or the same, or CI when

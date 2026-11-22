@@ -7,8 +7,8 @@ description: How to keep a product, its build and its repository safe in any pro
 
 Security is not a list of fears. It is a short list of who can reach the
 product, what each can send, and a guard for each that a test proves
-refuses them. Every rule here comes from a hole that was found, or nearly
-shipped, in real work, checked against the industry baseline: OWASP ASVS
+refuses them. The rules come from holes found, or nearly shipped, in real
+work, and from the industry baseline: OWASP ASVS
 and Top 10, CWE Top 25, SLSA, OpenSSF Scorecard and least privilege.
 
 **The user** is the person the agent works for, who decides. **The people
@@ -52,8 +52,8 @@ of it is untrusted.
   the signature, or a revoked key slips past its list written otherwise.
 - **Refuse, do not repair.** A path that escapes or a value out of range
   fails loudly. Silent correction hides the bug and the attack alike.
-- **Never eval it, never build a command, query, path or format from
-  it.** An ID from the interface is compared with the IDs the program
+- **Never eval it, never build a command, query, path, URL or format
+  from it.** An ID from the interface is compared with the IDs the program
   worked out itself, never joined onto a path.
 - **Encode on the way out, for the format it lands in:** subtitles,
   HTML, headers, CSV, SQL, a log line. A brace in caption text restyled
@@ -85,10 +85,22 @@ of it is untrusted.
 - **A fixed program from a known place,** the one the build put there,
   never one found on `PATH` at run time.
 - **No secret on a command line.** Every process on the machine can read
-  another's arguments while it runs. Use stdin, a 0600 file or a native
-  API.
+  another's arguments while it runs. Use stdin, the environment, a 0600
+  file or a native API.
 - **Whatever parses files strangers made,** a media decoder, a document
   reader, is kept current with its upstream.
+
+### A page that can call native code
+
+A webview app, Electron, Tauri or Wails, gives its page a way into the
+machine.
+
+- **No raw HTML from outside text.** A linter bans the sinks:
+  `innerHTML`, `{@html}`, `v-html`, `dangerouslySetInnerHTML`.
+- **Load no remote page,** and set a content security policy for the
+  app's own origin.
+- **Every method the page can call checks its arguments** as outside
+  input, paths above all.
 
 ### Network and fetching
 
@@ -114,6 +126,9 @@ of it is untrusted.
   copy can ever be updated again.
 - **Log the shape, not the content:** the length of what was typed, a
   key's short hint.
+- **A leaked secret is revoked and replaced at once,** before any
+  cleanup. Rewriting history does not take it back: clones, forks and
+  caches keep it. Then find how it leaked.
 - Constant-time comparison for secrets and MACs, the system's secure
   random source, the standard library's crypto. Each token reaches only
   what its caller needs.
@@ -181,13 +196,23 @@ who it really stops.
   so any branch can take what that file is given. Use `workflow_run` or a
   push to main for the privileged part. Never `pull_request_target`, and
   never check out a pull request's code in a job that can write.
+- **`workflow_run` has main's rights for any run, a fork's too.** Check
+  the run's repository first, `head_repository.full_name ==
+  github.repository`, treat its artifacts, branch name and title as
+  outside input, and never run what it built.
 - **A secret sits in an environment only main can enter,** on the step
   that needs it. A step that reads untrusted bytes holds none, nor a
   job-wide token that writes.
 - **No untrusted text in a shell.** Titles, branch names and bodies from
   `${{ github.event.* }}` go through `env:` and are quoted, never pasted
   into `run:`.
-- **Caches are written only by main,** so a branch cannot poison them.
+- **A job that holds a signing key or a write token restores no cache,**
+  and a job that runs unreviewed code in main's scope, a fresh bump on a
+  push or a schedule, saves none. A branch's cache stays in its branch,
+  but main's scope is shared by every job that runs there.
+- **`persist-credentials: false` on every checkout,** so the token is
+  not left on disk for later steps. A workflow linter, zizmor or
+  actionlint, catches most of this section.
 - **A test reads the workflows and holds the rules:** every action
   pinned, no dangerous event in any form YAML allows, `.yml` and `.yaml`
   alike, the check before the key, the sign step tied to it. A test that
@@ -223,8 +248,8 @@ The testing skill says how tests are written. For security:
   oversized or truncated input, a webhook replayed or out of order, a
   build that names a forbidden API.
 - **Every entry point, not a sample.** One test lists every call that
-  takes a path and tries each with a path outside. A new call is a new
-  line there.
+  takes a path, read from the code or its bindings, tries each with a
+  path outside, and fails on a call it does not try.
 - **Fail closed, proven.** The guard refuses when its input is missing,
   its list empty or unreadable. A rule that would match nobody refuses
   everything.
@@ -257,9 +282,11 @@ questions, and what to look for under each, are in
     or the new one passes an existing guard, named.
   - **Less safe:** it opens a way in, widens a permission, weakens a
     check or lets a secret or a person's data out. A must fix in the same
-    change, unless the user accepted the trade in words.
+    change, unless the user accepted the trade in words, and the
+    accepted trade is written in the pull request.
 - **A hole that was there before is logged on its own,** urgent when
-  people using the product can be hurt.
+  people using the product can be hurt, unless the change builds on it
+  or makes it worse, which makes it this change's must fix.
 - **A tool beats an eye.** When a scanner, a linter rule or a fuzz target
   could catch a kind of hole and none does, the missing tool is the
   finding.
@@ -296,18 +323,10 @@ questions, and what to look for under each, are in
 
 ## Before saying done
 
-1. The doors are named: who can reach the change, what they send, what
-   they must never get.
-2. Every outside input goes through its one reader, strict, bounded and
-   fuzzed with a property.
-3. Every path is resolved and checked against the root, at every entry
-   point.
-4. No shell string, no program from `PATH`, no secret on a command line,
-   in a log or in the repository.
-5. Every download is checked before use, every pin is exact, install
-   scripts are off.
-6. No secret and no write token is near code nobody has reviewed, and
-   privileged workflows run from main.
-7. A test tries the attack and fails when the guard is taken out.
-8. The security line says safer, the same or less safe, what the change
-   lets in and out, and what could not be checked.
+1. The doors are named, and every outside input, path and download goes
+   through its one guard, checked at every entry point.
+2. No secret or write token near code nobody reviewed, no shell string,
+   no secret on a command line, in a log or in the repository.
+3. A test tries the attack and fails when the guard is taken out.
+4. The security line says safer, the same or less safe, with its
+   evidence and what could not be checked.

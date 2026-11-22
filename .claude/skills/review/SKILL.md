@@ -222,7 +222,8 @@ someone could be. Then:
   words.
 - **A finding says who, from where, with what input, and what they
   get.** A hole nobody can reach is not a finding. A hole that was there
-  before is logged on its own. A missing scanner or fuzz target is a
+  before is logged on its own, unless the change builds on it or makes it
+  worse, which makes it this change's must fix. A missing scanner or fuzz target is a
   finding.
 
 ## 9. The design and the code
@@ -313,7 +314,8 @@ could read as the user's instruction. In this order:
    less safe, in a sentence, with what the change lets in or out and who
    could use it. Whether the work's own answer holds. A less safe is
    also a must fix finding.
-7. The findings, numbered, most important first, a few lines each: weight,
+7. The findings, numbered, most important first, each led by 30 words or
+   fewer, then a few lines: weight,
    where, what is wrong and how a person would hit it, how it is known, the
    fix.
 8. Unchecked assumptions, declined to judge, and questions for the user,

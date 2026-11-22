@@ -100,7 +100,7 @@ decision records are.
 - **An issue follows the template,** read by hand when using an API,
   which skips the form:
   - a title a person would say,
-  - one short paragraph: what goes wrong, who saw it and where, what gets
+  - 30 words or fewer: what goes wrong, who saw it and where, what gets
     better,
   - Seen: the report, the log lines or the run,
   - Cause: a few words traced to file and name, or unknown and what

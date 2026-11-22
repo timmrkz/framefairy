@@ -670,29 +670,25 @@ workspace measures the same on the person's path, see Playback.
 What the proofs read, the clip of three pieces with cuts off the frame
 edges, 25 frames a second:
 
-| | the frame queue, its own page | the frame queue, the workspace | the `<video>` path, the workspace |
-| --- | --- | --- | --- |
-| last frame before a cut to the first after it | 33 or 50 ms | 33 or 50 ms | 16 to 49 ms, 184 to 199 ms with `?slowseek=150` |
-| the same with the file 200 ms late | 33 or 50 ms | 33 ms | |
-| frames from inside a cut drawn | none | none | none |
-| the longest any frame stayed while playing | 50 ms | 50 ms | 93 ms, 199 ms with `?slowseek=150`, 417 ms with `?webkitclock` |
-| the playhead while playing | moves with the sound | still for no animation frame, never back | still for 1 animation frame, 10 with `?slowseek=150`, 24 with `?webkitclock` |
-| the playhead and the frame on screen | | less than a frame apart | up to 2 frames apart |
-| from the press to the first new frame | 129 to 142 ms, from a frame's start | 74 to 81 ms, 107 after a minute paused | 47 to 56 ms, 429 ms with `?webkitclock` |
-| frames of a play passed over, begun anywhere | none in 11 plays | | |
-| the most animation frames a frame was drawn after it was due | 1 | | |
-| where the play stops | 65.000, frame 64.96 | 65, frame 64.96 | 64.976 to 64.994, frame 64.96 |
-| the sound across a cut | the episode's own to the sample, best lag 0 | the same | stops for the seek |
-| the loop seam | the same as a cut | the same as a cut | |
-| paused frames | the frame that holds the moment, 11 of 11 | 14 of 14 gestures, 3 to 25 ms | a still from the engine while the seek lands |
-| frames open over a minute of play | 4 to 5 | | |
+| | the frame queue, its own page | the frame queue, the workspace |
+| --- | --- | --- |
+| last frame before a cut to the first after it | 33 or 50 ms | 33 or 50 ms |
+| the same with the file 200 ms late | 33 or 50 ms | 33 ms |
+| frames from inside a cut drawn | none | none |
+| the longest any frame stayed while playing | 50 ms | 50 ms |
+| the playhead while playing | moves with the sound | still for no animation frame, never back |
+| the playhead and the frame on screen | | less than a frame apart |
+| from the press to the first new frame | 129 to 142 ms, from a frame's start | 74 to 81 ms, 107 after a minute paused |
+| frames of a play passed over, begun anywhere | none in 11 plays | |
+| the most animation frames a frame was drawn after it was due | 1 | |
+| where the play stops | 65.000, frame 64.96 | 65, frame 64.96 |
+| the sound across a cut | the episode's own to the sample, best lag 0 | the same |
+| the loop seam | the same as a cut | the same as a cut |
+| paused frames | the frame that holds the moment, 11 of 11 | 14 of 14 gestures, 3 to 25 ms |
+| frames open over a minute of play | 4 to 5 | |
 
 A frame lasts 40 ms and the display draws every 16.7 ms, so one frame's
-time shows as 33 or 50, and a gap above 50 is a frame held. The `<video>`
-path was measured on the harness of f10a0b6, the last commit that had it,
-with its `?fps=25`, `?slowseek` and `?webkitclock`, gone since, and the
-frame on screen from `requestVideoFrameCallback` through its
-`?framelag=1`. Its 16 ms is the frame after the cut shown early, mid seek.
+time shows as 33 or 50, and a gap above 50 is a frame held.
 
 **What it taught.** Each cost a round of probing:
 

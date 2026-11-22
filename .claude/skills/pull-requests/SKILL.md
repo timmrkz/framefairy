@@ -195,14 +195,11 @@ Call a pull request ready to try or merge only when all hold:
 - **Answer every message at once,** even mid-work: what is being done and
   how the message changes it. Answer an approval in words, with what it
   set going.
-- **Thirty words first.** When a problem is hard, abstract or tangled,
-  the pull to explain it with more words is wrong. Say it in 30 words or
-  fewer: what breaks, why, and what fixes it. Stop there and let the user
-  ask for more. Squeezing it into 30 words also shows whether the cause
-  is really understood. Six paragraphs on why something is broken cost
-  the user minutes and often hide that it is not. Use this unasked
-  whenever a reply, a finding or an issue grows long, and give the
-  detail only below it or on request.
+- **Thirty words first.** When explaining a cause, a finding or a
+  choice that is hard or tangled, resist adding words. Say it in 30 or
+  fewer: what breaks, why, what fixes it. Then stop, and give detail only
+  on request. If it does not fit, the cause is not understood yet. When
+  the user asks for N words, give N and stop.
 - **Explain from what the person sees,** step by step, then where the
   time goes, in seconds, and only then, if at all, names in the code.
   Concrete first: a number, a file, a failing test.
