@@ -1320,7 +1320,9 @@ function fitProblem() {
   const viewer = box(".viewer");
   const range = box(".track[aria-label='The range picker']");
   const timeline = box(".clip-timeline");
-  if (!settings || !middle || !clips || !viewer || !range || !timeline) return `${at} a part of the workspace is missing`;
+  const row = box(".detail > .row");
+  const control = box(".detail > .row > button");
+  if (!settings || !middle || !clips || !viewer || !range || !timeline || !row || !control) return `${at} a part of the workspace is missing`;
   // Each pair is what it is and what it should be, a strip of nothing or
   // a part pushed off the app wherever they differ.
   const lines = {
@@ -1329,9 +1331,9 @@ function fitProblem() {
     // .settings in Episode.svelte, so its words start at the edge.
     "the settings' left edge": [settings.left + parseFloat(getComputedStyle(document.querySelector(".stage").firstElementChild).paddingLeft), stage.left],
     "the columns' top under the bar": [stage.top, main.top + gap],
-    "the columns' right edge": [stage.right, W - edge],
+    "the columns' right edge": [stage.right, W - gap],
     "the clip panel's left edge": [detail.left, stage.left],
-    "the clip panel's right edge": [detail.right, W - edge],
+    "the clip panel's right edge": [detail.right, W - gap],
     "the clip panel under the columns": [detail.top, stage.bottom + gap],
     "the clip panel's foot": [detail.bottom, H - edge],
     "the video preview after the settings": [middle.left, settings.right + gap],
@@ -1344,9 +1346,26 @@ function fitProblem() {
     "the range picker's foot": [range.bottom, stage.bottom],
     "the clip timeline's left edge": [timeline.left, detail.left],
     "the clip timeline's right edge": [timeline.right, detail.right],
+    // The controls stand one gap under the clip timeline, and the row is
+    // only as tall as they are, so no room is left over above them.
+    "the controls under the clip timeline": [control.top, timeline.bottom + gap],
+    "the row of controls' foot": [row.bottom, control.bottom],
   };
   for (const [what, [is, want]] of Object.entries(lines)) {
     if (Math.abs(is - want) > 0.5) return `${at} ${what} is at ${is}, not ${want}`;
+  }
+  // The playhead on each track runs past its borders and stops short of
+  // whatever stands round it: the video preview over the range picker,
+  // the line under it, and the controls under the clip timeline. One
+  // that ran the whole gap touched them, found by Tim.
+  for (const head of document.querySelectorAll(".playhead")) {
+    const h = head.getBoundingClientRect();
+    if (!h.height) continue;
+    const onRange = h.top < detail.top;
+    const [over, under] = onRange ? [viewer.bottom, detail.top] : [detail.top + 1, control.top];
+    const track = onRange ? range : timeline;
+    if (h.top <= over + 0.5 || h.bottom >= under - 0.5) return `${at} the playhead on the ${onRange ? "range picker" : "clip timeline"} runs from ${h.top} to ${h.bottom}, into what stands at ${over} and ${under}`;
+    if (h.top >= track.top - 8 || h.bottom <= track.bottom + 8) return `${at} the playhead on the ${onRange ? "range picker" : "clip timeline"} runs from ${h.top} to ${h.bottom}, no further past its track than a keyframe`;
   }
   // The picture grows until it runs out of width or height, whichever
   // comes first, and keeps its shape.
@@ -1418,7 +1437,7 @@ async function resizeProblem(page) {
     const spans = Math.max(least, Math.floor((width * 2) / 5));
     const ar = token("--ar", document.querySelector("section[style*='--ar']"));
     const widest = (width - spans - 2 * token("--gap")) / ar;
-    const down = 4 * token("--gap") + 1 + token("--row-h");
+    const down = 4 * token("--gap") + 1 + token("--control-h");
     const above = token("--bar-h") + token("--gap") + token("--edge");
     return [Math.round((least * 5) / 2), Math.round(widest + down + 1.5 * token("--wave-min") + above)];
   }, 1500);
@@ -1438,12 +1457,12 @@ async function resizeProblem(page) {
       await page.setViewportSize({ width, height });
       const parts = await workspaceParts(page);
       // The two sides measured from the app's own edges, the rail and a
-      // space in front of the settings and the edge after the clips, so
+      // space in front of the settings and a space after the clips, so
       // the picture stands in the middle of the app.
       const [left, right] = await page.evaluate(() => {
         const [l, , r] = getComputedStyle(document.querySelector(".stage")).gridTemplateColumns.split(" ").map(parseFloat);
         const token = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
-        return [token("--rail") + token("--gap") + l, r + token("--edge")];
+        return [token("--rail") + token("--gap") + l, r + token("--gap")];
       });
       if (Math.abs(left - right) > 1) return `at ${width} by ${height} the sides beside the picture are ${left} and ${right} wide from the app's edges`;
       for (const [k, b] of Object.entries(parts)) {

@@ -481,12 +481,14 @@ messages, pull request text, code comments and chat replies.
   through, like having no transcript yet, is never reported as a failure.
 - **One space between two things.** Every gap in the workspace is `--gap`
   from `frontend/src/app.css`: between the columns, between the video
-  preview and the range picker under it, between one row and the next. The
-  space between the window and what is in it is `--edge`. Any other number
-  needs a reason that can be said out loud, and inside a control is the
-  usual one. A measurement that JavaScript has to agree with, like the
-  height the video preview may have, uses the same number and says where it
-  comes from.
+  preview and the range picker under it, between one row and the next, and
+  between the clips and the right side of the app. The foot of the
+  workspace keeps `--edge`, where the reflection of the video preview
+  shows, and so does every other page between the app and what is in
+  it. Any other number needs a reason that can be said out loud, and
+  inside a control is the usual one. A measurement that JavaScript has to
+  agree with, like the height the video preview may have, uses the same
+  number and says where it comes from.
 - **Room that is there is used.** A bigger window makes the interface
   bigger, never emptier. No strip of nothing appears anywhere, so before
   anything is laid out it is decided what may grow and what may not, by

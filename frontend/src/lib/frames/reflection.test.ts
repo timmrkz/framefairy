@@ -1,5 +1,29 @@
 import { describe, expect, test } from "vitest";
-import { BLUR, COLS, ROWS, band, clear, ease, mirrored, painted, share, spread } from "./reflection";
+import { BLUR, COLS, ROWS, band, clear, ease, mirrored, painted, raster, share, spread } from "./reflection";
+
+// The colour of the app behind the band, --ink-0.
+const ground = [22, 23, 26] as const;
+
+// What the cell at i of spread's colours looks like laid over the ground.
+function over(from: Float32Array, i: number): number[] {
+  const rest = 1 - from[i + 3] / 255;
+  return [0, 1, 2].map((k) => from[i + k] + ground[k] * rest);
+}
+
+// What painted draws of spread's colours on a canvas wide by high, as its
+// bytes, red, green, blue and alpha.
+function paint(from: Float32Array, wide: number, high: number): Uint8ClampedArray {
+  const pixels = new Uint32Array(wide * high);
+  painted(from, ground, raster(wide, high), pixels);
+  return new Uint8ClampedArray(pixels.buffer);
+}
+
+// Every channel of the pixel at i within one step of what it should be:
+// the noise that keeps the reflection from falling into bands moves a
+// pixel by less than half a step before it is rounded.
+function near(bytes: Uint8ClampedArray, i: number, want: number[]) {
+  for (let k = 0; k < 3; k++) expect(Math.abs(bytes[i + k] - want[k])).toBeLessThanOrEqual(1);
+}
 
 // A frame of standard video, w by h, each pixel given as [r, g, b] of 0 to
 // 1023 the way the Go side packs them, red lowest, see picture.ts.
@@ -90,11 +114,13 @@ describe("the reflection settling on a new frame", () => {
     spread(cells, b, goal);
     expect(Math.max(...goal)).toBe(0);
     ease(now, goal, share(0.25));
-    const bytes = new Uint8ClampedArray(now.length);
-    painted(now, bytes);
+    const bytes = paint(now, COLS, ROWS);
     const i = ((ROWS - 1) * COLS + COLS / 2) * 4;
-    expect(bytes[i + 3]).toBeGreaterThan(0);
-    expect([bytes[i], bytes[i + 1], bytes[i + 2]]).toEqual([255, 0, 0]);
+    expect(now[i + 3]).toBeGreaterThan(0);
+    // Red still, over the ground, and as much of it as is left.
+    expect(bytes[i]).toBeGreaterThan(ground[0] + 10);
+    near(bytes, i, over(now, i));
+    expect(over(now, i)[0]).toBeCloseTo(ground[0] + ((255 - ground[0]) * now[i + 3]) / 255, 3);
   });
 
   test("fades in on its first frame with that frame's colours, not from black", () => {
@@ -104,11 +130,12 @@ describe("the reflection settling on a new frame", () => {
     spread(cells, band(1200, 100), goal);
     const now = new Float32Array(COLS * ROWS * 4);
     ease(now, goal, share(0.05));
-    const bytes = new Uint8ClampedArray(now.length);
-    painted(now, bytes);
+    const bytes = paint(now, COLS, ROWS);
     const i = ((ROWS - 1) * COLS + COLS / 2) * 4;
-    expect(bytes[i + 3]).toBeGreaterThan(0);
-    expect([bytes[i], bytes[i + 1], bytes[i + 2]]).toEqual([0, 0, 255]);
+    expect(now[i + 3]).toBeGreaterThan(0);
+    expect(bytes[i + 2]).toBeGreaterThan(ground[2]);
+    expect(over(now, i)[2]).toBeCloseTo(ground[2] + ((255 - ground[2]) * now[i + 3]) / 255, 3);
+    near(bytes, i, over(now, i));
   });
 });
 
@@ -159,15 +186,15 @@ describe("the reflection blurred and faded over its band", () => {
     mirrored(frame(64, 36, () => [1023, 512, 0]), 64, 36, "", cells);
     const colour = [...cells.subarray(0, 3)].map((v) => Math.round(v));
     const into = spreadOf(() => [1023, 512, 0]);
-    const bytes = new Uint8ClampedArray(into.length);
-    painted(into, bytes);
+    const bytes = paint(into, COLS, ROWS);
     for (const [r, c] of [
       [ROWS - 1, COLS / 2],
       [ROWS / 2, COLS / 4],
       [5, (3 * COLS) / 4],
     ]) {
       const i = (r * COLS + c) * 4;
-      expect([bytes[i], bytes[i + 1], bytes[i + 2]]).toEqual(colour);
+      const a = into[i + 3] / 255;
+      near(bytes, i, [0, 1, 2].map((k) => colour[k] * a + ground[k] * (1 - a)));
     }
   });
 
@@ -207,5 +234,59 @@ describe("the reflection blurred and faded over its band", () => {
       const expected = (below(-x) - below(-bandFrom)) / (below(bandTo) - below(-bandFrom));
       expect(lit).toBeCloseTo(expected, 2);
     }
+  });
+});
+
+describe("the reflection drawn on the screen's pixels", () => {
+  // The band as the walks lay it out, four fifths of 1500 by 100, on a
+  // screen of two pixels a point, as a Mac's is.
+  const wide = 2400;
+  const high = 200;
+
+  test("is the ground and nothing else where nothing is seen, so the band has no edge", () => {
+    const cells = new Float32Array(COLS * ROWS * 4);
+    const bytes = paint(cells, wide, high);
+    for (let i = 0; i < bytes.length; i += 4) {
+      if (bytes[i] !== ground[0] || bytes[i + 1] !== ground[1] || bytes[i + 2] !== ground[2] || bytes[i + 3] !== 255) {
+        throw new Error(`pixel ${i / 4} is ${[...bytes.subarray(i, i + 4)]}, not the ground`);
+      }
+    }
+  });
+
+  // Tim saw the reflection as pixels: a faint shade, a few steps of 256
+  // over the ground, rounded into flat bands a step apart, the edge of
+  // each stepping from cell to cell. A ramp of white from nothing to a
+  // sixth across the band climbs one step every 55 pixels or so.
+  function ramp() {
+    const cells = new Float32Array(COLS * ROWS * 4);
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++) {
+        const a = (42 * c) / (COLS - 1);
+        cells.set([a, a, a, a], (r * COLS + c) * 4);
+      }
+    const bytes = paint(cells, wide, high);
+    // What the middle row should be, not rounded, from the cells' middles.
+    const want = (x: number) => {
+      const u = Math.min(COLS - 1, Math.max(0, ((x + 0.5) * COLS) / wide - 0.5));
+      const a = (42 * u) / (COLS - 1);
+      return a + ground[0] * (1 - a / 255);
+    };
+    return { bytes, want, row: (high / 2) * wide * 4 };
+  }
+
+  test("shows the shade between two steps as their mix, so the eye sees the ramp and not the steps", () => {
+    const { bytes, want, row } = ramp();
+    let worst = 0;
+    for (let x = 0; x + 32 <= wide; x += 32) {
+      let seen = 0;
+      let meant = 0;
+      for (let k = x; k < x + 32; k++) {
+        seen += bytes[row + k * 4];
+        meant += want(k);
+      }
+      worst = Math.max(worst, Math.abs(seen - meant) / 32);
+    }
+    // Rounded alone, a window was a third of a step off: 0.33.
+    expect(worst).toBeLessThan(0.15);
   });
 });

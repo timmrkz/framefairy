@@ -16,6 +16,7 @@
 import { laidPart, inkBox, quarters, type Layer, type Over } from "./captions";
 import { lift, lightOfPixel, srgb, toSDR, wgsl, type Light } from "./light";
 import { Picture } from "./picture";
+import { BUFFER, gpuCanvas, onGPU, ownDevice, TEXTURE, type OnGPU } from "./gpu";
 
 export interface Screen {
   readonly kind: "webgpu" | "2d";
@@ -56,21 +57,15 @@ export function screenOf(canvas: HTMLCanvasElement): Promise<Screen> {
   return screen;
 }
 
-// A canvas keeps the first kind of context it is asked for, so a GPU
-// device is in hand before the canvas is asked for WebGPU, and only
-// without one is it asked for the 2D context.
-//
+// The graphics chip's canvas where there is one, see gpuCanvas in gpu.ts.
 // The walks read the video preview back from its canvas, which headless
 // Chromium does not give for a WebGPU canvas, so they ask for the 2D
 // canvas with __flatScreen and check what the GPU draws with checkPixels.
 async function openScreen(canvas: HTMLCanvasElement): Promise<Screen> {
-  const flat = (globalThis as { __flatScreen?: boolean }).__flatScreen === true;
-  const gpu = flat
-    ? null
-    : await GPUScreen.open(canvas).catch((e) => {
-        console.warn("video preview: no WebGPU canvas,", e);
-        return null;
-      });
+  const gpu = await GPUScreen.open(canvas).catch((e) => {
+    console.warn("video preview: no WebGPU canvas,", e);
+    return null;
+  });
   return gpu ?? new FlatScreen(canvas);
 }
 
@@ -214,23 +209,6 @@ const format: GPUTextureFormat = "rgb10a2unorm";
 const kinds: Record<Light, number> = { "": 0, pq: 1, hlg: 2 };
 
 const target: GPUTextureFormat = "rgba16float";
-
-// GPUTextureUsage's COPY_SRC, COPY_DST, TEXTURE_BINDING and
-// RENDER_ATTACHMENT, and GPUBufferUsage's MAP_READ, COPY_DST, COPY_SRC and
-// UNIFORM: TypeScript knows the types, not the values.
-const TEXTURE = {
-  copySrc: 0x01,
-  copyDst: 0x02,
-  binding: 0x04,
-  attachment: 0x10,
-};
-const BUFFER = { mapRead: 0x01, copySrc: 0x04, copyDst: 0x08, uniform: 0x40 };
-
-async function gpuDevice(): Promise<GPUDevice | null> {
-  if (typeof navigator === "undefined" || !navigator.gpu) return null;
-  const adapter = await navigator.gpu.requestAdapter();
-  return adapter ? adapter.requestDevice() : null;
-}
 
 // Draws frames with one device: each frame is written to a texture as it
 // is and drawn where it is told, in light where 1.0 is white.
@@ -453,7 +431,7 @@ function bordered(l: Layer): Uint8Array {
   return out;
 }
 
-class GPUScreen implements Screen {
+class GPUScreen implements Screen, OnGPU {
   readonly kind = "webgpu";
   onRestored?: () => void;
   private painter!: Painter;
@@ -466,34 +444,23 @@ class GPUScreen implements Screen {
     private ctx: GPUCanvasContext,
     device: GPUDevice,
   ) {
-    this.setUp(device);
+    onGPU(this, device);
   }
 
   static async open(canvas: HTMLCanvasElement): Promise<GPUScreen | null> {
-    const device = await gpuDevice();
-    if (!device) return null;
-    const ctx = canvas.getContext("webgpu") as GPUCanvasContext | null;
-    if (!ctx) {
-      device.destroy();
-      return null;
-    }
-    return new GPUScreen(canvas, ctx, device);
+    const gpu = await gpuCanvas(canvas);
+    return gpu ? new GPUScreen(canvas, gpu.ctx, gpu.device) : null;
   }
 
-  private setUp(device: GPUDevice) {
+  // The device is the one every canvas shares, see gpu.ts, which sets the
+  // video preview up again on a new one when it was lost.
+  setUp(device: GPUDevice) {
     this.configure(device);
     this.painter = new Painter(device);
-    device.onuncapturederror = (e) => this.complain(e.error.message);
-    // A GPU can be lost, to sleep or to a driver that restarts. The
-    // canvas cannot become a 2D canvas then, so a new device is asked for.
-    void device.lost.then(async (info) => {
-      if (info.reason === "destroyed") return;
-      console.warn("video preview: the GPU was lost,", info.message);
-      const next = await gpuDevice().catch(() => null);
-      if (!next) return;
-      this.setUp(next);
-      this.onRestored?.();
-    });
+  }
+
+  restored() {
+    this.onRestored?.();
   }
 
   // The extended mode only for HDR. On the Mac a canvas in it turns the
@@ -565,7 +532,7 @@ export async function checkScreen(
   frames: Picture[],
   overs: (Over | null)[] = [],
 ): Promise<number[][] | null> {
-  const device = await gpuDevice();
+  const device = await ownDevice();
   if (!device) return null;
   const painter = new Painter(device);
   const out: number[][] = [];
@@ -665,7 +632,7 @@ export async function checkPixels(
 // alike on both. Checked at one middle pixel before, a word grown one way
 // only passed, found by the second review. Null without WebGPU.
 export async function checkLift(scales: number[]): Promise<{ gpu: number[][][]; cpu: number[][][] } | null> {
-  const device = await gpuDevice();
+  const device = await ownDevice();
   if (!device) return null;
   const grey = (512 | (512 << 10) | (512 << 20)) >>> 0;
   const bytes = new Uint8Array(new Uint32Array(64).fill(grey).buffer);
