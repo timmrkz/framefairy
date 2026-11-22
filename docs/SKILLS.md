@@ -18,6 +18,7 @@ this app's interface without seeing its window.
 | `testing` | how tests are written, fixed and reviewed, and how a bug is found before it is fixed | [The testing skill in this project](TESTING.md#the-testing-skill-in-this-project) |
 | `review` | how a pull request is reviewed by an agent that did none of the work, and how a review is answered | [The review skill in this project](WORKFLOW.md#the-review-skill-in-this-project) |
 | `ci` | how CI stays fast, trustworthy and cheap: which jobs a change starts, caches, scarce runners, nightly runs, measuring CI | [The ci skill in this project](#the-ci-skill-in-this-project) |
+| `pull-requests` | how a change travels from the first line to the merge: sizing, opening early, the description, watching it, ready, the go to merge | [The pull-requests skill in this project](#the-pull-requests-skill-in-this-project) |
 | `maintenance` | how a code base stays easy to change: evidence before work, root causes, problems that come back, issues and triage, keeping the architecture | [The maintenance skill in this project](#the-maintenance-skill-in-this-project) |
 
 ## Copying them
@@ -62,3 +63,16 @@ or the doc of its part.
 | a decision record | `docs/decisions/`, see its README |
 | a test that reads the docs | `internal/naming` |
 | the unused-code check without the tests | `make lint`, see [No code nothing calls](BUILD.md#no-code-nothing-calls) |
+
+## The pull-requests skill in this project
+
+| The skill says | Here it is |
+| --- | --- |
+| the project's template | `.github/pull_request_template.md` |
+| the cap on open pull requests | five on the whole repository, see `CLAUDE.md` |
+| the way the user already gets changes | the app's Updates page, which follows main, a branch or a pull request, see [UPDATES.md](UPDATES.md) |
+| the conversation with the agent | the thread of the session on claude.ai |
+| the notice of a conflict | the comment of `conflicts.yml`, see [When main moves](WORKFLOW.md#when-main-moves) |
+| the expected head of a merge | `expectedHeadSha` in the GitHub tool, `sha` in the REST call |
+| where a review goes | [The review skill in this project](WORKFLOW.md#the-review-skill-in-this-project) |
+| what the user has to do, at the end of every reply | the This thread and For you lines, see `CLAUDE.md` |
