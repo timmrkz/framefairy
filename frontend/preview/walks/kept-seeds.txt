@@ -12,3 +12,8 @@ timeline.mjs 454045
 # longer than the engine keeps, and saving it was refused: the caption box
 # let in more than a word may hold.
 words.mjs 366410
+
+# A click on the clip timeline a step after another on the same spot was
+# the second of a double-click, and cut a part out under the playhead: the
+# walk judged the picture against the pieces from before the cut.
+playback.mjs 448743

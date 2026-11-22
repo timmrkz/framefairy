@@ -6,7 +6,7 @@
 //
 //   SEED=12 STEPS=25 BRIDGE_URL=http://127.0.0.1:8123/ node playback.mjs
 import { begin, walk } from "./walk.mjs";
-import { handles, inside, middle, high, ask, recordFrames, preview, engineState, drag, settle, playFor, playUntil, pressPlay } from "./bridge.mjs";
+import { handles, inside, middle, high, ask, recordFrames, preview, engineState, clickOnTrack, doubleClickOnTrack, dragOnTrack, settle, playFor, playUntil, pressPlay } from "./bridge.mjs";
 import { overlaid } from "./rules.mjs";
 
 const w = await begin({ steps: 25 });
@@ -88,7 +88,7 @@ async function nearEnd(p, g) {
   const x = s + ((t - p[0].start) / (last.end - p[0].start)) * (e - s);
   const handle = [g.start, g.end, ...g.cutEdges].some((h) => Math.abs(middle(h) - x) < 10);
   if (handle || !inside(g.track, x)) return;
-  await page.mouse.click(x, high(g.track));
+  await clickOnTrack(page, x, high(g.track));
   await settle(page);
 }
 
@@ -196,7 +196,7 @@ const gestures = [
     when: (g) => g.end.x - (g.start.x + g.start.w) > 400 && g.start.x - g.track.x < 40,
     async run(g) {
       const px = 80 + rng.int(220);
-      await drag(page, middle(g.start), high(g.track), px, false);
+      await dragOnTrack(page, middle(g.start), high(g.track), px, false);
       return `drag the clip's start by ${px} px`;
     },
   },
@@ -210,7 +210,7 @@ const gestures = [
       const state = await engineState(page, watch.at);
       const start = state.segments[0].start;
       const x = g.track.x + 4 + rng.next() * (g.start.x - g.track.x - 12);
-      await page.mouse.click(x, high(g.track));
+      await clickOnTrack(page, x, high(g.track));
       await settle(page);
       const from = (await at()).at;
       const stop = await recordFrames(page, frame);
@@ -264,7 +264,7 @@ const gestures = [
       const from = Math.max(g.start.x + g.start.w + 10, g.track.x + 4);
       const to = Math.min(g.end.x - 10, g.track.x + g.track.w - 4);
       const x = from + rng.next() * (to - from);
-      await page.mouse.dblclick(x, high(g.track));
+      await doubleClickOnTrack(page, x, high(g.track));
       return `double-click in the clip at ${Math.round(x)} px`;
     },
   },
@@ -274,7 +274,7 @@ const gestures = [
     when: (g) => g.cuts.some((c) => inside(g.track, middle(c))),
     async run(g) {
       const c = rng.pick(g.cuts.filter((c) => inside(g.track, middle(c))));
-      await page.mouse.dblclick(middle(c), high(g.track));
+      await doubleClickOnTrack(page, middle(c), high(g.track));
       return `double-click on the cut at ${Math.round(middle(c))} px`;
     },
   },
@@ -284,7 +284,7 @@ const gestures = [
     when: () => true,
     async run(g) {
       const x = g.track.x + 4 + rng.next() * (g.track.w - 8);
-      await page.mouse.click(x, high(g.track));
+      await clickOnTrack(page, x, high(g.track));
       return `click the clip timeline at ${Math.round(x)} px`;
     },
   },

@@ -1260,9 +1260,14 @@ walk now takes about 15 seconds, and a busy machine makes it slower
 without making it check a step sooner. Steps that come sooner meet the
 app's own sense of time where a person's hand has one: the clip
 timeline reads two presses within half a second and six pixels as a
-double-click, which cuts a part out. A walk that clicks where it clicked
-a step before uses `clickOnTrack`, which lands eight pixels beside the
-last spot first, so the click is one on its own. Opening
+double-click, which cuts a part out. So every press a walk makes on the
+clip timeline goes through `walks/bridge.mjs`: `clickOnTrack`,
+`doubleClickOnTrack`, `pressOnTrack` and `dragOnTrack` land eight pixels
+beside the last spot first when they come within six of it, so a click
+is one on its own and a double-click is only the one meant. Two random
+steps that clicked on the same spot one after the other cut a part out
+under the playhead, and the walk judged the picture against the pieces
+from before the cut. Opening
 the browser takes a second or two. The rest is the gestures. The ones
 that play once waited in real time, and playing a clip to its end took
 most of the playback walk. Now a play takes the refreshes that draw its
