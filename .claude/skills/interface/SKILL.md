@@ -1,15 +1,15 @@
 ---
 name: interface
-description: How to change the interface of the Frame Fairy app when you cannot see its window. Use for any work on frontend/ - a layout, a control, a colour, a drawing on the clip timeline or the range picker - and above all when Tim reports something that looks wrong. Covers the preview harness, what to measure, and how to prove a fix rather than claim one.
+description: How to change the interface of this app when you cannot see its window. Use for any work on frontend/ - a layout, a control, a colour, a drawing on the clip timeline or the range picker - and above all when the user reports something that looks wrong. Covers the preview harness, what to measure, and how to prove a fix rather than claim one.
 ---
 
 # Changing the interface without seeing it
 
-A cloud session has no screen, so the app's window cannot be opened. Tim is
+A cloud session has no screen, so the app's window cannot be opened. The user is
 the only one who can look at it. That is the whole problem this skill is
-about: without care, a session guesses, reports a fix, and Tim finds the
+about: without care, a session guesses, reports a fix, and the user finds the
 same bug still there. That has happened, more than once, and each time it
-cost him a round of testing.
+cost them a round of testing.
 
 ## The harness
 
@@ -135,7 +135,7 @@ app's test program once and starts `TestHarnessFrames` in
 `cmd/framefairy-app/harness_test.go` with the first call, on the episode's
 decoder that `make frames` builds, or the one `FRAMEFAIRY_FRAMES` names.
 Without the decoder those calls answer what is missing and the video
-preview shows no picture, issue #255, so a probe of the picture has to say
+preview shows no picture, so a probe of the picture has to say
 so rather than pass. Headless Chromium gives nothing back of a WebGPU
 canvas, so a probe that reads the picture back asks for the 2D canvas,
 `window.__flatScreen`, the way the walks do. The episode is a real one,
@@ -280,8 +280,8 @@ harness had never been able to produce the state in the first place. Run
 every probe against the old code once. A probe that has never failed is not
 yet evidence.
 
-**Check against what Tim actually said.** He reports precisely, and the
-pattern in his report is evidence. When he said the mark stepped beside
+**Check against what the user actually said.** They report precisely, and the
+pattern in their report is evidence. When they said the mark stepped beside
 the captions, the clip list and the range picker but not beside New clips,
 the clip timeline or the video preview, that was six data points: the ones
 that stepped were the ones sitting on a fractional pixel row. Five of six
@@ -293,15 +293,15 @@ found the cause faster than any amount of reading the code.
 The head of a settings group and the head of the clip list are both the
 head of an area, so they are the same size and weight. A difference
 between two things of the same kind reads as a hierarchy that is not
-there, and it is the kind of thing Tim sees at a glance and nobody else
-notices until he says it. Before adding a size, a colour or a spacing,
+there, and it is the kind of thing the user sees at a glance and nobody else
+notices until they say it. Before adding a size, a colour or a spacing,
 find the thing it is a sibling of and take that one's.
 
 **An animation used in two places is one component, never two that look
 alike.** Work in hand is `Busy.svelte`: the beam, the motes, the fill with
 its head, the glow pushed ahead of it and the light passing over what is
 done. The range picker once drew its own fill, a wash and a line made to
-look like Busy's, and Tim saw at once that it was not the same: no glow
+look like Busy's, and the user saw at once that it was not the same: no glow
 ahead of the head, no motes, a flat wash. A copy drifts from the original
 the day either is changed. So a place that shows work puts `Busy` in it,
 with `rim={false}` where there is no edge to run round, and a change to
@@ -316,7 +316,7 @@ on every frame passed. What gave it away was reading the list's height on
 every forced layout, `getBoundingClientRect` patched to log
 `scrollHeight`: the list went a row short inside one update, the leaving
 row set absolute by `animate:flip`, which clamps a scrolled list, and the
-card came back sliding open. Tim saw it as the whole list blinking at the
+card came back sliding open. The user saw it as the whole list blinking at the
 end of a search. When a thing changes what it is, keep its key, and hold
 what must not go in the same pass that builds the list.
 
@@ -324,7 +324,7 @@ what must not go in the same pass that builds the list.
 came in at their moments in the episode, above the rows waiting or between
 cards already there, and `animate:flip` slid every row under them down
 one, each time a clip was named. Nothing ended wrong and every probe of
-the end state passed. Tim saw the stack shuffle and cards that seemed to
+the end state passed. The user saw the stack shuffle and cards that seemed to
 be replaced rather than filled in. Now a running search keeps its rows by
 place: each clip comes into the row that says what the search is doing,
 and a row once a card stays there until the search is over, see `places`
@@ -388,7 +388,7 @@ mitigation, and endless mitigation is how a small thing becomes a month.
 **Asking for more opinions does not help while the premise is wrong.**
 Every briefing carries the framing with it, so every answer comes back
 from inside the same box. What broke this open was not another opinion,
-it was Tim asking how VS Code does it. A counterexample beats reasoning:
+it was the user asking how VS Code does it. A counterexample beats reasoning:
 three applications were on screen doing the thing we had written down as
 impossible.
 
@@ -398,8 +398,8 @@ The app on a Mac is WebKit. The walks walk in Playwright's WebKit, see
 Two browsers in `docs/TESTING.md`, and so does a probe of
 `frontend/preview/open.mjs`, with `WALKBROWSER=webkit` in front of it.
 Where the two keep time or paint differently, a probe in Chromium passes
-and Tim still sees the bug. The fill of a removed row grew back under the pointer on
-his Mac for two rounds while every Chromium probe said it held still:
+and the user still sees the bug. The fill of a removed row grew back under the pointer on
+their Mac for two rounds while every Chromium probe said it held still:
 WebKit plays a paused animation on from its timeline's last frame, and
 Chromium from now.
 
@@ -423,7 +423,7 @@ transform or a box, not what an animation says its progress is.
 ## What goes wrong here in particular
 
 These are the traps this interface has actually fallen into. Each cost at
-least one round of Tim's testing.
+least one round of the user's testing.
 
 **A layout that measures itself never settles.** The rule is in CLAUDE.md
 and it is there because the workspace once measured the clip timeline to
@@ -498,7 +498,7 @@ that is animated is worked out by the main thread on every frame, a
 `transform` is carried by the compositor. Put one of each side by side and
 they run on two clocks, one of them the clock that also has the app's own
 work on it, so one glides and the other steps and the distance between
-them changes. That is what Tim saw beside the transcript's edge. It shows
+them changes. That is what the user saw beside the transcript's edge. It shows
 in the harness as well, on an idle browser, as the line standing still on
 6 frames of 240 while the mark stood still on none.
 
@@ -550,9 +550,9 @@ anchor's right edge puts a list of the anchor's width, the list then comes
 out wider, and every pixel of the difference goes out the other way. Give
 a floating thing a width that does not depend on anything the placement
 writes, `max-content`, and it measures what it will get. This took three
-rounds of Tim's testing to see, because the harness's own convergence
+rounds of the user's testing to see, because the harness's own convergence
 hides it: the size change trips a ResizeObserver and the second pass comes
-out right in Chromium, and the first pass is what he was looking at.
+out right in Chromium, and the first pass is what they were looking at.
 
 **A floating thing is read whole, or it was not placed.** Over and under
 are not the only two answers: the clip timeline's info bubble was too tall
@@ -568,7 +568,7 @@ that put a mark everywhere.
 
 **Two things that show the same number must read the same number.** The
 row waiting for the transcript filled by the saved transcript, and the
-range picker's line by what had been heard, which runs seconds ahead. Tim
+range picker's line by what had been heard, which runs seconds ahead. The user
 saw the line well past the window and the row at 95 percent. When two
 places show one fact, find the one value both read and give it to both.
 
@@ -617,7 +617,7 @@ machine does: reproduce the state before trusting a probe that says the
 state is gone.
 
 **Contrast is judged with daylight on the screen.** A fill of 7 to 22
-percent of the accent read as no fill at all on Tim's Mac by a window. A
+percent of the accent read as no fill at all on the user's Mac by a window. A
 fill is 30 to 50 percent, and anything that is only told apart by a shade
 of dark grey needs a second look in a bright room.
 
@@ -647,7 +647,7 @@ what the person sees, the work it stands for waits on that same number.
 **Prove a fix on the path the person takes.** The heard-based pause was
 tested by calling the Go wait directly, and it passed, while the
 interface only asked for the search once the saved transcript covered the
-window, so the pause never came into play and Tim saw the same overrun
+window, so the pause never came into play and the user saw the same overrun
 again. A probe for anything the app does by itself starts where the
 person starts, adding the episode, and measures what they see, here the
 time from the edge passing the window to the search being asked for,
@@ -703,7 +703,7 @@ clip's rules are not in play, and the dimming changes in the frame the
 state does.
 
 **The whole clip dims, as one thing.** Only the frames were dimmed at
-first, and Tim saw the caption blocks and the cut edges stay bright inside
+first, and the user saw the caption blocks and the cut edges stay bright inside
 a dim frame, which reads as a clip that is half in play. Everything drawn
 for the chosen clip on the clip timeline, its frame, pieces, cuts and their
 edges, trim edges, caption blocks and their edges and thumbnails, is held
@@ -735,7 +735,7 @@ and the playhead waiting for the sound together, not a hold.
 **A click while it plays lands where it was clicked, every time.** Into
 the clip or out of it, the playhead goes to the click in the frame of the
 click, and the play goes on from there, the clip's with its cuts jumped
-inside the clip and the episode straight on outside. Tim found clicks
+inside the clip and the episode straight on outside. The user found clicks
 across the clip's edge lost while it played, and only those: the one
 gesture that changes the place and the moment together. The video preview
 told the queue the new program, then the moment. The new program started
@@ -800,8 +800,8 @@ bar still plays straight on. And a clip chosen while the video plays,
 which does not move the playhead, leaves it on the video, because no
 gesture put it on that clip. A clip made there with I or O is the
 exception, because it is made around the playhead: making it is the
-gesture on it, `claim` in `Player.svelte`. Tim saw such a clip come up
-dimmed over the very moment he made it from, 2.212. The play goes on as
+gesture on it, `claim` in `Player.svelte`. The user saw such a clip come up
+dimmed over the very moment they made it from, 2.212. The play goes on as
 it began, rule 6, and the next one plays the clip.
 
 **Where a gesture lands is a frame, not a second.** What is on screen is
@@ -839,12 +839,12 @@ every time from the same fact, the playhead was never where it was put:
   before the clip, and a seek can refuse a play
 - the first play after a search took the clock of a video that had read
   nothing, zero, as the playhead, which measured as far outside the clip,
-  and the episode played from its start (#97)
+  and the episode played from its start
 - the paused video on the Mac answers with where its frame begins, up to
   a frame early, so a clip starting more than half a frame into one
   measured as before the clip, and the space bar played the episode
   straight through its cuts and past its end. A wider tolerance and a hold
-  on the playhead were tried for this, #99, and closed: each fix only moved
+  on the playhead were tried for this and closed: each fix only moved
   the place the measurement could round to the wrong side
 
 A gesture knows what it is about. A clock can only say how far it is
@@ -913,7 +913,7 @@ early, in the middle of the seek.
 - The sound is not the browser's to decode, plan row 2.153: the Go side
   decodes it with ffmpeg, `GoSound` in `queue.ts`, so the video preview
   hears what the render is made of. The Mac's own AAC decoder was the one
-  part nobody could run in the cloud, and it was the last suspect when Tim
+  part nobody could run in the cloud, and it was the last suspect when the user
   heard a file from DaVinci Resolve out of step. The harness passes every
   call under `/frames/` on to the Go side's own routes, see The episode
   the harness can play. While the browser decoded it: Chromium stamped
@@ -1023,12 +1023,12 @@ needs `vp9parse`, H.264 needs `h264parse` and `avdec_h264`. An MP4 of
 H.264 with B-frames and AAC played the clip there with every frame in
 order, the cuts one frame's time and the canvas the frame said. That is
 GStreamer decoding. On the Mac, WebKit decodes with VideoToolbox and
-AudioToolbox, and only Tim's Mac can say how those order their output,
+AudioToolbox, and only the user's Mac can say how those order their output,
 stamp their sound and report the sound card's latency.
 
 ## A click is answered in the frame it lands in
 
-Tim felt this twice in one afternoon, and both times every test was green.
+The user felt this twice in one afternoon, and both times every test was green.
 Continue left the row the Stopped note stood in empty for six frames
 before it said Transcribing. Cancel made its button say Cancelling at once,
 while the row beside it went on saying Transcribing for the second the
@@ -1069,7 +1069,7 @@ all, and the probe passed against broken code until the stub waited
 The same rule as a click, over the length of a drag. Dragging a clip edge
 moved the edge and the wash under the hand, and the caption blocks stayed
 where the saved clip had them until the hand let go. Every test was green,
-because every test looked at the end. Tim found it by looking at the
+because every test looked at the end. The user found it by looking at the
 middle.
 
 So when a drag changes a thing, list everything that is drawn from that
@@ -1096,8 +1096,8 @@ across the up, the way the probe above does for a click.
 
 ## Work a click starts is built in front of the person
 
-Answering the click is not enough when the work takes seconds. Tim pressed
-I to make a clip, and for ten seconds nothing he could see changed: the
+Answering the click is not enough when the work takes seconds. The user pressed
+I to make a clip, and for ten seconds nothing they could see changed: the
 card was made, but in its place far down the list, the button showed
 nothing, and the clip timeline waited for the finished clip. Then
 everything changed at once. Every test was green, and the stub made the
@@ -1115,7 +1115,7 @@ seconds of nothing.
 Check it by making the thing somewhere the screen is not looking: far
 down the episode, with the list scrolled elsewhere. And make the stub as
 slow as the app, the speech model loading included, or the gap it hides
-is exactly the one Tim sees.
+is exactly the one the user sees.
 
 ## A list that floats keeps what it hangs from in place
 
@@ -1123,7 +1123,7 @@ Every list in the app is `Pick.svelte`, and its list hangs on the edge of
 its trigger. That holds only while the trigger stays where it was. The
 list is drawn over the whole app, outside whatever the trigger stands in,
 so to anything that opens on hover, moving onto the list is leaving. The
-first sort menu in the sidebar was hung correctly, and on Tim's Mac the
+first sort menu in the sidebar was hung correctly, and on the user's Mac the
 sidebar closed under it: moving onto a row shrank the sidebar, the list
 followed the trigger across and ended 40 pixels short of it, the pointer
 came back over the sidebar, and it flashed open and shut until it gave up.
@@ -1150,7 +1150,7 @@ container and outside it.
 
 - The walk for the fix fails on main and passes with it, written the way
   the testing skill in `.claude/skills/testing/` says: it never waits on
-  the clock, and it checks what Tim saw.
+  the clock, and it checks what the user saw.
 - `make interface`, which is the type check and the interface's own tests.
 - The walks run in CI, on four machines, and its result is the walk's
   proof, see CLAUDE.md. A single walk runs alone in the session only
@@ -1158,9 +1158,9 @@ container and outside it.
 - Build the preview, and the motion bench if the change touches any of the
   five ways work in hand is shown.
 - Push once those pass, and let CI run the rest. Its events say how it
-  went. A session that runs every walk again in the cloud is Tim waiting
+  went. A session that runs every walk again in the cloud is the user waiting
   on an answer CI already gave.
 - Say what to look at and what should happen, in the app, in the order
-  Tim would do it. He is the one who can see it.
+  the user would do it. They are the one who can see it.
 - Name what you could not verify. A fix reported as certain and found
   broken costs more than one reported as unverified.

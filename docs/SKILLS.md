@@ -8,10 +8,14 @@ decides what happens. So the folder of each can be copied into another
 repository as it is, and an agent there follows it without wondering who
 or what it means.
 
-`internal/naming/skills_test.go` holds them to that: a skill that names a
-person, the product or an issue by its number fails `make lint`. The one
-skill about this repository alone is `interface`, which says how to change
-this app's interface without seeing its window.
+`internal/naming/skills_test.go` holds them to that: a file of a skill
+that names a person, the product, a word only this project uses, or an
+issue or a pull request by its number fails `make lint`. The one skill
+about this repository alone is `interface`, which says how to change this
+app's interface without seeing its window. It may use this project's
+words, and it too names no person and no number. A name the test does
+not know, of another person or another project, is still the review's to
+catch.
 
 | Skill | What it is for | Where it meets this repository |
 | --- | --- | --- |

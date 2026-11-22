@@ -775,7 +775,7 @@ every push, by the people waiting on CI and by the machines.
   the behaviour on. Reduced motion in random tests saved two seconds a
   job and dropped code only those tests reached.
 - **A test that reads the whole repository defeats the cache.** A test
-  that walks the source or reads every doc ties its cached result to all
+  that reads the whole source tree or every doc ties its cached result to all
   of it. Checks over the whole repository belong with the lint.
 - **A benchmark proves only the case it reaches,** against the right
   base. Check that it reaches the case reported, compare with the merge
@@ -876,7 +876,7 @@ A test is code we keep. It must still be right and readable in a year.
   formats and long lists of values go in unit tests of the core, and the
   interface test checks once that the screen shows the result. Time in
   an interface test runs on a clock the test moves, the sound card and
-  the timers too, so a one minute clip plays as fast as its frames can
+  the timers too, so a one minute video plays as fast as its frames can
   be drawn.
 - **Add a step, not a test.** Every interface test starts the product
   from scratch, which costs seconds on every run. A new case goes into
@@ -908,7 +908,7 @@ A test is code we keep. It must still be right and readable in a year.
   machine for example, the product counts exactly where, the test sets
   aside only those parts, and separate counters prove the product's own
   mistakes stay at zero.
-- **Random walks find what scripts miss.** Seeded random steps, with
+- **Random exploration finds what scripts miss.** Seeded random steps, with
   rules checked after every step, found real bugs within tens of steps.
   The seed comes from the commit, a failure prints its seed and steps so
   it can be replayed, every seed that failed is played on every run, and
