@@ -63,6 +63,20 @@ type watching struct {
 	stopped bool
 	refused map[string]bool
 	done    chan struct{}
+	// queue keeps following and next. A follow asked while another sets
+	// the watch does not wait for it: the one under way takes its ask
+	// next, the newest one only, see follow.
+	queue     sync.Mutex
+	following bool
+	next      *followAsk
+}
+
+// followAsk is what a follow is asked to watch: the videos of the library
+// as they were when it was asked, and where their files are read.
+type followAsk struct {
+	files    afero.Fs
+	videos   []string
+	shortsOf func(video string) []string
 }
 
 // watcher is what the watch asks of one of the system's watches on
@@ -141,10 +155,48 @@ func watchedOf(video string, shorts []string) []string {
 // may name a short just rendered, so the
 // watch follows what was added, removed, deleted, made again and
 // rendered, the way the library itself does.
+//
+// A follow asked while another is under way returns at once, and the one
+// under way follows again with what it was asked. On macOS the system
+// opens every file in a folder it watches, and the first start of a new
+// build paid about 6 ms a file for it, 1.7 s on the median: the window's
+// calls waited behind the watch, issue #990. The first look at the
+// library sets the watch once the window is answered, see lookFirst, and
+// the library's own look, which follows too, answers without waiting
+// for it.
 func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video string) []string) {
 	if ws == nil {
 		return
 	}
+	ask := &followAsk{files: files, videos: videos, shortsOf: shortsOf}
+	ws.queue.Lock()
+	if ws.following {
+		ws.next = ask
+		ws.queue.Unlock()
+		return
+	}
+	ws.following = true
+	ws.queue.Unlock()
+	defer func() {
+		// An ask still in hand is one a panic ended: the next follow
+		// runs instead of handing its ask to nobody.
+		if ask != nil {
+			ws.queue.Lock()
+			ws.following, ws.next = false, nil
+			ws.queue.Unlock()
+		}
+	}()
+	for ask != nil {
+		ws.followNow(ask.files, ask.videos, ask.shortsOf)
+		ws.queue.Lock()
+		ask, ws.next = ws.next, nil
+		ws.following = ask != nil
+		ws.queue.Unlock()
+	}
+}
+
+// followNow is follow, under way.
+func (ws *watching) followNow(files afero.Fs, videos []string, shortsOf func(video string) []string) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.stopped {
