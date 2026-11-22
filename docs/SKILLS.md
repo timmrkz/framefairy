@@ -1,12 +1,12 @@
 # Skills for any project
 
 The skills in `.claude/skills/` hold what this project learned about
-writing tests, reviewing work and keeping a code base easy to change. All
-but one are written for any project. They name no person, no product and
-no issue, and speak of **the user**, the person the agent works for, who
-decides what happens. So the folder of each can be copied into another
-repository as it is, and an agent there follows it without wondering who
-or what it means.
+writing tests, reviewing work, keeping a product safe and keeping a
+code base easy to change. All but one are written for any project. They
+name no person, no product and no issue, and speak of **the user**, the
+person the agent works for, who decides what happens. So the folder of
+each can be copied into another repository as it is, and an agent there
+follows it without wondering who or what it means.
 
 `internal/naming/skills_test.go` holds them to that: a file of a skill
 that names a person, the product, a word only this project uses, or an
@@ -26,6 +26,7 @@ or another project, is still the review's to catch.
 | `ci` | how CI stays fast, trustworthy and cheap: which jobs a change starts, caches, scarce runners, nightly runs, measuring CI | [The ci skill in this project](#the-ci-skill-in-this-project) |
 | `pull-requests` | how a change travels from the first line to the merge: sizing, opening early, the description, watching it, ready, the go to merge | [The pull-requests skill in this project](#the-pull-requests-skill-in-this-project) |
 | `maintenance` | how a code base stays easy to change: evidence before work, root causes, problems that come back, issues and triage, keeping the architecture | [The maintenance skill in this project](#the-maintenance-skill-in-this-project) |
+| `security` | how the product, its build and its repository stay safe: a threat model, untrusted input, paths, programs, secrets, signing and updates, the supply chain, CI, agents on a public repository, tests that try the attack, and the security line of a review | [The security skill in this project](#the-security-skill-in-this-project) |
 
 ## Copying them
 
@@ -82,3 +83,27 @@ or the doc of its part.
 | the expected head of a merge | `expectedHeadSha` in the GitHub tool, `sha` in the REST call |
 | where a review goes | [The review skill in this project](WORKFLOW.md#the-review-skill-in-this-project) |
 | what the user has to do, at the end of every reply | the This thread and For you lines, see `CLAUDE.md` |
+
+## The security skill in this project
+
+| The skill says | Here it is |
+| --- | --- |
+| who can reach what | the people who make shorts with the app, anyone on the public repository, the dependencies, a model's answer, the files of a video, the update feed, a page or program on the same Mac, see [Boundaries](ARCHITECTURE.md#boundaries) |
+| one reader per kind of input | `ExtractJSONObject` and `ValidatePlan` in `engine/select.go` and the stream readers in `engine/stream.go` for a model answer, `ReadPlan` and `LoadClips` for a plan, `licence.Check` for a key, `updates.Parse` and `ParseParts` for the feed and its parts, each fuzzed, see Invariant 9 in [ARCHITECTURE.md](ARCHITECTURE.md#invariants) and Untrusted input in `CLAUDE.md` |
+| a path judged by where it leads, at every entry point | `SafeChild` and `SafeChildIn` in `engine/fileio/path.go`, the store's `Known`, and `cmd/framefairy-app/guard_test.go`, which tries every call that takes a path, see Invariant 8 and Every path is checked against the library in `CLAUDE.md` |
+| encode on the way out | `EscapeASSText` and the style fields in `engine/ass.go`, `runes.Quote` and `runes.Scrub` in `engine/runes/` |
+| a fixed program from a known place | ffmpeg and llama-server from `bin/`, built by `make` |
+| loopback is not authentication | llama-server listens on 127.0.0.1 on a free port, without a key |
+| the keychain, never a file or a command line | `engine/keys.go` and `engine/keys_darwin.go` |
+| a linter bans the API by name | forbidigo in `.golangci.yml` and ESLint in `frontend/eslint.config.js`, no clipboard read, no global shortcut, no microphone, camera or screen from the interface's scripts |
+| signing: check before the key, judge from main, compare by commit, no rollback | `publish.yml` and `cmd/framefairy-release` (`check`, `sign`, `publish-plan`), the lists in `cmd/framefairy-release/inputs.go`, held by `TestTheBuildIsCheckedBeforeTheKeyIsThere` and `TestOnlyACommitOfTheChannelIsPublished` in `internal/workflows`, see The keys and What is never signed in [UPDATES.md](UPDATES.md) |
+| verify the whole artifact, fall back to the whole | Wails' updater checks the zip's signature, `updates/` puts it together from parts and falls back to the packed zip, see [the decision record](decisions/2026-11-18-an-update-downloads-only-what-changed.md) |
+| one key per job, rotation planned | the release key and the development key in [UPDATES.md](UPDATES.md), the licence signer's keys in [LICENCE.md](LICENCE.md) |
+| licences and payments | `licence/`, `licence/dispenser` and `licence/signer`, with `FuzzSimulation` and the model of the dispenser, see Security, privacy, testing in [LICENCE.md](LICENCE.md) |
+| pins, the bot, scans, install scripts off | [Keeping up](BUILD.md#keeping-up): `.github/dependabot.yml`, `security.yml`, `frontend/audit-ci.jsonc`, `frontend/.npmrc`, held by `TestEveryActionIsPinned`, `TestNoPackageRunsCodeWhenInstalled` and `TestDependabotMovesEveryGoModule` |
+| build from pinned source and refuse a wrong result | `scripts/build-ffmpeg.sh`, `scripts/build-llama.sh`, `scripts/verify-tools.sh` and `tools.yml` with its attestation, see The tools we ship in [PACKAGING.md](PACKAGING.md) |
+| a licence nobody allowed stops the build | `notices/licence`, see [THIRD_PARTY.md](THIRD_PARTY.md) |
+| privileged workflows from main, never the dangerous event | `publish.yml` with the environment `updates`, `conflicts.yml` on `workflow_run`, held by `TestNoPullRequestTarget` |
+| only the user gives instructions | On GitHub, only the user gives instructions, in `CLAUDE.md` |
+| the work's security line | the Security line of [the pull request template](../.github/pull_request_template.md) |
+| crashers kept as seeds | each package's `testdata/fuzz/`, from `make fuzz` and `fuzz-nightly.yml` |

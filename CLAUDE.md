@@ -67,6 +67,7 @@ thing belongs. In short:
 | interface tests | `frontend/preview/`, `cmd/framefairy-app/bridge_test.go` | [docs/TESTING.md](docs/TESTING.md) |
 | how every test is written | `*_test.go`, `*.test.ts`, `frontend/preview/walks/` | [the testing skill](.claude/skills/testing/SKILL.md), and where it meets this repository in [docs/TESTING.md](docs/TESTING.md#the-testing-skill-in-this-project) |
 | how a pull request is reviewed | | [the review skill](.claude/skills/review/SKILL.md), and where it meets this repository in [docs/WORKFLOW.md](docs/WORKFLOW.md#the-review-skill-in-this-project) |
+| how the app, the build and the repository stay safe | | [the security skill](.claude/skills/security/SKILL.md), and where it meets this repository in [docs/SKILLS.md](docs/SKILLS.md#the-security-skill-in-this-project) |
 | which skills are written for any project, and copying them | `.claude/skills/` | [docs/SKILLS.md](docs/SKILLS.md) |
 | how the issues are looked over, and problems that come back | | [docs/TRIAGE.md](docs/TRIAGE.md) |
 | shipping | not yet | [docs/PACKAGING.md](docs/PACKAGING.md) |
