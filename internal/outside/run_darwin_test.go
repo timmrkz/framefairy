@@ -104,6 +104,13 @@ func TestSequences(t *testing.T) {
 			m.stopDispenser()
 		}
 	})
+	// Before the first sequence starts it, the app does not run on this
+	// runner, and what a failed step says of it says so.
+	t.Run("a failed step sees the app that does not run", func(t *testing.T) {
+		if why := m.whyGone(t, time.Now()); !strings.HasPrefix(why, "the app does not run, and macOS had written no crash report of it") {
+			t.Errorf("with the app not running, a failed step would say %q", why)
+		}
+	})
 	for _, seq := range sequences {
 		if !t.Run(seq.name, func(t *testing.T) { m.play(t, seq) }) {
 			return
@@ -119,7 +126,7 @@ func TestSequences(t *testing.T) {
 			t.Fatal(err)
 		}
 		why := m.whyGone(t, time.Now())
-		if !strings.HasPrefix(why, "the app still runs, as ") || !strings.HasSuffix(why, "macOS wrote no crash report of it since the step began") {
+		if !strings.HasPrefix(why, "the app still runs, as ") || !strings.Contains(why, "macOS had written no crash report of it") {
 			t.Errorf("with the app running, a failed step would say %q", why)
 		}
 	})
@@ -720,7 +727,9 @@ func (m *mac) whyGone(t *testing.T, since time.Time) string {
 		}
 	}
 	if len(reports) == 0 {
-		why = append(why, "macOS wrote no crash report of it since the step began")
+		// macOS writes one once the process has died, which can be after
+		// this, so the job shows them again once the test has ended.
+		why = append(why, "macOS had written no crash report of it since the step began, see the job's step The app's crash reports for one written later")
 	} else {
 		why = append(why, "macOS wrote "+strings.Join(reports, ", ")+", shown in the test's log")
 	}

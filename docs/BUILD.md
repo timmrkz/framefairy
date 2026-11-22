@@ -685,14 +685,18 @@ scan made once is out of date the week after.
   our packages needs its script. `npm run` still runs the scripts in
   `package.json`, only their `pre` and `post` steps are skipped.
   `internal/workflows` fails when the setting is gone.
-- **No cache where a key is.** A job that holds a key or a token that
-  writes, the job that signs updates first of all, restores no cache:
+- **No cache where a key is.** A job that holds a key, a secret or a
+  token that writes, the job that signs updates first of all, restores no
+  cache:
   `cache: false` on setup-go, and no `actions/cache`. Every run on main
   can write the caches main's runs share, a run that builds a dependency
   nobody has run before too, and Go trusts what it finds in its build
   cache without checking it again. So such a job builds from nothing,
   which costs it the compile of what it runs. `internal/workflows` fails
-  on a job with an environment or a write permission that restores one.
+  on a job with an environment, a secret or a write permission that
+  restores one. This keeps the key's own tools clean. The build they
+  sign is made in `builds.yml` from main's shared cache still, which
+  saves minutes on every build to update to.
 - **The tools we build ourselves**, and the pins Dependabot cannot move,
   which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
   four libraries it is built with, llama.cpp, the speech library and Node

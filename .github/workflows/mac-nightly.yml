@@ -82,6 +82,12 @@ jobs:
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
           security default-keychain -d user -s "$kc"
       - run: make outside WERROR=1
+      # macOS writes a crash report once the process has died, which can be
+      # after the step that saw the app go has failed, see whyGone in
+      # internal/outside. So a failed run shows the app's reports again here.
+      - name: The app's crash reports
+        if: failure()
+        run: find ~/Library/Logs/DiagnosticReports /Library/Logs/DiagnosticReports -name 'framefairy-app-*' -print -exec cat {} \; 2>/dev/null || true
 
   # A run that fails on main tells of itself, in an issue of its own, see
   # tell.yml. A run by hand on a branch is its session's to read, and a

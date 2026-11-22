@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -14,24 +15,33 @@ import (
 type cacheStep struct {
 	Uses string         `yaml:"uses"`
 	With map[string]any `yaml:"with"`
+	Env  map[string]any `yaml:"env"`
 }
 
 // A job, as far as what it holds and what it restores go.
 type cacheJob struct {
-	Uses        string      `yaml:"uses"`
-	Environment any         `yaml:"environment"`
-	Permissions any         `yaml:"permissions"`
-	Steps       []cacheStep `yaml:"steps"`
+	Uses        string         `yaml:"uses"`
+	Environment any            `yaml:"environment"`
+	Permissions any            `yaml:"permissions"`
+	Env         map[string]any `yaml:"env"`
+	Steps       []cacheStep    `yaml:"steps"`
 }
 
 // holdsAKey says whether a job holds something that writes or signs: an
-// environment, which is where a key is kept, or a token that may write.
+// environment, which is where a key is kept, a secret of the repository
+// read in the job, or a token that may write. The job's own token,
+// secrets.GITHUB_TOKEN, is what its permissions say.
 // A job takes the workflow's permissions when it names none, and with
 // none named anywhere it gets the repository's default token, which a
 // setting can make one that writes, so that counts as writing too.
 func holdsAKey(job cacheJob, workflow any) bool {
-	if job.Environment != nil {
+	if job.Environment != nil || readsASecret(job.Env) {
 		return true
+	}
+	for _, s := range job.Steps {
+		if readsASecret(s.Env) || readsASecret(s.With) {
+			return true
+		}
 	}
 	perms := job.Permissions
 	if perms == nil {
@@ -45,6 +55,22 @@ func holdsAKey(job cacheJob, workflow any) bool {
 	case map[string]any:
 		for _, v := range p {
 			if fmt.Sprint(v) == "write" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// secret is a secret of the repository read in an expression.
+var secret = regexp.MustCompile(`secrets\.(\w+)`)
+
+// readsASecret says whether a value names a secret other than the job's
+// own token.
+func readsASecret(values map[string]any) bool {
+	for _, v := range values {
+		for _, m := range secret.FindAllStringSubmatch(fmt.Sprint(v), -1) {
+			if m[1] != "GITHUB_TOKEN" {
 				return true
 			}
 		}
@@ -117,8 +143,9 @@ func localAction(t *testing.T) func(uses string) []cacheStep {
 // cache that main's runs share can be written by any run on main, one
 // that builds a dependency nobody has run before included, and Go trusts
 // what it finds in its build cache and its module cache without checking
-// it again. So the signing job, built from such a cache, would sign what
-// that run left there.
+// it again. So the tools a job like the signing job runs would be what
+// that run left there. This keeps the key's own tools clean, not the
+// build they sign, which builds.yml makes from main's shared cache.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestAJobThatHoldsAKeyRestoresNoCache(t *testing.T) {
@@ -172,6 +199,10 @@ func TestWhatHoldsAKeyAndWhatRestoresACache(t *testing.T) {
 		{"no permissions anywhere", "runs-on: ubuntu-24.04", "", true},
 		{"write-all", "permissions: write-all", "", true},
 		{"read-all", "permissions: read-all", "", false},
+		{"a secret in the job", "permissions: {}\nenv: {KEY: '${{ secrets.KEY }}'}", "", true},
+		{"a secret in a step", "permissions: {}\nsteps: [{run: x, env: {KEY: '${{ secrets.KEY }}'}}]", "", true},
+		{"a secret handed to an action", "permissions: {}\nsteps: [{uses: a/b@c, with: {token: '${{ secrets.KEY }}'}}]", "", true},
+		{"the job's own token", "permissions: {contents: read}\nenv: {TOKEN: '${{ secrets.GITHUB_TOKEN }}'}", "", false},
 	}
 	for _, c := range holds {
 		var job cacheJob
