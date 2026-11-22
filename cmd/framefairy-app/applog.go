@@ -303,11 +303,15 @@ func (l *appLog) watch(tell func(LogStatus), beat func() <-chan time.Time) {
 
 // WatchAppLog says whether Settings is open, so the log it shows is sent
 // to it as lines are written, as the event applog. Issue #421.
-func (s *FrameFairy) WatchAppLog(on bool) {
-	theLog.watching.Store(on)
+func (s *FrameFairy) WatchAppLog(on bool) { theLog.settingsOpen(on) }
+
+// settingsOpen notes whether Settings is open. Opened, it is sent the log
+// as it stands, whether or not a line was written since.
+func (l *appLog) settingsOpen(on bool) {
+	l.watching.Store(on)
 	if on {
 		select {
-		case theLog.grew <- struct{}{}:
+		case l.grew <- struct{}{}:
 		default:
 		}
 	}

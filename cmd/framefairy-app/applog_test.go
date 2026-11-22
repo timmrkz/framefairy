@@ -797,11 +797,35 @@ func TestSettingsShowsTheLastToasts(t *testing.T) {
 	}
 }
 
+// shows fails t unless Settings was sent the log with files, lines and
+// the toasts texts, newest first.
+func shows(t *testing.T, st LogStatus, files, lines int, texts ...string) {
+	t.Helper()
+	got := []string{}
+	for _, t := range st.Toasts {
+		got = append(got, t.Text)
+	}
+	if st.Files != files || st.Lines != lines || !slices.Equal(got, texts) {
+		t.Fatalf("Settings shows %d files, %d lines and %v, want %d, %d and %v", st.Files, st.Lines, got, files, lines, texts)
+	}
+}
+
+// toast writes a toast into the log l, the way the window says one.
+func (l *appLog) toast(text string) {
+	l.line(zerolog.WarnLevel, "window").Bool("toast", true).Msg(text)
+}
+
 // Settings, while it is open, is sent the log as lines are written,
-// without a reload: the toasts that came and the lines counted, once a
-// beat however many lines come in it, the same as read afresh. A log
-// turned over is a new file of the same name, and is counted as one.
-// Issue #421.
+// without a reload: the log as it stands when it opens, then the toasts
+// that came and the lines counted, once a beat however many lines come
+// in it, the same as read afresh. A log turned over is a new file of the
+// same name, and is counted as one. Issue #421.
+//
+// The watch runs on its own goroutine, and may take the signal of a line
+// written before Settings opened only after it opened. Either way
+// Settings is sent the log as it stands once, which is what the test
+// expects. A line written while Settings is closed sends nothing, see
+// TestClosedSettingsIsSentNoLog.
 //
 // On the real disk: lumberjack writes the log and knows only the disk.
 func TestSettingsSeesTheLogAsItIsWritten(t *testing.T) {
@@ -818,35 +842,28 @@ func TestSettingsSeesTheLogAsItIsWritten(t *testing.T) {
 		l.watch(func(st LogStatus) { told <- st }, func() <-chan time.Time { return beat })
 		close(done)
 	}()
-	toast := func(text string) { l.line(zerolog.WarnLevel, "window").Bool("toast", true).Msg(text) }
-	shows := func(st LogStatus, files, lines int, texts ...string) {
-		t.Helper()
-		got := []string{}
-		for _, t := range st.Toasts {
-			got = append(got, t.Text)
-		}
-		if st.Files != files || st.Lines != lines || !slices.Equal(got, texts) {
-			t.Fatalf("Settings shows %d files, %d lines and %v, want %d, %d and %v", st.Files, st.Lines, got, files, lines, texts)
-		}
-	}
 
-	// Nothing is sent while Settings is not open.
-	toast("before")
-	l.watching.Store(true)
-	toast("one")
-	shows(<-told, 1, 2, "one", "before")
+	// Opened, Settings is sent the log as it stands.
+	l.toast("before")
+	l.settingsOpen(true)
+	shows(t, <-told, 1, 1, "before")
+
+	// A line in the beat after it is sent once the beat is over.
+	l.toast("one")
+	beat <- time.Time{}
+	shows(t, <-told, 1, 2, "one", "before")
 
 	// Two lines in one beat are one message, sent once the beat is over.
 	l.line(zerolog.InfoLevel, "app").Msg("a line")
-	toast("two")
+	l.toast("two")
 	beat <- time.Time{}
-	shows(<-told, 1, 4, "two", "one", "before")
+	shows(t, <-told, 1, 4, "two", "one", "before")
 
 	// The same as the log read afresh.
 	l.counting.Lock()
 	l.counted = nil
 	l.counting.Unlock()
-	shows(l.status(), 1, 4, "two", "one", "before")
+	shows(t, l.status(), 1, 4, "two", "one", "before")
 
 	// Turned over, the old file keeps its lines under a new name, and a
 	// new one starts under the old name. It grows past where the old one
@@ -857,13 +874,35 @@ func TestSettingsSeesTheLogAsItIsWritten(t *testing.T) {
 	for range 6 {
 		l.line(zerolog.InfoLevel, "app").Msg("a line in the new file")
 	}
-	toast("three")
+	l.toast("three")
 	beat <- time.Time{}
-	shows(<-told, 2, 11, "three", "two", "one", "before")
+	shows(t, <-told, 2, 11, "three", "two", "one", "before")
 
 	close(l.grew)
 	beat <- time.Time{}
 	<-done
+}
+
+// A line written while Settings is closed sends Settings nothing, nor
+// does the signal of its opening, taken once it was closed again. The
+// watch is run to its end, on the signal of the line and a channel then
+// closed, so nothing it could send is still to come.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestClosedSettingsIsSentNoLog(t *testing.T) {
+	l := &appLog{run: "closed", grew: make(chan struct{}, 1)}
+	l.open(filepath.Join(t.TempDir(), "logs", "app.log"))
+	t.Cleanup(l.close)
+	l.settingsOpen(true)
+	l.settingsOpen(false)
+	l.toast("while closed")
+	close(l.grew)
+	l.watch(func(st LogStatus) {
+		t.Errorf("Settings is closed, and was sent the log with %d lines", st.Lines)
+	}, func() <-chan time.Time {
+		t.Fatal("Settings is closed, and the watch waited for a beat")
+		return nil
+	})
 }
 
 // close stops writing the log, for the tests, the way the app's process
