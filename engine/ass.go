@@ -12,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine/num"
 	"framefairy/engine/runes"
 	"framefairy/engine/timed"
@@ -660,6 +662,12 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	// after the version of its file. Anything else is measured each time.
 	_, keep := s.fonts.ByName(s.Font)
 	measured, _ := e.captions()
+	// What runs before measured, kept between runs, see inkkept.go.
+	stamp := ""
+	if keep {
+		stamp = e.inkStamp(ctx, measured)
+		measured.readKept(stamp)
+	}
 	key := func(i int) string { return measureKey(blocks[i], s, width, size) }
 	// Each block is measured by one ask at a time: a block another ask is
 	// measuring now is waited for, not measured again. Two asks for the
@@ -726,6 +734,9 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	}
 	if !e.measureBlocks(ctx, blocks, again, out, s, width, size, keep) {
 		return nil, false
+	}
+	if keep && len(missing)+len(again) > 0 {
+		measured.writeKept(stamp)
 	}
 	return out, true
 }
@@ -829,6 +840,14 @@ func measureKey(block string, s Style, width, size int) string {
 type inkCache struct {
 	mu    sync.Mutex
 	boxes map[string]inkBox
+	// files and path are where the boxes are kept between runs, see
+	// inkkept.go, and stamp what the ones read from there were measured
+	// with, once they were read. An empty path keeps them in memory only.
+	// writing keeps one write of the file at a time.
+	files   afero.Fs
+	path    string
+	stamp   string
+	writing sync.Mutex
 	// measuring is the blocks an ask is measuring now, each closed when
 	// that ask lets go of it, see measureMany.
 	measuring map[string]chan struct{}
@@ -883,8 +902,14 @@ func (c *inkCache) get(key string) (*inkBox, bool) {
 func (c *inkCache) put(key string, box *inkBox) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.boxes) >= 4096 {
-		clear(c.boxes)
+	if _, there := c.boxes[key]; !there && len(c.boxes) >= inkMost {
+		// One box makes room, the first the map hands out, which Go
+		// picks at random. Clearing them all left the ink kept between
+		// runs with only the few measured after.
+		for old := range c.boxes {
+			delete(c.boxes, old)
+			break
+		}
 	}
 	c.boxes[key] = *box
 }

@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -59,20 +60,37 @@ func (s *FrameFairy) reconcileTimed(changed []string, steps *lookSteps) {
 	if steps == nil {
 		steps = &lookSteps{}
 	}
+	if s.look(changed, steps) {
+		s.followTimed(steps)
+	}
+}
+
+// followTimed has the watch follow the library, see watching.follow, and
+// keeps how long it took in steps.
+func (s *FrameFairy) followTimed(steps *lookSteps) {
+	began := time.Now()
+	s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
+	steps.watch = time.Since(began)
+}
+
+// look is reconcile but for the watch, under its lock, and says whether
+// the watch is to follow the library after it.
+func (s *FrameFairy) look(changed []string, steps *lookSteps) (follow bool) {
 	began := time.Now()
 	took := func(into *time.Duration) {
 		now := time.Now()
 		*into, began = now.Sub(began), now
 	}
-	follow := changed == nil
+	follow = changed == nil
 	// A model deleted or added outside the app shows in the setup and
 	// the settings at once, and a look at every video looks at the
 	// models too, for whatever the watch could not hear.
 	if models, folder := s.watch.modelsIn(changed); models || changed == nil {
 		// A models folder made is watched before it is read, so a model
-		// written into it in between is heard, issue #722.
+		// written into it in between is heard, issue #722. This follow
+		// waits for one under way, which would only take its ask next.
 		if folder {
-			s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
+			s.watch.followWaiting(s.store.files, s.store.Episodes(), s.shortsOf)
 		}
 		s.tellSetup()
 	}
@@ -106,10 +124,7 @@ func (s *FrameFairy) reconcileTimed(changed []string, steps *lookSteps) {
 		}
 	}
 	took(&steps.videos)
-	if follow {
-		s.watch.follow(s.store.files, s.store.Episodes(), s.shortsOf)
-	}
-	took(&steps.watch)
+	return follow
 }
 
 // watchTheDisk starts the watch on the folders of the videos. What it
@@ -130,27 +145,48 @@ func (s *FrameFairy) watchTheDisk() {
 // version wrote the chosen clip back into one, and the app opened on it
 // after an update and said it was not in the library.
 //
-// It closes the store's looked when it is over, whatever happens, so a
-// look that goes wrong holds no call for good. Each step's time is in the
-// log, to see on the Mac where a slow first start goes.
+// The window's calls wait for the look at the videos and the jobs, and
+// not for the watch on their folders, which is set after they are
+// answered: on the first start of a new build macOS took 1.7 s on the
+// median to let the watch open the files in them, issue #990. A change
+// made in a folder before the watch is on it is read by the next look,
+// as the app comes back to the front.
+//
+// It closes the store's looked once the videos are looked at, whatever
+// happens, so a look that goes wrong holds no call for good. Each step's
+// time is in the log, to see on the Mac where a slow first start goes.
 func (s *FrameFairy) lookFirst() {
 	began := time.Now()
+	answered := sync.OnceFunc(func() {
+		if s.store.looked != nil {
+			close(s.store.looked)
+		}
+	})
 	defer func() {
 		if caught := recover(); caught != nil {
 			theLog.line(zerolog.ErrorLevel, "files").Str("stack", string(debug.Stack())).
 				Msgf("the first look at the library stopped unexpectedly: %v", caught)
 		}
-		if s.store.looked != nil {
-			close(s.store.looked)
-		}
+		answered()
 	}()
 	var steps lookSteps
-	s.reconcileTimed(nil, &steps)
+	follow := func() bool {
+		s.reconciling.Lock()
+		defer s.reconciling.Unlock()
+		return s.look(nil, &steps)
+	}()
 	restoring := time.Now()
 	s.restoreJobs(s.store.Episodes())
+	jobs := time.Since(restoring)
+	answered()
+	window := time.Since(began)
+	if follow {
+		s.followTimed(&steps)
+	}
 	theLog.line(zerolog.InfoLevel, "files").Int("videos", len(s.store.Episodes())).
 		Int64("models_ms", steps.models.Milliseconds()).Int64("videos_ms", steps.videos.Milliseconds()).
-		Int64("watch_ms", steps.watch.Milliseconds()).Int64("jobs_ms", time.Since(restoring).Milliseconds()).
+		Int64("jobs_ms", jobs.Milliseconds()).Int64("window_ms", window.Milliseconds()).
+		Int64("watch_ms", steps.watch.Milliseconds()).
 		Int64("ms", time.Since(began).Milliseconds()).Msg("the first look at the library is over")
 }
 

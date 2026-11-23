@@ -63,6 +63,30 @@ type watching struct {
 	stopped bool
 	refused map[string]bool
 	done    chan struct{}
+	// queue keeps following and next. A follow asked while another sets
+	// the watch does not wait for it: the one under way takes its ask
+	// next, the newest one only, see follow.
+	queue     sync.Mutex
+	following bool
+	next      *followAsk
+}
+
+// followAsk is what a follow is asked to watch: the videos of the library
+// as they were when it was asked, and where their files are read.
+type followAsk struct {
+	files    afero.Fs
+	videos   []string
+	shortsOf func(video string) []string
+	// waiting is closed once a follow of this ask, or of a newer one,
+	// is done, for the callers that wait for it, see followWaiting.
+	waiting []chan struct{}
+}
+
+// over tells whoever waits for the ask that it was followed.
+func (a *followAsk) over() {
+	for _, w := range a.waiting {
+		close(w)
+	}
 }
 
 // watcher is what the watch asks of one of the system's watches on
@@ -141,10 +165,74 @@ func watchedOf(video string, shorts []string) []string {
 // may name a short just rendered, so the
 // watch follows what was added, removed, deleted, made again and
 // rendered, the way the library itself does.
+//
+// A follow asked while another is under way returns at once, and the one
+// under way follows again with what it was asked. On macOS the system
+// opens every file in a folder it watches, and the first start of a new
+// build paid about 6 ms a file for it, 1.7 s on the median: the window's
+// calls waited behind the watch, issue #990. The first look at the
+// library sets the watch once the window is answered, see lookFirst, and
+// the library's own look, which follows too, answers without waiting
+// for it.
 func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video string) []string) {
 	if ws == nil {
 		return
 	}
+	ws.take(&followAsk{files: files, videos: videos, shortsOf: shortsOf})
+}
+
+// followWaiting is follow for a caller that must know the watch is set
+// when it returns: it waits for a follow under way to take its ask. A
+// models folder just made is read only once it is watched.
+func (ws *watching) followWaiting(files afero.Fs, videos []string, shortsOf func(video string) []string) {
+	if ws == nil {
+		return
+	}
+	followed := make(chan struct{})
+	ws.take(&followAsk{files: files, videos: videos, shortsOf: shortsOf, waiting: []chan struct{}{followed}})
+	<-followed
+}
+
+// take follows ask now, or hands it to the follow under way, which
+// takes the newest ask next.
+func (ws *watching) take(ask *followAsk) {
+	ws.queue.Lock()
+	if ws.following {
+		if ws.next != nil {
+			ask.waiting = append(ask.waiting, ws.next.waiting...)
+		}
+		ws.next = ask
+		ws.queue.Unlock()
+		return
+	}
+	ws.following = true
+	ws.queue.Unlock()
+	defer func() {
+		// An ask still in hand is one a panic ended: the next follow
+		// runs instead of handing its ask to nobody, and nobody waits
+		// for it for good.
+		if ask != nil {
+			ws.queue.Lock()
+			if ws.next != nil {
+				ws.next.over()
+			}
+			ws.following, ws.next = false, nil
+			ws.queue.Unlock()
+			ask.over()
+		}
+	}()
+	for ask != nil {
+		ws.followNow(ask.files, ask.videos, ask.shortsOf)
+		ask.over()
+		ws.queue.Lock()
+		ask, ws.next = ws.next, nil
+		ws.following = ask != nil
+		ws.queue.Unlock()
+	}
+}
+
+// followNow is follow, under way.
+func (ws *watching) followNow(files afero.Fs, videos []string, shortsOf func(video string) []string) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.stopped {

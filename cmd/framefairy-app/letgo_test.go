@@ -395,6 +395,69 @@ func TestTheWindowsCallsWaitForTheFirstLook(t *testing.T) {
 	})
 }
 
+// gatedWatcher is a watcher that adds no folder until gate is closed, the
+// way macOS opens every file of a folder it watches before it answers.
+type gatedWatcher struct {
+	*heldWatcher
+	gate chan struct{}
+}
+
+func (w gatedWatcher) Add(name string) error {
+	<-w.gate
+	return w.heldWatcher.Add(name)
+}
+
+// On the first start of a new build, macOS took 1.7 s on the median to
+// let the watch open the files in the folders of the videos, and the
+// library, the job list and the video the app opens on waited for it,
+// issue #990. They wait for the look at the videos, and the watch is set
+// after they are answered.
+func TestTheWindowIsAnsweredWhileTheWatchIsBeingSet(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		svc, eps := memoryLibrary(t, "PXL_1.mp4", "start.mp4")
+		withJobs(svc)
+		defer svc.jobs.shutDown()
+		svc.store.looked = make(chan struct{})
+		gate := make(chan struct{})
+		svc.watch = watchingWith(svc.reconcile, "", [2]watcher{
+			gatedWatcher{newHeldWatcher(), gate}, gatedWatcher{newHeldWatcher(), gate},
+		})
+		defer svc.watch.stop()
+		over := make(chan struct{})
+		go func() {
+			svc.lookFirst()
+			close(over)
+		}()
+		known := make(chan bool, 1)
+		go func() { known <- svc.store.Known(eps[0]) }()
+		listed := make(chan int, 1)
+		go func() { listed <- len(svc.Library()) }()
+		jobs := make(chan []Job, 1)
+		go func() { jobs <- svc.Jobs() }()
+		synctest.Wait()
+		if len(known) == 0 || len(listed) == 0 || len(jobs) == 0 {
+			close(gate)
+			<-over
+			t.Fatal("the window waited for the watch on the folders of the videos")
+		}
+		if !<-known {
+			t.Errorf("%s is not known while the watch is being set", eps[0])
+		}
+		if n := <-listed; n != 2 {
+			t.Errorf("the library lists %d videos while the watch is being set, want 2", n)
+		}
+		<-jobs
+
+		close(gate)
+		<-over
+		for _, ep := range eps {
+			if !slices.Contains(svc.watch.watchList(), engine.WorkDir(ep)) {
+				t.Errorf("the work folder of %s is not watched once the first look is over", ep)
+			}
+		}
+	})
+}
+
 // A first look that goes wrong holds no call for good: the window is
 // answered with what the library holds.
 func TestAFirstLookThatGoesWrongHoldsNoCall(t *testing.T) {
@@ -411,6 +474,16 @@ func TestAFirstLookThatGoesWrongHoldsNoCall(t *testing.T) {
 		svc.lookFirst()
 		if !<-known {
 			t.Error("the video in the library is not known after a first look that went wrong")
+		}
+		// The library answers again after it, and so does every look,
+		// which takes the lock the look held.
+		if !svc.reconciling.TryLock() {
+			t.Fatal("a first look that went wrong left the library locked, so it never answers again")
+		}
+		svc.reconciling.Unlock()
+		svc.setupNews = nil
+		if got := len(svc.Library()); got != len(eps) {
+			t.Errorf("the library after a first look that went wrong has %d videos, want %d", got, len(eps))
 		}
 	})
 }
