@@ -1,10 +1,10 @@
 # One clock on the machine
 
-13 November 2026, for #813.
+13 November 2026, for the issue on one clock on the machine.
 
 ## The problem
 
-Tim, 12 November 2026: "if there is still something similar like linear
+The user, 12 November 2026: "if there is still something similar like linear
 time being spent in the walks, or in any test for that matter, that
 should be refactored so that linear time is rather simulated using a
 controllable fake clock. And I guess there are other primitives that
@@ -59,7 +59,7 @@ Every use takes a function of its own shape, the way `Runner.Leave` and
 - Next changes: every new timer adds a field and a fake of its own. The
   walks' bridge has to fill each one with the same `walkTime`, so holding
   the walks' time means finding every field.
-- Cost: least code now, and the drift Tim warned of later, each fake
+- Cost: least code now, and the drift the user warned of later, each fake
   slightly different.
 
 ### 3. Where state lives: one clock on `engine.Machine`

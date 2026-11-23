@@ -151,7 +151,7 @@ in its column, so the marks of the sidebar stand one under the other. A
 row is lit while the pointer is anywhere on it, its dots included, and the
 dots take the pointer over the row's whole height, so a pointer going down
 the column of dots goes from one to the next and nothing goes dark on the
-way. Tim saw the row go dark each time the pointer reached its dots. The
+way. The user saw the row go dark each time the pointer reached its dots. The
 menu hangs under the row and is exactly as wide as it, so it reaches no
 further over the workspace than the sidebar does, and the sidebar stays
 open while it is. Its icons stand in the sidebar's column of icons and its
@@ -160,10 +160,10 @@ videos above it and run from edge to edge, the way a list's do in
 `Pick.svelte`.
 
 The row about the words says the one thing that can be done with them
-now, issue #432, asked for by Tim. Two rows of which one never works were
+now, asked for by the user. Two rows of which one never works were
 two things to read for one. Each is an action, which closes the menu the
 way a menu item does on the Mac. How far the work has come is not the
-menu's to show, Tim's call on #458:
+menu's to show, the user's call:
 
 - **Transcribe video** while the transcript has not reached the video's
   end, whether it never started, was stopped by hand, by a search, by the
@@ -174,13 +174,13 @@ menu's to show, Tim's call on #458:
 - **Stop transcribing** while it runs. What was heard stays, and the menu
   says Transcribe video again from the frame it is clicked.
 
-It and the work on the video's clips go one at a time, Tim's report of 26
+It and the work on the video's clips go one at a time, the user's report of 26
 October, 12.27. A search or a clip made by hand of the video stops its
 transcription, the way Stop transcribing does, and it does not start
 again by itself once they are done. The stop shows on the press, in the
 menu, the video's dot and the range picker, though the transcription
 ends only once the speech model has heard the piece it is in: the menu
-said Stop transcribing for three and a half seconds after Search, Tim's
+said Stop transcribing for three and a half seconds after Search, the user's
 report of 26 October, 14.22. While they run, Transcribe video
 cannot be clicked, and its title says to transcribe once the search is
 done. The menu once offered Continue transcribing, Transcribe the rest
@@ -213,11 +213,11 @@ transcription carries on after it by itself.
 While it runs, the range picker frames the part it works on the way it
 frames the window of a search that hears, the same line, breath and
 motes, over that part's dots, which still say what is not transcribed
-yet, Tim's pick on #458. Its left edge follows the work as it hears.
+yet, the user's pick. Its left edge follows the work as it hears.
 Whenever it waits its turn, behind a search
 of another video that finds with the local model, a clip made by hand of
 another video or a model being installed, its frame stays, in less of the colour and with no motes,
-still breathing, so it reads as on hold and not as gone, Tim's reports of
+still breathing, so it reads as on hold and not as gone, the user's reports of
 23 and 24 October. It goes on hold the moment that search takes the
 hearing, so its dots stand still from Search on, and what the speech
 model was still hearing then is let go, so nothing is kept that was not
@@ -228,7 +228,7 @@ because what the speech model was still hearing is let go, and the frame
 stands still and fades out.
 The window's mark is left off the range picker while the whole video is
 transcribed, because the work is about all of the video and not the
-window, Tim's ask of 5 November. The Go side says so in the window it
+window, the user's ask of 5 November. The Go side says so in the window it
 sends, and the mark comes back once the transcription is told to stop,
 by Stop transcribing, a search or a clip made by hand, or ends. On Stop
 transcribing it comes back in the frame of the click, as the part's
@@ -236,11 +236,11 @@ frame starts to fade.
 The dots follow the work again once other work hears, or once the video
 is transcribed to its end. A stop on its last piece keeps the dots on
 that piece, like a stop anywhere else: the piece was once written down
-as heard without its words, and never heard again, Tim's report of 11
+as heard without its words, and never heard again, the user's report of 11
 November. The video's
 dot in the sidebar pulses the way it does for all work, from the frame
 Transcribe video is clicked until the frame Stop transcribing is.
-Nothing else says how far it has come, Tim's calls on #458: a number in
+Nothing else says how far it has come, the user's calls: a number in
 the menu, and then one in the video's row, were more to read for what
 the range picker already shows. The library is read again each
 time the work goes on to another part of the video, after a search or a
@@ -264,7 +264,7 @@ the pill shows in the row. A colour clicked in an empty field takes the
 folder's name with it. An empty field is no label, so the field, the
 colours and the row never disagree, and a menu opened for Show in folder
 leaves the video as it was. A round before opened the menu on the
-folder's name and a colour, which Tim read as a label the video did not
+folder's name and a colour, which the user read as a label the video did not
 have.
 
 Everything saves at once: a colour when it is clicked, the words with
@@ -345,7 +345,7 @@ not even the transcription a stopped search would otherwise carry on.
 Once it is out of the list, nothing about how its work ended is said any
 more. Added again, a video says only what its folder still holds: kept,
 a search or a transcription that stopped says so again with Continue, the
-way it does after a restart, and deleted, it starts from nothing. Tim
+way it does after a restart, and deleted, it starts from nothing. The user
 removed a video, added the same file again, and its menu offered Continue
 transcribing for work the new video never had.
 Deleting also waits for the work to stop, and if something will not stop,
@@ -375,7 +375,7 @@ short deleted or moved in Finder is gone from its clip at once, and **Show
 in folder** with it, while the clip still says it was rendered. It tells a deleted folder by a mark the
 folder carries from the moment the video is added, `added.json`, and not by
 the folder alone, because the app writes a folder back whenever it is asked
-about the video, the chosen clip and the waveform among other things: Tim
+about the video, the chosen clip and the waveform among other things: the user
 deleted a folder, opened the video, and a folder was there again with
 nothing of its own in it, plan row 2.247. A folder written back like that is
 deleted again once the video is let go. A video deleted
@@ -501,7 +501,7 @@ has, so the faint shade never falls into bands. The graphics chip draws
 them where the app has WebGPU, see `frontend/src/lib/frames/reflected.ts`,
 so the processor's work stays the blur on the cells, and the processor
 draws them where it has none. Stretched as a canvas of 64 by 36, its
-few steps fell into flat blocks that stepped from cell to cell, and Tim
+few steps fell into flat blocks that stepped from cell to cell, and the user
 saw them as pixels. No filter and no mask in the stylesheet either: a
 blur there is worked out anew over the whole band every time the
 reflection changes, which without a graphics chip took more of the
@@ -528,7 +528,7 @@ short.
 Between cuts the sound is one stream, as the decoder puts it out, and its
 samples are counted the way any player counts them: the stamps in the
 file only say where the stream starts. They need not say more to the
-sample. Every AAC packet decodes to 1024 samples, but Tim's `start.mp4`
+sample. Every AAC packet decodes to 1024 samples, but the user's `start.mp4`
 says its packets last 1008, 1056 and 1008 in turn, and a clock of 600
 ticks a second, QuickTime's, says where a packet starts only to the
 nearest 80 samples at 48 kHz. Placed by its stamp, a packet missed the
@@ -561,7 +561,7 @@ once a frame of the video, not on every refresh of the screen, because
 everything that follows it is drawn by its frame: the mark on the clip
 timeline, the time field and the captions. Moved on every refresh, the
 whole workspace worked itself out again 120 times a second on a screen
-of 120 Hz for a video of 25 frames a second, issue #446. It never goes
+of 120 Hz for a video of 25 frames a second. It never goes
 back while playing. A press while it plays, on the clip timeline or the range picker, holds the
 play under the hand, like a nail, for as long as the button is down: the
 playhead goes to the press and stays there, follows the hand once it
@@ -575,7 +575,7 @@ cut made, moved or put back, an edge trimmed or a step undone or redone,
 moves no playhead and never stops the play: a play of the clip as it is
 now takes over a moment ahead of the sound heard, and goes on from the
 playhead with no stop. An end pulled in and put
-back with Cmd+Z plays on to the end put back. Tim's rule, #277: an edit
+back with Cmd+Z plays on to the end put back. The user's rule: an edit
 while it plays never disturbs the play, and an edge of the clip dragged
 past the playhead leaves the playhead outside the clip, on the video. The play then goes on as a play of the
 video, past where the clip ended and on to the episode's end, the clip
@@ -599,8 +599,8 @@ feeding it, since a timer behind another window may run only once a second.
 The picture catches up with the first frame.
 
 WebKit counts a window that other windows cover as a hidden page and
-stops drawing it. Tim saw part of the app flicker when Mission Control
-showed it after a while behind other apps, #536, and a page WebKit had to
+stops drawing it. The user saw part of the app flicker when Mission Control
+showed it after a while behind other apps, and a page WebKit had to
 draw again as it was shown is the likeliest cause, not proven yet. The
 app's web view is told to keep its page drawn while it is covered,
 `keepDrawing` in `cmd/framefairy-app/sight.go`. WebKit then asks only
@@ -628,7 +628,7 @@ decodes whatever picture and sound ffmpeg does.
 
 The sound is decoded on the Go side, by ffmpeg, plan row 2.153: the same
 sound the render and the transcript are made of, whatever decoder the
-webview has. Tim heard picture and sound out of step in a file from
+webview has. The user heard picture and sound out of step in a file from
 DaVinci Resolve, which keeps the encoder's 44 ms of silence at the front
 of its sound and holds the picture back by an empty edit of the same 44
 ms. ffmpeg and the queue's own reading of the file agreed on all of it, so
@@ -663,7 +663,7 @@ A frame the page makes from what the Go side decoded is in full range,
 and says so, with the picture's light as the Go side reads it from the
 file's transfer tag, see `framewire.Picture`.
 WebKit draws a frame made from a buffer as full range whatever the frame
-says: Tim's `start.mp4`, HEVC with 10-bit colour in video range, which
+says: the user's `start.mp4`, HEVC with 10-bit colour in video range, which
 the Go side decodes for WebKit, came out pale, its black a grey of 17
 where QuickTime shows 1. Labelled video range it stayed so. Now
 VideoToolbox is asked for full range, and ffmpeg too, `out_range=pc`, so
@@ -704,7 +704,7 @@ come than the hand takes to move. A frame that comes for an ask withdrawn
 on the way is put up while the frame for where the hand is now is still
 coming, unless a frame asked for later is on screen already, `passing` in
 `lib/frames/queue.ts`. Thrown away, as it was, the picture stood still
-for a whole drag on a busy machine, found by Tim on an HEVC episode at
+for a whole drag on a busy machine, found by the user on an HEVC episode at
 1080p. The decoder drops the frames before the moment asked for as they
 come out of decoding, before they are scaled. A stream the Go side stops, to make
 room or after standing unused, says `X-Frames-Closed`, and the play it
@@ -808,7 +808,7 @@ hair before its frame, and a click on that frame is on the clip. A step
 taken on the video, playing or paused, is the one exception: an arrow,
 with Shift or without, skips through the episode and leaves the playhead
 on the video, through the clip and its cuts, so a hand that moves along
-the clip timeline past a dimmed clip does not light it up. Tim on #938:
+the clip timeline past a dimmed clip does not light it up. As the user put it:
 a clip passed over is not active. On the clip, a step lands where its
 frame says.
 
@@ -850,7 +850,7 @@ Which clip it was lives in the episode's own folder, so it goes when the
 folder goes. The video preview draws nothing until the workspace knows
 where it opens, `opening` in `Player.svelte`, so the first frame on screen
 is the clip's. It drew the episode's first frames as it opened and then
-left them for the clip, a flicker Tim saw on every episode. The queue
+left them for the clip, a flicker the user saw on every episode. The queue
 opens the file meanwhile, so the clip's frame comes no later. Where the
 playhead opens is the first thing the workspace works out, `openEpisode`
 in `Episode.svelte`: the episode, its picture, its clips and the clip last
@@ -873,7 +873,7 @@ clip timeline drawn and the captions of the clip it opened on, `ready` in
 episode up. Meanwhile neither takes clicks or keys, `asleep` in
 `lib/keys.ts`, and an episode left while it plays goes quiet at once. The
 workspace was torn down and built again in front of the person, empty for
-a moment and then a part at a time as each answer came in, and Tim saw
+a moment and then a part at a time as each answer came in, and the user saw
 that as a flicker on every episode picked. It is the pending state of
 React's transitions, which keep what is on screen until what replaces it
 is ready rather than going back to nothing first.
@@ -950,7 +950,7 @@ the view by hand, and the view stays where it was put. **The playhead is
 dragged the same way on both**: a press anywhere on the track or on the
 playhead takes hold of it, and the video preview follows the hand,
 one seek a frame, until it lets go. The range picker only went there once
-the hand let go, and Tim asked for it to behave like the clip timeline. It
+the hand let go, and the user asked for it to behave like the clip timeline. It
 is one function, `scrub` in `frontend/src/lib/scrub.ts`, used by both. The
 playhead is taken hold of by its line, a few pixels either side, and on both tracks it shows the arrows left and right under
 the pointer, the way a clip's edges do. The empty track shows the hand.
@@ -959,7 +959,7 @@ playhead only because the playhead so often stands on the chosen clip's
 edge. **The playhead looks the same on both**, one rule, `.playhead` in
 `app.css`: a line and nothing else, running 12 px past the track's top and
 bottom border, 2.234. On the range picker it had a head above the track
-and on the clip timeline a line alone, and Tim asked for the two to match.
+and on the clip timeline a line alone, and the user asked for the two to match.
 
 The **crosshair** in the row under the timeline goes to the playhead, always,
 clip or no clip, and puts it in the middle of the view, because the reason to
@@ -1011,7 +1011,7 @@ even number first, so the range picker could be exactly half, and the
 picture took the rest. That rest changes in steps of three pixels, so as
 the app was dragged smaller the picture shrank a pixel, another, and grew
 three, and the range picker under it and the clip list beside it went with
-it: the shaking Tim recorded. In the harness, shrinking the app a pixel at
+it: the shaking the user recorded. In the harness, shrinking the app a pixel at
 a time, the picture, the range picker, the clip timeline and the clip list
 moved back on 48 steps of 150, and now on none. The picture growing into
 that rest also pushed the clip list 1 to 4 pixels past the edge of the
@@ -1093,13 +1093,13 @@ bubble scrolled by those eight pixels.
   not transcribed darker and the part being heard filling, but how far
   the work has come is said on the clip cards, the transcribing and the
   finding alike, and the range picker said only the first half of it.
-  Tim had it taken away: while clips are found the window breathes and
+  The user had it taken away: while clips are found the window breathes and
   the motes of work in hand rise through it. What it does show, always,
   is where the transcript has not reached yet, the dots of a part not
   transcribed, see What was not transcribed is said below. That is no
-  progress, it is where a search has to transcribe first. Tim picked
+  progress, it is where a search has to transcribe first. The user picked
   dots on what is not transcribed over dots on what is, so a video
-  transcribed to its end is a plain range picker, issue #432.
+  transcribed to its end is a plain range picker.
 
   **The width it is measured at is the width it grows from.** Which way a
   list grows is the placement's to decide, and it decides from the width
@@ -1188,7 +1188,7 @@ bubble scrolled by those eight pixels.
   - **A colour picked with the pointer lets go of the keyboard**, so Shift
     and the arrows walk the words again straight after. Left with Escape,
     it lets go too.
-  - **Escape lets go of the keyboard everywhere**, issue #370. It closes a
+  - **Escape lets go of the keyboard everywhere**. It closes a
     list, a list to search or the colour pop-up and leaves no ring on its
     trigger, see `letGo` in `Pick.svelte`. In a field being typed in, the
     size of the captions, a setting, the report, it lets go of the field
@@ -1198,7 +1198,7 @@ bubble scrolled by those eight pixels.
     field. Whatever takes Escape for itself, a word being corrected or the
     report while it listens, keeps it.
   - **A list lets go of the keyboard however it closes**, with a row
-    picked as well as with Escape, issue #876. A trigger left holding it
+    picked as well as with Escape. A trigger left holding it
     took the next letter as a pick from the shut list, so R changed the
     caption face, and the space bar opened the list instead of playing.
   - **A button pressed with the pointer keeps no keyboard**, the way a
@@ -1211,7 +1211,7 @@ bubble scrolled by those eight pixels.
     heard, and the clip's words are made with it, `Transcript.Of` in
     `engine/words.go`. Every other clip over the same word reads it as it
     was heard, a search and the model read what was heard, and a clip
-    removed and made again where it was starts from what was heard. Tim
+    removed and made again where it was starts from what was heard. The user
     chose this: everything done to a clip goes with it. Corrections used to
     be kept for the whole episode in `logs/corrections.json`, which is no
     longer read, so the corrections made before are gone.
@@ -1242,7 +1242,7 @@ bubble scrolled by those eight pixels.
     shows it, a search and the model read it, and a clip removed and made
     again where it was has it, see `RemovedWords` in
     `engine/removedwords.go`. It used to be a correction to nothing in
-    `corrections.json`, kept for the whole episode: Tim removed a caption,
+    `corrections.json`, kept for the whole episode: the user removed a caption,
     removed its clip, made it again with I where it had been, and the
     caption was still gone. A word
     removed then corrected again comes back with the new text. Delete in a word open for typing is the field's own and takes
@@ -1262,7 +1262,7 @@ bubble scrolled by those eight pixels.
     words are all removed goes and leaves its time empty, and the one
     before it goes when it did. It used to stay up through that time, so
     the block before a removed caption grew across its place on the clip
-    timeline, which Tim read as two captions merging. Before, the gap it left
+    timeline, which the user read as two captions merging. Before, the gap it left
     read as a pause, so the caption ended at the word before it, nothing
     was on screen for a moment, and the words after it went on to a
     caption of their own. Removing a word lost its way when the words
@@ -1280,7 +1280,7 @@ bubble scrolled by those eight pixels.
     lets the pick go, and so does any other key: a block clicked only to put
     the playhead there, then Shift and an arrow to a word, means delete is
     for that word, and a frame stepped with an arrow means nothing is
-    picked any more. Found by Tim. The engine finds
+    picked any more. Found by the user. The engine finds
     the caption by the moment its first word starts, `RemoveCaption` in
     `engine/corrections.go`, and removes its words from the clip as
     removing each would, so the caption goes with the clip, and a word
@@ -1468,7 +1468,7 @@ bubble scrolled by those eight pixels.
       card clicked or picked, the cards scrolled, the playhead put or the
       view moved, keeps the search from choosing any of its clips: they
       come into the list, and the playhead, the cards and the clip
-      timeline stay where the hand left them, Tim's report of 14
+      timeline stay where the hand left them, the user's report of 14
       November. A video with no clip chosen then stays so until a clip is
       picked or a later search chooses one. The model names its
       clips strongest first, so the first to land is often not the first
@@ -1524,7 +1524,7 @@ bubble scrolled by those eight pixels.
       of the range picker and the clip timeline, in one step. Each card
       used to come in at its moment in the episode, above the rows waiting
       or between cards already there, so every row under it slid down one
-      and the last row waiting closed, each time a clip was named. Tim saw
+      and the last row waiting closed, each time a clip was named. The user saw
       cards being replaced rather than filled in, and a stack that never
       stood still.
     - **A search starts in sight.** The rows still to come are often after
@@ -1575,7 +1575,7 @@ bubble scrolled by those eight pixels.
       there is nothing to carry on. A window nobody speaks in, the
       whole of a video with no speech among them, is what the video is,
       not a failure: its search is done, and its row says **No speech
-      found** the same way, with no toast and no Report, issue #831. A
+      found** the same way, with no toast and no Report. A
       video with no sound at all is heard as silence. Once the whole video
       is transcribed with no word, `EpisodeStatus.Speechless`, the row
       says **No speech in this video** instead and stays for as long as
@@ -1610,9 +1610,9 @@ bubble scrolled by those eight pixels.
       the same words, *16:45 of 30:00 transcribed*, growing as it hears,
       until it can say how long it has left.
       It once said *Window 0:00 to 30:00* under Transcribing, as if
-      nothing were heard yet, Tim's report of 25 October. The
+      nothing were heard yet, the user's report of 25 October. The
       frame over the window stands still and fades out from the press, the
-      way the whole video's frame does on Stop transcribing, Tim's report
+      way the whole video's frame does on Stop transcribing, the user's report
       of 24 October. **Search**
       takes its place. Clips it wrote before it stopped stay, with the row
       after them. The window's mark stays on the window the search was
@@ -1621,11 +1621,11 @@ bubble scrolled by those eight pixels.
       and Search starts a fresh search where the window is. Moved back, by
       hand or with Undo, Continue carries the search on as before. The Go
       side says whether a search is set aside, from the video's one
-      window, see below, so it is the same after a restart. Tim cancelled a search to look somewhere else and
+      window, see below, so it is the same after a restart. The user cancelled a search to look somewhere else and
       could not, because the window stood locked until it was carried on. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
       that failed, the red of its row and of its toast. A search set
-      aside has no row, so the dot says nothing of it either, issue #436.
+      aside has no row, so the dot says nothing of it either.
       How a video stands, its dot and the line under its name, is the Go
       side's to say, `EpisodeStatus.stands` from `standing` in
       `cmd/framefairy-app/videostate.go`, and `transcript` from
@@ -1638,7 +1638,7 @@ bubble scrolled by those eight pixels.
       seconds, the way a removed clip's row does, and the search's cards
       say it with it. Then the search and its record are forgotten, so the
       row, the cards and the dot go, also after a restart, and **Search**
-      is back. The clips it wrote stay. Issue #431.
+      is back. The clips it wrote stay.
     - **Search**, above the list, finds clips in the window, as long as the
       episode's windows are, and says so while it looks. The clips it
       finds join the ones already there. After a search the window walks
@@ -1661,7 +1661,7 @@ bubble scrolled by those eight pixels.
       when it no longer fits what a search can read. The first search
       once placed its window here and the workspace placed another on the
       range picker's step, two seconds apart, so a search cancelled while
-      it heard said Search with no Continue, Tim's report of 24 October. A short
+      it heard said Search with no Continue, the user's report of 24 October. A short
       episode is one window and is searched whole each time. A window searched again keeps every
       clip there is: the model is told which lines are clips already and
       asked for other moments, and a search that brings none ends with
@@ -1683,7 +1683,7 @@ bubble scrolled by those eight pixels.
       starts held and full, and its time starts once the pointer leaves:
       WebKit does not count it as under the pointer until the pointer
       moves, so the time ran for a moment and stopped a little short of
-      full, Tim found. Where the pointer was last seen says it. Nor does
+      full, the user found. Where the pointer was last seen says it. Nor does
       the time start on the events a browser makes up while the node under
       a still pointer is replaced: the pointer is let go of only where the
       page finds nothing of the row under it, and taken to have left the
@@ -1713,17 +1713,17 @@ bubble scrolled by those eight pixels.
       a search a hand worked during, see Clips arrive one at a time:
       removing the chosen clip chooses the next in the list, or the one before it when it
       was the last, the way Finder and Mail move on from what was
-      deleted. It used to leave nothing chosen, Tim found. A play of
+      deleted. It used to leave nothing chosen, the user found. A play of
       the clip removed goes on from the start of the clip chosen in its
       place. A play of the video goes on where it is, because the hand
       that removed the clip it watched before is still watching. It
-      jumped to the next clip's start, Tim found, issue #901.
+      jumped to the next clip's start, the user found.
       Putting a clip back takes back the remove and nothing more: the
       clip chosen stays chosen and a play goes on where it is. Only the
       clip that was itself the one chosen when it was removed is chosen
       again, while the clip chosen in its place is still chosen, and the
       playhead goes back to where it was, if the remove moved it. Putting back used to choose the clip put back
-      and play it from its start, away from the clip being watched, Tim
+      and play it from its start, away from the clip being watched, the user
       found. The clip stays in the plan with everything done to it, and
       a render of the whole plan leaves it out.
 - **Range picker:** one slim strip for the whole episode, under the video
@@ -1769,7 +1769,7 @@ bubble scrolled by those eight pixels.
       mark turns into the window, drawn over the track, and back into
       the mark when the search is done, on the window after it, or when
       it is stopped, on the window Continue carries on. Only one of the two is ever
-      drawn. Tim found a window at rest a leftover that got in the way:
+      drawn. The user found a window at rest a leftover that got in the way:
       after a search of the whole of a short episode it lay over all of
       it and hid every clip just found, and an outline with handles read
       as the same window. A clip is removed from its row in the list.
@@ -1808,7 +1808,7 @@ bubble scrolled by those eight pixels.
   back on, the same stretches play on. Started again from the playhead
   for each press, the picture and the sound stopped for a moment and the
   sound clicked, and kept going without a new end, the play stood at the
-  clip's end while the sound of its start played on for seconds. Tim
+  clip's end while the sound of its start played on for seconds. The user
   heard both. Then the
   playhead's time, in a field as tall as the buttons with a field's border:
   where the frame the playhead stands in starts, to the millisecond, so it
@@ -1820,12 +1820,12 @@ bubble scrolled by those eight pixels.
   before, and they were what its card in the clip list already says, so
   the card says them alone: where the clip starts, how long it comes out
   and in how many pieces, `1:05:30, 28 s, 1 piece`, following the hand
-  while an edge or a cut is dragged, issue #361. On the
+  while an edge or a cut is dragged. On the
   right what a reset threw away,
   **Render** and, once rendered, **Show in folder**. Rendered means the
   clip was rendered, as its clip set noted when the short was written, so
   the green dot, the green mark and Render again stay after the short is
-  uploaded and removed from its folder, issue #384. Show in folder shows
+  uploaded and removed from its folder. Show in folder shows
   the short where it went, in the folder **Shorts** named at the time,
   and only while it is still there: a short removed or written over by
   hand is no longer the clip's short, and a file of the same name that
@@ -1841,7 +1841,7 @@ bubble scrolled by those eight pixels.
       the middle of a word as often as not, it walks four words at a time
       where someone speaks quickly and none at all across a pause.
       While the episode plays on the video, they skip 5 seconds and stay
-      on the video, cuts and all, see the place of the playhead above. Found by Tim, who skipped ahead through a dimmed clip and
+      on the video, cuts and all, see the place of the playhead above. Found by the user, who skipped ahead through a dimmed clip and
       had it light up.
       - **It walks the words the caption lights up, not the words the
         transcript holds.** They are not the same list. A correction that
@@ -1857,7 +1857,7 @@ bubble scrolled by those eight pixels.
       - **From a cut they go to the caption's next word, or its last**,
         never onto a word the cut took out. A cut takes words out of the
         short on purpose, so they are not in the video preview and there
-        is nothing to step to, Tim on #938.
+        is nothing to step to, as the user put it.
       - **Which word to go to is decided by the word the playhead is in,
         never by how far it is from one.** The playhead is not where it was
         put: the picture answers with the frame it is showing, which can be
@@ -1884,8 +1884,8 @@ bubble scrolled by those eight pixels.
         was not alike. There is no caption there, so nothing on screen to
         step through, and what a hand wants there is to get on. They
         walked the words heard, and stopped dead where the transcript
-        ended, in the middle of the video, found by Tim. The same while the
-        episode plays on the video. Issue #377.
+        ended, in the middle of the video, found by the user. The same while the
+        episode plays on the video.
       - **Which list is walked is decided a whole frame either side of the
         clip**, for the same reason the crop frame is. Read exactly, a
         playhead just put at a clip's start is outside it, so the keys
@@ -1905,20 +1905,19 @@ bubble scrolled by those eight pixels.
       French or Belgian keyboard needs for its digits, `percentKey` in
       `Episode.svelte`, which asks the engine where the share lands,
       `engine.ShareTime`, the way every rule about a video is the engine's.
-      Issue #539.
     - Drag an edge to trim. The edge lands on the frame, the same as the
       edge of a cut, and shift puts it on the nearest word instead, the way
       the render cuts a clip the engine proposes, and then on the frame
       nearest that, where the render cuts it. Shift and not alt,
-      because it is the key Tim reached for first. It used to snap to words
+      because it is the key the user reached for first. It used to snap to words
       always, which left no way to take a breath off the end of a clip or
       keep the first frame of a gesture before the first word.
       A clip is as long as the hand makes it, only the video's own end
-      stops it. It stopped at ten minutes, and Tim could not make a clip
+      stops it. It stopped at ten minutes, and the user could not make a clip
       any longer.
     - **A double-click on an edge puts it back where the clip was found**,
       the way a double-click on a caption's edge puts that back where its
-      words put it. Tim asked for the two to be the same. The clip keeps
+      words put it. The user asked for the two to be the same. The clip keeps
       where its edges were in the plan, `found`, written by `editPieces` in
       `engine/edit.go` the first time anything changes its pieces and never
       after, so a clip never changed needs none and is where it was found.
@@ -1942,12 +1941,12 @@ bubble scrolled by those eight pixels.
       clip's start does, so it stands on that piece's first frame. One rule
       in the engine answers for all four, `edgePlayhead` in
       `engine/shape.go`. A cut's edges used to leave the playhead where it
-      was, found by Tim, so the frame beside a cut could not be seen while
+      was, found by the user, so the frame beside a cut could not be seen while
       it was placed.
       With shift it is the same frame, in line with the edge wherever the
       edge lands on the words. It used to stand inside the word the edge
       snapped to, a pause away from the edge, so that word was the one lit,
-      and Tim saw it leave the edge: a cut's left edge dragged on past the
+      and the user saw it leave the edge: a cut's left edge dragged on past the
       last word took the playhead over the cut into the caption before it.
       The edge is put on its frame first, the way the pieces are when the
       gesture lands, so the playhead is never half a frame off the edge
@@ -1966,7 +1965,7 @@ bubble scrolled by those eight pixels.
       kind of thing used to have a handler of its own, and they drifted:
       the track moved the playhead on the press, an edge only once the
       engine answered, a caption's edge only when the hand let go, and
-      Tim asked why a click did something different on every kind of
+      the user asked why a click did something different on every kind of
       thing. An edge's playhead is the frame it opens or the last frame
       before it closes, the same rule `edgePlayhead` in `engine/shape.go`
       has for the drag, worked out where it is pressed rather than asked
@@ -1976,7 +1975,7 @@ bubble scrolled by those eight pixels.
       cut's edge, a caption's edge, a caption, and only then the playhead
       and the track. What is drawn on top only decides what is seen. The
       playhead stands on an edge it was dragged with, and a press there
-      took hold of the playhead instead, found by Tim. A mark comes first
+      took hold of the playhead instead, found by the user. A mark comes first
       because it is small and sits on the clip's rules, often on its first
       frame, where an edge reaches over it and would leave it with no way
       to be taken hold of.
@@ -1987,7 +1986,7 @@ bubble scrolled by those eight pixels.
       save and goes on from the clip as saved, because the engine answers
       a gesture against the clip as saved. The edges used to go for as
       long as the save took, so pressing an edge again straight after
-      letting go moved the playhead instead, found by Tim. And the same
+      letting go moved the playhead instead, found by the user. And the same
       edge used to wait too, standing still under the hand on a busy
       machine (2.259).
     - **The last press owns the playhead.** Every press takes it, and an
@@ -1998,7 +1997,7 @@ bubble scrolled by those eight pixels.
       to a word only in the direction the hand goes, and stays where it
       is until the stop nearest the hand lies ahead of where the edge
       stood, `toward` in `engine/shape.go`. The nearest word could be behind it,
-      and Tim saw a cut's left edge dragged right jump left first.
+      and the user saw a cut's left edge dragged right jump left first.
     - **Shift stops at the words that light up.** An edge dragged with
       shift lands on the words the way the clip's captions split them, so
       the halves of a hyphenated word, or a correction that reads as two
@@ -2064,7 +2063,7 @@ bubble scrolled by those eight pixels.
       edge and drag to size. Outside the clip a double-click does nothing,
       and nothing else on the track makes a cut. Shift and a drag used to
       draw one, and a double-click in the place a cut had just been removed
-      took it out again: Tim found neither, and the second made a double-
+      took it out again: the user found neither, and the second made a double-
       click in the clip cut something only sometimes. Shift means words and
       clips everywhere else in the app, so a drag with it held moves the
       playhead like any other drag.
@@ -2098,7 +2097,7 @@ bubble scrolled by those eight pixels.
       piece before, `endInEpisode` in `frontend/src/lib/flow.ts`: a moment
       at a cut is both the end of the piece before and the start of the
       one after, and an end taken as the start of the next piece drew the
-      caption across the whole cut. Tim saw it moving the left edge of a
+      caption across the whole cut. The user saw it moving the left edge of a
       cut into a caption, and with shift on a cut's edge, where the next
       caption begins right where the cut ends. A block has no padding, so
       one a few pixels long is a few pixels long and does not reach into
@@ -2168,7 +2167,7 @@ bubble scrolled by those eight pixels.
       a line every two seconds and one of a few minutes keeps its line a
       minute. The clip timeline keeps its sparser ruler, a time for
       every 96 pixels: the same rule there drew a line over the waveform
-      every second, and Tim preferred it as it was.
+      every second, and the user preferred it as it was.
     - Everything on the range picker, the marks, the window, the playhead
       and the lines, and the captions over the video preview are placed
       by the stylesheet, in shares of the track's width and the picture's
@@ -2188,7 +2187,7 @@ bubble scrolled by those eight pixels.
       when the playhead reaches the last twentieth of the view, the view
       turns a page and the playhead stands a twentieth in, the same
       distance from the other side, so nearly the whole view is ahead of
-      it. A quarter in, tried first, left Tim too little to look ahead to. It turns rather than slides, so
+      it. A quarter in, tried first, left the user too little to look ahead to. It turns rather than slides, so
       the waveform holds still to be read between turns, and the view
       turned is held, like a move by hand, until the crosshair or the clip
       takes it back. **Once the hand takes hold of an edge, a cut or a
@@ -2199,17 +2198,17 @@ bubble scrolled by those eight pixels.
       where the hand put it**: the play turns pages again once its
       playhead is in the view, when it walks into a view swiped ahead of
       it, after the crosshair, or in a new play. A swipe was turned
-      straight back to the playhead, #900. **The keys keep it in sight the same way:** an arrow,
+      straight back to the playhead. **The keys keep it in sight the same way:** an arrow,
       or Shift and an arrow, that lands in the last twentieth of the view
       the way it goes, or out of the view, turns the page there, to the
-      left as to the right. A skip of 5 s left the view behind, #677.
+      left as to the right. A skip of 5 s left the view behind.
       **Only the hand zooms the clip timeline**, once a clip chosen or
       made is fitted. An edge that moves past the side of the view, by a
       drag or an undo, scrolls the view so the edge stands a tenth in, at
       the zoom it has, the way an editor's timeline scrolls with a trim.
       It zoomed out to the whole clip instead, and a clip dragged long
       then stood at a zoom where its caption blocks were too narrow to be
-      drawn, and they all went, Tim's report of 10 November. A clip made
+      drawn, and they all went, the user's report of 10 November. A clip made
       with I or O is fitted again once it is written, the way a clip
       picked from the list is, unless the hand is at work on the clip
       timeline by then: its card was fitted to where it was asked for,
@@ -2231,7 +2230,7 @@ bubble scrolled by those eight pixels.
       `frontend/src/lib/loudness.ts`. It reads the loudness again, whole,
       when the stamp `loudness` in the video's state changes.
       It asked the Go side for each view and drew empty track until the
-      answer came, Tim's report of 17 November, issue #909. See
+      answer came, the user's report of 17 November. See
       [the decision record](decisions/2026-11-18-the-window-holds-the-loudness.md).
     - **A click on a part not measured yet is measured at once.** Every
       move of the view is a look, `/frames/levels/look`, the way the video
@@ -2240,7 +2239,7 @@ bubble scrolled by those eight pixels.
       the measuring brings them, while several ffmpeg measure the rest of
       the video side by side. The waveform of a click on a part not
       measured waited 300 to 430 ms for the disk, a notice and a read of
-      the whole loudness, Tim's report of 21 November, issue #968. See
+      the whole loudness, the user's report of 21 November. See
       [the decision record](decisions/2026-11-21-the-waveform-keeps-up-with-the-hand.md).
     - **Every clip is on it, not only the chosen one.** The other clips
       are the same marks the range picker draws, across the middle of the
@@ -2265,7 +2264,7 @@ bubble scrolled by those eight pixels.
       on the clip timeline, and the window on the range picker, at rest
       and while it is searched, lie over the track's top and bottom border
       rather than just inside or just outside it, so no grey line runs
-      beside them. Found by Tim on #192.
+      beside them. Found by the user.
     - **Captions too narrow to see join their neighbour.** A caption
       block keeps its height and its line at every zoom, and only its
       width follows the zoom. A block narrower than it is tall, 16 pixels,
@@ -2278,7 +2277,7 @@ bubble scrolled by those eight pixels.
       joined block has the edges of its first and last caption, and the
       caption whose edge is being dragged joins nothing while it is. The
       lane was hidden whole once the middle caption was narrower, and a
-      clip zoomed out to stood bare, Tim's report of 10 November. He
+      clip zoomed out to stood bare, the user's report of 10 November. They
       picked joined blocks from five mockups.
 - **The waveform comes first.** The moment an episode is added, the app
   measures its loudness on its own, without the speech model: the audio
@@ -2321,15 +2320,15 @@ at once, and its picture is checked behind that, `checkAdded` in
 `library.go`: the episode's decoder is asked for its first frame, and the
 decoder that answers is the one the video preview reads from, so asking
 costs no start later. Asked first, the probe and the first frame kept
-the workspace from opening for 0.3 to 1.4 s on a Mac, issue #832. A file
+the workspace from opening for 0.3 to 1.4 s on a Mac. A file
 with no picture leaves the list and the workspace again, the folder its
 add made goes with it, and a toast says why. A new video's first search
 starts once its picture is known to be there. Until then the video's
 state says the search is on its way, `SearchComing`, so the clip list
 says Cancel from the moment the video opens, the way it does from a
 press of Search, and Cancel there calls the search off before it starts:
-it comes stopped, with Continue. The list said Search in that moment,
-issue #848. A file with no picture,
+it comes stopped, with Continue. The list said Search in that moment.
+A file with no picture,
 and one that is no video at all, said nothing at Add before and failed in
 the video preview after.
 
@@ -2338,7 +2337,7 @@ the video preview after.
 The transcript button in the head of the clip column, left of
 **Search**, a speech bubble with quotes in it, the mark Apple Podcasts
 puts on the button that opens an episode's transcript, searches
-everything the video says, as far as it has been heard (#366).
+everything the video says, as far as it has been heard.
 Search finds clips with the model. This finds a moment yourself: a line
 found is a place in the video, and I and O make a clip there.
 
@@ -2346,7 +2345,7 @@ found is a place in the video, and I and O make a clip there.
   swaps the whole head, Clips, the count, the info mark and Search, for a
   search field at the same height, with the keyboard in it. It says
   Search transcript in a grey darker than a label, because the browser's
-  lighter grey read like something already typed, found by Tim. The cross in
+  lighter grey read like something already typed, found by the user. The cross in
   the field gives the head and the clip cards back. There is no
   shortcut to open it, because the app has no ⌘ shortcuts.
 - **A card for every caption, and for every sentence between.** While
@@ -2354,21 +2353,21 @@ found is a place in the video, and I and O make a clip there.
   its time at the head and its words under it, `engine.SaidCards`. A
   clip's cards are its captions, one card a caption, so a block in the
   video preview, a block on the clip timeline and a card here are one
-  thing in three places, found by Tim. A card reads what its caption
+  thing in three places, found by the user. A card reads what its caption
   shows, a word corrected in the caption box among it. Two clips over
   each other each have their cards of the same words. What no clip keeps
   is in sentences, the engine's, `engine.Sentences`, the lines the model
   reads grouped the way the stories recipe groups them. A long sentence
   is more than one card: a card ends at a line once it runs 8 seconds,
   and never runs more than 12. Cards of twenty seconds and more were too
-  much to read as one place, found by Tim. A sentence card is also cut at
+  much to read as one place, found by the user. A sentence card is also cut at
   every edge of what a clip keeps, so it never holds a word a clip shows.
   The cards are asked for again whenever Go's stamp of them in the video's
   state changes, `VideoState.Cards` from `Episode.SaidStamp`: the
   transcript heard more, a clip set was written, by a hand or from outside
   the app, or the look of its captions changed. While the field is closed
   nothing is read. The window once decided this itself from the clips it
-  held, and missed a word corrected in a clip set outside the app, #933.
+  held, and missed a word corrected in a clip set outside the app.
   The engine lays out again only the captions of a clip set that changed,
   see `PlanSummary.Said`.
 - **The clips stand out.** A card of a clip wears the chosen clip's
@@ -2376,7 +2375,7 @@ found is a place in the video, and I and O make a clip there.
   below white. The edge is one and the same in both lists, `.clip-edge`
   in `app.css`: a bar 4 px wide down the card's left side, which the
   card's rounded corners cut off straight. In the transcript it curved
-  round the corners and was a pixel narrower, found by Tim. Every other card is in the grey of a label, and the words
+  round the corners and was a pixel narrower, found by the user. Every other card is in the grey of a label, and the words
   that answer what is typed are white in every card, so they stand out.
 - **Word for word first, then with a slip.** With nothing typed, every
   card is there. Typing keeps the cards that hold what was typed. Only
@@ -2387,10 +2386,10 @@ found is a place in the video, and I and O make a clip there.
   letters on it may be the start of a longer word. So arrm finds Arm and
   genomen finds genommen. The font list's way of finding a name, by its
   letters in order with gaps, found Verteidigungsministers for ernste in
-  a transcript, found by Tim. The words that answer are bold. Go answers
+  a transcript, found by the user. The words that answer are bold. Go answers
   what is typed, `engine.SaidSearch` through `SearchSaid`, over the cards
   the video's Episode keeps ready until they change, and the window shows
-  the cards it is told, #927. Each answer stays until the next, so the list never
+  the cards it is told. Each answer stays until the next, so the list never
   empties between two letters. What is typed
   is read from the top of the list, wherever the hand had scrolled it.
   The field says in grey, before its cross, how many cards match, the
@@ -2407,7 +2406,7 @@ found is a place in the video, and I and O make a clip there.
   The list follows a video that plays the way the clip timeline does, by
   turning the page: while the card of the playhead is in view the list
   stands still, and once the card is out of view, or going out of it at
-  the foot, it comes to the top, found by Tim. In a pause between two
+  the foot, it comes to the top, found by the user. In a pause between two
   captions of a clip the caption before stays the card until the next
   begins. Only the playhead moving moves the list, so the hand can
   scroll it while the video stands. The playhead put again in the card
@@ -2424,7 +2423,7 @@ found is a place in the video, and I and O make a clip there.
   scrolled column, and each came back where the other had been.
 - **The space bar still plays.** With nothing typed in the field, the
   space bar plays and stops and the field lets go of the keyboard,
-  because a space at the start of nothing is no search, found by Tim.
+  because a space at the start of nothing is no search, found by the user.
   Stopping gives the field the keyboard back, so what is typed next is a
   search again, unless the keyboard or the hand went somewhere else
   while it played.
@@ -2436,31 +2435,31 @@ found is a place in the video, and I and O make a clip there.
   foot, so the page before is shown. A clip walked to in the clip list
   turns the page the same way. Both were brought just into view, and
   then went on standing at the foot as the walk went down, found by
-  Tim. The answers to what is
+  the user. The answers to what is
   typed are walked from the first, down, or the last, up, and go round.
   The whole transcript is walked from the card of the playhead, a
   "Not transcribed yet" card among them, one card at a step either way.
   Where a card runs on a little into the part after it, the playhead put
   at the start of that part is in the part, not in the card, so a step
   down no longer stands still at the card before it and a step up no
-  longer goes past it, found by Tim. A card clicked or walked to is the
+  longer goes past it, found by the user. A card clicked or walked to is the
   card of the playhead for as long as the playhead is in it, so a card
   that begins just before a part, a word heard at its edge, lights
-  itself when it is clicked and not the part, found by Tim. A search
+  itself when it is clicked and not the part, found by the user. A search
   walked and then let go of, by Escape, by taking the words away or by
   its cross, puts the playhead and the chosen clip back where they stood
   before the first step, the way a search through a document goes back
-  to where it began, found by Tim. Enter at a card walked to stays there,
+  to where it began, found by the user. Enter at a card walked to stays there,
   and so does a card clicked or the playhead moved off the card walked
   to, because then the person went where they meant to go. A card
   clicked puts the playhead in the middle of the clip timeline, the way
   the crosshair does, at the zoom the clip timeline has, so the place
   clicked is seen with the same room either side. It stood wherever the
-  clip timeline happened to show it, found by Tim.
+  clip timeline happened to show it, found by the user.
 - **Shift and a click pick cards, and Copy copies their words.** The
   way files are picked in Finder, Shift and a click pick every card
   from the card of the playhead to the one clicked, in the grey the card
-  of the playhead wears, and the playhead stays (#783). Among the answers
+  of the playhead wears, and the playhead stays. Among the answers
   to a search, where no card need be current, the first Shift and click
   picks the card clicked and the next picks on from it. Another Shift
   and click moves the far end. A click without Shift, or another search,
@@ -2478,7 +2477,7 @@ found is a place in the video, and I and O make a clip there.
   them, closes the moment anything else in the app is pressed, and the
   keyboard goes to what was pressed, the way a menu on the Mac goes. The
   font list open and the transcript button pressed left both open, with
-  the keyboard in the font list's field, found by Tim. See `Pick.svelte`.
+  the keyboard in the font list's field, found by the user. See `Pick.svelte`.
 - **A failed read is said.** Cards that could not be read leave a line in
   the list, The transcript could not be read, with the reason under the
   pointer, until the next read works.
@@ -2488,14 +2487,14 @@ found is a place in the video, and I and O make a clip there.
   and the clip chosen is lit on the range picker and the clip timeline
   the way the hand on its card lights it. The hand lit a card a step
   less than the keys did, and the keys lit a clip's mark and frame a
-  step less than the hand did, found by Tim.
+  step less than the hand did, found by the user.
 - **One clip in every place.** The hand on a card a clip keeps lights
   that clip on the range picker and the clip timeline, the way the hand
   on its clip card does. In the list only the card under the hand is
   lit, never every card of its clip with it. The space between two cards
   belongs to them, half to the card above and half to the card below, so
   the hand going from one card of a clip to the next never leaves the
-  clip dark for a moment, a flicker found by Tim. A clip chosen on the range picker or the clip timeline leaves
+  clip dark for a moment, a flicker found by the user. A clip chosen on the range picker or the clip timeline leaves
   its first card where it is when it is in view, and otherwise puts it at
   the top of the list, where the first card stands, and choosing it
   again does it again. The cards in view and a column either side are
@@ -2516,58 +2515,58 @@ found is a place in the video, and I and O make a clip there.
   something typed the list holds only what matches. The range picker
   draws the same part under the minutes and the window, always, not only
   while the field is open, so where a search has to transcribe first is
-  seen without opening the cards, issue #432. The part is lit from its
+  seen without opening the cards. The part is lit from its
   card, and its card from it, only while the cards are open. A part is dots on nothing, a halftone grid, `--halftone`
   in `app.css`, that rises from the foot and thins out upwards, with none
   in the top third, so the minutes and their lines show through. A grey
-  wash under the dots hid them, found by Tim, who picked this one from a
+  wash under the dots hid them, found by the user, who picked this one from a
   sheet of seven. The dots are the grey of a card's edge at a share of
   its strength, so they are quieter than the dashes and the minute
-  lines, because at full strength Tim found them too strong. A row and
-  a column left clear round them looked cut off, found by Tim. In a card
+  lines, because at full strength the user found them too strong. A row and
+  a column left clear round them looked cut off, found by the user. In a card
   they are whole columns and rows, centred, with at least 2 px of room
   inside the dashes on every side, because dots right on to the edge sat
-  too close to the dashes, found by Tim. The grid is worked out from the
+  too close to the dashes, found by the user. The grid is worked out from the
   card's own size, and the card's dashes run at the same pitch over
   exactly the span of the dots, so every dash stands over a column of
   dots or beside a row. The dashes the browser
-  drew went their own way round the dots, found by Tim. On the range
+  drew went their own way round the dots, found by the user. On the range
   picker a part's left and right edges are dashed, a dash beside each row
   of its dots, so where a part not transcribed begins and ends is seen
-  even where its dots thin out, Tim's report of 26 October, 12.27. The
+  even where its dots thin out, the user's report of 26 October, 12.27. The
   dashes are in the dots' colour, `--halftone-ink`, with their fade, so
   each is as strong as the row beside it: in the grey of a card's edge
-  they were too bright, his report of 14.22. The range picker's own border is the edge
+  they were too bright, their report of 14.22. The range picker's own border is the edge
   of a part at the start or the end of the video, and its top and foot.
   Its dots cover the whole part, to its foot and its sides, and the
   foot row stands a pixel up from the range picker's foot, where it
-  looked clutched to it, found by Tim. Every part shows the one grid of
+  looked clutched to it, found by the user. Every part shows the one grid of
   dots laid from the start of the range picker, never a grid of its own,
   so a part that is split, shrunk, stopped or carried on only has dots
   peeled away at its edges, and no dot ever moves. An edge cuts through a
   dot as it passes. Each part once laid a grid of its own, centred in it
   or laid from a moment its work picked, and each new state of a part
-  laid it again, so the dots walked sideways, Tim's reports of 24 and 25
-  October and of 9 November, issue #765. Lit, the part goes up
+  laid it again, so the dots walked sideways, the user's reports of 24 and 25
+  October and of 9 November. Lit, the part goes up
   a step with the grey of every lit card, which the card's dashes
   go into, the way every card's edge does, and its dots go up a step
   too, `--halftone-lit`, keeping their fade. On the range picker the
   part takes half that grey, because the whole of it was far too strong
-  there, Tim's report of 24 October, and the range picker's own border
+  there, the user's report of 24 October, and the range picker's own border
   stays over the lit part. The hand on a part lights its card and the
   hand on a card lights its part, both ways round, and the keys on its
   card light the part as well, the same way. With the cards closed, the
   hand on a part on the range picker still lights it. Walked to with the keys it lit nothing on the range picker,
-  found by Tim. The parts give way as the work hears, from what is heard, not
+  found by the user. The parts give way as the work hears, from what is heard, not
   from the transcript, which is saved in pieces: a search hearing half an
-  hour took the parts away in thirds, found by Tim. What is heard, and
+  hour took the parts away in thirds, found by the user. What is heard, and
   what of the window, comes from Go in the state of the video,
   `VideoState.heard` and `WindowView.heard`, see `engine/reached.go`. While the work hears
   into a part, its dots stand still on the range picker's grid and its
   left edge wipes over them as it goes.
 - **Escape steps back wherever the keyboard is**, unless the keyboard is
   in another field. The first takes back what was typed, so the whole of
-  what was said is there again, and the next closes the search. Tim
+  what was said is there again, and the next closes the search. The user
   scrolled the sentences, pressed Escape and nothing happened, because
   the field no longer had the keyboard.
 - **The sentences are there when it opens.** They are read once the video
@@ -2582,25 +2581,25 @@ on the app that is not a video, a call to the Go side that failed for a
 video with no row or card to say it in, a file Report a Problem leaves
 out. Each used to be red text put wherever there was room: a banner over
 the workspace that pushed it down, a line over the video preview, three
-wrapped lines beside Report. Tim found the workspace moved about by a
-dropped screenshot, issues #263 and #327.
+wrapped lines beside Report. The user found the workspace moved about by a
+dropped screenshot.
 
 A toast lies over the app in the top right corner, under the bar, where
 macOS brings its own notes in, and moves nothing under it. Each time
 something goes wrong is a toast of its own, the way macOS stacks its
 notes: the newest comes in on top and pushes the others down, and each
 runs its own time. One toast for each place, which a newer reason
-replaced, showed Tim only the last of the pictures he dropped one after
+replaced, showed the user only the last of the pictures they dropped one after
 another. The same words from the same place while they show come in on
 top again with their time started again, rather than twice. It is
 300 px wide, one width for every toast so a stack reads as one column,
-which Tim found 340 px a little too wide for. A toast about a video shows while that video is on
+which the user found 340 px a little too wide for. A toast about a video shows while that video is on
 screen and waits while another is. Its time, ten seconds, the window's
 own, `newsShows` in `lib/removed.ts`, runs down from the moment it comes, in the
 same fill, and stands still while the pointer is on it. Its cross takes it away at
 once. It wears the red of a removed row over the dark of the app, with
 no line round it. The first one waited for the pointer before its time
-began and had a thin red line round a grey note, and Tim found both
+began and had a thin red line round a grey note, and the user found both
 wrong: a toast counts down by itself, and a look the app has nowhere
 else reads as a mistake. Every toast and how it went is in the log,
 `toast:` when it came and `toast closed:` or `toast ran out:` when it
@@ -2608,7 +2607,7 @@ went.
 
 What has a place of its own keeps it: a clip that failed says so on its
 card, a search that stopped in its row, and what dictation did not hear
-beside the microphone. Why is said in a toast, whole, issue #311. A
+beside the microphone. Why is said in a toast, whole. A
 search that failed says Failed with Continue in its row and why in a
 toast, which offers Report. Which failures are told, and in what words,
 is the Go side's: the queue tells each once, as the job goes from
@@ -2619,12 +2618,12 @@ said why the time it failed. Report opens Report a Problem as a report
 of its own, with only the toast's words in its field. A draft written
 before waits aside and comes back when the window closes, and the
 toast's report is let go then, sent or not, so the next toast's Report
-starts from nothing again. Tim found two toasts in one report after
+starts from nothing again. The user found two toasts in one report after
 closing the window between them. There is one report at a time: while
 Report a Problem is open, every Report button is greyed out, and the
 window is only brought forward, with nothing written into it, see
 `ReportAbout` in `bugs.go`. Cut to one line in the row, the reason lost the part that
-said what to do, and Tim read "Anthropic is busy and did not a…".
+said what to do, and the user read "Anthropic is busy and did not a…".
 
 A video whose file is gone says so in a toast as the workspace finds it
 gone, and its video preview shows nothing of what it showed. A gone file
@@ -2672,7 +2671,7 @@ In it, from the quickest pick to the most exact:
 
 Return closes the pop-up and keeps the colour it holds. Escape closes it
 and puts back the colour it opened on, the way Return and Escape answer a
-pop-up everywhere on the Mac. Tim found Escape keeping the shade he had
+pop-up everywhere on the Mac. The user found Escape keeping the shade they had
 just dragged to, and Return doing nothing, the wrong way round.
 
 The opacity stays the number beside each colour, so the row keeps its
@@ -2719,8 +2718,8 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     after the playhead or ends before it. Where the part after the
     playhead, or before it, is heard, and at the very end or the very
     start of the video whatever is heard, the button is off and says so
-    in its title, and the key does nothing. Tim found I at the end of the
-    video making a card that could only fail, on #456. A part not heard
+    in its title, and the key does nothing. The user found I at the end of the
+    video making a card that could only fail. A part not heard
     yet is heard first, so they are offered there, and a clip that then
     finds nothing said fails with Continue and why in a toast. Where
     each key makes a clip, the Go side says in the video's state,
@@ -2773,9 +2772,9 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     time ran out while it was away is called off on coming back. If the
     work cannot be called off, the card says Stopped again and why is
     said in a toast, with Report.
-    Issue #257. A search's cards have a trash can too, which removes the
+    A search's cards have a trash can too, which removes the
     search they came from, its row and every card of it at once, see
-    above. Issue #431.
+    above.
 - **The thumbnail button**, in the row under the clip timeline, makes the
   frame under the playhead a thumbnail. **T** does the same. It is not a
   mode, so it never looks pressed. Its icon says what a click does: a
@@ -2809,36 +2808,36 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 ### Keyframes
 
 A crop that changes while a clip plays, for a camera switch or a person
-who moves across the picture. Plan row 3.26 and #750, the design is in
+who moves across the picture. Plan row 3.26, the design is in
 [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
 
 - **Two keyframe buttons**, beside the thumbnail button under the clip
   timeline, each put a keyframe on the frame under the playhead, with the
   crop where it stands there now. **S** puts a switch keyframe, a diamond,
   where the crop switches, and **G** a glide keyframe, a circle, between
-  which the crop glides. S was K while there was one kind, and Tim asked
-  for S on #778, since K says neither kind. Like the
+  which the crop glides. S was K while there was one kind, and the user asked
+  for S, since K says neither kind. Like the
   thumbnail button neither is a mode: the icon is a diamond or a circle
   with a plus, and with a minus while the playhead stands on a keyframe
   of its kind, where a click removes it. On a keyframe of the other kind
-  the button turns it into its own. Tim chose the two buttons from
-  mockups on #750.
+  the button turns it into its own. The user chose the two buttons from
+  mockups.
 - **A keyframe is a turning point.** From its frame on, the crop is the
   keyframe's until the next keyframe. Before the first keyframe it is the
   clip's own crop. Into a diamond the crop switches on its frame, so a
   camera switch takes one keyframe, put where the camera switches. From a
   circle the crop glides into the next circle, over the whole time between
-  them, easing out and in. A glide runs only between circles, Tim's rule
-  on #750: a diamond is an instant switch with nothing before or after it.
+  them, easing out and in. A glide runs only between circles, the user's rule:
+  a diamond is an instant switch with nothing before or after it.
   A circle that starts a glide, after a diamond or the first, has no crop
   of its own: the glide starts from the crop before it, so a circle never
-  makes the crop jump, Tim on #778. A jump is a switch keyframe's.
+  makes the crop jump, as the user put it. A jump is a switch keyframe's.
   So a person who walks across takes a circle where the walk starts and a
   circle where it ends. A keyframe holds across a cut by the time the
   short plays. A part turned with Rotate has a crop of its own, so its
   crop still starts at its cut.
 - **The crop frame is dragged only with the playhead on a keyframe**, and
-  moves that keyframe's crop, Tim's rule on #750, so what moves is the
+  moves that keyframe's crop, the user's rule, so what moves is the
   diamond or the circle lit under the playhead. On a circle that starts a
   glide the crop frame stays put too, and its title says the glide starts
   from the crop before it. Anywhere else the crop
@@ -2846,20 +2845,20 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   and its title says to press S or G to put a keyframe there. That is
   also how the crop before the first keyframe is placed. A clip with no
   keyframes has one crop, dragged anywhere in it.
-- **An edge works like a snow shovel**, Tim's word on #778. The start or
+- **An edge works like a snow shovel**, the user's word. The start or
   the end of the clip dragged over keyframes carries the one it reached
   last on the clip's first or last frame, with its own crop, and the
   others it covers wait out of sight. A cut carries the latest keyframe
   it covers on the first frame after it. A glide keyframe is pushed the
   same way when no second one is left beside it: it rides on the edge as
   an empty ring until the edge reaches another keyframe, which then
-  rides in its place, Tim's report of 12 November. Every keyframe keeps its own place, so the edge dragged back out
+  rides in its place, the user's report of 12 November. Every keyframe keeps its own place, so the edge dragged back out
   leaves each where it was. Placing the crop on a carried keyframe,
   pressing S or G on it or dragging it makes it a keyframe of its own
   where it stands. Removing it removes only it, and the others it
   covered stay out of sight until the edge is dragged back out past them,
   so no keyframe comes up in its place. Removing a cut with a
-  double-click moves no keyframe, Tim's report of 13 November: the one
+  double-click moves no keyframe, the user's report of 13 November: the one
   it carried becomes a keyframe of its own where it stands, and the
   others it covered come back on their own moments with the part they
   are in. The keyframes, the glide line and
@@ -2871,7 +2870,7 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   clip timeline, drawn and lit the way a thumbnail is: filled in the
   app's light colour, and white while the playhead is on its frame, the
   clip's first and last frame included. It is 18 px, larger than it was
-  at first, after Tim found it too small. A thumbnail and a keyframe on
+  at first, after the user found it too small. A thumbnail and a keyframe on
   one frame stand at either end of the playhead's line, which runs 12 px
   on past the clip timeline's top and bottom border, past both marks. It is the thumbnail's kind of mark: a click puts the
   playhead on it, a drag moves it to another frame with its crop, and a
@@ -2881,14 +2880,14 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   Two circles in a row are joined by a line on the top rule, as thick as
   the rule, from the well's black brightening into the light colour at
   the second, so the two read as one glide. Three circles in a row have
-  two lines, and a diamond has none. Tim picked the look from a sheet of
+  two lines, and a diamond has none. The user picked the look from a sheet of
   nine. The engine says where each glide runs, `Glides`, so the line
   starts where the short's glide does, at a circle a cut hides too. The
   line comes with the second circle, before its crop is dragged. A circle
   with no circle beside it does nothing yet, so it is drawn as an empty
   ring of the same size and colour, which fills in once a second circle
   is put, and its title says it needs a second glide keyframe to glide.
-  Tim picked the ring from a sheet of eight, over a dimmed circle.
+  The user picked the ring from a sheet of eight, over a dimmed circle.
 - **Automatic crop** removes every keyframe of the clip and brings back
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing a keyframe gives its part the crop of
@@ -2897,8 +2896,8 @@ who moves across the picture. Plan row 3.26 and #750, the design is in
   was placed on the picture turned one way, and steers the part only while
   it is turned that way: turned another way, it waits, and four turns
   bring it back. A crop placed on the frame of a keyframe that
-  waits takes it to the picture as it stands. Tim found the diamonds gone
-  after a turn, issue #348.
+  waits takes it to the picture as it stands. The user found the diamonds gone
+  after a turn.
 - **Undo** takes back adding, moving and removing one.
 
 ### Rotate
@@ -2941,11 +2940,11 @@ lies on its side. Plan row 3.25, the design is in
   through it, with a dark glow round it that parts it from the waveform
   and the empty track alike. It is as tall as the track leaves between the
   keyframes and the thumbnails, shrinks with the part as the clip timeline
-  is zoomed out, and stays sharp at every size. Tim's idea, issue #348,
+  is zoomed out, and stays sharp at every size. The user's idea,
   after a small mark in the part's corner ran into the keyframes and an
   icon really cut out of the wash showed black in one place and grey in
   the next, the wash drawn over it a second time was too faint, and a
-  solid dark was too strong. Tim chose it from a sheet of sixteen. It
+  solid dark was too strong. The user chose it from a sheet of sixteen. It
   takes no click.
 - **Undo** takes a rotation back like any other edit.
 - **A phone's video stands up by itself.** A phone that records upright
@@ -2976,11 +2975,11 @@ moved by hand, on the clip timeline.
   into the last word the caption before shows, as far as its middle, and
   the caption before then goes where it appears, see `startFloor` in
   `engine/edit.go`. A word in running speech is heard up to about one of
-  the speech model's 80 ms steps off, and Tim heard a word start earlier
-  than its block, which he could not move there. The words keep their own
+  the speech model's 80 ms steps off, and the user heard a word start earlier
+  than its block, which they could not move there. The words keep their own
   time, so the first word still lights where it is heard. Dragging the right side used to
   take the caption before along, so pulling a left edge in over a word
-  drew the caption before into the room Tim had just cleared. Nothing
+  drew the caption before into the room the user had just cleared. Nothing
   overlaps, because the picture shows one caption at a time. An edge
   lands on a whole frame.
 - **With shift an edge lands on a word**, the way an edge of the clip and
@@ -2993,9 +2992,9 @@ moved by hand, on the clip timeline.
   goes with it, for an end onto the last frame the caption is up on, and
   for a start into its first word, the way a click on the caption goes,
   because the frame that holds a word's start begins before it, where the
-  caption is not up yet. Tim saw nothing to snap to there. A click on the
+  caption is not up yet. The user saw nothing to snap to there. A click on the
   start edge puts the playhead there too. The edges of a caption used to move a frame
-  at a time with shift or without, found by Tim.
+  at a time with shift or without, found by the user.
 - **An edge sets when a caption is shown, and nothing else.** Dragged
   in, an edge leaves out of its caption every word whose middle it
   stands past, so pulling the left edge of "one two three" past "one"
@@ -3026,9 +3025,9 @@ moved by hand, on the clip timeline.
   word fixes what the caption reads, like a typo, and only undo or the
   word typed in again brings it back. A drag used to remove the words it
   passed, and dragging back out brought back every removed word it
-  passed, however it had been removed: Tim removed a word, dragged the
-  start of the caption after it out to where he heard its next word
-  begin, and the word came back, #598. Words a drag took out before this
+  passed, however it had been removed: the user removed a word, dragged the
+  start of the caption after it out to where they heard its next word
+  begin, and the word came back. Words a drag took out before this
   was changed were kept as removed words, the same as the caption box
   keeps them, so on a clip edited then they stay removed too, and undo
   or typing them in again brings them back.
@@ -3041,17 +3040,17 @@ moved by hand, on the clip timeline.
   after the word, the room it took stays empty. Where the speech runs on
   into the next caption, the time of the word is no pause, so the caption
   before stays up until the next appears, whichever of the two the word
-  was in, and nothing goes blank while someone is still talking. Tim saw
-  the blocks on the clip timeline come apart where he had removed a word,
-  with the sound running on under the gap, #597. Before #189, the
+  was in, and nothing goes blank while someone is still talking. The user saw
+  the blocks on the clip timeline come apart where they had removed a word,
+  with the sound running on under the gap. Before, the
   caption kept the time the word had, and the two ways of taking a word
-  off its edge ended differently, which Tim found.
+  off its edge ended differently, which the user found.
 - **A double-click puts an edge moved by hand back where all its words
   put it**, which shows the words it left out again. A word removed in
   the caption box stays removed. It undoes any number of drags. It used to
   leave the words a drag had taken out still out, which put a dragged
   edge only where the words left put it, about where it already stood:
-  Tim dragged a right edge in and double-clicked twice, and the second
+  The user dragged a right edge in and double-clicked twice, and the second
   time nothing moved.
 - **The captions in the video preview follow the drag**, so what is
   seen while dragging is what is saved.
@@ -3073,11 +3072,11 @@ moved by hand, on the clip timeline.
   known by when it starts, so taking out a word before it is no new word.
   The block popped as a dragged left edge passed the playhead, which a
   click on the block puts at its first word, and a dragged right edge
-  never came near it, so the two edges looked different, found by Tim. A
+  never came near it, so the two edges looked different, found by the user. A
   block on the clip frame's edge pops from that edge, so it never reaches
   past the frame and never leaves the edge behind: popping from its middle,
   it did both for a moment each time a dragged clip edge passed a word,
-  which Tim saw as the blocks trailing the edge. A block takes no focus, so no focus ring is left
+  which the user saw as the blocks trailing the edge. A block takes no focus, so no focus ring is left
   round one when the keys walk the words on. A click puts the
   playhead a frame into the caption's first word, so the video preview
   shows that word lit, the first caption of a clip included, which is on
@@ -3099,7 +3098,7 @@ moved by hand, on the clip timeline.
   the playhead goes with it, so the video preview shows the frame the
   caption now starts or ends on. It used to go there only when the hand
   let go, and not at all in a drag, the one thing on the clip timeline
-  left that way after Tim's report, see One press for the whole clip
+  left that way after the user's report, see One press for the whole clip
   timeline.
 
 A moved caption is kept in the clip's plan against the word it begins or
@@ -3303,7 +3302,7 @@ own lane, so finding and rendering clips never wait for it. The other way
 round, a search finding clips with the model on this machine holds
 transcription up while it finds, since the two models share the machine.
 A model in the cloud, or llama-server on another machine given as its
-address, shares nothing with it and holds nothing up, issue #276.
+address, shares nothing with it and holds nothing up.
 
 There used to be an **Activity** page that listed every job again, with
 its progress, **Cancel**, **Clear finished** and the job's log. Nobody
@@ -3348,7 +3347,7 @@ its rows are `.card` in `app.css`, shared by both pages. Everything saves
 as it is changed, the way System Settings does on the Mac, so there is no
 **Save** button and nothing to forget to press. A field saves a moment
 after the typing stops, or at once when the page is left or the app
-closes before that moment, issue #879, see `saveNow` in `Settings.svelte`.
+closes before that moment, see `saveNow` in `Settings.svelte`.
 
 **What is in the way is said where it is put right**, not in a list of
 its own. A missing API key is said on the row where the key goes, a
@@ -3363,13 +3362,13 @@ page to the bottom to find where to fix what it said.
 **Clip model**, the names the setup uses too. Each is a choice with the
 line under it, and under that **Downloaded models**, folded, the models
 of its kind on this machine with the room they take and a trash can
-each. Tim found the two drawn two ways, 2026-10-27, and found **Finding
+each. The user found the two drawn two ways, 2026-10-27, and found **Finding
 clips** a poor name for the second. Where the models are kept is said
 once, in the info mark of each section, in full and with the slash at
 its end that says it is a folder. It was said under Advanced and What the
-app found until then, and Tim missed it once it was gone, 2026-10-28. A
+app found until then, and the user missed it once it was gone, 2026-10-28. A
 line under every model saying where it is, tried next, was clutter, and
-he asked for the info mark alone.
+they asked for the info mark alone.
 
 **The clip model is one choice**, **Find clips with**, in one list: under
 **In the cloud** a model from each company the app knows, Claude Sonnet 5
@@ -3420,7 +3419,7 @@ chosen model in the cloud has no tick either, so the tick means one
 thing in that list. The
 speech model's list is the same. A group of its own, **To download**, for
 the models still to fetch, parted a list that is one kind of thing, and
-Tim asked for the one group with a mark, 2026-10-28. A cloud mark on them
+the user asked for the one group with a mark, 2026-10-28. A cloud mark on them
 before that, the way Finder marks a file still in iCloud, read as a model
 that runs in the cloud, under a group of that name. A model this machine
 is short of memory for says so beside its size. Nothing says best: the biggest model
@@ -3620,7 +3619,7 @@ cloud the name of the model the API is asked, for one newer than the list,
 each a name on the left and a field on the right. There is no field for
 ffmpeg or llama-server any more, see **The tools are the app's own**, and
 none for the models: a model is chosen in its own section and spoken of
-there and nowhere else, where Tim once found the models in six places,
+there and nowhere else, where the user once found the models in six places,
 the sections, their info marks, two fields here and two rows of the check.
 Empty paths use the same defaults as the command line, which keeps every
 flag. Under the paths is what the check looked at, found or not, with the
@@ -3639,7 +3638,7 @@ Fairy.app/Contents/MacOS/ffmpeg`, whatever form the settings file, the
 check or the folder dialog handed it over in, see `shownPath` in
 `frontend/src/lib/paths.ts`. A path from `~` is written out from the home
 folder. Inside the home folder from `~` and the rest in full was tried
-first, and Tim still saw two kinds of path on one page, 2026-10-28. Only
+first, and the user still saw two kinds of path on one page, 2026-10-28. Only
 what is shown changes, what is saved stays as it came.
 
 **Logs** is the app's log, an area of its own between Training data and
@@ -3648,7 +3647,7 @@ files the log has with the older ones, their size and their lines, and
 where the file in use is, and keeps up while Settings is open: the app
 sends it again as lines are written, about once a second at most, so a
 toast that comes while Settings is open is listed without a reload.
-Tim asked for the name, for no fold, and for it to keep up, 13 November
+The user asked for the name, for no fold, and for it to keep up, 13 November
 2026. The folder button shows it in Finder, the
 way Show in folder does for a video in the sidebar, and the trash can
 removes every file of the log, the older ones too and nothing else in
@@ -3658,8 +3657,8 @@ newest first, in their own words, with when each came and the video it
 was about, read back from the log. A toast runs out after ten seconds,
 and this is where one that went unread is read again. Report on a row,
 shown while the pointer is on it, opens Report a Problem with the
-toast's words written in it, the way the toast's own Report does. Issue
-#421, Tim's ask of 20 October 2026.
+toast's words written in it, the way the toast's own Report does, the
+user's ask of 20 October 2026.
 
 What belongs to the episode being worked on is not here: the caption face,
 the size and the height, and how many clips a search looks for and how
@@ -3692,7 +3691,7 @@ report waiting, and a click brings it back. Closing the app's window
 closes it too. The report window has a title bar of its own, measured
 on its own, so with the app's window fullscreen its name still stays
 clear of its own buttons. It was in the
-Help menu before, where Mac apps keep it, and Tim wanted it where a
+Help menu before, where Mac apps keep it, and the user wanted it where a
 person looks while working.
 
 One field for what happened, and one row under it: **Dictate**, a
@@ -3704,15 +3703,15 @@ the home folder written as ~ and nothing of a video but its file name.
 Beside the buttons there is only what went wrong, and why a recording
 stopped by itself. What the buttons do shows on them, and the info mark
 beside **Report** says how the page works and what goes in a report.
-Tim found standing lines there, Listening and Saved on the Desktop,
+The user found standing lines there, Listening and Saved on the Desktop,
 read as news that was not true yet.
 
 **Clear**, then **Report**, the buttons of words on the right as the
-buttons of icons are on the left, issue #415. Clear empties the report,
+buttons of icons are on the left. Clear empties the report,
 what was written and every picture and recording. It asks first in the
 box over the page, "Everything you wrote and attached will be deleted.
 You can undo it with Cmd+Z." Cmd+Z then brings it all back and Cmd+Y
-clears it again, as Tim asked, until something else is typed, attached
+clears it again, as the user asked, until something else is typed, attached
 or removed, or the window is closed. The words go as one step of the field's own undo and the
 pictures follow it, removed on the Go side the way the bin removes one,
 so the app's copies go at the next start or the next report. Report and
@@ -3720,24 +3719,24 @@ Clear are off while there is nothing to report, no words and no
 pictures.
 
 Tab goes from the field to Report, then through the pictures and back
-to the field, and Shift+Tab the other way, issue #404, so Enter, Tab and
+to the field, and Shift+Tab the other way, so Enter, Tab and
 Enter end a dictation and make the report. The page moves the focus
 itself: macOS tabs past buttons unless full keyboard access is on, so
 Tab went from the field to the first picture, or with none to nothing
-Tim could see. Each move asks for the focus ring, because WebKit draws
+the user could see. Each move asks for the focus ring, because WebKit draws
 none on a focus the page moved after a click into the field. Tab pressed
 while the last words of a dictation are still written down leaves the
 focus on Report once they are in. Report pressed while the last words of a dictation are
 still written down says Making at once and waits for them, so they are
 in the report. While dictating Tab does nothing: only Enter, Escape and
-the microphone end a dictation, as Tim asked.
+the microphone end a dictation, as the user asked.
 
 The pictures are for screenshots and screen recordings. They come from
 the paperclip's open box, from a drop anywhere on the window, or from a
 paste into the field. Ten at most and 10 MB each. A picture is PNG or
 JPEG, decoded and written again as PNG, so nothing the file held besides
 the picture travels, a place or a camera among it. A recording is what
-the usual screen recorders make, issue #326: a video the app takes,
+the usual screen recorders make: a video the app takes,
 see [Which files are videos](#which-files-are-videos), which is what the
 Mac's own recorder, QuickTime, Windows, phones and OBS make, or WebM,
 which the GNOME and KDE recorders and browsers make. It is judged by its
@@ -3747,13 +3746,13 @@ its sound untouched, without what the file said about itself, the
 place, the date or the device. Its tile shows a still of its first frame
 with its length in the corner, the way Photos and Finder show a video,
 and the report holds the recording itself, under `recordings/`, see
-`cmd/framefairy-app/recording.go`. Tim's first recording was turned
+`cmd/framefairy-app/recording.go`. The user's first recording was turned
 away as not a PNG or JPEG picture. A file that is not a
 picture or a recording, or is too big, or would make an eleventh, is not attached and a
 toast in the window's top right corner says which and why, "notes.txt
 cannot be attached because it is not a picture or a screen recording", see
 [Toasts](#toasts). It used to be red text in the row of the buttons,
-which wrapped over three lines beside Report, Tim found. They show under the card in a
+which wrapped over three lines beside Report, the user found. They show under the card in a
 grid of three, four once the window is wide, every tile the same size
 on whole pixels and 16 by 10, the picture fitted in. A bin shows on a
 tile under the pointer, or on Delete with the tile focused, and the
@@ -3761,7 +3760,7 @@ tile then says Removed with **Put it back** for a moment before the
 grid closes over it, the look the clip list uses, `Removed.svelte`.
 The bin is the quiet trash can of every list, with no box of its own,
 and a shade falls from its corner so it reads on any picture, while the
-tile's edge lifts. On a solid grey square it looked pasted on, Tim
+tile's edge lifts. On a solid grey square it looked pasted on, the user
 found.
 
 What is written and attached is a draft, kept in the app's folder
@@ -3774,7 +3773,7 @@ A recording goes with the window: closing it while somebody talks drops
 the recording, and what was written down by then stays in the draft as
 text. This is on purpose and not the way Stop ends one, which the first
 design had. Left running, the next window took it up again, and every
-word already said came back grey into the text the draft had kept, Tim
+word already said came back grey into the text the draft had kept, the user
 found. While a report is being made the field takes no typing, and a
 picture dropped or pasted then goes into the next report.
 See [LOGGING.md](LOGGING.md), `cmd/framefairy-app/report.go` and
@@ -3785,7 +3784,7 @@ rather than typing it, plan row 2.189. Pressed, it says **Stop** and
 wears the beam while the app listens, and the words appear where the
 cursor was while they are said. Nothing is written down until the
 microphone has been as loud as a voice, 10 dB over a quiet room, since
-the speech model hears words in a room where nobody speaks: Tim pressed
+the speech model hears words in a room where nobody speaks: the user pressed
 Dictate and Stop a few times without a word and was given "yeah yeah".
 The microphone in the button grows and shrinks with the voice it
 hears, so the person sees they are heard. The Go side tells its
@@ -3795,8 +3794,8 @@ bounces: it swells with a word, goes a little past it and settles, and
 falls back between words with a small bounce under its rest. It grows
 from 16 px to 24 px for a raised voice, quickly, in about a tenth of
 a second, see `frontend/src/lib/spring.ts`.
-Following like a meter's needle, with no bounce and up to 28 px, Tim
-found it stiff (#739). It grows by a scale from a drawing at its largest
+Following like a meter's needle, with no bounce and up to 28 px, the user
+found it stiff. It grows by a scale from a drawing at its largest
 size, so it stays sharp and in its place, and it stays white. The
 beam stays the sign that it listens, because running work shows the beam
 on the control it was started from.
@@ -3808,7 +3807,7 @@ a dictation does to the text is worked out in
 `frontend/src/lib/dictating.ts`, in letters and numbers, with unit tests
 beside it. The field was a `contenteditable` of the page's own making,
 so that the words being heard could be grey. It was rebuilt under the
-cursor ten times a second, and on Tim's Mac the cursor bounced at the
+cursor ten times a second, and on the user's Mac the cursor bounced at the
 last line, jumped several lines at a time, went to the top of the
 report, and was left drawn on every line it passed (29 October).
 Dictated words look like typed ones now, the way macOS Dictation shows
@@ -3823,7 +3822,7 @@ talks on. Typing in them settles them at once. The Go side is told with
 Shift+Enter, cuts the recording there, with `BreakListening`: everything
 said before it is written down as a piece of its own and goes in front
 of it, however far behind the voice the speech model is, and what is
-said next goes after it, issues #373, #573 and #584. What was heard
+said next goes after it. What was heard
 there stands in until the piece comes, and once the person types in it,
 it is theirs and the piece does not replace it. A word typed right
 after a word that was said gets a space in front of it. The asks to
@@ -3842,7 +3841,7 @@ Mac text field, puts the line it goes to in view as it is pressed, and an edit p
 cursor's line in view from where the field was before it, so the browser
 finds the cursor in view and never scrolls the field itself. WebKit on a
 Mac puts a cursor that went out of view in the middle of the field, so
-the field jumped several lines at a time on Tim's Mac and then shifted
+the field jumped several lines at a time on the user's Mac and then shifted
 again as the next words came, and other engines put it at the very edge,
 with the padding hidden (30 October). Where the cursor is drawn is
 measured in a copy of the text laid out like the field's,
@@ -3851,14 +3850,14 @@ has WebKit draw the cursor again, by giving it the same colour said
 another way. WebKit draws the cursor again only where its place on the
 screen changed (`recomputeCaretRect` in its `FrameSelection.cpp`), and
 a cursor that moves a line while the field scrolls that same line keeps
-its place: the old one stayed drawn on the line it left, and Tim saw
+its place: the old one stayed drawn on the line it left, and the user saw
 cursors on every line the field scrolled past (30 October).
 
 The field follows the words the way a terminal follows its output:
 while its end is in view, it stays at its end as words come at the end
 of the report, wherever the cursor is. Scrolled away, by the wheel or by
 a key that takes the cursor up past the top, it stays where it was put,
-as Tim asked (30 October). Words said in the middle of the report keep
+as the user asked (30 October). Words said in the middle of the report keep
 the cursor that goes with them in view, while it was in view, as they
 push it down. Pressing Dictate, Stop or Attach with the
 mouse leaves the focus in the field: in WebKit the press took it to
@@ -3879,12 +3878,12 @@ moment later, and everything from the start of the dictation is then
 one step that Cmd+Z takes back and Cmd+Shift+Z brings back again. The
 cursor stays where the person has it while the last piece is written
 in, and what is typed right after the words meanwhile still goes after
-them: Tim pressed Enter at once after ending a dictation, for a new
-line, and the cursor was put back in front of it, issue #373.
+them: the user pressed Enter at once after ending a dictation, for a new
+line, and the cursor was put back in front of it.
 Escape keeps it too, the way it ends
 Dictation on a Mac. It removed everything said once, as on claude.ai,
-and Tim lost a long report to an Escape meant for the app, with nothing
-Cmd+Z could bring back, issue #355. It also
+and the user lost a long report to an Escape meant for the app, with nothing
+Cmd+Z could bring back. It also
 stops by itself, keeping what was said, after 2 minutes without a word
 or once a recording is 10 minutes long, and says why under the field
 where the problem would be. Stop pressed while it does that gets every
@@ -3917,7 +3916,7 @@ person. It hears what was said and one pause after it, never the
 silence beyond, and is asked only when something new was said and once
 more when a whole pause follows, which settles it. While nobody speaks,
 nothing changes: it heard words in the silence and changed the words
-before them while Tim said nothing. It is given the 5 s before that pause
+before them while the user said nothing. It is given the 5 s before that pause
 too, and everything after it, and the words are told apart by when they
 start, so a pause in the middle of a sentence gives it no full stop and
 the words after it no capital. Each `dictation` event carries every

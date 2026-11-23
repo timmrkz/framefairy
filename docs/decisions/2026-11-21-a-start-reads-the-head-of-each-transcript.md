@@ -1,6 +1,6 @@
 # A start reads the head of each transcript
 
-Issue #953.
+An issue on how a start reads the transcripts.
 
 ## The problem
 

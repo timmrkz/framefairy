@@ -2,17 +2,17 @@
 
 Partly replaced by [The waveform keeps up with the hand](2026-11-21-the-waveform-keeps-up-with-the-hand.md).
 
-Issue #909.
+An issue from the user's report of 17 November.
 
 ## The problem
 
-Tim, report of 17 November, 22.30: "I was scrolling back and forth in the
+The user, report of 17 November, 22.30: "I was scrolling back and forth in the
 clip timeline and there was a moment where the waveform of the audio was
 just lagging to catch up and be rendered ... The waveform should always
-be there instantaneously." Issue #909.
+be there instantaneously."
 
-The first fix, #912, taught the window to read the waveform ahead of the
-swipe. Tim, 18 November: "If we assume that the front end shouldn't have
+The first fix taught the window to read the waveform ahead of the
+swipe. The user, 18 November: "If we assume that the front end shouldn't have
 any logic other than displaying information ... why would a dumb UI
 layer have any kind of performance problems? ... I'm wondering what's
 actually broken by design."
@@ -31,7 +31,7 @@ Read on main:
   the preview harness, with answers 40 ms late, a swipe of three views at
   five views a second showed empty track in 24 of 36 frames, and filled
   in 200 ms after the hand stopped.
-- #912 made the policy bigger: a reading every quarter view, half a view
+- The first fix made the policy bigger: a reading every quarter view, half a view
   more ahead in the swipe's direction, several readings out at once. It
   removed the lag on the swipes measured and left the design as it was:
   the window still decides when to ask Go for something that exists.

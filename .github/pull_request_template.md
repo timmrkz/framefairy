@@ -12,8 +12,9 @@ out any other section that has nothing to say.
 No heading here. For each issue, at most 30 words: what goes wrong or
 what was asked, who saw it happen and where, and what gets better. Then
 `Fixes #N` for each issue this finishes, so merging closes it. For
-example: "Fixes #245. On Tim's Mac, start.mp4 showed no picture and did
-not play. Tim found it testing #184. Now it plays."
+example: "Fixes #N. On the user's Mac, start.mp4 showed no picture and did
+not play. The user found it testing
+another pull request. Now it plays."
 -->
 
 - **Architecture:** <!-- better, the same or worse -->
@@ -27,7 +28,7 @@ app, or for CI when only the tests or the build change. One word, and
 when it is faster or slower, the change in percent with its spread,
 `12 % faster, ± 3 %`, or `one run` in place of the spread. It is the
 change overall, on what a person waits on. A part that got slower is
-said in Proof, and its trade-off waits for Tim's yes in the reply. The
+said in Proof, and its trade-off waits for the user's yes in the reply. The
 same only when the change adds and takes away no work that runs. A
 measured change is its number, even inside its spread,
 `2 % faster, ± 5 %`. Everything else goes in Proof: what was measured,
@@ -37,7 +38,7 @@ buys. See Every change knows its performance in CLAUDE.md. Security:
 one word, safer, the same or less safe, for the app, the build and CI.
 Proof says what the change lets in from outside, runs, fetches or lets
 out, when it does any of that. Less safe is fixed before the merge,
-unless Tim says yes to the trade-off in the reply.
+unless the user says yes to the trade-off in the reply.
 -->
 
 ## Root cause
@@ -70,7 +71,7 @@ proof needs.
 ## How to test
 
 <!--
-A numbered list of steps Tim takes to see the change work, each one he
+A numbered list of steps the user takes to see the change work, each one they
 can take as it stands, in the app, in CI or wherever the change shows.
 For the app, the first step is to update to this pull request from the
 Updates page, then what to do, what to look at and what to verify. When

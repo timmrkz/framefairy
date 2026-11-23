@@ -1,8 +1,8 @@
 # The waveform keeps up with the hand
 
-21 November 2026, issue #968. It follows
+21 November 2026, for the issue of the lagging waveform. It follows
 [The video preview keeps up with the hand](2026-11-20-the-video-preview-keeps-up-with-the-hand.md),
-pull request #936, and partly replaces
+and partly replaces
 [The window holds the loudness, and Go sends it](2026-11-18-the-window-holds-the-loudness.md):
 the window still holds the whole loudness and draws every view from it,
 but what is measured now reaches it through a look, not through a stamp
@@ -10,24 +10,24 @@ and a read of the whole.
 
 ## The problem
 
-Tim clicks at random places on the range picker of a 4 h 20 min video he
-has just added. The video preview shows the frame quickly. The waveform
-on the clip timeline shows up 0.3 to 0.4 s later, every time. His report
+The user clicks at random places on the range picker of a 4 h 20 min video they
+have just added. The video preview shows the frame quickly. The waveform
+on the clip timeline shows up 0.3 to 0.4 s later, every time. Their report
 of 21 November, 12.11:
 
-- He added the video again at 12:10:13. Its waveform was measured whole
+- They added the video again at 12:10:13. Its waveform was measured whole
   at 12:10:45, 32 s later. Every click was in those 32 s.
 - After a click the measuring went there within a few milliseconds. The
   waveform for the click's place reached the window 300 to 430 ms after
   the click.
 
-In his words: "Whatever changes you're doing doesn't seem to move the
+In their words: "Whatever changes you're doing doesn't seem to move the
 needle, so maybe you need to switch up your approach." And then: the
 video preview's frames and the clip timeline's waveform are "basically
 the same mechanism. There's a stretch of content to be displayed, whether
 it's a video frame or an audio waveform. And there are those mouse
 pointer events, seemingly at random, which click and drag along the
-range picker or the clip timeline." What #936 does for the frames should
+range picker or the clip timeline." What the video preview's pull request does for the frames should
 be used here too, "so that we are not just writing the same code all
 over again."
 
@@ -42,12 +42,12 @@ How the two worked:
 - **Waveform.** The window told Go where the clip timeline looks and
   waited for nothing. Go measured there first, wrote it to the disk every
   half second, and the app told the window, at most four times a second.
-  The window then read the whole loudness again, 3 MB for Tim's video,
+  The window then read the whole loudness again, 3 MB for the user's video,
   and drew the view from it.
 
 So between measured and on screen there was a write every half second, a
 notice up to a quarter of a second late and a 3 MB read. The video
-preview has none of that. That detour is most of what Tim waits for.
+preview has none of that. That detour is most of what the user waits for.
 
 ## What a click demands, and what the sound can do
 
@@ -57,7 +57,7 @@ Timed in a cloud session, 4 cores, ffmpeg on the sound of a 1 h video:
   frames, so every place is a place to start.
 - Decoding: an hour in about 12 s, about 300 times as fast as it plays.
 - Several ffmpeg side by side add up: each core is another ffmpeg's
-  worth. Tim's Mac has 12 cores.
+  worth. The user's Mac has 12 cores.
 - What comes out is small and kept for good: a byte per 10 ms, 1.5 MB
   for 4 h. Frames are 6 MB each and kept only around the hand.
 
@@ -80,7 +80,7 @@ times a second, and let it read only what is new. It touches the app's
 notice and the window's read, about three files. But the waveform keeps
 a mechanism of its own beside the video preview's, a stamp, a notice and
 a read, and the next change to how the hand is followed is made twice.
-It is more of the same, which Tim asked to step away from. Dropped.
+It is more of the same, which the user asked to step away from. Dropped.
 
 ### B. One schedule for both (share the most)
 
@@ -91,7 +91,7 @@ of the picture, holding the decoder while the window paints, plays, the
 frames of the cards. None of it applies to sound. And sound needs what
 video does not: start anywhere, several at once, keep everything. Every
 one of those would be a question of which kind the schedule holds, the
-pile of flags #936 set out to remove. Dropped.
+pile of flags the video preview's pull request set out to remove. Dropped.
 
 ### C. Share the look, each its own rule (what changes together)
 
@@ -202,7 +202,7 @@ before, 11834 ms, 1 % slower, inside the spread.
   hearing takes every fast core while it runs, all eight of an M2 Max,
   so an ffmpeg out of the view runs at a lower priority and gives way to
   it. With the cores free, as they are once the hearing is done, the
-  measuring runs as fast as ever. The review of #974 found the first
+  measuring runs as fast as ever. The review of the pull request found the first
   draft of this said the hearing had the other half, which was wrong.
 - What the window holds is state, and Go keeps it: which chunks of the
   loudness it sent to which window, `LoudnessSchedule.told`, the way
@@ -212,6 +212,6 @@ before, 11834 ms, 1 % slower, inside the spread.
   review.
 - `/frames/levels` stays, for opening a video: the window reads the
   whole loudness once and the looks keep it up to date.
-- It is wrong if Tim still waits for the waveform after a click on a
-  part not measured, or if measuring side by side slows the hearing he
-  waits on.
+- It is wrong if the user still waits for the waveform after a click on a
+  part not measured, or if measuring side by side slows the hearing they
+  wait on.

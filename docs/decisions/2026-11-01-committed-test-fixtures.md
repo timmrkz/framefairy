@@ -1,10 +1,10 @@
 # Committed test fixtures
 
-1 November 2026, for #670.
+1 November 2026, for the issue on committed test fixtures.
 
 ## The problem
 
-Tim, 1 November 2026: "no test should repeatedly create those fixtures
+The user, 1 November 2026: "no test should repeatedly create those fixtures
 during test execution. We should have those types of test fixtures
 committed into the repository, which not only makes the tests more
 reliable, but also makes the tests faster because all of the data is
@@ -21,9 +21,8 @@ recipe. Two fixtures are committed today, `engine/testdata/open-gop.mp4`
 and `cmd/framefairy-app/testdata/gnome.webm`.
 
 Making them at runtime failed on CI's virtual Mac, where a file is made
-on the graphics chip first, #570 and #657, cost minutes of CI, #575 and
-#527, and let the app be changed for kinds of file only a test made,
-#266, #268, #270, #600, #601, #287 and #553.
+on the graphics chip first, cost minutes of CI, and let the app be
+changed for kinds of file only a test made.
 
 The engine's shared test video shows how far they can be shared. Its 69
 tests asked for 6 lengths, 2, 6, 15, 20, 40 and 70 seconds. Run with one
@@ -67,7 +66,7 @@ never pull the app into a test.
 
 ### 3. Where state lives: made once per machine and kept
 
-The walk videos' way since #527, for every test: made the first time,
+The walk videos' way, for every test: made the first time,
 kept in a folder by the sum of their recipe, cached by CI.
 
 - Layers: a cache under the tests.
@@ -76,8 +75,8 @@ kept in a folder by the sum of their recipe, cached by CI.
 - Next changes: every recipe change makes them all again, on every
   machine.
 - Cost: no file committed, but every fresh machine and every change
-  still runs ffmpeg, on CI's Mac on the graphics chip. #657 stays. It is
-  what Tim ruled out.
+  still runs ffmpeg, on CI's Mac on the graphics chip. That failure stays. It is
+  what the user ruled out.
 
 ### 4. What runs together: made by `make`, before the tests
 
@@ -118,7 +117,7 @@ are handed in, and a test hands in one that gives a length and silence.
   real file, so the fixtures stay for those.
 - Cost: a change to the engine itself, larger than any of the others,
   for tests that today take a second or two each. And the tests would
-  no longer run the ffmpeg the app runs, which is what found #570.
+  no longer run the ffmpeg the app runs, which is what found a failure on CI's Mac.
 
 Two ways of storing the files of 2 were weighed and are not designs of
 their own: Git LFS, which keeps them outside Git's store but needs
@@ -129,7 +128,7 @@ the package, and each test writes it to the disk again for ffmpeg.
 ## What converges
 
 - Committed files: in 1 and 2, and what 3 and 4 would cache. The
-  decisive reason is Tim's rule, and that only committed files keep
+  decisive reason is the user's rule, and that only committed files keep
   ffmpeg out of every run on every machine.
 - One home that every package's tests share: 2, and 4 by its folder. 1
   copies the test picture or reaches across packages by path.
@@ -139,7 +138,7 @@ the package, and each test writes it to the disk again for ffmpeg.
   on purpose comes out the same, and a reader sees what it is.
 
 Dropped: 3 and 4, which make the files again on every fresh machine,
-the cost Tim named. 5 is the better answer for the tests that do not
+the cost the user named. 5 is the better answer for the tests that do not
 look at the video, but it changes the engine for tests that are not
 slow, and it does not remove the fixtures the others need. It is not
 chosen now. If a test of a search ever grows slow for want of it, it is
@@ -190,7 +189,7 @@ an issue of its own.
   bridge answering a walk. A walk asks for a video by what it is, and
   the bridge names the fixture, see `walkFixture`, so the walks' cache in
   CI is gone.
-- The move was made over three pull requests, in the order of #670's
+- The move was made over three pull requests, in the order of the issue's
   Progress list, the engine's tests first and the app's and the walks'
   last.
 

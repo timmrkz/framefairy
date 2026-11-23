@@ -5,7 +5,7 @@ what each costs, and what is still to decide. Every prompt is a file in
 `engine/prompts/`, exactly as the model gets it, so a change to a prompt
 is a change to a few lines in a pull request that can be commented on.
 
-The numbers are from Tim's comparison of 2 October 2026: the first 30
+The numbers are from the user's comparison of 2 October 2026: the first 30
 minutes of an episode in German, six clips of 20 to 30 seconds, Gemma 4
 26B A4B on an M2 Max, which wrote 67 tokens a second and read about 590
 a second.
@@ -28,7 +28,7 @@ what the video is about. Only the three files that came from the Go code,
 `lines`, `heart` and `heart-opening`, send a system part too. It comes
 first, after `=== system ===`, and the message after `=== user ===`.
 They send word for word what the Go code sent before them. The `stories`
-recipes from pull request 19 are still in Go and take no part in this.
+recipes from an early pull request are still in Go and take no part in this.
 
 What each file sends, filled in for a transcript of five lines, is in
 [`engine/testdata/prompts`](../engine/testdata/prompts): as it is, with
@@ -40,7 +40,7 @@ TestEveryPromptAsksWhatTestdataSays -update-prompts` writes them anew.
 
 ## The simplest way of asking: `middle`
 
-Tim's way of asking, as little as can be said, and since 4 October the
+The user's way of asking, as little as can be said, and since 4 October the
 way every search asks. The transcript, with "…" before a line that comes
 after a pause of a second or more, and after it three sentences:
 
@@ -87,15 +87,15 @@ answer is stopped within seconds.
 What the program does with it. It never starts a story later than the
 model's start, and never ends it before the line in its middle. A story
 longer than the length is ended earlier, on a whole sentence, decided by
-Tim after the run of 3 October, where a story with no length to it ran
+the user after the run of 3 October, where a story with no length to it ran
 up to 2.5 minutes. One shorter than the length takes in the sentences
 before it. The model names no title, so a clip is named after its first
 words.
 
 ## What the run of 3 October showed
 
-Tim's episode with Ben, the first 30 minutes, six clips of 20 to 30
-seconds, Gemma 4 26B A4B on his M2 Max. Model is the seconds the model
+The user's episode with a guest, the first 30 minutes, six clips of 20 to 30
+seconds, Gemma 4 26B A4B on their M2 Max. Model is the seconds the model
 took for every ask of the side. The thought is worked out from what the
 plain sides wrote, which the report could not read yet.
 
@@ -169,7 +169,7 @@ the program fitted it, against what it was asked for:
 
 ## What the window from 1:30:00 showed
 
-Tim's episode with Ben, 1:30:00 to 2:00:00, run on 3 October with the
+The user's episode with a guest, 1:30:00 to 2:00:00, run on 3 October with the
 fixes of that day: the length said the same in all three prompts, only
 the longest, up to about 50 words, and `middle` writing its three lines
 in the order they come.
@@ -196,7 +196,7 @@ in the order they come.
 - **The pause mark costs nothing** and kept every clip within the length
   here. One window does not show that it finds better stories.
 
-Tim read the stories of all three and chose `middle+pause`. So since
+The user read the stories of all three and chose `middle+pause`. So since
 4 October `middle` always marks the pauses of a second or more, and it is
 the recipe of every search, in the app and on the command line. `lines`
 and the others stay as experiments. Its answers are recorded for
@@ -244,7 +244,7 @@ So the evidence of the first run said: the program decides the length,
 and the model is not told about seconds at all. The run of 3 October
 showed what that costs. Told nothing of the length, `heart-lean`,
 `points` and `middle` named whole topics, 5, 3 and 5 of 6 clips off the
-length, `middle` up to 351 words. Told the length in words, Tim's idea,
+length, `middle` up to 351 words. Told the length in words, the user's idea,
 `middle` named 4 of 6 stories within the words asked for. `lines`, told
 each line's seconds, had 4 of 6 within the length on its first answer
 too, from a transcript twice the size. So the lean prompts now say the
@@ -259,7 +259,7 @@ names. With an opening it never starts after and a payoff it never cuts,
 a story whose stretch from opening to payoff runs 45 seconds has nothing
 the program may take away. The model hardly ever leaves anything out
 inside a clip: all 24 clips of the first comparison were one piece.
-**Decided by Tim: such a story stays whole.** If it is a good story, the
+**Decided by the user: such a story stays whole.** If it is a good story, the
 person cuts in the app what they do not want in it, and the app makes
 that easy. Neither is the length a fixed 30 seconds: it is a setting in
 the app, so how far a story runs over depends on it too.
@@ -312,7 +312,7 @@ Each line of the transcript is a phrase as it was said: a new line
 begins at a pause of 0.45 s or more, or after a sentence of 2.5 s, or
 before 14 s.
 
-| Format | Example | Characters, Tim's window |
+| Format | Example | Characters, the user's window |
 | --- | --- | ---: |
 | `lines` today | `[314] 4.6s (pause 0.8s, quieter) In Schlössern und so gemacht` | 35,396 |
 | number and words | `[314] In Schlössern und so gemacht` | 26,385 |
@@ -366,7 +366,7 @@ That is the line numbers, the title and the reason, and nothing else.
 
 Nothing holds the model to the line, unlike JSON, which a schema holds
 it to. A grammar of our own was tried first, and `points` never finished
-in Tim's run of 3 October. llama-server applies such a grammar from the
+in the user's run of 3 October. llama-server applies such a grammar from the
 model's first token, where for a schema it builds one that lets Gemma
 think first. So Gemma could not open its thought, most likely wrote its
 thinking into the title, which the grammar let run without a line break,

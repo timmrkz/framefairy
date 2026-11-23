@@ -1,789 +1,378 @@
 ---
 name: testing
-description: How to write, fix and review tests in any project, backend, frontend or anything else, and how to find a bug before fixing it. Tests verify what matters to the people using the product, never wait on the clock, and run fast. Read it before writing, changing, fixing or reviewing a test, before fixing a reported bug, and before writing code that keeps time, waits on work or reaches the disk, a program, the network or the clock. Where another skill says otherwise about tests, this one wins.
+description: How to write, fix and review tests in any project, and how to find a bug before fixing it. Tests verify what matters to the people using the product, never wait on the clock, and run fast. Read it before writing, changing, fixing or reviewing a test, before fixing a reported bug, and before writing code that keeps time, waits on work, or reaches the disk, a program or the network. Where another skill says otherwise about tests, this one wins.
 ---
 
 # Testing
 
-A test is not the work. The work is knowing that what people rely on in
-the product does what it should, every time, on any machine, and finding
-out in seconds when it stops. A test is how we know. Everything below
-follows from that.
+A test is not the work. The work is knowing that what people rely on
+works, every time, on any machine, and hearing in seconds when it stops.
 
-Two people are named here. **The user** is the person the agent works
-for, who owns the product and decides what it should do. **The people
-using the product** are the ones it is made for. A project's own
-instructions, its README, its contributing guide or its agent file,
-say where its fakes, its events and its checks are. This skill says how
-to use them, and what to push for where they are missing.
+**The user** is the person the agent works for, who decides what the
+product does. **The people using the product** are who it is for. The
+project's instructions say where its fakes, events and checks are. This
+skill says how to use them, and what to push for where they are missing.
 
 ## 1. Verify what matters
 
-- **Start from the product, not the code.** Before a test, say in one
-  sentence what a person using the product would see go wrong if this
-  broke: an order charged twice, a page that never loads, a file the
-  product deleted that it should have kept. That sentence is what the
-  test guards. If there is no such sentence, there is no test to write.
-- **What the product should do is written down.** The project's
-  instructions, the doc of the part, the issue, what the user said. A
-  test checks that, not what the code happens to do today.
-- **When nobody can say why a behaviour is in the product, question the
-  feature, not only the test.** A test that protects a behaviour nobody
-  wants keeps it alive.
-- **What a person can see can be measured, and what can be measured is
-  tested.** A colour a little off, a box a pixel out of place, a step
-  that lags behind the hand: read the pixels, the box, the frame, the
-  time it took. The user should never be the first to find it.
-- **A promise to the people using the product is proven, not assumed.**
-  It never deletes their files. It never reads what it was not given.
-  Such a promise has a test or a check in CI that fails the day it
-  breaks.
-- **A test catches a break.** Name the change to the code that would make
-  it fail. If only a deliberate decision can fail it, a wording, a
-  constant, the shape of a private struct, it is a change detector. It
-  fails on every redesign and sleeps through every bug, so it does not go
-  in.
-- **Expected values are written by hand.** Never work out what is
-  expected with the code under test or its helpers, because then both
-  sides are wrong together. A test that checks the code against a copy
-  of the code's own rule proves nothing. A table of cases with literal
-  wants is the usual shape.
-- **Coverage is a map, not the goal.** Every behaviour that matters should
-  be covered, so coverage should be high. But a covered line is not a
-  verified line: a test that runs code and checks little reports 100 %
-  and proves nothing, and a product can fail with every line covered.
-  High coverage from weak tests is worse than lower coverage from strong
-  ones, because it looks safe.
-- **Every test can fail.** A test that would still pass with the code
-  broken guards nothing. Mutation testing finds those: it breaks the code
-  on purpose, a constant changed, a branch removed, an empty answer, and
-  reports every break no test caught. That is a tool's work in CI, see
-  section 12. Where CI has none yet, break the code by hand once and see
-  the test fail, and push for the tool. The same holds when an existing
-  test is rewritten: the rewrite must still fail where the old one did.
+- **Start from the product, not the code.** Say in one sentence what a
+  person would see go wrong if this broke: an order charged twice, a page
+  that never loads, a file deleted that should have been kept. The test
+  guards that. No such sentence, no test.
+- **Test what the product should do,** as the project's docs, the issue
+  or the user say, not what the code does today.
+- **When nobody can say why a behaviour exists, question the feature,**
+  since its test keeps it alive.
+- **Where the product has a screen, what a person can see is measured
+  and tested:** a colour a little off, a box a pixel out, a step that
+  lags the hand, see the interface skill. The user is never the first to
+  find it.
+- **A promise to the people using the product,** like never deleting
+  their files, has a test or CI check that fails the day it breaks.
+- **A test catches a break.** Name the code change that would fail it. A
+  test only a deliberate decision fails, a wording, a constant, a private
+  struct's shape, is a change detector that fails every redesign and
+  sleeps through every bug. Leave it out.
+- **Expected values are written by hand,** never computed with the code
+  under test or its helpers, or both sides are wrong together. A table of
+  cases with literal wants is the usual shape.
+- **Coverage is a map, not the goal.** A covered line is not a verified
+  one, and high coverage from weak tests is worse than lower coverage
+  from strong ones, because it looks safe.
+- **Every test can fail.** For every behaviour a change adds, name the
+  line whose removal must fail a test, the gate, the guard, the call,
+  remove it in a scratch copy and watch the test fail. Reviewers doing
+  this kept finding a guard with no test behind it. Mutation testing does
+  the same across the code, a CI tool's work, see section 12, so push for
+  it where CI has none. A rewritten test still fails where the old one
+  did.
+- **Check what comes out, not that the code asked for it:** the bytes
+  sent, the pixels painted, the file written. Checking the request
+  is enough only where a hard interface guarantees the effect.
+- **An empty result cannot pass.** Check the length before looping over
+  results. Check each setup step took effect: a test of redo passed when
+  the undo before it did nothing. In a concurrency test, check each side
+  ran. Never throw away a load test's answers.
+- **Pick values no fallback can produce.** A value that happened to equal
+  the fallback made a test pass while the code did the opposite of its
+  name.
+- **Check the fixture can show the case.** "Picks a different row" needs
+  a fixture with two rows.
 - **No retries.** A test passes on its first try or it has failed. A
-  retry, a runner's retry setting, a rerun in CI or a loop that reads or
-  acts again until the answer suits it, wherever it is written, lets a
-  test pass with the code broken, and hides the very order a flaky test
-  is about. A runner's retry setting stays at zero. What is left is a
-  gesture that corrects itself the way a person does, a hand that aims
-  again after a near miss, a check of a product's own retries, or a
-  comparison the test makes again because the state it compared has
-  moved on since, never because the same state gave an answer it did
-  not like. Each one says so where it is, and the project keeps a
-  complete list of them, so the next reader does not have to judge each
-  loop again.
-- **Not every line earns a test.** Glue that only passes values on, code
-  a library already tests, a log line's wording: leave them. Spend tests
-  where a mistake would reach a person.
+  runner's retry setting, which stays at zero, a rerun in CI, a loop that
+  acts again until the answer suits it: each lets a broken test pass and
+  hides the order a flaky test is about. Allowed are only a gesture that
+  corrects itself the way a person's does, a check of the product's own
+  retries, or a comparison redone because the state moved on, never
+  because the same state gave an unwelcome answer. Each says so where it
+  is, and the project keeps a complete list of them.
+- **Not every line earns a test.** Glue that passes values on, code a
+  library tests, a log line's wording: leave them. Spend tests where a
+  mistake would reach a person.
 
 ## 2. What a test covers
 
 A reported bug is one case of a kind. The test covers the kind.
 
-- **Every variant.** Both edges, in and out, all four corners and all
-  four sides, left to right and right to left, first and last.
+- **Every variant.** Both edges, all corners and sides, both directions,
+  first and last.
 - **Every place the behaviour appears.** A key that closes one list closes
-  every list in the product, so the fix and its test cover all of them,
-  not only the one in the report. The same gesture behaves the same on
-  every kind of element.
-- **What must stay the same.** A change to one item leaves its neighbours
-  where they were. A fix to one thing leaves the layout, the wording and
-  the timing of the rest alone. Check what the fix must not touch as well
-  as what it changes. A fix that changes something nobody asked for is a
-  new bug.
-- **Two paths to one result agree.** When two gestures or two calls are
-  meant to end the same way, a test runs both and compares them.
-- **Things that are separate stay separate.** Two parts that have nothing
-  to do with each other are proven not to move each other.
-- **The whole class of action sequences.** Try the orders around the one
-  that was reported: remove then undo, undo then edit, edit while work
-  runs, the same thing again from another state. State that survives
-  where it should have been cleared shows up this way.
-- **Again, and fast.** A gesture repeated, a double click after a drag, a
-  button pressed ten times, two requests at once.
+  every list, and a gesture behaves the same on every kind of element.
+- **Every path that shares the cause:** the undo, every writer of the
+  same file, everything that moves the same view. A cause left in a
+  sibling path is the commonest review finding.
+- **One check per sentence of the report.** "It stays put, and then
+  scrolling works again" is two checks.
+- **What must stay the same.** Neighbours stay put, the rest keeps its
+  layout, wording and timing. A change nobody asked for is a new bug.
+- **Two paths to one result agree,** and **separate things stay
+  separate.** Test both.
+- **The orders around the reported one,** remove then undo, undo then
+  edit, edit while work runs, to find state that should have been
+  cleared.
+- **Again, and fast.** A gesture repeated, a double click after a drag,
+  ten presses, two requests at once.
 - **The edges of the input.** Empty, one, very many, very short, very
-  long, the first and the last, a session left open for an hour.
-- **What changes together changes in the same frame.** When one action
-  changes three parts of a screen, a test reads the frames and checks
-  they moved together. Lag is behaviour too: a view that trails the hand,
-  an animation that stutters, is measured frame by frame and fails a
-  test.
-- **The core path is always guarded.** The one thing everything else
-  stands on, signing in, opening a document, playing a file, has a test
-  that runs on every change.
-- **Rules after every step.** Some breaks can happen anywhere: an error
-  in the console, a request that failed, two items selected where one may
-  be. An end-to-end test checks those after every step, so every new test
-  gets them for free.
-- **Invalid states are made impossible, not tested.** Where the types or
-  the data can rule out a state, they do, and there is no error path to
-  test.
+  long, a session left open for an hour.
+- **On a screen, what changes together changes in the same frame.** Lag
+  and stutter are behaviour, measured frame by frame.
+- **The core path is always guarded.** Signing in, opening a document,
+  paying: a test on every change.
+- **Rules after every step.** End-to-end tests check after every step
+  for a console error, a failed request, two items selected where one may
+  be, so every new test gets them free.
+- **Invalid states are made impossible, not tested,** by types or data.
 
 ## 3. Is it already tested?
 
-Issues describe the same behaviour in different words, so the same thing
-gets tested twice by people who did not know of each other. Two tests of
-one thing cost two maintenances and say nothing new. Before writing one:
+The same behaviour turns up in issues in different words and gets tested
+twice. Before writing a test:
 
 - **Search the tests** for the function, the gesture and the words of the
-  behaviour.
-- **Ask the coverage** which lines the existing tests already run, and
-  what one test reaches on its own, so two tests of the same lines are
-  found.
-- **Strengthen rather than add.** When a test covers the code but missed
-  the bug, the test was weak: add the case to its table, or make its
-  check exact. A second test beside it is a copy that drifts.
+  behaviour, and **ask the coverage** which lines existing tests run.
+- **Strengthen rather than add.** A test that covers the code but missed
+  the bug was weak: add the case to its table or make its check exact. A
+  second test beside it drifts.
 - **A regression asks why the tests missed it.** Say in the pull request
-  which test should have caught it and why it did not, and fix that test.
-  A behaviour settled once needs a guard so it is never settled again.
-- **One behaviour, one level.** Test a thing at the lowest level that can
-  see it. The logic lives in the core, and the interface shows what the
-  core says, so a rule is tested in the core. What the person sees of it
-  is tested in the interface. An end-to-end test does not check again
-  what a unit test proves, it checks what a person sees and does. When a
-  bug lives in logic in the interface, the logic moves to the core, under
-  a unit test.
+  which test should have caught it and why not, and fix that test, so a
+  behaviour settled once is never settled again.
+- **One behaviour, one level,** the lowest that can see it. Rules are
+  tested in the core, and an interface test checks only what a person
+  sees and does. Logic found in the interface moves to the core, under a
+  unit test.
 
 ## 4. Tests never wait
 
-This is the rule that matters most, and the one most often broken.
+The rule that matters most, and the one most often broken.
 
-**A test runs straight through.** It sets up the world, takes a step and
-checks the result, and then the next step. There is no moment where it
-stands by in the hope that some work has finished. Everything that moves
-is in its hands: the clock, the order work is done in, what a service
-answers, what the disk holds, what the backend sends.
+**A test runs straight through.** Set up, take a step, check, next step.
+Everything that moves is in its hands: the clock, the order of work, what
+a service answers, the disk, what the backend sends.
 
-**Event-driven means the test moves on events, not on time.** An event
-is something that has happened and says so. A test gets to the next step
-in one of two ways, best first:
+**It moves on events, not on time,** in one of two ways, best first:
 
-1. **It causes the event itself.** It calls the function and has the
-   answer, it moves the fake clock forward, it hands the queue a job and
-   steps it. Nothing runs that the test did not start, so there is
-   nothing to wait for.
-2. **It receives the event the code sends for exactly that step.** A
-   channel the code closes when the job is done, a callback, a message,
-   a program writing that it is ready, the page resolving a promise when
-   the step has been drawn. Where work crosses into another program, a
-   browser, a database, a worker, this is how the test hears it ended.
-   The event comes the moment the work is done, so this is not a wait,
-   it is a reply.
+1. **It causes the event itself.** It calls the function, moves the fake
+   clock, hands the queue a job and steps it. Nothing runs that it did not
+   start.
+2. **It receives the event the code sends for exactly that step:** a
+   channel closed when the job is done, a callback, a program writing that
+   it is ready, the page resolving a promise once the step is drawn. It
+   arrives the moment the work is done, so it is a reply, not a wait.
 
-**Never the clock.** A test that sleeps, or looks again and again until
-a deadline, or gives a step some milliseconds to finish, is time-based,
-and time-based tests are wrong:
+**Never the clock.** No sleep, no poll until a deadline, no milliseconds
+for a step:
 
 - A wait long enough on one machine is too short on a busy one, so the
-  test fails now and then, on someone else's machine or in CI, for no
-  reason in the code.
-- The waits that are long enough add up to minutes of CI on every push.
-- It checks something nobody asked for, that the work usually ends
-  within so many milliseconds, and not whether it is right.
-- A poll with a deadline is the same guess in a loop. It is not the
-  cure for a sleep, it is a sleep.
+  test fails now and then, for no reason in the code.
+- Waits long enough add up to minutes of CI on every push.
+- It checks that work usually ends in time, which nobody asked for.
+- A poll with a deadline is a sleep in a loop.
 
-**Load may make a test slower, never make it fail.** A test that passes
-alone and fails beside others, or on a busy runner, is waiting on time
-somewhere. That is the bug, not the load.
+**Load may make a test slower, never make it fail.** One that fails on a
+busy runner waits on time somewhere, and that is the bug.
 
-What time-based tests look like, all of them wrong:
+**The details are in [waiting.md](waiting.md),** read before writing a
+test that waits on anything. In short: wait for the step to end on its own event, sent after the last stage
+that can drop the result, then compare. Read and act in one step inside
+the product, and time reactions there. Prove that something did not
+happen with a try-lock or what the code decided, then one check. Set a
+framework's default timeout to the runner's own. Time the product defines
+runs on a fake clock the test moves, which does not order threads.
 
-```go
-// Wrong: hopes the job is done after 100 ms.
-q.Add(job)
-time.Sleep(100 * time.Millisecond)
-check(t, q.Find(id))
+**A test that has to wait is a finding,** never fixed by waiting longer.
+Ask:
 
-// Wrong: a poll with a deadline is the same guess, repeated.
-deadline := time.Now().Add(5 * time.Second)
-for q.Find(id).State != Done {
-	if time.Now().After(deadline) {
-		t.Fatal("timed out")
-	}
-	time.Sleep(10 * time.Millisecond)
-}
+- **Why is this work slow?** If it is slow for a person too, log it as a
+  product bug.
+- **Is this the right test from the right place?** Waiting on a slow
+  service to check how its answer is shown tests the service. Hand the
+  interface an answer from a fake, and test the slow part at its own
+  level.
 
-// Wrong: a test's own timeout. A hang is the test runner's to end,
-// and Go's prints every goroutine when it does.
-select {
-case <-done:
-case <-time.After(2 * time.Second):
-	t.Fatal("too slow")
-}
-```
+**Where the code gives no event, the code gains one,** as part of the
+fix. A test never works around code that cannot say when it is done.
 
-```js
-// Wrong: gives the click half a second.
-await page.click("text=Save");
-await page.waitForTimeout(500);
-
-// Wrong: "nothing happened for 250 ms" is a guess about time too, and
-// so is waiting for the network to be idle.
-await page.waitForLoadState("networkidle");
-
-// Wrong: a setTimeout, Date.now or performance.now to decide when to
-// go on.
-await new Promise((r) => setTimeout(r, 300));
-```
-
-What event-driven tests look like:
-
-```go
-// The code says when the job ends, and the test hears it. No time.
-done := make(chan Job, 1)
-q := NewQueue(WithOnEnd(func(j Job) { done <- j }))
-q.Add(job)
-got := <-done
-check(t, got)
-```
-
-```js
-// The page resolves a promise when the step is done, and the test
-// awaits it. It returns the moment the work ends, not a moment later.
-await page.click("text=Save");
-await page.evaluate(() => window.saved);
-```
-
-The names in these are made up. Find the real event where the test is,
-and where there is none, add it to the code.
-
-A helper that checks a condition again and again until it holds, like
-`waitForFunction`, `Eventually` or `waitFor`, is a poll. Use it only to
-read a state the page already shows. To go on when something happens,
-await the event that says it happened.
-
-**A helper every step goes through is lean.** A function run after every
-step of every test, to let the app settle, is paid thousands of times a
-run. A callback in it that does nothing, or a duration hidden in it,
-costs minutes.
-
-**Time the product itself defines runs on a clock the test moves.** A
-message that leaves after 10 s, a retry every 30 s, a delay of 150 ms
-before a search starts: that time is behaviour, and the test checks it,
-but it never lets real time pass. It moves a fake clock past the moment
-and checks before and after, in a fraction of a second:
-
-```go
-// The retry every 30 s, checked over 90 s of fake time, in no time.
-synctest.Test(t, func(t *testing.T) {
-	r := startRetries(fake)
-	time.Sleep(90 * time.Second) // the bubble's clock is fake
-	synctest.Wait()
-	if r.tries() != 4 {
-		t.Fatalf("tried %d times in 90 s, want 4", r.tries())
-	}
-})
-```
-
-Use the fake clock the language or the test tool already has: Go's
-`testing/synctest`, the fake timers of Vitest or Jest, Playwright's
-`page.clock`, `freezegun` or `time-machine` in Python, or a clock handed
-in, see section 5. A duration in a test is fine, it is a number. A check
-that bans the clock in tests must never block a clock the test controls.
-
-**A test that has to wait is a finding, not a test to fix by waiting
-longer.** When a test can only go on after work that takes a while, ask
-two questions before anything else:
-
-- **Why is this work slow?** If it is slow for a person too, that is a
-  bug or a performance issue in the product. Log it as an issue.
-- **Is this the right test from the right place?** A test that waits for
-  a slow service to check how its answer is shown tests the service
-  through the interface. Hand the interface an answer, from a fake, and
-  test how it is shown. The slow part gets its own test at its own level,
-  if it needs one.
-
-**Where the code gives no event, the code gains one.** That is part of
-the fix, not a detour from it. A test is never the place to work around
-code that cannot say when it is done.
-
-**The same holds for whoever runs the tests.** An agent starts a long
-test run in the background, ends its turn, and is woken when the run
-ends. It never sleeps on it and never polls a CI run, it subscribes to
-the run's events and acts when they come.
+**The same holds for whoever runs the tests.** An agent runs a long suite
+in the background and is woken when it ends, and subscribes to CI's
+events rather than polling.
 
 ## 5. Design for testing
 
-If the design of a solution is broken, tests help very little. Code that
-is hard to test is usually code that is shaped wrong, and the fix is the
-shape.
+Code that is hard to test is usually shaped wrong, and the fix is the
+shape. **The details are in [design.md](design.md),** read before writing
+code that keeps time, waits on work, or reaches the disk, a program, the
+network or the clock. In short:
 
-### Hand things in
-
-Code that touches what a test must control takes it from outside instead
-of reaching for it itself. That is dependency injection, and it means
-nothing more than a field, a parameter or an option:
-
-| What | Handed in as |
-| --- | --- |
-| the time of day | a `now` function, or a clock interface |
-| timers and timeouts | a clock that can be moved, or the language's fake clock around the test |
-| the disk | a file system interface, with one in memory for tests |
-| random numbers | a source of randomness |
-| a network service, a model, a database | an interface, with a fake the test drives |
-| a program the code runs | its path or a runner |
-| hardware or a system service outside the code, a hardware codec, a driver, a keychain | a value the program hands in, absent by default, see below |
-| the end of work | a channel, callback or event the caller gives |
-
-- The program hands in the real thing. A test hands in one it drives.
-- What a test hands in lives with the tests and is handed in by the
-  tests' own setup. The product keeps only the seam and the real thing
-  as its default, never the test's double or a flag, setting or global
-  that picks between the two. A switch can be set wrong in a build, and
-  then a customer runs the test's clock.
-- Plain constructor injection, the simplest form. No container library.
-- A new piece of code that keeps time, reads a file, calls a service or
-  does work on its own thread takes these from outside from the start.
-  Adding it later is a refactor nobody gets round to, and the test that
-  needed it got a sleep instead.
-- The interface the same: a module that keeps time takes its timer, or
-  is tested under fake timers.
-
-### Test up to the boundary you own
-
-A product hands work to systems it does not own: the operating system's
-media engine, a graphics driver, a keychain, a service in the cloud. What
-the product owns is what it hands over, the arguments, the request, the
-order of the calls. What the system then does with them is the system's
-code, on the machine the test happens to run on, which is rarely a
-machine people use. A test that runs it tests the system: a virtual
-machine's media engine that hangs says nothing about the product. This
-is ports and adapters, Alistair Cockburn's hexagonal architecture: the
-product meets the outside at a port, the real system is the adapter
-behind it, and a test stands in for the adapter.
-
-- **The product does not reach for the system by itself.** It is handed
-  it, the way it is handed the network: the program's own `main` hands
-  the real one, and what a test makes gets none, so it runs the plain
-  path in the product's own code or a stand-in. Code that picks the
-  system by the operating system it finds itself on reaches it from
-  every test on that system too.
-- **What is handed over is the test.** A stand-in records the arguments
-  or the request, and the test checks them against what the real system
-  took on a real machine, argument by argument. It runs on every machine
-  in milliseconds, and a change to what the system is asked shows there
-  first.
-- **The line is what differs between machines.** A library the project
-  builds itself and runs the same everywhere may run in a test, because
-  what it makes of the product's input is the product's behaviour. What
-  changes from one machine to the next, hardware, a driver, a system
-  framework, is behind the port.
-- **When a real machine breaks the contract,** the input that broke it
-  goes into the test of what is handed over, and the adapter is fixed
-  for it. A run of the real system in CI is not the answer, because CI's
-  machine is not the one that broke.
-- Something that fails on one machine and passes on another is first a
-  question of whether the test reaches past the boundary, before it is a
-  question of the product, section 6.
-
-### Shapes that test well
-
-- **Concerns apart, behind small interfaces.** A part with a clear
-  interface is tested alone, and a change to it runs only its own tests,
-  section 8. Two jobs mixed in one place are hard to test and hard to
-  even talk about.
-- **One source for each piece of state.** When one part of the product
-  knows something happened and another does not, they disagree. State
-  kept in two places is a bug waiting for an order of events, and no
-  test finds every order.
-- **One mechanism, used everywhere, not a copy.** A countdown of 8 s in
-  one place and 10 s in the rest, a button styled anew in each view: a
-  copy starts out the same and drifts. One mechanism has one set of
-  tests and is right everywhere at once. One renderer for the preview and
-  the final output makes a mismatch impossible, which beats a test that
-  compares two renderers. A test that fails when a second copy appears
-  keeps it that way.
-- **One path for every input.** When every input goes through the same
-  steps, one set of tests covers them all. A special path for one kind of
-  input needs its own tests and drifts.
-- **A fix makes the design simpler, or it is the wrong fix.** Ask whether
-  it streamlines the design or adds an exception that works around what
-  is already there. A fix that is generic and sound makes the next case
-  of the same kind right by design.
-- **Known problems have known answers.** An animation curve, a cache, an
-  update flow, a retry: look up how established software does it before
-  inventing. The spec then comes from that, and the test checks it.
-- **Numbers from first principles.** Check that a cost makes sense before
-  accepting it because the arithmetic adds up. Why does one small image
-  take 10 MB? Why does loading take half a minute? Design from what the
-  product already knows.
+- **Hand things in.** What a test must control, time, the disk,
+  randomness, a service, a program, the end of work, comes in as a field
+  or parameter. The program hands in the real thing, a test one it
+  drives, and nothing handed in means the harmless thing. The test's
+  double never ships, nor a flag that picks it.
+- **Test up to the boundary you own.** Hardware, drivers and system
+  frameworks sit behind a port, and a test checks what is handed to it.
+- **Shapes that test well:** concerns apart behind small interfaces, one
+  source for each piece of state, one mechanism used everywhere, one path
+  for every input, one contract for the channel between two halves, a
+  golden file for a format that crosses a boundary, every background task
+  owned by something that hears it end.
+- **A fix makes the design simpler, or it is the wrong fix.**
 
 ## 6. When a test fails, or a bug is reported
 
-A failing test asks what should have happened, and what kept it from
-happening there. A bug report asks the same.
+**The steps are in [failures.md](failures.md),** read before fixing any
+failure or bug. In short:
 
-1. **Reproduce it first, as it happened.**
-   - Use the input the reporter used, the same file, the same data, at
-     the moment their log names, not at a moment you pick.
-   - Read what the reporter already sent, logs, recordings, a report
-     bundle, before asking them for anything again.
-   - Reproduce it on your own machine where you can. Ask the user to run
-     something only for what only their machine can show.
-   - See the exact failure before the fix and see it gone after. A fix
-     never seen failing has not been shown to fix anything.
-2. **Read what should happen.** The spec of the part, the issue, what the
-   user said. Then read the code and the test.
-3. **Find the cause.**
-   - "It worked yesterday" means something changed. Bisect with the
-     failing test, and explain why it worked before, not only why it
-     fails now.
-   - Several symptoms after a run of merges often have one cause. Look
-     for it before fixing each, or the fixes stack up on each other.
-   - A test that passes most of the time and fails now and then has a
-     source of entropy in the test or in its environment. Look for it
-     there first: the event the test misses or the order it assumes,
-     with the tools in section 7, in their order. Loading the machine
-     comes last. The product is suspected only once the trace shows the
-     product itself doing the wrong thing in that order.
-   - A vague report of instability, with no case that fails every time,
-     is still a report. Look at the design, its concurrency and its order
-     of events.
-4. **Decide what is wrong**, asking of each in this order, and moving
-   on only once the evidence rules it out:
-   - **The environment.** Does it fail only where the test runs, on a
-     CI runner and its virtual hardware, on a busy machine, with a
-     stand-in program or a file made for the test? Look there first.
-     What the environment's own hardware or programs do is fixed in how
-     the test uses them, never in the product, and a test that reaches
-     them at all is the first thing to change, see Test up to the
-     boundary you own in section 5. What the test fed the
-     product decides it, not where it ran: input from outside, like a
-     fuzzer's bytes, or an order of the product's own work that a busy
-     machine only made likelier, is the product's to fix.
-   - **The test.** It checked something nobody specified, read the page
-     before the step had happened, or depended on time. Fix it so it
-     checks what matters, on an event.
-   - **The product's assumptions, the design.** The behaviour the test
-     protects does not serve a person, or the spec contradicts itself,
-     or the code is shaped so the right behaviour cannot be tested
-     without waiting. Tests on a broken design protect the broken
-     design. Say so to the user plainly, log an issue, and fix the
-     design when that is what the change is for. No patches on top:
-     find the root cause, and refactor if that is what it takes.
-   - **How the product carries them out, the code.** Fix the code, the
-     test stays as it is.
-5. **Size it.** How big is the difference, and where would a person see
-   it? A finding too small to matter is closed as won't fix, with its
-   number.
-6. **Look around it.** Where one bug was, try the gestures and states
-   next to it. Each new case found gets its own failing test, or its own
-   issue when it is outside the change.
-7. **Fix for every machine people use.** A fix tuned to one machine, its
-   screen, its speed or its system, is a bug on the next machine. A CI
-   runner's virtual hardware and a stand-in are the test's environment,
-   not machines people use, see step 4.
+1. **Reproduce it first, as it happened,** with the reporter's input and
+   moment, and see the exact failure before the fix.
+2. **Read what should happen,** then the code and the test.
+3. **Find the cause.** Bisect. Look for one cause behind several
+   symptoms. A flaky test's entropy is in the test or its environment
+   first.
+4. **Decide what is wrong,** in this order: environment, test, design,
+   code.
+5. **Size it, look around it, and fix it for every machine people use.**
+
+**A failing test changes the test, not the product, unless a person
+meets the same failure,** and that evidence is named first: a report or
+log from someone using the product, a reproduction with real input on a
+machine people use, or an ordinary gesture at a person's speed. The
+maintenance skill says why.
 
 Never, to get green: loosen a check, raise a timeout, add a sleep or a
-retry, skip, quarantine or remove a test, or change the expected value to
+retry, skip, quarantine or remove a test, or set the expected value to
 what the code now says without knowing why it changed.
 
 ## 7. Flaky, red and hanging checks
 
-### Finding why a test fails now and then
+A test that fails now and then met an order of events it did not expect.
+**How to find it, and how to handle red and hanging checks, is in
+[failures.md](failures.md).** In short:
 
-A test that fails now and then has run into an order of events it did
-not expect. In a single-threaded language, a page, Node, Python's asyncio,
-nothing touches the same memory at once, so there is no data race to
-detect. What fails is the order: the test read the result before the
-step had finished, or waited for a signal that had already gone by, or
-the code under test did the two halves of its work in an order nobody
-thought of. Find that order with these, in this order:
+1. Read what the failure left: trace, race report, dump of every program
+   the test started. A runner that keeps no trace is the first fix.
+2. Read the code for the order it assumes.
+3. Make that order happen on purpose, by holding one event back.
+4. Try the orders with a tool: race detector, fake clock, a scheduler.
+5. Run it alone many times only to count. Load the machine last.
 
-1. **Read what the failure left.** The runner keeps a trace of a
-   test that failed, and keeps it in CI with the run. Playwright's
-   trace has every action and the console and, where a project pays
-   for them, a film of the screen and snapshots of the page before and
-   after each action, with the network. Read what the project records before
-   looking for what it left out. The race detector has its
-   report, and `go test -timeout` prints every goroutine. Most flakes are
-   explained there, without running anything. Where the runner keeps
-   no trace of a failure yet, that is the first thing to fix. A trace
-   is several records of different cost. The calls and the console
-   are text the runner already has, and cost next to nothing. A film
-   of the screen or a snapshot of the page costs every run real time,
-   and a runner may record the network only along with the snapshots,
-   as Playwright does. Then the runner can hear each request and its
-   answer from outside the page and keep them beside the trace, which
-   adds nothing to the page under test. Keep the cheap records on for every test, and turn
-   the costly ones on only for the tests whose trace showed they are
-   needed, in one list that names the issue for each. The change that
-   fixes the test takes its line out.
-2. **Read the code for the order it assumes.** Name the event the test
-   waits for and where the code sends it. Ask whether the test could
-   read before it, and whether the event could come before the test
-   listens. Ask the same of the code under test.
-3. **Make that one order happen on purpose.** Hold the one event back
-   until the test lets it go: a request held with Playwright's
-   `page.route` or by a gate in the fake, a step of the fake clock, the
-   page's CPU throttled by the browser's own setting. A flake made to
-   fail every time is a bug with a test, and the fix is seen to work.
-4. **Try the orders systematically.** Go's race detector, and
-   `testing/synctest` for goroutines and timers. For async code in
-   JavaScript and TypeScript, fast-check's scheduler, `fc.scheduler()`
-   in a unit test, which tries the orders in which promises and events
-   can resolve, and cuts a failure down to the shortest order that
-   breaks it.
-5. **Run it again, alone, many times.** That counts how often it
-   fails, before and after a fix. It finds no cause by itself.
-6. **Load the whole machine, last.** Busy loops beside the test change
-   every timing at once, so a run that fails says nothing about which
-   order was wrong, and one that passes proves nothing. It takes many
-   runs, it breaks unrelated tests beside it, and a cloud machine under
-   load hangs. Reach for it only when nothing above has found the
-   order, and then go back to step 3 with what it showed.
-
-Debug logs added to see the order are step 1 done late: the trace
-should already hold them. A log line that would have explained the
-failure belongs in the trace or the product's logs for good.
-
-### Red and hanging checks
-
-- **Flaky tests come first.** A test that fails now and then teaches
-  everyone to ignore red. Rank them by how often they failed in CI, the
-  nightly runs too, and fix the worst first. A nightly job that has never
-  passed is among the worst.
-- **A check that hangs is fixed at once**, in a change of its own, and
-  never lived with. It is also no reason to hold back work CI has already
-  proven.
-- **Red CI is explained before it is rerun.** Read the check's
-  annotations and compare its step times with the last runs on the main
-  branch. A runner that was never given, or was lost, says so there. A
-  failure of ours is ours, whatever change it showed up on.
-- **Every failure seen is written down where it is tracked.** Whoever
-  runs into a failing check, on their own change, on someone else's or
-  on the main branch, looks for the issue that tracks it. When one is
-  open, a comment there gives the run, the commit, the test and what it
-  printed, so every time it happened is in one place when the issue is
-  read again. When none is open, one is opened, the way the project logs
-  its issues. The reply to the user links the comment or the issue.
-- **A manual step to get tests passing is a defect.** A stale build
-  rebuilt by hand, a cache cleared by hand: fix the build so the step is
-  never needed again.
-- **A guard that is removed says why.** A lint rule, a check or a test
-  taken out says in the pull request what it guarded and how the code is
-  better without it.
+Flaky tests come first, a hang is fixed at once, red is explained before
+it is rerun, and every failure seen is written down where it is tracked.
+The same kind of test fix twice means one helper every test goes through.
 
 ## 8. Fast, and cheap to run
 
-A test suite is run thousands of times. Every second in it is paid on
-every push, by the people waiting on CI and by the machines.
+Every second of a suite is paid on every push.
 
-- **Run only what a change reaches.** The tests of what changed and of
-  what depends on it, chosen from the diff. That simple rule beats a
-  clever cache. Prefer a tool's own feature, a test runner's affected
-  mode, a CI path filter, to a script of ours.
-- **Use the caches there are, and never defeat them.** Test runners and
-  build tools cache results until their inputs change. So:
-  - never turn the test cache off across the board, like Go's
-    `-count=1`. It is for a test that reads what the cache cannot see.
-  - no reading of the time, a random seed or a file that changes every
-    run into what a test checks, or its result is never cached.
-  - keep the test selection flags stable, caches are keyed on them.
-  - CI keeps its build cache, its test cache, its dependencies and its
-    downloads from one run to the next.
-- **Where a cache cannot apply yet, push for one.** Rerunning what did
-  not change is a cost to remove, not a fact to accept. Say so to the
-  user or log an issue with what it would save.
-- **Every CI job has a short limit, and a job that grows past it is
-  split**, never given a longer limit. Expensive machines run only what
-  differs on them. A run for an old commit is cancelled when a new one
-  comes.
-- **Fast by design.** No waits, section 4. The lowest level that can see
-  the behaviour, section 3. The smallest and shortest fixture that shows
-  it. Slow tests in parallel, unless they change what the whole process
-  shares, and then a comment says which. Off the disk, with a file system
-  in memory. A mockup or a screenshot to settle where something goes
-  needs no realistic fixture at all.
-- **Every test file and every CI job earns its place.** Say what it
-  guards and what it costs. Test tooling stays small, uses the tools'
-  own features, and keeps fixtures as plain files, not text inside a
-  script. A fixture is made once and committed with the tests, never
-  made while they run: one made every run costs its time on every run,
-  and fails wherever the tool that makes it does. Share the few that
-  are there before adding one.
-- **Work on the tests proves itself against the main branch.** The point
-  of it is tests that are faster and more reliable. A change to tests or
-  CI shows its numbers before and after, on the same machine, in a table.
-  What does not measure faster or more reliable is dropped. Before
-  speeding anything up, measure each step and understand where the time
-  goes, and look up what is already measured first. Then keep your eyes
-  on the goal: once every wait is an event, a test that is no faster was
-  already as fast as it could be.
+- **Run only what a change reaches,** its tests and those of what depends
+  on it. How CI picks them is the ci skill.
+- **Use the caches, never defeat them.** Never turn the test cache off
+  across the board, like Go's `-count=1`, which is for a test that reads
+  what the cache cannot see. Keep the time, a random seed or a file that
+  changes every run out of what a test checks. Keep test selection flags
+  stable, caches are keyed on them.
+- **Where no cache applies yet, push for one,** in an issue that says
+  what it would save.
+- **Fast by design.** No waits, section 4. The lowest level, section 3.
+  The smallest fixture that shows it, and none realistic for a mockup.
+  Slow tests in parallel, unless they change what the whole process
+  shares, and then a comment says which. A file system in memory.
+- **Every test file and CI job earns its place:** say what it guards and
+  what it costs. Test tooling stays small and uses the tools' own
+  features. Fixtures are plain files, made once and committed, never
+  while tests run, which costs time every run and fails wherever their
+  tool does. Share the few there are before adding one.
+- **Work on the tests proves itself against the main branch,** with
+  numbers before and after, on one machine, in a table, and is dropped if
+  it is not faster or more reliable. Measure each step, and read what is
+  measured already, before speeding anything up. Once every wait is an
+  event, a test no faster was already as fast as it can be.
+- **A shortcut never changes which product code runs.** It may remove
+  what the harness does twice, never turn off an animation, a detector or
+  a code path. Compare coverage before and after, name every line lost,
+  and keep a test with the behaviour on. Reduced motion in random tests
+  saved two seconds a job and dropped code only they reached.
+- **A test that reads the whole repository defeats the cache.** Such
+  checks belong with the lint.
+- **A benchmark proves only the case it reaches.** Check it reaches the
+  reported case, compare with the branch's merge base, not a stale main,
+  and interleave before and after on one machine.
+- **A probe that proved a fix is committed** as a test or benchmark in the
+  same change.
 
 ## 9. Tests that last
 
-A test is code we keep. It must still be right and readable in a year.
+A test is code we keep, still right and readable in a year.
 
-- **Through the behaviour, not the inside.** Test what a person or a
-  caller sees, through the package's own functions, so a refactor that
-  keeps the behaviour keeps the tests green.
-- **Each test reads on its own.** What it sets up, what it does and what
-  it expects are in the test, not three helpers away. Repeating a line
-  in two tests is fine when it keeps each readable.
-- **Shared setup lives in one place, extended, not copied.** One fake of
-  each service, one set of helpers for the end-to-end tests. A second
-  fake drifts from the first.
-- **The name says the behaviour.** `TestTrimKeepsAWordWholeWhenAnEdgeLandsInIt`,
-  not `TestTrim3`.
-- **A failure says what went wrong** in words: what was asked, what came
-  back, what was wanted.
+- **Through the behaviour, not the inside,** via the package's own
+  functions, so a refactor keeps the tests green.
+- **Each test reads on its own.** Setup, action and expectation are in
+  the test, not three helpers away. A line repeated in two tests is fine.
+- **Shared setup lives in one place, extended, not copied.** One fake per
+  service, one set of end-to-end helpers. A second fake drifts.
+- **The name says the behaviour.** `TestRefundKeepsTheOrderWhenOneItemIsReturned`,
+  not `TestRefund3`.
+- **A failure says what went wrong:** what was asked, what came back,
+  what was wanted.
 
 ## 10. Unit tests
 
-- **Concurrent code is tested from several threads at once,** under the
-  race detector where the language has one. Anything asynchronous, a
-  queue above all, has a test that does everything callers can do to it
-  at the same time, while work runs.
-- **The standard test library first.** An assertion library adds little,
-  and the ones with `Eventually` add a poll.
-- **No build tags or flags to hide slow tests.** A test that needs a
-  program that is not installed skips with a reason, and CI installs it.
-- **Off the disk, off the network.** A test that must touch the real
-  disk or another program says why, on the test itself.
-- **Fuzz only what reads bytes from outside**: a file the product opens,
-  an answer from a service, a key, a webhook, a path. Everything else
-  gets its basics as a table, deterministic. A crash the fuzzer finds is
-  kept as a case with its fix, so every run plays it.
+**The details are in [unit.md](unit.md).** In short: concurrent code is
+tested from several threads at once under the race detector, and a
+concurrency test fails without its lock. The standard test library first.
+Off the disk and the network. Fuzz only what reads bytes from outside,
+and run many more seeds than CI when changing code under a random test.
+A fake keeps the real one's limits.
 
 ## 11. End-to-end and interface tests
 
-- **An end-to-end test does what the person did and checks what they
-  saw,** against the real backend. A fix to the interface comes with one
-  that fails on the main branch and passes with the fix.
-- **The whole product, the way a person uses it.** An end-to-end test
-  goes from one part of the product to another, as a person does. A test
-  of one component is no replacement for it.
-- **A test only proves what its fixture contains.** Make fixtures the way
-  real inputs are: the encodings, sizes and odd shapes that come in from
-  outside. Know what a fixture hides: a video at a low frame rate hides
-  what lasts less than a frame, a steady signal hides what only shows
-  when it varies, data with one row hides what only two rows break.
-- **Each shape of a thing.** The simple case and the one with every
-  option, and a test meant to cross a boundary fails unless it really
-  crossed it.
-- **Test what ships.** The product built from the code under test, with
-  the programs and libraries it ships with, set up as close to the
-  customer's as the test machine allows.
-- **The engine the product really runs on.** Where the product runs in a
-  browser engine or a platform of its own, run the same steps there too
-  before saying it works there. Typing, focus, hover, painting and timing
-  are where engines differ.
-- **Only what the window can show.** An interface test checks two
-  things: that a key or a click does what the person meant, and that
-  the screen shows what the core sent. Rules the core decides, file
-  formats and long lists of values go in unit tests of the core, and the
-  interface test checks once that the screen shows the result. Time in
-  an interface test runs on a clock the test moves, the sound card and
-  the timers too, so a one minute clip plays as fast as its frames can
-  be drawn.
-- **Add a step, not a test.** Every interface test starts the product
-  from scratch, which costs seconds on every run. A new case goes into
-  a test that is already there, and a new one says why no test there
-  could take its steps.
+**The details are in [end-to-end.md](end-to-end.md),** read before writing
+or fixing one. In short: do what the person did and check what they saw,
+against the real backend and the product's own wiring, in the engine the
+product runs on. Check only what the window can show, read everything a
+rule judges at one moment, wait on a barrier built from signals, and
+judge motion by the frames drawn. A new case is a step in an existing
+test.
 
 ## 12. CI holds the rules
 
-Everything in this skill that a tool can check, a tool checks, in CI, on
-every pull request. An agent is not asked to remember to run a command,
-and the user is not asked to catch what a machine can. A rule that is
-only written down slips. A rule a check enforces holds, and it protects
-the agent too, because the check fails before the user has to.
-
-What CI should hold, with established, widely used open-source tools,
-never a scanner of our own:
-
-| Rule | Checked by, for example |
-| --- | --- |
-| no sleep, timer or real clock in a test | a linter that bans the calls in test files: golangci-lint's `forbidigo`, ESLint's `no-restricted-globals` and `no-restricted-syntax`, `eslint-plugin-playwright`'s `no-wait-for-timeout`, Ruff's banned-api rule |
-| no poll with a deadline | the same linters, banning `Eventually`, `waitForFunction` with a timeout and the like |
-| no skipped, focused or disabled test slipping in | the skip and focus rules of the ESLint plugins for Playwright, Jest and Vitest, and the same ban on skip calls in other languages |
-| every test can fail | mutation testing: Stryker for JavaScript and TypeScript, Gremlins for Go, mutmut for Python |
-| no data race | the race detector of the language, on every run |
-| no test that touches the disk or the network without saying why | a check over the test files, or a sandbox that refuses them |
-| no retries | the runner's retry setting checked at zero |
-| no job over its limit | the job's own timeout in the workflow |
-
-- **Only new breaks fail.** Where old code still breaks a rule, the
-  check takes a baseline from the main branch, the linter's own
-  new-from-revision mode or its list of suppressions, so a pull request
-  fails only on what it adds, and the old breaks are an issue to burn
-  down.
-- **A pull request cannot weaken the check that judges it.** Changes to
-  the checks themselves, their configuration and their baselines are
-  visible in review and owned by the user, and a baseline only ever
-  shrinks.
-- **Where a rule has no check yet, push for one.** Log an issue that
-  names the rule, the tool that would hold it and what it would have
-  caught. Do not make up for it by asking anyone, agent or person, to run
-  a command by hand.
-- **CI is the proof that counts.** Push once the tests of the change
-  pass, and let CI run the rest. A local run never holds back work CI
-  has already proven, and an agent never runs the whole suite again on
-  its own machine after the push: CI runs it on the machines it was
-  sized for and answers first. A failing run on your pull request is
-  your work, and you hear of it by its event, so the agent subscribes
-  to its pull request's events as it opens it.
+Every rule here a tool can check is checked in CI on every pull request,
+because a rule only written down slips: no sleep or poll, no skipped or
+focused test, every test can fail, no data race, no retries. Which tool
+holds which is the ci skill. **CI is the proof that counts:** push once
+the change's tests pass and let CI run the rest. Never rerun the whole
+suite locally after the push, and hear of a failing run by the pull
+request's events.
 
 ## 13. Review and handing over
 
-- **An independent review, once the work is done.** The review skill
-  says who reviews, when and what for. Of the tests, the reviewer breaks
-  the code to see them fail, and looks for a test that passes by
-  coincidence, a test that checks code against a copy of its own rule,
-  and a wait on time.
-- **Review your own work for design first.** A change of thousands of
-  lines that is still broken is a sign the design is wrong. Ask why it
-  needs so much code.
-- **The tests prove the behaviour. The user only looks.** The steps to
-  try a change by hand are a click or two. When the user only needs to
-  see a state that is hard to reach, an error after retries or a message
-  for a rare case, give them a quick way to see it, a temporary page or
-  a temporary commit that shows every state with made-up data, removed
-  before the merge. Every step they are given exists in the product as
-  they have it and can be done at a person's speed. A case faster than a
-  hand is proven by a named test, and the step only looks at the result.
-- **Visual choices iterate fast.** Render several candidates from the
-  real code side by side, rather than one build per idea. Compare a
-  visual behaviour with the version before it and with the established
-  way to do it, and measure it, before handing it over.
-- **A proof that needs the user's machine says so.** Prove what can be
-  proven on yours, against fakes, and say which number only their
-  machine gives and where they will find it.
-- **Logs make the product testable in the field.** Structured logs, from
-  an established library, at the places a bug would be found, tagged with
-  what they are about. One report from a person using the product should
-  be enough to find the bug, without a second round.
+- **An independent review, once the work is done,** as the review skill
+  says. The reviewer breaks the code to see the tests fail, and looks for
+  a test that passes by coincidence, checks code against a copy of its
+  own rule, or waits on time.
+- **Review your own work for design first.** Thousands of lines still
+  broken mean the design is wrong.
+- **The tests prove the behaviour. The user only looks,** in a click or
+  two, each step in the product as they have it and at a person's speed.
+  For a state hard to reach, give a temporary page or commit showing
+  every state with made-up data, removed before the merge. A case faster
+  than a hand is proven by a named test, and the step only looks at the
+  result.
+- **Visual choices iterate fast.** Render candidates from the real code
+  side by side, compare with the version before and the established way,
+  and measure.
+- **A proof that needs the user's machine says so.** Prove what you can
+  against fakes, and say which number only theirs gives, and where.
+- **Logs make the product testable in the field.** Structured logs from
+  an established library, tagged, where a bug would be found, so one
+  report is enough to find it.
 
 ## 14. Where other advice says otherwise
 
-General testing advice is good on the whole. On these points it is
-wrong, and this skill wins:
+General testing advice is good on the whole. On these points this skill
+wins:
 
 | Common advice | Why not | Instead |
 | --- | --- | --- |
-| `assert.Eventually`, `waitFor`, condition-based waiting up to a deadline | a poll with a deadline is a sleep in a loop | the event for that step, section 4 |
+| `assert.Eventually`, `waitFor`, waiting on a condition up to a deadline | a sleep in a loop | the event for that step, section 4 |
 | sleep a few seconds for a service to start | a guess about time | the service says it is ready, and the test hears it |
-| a test's own timeout on `time.After` or a timer | a guess about time, and it hides where it hung | the test runner's own timeout |
+| a test's own timeout on `time.After` or a timer | a guess that hides where it hung | the runner's own timeout |
 | `networkidle`, wait for the page to be quiet | quiet is a guess about time | the event the page sends when the step is done |
-| retry a flaky test, in the runner, in CI or in a loop in the test | a test that passes on its second try is failing | no retries, section 1, and find the cause, section 7 |
-| load the machine to make a flaky test fail | it changes every timing at once and proves nothing when it passes | the trace, then the one order held on purpose, section 7 |
+| retry a flaky test, in the runner, in CI or in a loop | passing on the second try is failing | no retries, section 1, and the cause, section 7 |
+| load the machine to make a flaky test fail | changes every timing, proves nothing when it passes | the trace, then the one order held on purpose, section 7 |
 | turn the test cache off to be safe | every run pays for every test | keep the cache, section 8 |
 | a coverage number as the bar | coverage is not verification | what matters verified, and mutation testing, section 1 |
 | a dependency injection container | more machinery than a constructor | plain constructor injection, section 5 |
-| tags or flags to keep slow tests out of the usual run | slow tests stay slow and go unrun | make them fast, or skip with a reason when a program is missing |
+| tags or flags to keep slow tests out of the usual run | slow tests stay slow and unrun | make them fast, or skip with a reason when a program is missing |
 
 ## Before saying done
 
-1. The test guards a behaviour a person relies on, named in one sentence.
-2. It covers the kind, not only the case: every variant, every place, and
-   what must stay the same.
+1. The test guards a behaviour named in one sentence, and the line whose
+   removal fails it was named and removed once.
+2. It covers the kind: every variant, every place, what must stay.
 3. Nothing already tested it, or the old test was strengthened instead.
-4. It failed on the main branch, for the reason given, and passes now.
+4. It failed on the main branch for the reason given, and passes now.
 5. It never waits, and nothing in it defeats the test cache.
 6. A change to tests or CI has its numbers against the main branch, and
-   the end-to-end tests take no longer than they did there.
-7. CI passed on the last commit, and every rule here that CI does not
-   check yet has an issue asking for the check.
+   the end-to-end tests take no longer than there.
+7. CI passed on the last commit, and every rule here CI does not check
+   yet has an issue asking for the check.

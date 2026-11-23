@@ -2,7 +2,7 @@
 
 ## The problem
 
-Tim, 13 November: the walks should only check what a person does on
+The user, 13 November: the walks should only check what a person does on
 screen and what they see. "Stuff that relates to the communication
 channel between the backend and the front end should maybe be verified
 in isolation there, so that we can ensure the interfaces between all of
@@ -51,7 +51,7 @@ A name, the data it carries and the type `api.ts` reads it as change
 together, across two languages, so they are written once and the other
 side generated: Wails' own binding generator writes the TypeScript from
 the Go types and from events registered with `RegisterEvent`. This was
-#611, closed as not planned on 1 November: no field had drifted, and the
+an issue, closed as not planned on 1 November: no field had drifted, and the
 generator brings a build step, files written by a program into the
 repository and a check that they are fresh. Every helper in `api.ts`
 would be rewritten around the generated names. Cost: many files, a new
@@ -61,7 +61,7 @@ step in `make`, for a drift seen once, `Notice`.
 
 The names are kept where Wails keeps them: `RegisterEvent[T](name)` at
 start, so Wails refuses at run time an event sent with the wrong type.
-The check then happens in the app, on Tim's Mac, where a refused event
+The check then happens in the app, on the user's Mac, where a refused event
 is an event the window never gets and a line in the log, not in a test
 before the merge. And the registry is a package variable of Wails',
 filled in `init`. Cost: small, but the failure lands in the wrong place.
@@ -84,7 +84,7 @@ by reflection: the names both ways, the type each listener reads the
 data as, and every field of every type that crosses, both ways. The
 agent of the research suggested example messages written by Go into
 files the TypeScript tests read, the `frame.cases.json` shape, which is
-a file both sides must keep agreeing on and was refused for #665. Cost:
+a file both sides must keep agreeing on and was refused before. Cost:
 two test files and no change to the app.
 
 ## What converges
@@ -140,7 +140,7 @@ the parts                       the queue, the news, the report, the
   reads one always there, fails the test too. 24 such fields were there
   when it came, each kept a list by hand where it is made. They are
   listed in `nullToday` in `channel_test.go`, no field joins them, and
-  #819 takes them away.
+  an open issue takes them away.
 - The bridge finds a method by the whole name Wails gives it in the app,
   `main.FrameFairy.<Method>`, and `bindings_test.go` holds `api.ts` to
   the same. The bridge cannot call through Wails' own dispatch, its

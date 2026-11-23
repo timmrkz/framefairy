@@ -29,8 +29,10 @@ has a third page, the preview's `preview/frames/`: one canvas playing an
 episode made for it, whose picture carries its frame number and whose
 sound can be laid over the episode's own sample by sample. The preview's
 own episode is made the same way, so the same is measured in the
-workspace. What it measures and how to read it is in the interface
-skill, under Playback and The frame queue.
+workspace. What it measures and how to read it is in
+[INTERFACE.md](INTERFACE.md), under
+[Playback](INTERFACE.md#playback-on-the-clip-or-on-the-video) and
+[The frame queue](INTERFACE.md#the-frame-queue).
 
 Adding a video runs against the bridge: a walk asks `/pick` for a test
 video, the bridge has the Add button's box hand it over, and the walk
@@ -45,7 +47,7 @@ can show:
 | | Runs | For | Why this way |
 | --- | --- | --- | --- |
 | plain code | Go tests and Vitest, once | every rule that can be said without a page: what a dictation does to the text, where an arrow key takes the cursor, how far a field scrolls | no browser decides it, so a second browser would test the same code twice. It is the quickest test and the easiest to read |
-| the walks | every walk and sequence on every pull request that reaches them, in Chromium, and all of them in both browsers every night | what a person does, against the real Go side, in the engines the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug Tim met in Report a Problem, #574, was WebKit's alone and passed in Chromium, so WebKit is walked every night. Playwright's WebKit for Linux draws every frame on the processor, so a push walks in Chromium, which walked the same walks 35 % sooner |
+| the walks | every walk and sequence on every pull request that reaches them, in Chromium, and all of them in both browsers every night | what a person does, against the real Go side, in the engines the app runs in | the engines differ where people type and look: the cursor, the selection, the focus, scrolling, fonts and layout. Nearly every bug the user met in Report a Problem was WebKit's alone and passed in Chromium, so WebKit is walked every night. Playwright's WebKit for Linux draws every frame on the processor, so a push walks in Chromium, which walked the same walks 35 % sooner |
 | what only a Mac does | a step that acts out the Mac's behaviour on purpose, and the rule it protects in plain code | how AppKit reaches WebKit: a cursor revealed in the middle of a field, a button that takes no focus from a click, a mouse entering as a plain move | no browser on Linux has it, WebKit's Linux ports included, so a walk can only play it, as `attach, as on a Mac` does |
 
 The walks are the same walks in both browsers, and the browser is a
@@ -109,7 +111,7 @@ clock of 1/90000 s so that ffprobe reads it as a true 0.25 s after it,
 counted from the file and from the picture were the same frames there and
 a mistake between the two could not be seen.
 `late4ms` is a picture at 25 frames a second that starts 4 ms after its
-sound, the way OBS recorded Tim's episodes: its grid of whole frames
+sound, the way OBS recorded the user's episodes: its grid of whole frames
 starts inside its first tick of 1/25 s, so a frame counted in whole ticks
 comes out one early.
 
@@ -120,7 +122,7 @@ second on the right against light red. The search frames the clip in
 one piece with one crop, so a camera whose subject lies outside that
 crop shows its plain backdrop through it, which the video preview and a
 short both show at a glance, and each camera looks the same through it
-wherever it is in the clip. A search before #396 found the switch, parted
+wherever it is in the clip. An earlier search found the switch, parted
 the clip there and framed each camera on its own subject. Its sound is a
 steady tone in plain samples rather than Opus: a render seeked into each
 piece, and the first 80 ms of Opus after a seek were decoded quiet, a dip
@@ -166,9 +168,9 @@ each with a POST:
 | `/hold?call=Search&gate=shut&times=K&answer=1&fail=why` | with `gate=shut`, the calls of that name wait before they reach the Go side until `gate=open`, every one of them, or the next K with `times`, the way a busy machine delivers them late, so a walk can press something and look while the Go side has not heard of the call yet, and lets it through once it has looked, on any machine. A walk holds a call with `hold` in `walks/bridge.mjs` and lets it go with `letHeld`: the page sets the held call aside, so `settle` waits for everything else meanwhile, and the watch lets go of whatever is still held before it compares the screen with the engine. With `answer=1` the call reaches the Go side at once and only its answer waits for `gate=open`, so the news of what it set going comes before it, `hold(page, name, true)`. With `fail` the next call fails with that reason instead of reaching the Go side, the way a full disk refuses a save. `/reset` opens every gate |
 | `/clock?run=MS` | runs the machine's clock, `engine.Clock`, on by MS milliseconds, and makes every call due by then before it answers. The Go side keeps that time and forgets the work once it is up, see `removal.go`, and `runClock` in `walks/bridge.mjs` runs it on with the page's clock, so the ten seconds a walk runs on are the same ten seconds on both sides, on any machine. `/clock?hold` holds it with the page's clock and `/clock?go` lets it go again, see `holdClock` and `letClockGo`, so while a walk holds the page's time a busy machine spends none of Go's either. Let go, it goes as the system's clock does. A running search reports how far it has come on the same clock, and `/clock?next` runs it on to the next call due, waiting for one to be set, so a walk hears a search's next report in a step, see `asks none` in `walks/search/steps.mjs` |
 | `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
-| `/fresh`, `/fresh?memory=8`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like Tim's, or of the gigabytes `memory` gives, so the setup offers the same models on every machine. A key saved there is kept by the bridge, never the keychain, and counted as there. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
+| `/fresh`, `/fresh?memory=8`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like the user's, or of the gigabytes `memory` gives, so the setup offers the same models on every machine. A key saved there is kept by the bridge, never the keychain, and counted as there. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
-| `/reset` | the app closed the one way it quits, `closeDown` in `quit.go`, and what the end of its process stops stopped too, see `quit` in `bridge_test.go`, so nothing it started writes while its folders go, and then as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, the episode's decoders the walk before left are closed, and the app is opened again on them, on a machine that keeps only what the one before learned about the computer's programs, what ffmpeg offers and what it said about files that stay as they are, see `engine.Machine.LearnFrom`. So a video a walk adds is heard with the same words, however many walks came before it, and a walk that moves the playhead far starts from no decoder rather than one left where the walk before stopped, which let a drag go on without a key frame, issue #552 |
+| `/reset` | the app closed the one way it quits, `closeDown` in `quit.go`, and what the end of its process stops stopped too, see `quit` in `bridge_test.go`, so nothing it started writes while its folders go, and then as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, the episode's decoders the walk before left are closed, and the app is opened again on them, on a machine that keeps only what the one before learned about the computer's programs, what ffmpeg offers and what it said about files that stay as they are, see `engine.Machine.LearnFrom`. So a video a walk adds is heard with the same words, however many walks came before it, and a walk that moves the playhead far starts from no decoder rather than one left where the walk before stopped, which let a drag go on without a key frame |
 | `/reset?seconds=30&rate=25&timing=turned` | the same, with a second video in the app, of the kind `add` picks with the same words, heard and searched the way adding it and its first search leave it, and answers with its path. The first bridge asked for a kind adds it and keeps what the app made of it, and every bridge after it puts that back, see the `added` step |
 
 To open it by hand:
@@ -280,7 +282,7 @@ nothing on the page moves for a moment, see below:
 | The caption box shows one of the engine's captions exactly, the same words in the same order at the same moments, whenever no word is open | a word typed in beside another shown twice, "weil ein \| ein" |
 | Enter opens the word in the frame | Enter opening the word at the playhead instead, found by the first walks |
 | One word at most wears the frame, and one at most is open | |
-| A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, once the frame queue says the picture stands, `standing` in `lib/frames/queue.ts`, `blurOf` in `rules.mjs`. Looked at again only after a step that changes the video, the clip, the playhead, the frame shown or the size of the canvas | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
+| A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, once the frame queue says the picture stands, `standing` in `lib/frames/queue.ts`, `blurOf` in `rules.mjs`. Looked at again only after a step that changes the video, the clip, the playhead, the frame shown or the size of the canvas | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by the user, plan row 2.187 |
 
 The engine's captions are asked for directly, `Captions` through
 `/call`, and are what the screen is compared with: the walk knows
@@ -354,9 +356,9 @@ settled. The rules, besides every walk's:
 | Every frame put on screen while a clip plays is in one of its pieces, a frame of give either side | the part just cut played when the space bar was pressed with the playhead in it |
 | The space bar plays: a frame comes, or the playhead moves | a press of the space bar lost while the file was still being read |
 | Paused, the picture stays where it was paused: the playhead stays, and the frame on screen is the one that holds it, or at the clip's end the one that ends on it | |
-| A clip played to its end stops at its end, within half a second of the playhead reaching it, half the time with L pressed on the way and again a moment before the end. The playback walk does it first on every run, once with L and once without, through `first` in `walk.mjs`, so it is checked on every push whatever its seed draws | the clip's start heard for seconds after the play stood at its end, loop switched off near the end, found by Tim |
-| On every animation frame of a play, on the video the video preview lays nothing over the picture, no crop frame, no shade, no captions, and on the clip a frame or more inside a piece it shows the crop frame, and the captions wherever the engine has a caption, `overlaid` in `rules.mjs` | the crop frame and the captions staying up while the episode played on through the clip, found by Tim |
-| The episode played from before the clip goes on into it, and stays on the video on every animation frame, skips and all | the clip lighting up the moment Shift and the right arrow skipped into it, found by Tim |
+| A clip played to its end stops at its end, within half a second of the playhead reaching it, half the time with L pressed on the way and again a moment before the end. The playback walk does it first on every run, once with L and once without, through `first` in `walk.mjs`, so it is checked on every push whatever its seed draws | the clip's start heard for seconds after the play stood at its end, loop switched off near the end, found by the user |
+| On every animation frame of a play, on the video the video preview lays nothing over the picture, no crop frame, no shade, no captions, and on the clip a frame or more inside a piece it shows the crop frame, and the captions wherever the engine has a caption, `overlaid` in `rules.mjs` | the crop frame and the captions staying up while the episode played on through the clip, found by the user |
+| The episode played from before the clip goes on into it, and stays on the video on every animation frame, skips and all | the clip lighting up the moment Shift and the right arrow skipped into it, found by the user |
 
 The playback walk can walk an HEVC video too, `HEVC=1`. `make walks` no
 longer does that on every push. The browser decodes no video at all:
@@ -367,7 +369,7 @@ and in 10-bit colour in Go, and the sequences that add an HEVC video, "a
 playhead dragged far over HEVC" among them, still show one in the app.
 The sequence "a picture the browser's
 decoder fails on comes from the Go side" makes Chromium's decoder say yes
-and then fail on the first frame, the way WebKit's does with Tim's
+and then fail on the first frame, the way WebKit's does with the user's
 `start.mp4`. The sequence "the picture comes back after the playhead
 reached the end of the episode" drags the clip's end to the end of the
 episode, plays to it, and then clicks four places along the clip
@@ -598,7 +600,7 @@ run on by hand, a frame of 16 ms at a time: it springs to the size of
 the hum a little past it and settles, falls back in the pause a little
 under its rest and settles, never jumps half its way in a frame, keeps its
 box and its middle and is drawn white. It runs in one walk, not in
-every `dictate`, see #543. `click heard` clicks
+every `dictate`. `click heard` clicks
 into the first word still being heard and sees it settled with the
 cursor in it, with what the Go side tells the window held back from
 reading the word to the click, `window.__pauseEvents` in
@@ -609,7 +611,7 @@ the field reads so, with `*` for whatever the speech model heard, and
 plays two seconds of a hum, then a pause and a second and a half more,
 over and over, and pieces are settled while it listens and there is
 more to hear until it stops. It goes on only as the walk asks, never on
-the app's timers, #551: a step hands the app a tenth of a second of it,
+the app's timers: a step hands the app a tenth of a second of it,
 a reading of how loud it is and a pass of the speech model, through
 `listening.beats` in `cmd/framefairy-app/listen.go`, and nothing moves
 between steps. A walk asks with `/microphone?until=`, which takes steps
@@ -650,15 +652,15 @@ on the list, through `/updates`, and `follow` picks a channel. Then
 one picked, `status`, the line under the build, `no check`, no button on
 that line, and `at once`, the list and that line in the frame after a
 pick. `a build made on the Mac follows nothing until a channel is chosen,
-and then follows it` is Tim's test of #147 with `make install`. Against
-the head of #147 it fails at the first `channel`: the list says Pull
-request #143, the pick of a build before it.
+and then follows it` is the user's test with `make install`. Against
+the code before the fix it fails at the first `channel`: the list names
+a pull request an older build had picked.
 
 Each sequence starts from the bridge's episode as it was first searched,
 in a page of its own.
 
 `a model a search finds clips with is not changed or removed under it`
-is Tim's test of the settings while a search runs, done the way he did
+is the user's test of the settings while a search runs, done the way they did
 it. It starts a search the model holds, opens the settings, picks another
 model, and presses the bins of the language model and of the speech
 model. Each time the card has to shake, no list or box may open and the
@@ -673,7 +675,7 @@ installed, and the setup check counts both models and llama-server as
 there, since the stand-ins hear and find the clips.
 
 `the episode played through a clip shows only the video, and the clip
-its frame and captions` is Tim's test of 2.173. It trims the clip's start
+its frame and captions` is the user's test of 2.173. It trims the clip's start
 to leave room before it, clicks the clip timeline there and plays six
 seconds, on into the clip, and then clicks inside the clip and plays four.
 Through the first play the playhead has to be on the video on every
@@ -693,7 +695,7 @@ and keep its crop frame and its captions in the piece after it. Against
 main it fails the same way, at 6.8 s.
 
 `loop switched off near the end stops the play at the clip's end` is
-Tim's test of 2.183. It records every sample the walk's sound card plays,
+The user's test of 2.183. It records every sample the walk's sound card plays,
 plays the clip, presses L to loop it, and two seconds before the clip's
 end presses L five times quickly, the loop off after the last, once the
 play has worked out the next time through. No press may start the play
@@ -707,7 +709,7 @@ end, and against the first fix, which started the play over on each
 press, with three restarts, heard as a click at each.
 
 `shift and the arrows skip ahead through a clip on the video, and walk its
-words on the clip` is Tim's test of the skip. With the clip's start
+words on the clip` is the user's test of the skip. With the clip's start
 trimmed and one cut in it, it plays eight seconds from before the clip,
 pressing Shift and the right arrow every 400 ms. The playhead has to go a
 second or more further than the play alone takes it, and stay on the
@@ -717,7 +719,7 @@ the clip's words and stay on the clip, its crop frame and its captions
 shown. Before the fix it fails at `only the video`, the playhead on the
 clip at 7.96 s.
 
-`a clip made with I while the episode plays is not dimmed` is Tim's test
+`a clip made with I while the episode plays is not dimmed` is the user's test
 of 2.212. With the clip's start trimmed, it plays from before the clip,
 presses I a second and a half in, and reads the clip timeline on every
 animation frame until the clip made is written and chosen, two seconds
@@ -730,7 +732,7 @@ the card on its way became the written one, which is why every frame is
 read.
 
 `a clip filmed by two cameras has one crop, through a cut, a trim and a
-drag` is Tim's decision on #396 done the way he would try it. It adds a
+drag` is the user's decision done the way they would try it. It adds a
 video of 30 seconds whose camera switches at 12, each camera on a subject
 of its own, and its search has to find one clip in one piece. It looks at
 the crop frame in the middle of each camera, which has to stand in one
@@ -743,7 +745,7 @@ was. Then it drags the crop frame to the left on the first camera, and
 the crop frame has to stand there on the second camera too. Last it
 presses Render and reads the short back from disk: every frame has to
 look like what the crop frame showed on its camera, by its colour and its
-detail. Against the engine before #396 it would fail at the first step,
+detail. Against the engine before that decision it would fail at the first step,
 which is inferred and was not run: the search parted the clip at the
 switch, and the clip timeline drew two pieces.
 
@@ -770,32 +772,31 @@ stopped stops at its next frame even when the next one has begun. It
 read the next watch's switch before and went on, so every step of `a
 step onto a word pops it over the paused frame` added a reading of the
 canvas to every frame, and on a busy machine the screen drew a bounce on
-fewer frames each step, issues #328 and #329.
+fewer frames each step.
 
 How many frames the screen draws, and how soon the video preview comes
 to a frame, is the machine's. So a step that works on the frame shown,
 C, R and a play from the playhead, waits for that frame first,
-`shownOnPlayhead`, issue #320. It waits on the page, never on the clock:
+`shownOnPlayhead`. It waits on the page, never on the clock:
 a `MutationObserver` on the video preview hears `data-playhead` and
 `data-shown` change. With captions it also waits for the frame to be
 drawn with its own captions over it, `data-captioned`, and says so when
 a layer of captions is given up on, `data-captions-lost`, counted from
 before the click. A step that reads the caption box waits for that, since
-the box shows what was drawn on the frame on screen, issue #359. A click
+the box shows what was drawn on the frame on screen. A click
 on a caption block after a trim waits until `data-answered` on the clip
 timeline's box names the track the trim saved, and fails when
 `data-framed` does not, since until then a click goes by the words' own
-times, issue #290. A frame that never comes is ended by the `-timeout`
+times. A frame that never comes is ended by the `-timeout`
 of `make walks`, `WALKTIMEOUT`, 30 minutes by hand and 8 in CI, where a
-share takes about two and a half, issue #461. A minute before it,
+share takes about two and a half. A minute before it,
 `TestWalks` stops every walk still running and fails it with what it
 printed, and every walk writes `walking`, `walked` or `failed` with its
-name to stderr as it starts and ends, so a walk that hung is named,
-issue #443. And a check counts what the app drew against the frames the
+name to stderr as it starts and ends, so a walk that hung is named. And a check counts what the app drew against the frames the
 screen drew, not against a number: a bounce is drawn on every frame the
 screen drew while it lasted, and the crop frame of a keyframe stands
 where the render crops it on every frame the play showed, so frames the
-screen did not draw make no jump, issue #442.
+screen did not draw make no jump.
 
 Where how many frames the screen draws decides what a walk can see, the
 walk gives the app its frames or its time instead. The bounce after a
@@ -804,14 +805,13 @@ sixtieth of a second after the other, `frames` on `CaptionLayers` in
 `lib/frames/captions.ts`, and the pills are read off the screen after
 each: its 220 ms are 15 frames on any machine, and the one nearest its
 peak is within 0.2 % of it. On the screen's own frames a busy machine
-drew two and missed the peak, issues #328, #329 and #460. A frame whose
+drew two and missed the peak. A frame whose
 captions a walk holds back waits for them as long as they take, by a
 wait the walk hands the frame queue, `dressWait` in
 `lib/frames/queue.ts`, where on the browser's clock the walk's own steps
-used up the 600 ms it waits, issue #468. And a crop read while it plays
+used up the 600 ms it waits. And a crop read while it plays
 goes on until the video preview has shown ten frames or come to the end
-of the piece, not for two seconds, in which a busy machine showed two,
-issue #464.
+of the piece, not for two seconds, in which a busy machine showed two.
 
 Every walk plays on the walk's clock and the walk's sound card,
 `preview/clock.ts`. The page the walks run on hands both to every frame
@@ -827,10 +827,10 @@ the app manages by having the frame's time to fetch them, the sound stays with
 the picture, and a play takes the refreshes that draw its frames, not the
 time it lasts: 3 s of a 5 fps video are 15 refreshes, a quarter of a
 second. By the system's sound card a busy machine showed two frames of a
-glide's nine, issue #534, a play of the captions showed fewer frames,
-each longer, issue #338, and every play took as long as it lasts. Each of
+glide's nine, a play of the captions showed fewer frames,
+each longer, and every play took as long as it lasts. Each of
 those walks had a clock of its own, until a new walk that played was the
-next to fail, issue #588. A walk that listens to a play asks the card
+next to fail. A walk that listens to a play asks the card
 to record, and reads what it played sample by sample, `record` and
 `heard`: the sum of the stretches the frame queue handed it, each from
 its frame and through the gain as it was set and ramped at that frame,
@@ -845,13 +845,13 @@ plays on the system's sound card and its clock, asked of `open` by name,
 `clock: "sound"`, which the page reads from `window.__playClock` before
 the app starts. A walk can also hold the sound
 card a moment by hand, `holdSound`, as the end dragged back past the
-playing playhead does while the hand drags, issue #583. The fold of a removed row is held as Svelte makes it and stepped
+playing playhead does while the hand drags. The fold of a removed row is held as Svelte makes it and stepped
 through by hand, in twenty steps, and at each the card under the row
 has to have risen by as much of the row and the space after it as the
 row has folded. That the row leaves the list only once its fold has
 finished is heard from the fold's own animation, which says so before
 Svelte takes the row out. On the screen's own frames a busy machine drew
-none of the fold's 200 ms, issues #442 and #469.
+none of the fold's 200 ms.
 
 Where the machine itself spoils what a walk checks, the app says where,
 and the walk sets aside only that. A page too busy to hand the sound
@@ -865,7 +865,7 @@ late, and says how many it set aside. Any other click fails it. So that
 the app's own mistakes cannot hide there, the queue also counts sound
 it took off the sound card before it had played, `soundThrown`, and
 sound it handed over twice, `soundTwice`, and the presses of L must
-leave both at nought, issue #466.
+leave both at nought.
 
 ### `speed.mjs`: how quickly the video preview follows the keys
 
@@ -900,7 +900,7 @@ of a CSS pixel, 2 unless set, a Mac's screen, `CODEC=hevc` makes the
 video HEVC with 10-bit colour, and `SIZE=2160` makes it 3840 by 2160,
 the way a 4K camera records. The window is 1728 by 1080, a 16 inch
 MacBook Pro's screen, unless `VIEWPORT` sets another, `2560x1440` for
-frames about the size of Tim's. The line under the table also counts the
+frames about the size of the user's. The line under the table also counts the
 frames read ahead, and those of them let go of from the kept frames
 before the hand asked for them. Plan row 2.269 in
 [GUI-PLAN.md](GUI-PLAN.md) has the numbers it measured.
@@ -938,8 +938,8 @@ each drag ends with in the app's log, see `dragged` in
 `lib/frames/queue.ts`: how far behind the frame on screen was, how long
 the picture stood while the hand had moved on, against the 50 ms of
 [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), and how the frames came, kept, from
-a stream reading on or from a new one. Tim's slow drags stuttered where
-fast ones did not, #596.
+a stream reading on or from a new one. The user's slow drags stuttered where
+fast ones did not.
 
 ### Finding why a walk failed
 
@@ -947,8 +947,8 @@ A walk that fails now and then has met an order of events it did not
 expect, see section 7 of the testing skill. Here is where each of its
 tools is in this repository, in the order to use them. Loading the
 machine with busy loops beside a walk comes last, if at all: it took
-many runs to show anything, it never showed #358, and the walks beside
-it hang, #508.
+many runs to show anything, it never showed a failure that holding a
+call later did, and the walks beside it hang.
 
 1. **The trace.** Every walk and sequence records a Playwright trace of
    every page it opens, into `WALKTRACES`, `.build/walk-traces` unless
@@ -970,7 +970,7 @@ it hang, #508.
    they are not in it. A film of
    the screen is in it only for the walks `walks/filmed.mjs` names: it
    made every walks job in CI about a fifth longer when every walk had
-   one, measured on #558. `make walks TRACE=film` films every walk for
+   one. `make walks TRACE=film` films every walk for
    that run, and `TRACE=none` records no trace. Playwright's snapshots
    of the page before and after each call no walk records: eight
    sequences took 41 % longer with them in a cloud session, and with
@@ -998,13 +998,13 @@ it hang, #508.
 2. **The order the walk assumes.** What the step waits for, `settle`,
    `caughtUp`, `nextNews`, `pageUntil`, `__standing`, and whether what
    it reads could change after that, or come before the walk listens.
-   #538 and #554 read before the step had finished, #556 waited for a
+   Two walks read before the step had finished, another waited for a
    signal that had gone by.
 3. **That one order, on purpose.** Hold the call the walk would race
    with `hold` and `letHeld`, the `/hold` gate of the bridge above, and
    look while it is held. Hold a request the bridge does not gate, a
-   frame read, with Playwright's `page.route`, the way #531 showed #358
-   with a frame read held back. Hold the app's time with `holdClock`
+   frame read, with Playwright's `page.route`, the way a failure that busy loops never
+   showed was shown with a frame read held back. Hold the app's time with `holdClock`
    and turn it on with `runClock`. Slow the page with `SLOW=4`, the
    browser's own CPU throttle, see Walks above. A walk that fails every
    time this way is a test for its fix.
@@ -1127,12 +1127,12 @@ routes and init scripts, what the app kept in the page's storage, the
 pointer and the keys, and its trace, and the page leaves the app. The
 bridge serves every file with `no-store`, so a sequence fetches what it
 needs whichever walked before it, a font too, which the app lets a page
-keep for a day, so the walks fetch it where Tim's Mac takes it from its
+keep for a day, so the walks fetch it where the user's Mac takes it from its
 cache. A page whose clock a walk took, the page of a sequence that
 failed, and every page while the walks count the lines they run, are
 closed. Starting node, Playwright and
 Chromium for every sequence was 1.45 s and 1.2 s of CPU each time, 220
-times, issue #526. A sequence that throws ends its node, and the next
+times. A sequence that throws ends its node, and the next
 sequence starts a new one, so nothing a throw left behind walks on. What
 the node said before `walking` belongs to no sequence, so the sequence
 it was handed fails with it, and a node that ends between the two lines
@@ -1147,7 +1147,7 @@ then leaves out what it animates, the info marks' fade and the pops
 among it, so the settle waits for none of it. On main those two were
 179 s of the 1976 s all runs took one after another. The sequences with
 those steps and every random walk keep the motion, so the app is still
-walked the way it moves on Tim's Mac. A new step that looks at motion
+walked the way it moves on the user's Mac. A new step that looks at motion
 goes into `moving`, or it passes without ever seeing what it checks, and
 `--names` fails on a name in `moving` that is no step. `make walks
 STILL=none` walks every sequence with the motion, and
@@ -1175,7 +1175,7 @@ and gets it by a recipe of its own. Only the camera's videos of
 `speed.mjs` and `smooth.mjs` are made when they are asked for, see
 `makeCameraEpisode`, because they are too large to commit. Made on every
 add, the 54 videos the sequences added took 100 s, and the one of ten
-minutes 9 s every time, issue #527, and kept in CI's cache instead, a
+minutes 9 s every time, and kept in CI's cache instead, a
 run that changed what makes them made them all again.
 
 Measured on four cores, the cloud's and CI's, with the 3 seeds: the
@@ -1275,7 +1275,7 @@ that time starts, with Playwright's own fake clock, `holdClock` in
 still there after nine seconds and gone after ten and a half, in a
 fraction of a second of the walk's own. On the real clock a busy machine
 spent part of the ten seconds on the steps before, and the toast went
-before the walk had looked, #341. Every timer, frame and
+before the walk had looked. Every timer, frame and
 `performance.now` of the app stands still while the clock is held, so a
 step that needs the app's own frames comes before `["hold the clock"]` or
 after `letClockGo`. The walk's own waits, `settle` among them, keep the
@@ -1294,14 +1294,13 @@ ESLint refuses a new wait on the clock in a walk, in `make interface`:
 to let time pass. It reads the probes in `frontend/preview/` the same way.
 Playwright's own 30 s on every action and wait is off too, `noDeadlines` in
 `walks/bridge.mjs`, so a wait that never ends is ended by the `-timeout`
-of `make walks`. The walks and the probes wait on no clock since #341 and
-#495. What `frontend/eslint-suppressions.json` still counts for them are
+of `make walks`. The walks and the probes wait on no clock. What `frontend/eslint-suppressions.json` still counts for them are
 reads of the clock that measure, and the stalls and late answers a step
 puts on the app on purpose. One more in a file fails. A walk counts the
 browser's frames only where the count is the scenario, a hand held still
-and a Go side made slow on purpose, since #503. A probe fails at once
+and a Go side made slow on purpose. A probe fails at once
 when its video preview shows no picture or its list has no clip to pick,
-since #501, so a broken test video is said where it is found. See
+so a broken test video is said where it is found. See
 No test waits on the clock in
 [BUILD.md](BUILD.md#no-test-waits-on-the-clock).
 
@@ -1329,7 +1328,7 @@ rule was about, see A walk waits on what a rule is about above, and none
 was the app. Put right, the five seeds that broke ran 16 times each, 80
 runs, without a rule broken.
 
-Against the video preview from before the fixes in #106, five walks of
+Against the video preview from before its fixes, five walks of
 ten broke a rule within sixty steps, all of them showing a word typed in
 beside another twice. The first walks against the code of the day found
 a bug of their own within twenty steps: Enter opened the word at the
@@ -1407,7 +1406,7 @@ last frame of what played.
 The walks drive the interface from inside its page. Some of what the app
 does starts outside it: a link in a mail that opens the app, with the app
 closed or already open, and the app quitting and being started again. `make outside` checks those on a real Mac, the
-way Tim did by hand, and CI runs it every night on main in the job
+way the user did by hand, and CI runs it every night on main in the job
 `outside` of `mac-nightly.yml`, the only job that needs any of what it
 sets up, and on a branch by hand, see On a Mac in
 [BUILD.md](BUILD.md#on-a-mac).
@@ -1670,4 +1669,4 @@ Go test, `internal/offdisk` for a test on the real disk, and `-timeout`
 from `UNITTIMEOUT` in `make unit`, 4m in CI, which ends a test whose signal
 never comes. What it does not hold yet, skipped tests, polls with a
 deadline that use no clock call, mutation testing and a check a pull
-request cannot weaken, is #475.
+request cannot weaken, is open work in the issues.

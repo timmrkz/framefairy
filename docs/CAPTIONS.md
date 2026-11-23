@@ -4,7 +4,7 @@ The captions of a clip are seen in three places: in the video preview while
 the clip is made, in the thumbnails, and in the short. They are one drawing
 in all three, pixel for pixel, the bounce of the word being spoken and the
 padding of its pill included. Not three drawings made to look alike, which
-drift the day one of them changes: Tim saw the video preview show the pill
+drift the day one of them changes: the user saw the video preview show the pill
 settled on a frame where the short showed it on its way up, and the
 thumbnail darker than the short, with less room round its word. This file
 says how the one drawing is kept one. The batch is 2.211 in
@@ -47,8 +47,8 @@ moment of it. A step from frame to frame, an arrow alone, a click or a
 drag, shows exactly that: the frame as the short shows it, with nothing
 played over it. A step from word to word, Shift and an arrow, bounces the
 word it lands on, which is how the video preview shows the step and is
-nothing the short shows. Tim saw the pop the short burns in played again
-over every frame he stepped to, the arrow keys included, two animations
+nothing the short shows. The user saw the pop the short burns in played again
+over every frame they stepped to, the arrow keys included, two animations
 mixed into one, and wanted them apart. The word that bounces is the one
 on the frame the step lands on, counted from the frame on screen whether
 its layer has come or not, so two quick steps bounce the second word and
@@ -74,11 +74,11 @@ pixels to the GPU again, so a bounce costs one small uniform a frame.
 
 Before, the bounce was the short's own frames of the pop, drawn on the Go
 side one by one and shown one each frame of the short, 25 a second on
-Tim's episode and stepped by a timer, and Tim found it laggy.
+the user's episode and stepped by a timer, and the user found it laggy.
 
 Every word bounces the same, from rest through 115 % and back in 220
 milliseconds, a word the short lights for one frame too, which the short
-shows at its peak: Tim wanted the bounce the same for every word, without
+shows at its peak: the user wanted the bounce the same for every word, without
 exception, even where that is not the frame the short shows. At rest the
 word stays lifted over the frame until the playhead moves or the clip
 plays. The frame's own layer stays while the two parts are on their way,
@@ -132,7 +132,7 @@ grid, and checks on every frame that the word begun last is lit, that no
 word with a frame of its own is lit with others, that the pop stays in
 its bounds, and that every word of a caption that is shown is lit on
 some frame. Several words typed into a word a frame or two long were
-lit on no frame before, so they were never seen lit, #280. Tim asked
+lit on no frame before, so they were never seen lit. The user asked
 that how many words go into so little time stays the person's choice,
 so their times are not stretched, the words share the frame.
 
@@ -143,7 +143,7 @@ pill, a pixel of the screen out and one in, `--hair` in `app.css`. libass
 draws the edge where it falls, between two pixels as often as not, and
 the row it half covers comes out half dark, while the browser puts a
 frame on whole pixels. As an outline round the box, that row showed
-between the frame and the pill or just inside it, and Tim saw the pill a
+between the frame and the pill or just inside it, and the user saw the pill a
 pixel short at the top or the bottom. An outline cannot be moved by half
 a point, so the frame is a shadow.
 
@@ -210,7 +210,7 @@ no ask waits for it. So is one that is no longer drawn because the
 whole file of the new size is there already. A file called off says
 nothing in the log. A step of the caption size measured every word of
 the clip again before it showed, about 320 ms for a clip of 25 s in a
-cloud session, and Tim saw the captions stutter as he stepped the size
+cloud session, and the user saw the captions stutter as they stepped the size
 with the arrow keys. The captions that show take about 60 ms. A step of
 a drag, a drawing in the hand, `CaptionDrawing.inHand`, starts no whole
 file: the video preview shows it still, and the next step called its file
@@ -222,7 +222,7 @@ its track, and the app keeps the saved drawing for it, so the clip still
 gets its whole file. The folder keeps the
 256 used last and removes the rest, those of earlier runs first, and what
 an earlier run left half written. A file half written a moment ago is
-another ask's, made beside it, and stays. The caption file is never what makes the work folder: a folder without its mark gets no caption file, and one gone by the moment the file is written gets none either, `ErrNoWorkFolder`. The folders the file and its face go in are made one at a time inside the work folder, `foldersIn`, and never with everything above them, so a deletion that crosses the write leaves the folder gone, which CI's run of that walk caught. The video preview went on asking for captions after Tim's folder was deleted in Finder, and wrote the folder back before the app let the video go, which main's walk for 2.247 found on #201.
+another ask's, made beside it, and stays. The caption file is never what makes the work folder: a folder without its mark gets no caption file, and one gone by the moment the file is written gets none either, `ErrNoWorkFolder`. The folders the file and its face go in are made one at a time inside the work folder, `foldersIn`, and never with everything above them, so a deletion that crosses the write leaves the folder gone, which CI's run of that walk caught. The video preview went on asking for captions after the user's folder was deleted in Finder, and wrote the folder back before the app let the video go, which main's walk for 2.247 found.
 
 The decoder draws the file twice, over black and over white, and takes
 colour and coverage from the two, `framewire.Layer`: red, green and blue
@@ -249,8 +249,8 @@ A frame on its way to the screen asks for its layer ahead, `coming` in
 `CaptionLayers`, so playing keeps up. A frame a gesture puts the playhead
 on, a click, a step, a clip picked, a play starting, waits for its own
 layer before it is put up, `ready` in `CaptionLayers` and `dress` in
-`queue.ts`, so the picture and its captions come in one frame, issue
-#383. The layer is asked for the moment the frame is, ahead of the frames
+`queue.ts`, so the picture and its captions come in one frame.
+The layer is asked for the moment the frame is, ahead of the frames
 read ahead, so the two take the time the slower takes. A clip just picked
 waits for its captions from the Go side first, `captionsDue`, unless
 they were read before: the captions of every clip on the cards are asked
@@ -288,7 +288,7 @@ While a clip plays, a frame that asks ahead while three are on their
 way waits its turn and is asked for as soon as one comes, after the frame
 on screen if that is still waiting for its own. Before, it was dropped
 and asked for only once it was drawn, so on a busy machine a playing clip
-showed a frame with the captions of the frame before, issue #288.
+showed a frame with the captions of the frame before.
 Paused, nothing waits: the frames read ahead are the ones a step may
 come to, the step asks for its own, and a bounce after a word step needs
 the Go side to itself.
@@ -303,7 +303,7 @@ draws the caption without that word, in its place, `typing` on
 only the letters being typed, on that word's box and in the caption's
 colour, since they are in no caption file yet. Nothing else of the
 caption moves. Before, the layer stepped aside and the browser drew the
-whole caption in its own font, larger than libass draws it, and Tim saw
+whole caption in its own font, larger than libass draws it, and the user saw
 the caption grow as a word was opened and shrink as it was left. Only
 before libass has said where the words stand does the browser still draw
 the whole caption while a word is typed.
@@ -311,7 +311,7 @@ the whole caption while a word is typed.
 The word typed sits on a pill in the highlight colour, whether it is the
 word lit or not, and wears no frame. A word not lit was typed on the dark
 box of the caption, and the frame round a lit word, in the app's lighter
-purple, read as a second shade of the pill, so Tim saw three colours where
+purple, read as a second shade of the pill, so the user saw three colours where
 there is one. The caret says the word is open, and the word wears no
 focus ring either: the ring every other control wears stood a pixel off
 the pill, and the caption's box showed through between the two as a dark
@@ -327,7 +327,7 @@ pill as long as it holds the word: its height, its corners, and its width,
 which is the margin left round the browser's letters, read once as the
 word is opened. It grows round its middle by exactly what is typed, so a
 word made longer, or made two, stays inside it. libass drew the pill at
-the word's old size, and Tim saw a word typed longer run out of it. On a
+the word's old size, and the user saw a word typed longer run out of it. On a
 frame of the pop the word opens at that frame's scale and keeps it while
 it is typed, since the frame stays where it was, so opening a word moves
 nothing. The rest of the line stays put while a word is typed, and the
@@ -348,8 +348,8 @@ stroke round each letter in its own colour, as wide as the share of the
 em `Thickening` in `engine/fonts.go` says, which the captions view hands
 over as `thicken`. With no weight declared every face counted as 400, so
 on the Mac Inter Black was thickened in the caption box and not in the
-short, and Tim saw the word typed larger than the word in the frame
-behind it. Then Tim saw a word typed in Archivo Black, a face of weight
+short, and the user saw the word typed larger than the word in the frame
+behind it. Then the user saw a word typed in Archivo Black, a face of weight
 400 that libass thickens for bold captions, lighter and narrower than
 libass draws it, since the Mac faked the bold its own way. The walk "a
 word typed in a face libass thickens is as heavy as libass draws it"
@@ -360,7 +360,7 @@ which nothing thickens, a tenth heavier than a cloud session does. The pill and 
 letters typed wear the look of the frame they lie over, `shownColour` in
 `frontend/src/lib/frames/light.ts`: libass draws the captions into the
 frame and the frame is then given its look, so a colour drawn by the
-browser beside it needs the same look or it stands out. Tim saw the pill
+browser beside it needs the same look or it stands out. The user saw the pill
 of the word typed in another purple than the pill round it. The caret is
 the colour of the letters, as in a text field on the Mac, and the
 selection is the Mac's own, `Highlight`, kept just short of opaque so
@@ -381,8 +381,8 @@ see `layWords` and `WordFrames` in `engine/wordframes.go`. The caption
 box places each word on that box, from the line the captions stand on,
 so the frame round a word under the hand is the edge of its pill and the
 word stands in its middle, wherever the captions are dragged. The
-browser laid the words out in its own font before, and Tim saw the frame
-stand off its word on #201. They are not asked for while the hand still
+browser laid the words out in its own font before, and the user saw the frame
+stand off its word. They are not asked for while the hand still
 shapes the clip or a caption on the clip timeline, only for the captions
 it leaves, see `wordFrames` in `Episode.svelte`. Asked on every step of
 a drag, they held a connection to the Go side beside the video
@@ -398,7 +398,7 @@ capital and its baseline, `text-box: trim-both cap alphabetic`, and its
 top padding puts the baseline on `base`. The browser put the line in the
 middle of the pill's height before, where the face's own ascent and
 descent decide where the letters stand. On the Mac that was a few pixels
-lower than libass, and Tim saw a word drop as he opened it on #201. The
+lower than libass, and the user saw a word drop as they opened it. The
 walk "a word opened in the caption box stays where libass draws it"
 holds the rows of the letters typed to the rows libass drew them on. In
 the cloud's Chromium the two agreed before too, so the walk holds the
@@ -409,8 +409,8 @@ top of its first line's reach to the bottom of its last, the rows the
 pills of those lines stand round, and the ink across, `wordsLaid.extent`
 in `engine/wordframes.go`. Round the ink alone it hugged a caption with no
 tall or deep letter while the pill reached down for a tail the word did
-not have, and Tim saw the pill of "Und" touch the bottom of its box with
-room over it on #201. Now every caption of as many lines has a box of
+not have, and the user saw the pill of "Und" touch the bottom of its box with
+room over it. Now every caption of as many lines has a box of
 one height, and it leaves as much room over its pills as under them,
 `TestTheBoxStandsEvenlyRoundItsPills`.
 
@@ -431,7 +431,7 @@ the pill with, and the caption box rounds the frame round a word by it.
 The pill's corners are quarters of a circle, the way a browser rounds a
 corner, see `roundedRect` in `engine/ass.go`. Its curves had both handles
 on the corner before, which drew corners much sharper than the radius,
-and Tim saw the frame and the pill with different corners on #201.
+and the user saw the frame and the pill with different corners.
 
 The caption box shows the caption and the lit word of the layer on
 screen, not of the playhead. The playhead is the sound, and the frame on
@@ -441,9 +441,9 @@ the short's frames. So `/frames/captions` says with every layer which
 caption and which word of it libass drew, in the header
 `X-Caption-Showing`, from `ShowingAt` in `engine/wordframes.go`, which
 reads the same times the caption file is written with, `litRuns`. The
-video preview hands the caption box what the layer it paints says. Tim saw
+video preview hands the caption box what the layer it paints says. The user saw
 the frame round a word go on to the next caption a few frames before the
-pill did on #201, when the caption box worked the word out from the
+pill did, when the caption box worked the word out from the
 playhead.
 
 The keyboard goes by the frames too. Each word frame also says when the
@@ -458,8 +458,7 @@ holds it back with the pill. A caption's times are on the clip's clock and
 a piece of the short starts on the frame nearest its start, so a word can
 light up to half a frame before or after its own time. Walking by the
 words' own times landed now and then on a frame that still lit the word
-before, with the keyboard's frame already round the next, which Tim saw on
-#201.
+before, with the keyboard's frame already round the next, which the user saw.
 
 ## The tests
 

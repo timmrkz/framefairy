@@ -19,7 +19,7 @@ a CI runner's virtual hardware or a stand-in program, is fixed in how
 the test uses it, never in the app. What reaches a person is fixed once
 in our code, in one place, for every path it can come through, and so is
 an order of the app's own work that a busy runner only made likelier.
-Evidence comes first: Tim's report or log, the failure reproduced with
+Evidence comes first: the user's report or log, the failure reproduced with
 real input on a machine people use, or the order made to happen on
 purpose. When
 the cause is not known yet, finding it is the work: the trace first,
@@ -43,7 +43,7 @@ this order, because what happens now comes first:
    issue whose facts changed is looked at again, a flaky test seen
    failing again for example.
 3. **Who it happens to.** Every open issue that reports a problem is
-   checked for who it happens to, in Tim's report logs first. One that only a test's
+   checked for who it happens to, in the user's report logs first. One that only a test's
    environment causes, a CI runner's virtual hardware, a stand-in or a
    file made for the test, is rewritten to be about the test, see Root
    causes only. One found only by reading code or
@@ -59,7 +59,7 @@ this order, because what happens now comes first:
    issue that is still open. The same failure after its issue closed,
    or the same cause in another place, is an incident under a problem,
    see below. An issue a session opened that is mostly done is
-   rewritten to what is left. One Tim opened gets a comment that says
+   rewritten to what is left. One the user opened gets a comment that says
    what is left. Each closing says in one line which pull request or
    decision closed it. One that waits for its next failure to say why,
    with nothing to work on until then, because nothing failed since its
@@ -71,24 +71,24 @@ this order, because what happens now comes first:
    after the last of its sub-issues.
 5. **Problems that come back**, in even weeks of the year, see below.
 
-Tim's labels and Tim's words are never changed. The triage ends with a
-reply to Tim that lists every change, each linked, and he checks them.
+The user's labels and the user's words are never changed. The triage ends with a
+reply to the user that lists every change, each linked, and they check them.
 
 ## Problems that come back
 
 When the same thing goes wrong again and again, each time under a new
 issue, every fix looks done and none of them is. Seen together, the
 issues say what is broken underneath. On GitHub's virtual Mac the media
-engine hung in the decoder probe, #282, then in the video preview's
-decoder, #553, in the render, #570, in a test's reference frame, #581,
-and in the decoder again, #638. Each pull request made one place give up
+engine hung in the decoder probe, then in the video preview's
+decoder, in the render, in a test's reference frame,
+and in the decoder again. Each pull request made one place give up
 on it, which was a workaround, and the next hang came in a place that
 did not.
 
 This is how
 [ITIL's problem management](https://en.wikipedia.org/wiki/Problem_management)
 keeps them apart. One time something goes wrong is an **incident**: a
-failed run, a bug Tim saw, a test that hung. It is an ordinary issue.
+failed run, a bug the user saw, a test that hung. It is an ordinary issue.
 The cause behind incidents is a **problem**. ITIL opens a problem from
 one incident too. Here it takes two, because what matters is what comes
 back. A problem is an issue of its own, labelled `problem` beside its
@@ -124,7 +124,7 @@ Here it does not, see Root causes only above.
   and finding the rest comes first.
 - **In even weeks the triage** reads every issue opened or closed in the
   last fourteen days, puts each that shares a cause with another under
-  its problem, and opens the problems that are missing. Its reply to Tim
+  its problem, and opens the problems that are missing. Its reply to the user
   names the problems that had a new incident, the ones reopened, and
   the problems closed in those fourteen days that have had no incident
   since.

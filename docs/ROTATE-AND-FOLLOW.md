@@ -4,20 +4,20 @@ Plan rows 3.25 to 3.28 and 2.190 in [GUI-PLAN.md](GUI-PLAN.md). Rotate,
 3.25, is built, see Rotate in [APP.md](APP.md), and so are keyframes,
 3.26, see Keyframes there.
 
-## What Tim wants to fix
+## What the user wants to fix
 
-A phone records a video in the shape it had when recording began. Tim
+A phone records a video in the shape it had when recording began. The user
 started in portrait, turned the phone to landscape while recording, and the
 phone kept writing portrait. So the video has a part where the person
 lies on their side, a quarter turn off, and the moments of the turn itself,
-where the whole picture spins. He wants to mark that part with cuts, rotate
+where the whole picture spins. They want to mark that part with cuts, rotate
 it upright, and place the crop on a few frames by hand with the movement
-between them worked out for him. No numbers, no curves, no curve editor,
+between them worked out for them. No numbers, no curves, no curve editor,
 and nothing changes for a video that is fine as it is.
 
-Later, on #750, Tim found a glide between keyframes hard to work with for
+Later, the user found a glide between keyframes hard to work with for
 a camera switch, and asked for a keyframe as a turning point instead: the
-crop switches on it and holds until the next. He then wanted the glide
+crop switches on it and holds until the next. They then wanted the glide
 back as a choice, and picked how from clickable mockups: two kinds of
 keyframe, a diamond the crop switches on and a circle, with the crop
 gliding from one circle into the next, each with its key and its button. That is what keyframes do now, see
@@ -33,13 +33,13 @@ section 4.
   `engine/analysis.go` gives every piece the same crop, measured once from
   where the faces are, and `SetCrop` in `engine/edit.go` moves every piece
   together. One crop per clip, standing still for the whole clip. It once
-  was one crop per camera angle, which #396 took out.
+  was one crop per camera angle, which was taken out.
 - A double-click in the clip on the clip timeline cuts a part out, and its
   edges are dragged to size. The render plays straight over it.
 - `BuildFilterGraph` in `engine/render.go` builds one ffmpeg chain per
   piece: cut, crop, scale.
 
-So most of what Tim needs is there. The cuts are the cuts that exist, the
+So most of what the user needs is there. The cuts are the cuts that exist, the
 crop is the crop that exists. Two things are missing: a piece cannot be
 rotated, and a crop cannot move while a piece plays.
 
@@ -48,10 +48,10 @@ rotated, and a crop cannot move while a piece plays.
 ### 1. The spin is cut out, with the cut that exists
 
 The seconds where the phone turns are no use to anybody: the picture spins
-and no rotation of ours makes it stand still. So the first step is what Tim
+and no rotation of ours makes it stand still. So the first step is what the user
 already does to a pause: a double-click on the spin cuts it out, and the
 cut's edges are dragged onto the first and last frame of the spin. When
-the phone is turned back later, a second cut. That is the "two cuts" Tim
+the phone is turned back later, a second cut. That is the "two cuts" the user
 described, and it needs nothing new. What lies between two cuts, or
 between a cut and an edge of the clip, is a **part** of the clip below.
 
@@ -70,13 +70,13 @@ between a cut and an edge of the clip, is a **part** of the clip below.
   presses.
 - A rotated part has the rotate icon on the clip timeline, large, in its
   middle, in the accent at half strength with a dark glow round it, clear of the keyframes along the top
-  rule and the thumbnails along the foot, issue #348, so a clip that
+  rule and the thumbnails along the foot, so a clip that
   holds a rotation says so without playing it.
 - Nothing about it is a setting, and nothing is on screen until a part
   is rotated. A video that was never rotated looks and works as it does
   today.
 
-What happens to the shape: Tim's video is portrait, 1080 by 1920. The
+What happens to the shape: the user's video is portrait, 1080 by 1920. The
 rotated part is landscape, 1920 by 1080, and the short is portrait, so the
 crop is a 608 by 1080 window that moves sideways in it, exactly as the
 crop of a landscape podcast does today. It is scaled up to the short,
@@ -92,7 +92,7 @@ rotated part.
 
 ### 3. A crop that follows: keyframes, made like thumbnails
 
-Tim decided this on #188: a keyframe is made the way a thumbnail is,
+The user decided this: a keyframe is made the way a thumbnail is,
 with a button and a key, and dragging the crop frame only places the
 crop.
 
@@ -105,14 +105,14 @@ crop.
   the way the thumbnail button does, and on one of the other kind it
   turns it into its own. Their icons are a diamond and a circle with a
   plus, and with a minus while the playhead stands on one of their kind.
-  The shapes are Tim's: the diamond is pointed, an instant change, and the
+  The shapes are the user's: the diamond is pointed, an instant change, and the
   circle round and smooth, a glide.
-- **A keyframe is a turning point**, Tim's word on #750. From its frame
+- **A keyframe is a turning point**, the user's word. From its frame
   on, the crop is the keyframe's until the next keyframe. Before the
   first keyframe it is the clip's own crop. One diamond where the camera
   switches is a camera switch.
-- **The crop frame is dragged only with the playhead on a keyframe**, Tim
-  on #750, and moves that keyframe's crop. The keyframe is lit then, so
+- **The crop frame is dragged only with the playhead on a keyframe**, as
+  the user asked, and moves that keyframe's crop. The keyframe is lit then, so
   what moves is seen. Anywhere else the crop frame shows the crop as the
   short has it, held or gliding, and a drag moves nothing. A clip with no
   keyframes has one crop, today's drag anywhere in it.
@@ -132,10 +132,10 @@ there:
 - **From a circle the crop glides into the next circle**, over the whole
   time between them, easing out and in the way a camera operator pans,
   and reaches the second circle's crop on its frame. A glide runs only
-  between circles, Tim's rule: a diamond is an instant switch with
+  between circles, the user's rule: a diamond is an instant switch with
   nothing before or after it. A circle that starts a glide has no crop
   of its own: the glide starts from the crop before it, a diamond's or
-  the clip's own, so a circle never makes the crop jump, Tim on #778.
+  the clip's own, so a circle never makes the crop jump, as the user asked.
   So a person who walks across the picture
   takes a circle where the walk starts and a circle where it ends.
 - **A drag places one keyframe.** Dragging a keyframe along the clip
@@ -150,17 +150,16 @@ there:
   over keyframes carries the last one it reached on the clip's first or
   last frame, or the first frame after the cut, with its own crop, and
   the edge dragged back out leaves each where it was. So a glide whose
-  first circle the start passes gets shorter, and faster, Tim's choice on
-  #778.
+  first circle the start passes gets shorter, and faster, the user's choice.
 
 The first design glided the crop from one keyframe to the next over the
 whole time between them, easing out and in, so the tempo was where the
 keyframes were. One keyframe then stood still, and a camera switch took
-two keyframes a frame apart. Tim found that odd on #750 and asked for the
+two keyframes a frame apart. The user found that odd and asked for the
 keyframe as a turning point, with the glide kept between circles.
 Mockups of five ways to offer it, a glide key, a menu on the keyframe, a
 switch with a length, a pan across a part and a movement recorded while
-playing, are kept in the project's files, and Tim chose the two keys.
+playing, are kept in the project's files, and the user chose the two keys.
 
 ### 5. Where the keyframes are on the clip timeline
 
@@ -179,14 +178,14 @@ their own:
 - **Two circles in a row are joined** by a line on the top rule, as thick
   as the rule, from the well's black brightening into the light colour at
   the second circle, so the two read as one glide over the clip's wash.
-  Three in a row have two lines, and a diamond has none. Tim asked for the
-  join and picked this look, number 4 of a sheet of nine drawn for him.
+  Three in a row have two lines, and a diamond has none. The user asked for the
+  join and picked this look, number 4 of a sheet of nine drawn for them.
 - **Automatic crop** removes every keyframe of the clip and brings back the
   placement the engine found.
 
 ### 6. What the engine can do by itself, later
 
-The app should not need Tim to do even this much, so two rows follow the
+The app should not need the user to do even this much, so two rows follow the
 two above:
 
 - **It finds a rotated part.** The face finder already samples every clip
@@ -230,5 +229,5 @@ two above:
   quarter: a render test that reads the short back and finds the part
   upright, a test that the crop of a render with keyframes is where they
   hold it on every frame, and walks that press R and S and drag the
-  crop, checking the canvas and the plan, so Tim does not have to
+  crop, checking the canvas and the plan, so the user does not have to
   try it by hand to know it holds.

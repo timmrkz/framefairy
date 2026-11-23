@@ -1,17 +1,17 @@
 # What decides a build lives in Go, not in shell
 
-Issues #838, #839, #840 and #841, in one pull request, #842.
+Four issues on updates, in one pull request.
 
 ## The problem
 
-Fixing the four update bugs, #842 first added `scripts/build-ended.sh`,
+Fixing the four update bugs, the pull request first added `scripts/build-ended.sh`,
 its test with a stand-in `gh`, and about 60 lines of shell inside
-publish.yml. Tim, 14 November: "why are we starting to write a bunch of
+publish.yml. The user, 14 November: "why are we starting to write a bunch of
 shell scripts again in this pull request ... we are now creating a whole
 new mess full of shell scripts again in order to address those small
 issues ... how can we then prevent agents in the future from writing
 those stupid shell scripts all over the place for things that should
-actually be simple?" He chose to move every update decision into Go in
+actually be simple?" They chose to move every update decision into Go in
 this pull request.
 
 What decided a build on main at b0488d0, counted from the files:
@@ -43,7 +43,7 @@ always runs from main. The issues are each one such mistake.
    established shell test tool, bats or shellspec. The rules stay where
    they are and gain tests. Cost: a test tool to pin and install in the
    CI image, `jq` too, and stand-ins for `gh` that copy GitHub's answers
-   by hand. The shell goes on growing by copying, which is how #842
+   by hand. The shell goes on growing by copying, which is how the pull request
    began.
 3. **Where state lives.** The channel list is worked out on request by a
    small server, the licence server's sibling, from GitHub's state, and
@@ -102,7 +102,7 @@ the step after it.
 
 ## What it costs
 
-- One pull request, #842, with the four fixes it already holds.
+- One pull request, with the four fixes it already holds.
 - The `which` job of builds.yml checks the repository out and sets up Go,
   which the Mac job did before. A commit that needs no build no longer
   starts a Mac at all.

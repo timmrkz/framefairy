@@ -1,10 +1,10 @@
 # A state sends only the clips that changed
 
-Issue #809, in pull request #812.
+An issue on what a state sends, in one pull request.
 
 ## The problem
 
-Tim, 12 November: "I want the engine, the front end, and the transport
+The user, 12 November: "I want the engine, the front end, and the transport
 between those two to be as efficient, fast, and reliable as possible."
 The front end review of that night, finding 4, found every state of a
 video crossing to the window whole, about four times a second while
@@ -51,19 +51,19 @@ window behind those fetches.
 3. **Where state lives.** The window keeps the clips and asks for them:
    a state carries a hash of all its clips, and the window calls `Clips`
    when it differs. It breaks the rule that a card on its way becomes
-   its clip in the same state that ends its job, #697, since the clips
+   its clip in the same state that ends its job, since the clips
    would come in a call of their own, and it doubles the trips exactly
    while a search writes clips, when states come fastest.
 4. **What runs together.** A `clip` event for each clip that changed,
    beside the state. Two channels again, the problem the one state of
-   #606 was made to end: the window could hold a clip from one moment
+   a video was made to end: the window could hold a clip from one moment
    and the jobs from another.
 5. **What a test has to build.** Keep the state whole and make it
    smaller, the plan's path once instead of in every clip, the reason
    only for the clip chosen. Every field taken out is a change to every
    place that reads it, and 40 clips still do not fit in 8 KB.
 
-The review of #812 found a sixth, simpler than all of them, missing:
+The review of the pull request found a sixth, simpler than all of them, missing:
 **what changes least.** When not one clip changed, the state leaves out
 the clips whole and says so, and when any changed it sends all of them.
 It needs no memory of each clip, and a state stays the same size however

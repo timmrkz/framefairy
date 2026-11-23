@@ -1,6 +1,6 @@
 # Go answers the transcript search, over cards its Episode keeps ready
 
-Issue #927.
+An issue on the transcript search.
 
 ## The problem
 
@@ -10,7 +10,7 @@ words go bold, `found` and `near` in `frontend/src/lib/match.ts`, run by
 `SaidList.svelte` over every card at every letter. `docs/ARCHITECTURE.md`
 says `frontend/src/lib/` never holds a rule of the engine. The issue
 asks Go to answer: the keys of the cards that answer and the words to
-set in bold, without making typing slower, see #894.
+set in bold, without making typing slower.
 
 Measured on the code as it is, in a cloud session, a video of four
 hours, 3000 cards, from `longVideo` in `engine/transcript_bench_test.go`:

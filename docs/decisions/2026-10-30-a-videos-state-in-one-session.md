@@ -2,15 +2,15 @@
 
 Replaced by [2026-11-01-every-rule-of-the-workspace-in-go.md](2026-11-01-every-rule-of-the-workspace-in-go.md) for the reactions to a video's work, which that record puts in Go.
 
-Issue #606, from the architecture review of 29 October 2026 (#603).
+An issue from the architecture review of 29 October 2026.
 Decided on 30 October 2026, in the pull request that makes its first
 slice. The slices after it name this record.
 
 ## The problem
 
-Tim asked on 29 October for the issues of the architecture review that
+The user asked on 29 October for the issues of the architecture review that
 matter most for reliability and long-term maintenance, a large one in a
-pull request of its own. #606 is one of them: "Go owns a video's state
+pull request of its own. This is one of them: "Go owns a video's state
 and sends it as one snapshot", so the workspace stops guessing from pings.
 
 Measured on main at 127fbef:
@@ -38,8 +38,7 @@ An effect that compares the value from before runs on every job event,
 about once a second, and sees only the newest state after the batch: a
 search that ends and a new one that starts before the effect runs are
 one search to it. Each new kind of work has added an effect, a ticket or
-a counter of its own, which is how the family of #323, #331, #431, #436,
-#444, #450, #513 and #572 came about.
+a counter of its own, which is how a whole family of bugs came about.
 
 ## Five simulations
 
@@ -145,8 +144,8 @@ In four slices, each a pull request:
    `clips`, `coverage` and the video's jobs move into the session.
 4. The tickets, `OnTheWay`, `unread`, the effects that notice a start
    and both polls go. One `startJob` keeps the pending state of every
-   control from the video's jobs, as Tim's comment on the issue asks.
-   This fixes #513.
+   control from the video's jobs, as the user's comment on the issue asks.
+   This fixes one of that family of bugs.
 
 ## What follows
 
@@ -167,7 +166,7 @@ In four slices, each a pull request:
 
 ## Slice 3, as built
 
-Tim asked on 1 November for all of step 3 in one pull request.
+The user asked on 1 November for all of step 3 in one pull request.
 
 - Go reads a video's state with `State` in
   `cmd/framefairy-app/videostate.go`: its status, its clips, how often
@@ -221,7 +220,7 @@ Measured in a cloud session before it was sent:
   file stays as it was, one for each transcript, `heardOf` in
   `engine/heard.go`, and the status
   then took 0.013 ms, from 0.012 to 0.035. It is a package variable, as
-  the caches that outlive a job are until #607 gives them one home.
+  the caches that outlive a job are until they are given one home.
 - The state of a video of five minutes with one clip and one job was
   2.2 KB, measured once: 0.6 for the clip, 0.9 for the job and 0.6 for the
   status. Reading it took 0.1 ms, measured five times. A state of fifty

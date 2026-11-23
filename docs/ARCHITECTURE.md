@@ -8,9 +8,9 @@ short and only about what rarely changes.
 
 A line is added only for a new kind of thing: a new part, a new home for
 state, a new boundary. Such a change is simulated five times first, see
-Changing the architecture at the end. A pull request that closes an
-issue this file names rewrites the rows that name it and removes its
-line under Not to copy. `internal/naming` checks that every path the file names exists.
+Changing the architecture at the end. A pull request that fixes
+code listed under Not to copy removes its line there and rewrites the
+rows that name it. `internal/naming` checks that every path the file names exists.
 
 ## Bird's eye view
 
@@ -132,7 +132,7 @@ model is reached with the person's own key.
 
 ## Where does it go?
 
-What to do today, and what changes once the issue named is built.
+What to do today, and what changes once the work named is built.
 
 | I need to | It goes |
 | --- | --- |
@@ -281,20 +281,21 @@ other side relies on, and the pull request says so.
 - `engine.Episode`, with `engine.Options` handed in, the questions a front end asks of a video's files: its transcript, plans, status, room and window, and whose a path is.
 - The files of a work folder and of the config folder, which an older
   and a newer build both read, `chosen.json` and the settings among
-  them, see #612.
+  them.
 - `internal/framewire` and the decoder's one argument besides the episode, `-chip`, between the decoder and the engine.
 - The update feed and the licence key, which the builds of customers
   read.
 
 ## Not to copy
 
-Code that breaks this map today, with the issue that fixes it. A session
+Code that breaks this map today. Each has an open issue, found by
+searching the issues for its path. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
 - Rules of the engine in `frontend/src/lib/flow.ts`, its frames held to
   Go by a shared case file, the frame lookups `rotationAt` and
   `pieceHolding` in `frontend/src/lib/rotate.ts`, and `frameOf` in
-  `frontend/src/lib/keyframes.ts`, #610. So is `rankAt` in
+  `frontend/src/lib/keyframes.ts`. So is `rankAt` in
   `frontend/src/lib/frames/movie.ts`, the window's count of
   `Grid.Holding`, held by the same case file, by which a look names its
   frame: a look could name its moment and Go count the frame. These are

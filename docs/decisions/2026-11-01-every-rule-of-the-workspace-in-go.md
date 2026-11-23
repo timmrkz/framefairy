@@ -1,8 +1,8 @@
 # Every rule of the workspace is in Go
 
-Issue #606, from the architecture review of 29 October 2026 (#603).
-Decided on 1 November 2026, in #665, the first of the pull requests that
-finish #606. The others name this record. It replaces the part of
+An issue from the architecture review of 29 October 2026, "Go owns a
+video's state". Decided on 1 November 2026, in the first of the pull
+requests that finish it. The others name this record. It replaces the part of
 [2026-10-30-a-videos-state-in-one-session.md](2026-10-30-a-videos-state-in-one-session.md)
 that put the workspace's reactions to a video's work in the interface.
 The rest of that record stands: a job holds its engine record, and Go
@@ -10,7 +10,7 @@ sends a video's whole state as one message, with a revision, coalesced.
 
 ## The problem
 
-Tim, on 1 November 2026:
+The user, on 1 November 2026:
 
 > my understanding of the app is that Go is just the back end, and like
 > this TypeScript thing is just the front end, and they should just talk
@@ -21,7 +21,7 @@ Tim, on 1 November 2026:
 > any logic or rules at all. The front end should just ask for shit and
 > then get a response.
 
-Section A of the assessment of that evening, copied onto #606, counts
+Section A of the assessment of that evening, copied onto the issue, counts
 twelve kinds of decision the interface still makes about a video's work
 and its workspace: the clip chosen in every case, the window fitted and
 moved on, how a search ended, which job is the video's, which failures
@@ -33,7 +33,7 @@ interface gets what was decided.
 
 ### What was tried first
 
-The first pull request of the last slice of the record before, #665,
+The first pull request of the last slice of the record before
 needed each move of the session to read the clips the work left. Its
 commits tried three ways, each with five simulations that asked only
 where in the interface or the sender the order is kept: the job store
@@ -41,16 +41,16 @@ holding a video's news until its state, Go sending a state before the
 news that moves the work on, and the session waiting with each move for
 a state read after its news. The last needed the rule of which news
 moves the work on twice, `movesOn` in Go and the moves in the session,
-held to one by a shared `moves.cases.json`. Tim saw that and called it
+held to one by a shared `moves.cases.json`. The user saw that and called it
 wrong. An earlier draft of this record, e4c7d72, then had five
 simulations that were one candidate seen from five sides, which a fresh
 review found with thirteen more things wrong. All three ways were taken
-out of #665 again before it was merged, 2be6525. Only the fix they had
+out of that pull request again before it was merged, 2be6525. Only the fix they had
 found on the way stays: a video's states go out one at a time.
 
 ## What the code is today
 
-Counted on main at 93a2ef6, which #665 leaves as it is but for the send
+Counted on main at 93a2ef6, which the first pull request leaves as it is but for the send
 one at a time.
 
 - A video's work reaches the interface on two channels. The `job` event
@@ -61,7 +61,7 @@ one at a time.
   video except the downloads of the two models, kinds `model` and `llm`.
 - Because the two travel apart, each move of the session reads the
   video again when it is made, and the answers come one frame after
-  another, #513.
+  another.
 - The session makes seven moves. In `Episode.svelte` they use nine
   values kept for them, `listedBefore`, `pickedBefore`, `shownFirst`,
   `chosenByFind`, `selected`, `paused`, `movingOn`, `madeHere` and
@@ -97,7 +97,7 @@ what the hand did and draws the newest state.
   A job and the clips it wrote always come in one message, so no order
   of two messages has to be kept and nothing has to know which news
   matters: `OnTheWay`'s hold, `unread`, `session.wrote` and `take`
-  handing jobs to the store all go. The walk findings of #665 were about
+  handing jobs to the store all go. The walk findings of the first pull request were about
   news held behind a state, which cannot happen with one message.
 - Crossing the boundary: three fields on `VideoState`, the clip chosen,
   the window and what a drag may reach, and one on `Job`, how it ended.
@@ -108,7 +108,7 @@ what the hand did and draws the newest state.
   again. And a pick shown at once can be undone by a state read before
   Go had it.
 - Next likely changes: a new outcome, a clip chosen after a render, is a
-  field and a decision in Go. Clips chosen while the video plays, if Tim
+  field and a decision in Go. Clips chosen while the video plays, if the user
   wants them, is one condition in Go.
 - Cost: about 25 files, in six or seven pull requests, most of it
   removed code.
@@ -126,7 +126,7 @@ is, and the interface does what each notice says.
   handler for each notice.
 - Crossing the boundary: four new events, or one with four kinds.
 - Where it breaks: "chose clip X" can come before the state that holds
-  X, which is the order problem #665 spent two rounds on, now for
+  X, which is the order problem the first pull request spent two rounds on, now for
   notices. A workspace that opens, or is put back after the app slept,
   has missed every notice, so it needs the clip chosen and the window in
   the state anyway. The notice is then a second way to say a field,
@@ -164,7 +164,7 @@ The interface is a template that draws it and sends every gesture.
 - Next likely changes: every change of a word or a row is a change to
   Go and the template.
 - Cost: most of `Episode.svelte` rewritten, well over a thousand lines,
-  in more pull requests than #606 has left.
+  in more pull requests than the issue has left.
 
 ### 4. What runs together: one owner for each video
 
@@ -208,7 +208,7 @@ and an edit's lock, `history.mu`.
 
 ### 5. What a test has to build: ask and answer
 
-Tim's words taken as they stand: the interface asks and gets a
+The user's words taken as they stand: the interface asks and gets a
 response. Go only says that a video changed, at a rev. The interface
 asks for its state, and every call that changes a video answers with
 the state after it.
@@ -338,8 +338,8 @@ goes.
 
 **A press shown at once.** What the hand pressed is the interface's to
 show until Go answers, the way a pick is: one `startJob`, which keeps
-the press until the state holds the job, as Tim's comment of 29 October
-on #606 asks, so no control keeps a flag of its own, `stopping`, `renderAsked`,
+the press until the state holds the job, as the user's comment of 29 October
+on the issue asks, so no control keeps a flag of its own, `stopping`, `renderAsked`,
 `renderStopping` and `pressed`.
 
 **The polls go.** One channel needs no job poll to put a lost event
@@ -381,9 +381,9 @@ is sent, or if the hand had to wait for Go to see its own click, which
 a pick answered with a rev and one `startJob` are there to prevent.
 
 Each pull request removes what it replaces, so every merge leaves the app working
-and fewer rules in the interface. Each is listed on #606 as it opens.
+and fewer rules in the interface. Each is listed on the issue as it opens.
 
-1. **One send at a time**, #665: a video's states go out one at a time,
+1. **One send at a time**: a video's states go out one at a time,
    with at most one more waiting however slow a read is, which fixes
    `TestPathWhatChangesAVideoSendsItsState` on the Mac. And this record,
    and the two lines of `docs/ARCHITECTURE.md` that let a rule of the
@@ -398,7 +398,7 @@ and fewer rules in the interface. Each is listed on #606 as it opens.
 3. **Go chooses the clip**: the clip chosen in `VideoState`, rules 1 to
    7 above, `Playing`, `ChosenClip`, the `wrote` and `made` moves and
    their nine values gone. Steps 2 and 3 came as one pull request,
-   #676, as Tim asked.
+   as the user asked.
 4. **Go fits the window**: the window and the reach in the state,
    measured first, the target typed kept with its window, the fitting in
    the interface, `typed`, `followed` and `ChosenWindow` gone.
@@ -407,8 +407,8 @@ and fewer rules in the interface. Each is listed on #606 as it opens.
 6. **One channel, and the moves gone**: a video's jobs only in its
    state, how a search ended from Go, stopped work forgotten by Go, the
    transcription said stopping by Go, one `startJob`, `EpisodeSession`'s
-   moves, `WorkMoves`, `onchange` from them and both polls gone. #513
-   with it. It may split in two or three once it is worked out.
+   moves, `WorkMoves`, `onchange` from them and both polls gone. It also
+   fixes the answers that came one frame after another. It may split in two or three once it is worked out.
 7. **The architecture's own lines**: the move row and the "what is on
    screen" row rewritten, and invariant 5 held by the design. Each
    earlier pull request already changes the lines it makes wrong, so
@@ -416,7 +416,7 @@ and fewer rules in the interface. Each is listed on #606 as it opens.
 
 ## As built
 
-Steps 2 and 3, #676, differ from the convergence in one place. The
+Steps 2 and 3 differ from the convergence in one place. The
 queue does not tell the record of each job. The record chooses as the
 state is read, `chosenFor` in `cmd/framefairy-app/choose.go`, from the
 jobs and the clips of that one read, and keeps the rev of the newest
@@ -472,7 +472,7 @@ alone. A search refused as it is asked for, while the app closes or the
 video is being removed, now says why in a toast too, where it said only
 Failed in its row before.
 
-Steps 6 and 7 came as one pull request, #689, as Tim asked, and differ
+Steps 6 and 7 came as one pull request, as the user asked, and differ
 from the plan in three places.
 
 Stopped work forgotten by Go needed a clock a walk can run on. The time
@@ -503,7 +503,7 @@ The walks that waited on the Go side and then looked at the page assumed
 the page heard a job's news as the Go side sent it, because the job
 event went out at once. A video's jobs come in its state now, a moment
 later, so those walks catch up with the Go side's news first,
-`caughtUp`, before they look. And #392 came with it: a render cut off
+`caughtUp`, before they look. And a fix came with it: a render cut off
 by the app closing, or failed, says so at its clip's Render button with
 Continue and a bin, removed the way stopped work is, which needed
 nothing new but the button.

@@ -755,7 +755,7 @@ with, offline, before every render.
   and the rim rests between, because it is what
   was bought and nothing is running. Running all the time it was too
   busy. It is what was bought: a first try with a light of its own looked like
-  nothing else in the app, and Tim saw it. The trash can beside it
+  nothing else in the app, and the user saw it. The trash can beside it
   removes the key, after asking, and the field comes back.
 - **The Unlock link.** The thank-you page and the letter carry, for
   each key, an Unlock Frame Fairy button, a link
@@ -769,13 +769,13 @@ with, offline, before every render.
   Every key unlocks the same app, so the Mac is licensed all the way
   through and nothing is lost, and the key replaced is still in its own
   letter. It used to wait in the field for Unlock instead, because any
-  web page can open such a link, but Tim found the field and the button
+  web page can open such a link, but the user found the field and the button
   a step that did nothing a buyer needs: the most a page can do is put
   in a key of its own, which still unlocks the app, and which the row
   names. The same key again changes nothing. A key the app refuses
   changes nothing either, and the row says why, in full, with the
   warning mark: a Mac that was licensed stays licensed, and says that
-  its key still unlocks it. Tim's first try from main looked like a key
+  its key still unlocks it. The user's first try from main looked like a key
   that would not unlock: an app from Updates refuses test keys, and the
   reason was cut off at "takes …". The link is read
   strictly, in `keyFromLink`: the `framefairy` scheme, the host

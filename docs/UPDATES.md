@@ -252,7 +252,7 @@ steps up to the disk image. Updates add three:
 - **Version numbers** are `1.2.3`, one number in one place, `engine.Version`,
   set from the tag by the workflow. A patch fixes, a minor adds, a major
   is what a paid upgrade would be, if there ever is one.
-- **Channels**: stable for customers, beta for Tim and anyone who asks,
+- **Channels**: stable for customers, beta for the user and anyone who asks,
   from the same workflow with a different tag.
 - **Release notes** in plain words, written with the pull requests that
   make them, because they are what the person reads in the app.
@@ -264,14 +264,14 @@ steps up to the disk image. Updates add three:
 
 ## Updates for pull requests
 
-Tim's idea: run the app once, and whenever a pull request gets a new
+The user's idea: run the app once, and whenever a pull request gets a new
 commit, update the running app to it from inside the app, the way a
 customer will update to a release. No terminal, no checking out a branch,
 no `make run` again.
 
 It is worth doing, and doing first, for two reasons. It uses the update
 path every day, long before any customer does, so whatever is wrong with
-it shows up on Tim's Mac and not on theirs. And it is most of the release
+it shows up on the user's Mac and not on the customers'. And it is most of the release
 workflow already: build, assemble, pack, sign the update, write the feed,
 publish. Only Apple's signing and notarisation, the stable channel and the
 licence come later.
@@ -284,13 +284,13 @@ How it would work:
   repository is public, so the runner costs nothing. It is built on the
   push itself, which finds the branch's open pull request, and not on
   the pull request's own event: GitHub runs no workflow for a pull
-  request while it is in conflict with main, and a commit pushed to #35
-  in that state got no build. A branch with no open pull request builds
+  request while it is in conflict with main, and a commit pushed to a
+  pull request in that state got no build. A branch with no open pull request builds
   nothing, and opening a pull request builds nothing either, so a pull
   request is built from its first push after it was opened. When the
   opening built too, a Dependabot pull request, pushed and opened in the
-  same second, was built twice and the second build stopped the first,
-  #642. The build is of the branch as it is, not merged with main, so a
+  same second, was built twice and the second build stopped the first.
+  The build is of the branch as it is, not merged with main, so a
   pull request in conflict can still be tested.
 - **A commit gets one build.** One that is built already, or that only
   changes the docs against the build there is, gets none of its own.
@@ -298,26 +298,26 @@ How it would work:
   build and for the list alike. It measures against what is built, not against the push before,
   so a push of the docs that stops the build of a push of code before it
   does not leave that code without a build.
-- **Each pull request is a channel**, `pr-18`, and main is one too. All
+- **Each pull request is a channel**, `pr-N` after its number N, and main is one too. All
   their builds are files of one pre-release, `dev`. A version reads like
-  `0.3.0-pr18.a1b2c3d`, where `a1b2c3d` is the commit it was built from,
+  `0.3.0-prN.a1b2c3d`, where `a1b2c3d` is the commit it was built from,
   shortened the way git and GitHub shorten it. It used to end in the
   workflow's run number, which said nothing about what was in the build.
   Nothing orders builds by their version: the app installs whatever build
   its channel has when it is not the one running.
-- **Only a development build sees them.** A build made for Tim shows, next
+- **Only a development build sees them.** A build made for the user shows, next
   to Check for Updates, which channel it follows: main or one of the open
   pull requests, by number and title. A customer's build is made without
   that list and only ever reads the stable feed.
-- **Switching is allowed to go sideways.** Moving from pull request 18 to
-  pull request 20 is not an upgrade by version number, so a development
+- **Switching is allowed to go sideways.** Moving from one pull request to
+  another is not an upgrade by version number, so a development
   build installs whatever the chosen channel's newest build is, whether its
   number is higher or not. Wails' updater can be given a small source of
   our own that does exactly that.
 - **The running build says which it is**, pull request and commit, in the
   About box, so a report from testing always names what was tested.
 - **Pull requests from forks are never built for it.** Only branches of this
-  repository, which only Tim and Claude push to. A development build runs
+  repository, which only the user and Claude push to. A development build runs
   whatever a pull request contains, so nothing from outside may get in.
 - **Its own key.** The development builds are signed with an update key of
   their own, a different one from the customer key. A leak of it reaches
@@ -328,7 +328,7 @@ What it can start with and what it cannot:
 - **It needs no Apple certificate.** Until batch 5.5 the builds are signed
   the way `make app` signs them today, ad hoc. A file the app downloads
   itself carries no quarantine mark, so macOS runs it without asking, the
-  same as a build made by `make`. This has to be confirmed on Tim's Mac, and
+  same as a build made by `make`. This has to be confirmed on the user's Mac, and
   it is the first thing the batch that builds this tries.
 - **It takes a few minutes per push.** The build runs in CI after each
   commit, so an update is ready a few minutes after Claude pushes, not at
@@ -336,8 +336,8 @@ What it can start with and what it cannot:
   to turns green on the commit that was built.
 - **The app lives in one place.** It is installed once, to
   `/Applications`, and updates itself there. An administrator can write
-  there without a password prompt, and Tim's account is one. `make run`
-  still works, for a change Tim wants to build himself.
+  there without a password prompt, and the user's account is one. `make run`
+  still works, for a change the user wants to build themselves.
 - **Every build shares one set of settings and episodes.** A pull request
   that changes a file format can leave a file another build cannot read.
   That is rare, it is the same rule a release lives by, and it is the risk
@@ -349,17 +349,17 @@ What it can start with and what it cannot:
 An update key is a pair of numbers made together, the way an SSH key is:
 a private half that signs and a public half that checks. Ed25519, the
 same kind Sparkle and Wails' updater use. They are not bought and not
-issued by anybody: they are made once, on Tim's Mac, with one command.
+issued by anybody: they are made once, on the user's Mac, with one command.
 
 | Key | Signs | Private half lives | Public half lives |
 | --- | --- | --- | --- |
-| The release key | what customers download | a GitHub secret only the release workflow can read, behind an environment that waits for Tim's approval, and a backup in Tim's password manager | in the repository, built into every customer build |
+| The release key | what customers download | a GitHub secret only the release workflow can read, behind an environment that waits for the user's approval, and a backup in the user's password manager | in the repository, built into every customer build |
 | The development key | the builds of `main` and of pull requests | `FRAMEFAIRY_UPDATE_KEY`, a secret of the GitHub environment `updates`, which only main can enter, and the password manager | in the repository, built into every development build |
 
 - **The private half never leaves those two places.** It is not in the
-  repository, not in a chat, not on a cloud session's disk. Tim makes the
+  repository, not in a chat, not on a cloud session's disk. The user makes the
   pair, pastes the private half into the repository's secrets on GitHub's
-  settings page, and keeps a copy in his password manager.
+  settings page, and keeps a copy in their password manager.
 - **No branch can read it.** A push runs the workflow file of the branch
   pushed, so whatever the build workflow is given, any branch can take,
   by rewriting that file. So the build, `builds.yml`, asks for no secret
@@ -367,7 +367,7 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
   GitHub runs that one from main whatever branch was built, and the key
   sits in an environment only main can enter. Which channel, commit and
   version a build is, it works out again from GitHub's record of the run,
-  not from anything the build wrote. Until #43 the build signed itself
+  not from anything the build wrote. The build once signed itself
   with the key in its own environment, and a branch could also have
   replaced main's entry in the list.
 - **The record of the run is checked too.** It names the branch, but a
@@ -403,7 +403,7 @@ issued by anybody: they are made once, on Tim's Mac, with one command.
 
 A build that could read input meant for other apps, watch the screen or
 the camera, or ask for administrator rights, is refused before it is
-signed, so no app is ever offered it, issues #369 and #751. `framefairy-release check` reads every file of the zip
+signed, so no app is ever offered it. `framefairy-release check` reads every file of the zip
 first, see `cmd/framefairy-release/inputs.go`, with Go's `debug/macho`, so
 it needs no Mac. It runs in a step of its own, before the step that holds
 the update key, because the zip is a branch's code that nobody has
@@ -480,9 +480,9 @@ GitHub cannot replace a release file in one step. `gh release upload
 --clobber` deletes the old file before it uploads the new one, so for the
 length of an upload there was no list, and an app that checked then was
 answered 404 and said the check did not get through. The list is written
-twice on every push to a pull request, so Tim ran into it. The first fix
+twice on every push to a pull request, so the user ran into it. The first fix
 uploaded the new list under a name of its own and renamed it into place,
-and the app waited out a 404 for seven seconds. Tim still ran into it:
+and the app waited out a 404 for seven seconds. The user still ran into it:
 after the rename GitHub went on answering 404 at the list's address for
 a few seconds more, measured at up to four from outside, and how long is
 GitHub's to decide.
@@ -508,11 +508,11 @@ with its newest build, so one fetch is the whole check:
 {
   "channels": [
     {
-      "channel": "pr-18",
-      "name": "#18 How the app updates itself",
-      "version": "0.3.0-pr18.a1b2c3d",
+      "channel": "pr-N",
+      "name": "#N How the app updates itself",
+      "version": "0.3.0-prN.a1b2c3d",
       "commit": "a1b2c3d4e5f6",
-      "url": "https://github.com/timmrkz/framefairy/releases/download/dev/app-pr-18-0.3.0-pr18.a1b2c3d.zip",
+      "url": "https://github.com/timmrkz/framefairy/releases/download/dev/app-pr-N-0.3.0-prN.a1b2c3d.zip",
       "size": 187000000,
       "sha256": "…",
       "signature": "…",
@@ -539,18 +539,18 @@ with its newest build, so one fetch is the whole check:
   or was refused by the signer, see `ended` in `cmd/framefairy-release/channels.go`. The list is
   written again whenever a build ends, however it ended, so the page
   stops saying a build is coming as soon as it is known that none is.
-  Until #840 such a commit was named until the next push. A pull request that is merged or closed has its
+  Such a commit was once named until the next push. A pull request that is merged or closed has its
   entry taken away, and its builds go an hour later. Every writing of the
   list also takes away the entry of any pull request that is not open,
   because GitHub runs nothing for a pull request that no longer merges
-  into main: #24 was closed in that state, the close was never seen, and
+  into main: a pull request was closed in that state, the close was never seen, and
   the app went on offering it.
 - **The channel followed is read from its own entry too.** A build and
   its entry, `channel-<channel>.json`, are uploaded one after the other,
   and the list is written from the entries only after that, in one queue that
   every build of every channel shares. On 20 October the list took two
-  minutes to follow a build of #367, and a pick in between came back at
-  once as the build before, which was kept in the cache, #420. So every
+  minutes to follow a build of a pull request, and a pick in between came back at
+  once as the build before, which was kept in the cache. So every
   read of the list also reads the entry of the channel followed, and
   when the entry is of a newer build, by `published`, it takes the
   list's place for that channel, with the list's name, `newest` and
@@ -565,7 +565,7 @@ with its newest build, so one fetch is the whole check:
 - **A pull request in conflict says so.** One that no longer merges into
   main keeps its entry, because its build is of the branch as it is and
   can still be tried, and the list marks it with `"conflict": true`. The
-  Updates page then names it **PR #20, conflicts**,
+  Updates page then names it **PR #N, conflicts**,
   the way it names a closed one, in the list and on the trigger when it is
   followed. GitHub runs no CI on such a pull request, so the mark says its
   build was not tested. Followed, the list wears the colour of a warning,
@@ -602,29 +602,29 @@ with its newest build, so one fetch is the whole check:
 
 ### End to end
 
-1. **Once, the key.** Tim runs `make update-key` on his Mac. It puts the
+1. **Once, the key.** The user runs `make update-key` on their Mac. It puts the
    public half in `cmd/framefairy-app/update-key.txt` and the private half
-   on the clipboard, never in a file. He pastes the private half into the
+   on the clipboard, never in a file. They paste the private half into the
    secrets of the GitHub environment `updates` as `FRAMEFAIRY_UPDATE_KEY`,
-   with the environment's deployment branches set to main only, and into his
+   with the environment's deployment branches set to main only, and into their
    password manager, and the public half into the pull request, where
    Claude commits it. Until then nothing is built to update to, and the
    app says it has no key.
-2. **Once, the app.** `make install` builds the app on Tim's Mac and copies
+2. **Once, the app.** `make install` builds the app on the user's Mac and copies
    it to `/Applications`. Built on the Mac, it carries no quarantine mark,
    so macOS opens it. From then on it is started like any other app, not
    from the terminal.
-3. **Tim picks #18** in the list on the Updates page. Updates is the last row of
+3. **The user picks a pull request** in the list on the Updates page. Updates is the last row of
    the sidebar, and it says which build is running. The app reads the
-   channel list, downloads #18's build with the fill on the Check button,
+   channel list, downloads its build with the fill on the Check button,
    checks it against the key, and says it is ready. Updates on the rail
-   gets a dot. Tim clicks **Relaunch**, and the app comes back as pull
-   request 18. The sidebar says `0.3.0-pr18.a1b2c3d`, and the page adds
+   gets a dot. The user clicks **Relaunch**, and the app comes back as that pull
+   request. The sidebar says `0.3.0-prN.a1b2c3d`, and the page adds
    the commit, which opens on GitHub.
-4. **Claude pushes to pull request 18.** About a minute later the list
+4. **Claude pushes to that pull request.** About a minute later the list
    says a newer commit is being built, and the page says so, naming it,
    the next time it looks. A few minutes later the workflow
-   has built `0.3.0-pr18.e4f5a6b`, signed it, and put it in the channel list.
+   has built `0.3.0-prN.e4f5a6b`, signed it, and put it in the channel list.
    The app looks by itself the moment it starts and every ten minutes
    after, and every twenty seconds while a commit is being built, so the
    build is found soon after it lands. It downloads it quietly and puts
@@ -633,7 +633,7 @@ with its newest build, so one fetch is the whole check:
    first, whatever else is going on, so a pull request whose first build
    has just been published is on the list the moment Check is clicked. It
    used to wait for a check already running, a download among them.
-5. **Tim picks #20**, or main. The app downloads that channel's newest
+5. **The user picks another pull request**, or main. The app downloads that channel's newest
    build, sideways, and says it is ready. A pick while another channel's
    build is downloading takes over at once, and the page shows the new
    channel from the moment of the pick. A pick is always looked for, also
@@ -652,9 +652,9 @@ with its newest build, so one fetch is the whole check:
    to unpack, or still on its way, and the fill goes on from where it is.
    The fill only ever goes forward. Handing a build that has just arrived
    over from the cache is not more of the download, so it says only that
-   the build is whole. It used to count from nothing again, and Tim saw
+   the build is whole. It used to count from nothing again, and the user saw
    the fill run back towards empty just before the end, then jump to
-   full (#334).
+   full.
    A download that brings nothing for a minute, `fetchQuiet`, is given
    up on and says so, a connection that went away without closing. It
    used to wait for the whole half hour a download may take, and every
@@ -662,13 +662,13 @@ with its newest build, so one fetch is the whole check:
    A build is never downloaded twice at once. A kept build is used only
    while it still hashes to what the list says, and the updater checks it
    again, checksum and signature, as it checks a download.
-6. **#18 is merged.** Its channel goes from the list, and an app still on
-   it downloads nothing. The page says **PR #18 is closed** after the
+6. **The pull request is merged.** Its channel goes from the list, and an app still on
+   it downloads nothing. The page says **PR #N is closed** after the
    warning triangle, the list names it, closed, in the colour of a warning, and nothing
    downloads until another channel is picked. The build kept for it is
    removed the next time the list is read, and so is any build a newer
    push has replaced: nothing is kept that the list does not name. It
-   used to follow main by itself, and Tim, meaning to pick another pull
+   used to follow main by itself, and the user, meaning to pick another pull
    request, watched main download without having asked for it.
    The page says closed whenever the list does, whatever the last check
    said: the channel being gone and the line under the build are one
@@ -704,7 +704,7 @@ queue takes no new work, see `closeIfIdle` in
 `cmd/framefairy-app/jobs.go`, so no search starts between the look and
 the quit. Following another channel only downloads, so it stops nothing.
 Quitting stops the work the way any quit does, after asking, and the
-search says Stopped with Continue in the new build. Issue #382.
+search says Stopped with Continue in the new build.
 
 **Quitting with a build ready puts it in place**, the way Chrome does:
 the next start is the new build, and nothing opens by itself in between.
@@ -736,7 +736,7 @@ only the ones about Frame Fairy go.
 A build made by `make`, and `make install` and `make run` are, starts out
 following nothing, whatever `updates.json` says. It is a build somebody
 made on purpose, not one that came from a channel, so a channel picked by
-an earlier build is not carried over to it: Tim made one and found it
+an earlier build is not carried over to it: the user made one and found it
 following the pull request an earlier build had picked. `updates.json`
 stays as it is, for the builds from a channel that read it. Following
 nothing, the build does not look, so every `make run` does not fetch a
@@ -757,10 +757,10 @@ minutes. Once a channel is picked, another channel is what follows it.
 
 | Part | Where | What it does |
 | --- | --- | --- |
-| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A build with parts is put together from the running app's own files and the pieces it lacks, `assemble.go`, and downloaded as the stored zip packed with zstd when that fails or weighs less, `whole.go`. A build without parts is downloaded whole. `parts.go` holds what the parts are and how a build is packed in them. A channel that has gone is followed by nothing, never by main by itself. Every build downloads into the user's caches first and goes on to the end whoever still waits for it, so a channel picked again has its build at once or on its way, and whatever the list stops naming is removed each time it is read, unless it is still arriving |
+| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A build with parts is put together from the running app's own files and the pieces it lacks, `assemble.go`, and downloaded as the stored zip packed with zstd when that fails or weighs less, `whole.go`. A build without parts is downloaded whole. `parts.go` holds what the parts are and how a build is packed in them. A channel that has gone is followed by nothing, never by main by itself. Every build downloads into the app's caches first and goes on to the end whoever still waits for it, so a channel picked again has its build at once or on its way, and whatever the list stops naming is removed each time it is read, unless it is still arriving |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, a newer build in place of one that is ready once it is whole, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
-| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot whenever the page marks something, in the colour the page wears it in, issue #406: work on a newer build, looking, downloading or a newer commit being built, pulses in the accent, a newer build ready stands still in the accent, a pull request followed that closed or that conflicts with main stands still in the colour of a warning, the dot of work on it pulsing in that colour too, and a check that did not get through stands still in red. Up to date, a build made on the Mac and a build that does not update itself wear none. Both read the one state and the one mark, in `frontend/src/lib/updates.svelte.ts`, so the row never says less than the page or something else. Its title then says what the page says. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or PR #18, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check while a channel is followed, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. A check or a download that did not get through says why in words a person uses, from `updateProblem`, no connection to GitHub, GitHub busy, nothing found, a build that could not be verified or a disk that took nothing, in one short sentence, and asks to check the internet connection only when the error was the network's, a certificate the Mac does not trust among them, which is what a hotel's Wi-Fi or a company's proxy shows it. What the system said is under it apart, in a field at the height of a control on one line that scrolls sideways, with a button at its end that copies it for a report, and Try again stands on the same row as the field, issue #417. Looking is shown for at least 1.4 seconds, on the page and on the row alike, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
+| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot whenever the page marks something, in the colour the page wears it in: work on a newer build, looking, downloading or a newer commit being built, pulses in the accent, a newer build ready stands still in the accent, a pull request followed that closed or that conflicts with main stands still in the colour of a warning, the dot of work on it pulsing in that colour too, and a check that did not get through stands still in red. Up to date, a build made on the Mac and a build that does not update itself wear none. Both read the one state and the one mark, in `frontend/src/lib/updates.svelte.ts`, so the row never says less than the page or something else. Its title then says what the page says. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or PR #N, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check while a channel is followed, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. A check or a download that did not get through says why in words a person uses, from `updateProblem`, no connection to GitHub, GitHub busy, nothing found, a build that could not be verified or a disk that took nothing, in one short sentence, and asks to check the internet connection only when the error was the network's, a certificate the Mac does not trust among them, which is what a hotel's Wi-Fi or a company's proxy shows it. What the system said is under it apart, in a field at the height of a control on one line that scrolls sideways, with a button at its end that copies it for a report, and Try again stands on the same row as the field. Looking is shown for at least 1.4 seconds, on the page and on the row alike, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | every decision the two workflows make, one command a step. `key` makes the pair, `build-plan` says what a push is a build of and whether it needs one, `publish-plan` what a finished build is published as and refuses a commit its channel's history does not hold, `pack` writes the build again with each file stored as it is, its parts, its pieces and the zip packed with zstd, `check` refuses a build that could reach past the app, before the key is there, `sign` signs a build `check` passed, and the stored zip `pack` wrote beside it, and refuses a key that is not the app's, `publish` uploads the pieces the release lacks, the zip, the stored zip packed, its parts, then its entry, then marks the commit, `not-published` marks a commit whose publishing failed and says why, `channels` writes the channel list and leaves out a newest commit whose build ended without one, and `unstick` cancels a publish stuck before its environment. What they ask GitHub is in `github.go`, behind an interface the tests replace. A decision about a build goes here, never into a script, see [the decision record](decisions/2026-11-14-update-decisions-in-go.md) |
 | The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so main's copy asks for no secret and no token that can write, which a branch's copy could, so what holds is the `updates` environment and the history check in `publish.yml`. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `needsBuild` in `cmd/framefairy-release` |
 | The publishing | `.github/workflows/publish.yml` | runs from main whenever a build starts or ends. It works out which channel, commit and version a build is from GitHub's record of the run, packs the zip in parts, signs it and the stored zip, uploads the pieces the release lacks, the zip, the stored zip packed, its parts and its entry to the `dev` release, takes away the zips, packed zips, parts and pieces no entry reaches, writes the list at the start of a push and when its build is done, and marks a pull request's commit Ready to update to the moment its entry is up |
@@ -783,9 +783,9 @@ Still to come, in the order they are needed:
   is an app it has never seen. Signed with a real certificate, macOS
   knows the app by its bundle identifier and the certificate, and asks
   once for good. Developer ID, batch 5.5, ends it. Until then a new build
-  asks once. Tim accepted that for now.
+  asks once. The user accepted that for now.
 - **Installing when the app quits, tried on the Mac.** Built, see below,
-  and not yet seen working on Tim's Mac.
+  and not yet seen working on the user's Mac.
 - **Customers.** The stable channel, Apple's signing and notarisation, the
   release key, and a release build that knows no channel list.
 
@@ -830,7 +830,7 @@ pull request channel adds about 5 more. At twenty such pushes a day that
 is around 400 macOS minutes, 25 dollars a day, 500 to 700 a month. Three
 ways to bring it down, which can be combined:
 
-- **A runner on Tim's Mac.** GitHub runs the macOS jobs on a machine of
+- **A runner on the user's Mac.** GitHub runs the macOS jobs on a machine of
   our own, the M2 Max, faster than GitHub's and without the minutes. It
   works while the Mac is awake, and it only ever runs this private
   repository's own jobs.
@@ -841,7 +841,7 @@ ways to bring it down, which can be combined:
 
 **Pull request builds are public in both ways**, because the releases
 repository is. So every build, development or release, asks for the
-licence key before it renders without a watermark. Tim has a key like any
+licence key before it renders without a watermark. The user has a key like any
 customer. A build is only ever as free as a release.
 
 ## Decisions

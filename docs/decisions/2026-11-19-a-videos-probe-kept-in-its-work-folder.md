@@ -1,6 +1,6 @@
 # A video's probe is kept in its work folder
 
-Issue #891.
+An issue from the speed hunt of 16 November.
 
 ## The problem
 

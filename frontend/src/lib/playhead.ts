@@ -13,7 +13,7 @@
 // bar played the episode straight through its cuts and past its end. Each
 // fix moved the place the measurement could round to the wrong side. A
 // gesture knows what it is about, so it says, and nothing after it can
-// change that. See Playback in .claude/skills/interface/SKILL.md.
+// change that. See Playback in docs/INTERFACE.md.
 
 import { intoWord, wordStep, type Word } from "./api";
 import { frameAt, insideClip, type Piece } from "./flow";

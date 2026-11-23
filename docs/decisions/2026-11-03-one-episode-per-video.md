@@ -1,6 +1,7 @@
 # One episode per video, read again only when its files changed
 
-Step 3 of #673, which closes #608. It carries on the record
+Step 3 of the plan for the app in step with its files, which closes the
+issue that asks for one holder per video. It carries on the record
 [the app in step with its files](2026-11-01-the-app-in-step-with-its-files.md),
 which named an `Episode` per video in the engine without working it
 through. Decided on 3 November 2026, in the first pull request that
@@ -9,11 +10,11 @@ record.
 
 ## The problem
 
-Tim said "go on with the next steps" on 3 November, once steps 1 and 2
-were merged. Step 3 of #673 reads: "One `Episode` per video in the
+The user said "go on with the next steps" on 3 November, once steps 1 and 2
+were merged. Step 3 of the plan reads: "One `Episode` per video in the
 engine that holds its plans, status and transcript by file stamp and
 reads a file again only when it changed. The app's own transcript cache
-goes. Closes #608." Tim on 1 November: "The source of truth are the files
+goes. Closes the issue." The user on 1 November: "The source of truth are the files
 on the file system. And the files on the file system can potentially be
 written by many writers." So whatever holds a video's files in memory
 holds a copy, and has to know when the copy no longer matches the file.
@@ -36,8 +37,8 @@ Measured on main at b8cb415:
   takes 0.10 ms and shaping a clip while an edge is dragged 0.55 ms, one
   run each in a cloud session on 1 November. Plans are cheap, the
   transcript is not, and the copies are what can go wrong.
-- `engine.Machine`, from #644, is made once in each program and lives as
-  long as it. #646 and #649 move the other caches onto it.
+- `engine.Machine` is made once in each program and lives as
+  long as it. Later pull requests move the other caches onto it.
 
 ## Five simulations
 
@@ -59,7 +60,7 @@ episode. What crosses the new boundary: `Machine.Episode`,
 writes through the file as it does and the episode sees the new stamp on
 the next question, so nothing has to tell it.
 
-Next changes: steps 4 to 6 of #673 touch nothing of it. A third kind of
+Next changes: steps 4 to 6 of the plan touch nothing of it. A third kind of
 file, the loudness, is a field. Cost: a `Stat` per file per question,
 microseconds, and the memory of the transcripts kept, which stays at
 ten as today.
@@ -81,8 +82,8 @@ question never looks at the disk at all.
 It reads nothing it does not need to and stats nothing. But it holds
 only where a watch runs. The command line has none, a test in memory
 has none, and a change the system's queue lost leaves the copy wrong
-until something else names the file, which is the very harm the review
-of #675 found in a copy kept beside the disk, finding 2. The disk would
+until something else names the file, which is the very harm a review
+found in a copy kept beside the disk. The disk would
 no longer be the truth, the watch would. Its hints are good for one
 thing here: a copy can be dropped early, which costs nothing and
 changes no answer.
@@ -102,7 +103,7 @@ plan, the loudness.
 
 It is small, and every read stays the function it is. But there is no
 place that is the video: three caches, each with its own key and its
-own count of what it keeps, which is what #607 called out in the
+own count of what it keeps, which is what the issue on what outlives a job called out in the
 package variables. The questions that span files, `Status` reads the
 transcript, the plans and the loudness, still gather them by hand in
 every caller. It is the right mechanism and the wrong home.
@@ -116,10 +117,10 @@ to keep in step.
 ### 4. The app holds it, beside what is chosen
 
 The principle: the app already keeps a record for each video, its undo
-steps and, since #606, `picked`. The transcript and the plans would sit
+steps and, since Go owns a video's state, `picked`. The transcript and the plans would sit
 beside them.
 
-It is close to where they are used. But it is the second holder #608
+It is close to where they are used. But it is the second holder the issue
 is about: the engine's `Status` still reads for itself, and the command
 line gets nothing. It breaks "one engine, two front ends", and a rule
 about when a file is read again would live in the app.
@@ -195,12 +196,12 @@ The pull requests, in order, each one self-contained:
    `NewProject(nil, ...)` go.
 4. Every plan read still outside the episode, the views of a gesture
    and its captions above all, and whose a path is asked of the episode,
-   the third thing #608 asks for. Opening the work folder through
-   `os.Root` was dropped, see Part 4 below. Closes #608.
+   the third thing the issue asks for. Opening the work folder through
+   `os.Root` was dropped, see Part 4 below. Closes the issue.
 
 ## Parts 2 and 3: what the app asks in place of a Project
 
-Tim asked on 4 November for parts 2 and 3 in one pull request. Part 2
+The user asked on 4 November for parts 2 and 3 in one pull request. Part 2
 carries out what the decision above holds: the plans are read through
 the episode, each by its own stamp. Part 3 takes the app's `project()`
 away, and the decision did not say what the app asks instead. Seven
@@ -237,7 +238,7 @@ and the settings change under the app, so either the machine keeps one
 per video and per set of options, or the app makes one per call as it
 does now. The first is a cache keyed by options, a second holder beside
 the episode. The second changes only who calls `NewProject`, and leaves
-#608's complaint, a `Project` made to find a path, where it was. Dropped.
+the issue's complaint, a `Project` made to find a path, where it was. Dropped.
 
 ### 3. Where state lives: the episode keeps the answers too
 
@@ -301,8 +302,8 @@ is where that copy belongs.
 
 ## Part 4: the plans a gesture reads, and whose a path is
 
-Tim asked on 5 November for part 4 of this record and step 4 of #673,
-the shorts folder watched, in one pull request. Part 4 is what #608
+The user asked on 5 November for part 4 of this record and step 4 of the plan,
+the shorts folder watched, in one pull request. Part 4 is what the issue
 still asks: "dragging an edge read no ... plan file that has not
 changed", and "path checks for a video's own files become a question to
 its `Episode`". Counted from the code on main at 3f10c93:
@@ -357,7 +358,7 @@ with it.
 
 The episode opens its work folder with `os.OpenRoot`, and every file of
 it is opened through that root, so a link inside it can lead nowhere
-outside, whatever happens between a check and an open. `#608` named it.
+outside, whatever happens between a check and an open. The issue named it.
 But the engine reads its files through the `afero.Fs` it is handed, so
 a test runs in memory, and an `os.Root` is a folder on the disk. Either
 the episode reads through an `afero.Fs` made over an `os.Root` on the
@@ -400,7 +401,7 @@ than the check they remove. So: simulation 1. The views take a
 `PlanSummary`, which keeps its bytes, the edits keep reading under the
 lock, `IsShort` and `TakeSnapshot` ask the episode, and whose a path is
 is `Episode.Owns` and `Episode.HasPlan`. `os.Root` is left out, and
-`#608` closes with its Done when met: the library and a drag read no
+The issue closes with its Done when met: the library and a drag read no
 file that has not changed, the app keeps no transcript of its own, and
 no `NewProject(nil` is left.
 
@@ -411,7 +412,7 @@ engine edits, undo snapshot  read the file, trusting no stamp
 engine.Episode               plans with their bytes, by stamp
 ```
 
-### Step 4 of #673: the shorts watched
+### Step 4 of the plan: the shorts watched
 
 Where a clip's short is, the plan says, `recordOf`, and whether it is
 still there is asked each time the clip list is made, `shortOf`. So a
@@ -453,7 +454,7 @@ many files are in the folders, for a measurement on a real library.
   few milliseconds too, so a plan edited twice in one tick to the same
   size kept its old read. The stamp takes the file's inode as well, see
   `fileio.Stamp`: every write of a plan puts a new file in the old one's
-  place, which the system numbers anew. #608 asked for `editPlan` to
+  place, which the system numbers anew. The issue asked for `editPlan` to
   tell the episode instead. That covers the app's own edits alone, and
   the command line, Finder and a sync service tell nobody, so the stamp
   is the one way that sees them all.

@@ -12,7 +12,7 @@ before the fix.
 
 This audit is history. Open work lives in GitHub issues, never in this
 file. On 29 October 2026 every item was checked again against main at
-`a2d7260` by the architecture review [#603](https://github.com/timmrkz/framefairy/issues/603).
+`a2d7260` by the architecture review.
 What had come back or was still open moved to an issue or was dropped, as
 each item says, and nothing here changes again.
 
@@ -53,7 +53,7 @@ what became of it.
    server. A process the system has given the same number since is left
    alone, and so is a server the command line is still using.
    `engine/leftover.go`.
-   Found by Tim on a Mac: all of that ran after `app.Run`, which never
+   Found by the user on a Mac: all of that ran after `app.Run`, which never
    returns on macOS. Cmd+Q ends the process from inside Cocoa once Wails
    has run its shutdown hooks, so a llama-server outlived every Mac that
    quit during a search. It is a shutdown hook now, `OnShutdown`. It
@@ -69,9 +69,9 @@ what became of it.
    job, its news included. `engine/planbuild.go`, `engine/searchclock.go`,
    `cmd/framefairy-app/jobs.go`, each with a test that crashed the test
    program before. **Came back**, found on 29 October 2026: the goroutine
-   that builds the video preview's captions, new in #201, has no recover,
+   that builds the video preview's captions, added after the fix, has no recover,
    and neither do 10 of the engine's 13 goroutines and 8 of the app's 28.
-   Moved to #604, which guards each goroutine that reads what nobody
+   Moved to the issues, to guard each goroutine that reads what nobody
    checked.
 5. **A job event lost or out of order leaves the interface stuck.** The
    queued event can arrive after the running one, events sent before the
@@ -110,7 +110,7 @@ what became of it.
    that appears between the two pictures of an edit is left out of it.
    `engine/undo.go` `LeaveOutNewClips`, used by the history in
    `cmd/framefairy-app/history.go`.
-   The same for the other two things a search does to a plan, issue #309.
+   The same for the other two things a search does to a plan.
    Over a window searched before it writes its plan anew, and undoing an
    edit made at that moment put the clips of the search before back into
    the new plan, with its id. And it takes out a removed clip it has made
@@ -136,7 +136,7 @@ what became of it.
     the interface only asked for the first search once the saved transcript
     covered the window, and that is written every 8 s of work and read every
     2 s. So the search came up to 10 s after the window had been heard, and
-    the transcription ran minutes of audio past it, which Tim saw on the
+    the transcription ran minutes of audio past it, which the user saw on the
     range picker. The test for the earlier fix drove the Go side directly
     and never went through the interface, which is how it passed. Fixed:
     every decision about a search in the interface goes by what has been
@@ -151,13 +151,13 @@ what became of it.
     rather than up to two pieces of 30 s. The window is locked from the
     start of the transcription until that search has run.
 13. **Cmd+Q and removing an episode froze the app for five seconds.**
-    Found by Tim. Both stop llama-server, which is asked to go and was given
+    Found by the user. Both stop llama-server, which is asked to go and was given
     five seconds before it was killed, and it used them all: on the way
     out it joins the threads of its HTTP server, and one still waiting on
     an answer holds it there. Its own source says so beside its signal
     handler. Quitting did that on the main thread, so the app froze under
     the spinning wheel, and removing did it while nothing on screen said
-    the click had been heard, so Tim clicked again and again. Fixed:
+    the click had been heard, so the user clicked again and again. Fixed:
     llama-server has half a second and is then killed, it has nothing to
     save. `TestAServerThatWillNotStopIsKilledAtOnce` runs the test binary
     as a server that ignores the interrupt, and fails with the five
@@ -172,6 +172,6 @@ what became of it.
     A warm-up for a search that failed still loads the model. The job list,
     the probe cache and the plan locks grow while the app is open.
     **Dropped** on 29 October 2026: the model now stays loaded while the app
-    is open, #434 and #440, so a warm-up costs nothing. The job list and
+    is open, so a warm-up costs nothing. The job list and
     the plan locks grow only with one session's work, and the probe cache
     holds one entry a video.

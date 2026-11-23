@@ -1,6 +1,6 @@
 # A caption layer the page has is not drawn again
 
-Issue #896.
+An issue from the speed hunt of 16 November.
 
 ## The problem
 

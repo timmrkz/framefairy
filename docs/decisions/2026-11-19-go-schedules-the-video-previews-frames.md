@@ -1,20 +1,20 @@
 # Go decides which frames the video preview gets
 
-Issue #924, after #920.
+An issue from the user's report of 18 November, after an earlier pull request.
 
 ## The problem
 
-Tim, report of 18 November, 14.36: "the video preview sometimes lags to
+The user, report of 18 November, 14.36: "the video preview sometimes lags to
 render the frame at which I put the play head ... we must make sure that
-the frame fairy app is instant." The first fix, #921, taught the window
-one more rule. Tim, the same evening: "all the changes that you did were
+the frame fairy app is instant." The first fix taught the window
+one more rule. The user, the same evening: "all the changes that you did were
 just in the front end part ... if the front end is truly just a dumb
 rendering layer, then there shouldn't be any performance issues in the
 front end ... the fix of this pull request is very likely just a
 workaround ... there is just so much that we can push on a string."
-#921 was closed for this record.
+The first fix was closed for this record.
 
-Read from Tim's own logs, 10 to 18 November, on his M2 Max:
+Read from the user's own logs, 10 to 18 November, on their M2 Max:
 
 - 4815 jumps of the decoder on youtube.mp4, 1080p at 50 frames a
   second, took 48 ms from the open to the first frame on the median and
@@ -51,13 +51,13 @@ Read from the code on main:
   the frame asked for, up to 40 frames on youtube.mp4, and nothing ends
   it early. That is why the window parks: a new stream beside a stale one
   would decode beside it, not instead of it.
-- Under all of it lies the shape of the frame queue of #110, which fed
+- Under all of it lies the shape of the first frame queue, which fed
   WebCodecs. `queue.ts` still feeds a decoder with samples, and
   `AppPictures` in `app.ts` answers it the way a `VideoDecoder` would,
   `decode`, `flush`, `decodeQueueSize`, from frames `AppFrames` fetches.
 
 So the window keeps a decoder's schedule for a decoder it cannot see and
-cannot stop. Each report since #281 tuned it: #502, #511, #596, #921.
+cannot stop. Each report since the first one tuned it, four times, the first fix last.
 Every table in VIDEO-PREVIEW.md shows a rule that helped one drag and
 hurt another, because the cost it guesses at, where the key frames are
 and what each cursor is doing, is Go's to know.
@@ -81,7 +81,7 @@ give up work either.
 
 ### 2. What runs together
 
-The hand moves every 8 ms on Tim's screen, and the decoder takes 25 ms
+The hand moves every 8 ms on the user's screen, and the decoder takes 25 ms
 and more for a jump. So the decoder must always work on the newest
 place, and work for an old place must end the moment a newer one comes,
 not at the end of its batch. That gives three needs. The decoder stops
@@ -96,7 +96,7 @@ Weighed here: a channel open for as long as the video preview, the
 window sending places on it and Go sending frames as they are made. It
 saves a request per frame and needs a reply body that streams, through
 Wails on WebKit, WebKitGTK and WebView2, and the walks' bridge. What a
-request costs on a Mac was not measured. In the one case of Tim's log
+request costs on a Mac was not measured. In the one case of the user's log
 where both ends are timed, a request that brought three frames of 4.9 MB
 each was on the page 2 ms after Go wrote it. Each request already brings
 a frame, so the request stays, and the channel comes back should step 2's
@@ -126,13 +126,13 @@ says play from here, Go sends the program's frames in order, and the
 window draws each when the sound card's clock reaches it. That is the
 largest step, with `plan.ts`, the two picture decoders and `AppPictures`
 leaving the window. It is kept as the last step of this record, because
-a paused video preview is where Tim waits and where the schedule's
+a paused video preview is where the user waits and where the schedule's
 guesses go wrong, and a play keeps up today.
 
 ### 5. What a test has to build
 
 A rule of the window's schedule is proven today by a walk through the
-whole app, and #921's first version made two walks hang. As a type in
+whole app, and the first fix's first version made two walks hang. As a type in
 the engine, the schedule is a function of the places it is told and of
 what the decoder answers, tested in Go with the real decoder on the
 committed fixtures, counted in frames decoded and frames handed over, as
@@ -169,11 +169,12 @@ the newest wins, and the decoder alone says how to get there, a seek or
 reading on, as `goOn` already does. Kept as a refinement of the
 decision, not as a sixth layer.
 
-**The window closes the streams it left**, the first version of #921.
+**The window closes the streams it left**, the first version of the first fix.
 It is the smallest change, and it keeps the schedule in the window,
 which still cannot see what a stream costs and still guesses with
 `REACH`, `BACK` and `SLOW`. It is the rule kept on the wrong side that
-#665 and Tim's words of 18 November rule out. Dropped.
+the record on every rule of the workspace in Go and the user's words
+of 18 November rule out. Dropped.
 
 **The frames the window keeps.** Showing a frame the window holds again
 costs nothing, and a frame from Go costs a request and 4.9 MB carried.
@@ -215,7 +216,7 @@ The steps, each a pull request, each measured before and after:
    into what it keeps, and the window's reads ahead go.
 5. The decoder gets quicker: kept ready across a jump, several frames in
    the graphics chip at once. Measured by the decoder's own first frame
-   line on Tim's Mac, since the cloud has no VideoToolbox.
+   line on the user's Mac, since the cloud has no VideoToolbox.
 6. The play: Go sends the program's frames, and `plan.ts`, the two
    picture decoders and `AppPictures` leave the window. It may need a
    record of its own when it comes, which then names this one.
@@ -225,10 +226,10 @@ The steps, each a pull request, each measured before and after:
 It costs a request in the decoder's wire, a route, a type in the engine,
 and most of `app.ts`, about 900 lines, over five or six pull requests.
 It buys an end to the waits that come from the window's guessing, up to
-950 ms in Tim's report, and it makes the decoder's own speed worth
+950 ms in the user's report, and it makes the decoder's own speed worth
 working on, since what it works on is then chosen by what knows the cost.
 
-What each step may bring, estimated from the parts and Tim's numbers,
+What each step may bring, estimated from the parts and the user's numbers,
 none of it measured on a Mac yet. A let-go that waited took 61 ms on the
 median, of which the decoder's jump was 48 ms, 25 ms to start and 3.2 ms
 for each of about 10 frames decoded.
@@ -245,12 +246,12 @@ for each of about 10 frames decoded.
 It would show it was wrong if the frames under a drag came no sooner
 with Go deciding than with the window, measured the way
 `speed.mjs DRAG=1` measures drags in the cloud and the let-go line on
-Tim's Mac, or if the request per frame turns out to cost more than the
+the user's Mac, or if the request per frame turns out to cost more than the
 decoding, which would bring back the channel of simulation 2.
 
 ## How the steps went
 
-Steps 2 to 4 are one pull request, as Tim asked on 19 November: "I
+Steps 2 to 4 are one pull request, as the user asked on 19 November: "I
 would have hoped you just made all of those changes in one pull
 request."
 
@@ -291,7 +292,7 @@ request."
   past those was a seek of its own, where main had read on in the stream
   it held. The run of a hand that holds the playhead now holds there
   instead, and reads on from where it stands.
-- Step 5 found nothing to build. Tim's log of 12 November says a jump's
+- Step 5 found nothing to build. The user's log of 12 November says a jump's
   seek takes 0 ms, `moved ... 0 ms`, so an index of key frames would
   save nothing, and its key frame came 15 to 16 ms after the open with
   2 frames decoded, then about 3.4 ms a frame. Both are the graphics

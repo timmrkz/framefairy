@@ -2,11 +2,11 @@
 
 A spec, being built. It decides how the video preview gets its picture
 and its sound from here on, and what is removed on the way. Decided with
-Tim on 8 October 2026, after the history below. Plan row 2.156. Steps 1
+the user on 8 October 2026, after the history below. Plan row 2.156. Steps 1
 and 2 are built, every file's picture through ffmpeg and the episode's
-decoder for it, in one pull request, #157, as Tim asked. Step 3, one
-engine, is built in #162 and tried on Tim's Mac. Step 4 is built in
-#168. Step 5 is built in #195, found needed by a video in Matroska. What
+decoder for it, in one pull request, as the user asked. Step 3, one
+engine, is built and tried on the user's Mac. Step 4 is built.
+Step 5 is built, found needed by a video in Matroska. What
 is not built yet says so where it is described.
 
 Three parts of the app are named here. **The interface** is the
@@ -33,8 +33,8 @@ removed. Nothing is prepared before the first play.
   It could not play a clip with cuts: a cut was a seek in the middle of
   playing, so the last frame before it stood for up to 200 ms and the
   sound stopped. About ten pull requests patched the element's clock
-  around that (#5, #6, #49, #97, #98, #100, #102, #105).
-- **#110** replaced it with our own frame queue: two decoders, the second
+  around that.
+- **Our own frame queue** replaced it: two decoders, the second
   fed from the key frame before the next piece while the first plays, the
   frames drawn on the sound card's clock. Cuts became seamless and exact.
   That part was right, and it stays.
@@ -86,22 +86,22 @@ removed. Nothing is prepared before the first play.
    clip are the frames the render takes, chosen by the same code, the
    sound is the sound the render takes, and the colours are what ffmpeg
    makes of the file's own tags. How those colours are shown on the
-   screen is decided once, by Tim, after the test in Colour. An HDR
+   screen is decided once, by the user, after the test in Colour. An HDR
    episode makes an HDR short, and the video preview shows its HDR as far
    as the webview lets a canvas show it, see HDR.
 6. **A running play takes in the clip as it is now, ahead of the
-   playhead.** #155 made a play run one program, the clip's pieces or the
+   playhead.** One change made a play run one program, the clip's pieces or the
    episode straight on, from the moment it starts, and stopped the play
-   and started it again for a gesture that changed the program. #152 had
+   and started it again for a gesture that changed the program. A pull request before it had
    spliced the new program into the running play in 366 lines, and was
    closed for it. Loop was the first exception, 2.150 and 2.183, which
    changes only where the play ends. That end is the play's own: the
    next play builds its program again. Kept, a loop switched off in the second time through sent the next
    play round the clip's end once more. Then the play kept the pieces it
    started with while an edge or a cut was dragged, because starting it
-   again at every step of the hand stuttered. Tim found the cost of that
-   on #277: he pulled the end of a clip in, played it, put the end back
-   with Cmd+Z while it played, and the play still stopped at the end he
+   again at every step of the hand stuttered. The user found the cost of that:
+   they pulled the end of a clip in, played it, put the end back
+   with Cmd+Z while it played, and the play still stopped at the end they
    had taken back. No rule of the product makes that case not happen, an
    undo while the clip plays is an ordinary thing to do, so rule 7 lets
    the machinery in. Now every change of the clip while it plays, an edge
@@ -114,7 +114,7 @@ removed. Nothing is prepared before the first play.
    goes on as it was and the pieces are the next play's. An edge of the
    clip dragged past
    the playhead leaves the playhead outside the clip, on the video,
-   Tim's rule on #277, so the play goes on as a play of the video,
+   the user's rule, so the play goes on as a play of the video,
    straight on to the episode's end, `playOn`. Paused, the playhead goes
    with the edge dragged, a cut's edges too, see the clip timeline in
    [APP.md](APP.md).
@@ -150,7 +150,7 @@ closed for standing unused.
   decodes: the frame is brought out as it is, and one chain on the
   processor scales it to the size of the canvas, the same chain on every
   system and for every file. Scaling on the chip as well was a second
-  chain with a fallback, and the chip on Tim's Mac refused it for an HEVC
+  chain with a fallback, and the chip on the user's Mac refused it for an HEVC
   file with 10-bit colour. Why the chip refused it is still to be found
   out. A file the chip does not decode at all, AV1 on an M2 or MPEG-4, is
   decoded by ffmpeg on the processor, with as many threads as it takes:
@@ -180,8 +180,8 @@ closed for standing unused.
   stream hears that
   the cursor hung and goes on from a new cursor at the frame after the
   last one it had. Before, the video preview stood still for good, as
-  the chip did on CI's virtual Mac in the middle of a stream, issue
-  #553. `FRAMEFAIRY_FRAMES_HANG_AFTER=n` makes the decoder hang once on
+  the chip did on CI's virtual Mac in the middle of a stream.
+  `FRAMEFAIRY_FRAMES_HANG_AFTER=n` makes the decoder hang once on
   the n-th packet a cursor of picture sends, and say so at once, so a
   test waits for no 10 s of the clock. A stream the
   Go side opens takes a cursor that a stream before it has finished with
@@ -208,7 +208,7 @@ closed for standing unused.
   before it, it seeks after all, because decoding from that key frame is
   less work. A play after a pause and a jump a few frames on are then a
   frame or two of work, where they were all the frames from the key
-  frame before. About one seek in six in Tim's report of two days was
+  frame before. About one seek in six in the user's report of two days was
   such a jump. When a cursor is let go of and three are kept already,
   the one kept longest is closed, so the cursor that stands where the
   playhead was is the one that stays.
@@ -227,13 +227,13 @@ closed for standing unused.
   sends it when a stream is closed with frames still to come, so a
   stream for a place the hand has left decodes no further towards it and
   its cursor is free at once. Before, it decoded on from the key frame to
-  the frame asked for, up to 40 frames on Tim's Mac, beside the stream
+  the frame asked for, up to 40 frames on the user's Mac, beside the stream
   for the new place. A stop that comes after the key frame asked for
   first was decoded, and before it was handed over, leaves the cursor at
   the frame asked for, since the frames between were let go or never
   decoded. `FRAMEFAIRY_FRAMES_STOP_AFTER=n` makes a cursor of picture
   stop as if told to once its open decoded n frames, once in the
-  program's life, for the tests. Issue #924, the first step of
+  program's life, for the tests. It is the first step of
   [the decision record](decisions/2026-11-19-go-schedules-the-video-previews-frames.md)
   that moves the choice of the next frame from the interface to Go.
 - **While the video preview stands still, Go decides which frames the
@@ -249,7 +249,7 @@ closed for standing unused.
   and one sent before the newest is answered with nothing when it comes.
   Before, the interface chose
   the streams, parked a place behind a stream that had not given its
-  first frame, and a let-go waited up to 950 ms on Tim's Mac, issue #924.
+  first frame, and a let-go waited up to 950 ms on the user's Mac.
   - What the decoder does next is one rule, `plan`, asked again after
     every frame it makes, every look and every change of what has the
     decoder, see
@@ -291,7 +291,7 @@ closed for standing unused.
     frames behind the hand whose end moves on too: it once started a
     new stream at every frame while the frames by the hand were let go
     of. A drag that stood still in
-    Tim's reports of 19 and 20 November had runs started over at each
+    the user's reports of 19 and 20 November had runs started over at each
     move of the hand, one of them 216 frames decoded with none shown.
   - Every frame a run makes that is nearer the hand than the frame on
     screen goes up at once, so the picture walks toward a hand the
@@ -309,12 +309,12 @@ closed for standing unused.
     place starts. A hand that drags across hours on the range picker
     reaches a new stretch at every look, about as often as a key frame
     takes, so each run was stopped before its key frame came. Two such
-    drags in Tim's report of 21 November stood still for up to 436 ms.
+    drags in the user's report of 21 November stood still for up to 436 ms.
   - Where the key frames are is learned from the decoder: the key frame
     it hands first for a frame says no key frame lies between the two,
     and the shortest gap between two key frames seen is the span once it
     is less than twice the longest stretch seen. Until then a span is a
-    second, what Tim's videos have. A video with a key frame every two
+    second, what the user's videos have. A video with a key frame every two
     seconds, or every 250 frames as x264 makes unless told otherwise,
     was read as if it had one every second.
   - What is read around the hand fits in the frames kept, at any size of
@@ -332,7 +332,7 @@ closed for standing unused.
     into read whole, from its key frame, every frame kept, and once its
     own frame is there the span before it, so the steps back find their
     frames kept, where a span fits in the frames kept. Each step back was a seek of its own, and the picture
-    stood for each, issue #596.
+    stood for each.
   - The window tells Go where the hand is on every move, also over the
     frames it keeps itself, with a look marked `kept`. That look is
     answered with no content, and Go reads around the place before the
@@ -369,7 +369,7 @@ closed for standing unused.
     and an arrow walk, plan row 2.269, with the frame before each and four
     after, where the arrows step from there, and then the first frames of
     the clips on the cards, the likeliest first, as many as 400 MB holds,
-    so a card clicked puts up its clip from what was read, issue #383.
+    so a card clicked puts up its clip from what was read.
     The answer brings the frames read that the interface does not hold
     yet, and it keeps them, the cards' for as long as their cards are
     there, so a step or a card clicked shows its frame with no request.
@@ -470,13 +470,13 @@ closed for standing unused.
   it is decoded, see [CAPTIONS.md](CAPTIONS.md). A seek to another clip
   holds the crop frame and the captions over the frame on screen until the
   new clip's frame goes up, and all of it changes in that one frame,
-  `held` in `Player.svelte`. Tim saw a clip card clicked move the crop
+  `held` in `Player.svelte`. The user saw a clip card clicked move the crop
   frame first, the picture a few frames later and the captions a few after
-  that, issue #383. The same hold keeps the crop frame and the captions
+  that. The same hold keeps the crop frame and the captions
   over the frame on screen while an edge dragged over it leaves it out of
   the clip, until the frame the playhead goes to with the edge goes up.
-  Tim saw the captions blink off for a frame each time a start dragged
-  later passed a frame, issue #755. Nothing waits under a dragging hand,
+  The user saw the captions blink off for a frame each time a start dragged
+  later passed a frame. Nothing waits under a dragging hand,
   which follows the hand.
 
 ## Speed
@@ -490,8 +490,8 @@ afterwards, so a waiting copy of it would save only the first of the
 three. The episode's decoder saves the first two, and with the graphics
 chip and the frames around the playhead kept, most of the third.
 
-What counts as fast enough, measured on Tim's Mac with his own files, by
-his eye and by the walks in CI:
+What counts as fast enough, measured on the user's Mac with their own files, by
+their eye and by the walks in CI:
 
 | What | Fast enough |
 | --- | --- |
@@ -501,15 +501,15 @@ his eye and by the walks in CI:
 | Playing at 1080p, up to 60 frames a second | no frame late, and a cut takes one frame's time, as now |
 | The machine while playing at 1080p | Frame Fairy and its decoder together under 100% in Activity Monitor, one core's worth |
 
-The numbers are a proposal for Tim to change. Main is measured the same
+The numbers are a proposal for the user to change. Main is measured the same
 way first, so each step is judged against today as well as against the
 marks.
 
 **How even a play was is in the log.** Each play ends with a line, at a
 pause or at the end, that says how many frames were late, which is a
 frame not decoded in time, and how even the play was, `lib/frames/even.ts`.
-Nearly every play on Tim's Mac said 0 frames late while he still saw it
-not quite even, issue #251, so the line also says:
+Nearly every play on the user's Mac said 0 frames late while they still saw it
+not quite even, so the line also says:
 
 - the screen's refresh, from the time between two animation frames
 - the animation frames the page missed, and the longest gap
@@ -525,11 +525,11 @@ not quite even, issue #251, so the line also says:
   up a refresh early or late, which the tests show for a clock that
   steps by 1024 samples
 
-The first report with the line, three plays of start.mp4 on Tim's Mac,
+The first report with the line, three plays of start.mp4 on the user's Mac,
 said every frame was on time, no refresh was missed and the clock
 strayed 1.5 ms typically. But the screen was at 60 Hz, so each frame
 of 25 a second stood 2 and 3 refreshes by turns, 33 and 50 ms, and that
-is what Tim saw. His Mac's own screen refreshes 120 times a second.
+is what the user saw. Their Mac's own screen refreshes 120 times a second.
 WebKit holds a page to about 60 updates a second, to save power on
 websites, where QuickTime uses the whole 120. So the app lifts that hold
 for its window as the page
@@ -543,7 +543,7 @@ more either. That is how WebKit draws them, not a measurement.
 
 The second report, three plays with the hold lifted, said the screen can
 show 120 frames a second and the page updated that often. Of 1576
-frames, 317 stood 4 refreshes, 1254 stood 5 and 5 stood 6, and Tim found
+frames, 317 stood 4 refreshes, 1254 stood 5 and 5 stood 6, and the user found
 it smoother. How long a frame stood, from the two reports, three plays
 of start.mp4 each:
 
@@ -569,7 +569,7 @@ the page cleaning up memory for about 1.3 s of every 12 s: every frame
 came in a new buffer of 7 MB, 170 MB a second. So the buffers are now
 kept and handed back to the next pull once no frame holds them,
 `lib/frames/pool.ts`, and a play makes no new memory for its frames.
-Refreshes the page missed on Tim's Mac, from the second and the third
+Refreshes the page missed on the user's Mac, from the second and the third
 report, three plays each:
 
 | Refreshes missed         | Before | After | Change     |
@@ -583,7 +583,7 @@ Apple's advice is to set the screen by hand to a rate that divides evenly
 by the video's, and the screen of a MacBook Pro offers 47.95, 48, 50,
 59.94 and 60 Hz besides its own 120. At 50 Hz every frame of 25 a second
 stands exactly 40 ms. The app could switch the screen to 50 Hz while a
-video plays, and Tim chose on 21 October 2026 to leave the rhythm as
+video plays, and the user chose on 21 October 2026 to leave the rhythm as
 QuickTime has it. A video of 24, 30 or 60 frames a second is even at 120.
 
 The line of a play is counted as the play goes, in sums and in samples
@@ -598,15 +598,15 @@ to start, about 45 ms, which every play does on purpose, see
 off its line by 23 to 47 ms each play, so the line is now fitted from the
 moment the sound starts.
 
-Tim's third report on #430 still missed about 9 refreshes a minute, and
+The user's third report still missed about 9 refreshes a minute, and
 the time went to the page's own work after each animation frame, not to
 the frame queue's. While it played, the playhead moved on every
 animation frame, and everything in the workspace that depends on it was
-worked out again and laid out each time, 120 times a second on Tim's
+worked out again and laid out each time, 120 times a second on the user's
 screen for a video of 25 frames a second. Everything that follows the
 playhead is drawn by its frame, so the playhead now moves only when the
-sound heard is in another frame, `playMoves` in `lib/playhead.ts`, issue
-#446. A trace of plays in the cloud, headless Chromium at 60 Hz, with
+sound heard is in another frame, `playMoves` in `lib/playhead.ts`.
+A trace of plays in the cloud, headless Chromium at 60 Hz, with
 `smooth.mjs`'s video of a minute at 1080p, two runs of three plays each,
 101.3 s of play a run, the work of a second of play averaged over the
 two:
@@ -625,12 +625,12 @@ there, and they moved by more between two runs of the same code than
 between before and after.
 
 A playhead dragged faster than the frames under it can be decoded shows
-the key frame on the way, issue #281, see The interface. `speed.mjs` in
+the key frame on the way, see The interface. `speed.mjs` in
 the cloud, on its camera videos of 25 frames a second, five runs a side,
 each five drags over a clip and back, with the key frame first turned
 off for Before by an edit of `AppFrames.frame` and on for After, on the
 same branch, off and on taking turns. The 1080p H.264 video stands in
-for Tim's youtube.mp4. Each number is the median of the five runs, with
+for the user's youtube.mp4. Each number is the median of the five runs, with
 the lowest and highest run beside it:
 
 | Frames behind while dragging | Before (frames) | Before, runs | After (frames) | After, runs | Change                        |
@@ -644,12 +644,12 @@ the lowest and highest run beside it:
 At 4K the median and the 90th percentile moved further than the runs of
 either side lie apart. Letting go of a drag, a far click, and the steps
 by word and by frame came out inside the spread of the runs at both
-sizes, faster or slower by a few per cent in most rows: the numbers are
-in pull request #502. A click and a step never ask for a key frame first,
+sizes, faster or slower by a few per cent in most rows.
+A click and a step never ask for a key frame first,
 so they take the path they took before.
 
-A slow drag to the left stood where one to the right kept up, issue
-#596. `speed.mjs` with `DRAG=1` in the cloud, on its camera video of a minute at 1080p,
+A slow drag to the left stood where one to the right kept up.
+`speed.mjs` with `DRAG=1` in the cloud, on its camera video of a minute at 1080p,
 25 frames a second, decoded on the processor, three runs a side of a slow
 drag to the right, a slow drag to the left, a pixel every frame of the
 page, and a fast drag of 30 pixels to the right and back. Before is the
@@ -714,9 +714,9 @@ of 3 to 15 frames back takes the path it took before.
 
 ## Colour
 
-**What Tim saw** was a pale, foggy picture: black shown as a grey of 17
+**What the user saw** was a pale, foggy picture: black shown as a grey of 17
 where QuickTime shows 1. That was the range, video range taken for full
-range, and #141 fixed it. Black is 0 now.
+range, and that is fixed. Black is 0 now.
 
 **What is left** is smaller and only in the dark tones. Black stays
 black and white stays white. In between, QuickTime on the Mac lifts the
@@ -732,19 +732,19 @@ file is shown side by side:
 - in the video preview, with the standard curve
 - in QuickTime
 - the rendered short in Safari and in Chrome on the Mac
-- the rendered short on Tim's iPhone, in Photos and as uploaded to
+- the rendered short on the user's iPhone, in Photos and as uploaded to
   Instagram and YouTube
 
-Tim picks the look the video preview should have. If it is QuickTime's,
+The user picks the look the video preview should have. If it is QuickTime's,
 the lift is one fixed curve in ffmpeg's conversion for the video
 preview, the same on every system. The short itself is never changed by
 this choice: its numbers are the file's, and each phone shows them its
 own way.
 
-**Tim picked QuickTime's look**, on 9 October 2026, from start.mp4 at
-the same frame in the video preview and in QuickTime, side by side: he
+**The user picked QuickTime's look**, on 9 October 2026, from start.mp4 at
+the same frame in the video preview and in QuickTime, side by side: they
 found QuickTime's blacks deeper and the video preview a little pale.
-His screenshot of the two says what the difference is. Black is the
+Their screenshot of the two says what the difference is. Black is the
 same in both and so is white, and QuickTime shows the middle tones
 brighter: a grey the video preview showed as 22 QuickTime showed as 25,
 46 as 55 and 81 as 93. The brighter middle against the same black is
@@ -760,7 +760,7 @@ a little brighter in the middle than most players there show the same
 file. Above the brightest grey of start.mp4, 93, the curve is not
 measured.
 
-**Every frame comes in 10 bits**, standard video too. Tim saw banding
+**Every frame comes in 10 bits**, standard video too. The user saw banding
 in the dark of start.mp4 with the look first made in ffmpeg, in 8 bits:
 the curtain in stripes and a block on the black shirt, where QuickTime
 showed smooth gradients. Video range spreads 220 values over 256, and the
@@ -788,7 +788,7 @@ as well: a newer ffmpeg takes an encoder's tags from its frames and drops
 
 ### The short: HDR in, HDR out
 
-Decided by Tim. A short keeps the quality of its episode, and an HDR
+Decided by the user. A short keeps the quality of its episode, and an HDR
 episode makes an HDR short. That is the rule of no colour changes.
 
 - The short is HEVC with 10-bit colour and the episode's own transfer,
@@ -839,7 +839,7 @@ not yet for a canvas, as far as can be found:
   brighter values are brighter light. Chrome shipped it, so the webview on
   Windows has it. On the Mac, Safari took the setting and still showed
   normal brightness in August 2025, and WebKit has since marked the work
-  as done. Whether the webview on Tim's macOS shows it is not known.
+  as done. Whether the webview on the user's macOS shows it is not known.
   Linux's webview has nothing of the kind yet.
 
 So the video preview draws on a WebGPU canvas, for every file, and asks
@@ -848,8 +848,8 @@ and its canvas is in the standard mode, the one the rest of the app is
 drawn in. In the extended mode it turned the Mac's HDR on for every
 video, which greys all ordinary white, and a screenshot then took the
 canvas darker than the rest of the window by however much the screen had
-to spare. On #201 the white of the captions came out 188 and 209 of 255
-in two of Tim's pictures, beside the box a word is typed in at 255. The
+to spare. The white of the captions came out 188 and 209 of 255
+in two of the user's pictures, beside the box a word is typed in at 255. The
 walk "the GPU draws standard video with QuickTime's look, a step for
 every value, and HDR as BT.2100's light" checks the mode. For HDR:
 
@@ -871,7 +871,7 @@ every value, and HDR as BT.2100's light" checks the mode. For HDR:
   video preview shows the HDR short as an SDR screen would show it.
   Nothing in our code changes for that. It improves by itself the day a
   webview gives more.
-- The first thing the colour step does is a test on Tim's Mac: one frame
+- The first thing the colour step does is a test on the user's Mac: one frame
   of an iPhone file on the extended canvas, its sky or a lamp beside the
   white of the interface. If it shines brighter, WebKit gives us HDR
   today.
@@ -898,12 +898,12 @@ thing.
 
 ## The steps
 
-Each step is its own pull request, tested by Tim on his Mac before the
-next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
+Each step is its own pull request, tested by the user on their Mac before the
+next one starts. Steps 1 and 2 went into one, at the user's wish.
 
 1. **Measure first, remove nothing.** Every file plays through the ffmpeg
    program's streams that already exist, on every system. A change of a
-   few lines in `queue.ts`. Tim compares it with main, by updating
+   few lines in `queue.ts`. The user compares it with main, by updating
    between the two from the Updates page, on `start.mp4`, an export in
    H.264, a file from a phone and a 4K file, against the marks in Speed.
    The walks measure where a jump's time goes: starting the program,
@@ -919,13 +919,13 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
 3. **One engine.** Remove WebKit's decoders, the Mac's decoder in cgo and
    the choice between them. Refuse at Add a file whose picture ffmpeg
    cannot decode. The sound through the episode's decoder as well. Built
-   in #162 and tried on Tim's Mac.
+   and tried on the user's Mac.
 4. **Colour and HDR.** The frames carry pixels converted by ffmpeg from
    the file's tags, and the interface draws them as they come. Proved
    against ffmpeg's own conversion of the same frame, value by value, on
    files tagged BT.601, BT.709 and BT.2020, in video and full range, 8 and
-   10 bit, and on files with no tags. Then the side-by-side test, and Tim
-   picks the look. HDR in both: the test of the extended canvas on Tim's
+   10 bit, and on files with no tags. Then the side-by-side test, and the user
+   picks the look. HDR in both: the test of the extended canvas on the user's
    Mac first, then the video preview on the WebGPU canvas and the HDR
    short with its captions at the reference white.
    The frames are colours now: the episode's decoder scales each frame
@@ -944,7 +944,7 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    white on a WebGPU canvas in the extended mode, beside the app's own
    white, with whether the webview has WebGPU, whether it kept the
    extended mode and whether it says the screen is HDR. In the cloud's
-   Chromium it has WebGPU and keeps the mode. On Tim's M2 Max, on 9 October
+   Chromium it has WebGPU and keeps the mode. On the user's M2 Max, on 9 October
    2026, it passed: the webview has WebGPU, keeps the extended mode and
    says the screen is HDR. The app's white and 1 × white looked the same,
    both greyer than usual, because macOS holds ordinary white back once
@@ -975,7 +975,7 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
 5. **The interface stops reading the file.** The program counts on the
    frames the engine names, the picture's start and the short's rate, and
    a piece is asked for by the render's own code. `mp4.ts` is removed.
-   Ends 2.155. Built in #195, after Tim added a video OBS recorded in
+   Ends 2.155. Built after the user added a video OBS recorded in
    Matroska and the video preview said it had no moov box.
    `SourceInfo.Grid` in `engine/render.go` names the frames of the
    short: the short's rate, from the first frame of it inside the file to
@@ -1006,10 +1006,10 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    begins after it. A seek after the last key frame of such a file found
    no key before the end and showed nothing, so a jump into the last
    stretch of an MPEG-TS video stood empty. It now goes back to the last
-   key frame too, issue #287. In MPEG-PS a key frame may carry no time of
+   key frame too. In MPEG-PS a key frame may carry no time of
    its own, and decoded first after a seek it got one ffmpeg guessed, a
    frame and a half early, so a seek that reaches such a key frame goes on
-   to the one before it, #268. The route that served a file's bytes to the page,
+   to the one before it. The route that served a file's bytes to the page,
    `/media/`, is removed with the reader that used it.
    `TestTheVideoPreviewShowsTheFramesOfTheShort` holds the decoder to the
    render's rule on a phone's uneven frames, a screen recorder's left-out
@@ -1037,7 +1037,7 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
   and the protocol, about 450 more. It is still ffmpeg's decoding, only
   kept running.
 - **A video preview a little brighter in the middle tones than most
-  players on Windows and Linux**, because Tim picked QuickTime's look.
+  players on Windows and Linux**, because the user picked QuickTime's look.
 
 ## What established players do
 
@@ -1063,7 +1063,7 @@ What applies here:
   seconds. It holds about four frames and grows that after an underflow.
   The frame queue picks the frame for the moment of the animation frame,
   with no cadence, and jitter there turns 2-2-2 into 1-3: the likely
-  cause of the unevenness Tim sees, not yet proved.
+  cause of the unevenness the user sees, not yet proved.
 - **Frames into the webview.** WebKit on the Mac copies an I420 frame
   into NV12 on the processor before it draws it on a canvas. Chromium
   converts on the graphics chip. Frames that ffmpeg has already turned
@@ -1081,6 +1081,6 @@ What applies here:
 - **The playback copy of the episode**, plan row 1.5b, made for files the
   video preview could not play. With one engine the video preview plays
   whatever the render can read, and no copy is made.
-- **The survey of media libraries in #151**, which proposed a colour
+- **A survey of media libraries**, which proposed a colour
   shader of our own and mediabunny in place of `mp4.ts`. With one engine
-  neither is needed, and #151 was closed for this spec.
+  neither is needed, and the survey was closed for this spec.

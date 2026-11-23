@@ -1,7 +1,7 @@
 # Design review
 
 A review of the design of the whole app, made on 6 October 2026 against
-main at `bd691ef`, asked for by Tim. The question: where is a part built
+main at `bd691ef`, asked for by the user. The question: where is a part built
 in a way that makes it harder, slower, less reliable or less safe than it
 needs to be, and which kinds of bug keep coming back because of how
 something is built rather than how it was written.
@@ -24,60 +24,60 @@ Line numbers are as found and drift as the code moves.
 
 This review is history. Open work lives in GitHub issues, never in this
 file. On 29 October 2026 every finding was checked again against main at
-`a2d7260` by the architecture review [#603](https://github.com/timmrkz/framefairy/issues/603).
+`a2d7260` by the architecture review.
 The table below says how each stood then, and nothing here changes again.
 The text after it is as written on 6 October.
 
 ## Where it stands, 29 October 2026
 
-Fixed, with its pull request. Partly or mostly fixed, with where the
-rest went. Moved, to the issue that holds what is open. Listed, in #603
-under what was seen and not logged, for Tim to raise when he wants it.
+Fixed. Partly or mostly fixed, with where the rest went. Open, in the
+issues, what moved to an issue. Listed, in the architecture review under
+what was seen and not logged, for the user to raise when they want it.
 Dropped, with why. Ended, a family that stopped.
 
 | Finding | 29 October 2026 |
 | --- | --- |
-| Bug 1, preview and short a frame apart at 29.97 fps | Fixed in #148 |
-| Bug 2, model guards on job kinds that do not exist | Fixed in #130 |
-| Bug 3, a work folder that is a link joins the library | Fixed in #130 |
-| Bug 4, a refused search sits in Finding clips | Fixed in #130 |
-| Bug 5, a render ending on another video is not noticed | Mostly fixed in #164, which keeps ten workspaces. Moved to #606 for the rest |
+| Bug 1, preview and short a frame apart at 29.97 fps | Fixed |
+| Bug 2, model guards on job kinds that do not exist | Fixed |
+| Bug 3, a work folder that is a link joins the library | Fixed |
+| Bug 4, a refused search sits in Finding clips | Fixed |
+| Bug 5, a render ending on another video is not noticed | Mostly fixed, by keeping ten workspaces. The rest is open, in the issues |
 | Bug 6, Put captions back is six calls and six undo steps | Listed |
-| Bug 7, the caption box's overrides are a drifted copy | Fixed in #201 |
-| Bug 8, settings writers outside the lock | Fixed in #130 |
-| Bug 9, the thank-you page gives keys for 24 hours | Fixed in #146 |
-| Bug 10, six copies of "is someone typing" | Fixed in #130 |
-| The video preview's clock | Ended in #110 |
-| Time as rounded seconds | Fixed in #148, done with frame starts rather than frame numbers |
-| ffmpeg seek and pipe | Partly fixed: a part of the sound is cut at the frame's timestamp, see ENGINE.md. Decoding the sound once into a cache is listed. #266 and #274 are its live symptoms, and #602 is the same family for the picture of a short |
-| The interface rebuilds Go's state | Moved to #606 |
-| Tested in Chromium, shipped in WebKit | Moved to #380 |
-| One thing written twice | Partly fixed in #396 and #201. Moved: the types to #611, the preview stub to #613, the loudness to #609 |
-| Which tests run, and where | Fixed in #451 and #544, with `internal/ffmpegtest`. The Linux tests on our own ffmpeg wait on #300 |
-| Contained, `--above` and `centre()` | Fixed in #228 |
-| Framing decodes every kept second twice | Fixed in #123 and #396 |
-| No episode object | Partly fixed in #123. Moved to #608 |
-| Every gesture scans the words of the whole episode | Fixed in #123 |
-| A render does its setup again for every clip | Partly fixed in #346 and #351. Moved to #609 |
-| Every atomic write is a full flush, the loudness kept twice | Moved to #609 |
-| The x264 preset is `slow` | Dropped: a Mac encodes with VideoToolbox, and Linux has no encoder to ship until #300 |
+| Bug 7, the caption box's overrides are a drifted copy | Fixed |
+| Bug 8, settings writers outside the lock | Fixed |
+| Bug 9, the thank-you page gives keys for 24 hours | Fixed |
+| Bug 10, six copies of "is someone typing" | Fixed |
+| The video preview's clock | Ended, with the video preview's own frame queue |
+| Time as rounded seconds | Fixed, done with frame starts rather than frame numbers |
+| ffmpeg seek and pipe | Partly fixed: a part of the sound is cut at the frame's timestamp, see ENGINE.md. Decoding the sound once into a cache is listed. Two open issues are its live symptoms, and a third is the same family for the picture of a short |
+| The interface rebuilds Go's state | Open, in the issues |
+| Tested in Chromium, shipped in WebKit | Open, in the issues |
+| One thing written twice | Partly fixed. The rest is open, in the issues: the types, the preview stub and the loudness |
+| Which tests run, and where | Fixed, with `internal/ffmpegtest`. The Linux tests on our own ffmpeg wait on an open issue |
+| Contained, `--above` and `centre()` | Fixed |
+| Framing decodes every kept second twice | Fixed |
+| No episode object | Partly fixed. The rest is open, in the issues |
+| Every gesture scans the words of the whole episode | Fixed |
+| A render does its setup again for every clip | Partly fixed. The rest is open, in the issues |
+| Every atomic write is a full flush, the loudness kept twice | Open, in the issues |
+| The x264 preset is `slow` | Dropped: a Mac encodes with VideoToolbox, and Linux has no encoder to ship yet |
 | Framers each take half the cores | Dropped: four framers at once is rare, and the cost is time, not a fault |
-| ENGINE.md contradicts itself on a window | Fixed in #614 |
-| A job has two state machines | Moved to #606 |
-| Two queue paths and five ways in | Polling ended in #504, the removal wait is bounded since #337. Moved to #613 for the ways in only tests use |
-| 69 bindings with no rule for errors | Dropped: a refused start says why in its row since #130 |
-| Engine work done in the app | Overrides fixed in #201. The search's plan name and warm-up decision, still in the app, moved to #610. The rendered record, written only by the app, is listed |
-| Job kinds are strings | Partly fixed in #130: the search guards ask the engine's constants. The model guards still type `"llm"` and `"model"`, `setup.go:465`, which is dropped as small, since only the app makes those jobs |
-| Go only pings, the interface guesses | Moved to #606 |
-| One pending flag per control | Moved to #606 |
-| Rules about where things land live in the interface | Caption edges fixed in #189. Moved to #610 |
+| ENGINE.md contradicts itself on a window | Fixed |
+| A job has two state machines | Open, in the issues |
+| Two queue paths and five ways in | Polling ended, the removal wait is bounded. The ways in only tests use are open, in the issues |
+| 69 bindings with no rule for errors | Dropped: a refused start says why in its row now |
+| Engine work done in the app | Overrides fixed. The search's plan name and warm-up decision, still in the app, are open, in the issues. The rendered record, written only by the app, is listed |
+| Job kinds are strings | Partly fixed: the search guards ask the engine's constants. The model guards still type `"llm"` and `"model"`, `setup.go:465`, which is dropped as small, since only the app makes those jobs |
+| Go only pings, the interface guesses | Open, in the issues |
+| One pending flag per control | Open, in the issues |
+| Rules about where things land live in the interface | Caption edges fixed. The rest is open, in the issues |
 | One click, one edit | Listed, with bug 6 |
-| Objects rebuilt stand in for "something changed" | Moved to #606 |
-| The library is checked by path strings | Links refused since #130. Moved to #608 |
-| The webview has no second wall | No route serves a file's bytes since #195, so `nosniff` and `sandbox` are dropped. The CSP, and `llmModel` and `outputDir` taken as any path from the page, are listed |
-| Environment variables choose the programs | Fixed in #130 |
-| The licence server | Nonce fixed in #146. Moved to #305 |
-| Updates, before customers get them | Moved to #306 |
+| Objects rebuilt stand in for "something changed" | Open, in the issues |
+| The library is checked by path strings | Links refused. The rest is open, in the issues |
+| The webview has no second wall | No route serves a file's bytes any more, so `nosniff` and `sandbox` are dropped. The CSP, and `llmModel` and `outputDir` taken as any path from the page, are listed |
+| Environment variables choose the programs | Fixed |
+| The licence server | Nonce fixed. The rest is open, in the issues |
+| Updates, before customers get them | Open, in the issues |
 
 The order of changes at the end is as planned on 6 October. Changes 3,
 4 and 5 are done, changes 1 and 2 mostly, and the rest follow the rows
@@ -85,10 +85,10 @@ above.
 
 ## The short answer
 
-Tim's hunch is right. Most of the bugs of the last month come from six
+The user's hunch is right. Most of the bugs of the last month come from six
 design decisions, and each of them has been patched place by place
 instead of changed once. The one time a design was changed instead, the
-video preview's own frame queue in #110, a family of about ten pull
+video preview's own frame queue, a family of about ten pull
 requests ended and has not come back.
 
 1. **A moment is a float of seconds rounded to the millisecond, and five
@@ -125,15 +125,15 @@ These are live today, independent of any redesign, and small to fix.
 
 | # | Bug | Where | How it was found |
 | -: | --- | --- | --- |
-| 1 | At 29.97 fps the video preview and the short disagree by one frame at about half of all edges. An edge is saved to the millisecond, which lands just before its frame for 1455 of 3000 frames. The interface floors and draws the frame before, the render rounds and starts on the frame itself. | `engine/shape.go:289`, `frontend/src/lib/playhead.ts:73`, `frontend/src/lib/frames/mp4.ts:770`, `engine/render.go:206` | read, and the count checked by arithmetic. Not seen in the app yet. The walks cannot see it, their episode is 5 fps, where every frame starts on a whole millisecond. Fixed in #148 at the cause: every edge is put on the start of its frame as the clip enters the plan, from a search, by hand or from a gesture, `PieceOnFrames` in `engine/render.go`, so the frame that holds an edge is the frame the render cuts on. The interface keeps its one rule, the frame that holds a moment with a millisecond of allowance. Both sides are held to `frame.cases.json`. Counted exactly it is 1400 of 3000. A walk on a 29.97 fps episode reads the frame on each edge off the video preview against the short. Frames at uneven times are not covered, see plan row 2.155 |
+| 1 | At 29.97 fps the video preview and the short disagree by one frame at about half of all edges. An edge is saved to the millisecond, which lands just before its frame for 1455 of 3000 frames. The interface floors and draws the frame before, the render rounds and starts on the frame itself. | `engine/shape.go:289`, `frontend/src/lib/playhead.ts:73`, `frontend/src/lib/frames/mp4.ts:770`, `engine/render.go:206` | read, and the count checked by arithmetic. Not seen in the app yet. The walks cannot see it, their episode is 5 fps, where every frame starts on a whole millisecond. Fixed at the cause: every edge is put on the start of its frame as the clip enters the plan, from a search, by hand or from a gesture, `PieceOnFrames` in `engine/render.go`, so the frame that holds an edge is the frame the render cuts on. The interface keeps its one rule, the frame that holds a moment with a millisecond of allowance. Both sides are held to `frame.cases.json`. Counted exactly it is 1400 of 3000. A walk on a 29.97 fps episode reads the frame on each edge off the video preview against the short. Frames at uneven times are not covered, see plan row 2.155 |
 | 2 | Removing the language model during a search, or the speech model while something is heard, is not refused. The guards ask for job kinds `plan` and `transcribe`, which no longer exist. | `cmd/framefairy-app/setup.go:382`, `:408` | proved, the model file was deleted mid-search, and checked again by hand |
 | 3 | A work folder `episode.framefairy` that is itself a link to the home folder makes every file in it part of the library. The media route then serves `~/.ssh/id_ed25519`. A zip from an editor can carry such a link. | `cmd/framefairy-app/settings.go:272`, `main.go:228` | proved |
 | 4 | A search the Go side refuses leaves the row saying Finding clips for good, with Cancel disabled and the reason never shown. The interface throws away the job `Search` returns and waits for a running job that never comes. | `frontend/src/screens/Episode.svelte:1752`, `:1852`, `cmd/framefairy-app/jobs.go:381` | proved in the harness, and read again by hand |
 | 5 | Start a render, open another episode, come back: when the render ends, the clip list is not read again, so the rendered dot never appears and a failed render never says why. The render watch belongs to the mounted component. | `Episode.svelte:1890`, `:1998` | read |
 | 6 | Put captions back is up to six Go calls and six undo steps. Cmd+Z then undoes only the colours, and "as they were" can bring back stale values. | `Episode.svelte:1609-1631`, `:1784` | read |
 | 7 | The caption overrides for the caption box are a copy of the render's, and they have drifted: the render sets the margin only when a height is set and checks the colour, the copy does neither. | `cmd/framefairy-app/views.go:165`, `engine/run.go:627` | read |
-| 8 | Three settings writers still read, change and write back outside the lock, the lost update ROBUSTNESS #10 removed elsewhere. | `cmd/framefairy-app/setup.go:254`, `:351`, `:391` | read |
-| 9 | The licence server's thank-you page gives the keys to anyone who has the Paddle transaction id, for 24 hours. The id travels in the thank-you link, receipts and support mail. | `licence/dispenser/api.go:287`, `:326` | proved. Fixed in #146: a nonce from the checkout page, kept hashed with the sale and required, and an hour |
+| 8 | Three settings writers still read, change and write back outside the lock, the lost update ROBUSTNESS 10 removed elsewhere. | `cmd/framefairy-app/setup.go:254`, `:351`, `:391` | read |
+| 9 | The licence server's thank-you page gives the keys to anyone who has the Paddle transaction id, for 24 hours. The id travels in the thank-you link, receipts and support mail. | `licence/dispenser/api.go:287`, `:326` | proved. Fixed: a nonce from the checkout page, kept hashed with the sale and required, and an hour |
 | 10 | Cmd+Z from the menu edits the episode behind the Remove box. Six copies of "is someone typing or is a box open" disagree. | `Episode.svelte:1212`, `:1224`, `:2034`, `ClipTimeline.svelte:743`, `Player.svelte:950`, `:982` | read |
 
 ## The families, from the history
@@ -144,17 +144,17 @@ requests each has cost so far.
 
 ### The video preview's clock: ended by a design change
 
-About ten pull requests (#5, #6, #49, #97, #98, #100, #102, #105) all came
+About ten pull requests all came
 from asking a `<video>` element what time it is, a clock that is only an
-estimate. #110 replaced it with the app's own frame queue, and none has
+estimate. The app's own frame queue replaced it, and none has
 come back. This is the proof that changing the design works where
 patching does not.
 
 ### Time as rounded seconds: live, about 8 pull requests
 
-#5 (the two ends of a cut rounded on their own), #72 (libass given 199.999
-ms for 0.2 s), #111 (a reset edge a frame off), #117 (frames lost at five
-frame rates), ASSESSMENT 9, and 2.130 still open for variable frame rates.
+The two ends of a cut rounded on their own, libass given 199.999
+ms for 0.2 s, a reset edge a frame off, frames lost at five
+frame rates, ASSESSMENT 9, and 2.130 still open for variable frame rates.
 
 The cause: a moment is a float of seconds, saved to the millisecond
 (`shape.go:291`). Which frame holds it is answered by five rules: `cutOf`
@@ -163,7 +163,7 @@ rounds with the rational rate, `OnFrames` rounds with the rate as a float,
 with 1e-6 of slack and `rankAt` floors with a microsecond. The frame rate
 itself comes from two places, ffprobe and the sample durations in the
 file. Small tolerances, 1e-9, 1e-6, 0.0005 and 0.0015, paper over the
-differences. Bug 1 above was the next one. #148 removed its cause rather
+differences. Bug 1 above was the next one. Its fix removed the cause rather
 than adding a rule: every edge is kept on the start of its frame, put
 there once as it enters the plan, so the one rule each side already had
 gives the same frame. `cutOf`, `OnFrames` and `onFrame` now go through
@@ -178,33 +178,33 @@ screen and in ffmpeg's arguments.
 
 ### ffmpeg seek and pipe: live, about 6 pull requests
 
-#28 (40 ms wrong after a seek), #31, #54 (looking for camera switches
-hung), #117, #118 (ffmpeg 9 drops the first packet), and #122, still
-open (Opus decodes 80 ms quiet after a seek).
+40 ms wrong after a seek, looking for camera switches that
+hung, ffmpeg 9 dropping the first packet, and, still open, Opus
+decoding 80 ms quiet after a seek.
 
 The cause: every read of a part of the episode is a fresh ffmpeg that
 seeks and pipes raw samples, which carry no time. So every codec's and
 every release's way of seeking moves the sound. The 0.2 s lead in
-`levels.go` and `render.go` is a patch, and may already cover #122.
+`levels.go` and `render.go` is a patch, and may already cover the Opus one.
 
 What ends it: decode the sound once into a cache indexed by sample, and
 serve the waveform, the transcription and the render from it. Short of
-that, cut by timestamp inside the one graph everywhere, which #118 began.
+that, cut by timestamp inside the one graph everywhere, which the fix for the first packet began.
 And test against the ffmpeg we ship, see the last family.
 
 ### The interface rebuilds Go's state: live, about 10 pull requests
 
-ROBUSTNESS 5, 8 and 12, #2, #37, #52, #56, #104, #63, the rule "what
+ROBUSTNESS 5, 8 and 12, six pull requests, the rule "what
 watches running work does not watch the job", and 2.131, open, and 2.132,
-fixed since in #133. See the interface section below.
+fixed since. See the interface section below.
 
 ### Tested in Chromium, shipped in WebKit: live, about 8 pull requests
 
-#4, #49, #100, #63 and #65 (three pull requests for one ten-second fill),
-and #120, open: WebKit's `VideoDecoder` says yes to HEVC Main 10 and then
+Five pull requests, three of them for one ten-second fill,
+and one issue, open: WebKit's `VideoDecoder` says yes to HEVC Main 10 and then
 fails on the first frame. Every walk and every probe launches Chromium
 (`walks/bridge.mjs:5`, `preview/open.mjs:9`), and the harness imitates
-WebKit with modes written from reading its source. #65 showed that
+WebKit with modes written from reading its source. One of those pull requests showed that
 WebKitGTK does reproduce the Mac.
 
 What ends it: run the playback and clip timeline walks in Playwright's
@@ -212,9 +212,9 @@ WebKit as well.
 
 ### One thing written twice: live, about 8 pull requests
 
-#24 then #31 (the clip made by hand, built beside the pipeline and then
-rebuilt on it), #33 (words kept twice), #61 (a second fill that drifted),
-#72 (the video preview lit words by another rule than the render).
+The clip made by hand, built beside the pipeline and then
+rebuilt on it, words kept twice, a second fill that drifted,
+the video preview lit words by another rule than the render.
 Still there:
 
 - `frontend/preview/wails-stub.ts`, 1,781 lines, cuts, shapes and lays
@@ -222,7 +222,7 @@ Still there:
 - The TypeScript types and caption constants are copied by hand
   (`api.ts:880-899`, ASSESSMENT 25).
 - `found` and `found_segments` keep the same fact twice
-  (`engine/edit.go:610-625`). #396 took `found_segments` out.
+  (`engine/edit.go:610-625`). `found_segments` has since been taken out.
 - The loudness is kept twice, in `words.frames` and `levels.frames`, from
   two decodes of the same sound (see the engine section).
 - The caption overrides, bug 7.
@@ -233,7 +233,7 @@ out from `found_segments`, keep one loudness.
 
 ### Which tests run, and where: live, about 8 pull requests
 
-#44, #54, #89, #8, #4, #90, #119, and 2.129, open: the render tests skip
+Seven pull requests, and 2.129, open: the render tests skip
 without a word in CI. Hand-written path rules decide what runs
 (`ci-needs.sh`, and `changed.sh` at 370 lines), and 54 `t.Skip` calls turn
 a missing tool into a pass.
@@ -245,10 +245,10 @@ skips into failures. Run the Linux tests and the walks against the ffmpeg
 
 ### Contained
 
-The update channel list (#36, #55, #69, #93) ended with the two copies in
-#93. Layout worked out in JavaScript is mostly contained since 2.43, with
+The update channel list, four pull requests, ended with the two copies in
+the last of them. Layout worked out in JavaScript is mostly contained since 2.43, with
 `--above` (`Episode.svelte:2186`) and `centre()` (`:2619`) left,
-ASSESSMENT 28. ASSESSMENT 30 was fixed in #132.
+ASSESSMENT 28. ASSESSMENT 30 was fixed later.
 
 ## The engine
 
@@ -267,7 +267,7 @@ first frames of the neighbouring pieces, so `sameShot` needs no run of
 its own. The same work in 3 runs took **8.7 s, measured**, 2.1 times
 faster. Framing the first clip is most of the wait for it.
 
-#396 took the camera switches out of framing, `DetectShots` and
+A later change took the camera switches out of framing, `DetectShots` and
 `sameShot` with them, so a clip has one crop and each kept span is read
 once for its faces.
 
@@ -321,7 +321,7 @@ What ends it, in two steps:
    levels, keyed by the files' stamps, one load in flight at a time,
    corrections applied in memory (9.5 ms against a 110 ms reload), and the
    heard parts in a small header that can be read alone. This is
-   ASSESSMENT #19, the episode type, and it is where most of the speed is.
+   ASSESSMENT 19, the episode type, and it is where most of the speed is.
 
 ### Every gesture scans the words of the whole episode
 
@@ -405,7 +405,7 @@ What ends it:
 
 - Two queue paths and five ways in (`add`, `addOnce`, `addFor`, `queue`,
   `queueFor`), one of them unused. Waiters poll every 20 to 100 ms,
-  which #504 ended, and `Search` can hold a call for 15 s. `RemoveEpisode` waits with no limit
+  which has since ended, and `Search` can hold a call for 15 s. `RemoveEpisode` waits with no limit
   on a loudness measuring whose ffmpeg may hang. One `add`, and a `done`
   channel per job that waiters select on with a deadline.
 - 69 bindings with no one rule for errors. Calls that start work never
@@ -514,7 +514,7 @@ are checked to be no links. Every file operation in a work folder goes
 through an `os.Root` opened on it, which refuses an escape when the file
 is opened, so there is no gap between the check and the open. Bindings
 and the media route take an episode and a name inside its work folder.
-This is the safe half of ASSESSMENT #19, the episode type, the same
+This is the safe half of ASSESSMENT 19, the episode type, the same
 change that brings most of the speed above.
 
 ### The webview has no second wall
@@ -544,7 +544,7 @@ to Documents and Desktop. Compile them out of production builds.
 
 - Bug 9, the thank-you page: a nonce made on the checkout page, passed to
   Paddle as custom data, stored hashed with the sale and required on
-  `/v1/thanks`, and a shorter window. Done in #146, with an hour, see
+  `/v1/thanks`, and a shorter window. Done, with an hour, see
   [LICENCE.md](LICENCE.md#every-endpoint).
 - Every sold key is kept as plain text, in the database and in the backup
   locked for a year (`licence/dispenser/store.go:29`). LICENCE.md says the
@@ -573,7 +573,7 @@ Team ID just before the swap.
 Small first, then the three changes that end families. Each is its own
 pull request.
 
-**Done so far**, in #123 with this review, measured on the cloud machine:
+**Done so far**, with this review, measured on the cloud machine:
 
 - Change 3: the plans are listed with `PlanSummaries`, a plan's view is
   made from what its summary read, and an edit reads back only its own
@@ -585,7 +585,7 @@ pull request.
   in three pieces from a 1080p video went from 18.1 s to 9.9 s, with the
   same crops.
 
-In #130:
+In the next pull request:
 
 - Change 1, bugs 2, 4, 8 and 10. The model guards ask for the job kinds
   that run, `engine.JobSearch` and `engine.JobClip`. Every settings writer
@@ -596,10 +596,10 @@ In #130:
   episode behind the box rather than pressing the button that had the
   keyboard. A `startJob` helper for every control is still open.
 - Change 2, the links half: a video or a work folder that is a link is no
-  episode. `nosniff`, `sandbox` and the CSP are still open, after #120.
+  episode. `nosniff`, `sandbox` and the CSP are still open, after the WebKit decoder issue.
 - Security: the app as it ships takes no program and no model from the
   `FRAMEFAIRY_*` variables.
-- From Tim's test of bug 2: the guard was only half of it. The models a
+- From the user's test of bug 2: the guard was only half of it. The models a
   search uses are now locked from its first moment, hearing included, in
   the interface and on the Go side, and choosing another model is
   refused too, not only removing one. A walk sequence holds it.
@@ -615,6 +615,6 @@ In #130:
 | 7 | An episode revision and one coalesced change event from Go, an `EpisodeSession` store in the interface, the polls and tickets removed | large | the state family, bug 5, the read storms |
 | 8 | The engine `Episode` type: parsed transcript, plans and levels held by stamp, one loudness, `os.Root` for every file, bindings by episode handle | large | the speed of everything that reads, and the path class of bugs |
 | 9 | Caption, thumbnail and crop as gestures, `SetCaptionLook` as one edit | medium | rules out of the interface, bug 6 |
-| 10 | Walks in WebKit too, Linux tests and walks on our ffmpeg, required tools in CI | medium | the WebKit and ffmpeg surprises found by CI, not by Tim |
+| 10 | Walks in WebKit too, Linux tests and walks on our ffmpeg, required tools in CI | medium | the WebKit and ffmpeg surprises found by CI, not by the user |
 | 11 | Licence server: thank-you nonce, keys encrypted at rest, trusted client address | medium | bug 9 and the backup leak |
 | 12 | Before the customer channel: the signed feed with a sequence and expiry, keys per purpose, the signature checked at swap, the tool variables out of production | medium | rollback and replay |

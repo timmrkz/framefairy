@@ -8,15 +8,15 @@ within each group. Line numbers are as found and drift as the code moves.
 
 This review is history. Open work lives in GitHub issues, never in this
 file. On 29 October 2026 every item was checked again against main at
-`a2d7260` by the architecture review [#603](https://github.com/timmrkz/framefairy/issues/603),
+`a2d7260` by the architecture review,
 and each status below says how it stood then. What was still open moved
 to an issue or was dropped, and no status here changes again.
 [ROBUSTNESS.md](ROBUSTNESS.md) is the older audit of the handoffs between
 the parts, and nothing here repeats it.
 
-**Status:** Fixed (with its pull request), Half or Partly fixed (with
+**Status:** Fixed, Half or Partly fixed (with
 where the rest went), Decided (a choice made, with what was chosen), Moved
-(to the issue that holds the open part), or Dropped (not worth doing now,
+(to the issues, which hold the open part), or Dropped (not worth doing now,
 with why).
 
 ## Overall
@@ -49,13 +49,13 @@ facade the app goes around, and three files too big to hold in one's head.
    `channel-main.json`, and the `list` and `announce` jobs ran
    `scripts/channel-list.sh` from the branch with a token that can write.
    A change to the YAML alone cannot close this, because a push runs the
-   workflow file of the branch pushed, and a branch can rewrite it. Fixed
-   in #43: `builds.yml` gets no secret and no token that can write, and
+   workflow file of the branch pushed, and a branch can rewrite it. Fixed:
+   `builds.yml` gets no secret and no token that can write, and
    leaves only the zip. `publish.yml`, which GitHub always runs from main,
    works out channel, commit and version from GitHub's record of the run,
    signs, and uploads the channel's own two files by name. The key lives
    in the environment `updates`, limited to main, and the repository
-   secret is gone. **Fixed** in #43 and #46.
+   secret is gone. **Fixed**.
 2. **A short counts as rendered while it is written, and after it is cut
    off.** Render writes straight to `out/<name>.mp4`
    (`engine/render.go:164`), and a clip counts as rendered as soon as that
@@ -64,7 +64,7 @@ facade the app goes around, and three files too big to hold in one's head.
    (`render.go:204`), a broken file stays and counts as done. A failed
    re-render deletes the good short from before. Fix: write to
    `<name>.part.mp4`, check it, then rename it into place, the way
-   thumbnails already do (`render.go:251-268`). **Fixed** in #44:
+   thumbnails already do (`render.go:251-268`). **Fixed**:
    `<name>.part.mp4` is checked and then renamed into place, and nothing
    that counts shorts takes a `.part` file for one.
 
@@ -75,7 +75,7 @@ facade the app goes around, and three files too big to hold in one's head.
    not in a `defer`. A panic fails the job, but the lane stays taken, and
    every later search and clip made by hand waits for good. That breaks the
    rule that a job that goes wrong fails itself, not the app. Fix: release
-   in a `defer`, as the other steps do. **Fixed** in #44.
+   in a `defer`, as the other steps do. **Fixed**.
 4. **Edits do not check that a plan belongs to its episode.** `SetWord`,
    `SetCrop`, `ResetCrop`, `SetThumbnail`, `SetCaptionTime`, `RemoveClip`,
    `Shape`, `Reshape`, `Captions` and the caption setters
@@ -84,7 +84,7 @@ facade the app goes around, and three files too big to hold in one's head.
    is accepted: the undo history snapshots the wrong episode, the crop is
    clamped to the wrong video and the words come from the wrong transcript.
    `RemoveSearch` already checks it properly. Fix: one guard used by every
-   edit. **Fixed** in #44: `PlanOf` checks the plan is in the episode's
+   edit. **Fixed**: `PlanOf` checks the plan is in the episode's
    own logs folder, and every edit, the captions and the render go
    through it.
 5. **CI skips the Go tests for a change to the interface alone.**
@@ -94,27 +94,25 @@ facade the app goes around, and three files too big to hold in one's head.
    `frontend/src/lib/suggest.cases.json`. A break between the two sides
    passes the pull request and fails on main. Fix: count the files the Go
    tests read as Go changes, in both scripts and in `ci-needs-test.sh`.
-   **Fixed** in #44: such a file is found by the path a test reads it by,
+   **Fixed**: such a file is found by the path a test reads it by,
    so a new one needs no new rule.
 6. **Starting the app can kill a llama-server the command line is using.**
    The CLI and the app share one note, `~/.framefairy/llama-server.json`, and
    `StopLeftoverServer` (`engine/leftover.go:88`) stops whatever matches its
    port and model, live or not. Either can also overwrite the other's note,
    so a real leftover is then never found. Fix: keep the owner's process id
-   in the note and stop the server only when that owner is gone. **Fixed**
-   in #48: one note a server, with the process that started it, and a
+   in the note and stop the server only when that owner is gone. **Fixed**: one note a server, with the process that started it, and a
    model path with a space in it is found too.
 7. **The model's health check cannot be cancelled.** `local.go:326` asks
    `/health` with a client that has no timeout and no context. A server that
    accepts and never answers holds the load, and at quit it is left running
    until the next start. Fix: a request with the context and about 2 s per
-   try. **Fixed** in #48.
+   try. **Fixed**.
 8. **The retry for a model that spent its budget thinking depends on the
    wording of an error.** `engine/api.go:705` looks for
    `"blocks: ['thinking']"` in `err.Error()`. Changed wording, or a reply
    with another block in the list, turns the retry off without a sound. Fix:
-   a sentinel error checked with `errors.Is`. **Fixed**
-   in #48: a reply of thinking blocks alone, shown or hidden, carries
+   a sentinel error checked with `errors.Is`. **Fixed**: a reply of thinking blocks alone, shown or hidden, carries
    `errSpentThinking`.
 9. **A window's start goes from number to text and back.** `Project.Plan`
    names the plan with `int(window.Start)` (`engine/project.go:139`), then
@@ -122,8 +120,7 @@ facade the app goes around, and three files too big to hold in one's head.
    and names the file from again (`run.go:218, 266`). A start of 29.9996
    gives the caller `clips-29-…` while `Run` writes `clips-30-…`. The
    interface usually snaps windows, so it is latent. Fix: pass the window as
-   a value. **Fixed**
-   in #48, differently: the window is rounded to the millisecond before
+   a value. **Fixed**, differently: the window is rounded to the millisecond before
    anything names it, in one function, `searchWindow`, which the search,
    its record and Run's input now share. A job record also named the
    whole episode asked for by its end `clips-0-<end>.json` where the
@@ -132,7 +129,7 @@ facade the app goes around, and three files too big to hold in one's head.
     a chosen ffmpeg is done twice in the app (`main.go:391, 647`), without
     the `ffprobe.exe` case the engine has (`engine/run.go:145-155`), so on
     Windows the app would not find it. `main.go:436` repeats `tokens.txt`
-    from `engine/speech.go:98`. Fix: one engine helper used by both. **Fixed** in #48: `Engine.UseTools` and
+    from `engine/speech.go:98`. Fix: one engine helper used by both. **Fixed**: `Engine.UseTools` and
     `SpeechModelReady`, used by the command line and the app alike. The
     app's own check had also taken an empty `tokens.txt` for a model.
 
@@ -144,14 +141,14 @@ facade the app goes around, and three files too big to hold in one's head.
     moved. `pack-source.sh` fetches the "corresponding source" separately,
     also unchecked, so nothing proves it is what was built, which LGPL asks
     for. `speech-libs.sh` already does it right. Fix: a sha256 per tarball
-    and a commit per tag, checked in both scripts. **Fixed** in #51: the four archives are
+    and a commit per tag, checked in both scripts. **Fixed**: the four archives are
     checked against a sha256, ffmpeg and llama.cpp against the commit of
     their tag, in the build and in `pack-source.sh` alike. ffmpeg is now
     always taken from git, since ffmpeg.org publishes no checksum to hold
     its archive to.
 12. **ffmpeg 7.1.1 is four point releases behind.** 7.1.5 is out on the same
     branch, with security fixes in code that reads the user's video.
-    harfbuzz 10.1.0 and libass 0.17.3 want a look too. **Fixed** in #54: ffmpeg 7.1.5.
+    harfbuzz 10.1.0 and libass 0.17.3 want a look too. **Fixed**: ffmpeg 7.1.5.
     The hang did not come back: on a macOS runner, 80 runs of the command
     and three rounds of the engine tests under the race detector, with
     7.1.1 and with 7.1.5 alike, never hung, and the macOS CI passed with
@@ -164,39 +161,38 @@ facade the app goes around, and three files too big to hold in one's head.
     `permissions:` block, every action is pinned by tag rather than by
     commit, and `tools.yml` puts `inputs.tag` straight into a shell line.
     Fix: `contents: read` by default, pins by commit or Dependabot for
-    actions, inputs through `env:`. **Fixed** in #51: every
+    actions, inputs through `env:`. **Fixed**: every
     workflow has a `permissions:` block, every action is pinned to the
     commit its tag named on 29 September 2026, with the tag beside it,
     and the release tag reaches the shell through `env:`. Pinned actions
     do not update themselves, so Dependabot proposes their updates as pull
-    requests, since #80.
+    requests.
 14. **Writes that replace a file are not flushed.** `writeAtomic`
     (`engine/transcript.go:140`) and `replacePlan` (`engine/edit.go:236`)
     write a temporary file and rename it, but never sync it. After a power
     loss a plan or transcript can come back empty. `transcript.go:134-137`
     also writes the frames file and the JSON as two steps. Fix: sync before
-    the rename, and make the two one function. **Fixed** in #51: one
+    the rename, and make the two one function. **Fixed**: one
     `replaceFile`, which flushes the file before the move and the folder
     after, and which `writeAtomic` and `replacePlan` both go through. The
     frames and the transcript stay two files written one after the other.
 15. **Plan locks hold only inside one process.** `lockFile`
     (`engine/edit.go:151`) is a map of mutexes, so the CLI and the app
     editing one plan at once can lose an edit. Unlikely, but it should be
-    written down or closed with a file lock. **Fixed** in
-    #51 on macOS and Linux: `flock` on a hidden file beside the plan or
+    written down or closed with a file lock. **Fixed** on macOS and Linux: `flock` on a hidden file beside the plan or
     transcript, taken after the lock inside the program. Windows keeps
     only the lock inside the program until it is shipped.
 16. **Some reads and downloads have no bound.** The speech model download
     uses `http.DefaultClient` (`engine/speech.go:223`), so a stalled
     connection waits for Cancel. `api.go:297` reads a reply with
     `io.ReadAll` and no limit. Fix: a timeout for stalls, and
-    `io.LimitReader` of a few MB. **Fixed** in #51: a download that gets no
+    `io.LimitReader` of a few MB. **Fixed**: a download that gets no
     byte for a minute ends, with what came kept to carry on from, and an
     answer read whole is read to 16 MB.
 17. **No fuzz target for the model's streamed answers.** `readClaudeStream`
     (`engine/stream.go:135`) and `readLocalStream` (`:417`) read what a model
     sends, on the default paths, and have unit tests only. `CLAUDE.md` asks
-    for fuzz targets on everything that reads a model answer. **Fixed** in #51:
+    for fuzz targets on everything that reads a model answer. **Fixed**:
     `FuzzReadClaudeStream` and `FuzzReadLocalStream`.
 
 ## Design debt
@@ -210,13 +206,13 @@ facade the app goes around, and three files too big to hold in one's head.
     `planFailed` has two identical branches (`run.go:767-773`). Fix: `Run`
     returns an error and the command line turns it into an exit code. Split
     `Run` into steps `Project` calls directly instead of filling `Options`
-    with strings. **Half fixed** in #59: the run
+    with strings. **Half fixed**: the run
     returns an error, kept as the kind it is with `%w`, and only `Run`,
     for the command line, turns it into an exit code and a line. `Project`
     and the recipe comparison take the error rather than hooking the last
     error line, and the hook is gone. The messages no longer name flags,
     `planFailed` has one branch, and a speech model that will not load
-    keeps its error. **Fixed** in #67: the run is split into steps,
+    keeps its error. **Fixed**: the run is split into steps,
     prepare, hear, plan, read the plan back and render, held on one
     `runner`. `Run` takes them in order for the command line, and
     `Project` calls the ones it needs with the window as numbers, so no
@@ -226,7 +222,7 @@ facade the app goes around, and three files too big to hold in one's head.
     functions directly, and builds `engine.NewProject(nil, …)` seven times
     only to get paths. Such a project panics if asked to run anything. Fix:
     an episode type for paths, reads and edits, apart from the part that
-    runs work and needs an engine. **Moved** to #608 on 29 October 2026:
+    runs work and needs an engine. **Moved** to the issues on 29 October 2026:
     the seven copies are one helper now, but `NewProject(nil, …)` is still
     there, `cmd/framefairy-app/words.go:32`, and nothing holds a video's
     files.
@@ -235,14 +231,13 @@ facade the app goes around, and three files too big to hold in one's head.
     `Plan.Raw` and `PlanEntry` (`select.go:247`), with key names written out
     as strings in nine files. The ordered object is needed to keep unknown
     fields, the rest goes against "one primitive per thing". Fix: the key
-    names as constants and one way to read and write a clip. **Half fixed**
-    in #68: the names of a plan's parts are constants in
+    names as constants and one way to read and write a clip. **Half fixed**: the names of a plan's parts are constants in
     `engine/plankeys.go`, and every read and edit of the ordered object,
     `LoadClips` included, reaches the plan by them. The tags of the
     structs that write a new plan are held to the same names by a test.
     **Dropped** on 29 October 2026: one way to read and write a clip. The
     five shapes are still there, but joining them is part of the engine
-    split Tim put on hold on 22 October.
+    split the user put on hold on 22 October.
 21. **The engine is one package of 57 files and 21,000 lines**, with 248
     exported names, 53 of the functions used nowhere outside it. Core types
     sit in unrelated files (`Engine` in `ffmpeg.go`, `Transcript` in
@@ -251,13 +246,13 @@ facade the app goes around, and three files too big to hold in one's head.
     make import cycles. Fix, in order: unexport what nobody outside uses,
     move core types to files of their own, then a small shared package, then
     the typesetting and the model providers. **Dropped** on 29 October
-    2026: Tim put the engine split on hold on 22 October, unsure the gain
+    2026: the user put the engine split on hold on 22 October, unsure the gain
     is worth the cost. The engine is 87 files and 34,641 lines today.
 22. **Global state keeps the engine tests serial.** `trainingDir` is set from
     inside `Run` (`run.go:140`), there is a package-level model host and
     several test hooks, and `DefaultStyle` is an exported map anyone can
     change. No engine test runs in parallel, and the engine tests take four
-    minutes. **Fixed** in #59, the part that
+    minutes. **Fixed**, the part that
     held the tests up: `Run` no longer sets the training folder, the command
     line does, once. The test helpers no longer move it, and the tests that
     read their own records get one of their own with `ownTrainingDir`. How
@@ -268,7 +263,7 @@ facade the app goes around, and three files too big to hold in one's head.
     purpose, since one model fits in memory at a time, and `DefaultStyle`
     is read in too many places to change here. Tests that set `framing`,
     `launch`, `healthWait`, `shotLimit` or the speed file, or the
-    environment, still run one at a time. **Moved** to #607 on 29 October
+    environment, still run one at a time. **Moved** to the issues on 29 October
     2026: the test seams are still package variables, now 18 of them.
     `DefaultStyle` is written nowhere outside `engine/ass.go`, so that
     part is dropped.
@@ -279,12 +274,12 @@ facade the app goes around, and three files too big to hold in one's head.
     session as a runes class in `lib/`, with tests, and job endings reported
     by the job store. `ClipTimeline` gets about 30 props and `Player` about
     22, and `showChosen` reaches into ClipList's markup by class name.
-    **Moved** to #606 on 29 October 2026. `Episode.svelte` was 4,565 lines
+    **Moved** to the issues on 29 October 2026. `Episode.svelte` was 4,565 lines
     with 35 effects by then.
 24. **`cmd/framefairy-app/main.go` is 1,600 lines with 70 bindings.** The
     tests are already split by the right seams, the code is not. Fix: media,
     views, words, edits, chosen and training in files of their own,
-    `CheckSetup` into `setup.go`. **Fixed** in #66: `main.go` keeps the
+    `CheckSetup` into `setup.go`. **Fixed**: `main.go` keeps the
     start of the app, the media handler and the `FrameFairy` type, 373
     lines, and the bindings moved unchanged to `library.go`, `media.go`,
     `views.go`, `words.go`, `edits.go`, `chosen.go` and `training.go`, with
@@ -295,16 +290,16 @@ facade the app goes around, and three files too big to hold in one's head.
     the caption heights and `snapCaptionY`, the caption defaults, `Reach`
     and `fitWindow`, have no shared test. `suggest.cases.json` shows the way:
     one file of cases both sides read. **Partly fixed:** `frame.cases.json`
-    and `glide.cases.json` are now read by both sides. **Moved** on 29
-    October 2026: the types and the caption defaults to #611, the rules
-    copied into the interface to #610.
+    and `glide.cases.json` are now read by both sides. **Moved** to the issues on 29
+    October 2026, in two: the types and the caption defaults, and the rules
+    copied into the interface.
 26. **Two ways of saving settings.** `SaveSettings` replaces everything and
     has to carve out `Chosen` by hand (`main.go:367-373`), while other calls
     change one field. Each new field the Go side owns needs another carve
     out or is lost to the last save. Fix: saves that change only what
-    changed. **Fixed** in #59: the settings page sends only the keys it changed, and the Go side lays them over what it holds.
+    changed. **Fixed**: the settings page sends only the keys it changed, and the Go side lays them over what it holds.
 27. **One name, two things.** `engine.Compare` compares two undo snapshots,
-    `Engine.Compare` compares recipes. **Fixed** in #59: the one for two snapshots is `engine.ChangeBetween`.
+    `Engine.Compare` compares recipes. **Fixed**: the one for two snapshots is `engine.ChangeBetween`.
 
 ## Against the project's own rules
 
@@ -313,7 +308,7 @@ facade the app goes around, and three files too big to hold in one's head.
     workspace (2084-2092), render failures included, which "no toasts and
     no banners" rules out. It is measured and written back as `--above` on
     every resize, since it wraps. Fix: each failure in the row of the work
-    that failed. **Fixed** in #228, issue #327: it is a toast about the
+    that failed. **Fixed**: it is a toast about the
     video now, which lies over the app and moves nothing, and `--above`
     holds only the line that says the file is missing. A failure that has a
     row of its own still belongs in that row.
@@ -322,11 +317,11 @@ facade the app goes around, and three files too big to hold in one's head.
     screens in the app and everything about the records in
     `framefairy-train`. **Decided:** it stays for now, as not important
     yet. It comes up again with 5.7 in GUI-PLAN.md, whether customer
-    builds record training data at all, which is #304.
+    builds record training data at all, which is open in the issues.
 30. **Sizes worked out in JavaScript.** `RangeWindow.svelte:114` measures its
     width and places everything in pixels, to land on whole pixels.
     `Player.svelte:702` does the same for the caption scale. CSS `round()`
-    and container units would do both in the stylesheet. **Fixed** in #132:
+    and container units would do both in the stylesheet. **Fixed**:
     the range picker places every mark with `round()` in container units,
     and the captions are sized in shares of the picture's height, `cqh`.
 
@@ -335,47 +330,47 @@ facade the app goes around, and three files too big to hold in one's head.
 31. Dead code: `wrapText` (`ass.go:295`), `captionLayout`
     (`highlight.go:66`), `storedForm` (`transcript.go:358`, with a comment
     that says it matters), `medianIndex` (`util.go:304`), the `ReadPlan`
-    binding and `api.readPlan`, and the `tslib` dev dependency. **Fixed** in #58.
+    binding and `api.readPlan`, and the `tslib` dev dependency. **Fixed**.
 32. Errors worded like Python reach the user: `'start'` (`clips.go:311`) and
-    "could not convert string to float" (`clips.go:161`). **Fixed** in #58.
+    "could not convert string to float" (`clips.go:161`). **Fixed**.
 33. Failures in the app come back as `os.ErrNotExist`, "file does not
-    exist", where `notInLibrary` says what happened. **Fixed** in #58.
+    exist", where `notInLibrary` says what happened. **Fixed**.
 34. `make help` prints lines 1 to 39 of the Makefile (line 117) and the
-    header runs to 45, so it stops mid-sentence. **Fixed** in #58.
+    header runs to 45, so it stops mid-sentence. **Fixed**.
 35. Docs that drifted: the fuzz target count and the `TIDY=0` step in
     BUILD.md, the header of `build-ffmpeg.sh` that says make does not run
     it, the two CI jobs in WORKFLOW.md where there are six, and 18 files
-    missing from the code map in ENGINE.md. **Fixed** in #58.
+    missing from the code map in ENGINE.md. **Fixed**.
 36. The ffmpeg and llama.cpp licence files never reach the bundle:
     `tools-beside` copies only the binaries, so the loop in
-    `bundle-macos.sh:61` finds nothing. **Fixed** in #58. They go in
+    `bundle-macos.sh:61` finds nothing. **Fixed**. They go in
     `Contents/Resources`: in `Contents/MacOS` they made the signing fail,
-    and the first build of #58 was an app macOS would not open. A signing
+    and the first build of that fix was an app macOS would not open. A signing
     that fails now stops the build, and the bundle is checked with
     `codesign --verify`.
 37. Tests that wait on time: `remove_test.go:169, 190, 236` sleep a fixed
-    300 ms for a 200 ms job. Poll with a deadline instead. **Fixed** in #58.
+    300 ms for a 200 ms job. Poll with a deadline instead. **Fixed**.
     The advice was wrong: a poll with a deadline waits on the clock too.
     A test hears the event that says the job ended, see the testing skill
-    in `.claude/skills/testing/`. #394 took the last of such polls out.
+    in `.claude/skills/testing/`. The last of such polls was taken out later.
 38. When our ffmpeg build fails, `tools.sh:104` unlinks the user's Homebrew
     ffmpeg and installs the tap's, a change to the machine nobody would
-    expect. **Fixed** in #58.
+    expect. **Fixed**.
 39. No tests in `cmd/framefairy`, `cmd/framefairy-train` or
     `cmd/framefairy-release`, which signs updates. No check that `go.mod` is
-    tidy in CI, since make tidies it quietly. **Fixed** in #58.
+    tidy in CI, since make tidies it quietly. **Fixed**.
 40. `Reveal` (`main.go:1547`) and the other `.Start()` calls never `Wait`,
-    so each leaves a zombie until the app quits. **Fixed** in #58.
+    so each leaves a zombie until the app quits. **Fixed**.
 41. Colours and heights outside the tokens: `rgba(224,96,90,.14)` in
     `ClipList.svelte:344` is `--err` written out, `--wave` is defined in
     `ClipTimeline.svelte` with two different values, the backdrop
     `rgba(0,0,0,.55)` is repeated in three components, and the card height
-    `56px` four times in `ClipList.svelte`. **Fixed** in #58.
+    `56px` four times in `ClipList.svelte`. **Fixed**.
 42. Doc comments in the wrong place: `ResetCrop`'s above `SetCaptionStyle`
-    (`main.go:1064`), an orphan above `Notice` in `api.ts:10`. **Fixed** in #58.
+    (`main.go:1064`), an orphan above `Notice` in `api.ts:10`. **Fixed**.
 43. `make changed` runs no Go test for a change to a build script.
     `notices_test.go` checks the versions in `notices.json` against the pins
     in `build-ffmpeg.sh` and `build-llama.sh`, but it names them without
     their folder, so the rule that finds a Go test by the path it reads a
-    file by never finds it. Raising ffmpeg in #54 passed `make changed` and
-    failed the notices test in CI. **Fixed** in #58.
+    file by never finds it. Raising ffmpeg to 7.1.5 passed `make changed` and
+    failed the notices test in CI. **Fixed**.
