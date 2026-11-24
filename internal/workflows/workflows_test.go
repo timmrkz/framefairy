@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -10,30 +11,70 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"gopkg.in/yaml.v3"
 )
 
 // The files GitHub runs: every workflow and the setup the CI jobs share.
+//
+// On the real disk: what is read is the repository's own workflows.
 func actionFiles(t *testing.T) []string {
 	t.Helper()
 	root := filepath.Join("..", "..", ".github")
-	var files []string
-	for _, ext := range []string{"*.yml", "*.yaml"} {
-		found, err := filepath.Glob(filepath.Join(root, "workflows", ext))
-		if err != nil {
-			t.Fatal(err)
-		}
-		files = append(files, found...)
-	}
-	if len(files) == 0 {
-		t.Fatal("found no workflow in .github/workflows")
-	}
-	actions, err := filepath.Glob(filepath.Join(root, "actions", "*", "action.yml"))
+	found, err := gitHubRuns(os.DirFS(root))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return append(files, actions...)
+	files := make([]string, len(found))
+	for i, f := range found {
+		files[i] = filepath.Join(root, filepath.FromSlash(f))
+	}
+	return files
+}
+
+// gitHubRuns lists what GitHub runs in a .github folder, a workflow or a
+// composite action, each named either way GitHub reads it, .yml or .yaml.
+func gitHubRuns(github fs.FS) ([]string, error) {
+	var files []string
+	for _, glob := range []string{"workflows/*.yml", "workflows/*.yaml", "actions/*/action.yml", "actions/*/action.yaml"} {
+		found, err := fs.Glob(github, glob)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, found...)
+	}
+	if !slices.ContainsFunc(files, func(f string) bool { return strings.HasPrefix(f, "workflows/") }) {
+		return nil, errors.New("found no workflow in .github/workflows")
+	}
+	return files, nil
+}
+
+// A composite action named action.yaml is run by GitHub as one named
+// action.yml is, so every rule reads it too.
+func TestEveryNameGitHubRunsIsRead(t *testing.T) {
+	t.Parallel()
+	github := fstest.MapFS{
+		"workflows/ci.yml":               {},
+		"workflows/nightly.yaml":         {},
+		"actions/prepare/action.yml":     {},
+		"actions/setup/action.yaml":      {},
+		"actions/setup/README.md":        {},
+		"actions/setup/inner/action.yml": {},
+		"workflows/notes.txt":            {},
+	}
+	got, err := gitHubRuns(github)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(got)
+	want := []string{"actions/prepare/action.yml", "actions/setup/action.yaml", "workflows/ci.yml", "workflows/nightly.yaml"}
+	if !slices.Equal(got, want) {
+		t.Errorf("read %q, want %q", got, want)
+	}
+	if _, err := gitHubRuns(fstest.MapFS{"actions/prepare/action.yml": {}}); err == nil {
+		t.Error("a .github folder with no workflow passed")
+	}
 }
 
 // Every workflow reads as YAML. Most of them run only on main, at night or
