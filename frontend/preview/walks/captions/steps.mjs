@@ -1491,6 +1491,11 @@ export const steps = {
       walk.wrong = `the video preview never showed the frame at ${frame.toFixed(3)}`;
       return;
     }
+    const landed = await playhead(page);
+    if (landed <= begins) {
+      walk.wrong = `the playhead landed at ${landed.toFixed(3)}, not past ${begins.toFixed(3)} where the next caption will begin, so nothing is proven`;
+      return;
+    }
     await word(name).click();
     await page.keyboard.press("End");
     await page.keyboard.type(typed);
@@ -1508,7 +1513,10 @@ export const steps = {
     await page.keyboard.press("Enter");
     await settle(page);
     await settled();
-    await walk.captioned();
+    if (!(await walk.captioned())) {
+      walk.wrong = "the layer of the saved captions was given up on, so the caption box was never seen with it";
+      return;
+    }
     await settled();
     const firsts = await page.evaluate(() => {
       const got = window.__firsts;
