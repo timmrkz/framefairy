@@ -160,7 +160,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 	case engine.HearsWhole:
 		return s.Transcribe(path)
 	case engine.HearsPart, engine.HearsAround:
-		return s.transcribe(path, carry.Part(), carry.Hears() == engine.HearsAround)
+		return s.transcribe(path, carry.Part(), carry.Hears() == engine.HearsAround, false)
 	}
 	return s.render(path, carry.Render(), carry)
 }

@@ -1388,3 +1388,25 @@ func (q *queue) find(episode, kind string) (Job, bool) {
 	}
 	return Job{}, false
 }
+
+// Relaunch does not wait for the whole video's transcription, which the
+// app starts by itself after every search and which can take an hour:
+// what it heard stays. A part of a clip being heard is waited for.
+func TestRelaunchDoesNotWaitForTheWholeVideosTranscription(t *testing.T) {
+	t.Parallel()
+	q := newIdleQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
+	const ep = "/eps/ep.mp4"
+	q.addSteps(ep, engine.JobTranscribe, "Transcribe whole video", true, func(j *Job) { j.JobRecord.ID = engine.TranscribeID }, nil)
+	reopen, idle := q.closeIfIdle()
+	if !idle {
+		t.Fatal("Relaunch waits for the whole video's transcription")
+	}
+	reopen()
+	q.addSteps(ep, engine.JobTranscribe, "Transcribe the clip", true, func(j *Job) {
+		j.JobRecord.ID, j.From, j.To = engine.TranscribePartID, 120, 150
+	}, nil)
+	if reopen, idle := q.closeIfIdle(); idle {
+		reopen()
+		t.Error("Relaunch does not wait for a part of a clip being heard")
+	}
+}

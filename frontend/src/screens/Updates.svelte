@@ -12,13 +12,12 @@
   // Updates in the app menu. See docs/UPDATES.md.
   import { onDestroy, onMount } from "svelte";
   import { api, errorText } from "../lib/api";
-  import { live } from "../lib/flow";
-  import Busy from "../components/Busy.svelte";
+    import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import Pick from "../components/Pick.svelte";
   import { jobs } from "../lib/state.svelte";
-  import { channelName, conflicted as conflictedIn, following as followingIn, standing as standingOf, updates } from "../lib/updates.svelte";
+  import { channelName, conflicted as conflictedIn, following as followingIn, relaunchWaitsFor, standing as standingOf, updates } from "../lib/updates.svelte";
 
   // What is on screen, which the sidebar's dot on Updates is read from
   // too, so the two say the same, see lib/updates.svelte.ts.
@@ -118,26 +117,8 @@
     return listed;
   });
 
-  // Work running or waiting to, which Relaunch waits for: quitting into
-  // the new build would stop it half way, issue #382. The Go side refuses
-  // a Relaunch pressed all the same. In the words of the work the person
-  // started, the first there is.
-  const working = $derived.by(() => {
-    const job = jobs.list.find(live);
-    if (!job) return "";
-    switch (job.kind) {
-      case "search":
-        return "the search";
-      case "render":
-        return "the render";
-      case "clip":
-        return "the clip being made";
-      case "transcribe":
-        return "the transcription";
-      default:
-        return "the download";
-    }
-  });
+  // Work running or waiting to, which Relaunch waits for.
+  const working = $derived(relaunchWaitsFor(jobs.list));
 
   const short = (commit: string) => commit.slice(0, 7);
 

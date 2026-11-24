@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
+	"framefairy/engine/timed"
 )
 
 // Export transcript saves the words of the whole video with the word
@@ -171,6 +172,13 @@ func TestASearchThatIsDoneHearsTheRestOfItsVideo(t *testing.T) {
 				svc.jobs.add(path, engine.JobSearch, "Search", func(context.Context, *engine.Project) (string, error) { return "", nil })
 			}},
 		{name: "a clip made by hand of a video never searched", end: 600, kind: engine.JobClip, state: JobDone},
+		{name: "a clip made by hand of a video searched before", end: 600, kind: engine.JobClip, state: JobDone,
+			before: func(svc *FrameFairy, path string) {
+				rec := engine.JobRecord{ID: engine.SearchID, Kind: engine.JobSearch, To: 60, Step: engine.StepStopped}
+				if err := engine.WriteJob(svc.store.files, path, rec); err != nil {
+					t.Fatal(err)
+				}
+			}, hears: true},
 		{name: "a transcription that is done", end: 600, kind: engine.JobTranscribe, state: JobDone},
 	} {
 		svc, eps := memoryLibrary(t, "ep.mp4")
@@ -184,6 +192,52 @@ func TestASearchThatIsDoneHearsTheRestOfItsVideo(t *testing.T) {
 		svc.searched(Job{Episode: path, State: c.state, JobRecord: engine.JobRecord{Kind: c.kind}})
 		if hears := wholeHeard(svc.jobs.list()); hears != c.hears {
 			t.Errorf("%s: the rest of the video is heard %v, want %v", c.name, hears, c.hears)
+		}
+	}
+}
+
+// The rest of a video asked for by itself the moment Search or a clip
+// made by hand is pressed never runs beside them, the way the user's
+// report of 26 October asked: the two orders the calls can land in, made
+// to happen on purpose. The rest asked for after the work on the clips
+// was added is dropped, without a word, and the work on the clips added
+// after the rest is asked for calls it off.
+func TestTheRestOfAVideoNeverHearsBesideASearchPressedAtOnce(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{engine.JobSearch, engine.JobClip} {
+		for _, restFirst := range []bool{false, true} {
+			svc, eps := memoryLibrary(t, "ep.mp4")
+			svc.jobs = newIdleQueue(svc.store, func(JobUpdate) {}, func(string) {})
+			path := eps[0]
+			rest := func() Job { return svc.transcribe(path, timed.Window{}, false, true) }
+			clips := func() Job {
+				return svc.jobs.addSteps(path, kind, kind, true, func(j *Job) { j.JobRecord.ID = kind }, nil)
+			}
+			// The check before the add passes in both orders: nothing of
+			// the clips is going yet.
+			if !svc.jobs.makeWayForTranscribe(path) {
+				t.Fatalf("%s: the rest was refused before anything was asked for", kind)
+			}
+			var heard Job
+			if restFirst {
+				heard = rest()
+				clips()
+			} else {
+				clips()
+				heard = rest()
+			}
+			jobs := svc.jobs.list()
+			if whole := wholeJob(jobs); whole != nil {
+				t.Errorf("%s, the rest first %v: the rest of the video is heard beside the work on its clips: %+v", kind, restFirst, *whole)
+			}
+			if !restFirst && heard.ID != "" {
+				t.Errorf("%s: the rest asked for after it was added, not dropped: %+v", kind, heard)
+			}
+			for _, j := range jobs {
+				if j.State == JobFailed {
+					t.Errorf("%s, the rest first %v: a job was refused out loud: %+v", kind, restFirst, j)
+				}
+			}
 		}
 	}
 }

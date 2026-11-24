@@ -46,7 +46,8 @@ import (
 // may need it.
 //
 // And last: the whole video heard by itself, Transcribe whole video in
-// its menu, or asked for once a search of the video is done, issue #447,
+// its menu, or asked for once a search or a clip made by hand of the
+// video is done, see hearRest,
 // hears only when no search and no clip needs the lane. It can
 // take an hour, and nobody waits on it the way somebody waits on a search
 // or a clip, so it goes behind every one of them that asks to hear, gives

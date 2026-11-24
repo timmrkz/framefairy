@@ -461,16 +461,16 @@ func TestAClipsPartIsHeardBesideTheWholeVideo(t *testing.T) {
 	svc, eps := memoryLibrary(t, "ep.mp4")
 	svc.jobs = newIdleQueue(svc.store, func(JobUpdate) {}, func(string) {})
 	whole := svc.Transcribe(eps[0])
-	part := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}, false)
-	around := svc.transcribe(eps[0], timed.Window{Start: 60, End: 210}, true)
+	part := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}, false, false)
+	around := svc.transcribe(eps[0], timed.Window{Start: 60, End: 210}, true, false)
 	if whole.ID == part.ID || part.ID == around.ID || whole.Hears() != engine.HearsWhole ||
 		part.Hears() != engine.HearsPart || around.Hears() != engine.HearsAround {
 		t.Fatalf("the whole video is %+v, the part %+v, around it %+v", whole, part, around)
 	}
-	if again := svc.transcribe(eps[0], timed.Window{Start: 60, End: 210}, true); again.ID != around.ID {
+	if again := svc.transcribe(eps[0], timed.Window{Start: 60, End: 210}, true, false); again.ID != around.ID {
 		t.Errorf("around the clip asked for again is %s, not the one that runs, %s", again.ID, around.ID)
 	}
-	if again := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}, false); again.ID != part.ID {
+	if again := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}, false, false); again.ID != part.ID {
 		t.Errorf("the part asked for again is %s, not the one that runs, %s", again.ID, part.ID)
 	}
 	if again := svc.Transcribe(eps[0]); again.ID != whole.ID {

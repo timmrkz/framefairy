@@ -71,6 +71,14 @@ export function mergeJob<T extends Stamped>(list: T[], got: T): T[] | null {
 // A job waiting its turn or running.
 export const live = (j: Job | undefined) => j?.state === "running" || j?.state === "queued";
 
+// The whole video's transcription, Transcribe whole video in its menu, or
+// the rest of a video heard once its search is done. A transcription with
+// an end is a part of a clip or the stretch around one, which the Go side
+// hears by itself, see JobRecord.Hears there.
+export function transcribesWhole(j: Job): boolean {
+  return j.kind === "transcribe" && !j.to;
+}
+
 // A job that ended before it was done, interrupted, stopped or failed,
 // which says so where its work was until Continue carries it on.
 export const unfinished = (j: Job | undefined) =>

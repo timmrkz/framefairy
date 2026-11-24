@@ -2,7 +2,7 @@
 // A video's jobs come in its state, onVideoState, one channel, and a job
 // of no video, a model being downloaded, on the job event.
 import { api, onJob, onVideoState, type EpisodeStatus, type Job, type Lane, type VideoState } from "./api";
-import { live, mergeJob, outstanding } from "./flow";
+import { live, mergeJob, outstanding, transcribesWhole } from "./flow";
 import { said } from "./said";
 import type { EpisodeOrder } from "./order";
 
@@ -13,13 +13,6 @@ import type { EpisodeOrder } from "./order";
 export type Work = "whole" | "clips" | "render";
 
 const works: Work[] = ["whole", "clips", "render"];
-
-// The whole video's transcription, Transcribe whole video in its menu. A
-// transcription with an end is a part of a clip or the stretch around
-// one, which the Go side hears by itself, see JobRecord.Hears there.
-function transcribesWhole(j: Job): boolean {
-  return j.kind === "transcribe" && !j.to;
-}
 
 function doing(work: Work, j: Job): boolean {
   if (work === "whole") return transcribesWhole(j);

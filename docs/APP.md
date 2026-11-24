@@ -181,7 +181,9 @@ made by hand of a video searched before is done, the transcription
 starts again by itself and hears the rest of the video, so a later
 search of a window heard already starts finding at once: in two searches
 of 20 minutes, hearing took about 17 s of 41 s. So Stop transcribing
-holds until the next search is done. The stop shows on the press, in the
+holds until the next search, or clip made by hand, is done. Relaunch on
+the Updates page does not wait for it, since it can take an hour: what
+it heard stays. The stop shows on the press, in the
 menu, the video's dot and the range picker, though the transcription
 ends only once the speech model has heard the piece it is in: the menu
 said Stop transcribing for three and a half seconds after Search, the user's

@@ -6,7 +6,8 @@
 // wore the warning while the sidebar showed nothing, issue #406. See
 // docs/UPDATES.md.
 
-import { api, onUpdates, size, type UpdateState } from "./api";
+import { api, onUpdates, size, type Job, type UpdateState } from "./api";
+import { live, transcribesWhole } from "./flow";
 import { said } from "./said";
 
 // A check that finds nothing is over in a tenth of a second, which is
@@ -51,6 +52,29 @@ function when(checked: string | undefined, now: number): string {
 }
 
 const short = (commit: string) => commit.slice(0, 7);
+
+// The work Relaunch waits for, in the words of the work the person
+// started, the first there is, or "" when there is none: quitting into
+// the new build would stop it half way, issue #382. The Go side refuses
+// a Relaunch pressed all the same, see queue.closeIfIdle. The whole
+// video's transcription is not waited for: it can take an hour, the app
+// starts it by itself after a search, and what it heard stays.
+export function relaunchWaitsFor(list: Job[]): string {
+  const job = list.find((j) => live(j) && !transcribesWhole(j));
+  if (!job) return "";
+  switch (job.kind) {
+    case "search":
+      return "the search";
+    case "render":
+      return "the render";
+    case "clip":
+      return "the clip being made";
+    case "transcribe":
+      return "the transcription";
+    default:
+      return "the download";
+  }
+}
 
 // Where things stand, in the words of the line under the build: its mark,
 // what it is in a few words, then what that means. working is the work
