@@ -87,16 +87,13 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # No cache: a job that holds a key or a token that writes builds
-      # from nothing that another run on main could have left.
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: go.mod
-          cache: false
+      # main's own build of the tool, signed, from no cache anybody else
+      # wrote, see .github/actions/release-tool.
+      - uses: ./.github/actions/release-tool
       - name: Write the channel list from every entry
-        run: go run ./cmd/framefairy-release channels
+        run: framefairy-release channels
       - name: Cancel a publish stuck before the environment
-        run: go run ./cmd/framefairy-release unstick
+        run: framefairy-release unstick
 
   publish:
     if: >-
@@ -123,12 +120,9 @@ jobs:
     steps:
       # main, the default for a workflow_run, never the branch.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # No cache: a job that holds a key or a token that writes builds
-      # from nothing that another run on main could have left.
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: go.mod
-          cache: false
+      # main's own build of the tool, signed, from no cache anybody else
+      # wrote, see .github/actions/release-tool.
+      - uses: ./.github/actions/release-tool
 
       # What the build is a build of, from GitHub's record of the run and
       # not from anything the build wrote, and only a commit its channel's
@@ -140,7 +134,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.event.workflow_run.id }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
-        run: go run ./cmd/framefairy-release publish-plan -run "$RUN" -branch "$BRANCH" -commit "$SHA"
+        run: framefairy-release publish-plan -run "$RUN" -branch "$BRANCH" -commit "$SHA"
 
       - if: steps.which.outputs.run == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -163,12 +157,12 @@ jobs:
       - id: pack
         if: steps.which.outputs.run == 'true'
         name: Pack it in parts
-        run: go run ./cmd/framefairy-release pack -zip "$RUNNER_TEMP/build/app.zip" -out "$RUNNER_TEMP/packed"
+        run: framefairy-release pack -zip "$RUNNER_TEMP/build/app.zip" -out "$RUNNER_TEMP/packed"
 
       - id: check
         if: steps.pack.outcome == 'success'
         name: Check what it could reach
-        run: go run ./cmd/framefairy-release check -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
+        run: framefairy-release check -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
 
       - id: sign
         if: steps.check.outcome == 'success'
@@ -181,7 +175,7 @@ jobs:
           COMMIT: ${{ steps.which.outputs.commit }}
           URL: https://github.com/${{ github.repository }}/releases/download/dev/${{ steps.which.outputs.zip }}
         run: >-
-          go run ./cmd/framefairy-release sign -zip "$RUNNER_TEMP/build/app.zip" -parts "$RUNNER_TEMP/packed/parts.json"
+          framefairy-release sign -zip "$RUNNER_TEMP/build/app.zip" -parts "$RUNNER_TEMP/packed/parts.json"
           -channel "$CHANNEL" -name "$NAME"
           -version "$VERSION" -commit "$COMMIT" -url "$URL" -out "$RUNNER_TEMP/entry.json" -refusal "$RUNNER_TEMP/refused.txt"
 
@@ -195,7 +189,7 @@ jobs:
           ZIP: ${{ steps.which.outputs.zip }}
           CHANNEL: ${{ steps.which.outputs.channel }}
         run: >-
-          go run ./cmd/framefairy-release publish -zip "$RUNNER_TEMP/build/app.zip" -as "$ZIP"
+          framefairy-release publish -zip "$RUNNER_TEMP/build/app.zip" -as "$ZIP"
           -packed "$RUNNER_TEMP/packed" -entry "$RUNNER_TEMP/entry.json" -channel "$CHANNEL" -commit "$SHA"
 
       # Whatever failed, the refusal of the check or the signer, or any
@@ -208,7 +202,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: go run ./cmd/framefairy-release not-published -commit "$SHA" -run "$RUN" -refusal "$RUNNER_TEMP/refused.txt"
+        run: framefairy-release not-published -commit "$SHA" -run "$RUN" -refusal "$RUNNER_TEMP/refused.txt"
 
   # Whenever a build ends, whether publish signed it, skipped it or
   # refused it: a build that ended without one is a build no longer to
@@ -236,13 +230,10 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # No cache: a job that holds a key or a token that writes builds
-      # from nothing that another run on main could have left.
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: go.mod
-          cache: false
+      # main's own build of the tool, signed, from no cache anybody else
+      # wrote, see .github/actions/release-tool.
+      - uses: ./.github/actions/release-tool
       - name: Write the channel list from every entry
-        run: go run ./cmd/framefairy-release channels
+        run: framefairy-release channels
       - name: Cancel a publish stuck before the environment
-        run: go run ./cmd/framefairy-release unstick
+        run: framefairy-release unstick

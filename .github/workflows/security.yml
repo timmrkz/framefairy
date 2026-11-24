@@ -99,12 +99,9 @@ jobs:
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # No cache: a job that holds a key or a token that writes builds
-      # from nothing that another run on main could have left.
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: go.mod
-          cache: false
+      # main's own build of the tool, signed, from no cache anybody else
+      # wrote, see .github/actions/release-tool.
+      - uses: ./.github/actions/release-tool
       # upstream.sh says what is behind, and framefairy-release keeps the
       # issue from its answer, see cmd/framefairy-release/behind.go.
       - name: Newer releases of what we ship
@@ -114,7 +111,7 @@ jobs:
         run: |
           status=0
           sh scripts/upstream.sh --behind > "$RUNNER_TEMP/behind.md" || status=$?
-          go run ./cmd/framefairy-release behind -status "$status" -table "$RUNNER_TEMP/behind.md"
+          framefairy-release behind -status "$status" -table "$RUNNER_TEMP/behind.md"
 
   # A run that fails on main tells of itself, in an issue of its own, see
   # tell.yml. A run by hand on a branch is its session's to read, and a

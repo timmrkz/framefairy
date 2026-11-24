@@ -14,6 +14,7 @@ import (
 // A step of a job or of a composite action, as far as caches go.
 type cacheStep struct {
 	Uses string         `yaml:"uses"`
+	Run  string         `yaml:"run"`
 	With map[string]any `yaml:"with"`
 	Env  map[string]any `yaml:"env"`
 }
@@ -144,8 +145,10 @@ func localAction(t *testing.T) func(uses string) []cacheStep {
 // that builds a dependency nobody has run before included, and Go trusts
 // what it finds in its build cache and its module cache without checking
 // it again. So the tools a job like the signing job runs would be what
-// that run left there. This keeps the key's own tools clean, not the
-// build they sign, which builds.yml makes from main's shared cache.
+// that run left there. Such a job runs the release tool main built and
+// signed, see TestAJobThatHoldsAKeyRunsTheSignedReleaseTool. This keeps
+// the key's own tools clean, not the build they sign, which builds.yml
+// makes from main's shared cache.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestAJobThatHoldsAKeyRestoresNoCache(t *testing.T) {
