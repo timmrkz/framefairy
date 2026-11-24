@@ -8,7 +8,7 @@ left open.
 
 The issue: "What the app learns about a video at a cost, its probe and
 the ink of its captions, is kept in memory only, so every start pays for
-it again." The probe is kept in the video's work folder now. The ink is not.
+it again." The probe is kept now. The ink is not.
 
 Read on main, 22 November:
 
@@ -20,8 +20,8 @@ Read on main, 22 November:
   `measureKey`. It dies with the program.
 - So the first caption file of each clip after a start waits for ffmpeg.
   In the cloud session a caption file of 18 captions took 433 ms with
-  the ink measured and 3.6 ms with it known, 3 runs each. On the user's Mac,
-  report of 22 November, the first caption files of a run took 100 to
+  the ink measured and 3.6 ms with it known, 3 runs each. On the user's
+  Mac, report of 22 November, the first caption files of a run took 100 to
   270 ms, later ones of other clips 60 to 100 ms, and 6 frames of the
   video preview were put up without their captions because they did
   not come in time.
