@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+
+	"framefairy/engine"
 )
 
 // Export transcript saves the words of the whole video with the word
@@ -141,5 +143,47 @@ func TestAnExportToADriveWithoutModesIsSaved(t *testing.T) {
 	}
 	if body, err := afero.ReadFile(svc.store.files, saved); err != nil || string(body) != "0:10\neins zwei.\n" {
 		t.Errorf("the text reads %q: %v", body, err)
+	}
+}
+
+// A search that is done hears the rest of its video, the way Transcribe
+// video does, so a later search of a window heard already starts finding
+// at once, issue #447. A video heard to its end, a search that did not
+// end done, more work on the video's clips on the way, and a clip made by
+// hand of a video never searched ask for nothing.
+func TestASearchThatIsDoneHearsTheRestOfItsVideo(t *testing.T) {
+	t.Parallel()
+	words := [][3]any{{10.1, 10.4, "eins"}, {10.5, 10.9, "zwei"}}
+	for _, c := range []struct {
+		name   string
+		end    float64
+		kind   string
+		state  string
+		before func(svc *FrameFairy, path string)
+		hears  bool
+	}{
+		{name: "a search that is done", end: 600, kind: engine.JobSearch, state: JobDone, hears: true},
+		{name: "a search of a video heard to its end", end: 30, kind: engine.JobSearch, state: JobDone},
+		{name: "a search that failed", end: 600, kind: engine.JobSearch, state: JobFailed},
+		{name: "a search that was stopped", end: 600, kind: engine.JobSearch, state: JobStopped},
+		{name: "a search with another of the video waiting", end: 600, kind: engine.JobSearch, state: JobDone,
+			before: func(svc *FrameFairy, path string) {
+				svc.jobs.add(path, engine.JobSearch, "Search", func(context.Context, *engine.Project) (string, error) { return "", nil })
+			}},
+		{name: "a clip made by hand of a video never searched", end: 600, kind: engine.JobClip, state: JobDone},
+		{name: "a transcription that is done", end: 600, kind: engine.JobTranscribe, state: JobDone},
+	} {
+		svc, eps := memoryLibrary(t, "ep.mp4")
+		svc.keeping = newKeeping()
+		svc.jobs = newIdleQueue(svc.store, func(JobUpdate) {}, func(string) {})
+		path := eps[0]
+		heardPartOf(t, svc, path, 30, c.end, words)
+		if c.before != nil {
+			c.before(svc, path)
+		}
+		svc.searched(Job{Episode: path, State: c.state, JobRecord: engine.JobRecord{Kind: c.kind}})
+		if hears := wholeHeard(svc.jobs.list()); hears != c.hears {
+			t.Errorf("%s: the rest of the video is heard %v, want %v", c.name, hears, c.hears)
+		}
 	}
 }

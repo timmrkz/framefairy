@@ -84,7 +84,7 @@ func main() {
 	svc.tellWindow(emitterFunc(func(name string, data ...any) bool {
 		return app != nil && app.Event.Emit(name, data...)
 	}))
-	svc.jobs.searched = svc.keeping.ask
+	svc.jobs.searched = svc.searched
 	// The log as Settings shows it, while Settings is open, as lines are
 	// written, about once a second at most. See watch in applog.go.
 	go theLog.watch(func(st LogStatus) { appLogEvent.to(svc.tell, st) },

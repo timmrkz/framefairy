@@ -46,7 +46,8 @@ import (
 // may need it.
 //
 // And last: the whole video heard by itself, Transcribe whole video in
-// its menu, hears only when no search and no clip needs the lane. It can
+// its menu, or asked for once a search of the video is done, issue #447,
+// hears only when no search and no clip needs the lane. It can
 // take an hour, and nobody waits on it the way somebody waits on a search
 // or a clip, so it goes behind every one of them that asks to hear, gives
 // the lane back to each, and waits while a search finds, like a search

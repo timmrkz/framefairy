@@ -52,7 +52,8 @@ Cancel, because nothing could tell the two apart.
 
 A job is one piece of work a person started, or the app started for them:
 a **search**, a **clip** made by hand, a **render**, or the whole video
-**transcribed** to its end from its menu. It is owned by the
+**transcribed** to its end from its menu, or by itself once a search of
+the video is done, `hearRest` in `export.go`. It is owned by the
 Go side. It has what it was asked for and a step it is in. An episode has
 at most one search at a time, and any number of clips and renders.
 
@@ -70,7 +71,8 @@ does: its record says stopped, what it heard stays, and the menu offers
 Transcribe video again, after a restart too. A search or a clip made by
 hand of the same video stops it the same way, and it is refused while
 they run, `stopTranscribing` and `makeWayForTranscribe` in `jobs.go`,
-the user's report of 26 October, 12.27.
+the user's report of 26 October, 12.27. Once that search, or that clip of a
+video searched before, is done, the transcription is asked for again.
 
 A transcription also hears a part of the video by itself, for the clip
 chosen, `hearChosen` in `export.go`, from the state the app

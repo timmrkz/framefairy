@@ -176,8 +176,12 @@ menu's to show, the user's call:
 
 It and the work on the video's clips go one at a time, the user's report of 26
 October, 12.27. A search or a clip made by hand of the video stops its
-transcription, the way Stop transcribing does, and it does not start
-again by itself once they are done. The stop shows on the press, in the
+transcription, the way Stop transcribing does. Once a search or a clip
+made by hand of a video searched before is done, the transcription
+starts again by itself and hears the rest of the video, so a later
+search of a window heard already starts finding at once: in two searches
+of 20 minutes, hearing took about 17 s of 41 s. So Stop transcribing
+holds until the next search is done. The stop shows on the press, in the
 menu, the video's dot and the range picker, though the transcription
 ends only once the speech model has heard the piece it is in: the menu
 said Stop transcribing for three and a half seconds after Search, the user's
@@ -1071,13 +1075,13 @@ bubble scrolled by those eight pixels.
   episode from where the transcript ends to the end of its window, stops
   exactly on its edge, and then finds. Adding a video asks for its first
   search, of its first window, so the Go side starts it and the
-  workspace only shows it. Nothing carries the transcription on through
-  the rest of the episode afterwards by itself. So there is nothing to
-  control about it in the workspace but the search: **Search** starts it
-  and **Cancel** stops it, and what was heard stays, so the next search
-  goes on from there. Hearing the whole video is asked for in its menu in
-  the sidebar, **Transcribe video**, see above, and a search of the
-  video stops it. While another
+  workspace only shows it. Once the search is done, the rest of the
+  video is heard by itself, the way **Transcribe video** in its menu in
+  the sidebar hears it, see above, and a search of the video stops it and
+  asks for it again once it is done. So there is nothing to control
+  about it in the workspace but the search: **Search** starts it and
+  **Cancel** stops it, and what was heard stays, so the next search goes
+  on from there. While another
   episode's search finds its clips, a search that hears waits and carries
   on after, because the two models want the same memory.
 - **What is not there yet says so by waiting.** The part of the clip

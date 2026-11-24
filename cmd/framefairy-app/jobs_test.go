@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -953,16 +954,25 @@ func relaunchAfterWork(t *testing.T) {
 }
 
 // A search that has ended asks for the model to be kept again, because it
-// may have put the kept model aside for another one, see keep.go.
+// may have put the kept model aside for another one, see keep.go, and
+// says how it ended, so one that is done carries the hearing on, see
+// hearRest.
 func TestASearchThatEndsKeepsTheModelAgain(t *testing.T) {
 	t.Parallel()
 	q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
-	searched := make(chan struct{}, 1)
-	q.searched = func() { searched <- struct{}{} }
-	q.add("/home/tim/ep.mp4", engine.JobSearch, "Search", func(context.Context, *engine.Project) (string, error) {
-		return "", nil
-	})
-	<-searched
+	searched := make(chan Job, 1)
+	q.searched = func(j Job) { searched <- j }
+	for _, c := range []struct {
+		state string
+		err   error
+	}{{JobDone, nil}, {JobFailed, errors.New("the model did not answer")}} {
+		q.add("/home/tim/ep.mp4", engine.JobSearch, "Search", func(context.Context, *engine.Project) (string, error) {
+			return "", c.err
+		})
+		if j := <-searched; j.Episode != "/home/tim/ep.mp4" || j.Kind != engine.JobSearch || j.State != c.state {
+			t.Errorf("a search that ended %s was told as %s, %s of %s", c.state, j.State, j.Kind, j.Episode)
+		}
+	}
 }
 
 // A job that hears a video in parts has the library read again each time
