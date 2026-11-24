@@ -133,6 +133,7 @@ whose code it changed, by the filters of the job `changes` in `ci.yml`:
 | Changed | Starts |
 | --- | --- |
 | Go: any file outside `frontend/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `frontend/` a Go test reads, the filter `goread` | `linux`, `fuzz` and the walks |
+| Go the app never builds: the programs that run on no customer's machine, like the release tool and the licence server, the command line, and the rules about the repository, all of the filter `go` but `walked` | only `linux` and `fuzz`, no walks |
 | code only a Mac builds, a `*_darwin*.go` file, or `go.mod` or `go.sum`, which bring the modules' own, the filter `mac` | `macos` too |
 | the interface: `frontend/`, the Makefile, `.github/workflows/`, `.github/actions/` and `.node-version` | `interface` and the walks |
 | only the docs, `docs/`, any `.md`, `.claude/` | only `build` |
@@ -145,7 +146,10 @@ again only the packages whose code or test files changed since, and says
 in `make unit`: there the app's and the engine's tests never came from
 the cache, and keeping their results cost 24 s a run, see the Makefile.
 The walks test the whole app, its Go side too,
-so they start for either kind of change, and run whole.
+so they start for either kind of change, and run whole, but not for Go
+the app never builds. Which folders that is, the filter `walked` says,
+and `internal/workflows` holds it to what the app and its decoder
+import, so it never leaves out a folder the app uses.
 
 A filter that missed a file would show as a test that passes on its
 pull request and fails on main. So `internal/workflows` reads every Go
