@@ -788,10 +788,6 @@ func (q *queue) refuse(episode, kind, label, reason string, with ...func(*Job)) 
 	return snapshot
 }
 
-func (q *queue) busyLocked() bool {
-	return slices.ContainsFunc(q.jobs, (*Job).going)
-}
-
 // closeIfIdle is how Relaunch asks the queue. When no job runs or waits,
 // it takes no new job from now on and says yes, and reopen takes the no
 // back, for a relaunch that did not happen. When work runs it says no and

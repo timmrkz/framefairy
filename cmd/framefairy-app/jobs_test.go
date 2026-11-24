@@ -1364,7 +1364,7 @@ func (q *queue) add(episode, kind, label string,
 func (q *queue) busy() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.busyLocked()
+	return slices.ContainsFunc(q.jobs, (*Job).going)
 }
 
 // cancelEpisode stops every job of an episode and waits until none of them
