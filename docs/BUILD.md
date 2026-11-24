@@ -695,7 +695,7 @@ scan made once is out of date the week after.
   `release-tool.yml` whenever its code changes, signed with a build
   attestation and kept in the release `release-tool` under a key of what
   it was built from. The action checks the attestation before the tool
-  runs, and with no signed build of the key, right after a change to the
+  runs, that main's `release-tool.yml` signed it under that very name, and with no signed build of the key, right after a change to the
   tool, it builds the tool itself with no cache. `internal/workflows`
   fails on a job with an environment, a secret or a write permission
   that restores a cache or builds the tool any other way, and on a key

@@ -13,6 +13,8 @@ permissions:
   contents: read
   actions: read
   issues: write
+  # To check the release tool's signature.
+  attestations: read
 
 jobs:
   tell:

@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"fmt"
 	"go/parser"
 	"go/token"
 	"path"
@@ -63,7 +64,7 @@ func ownImports(t *testing.T, root, dir string) []string {
 }
 
 // The paths the action's key is worked out of.
-var keyed = regexp.MustCompile(`HEAD:(\S+)`)
+var keyed = regexp.MustCompile(`HEAD:([^\s;]+)`)
 
 // The key the action finds the tool by covers everything the tool is
 // built from: go.mod, go.sum and every package of ours it imports. A
@@ -156,5 +157,97 @@ func TestAJobThatHoldsAKeyRunsTheSignedReleaseTool(t *testing.T) {
 	}
 	if ran == 0 {
 		t.Error("no job that holds a key runs framefairy-release, so this test checks nothing")
+	}
+}
+
+// The action takes the tool it downloads only when main's own
+// release-tool.yml signed it, on GitHub's own runner, under the very name
+// it was downloaded by. A branch can upload any file under that name: a
+// build of its own, which main never signed, or an older build of main's,
+// which main signed under its own name. Each of these flags is what refuses
+// one of them.
+//
+// On the real disk: what is read is the repository's own action.
+func TestTheReleaseToolIsCheckedAgainstMainsSignature(t *testing.T) {
+	t.Parallel()
+	var fetch *cacheStep
+	steps := localAction(t)(releaseToolAction)
+	for i, s := range steps {
+		if strings.Contains(s.Run, "gh attestation verify") {
+			fetch = &steps[i]
+		}
+	}
+	if fetch == nil {
+		t.Fatalf("%s runs no gh attestation verify", releaseToolAction)
+	}
+	signer := "${{ github.server_url }}/${{ github.repository }}/.github/workflows/release-tool.yml@refs/heads/main"
+	if got := fmt.Sprint(fetch.Env["SIGNER"]); got != signer {
+		t.Errorf("the signer the tool is checked against is %q, want main's release-tool.yml, %q", got, signer)
+	}
+	for _, flag := range []string{
+		`--cert-identity "$SIGNER"`,
+		`--source-ref refs/heads/main`,
+		`--deny-self-hosted-runners`,
+		`.statement.subject[].name' | grep -xF "$NAME" >/dev/null`,
+	} {
+		if !strings.Contains(fetch.Run, flag) {
+			t.Errorf("%s checks the tool's signature without %s", releaseToolAction, flag)
+		}
+	}
+}
+
+// The token of a job that uses the action may read attestations, or the
+// check of every download fails and every job builds the tool itself,
+// as slowly as with no signed build at all and with nothing but a warning
+// to say so. A job that calls a workflow of ours hands it the token.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestAJobThatUsesTheReleaseToolMayReadItsSignature(t *testing.T) {
+	t.Parallel()
+	type workflow struct {
+		Permissions any                 `yaml:"permissions"`
+		Jobs        map[string]cacheJob `yaml:"jobs"`
+	}
+	files, err := filepath.Glob(filepath.Join("..", "..", ".github", "workflows", "*.y*ml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := map[string]workflow{}
+	for _, f := range files {
+		var wf workflow
+		readYAML(t, f, &wf)
+		all["./.github/workflows/"+filepath.Base(f)] = wf
+	}
+	usesTheTool := func(job cacheJob) bool {
+		return slices.ContainsFunc(job.Steps, func(s cacheStep) bool { return s.Uses == releaseToolAction })
+	}
+	mayRead := func(perms any) bool {
+		p, ok := perms.(map[string]any)
+		return ok && (p["attestations"] == "read" || p["attestations"] == "write")
+	}
+	checked := 0
+	for file, wf := range all {
+		for name, job := range wf.Jobs {
+			uses := usesTheTool(job)
+			if called, ok := all[job.Uses]; ok {
+				for _, j := range called.Jobs {
+					uses = uses || usesTheTool(j)
+				}
+			}
+			if !uses {
+				continue
+			}
+			checked++
+			perms := job.Permissions
+			if perms == nil {
+				perms = wf.Permissions
+			}
+			if !mayRead(perms) {
+				t.Errorf("%s: the job %s uses %s and its token may not read attestations: add attestations: read", path.Base(file), name, releaseToolAction)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no job uses the release tool, so this test checks nothing")
 	}
 }

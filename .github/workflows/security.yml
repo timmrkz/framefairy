@@ -97,6 +97,8 @@ jobs:
     permissions:
       contents: read
       issues: write
+      # To check the release tool's signature.
+      attestations: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # main's own build of the tool, signed, from no cache anybody else
@@ -123,4 +125,5 @@ jobs:
       contents: read
       actions: read
       issues: write
+      attestations: read
     uses: ./.github/workflows/tell.yml

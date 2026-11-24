@@ -82,6 +82,8 @@ jobs:
       # What became of a commit's build, and the publish runs that wait.
       actions: write
       statuses: read
+      # To check the release tool's signature.
+      attestations: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -113,6 +115,8 @@ jobs:
       pull-requests: read
       actions: read
       statuses: write
+      # To check the release tool's signature.
+      attestations: read
     # The token is handed only to the steps that ask GitHub, so the step
     # that reads the build holds nothing that can write.
     env:
@@ -225,6 +229,8 @@ jobs:
       # What became of a commit's build, and the publish runs that wait.
       actions: write
       statuses: read
+      # To check the release tool's signature.
+      attestations: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}

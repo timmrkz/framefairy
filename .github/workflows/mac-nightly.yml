@@ -99,4 +99,5 @@ jobs:
       contents: read
       actions: read
       issues: write
+      attestations: read
     uses: ./.github/workflows/tell.yml

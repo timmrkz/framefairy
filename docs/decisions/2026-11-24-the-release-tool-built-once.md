@@ -96,15 +96,20 @@ publishes its own build too, before `release-tool.yml` has finished.
 
 The key is the first 16 hex digits of the SHA-256 of the git objects of
 those four paths, which git already has, so no Go is needed to work it
-out. The release is `release-tool`, a prerelease that is never the
+out, and of the runner's system, so a Mac job would not take a Linux
+build. The patch version of Go is not in it: a newer one reaches the
+tool with the next change to `go.mod`, `go.sum` or the tool. The release is `release-tool`, a prerelease that is never the
 latest, and it keeps only the newest asset: a job of an older commit
 finds none and builds.
 
-The check is `gh attestation verify` with the repository, the signer
-workflow `release-tool.yml` and the source ref `refs/heads/main`. Any
-branch can upload to the release, because a push runs the branch's own
-workflow file with whatever it asks for. It cannot make an attestation
-that says main.
+The check is `gh attestation verify` with the repository, the exact
+signer `release-tool.yml@refs/heads/main`, the source ref
+`refs/heads/main` and GitHub's own runners, and the name the
+attestation signed must be the name of the file. Any branch can upload
+to the release, because a push runs the branch's own workflow file with
+whatever it asks for. It cannot make an attestation that says main, and
+an older build of main's put under a newer key carries its own name. The
+jobs that use the action may read attestations, `attestations: read`.
 
 ## What follows
 
