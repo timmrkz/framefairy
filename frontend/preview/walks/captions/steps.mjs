@@ -1434,7 +1434,8 @@ export const steps = {
     }, arg);
   },
   // ["saved past a caption's end", word, typed]
-  //                    types typed after the word and saves, which takes
+  //                    puts the playhead on the word, wherever the walk
+  //                    stands, types typed after it and saves, which takes
   //                    the word typed on to the next caption, and undoes
   //                    it, to learn where that caption will begin. Then
   //                    puts the playhead just past there, on a frame that
@@ -1458,6 +1459,12 @@ export const steps = {
       }
       return null;
     };
+    const said = (await engineState(page, watch.at)).captions.flatMap((c) => c.lines.flatMap((l) => l.words)).find((w) => w.text === name);
+    const on = said && into((said.start + said.end) / 2);
+    if (on === null || on === undefined || !(await seekTo(page, on, fps))) {
+      walk.wrong = `the playhead never stood on "${name}"`;
+      return;
+    }
     const save = async () => {
       await word(name).click();
       await page.keyboard.press("End");
