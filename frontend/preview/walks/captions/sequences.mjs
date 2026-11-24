@@ -39,6 +39,17 @@ export default [
     ],
   },
   {
+    // Found by a nightly words walk: a word saved with the playhead past
+    // where its caption now ends, on a frame from before, showed the next
+    // caption in the caption box until the layers came, and then the one
+    // before again, so the word the walk was about to click went away.
+    name: "a word saved past its caption's new end keeps the caption box on the frame's caption",
+    steps: [
+      ["layers late", 7],
+      ["saved past a caption's end", ["alt,", " Schulhof"]],
+    ],
+  },
+  {
     // Found by Tim on #201: a caption whose first word the picture lights
     // for a single frame showed nothing when its block was clicked, and
     // its block did not pop, while shift and an arrow went to that frame.
