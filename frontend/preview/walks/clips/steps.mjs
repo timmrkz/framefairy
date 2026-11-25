@@ -1503,7 +1503,7 @@ async function pickCards(page, n) {
   };
   const asked = (r) => {
     const u = r.url();
-    if (u.includes("/frames/captions?")) heard.push({ at: Date.now(), what: `layer at ${new URL(u).searchParams.get("at")} asked` });
+    if (u.includes("/frames/dress?")) heard.push({ at: Date.now(), what: `layer at ${new URL(u).searchParams.get("at")} asked` });
     const call = u.endsWith("/call") ? callOf(r) : null;
     if (call?.name?.endsWith("Captions")) heard.push({ at: Date.now(), what: "Captions asked" });
     if (call?.name?.endsWith("Said"))
@@ -1511,12 +1511,12 @@ async function pickCards(page, n) {
   };
   const answered = (r) => {
     const u = r.url();
-    if (u.includes("/frames/captions?"))
+    if (u.includes("/frames/dress?"))
       heard.push({ at: Date.now(), what: `layer at ${new URL(u).searchParams.get("at")} answered ${r.response() ? "" : "nothing"}` });
     if (u.endsWith("/call") && callOf(r)?.name?.endsWith("Captions")) heard.push({ at: Date.now(), what: "Captions answered" });
   };
   const failed = (r) => {
-    if (r.url().includes("/frames/captions?")) heard.push({ at: Date.now(), what: `layer failed, ${r.failure()?.errorText}` });
+    if (r.url().includes("/frames/dress?")) heard.push({ at: Date.now(), what: `layer failed, ${r.failure()?.errorText}` });
   };
   page.on("request", asked);
   page.on("requestfinished", answered);

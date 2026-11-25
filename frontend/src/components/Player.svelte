@@ -40,7 +40,7 @@
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playMoves, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
-  import { CaptionLayers, quarters, type CaptionAsk, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
+  import { CaptionLayers, type CaptionAsk, type FrameDress, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
   import { shownColour, type Light } from "../lib/frames/light";
   import type { Picture } from "../lib/frames/picture";
   import Info from "./Info.svelte";
@@ -53,8 +53,6 @@
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
-  import { pictureOf, pieceHolding, rotationAt, shownAt } from "../lib/rotate";
-  import { heldLeft, markOn } from "../lib/keyframes";
 
   let {
     path,
@@ -86,6 +84,7 @@
     opening = false,
     pictured = $bindable(false),
     frameStart = $bindable(NaN),
+    dressed = $bindable(null),
     sleeping = false,
     missing = false,
     onframe,
@@ -96,7 +95,7 @@
     // Where the playhead is on its way to while the hand drags an edge of
     // the clip: the frame the clip now starts or ends on. The clip
     // timeline hands over the clip as the edge leaves it, and puts the
-    // playhead there a frame later, see held.
+    // playhead there a frame later, see holding.
     heading?: number | null;
     // The key of the clip on its way that is chosen, which the video
     // preview has nothing of yet but the place of the playhead, see claim.
@@ -110,7 +109,7 @@
     // WordFrame, null while they are on their way or cannot be said.
     wordFrames?: { key: string; frames: WordFrame[][] | null } | null;
     // What the hand is changing of their colours and switches on the way,
-    // as /frames/captions takes it, see cmd/framefairy-app/captions.go.
+    // as /frames/dress takes it, see cmd/framefairy-app/captions.go.
     // Only what is being changed: the rest is the captions' own.
     drafts?: Record<string, string>;
     time?: number;
@@ -176,6 +175,10 @@
     // says it drew it. NaN before the first. The frame a mark is put on,
     // see shownMoment in Episode.svelte.
     frameStart?: number;
+    // The dress of the frame on the canvas, see FrameDress: which piece
+    // holds it, its turn and crop, and the keyframe on it. Null with no
+    // clip, or before a frame of it is drawn.
+    dressed?: FrameDress | null;
     // The workspace is kept for coming back to while another episode is
     // in front, see App.svelte. Asleep, the video preview holds nothing
     // but the frame on its canvas and what it plays: no decoder on the
@@ -261,7 +264,7 @@
       paused = true;
       nailed = false;
       if (queue === going) queue = null;
-      held = null;
+      holding = null;
       setTimeout(() => going.close());
     };
   });
@@ -414,7 +417,7 @@
   // there is to offer.
   $effect(() => {
     offers = {
-      crop: !clip ? "" : crop?.moved ? "auto" : undoCrop?.key === clip.key && undoCrop.turn === (clip.segments[piece]?.rotate ?? 0) ? "back" : "",
+      crop: !clip ? "" : crop?.moved ? "auto" : undoCrop?.key === clip.key && undoCrop.turn === turn ? "back" : "",
       savingCrop,
       hint: dragCaptions !== null ? `Captions ${Math.round(captionY)} from the bottom` : "",
     };
@@ -523,18 +526,15 @@
     // and each step lights another word, so its layer is a new one. Found
     // by the review of #385.
     const ask = captionAsk;
+    const size = canvasSize();
     for (const at of ask ? times : []) {
       const frame = queue.firstFrameAt(at);
-      const f = frame !== null && framesClip(frame) ? framingOf(frame) : null;
-      const size = f && layerSize(f);
       if (frame !== null && ask && size) wants.push({ ask, frame, size });
     }
     for (const { clip: of, captions: view } of clips) {
       const frame = queue.firstFrameAt(of.start);
       if (frame === null) break;
       const card = askOf(of, view);
-      const f = card ? framingOf(frame, of) : null;
-      const size = f && layerSize(f);
       starts.push(of.start);
       if (card && size) wants.push({ ask: card, frame, size });
     }
@@ -648,40 +648,16 @@
     paused = false;
   }
 
-  // The piece under the playhead, or the one nearest to it. Nearest, not
-  // first, so nothing jumps when the playhead sits on a cut or rests on the
-  // last frame of the clip.
-  const piece = $derived.by(() => {
-    if (!clip) return -1;
-    const here = clip.segments.findIndex((s) => time >= s.start && time < s.end);
-    if (here >= 0) return here;
-    let best = 0;
-    let near = Infinity;
-    clip.segments.forEach((s, i) => {
-      const gap = time < s.start ? s.start - time : time - s.end;
-      if (gap < near) {
-        near = gap;
-        best = i;
-      }
-    });
-    return best;
-  });
-
-  // The moment the frame on the canvas starts, which the picture is turned
-  // for and its crop stands for, see lib/rotate.ts.
-  const frameAt = $derived(shownAt(frameStart, time));
-  // How far that frame is turned, by the clip's rotations: the picture is
-  // drawn rotated, and the crop and the captions stand on it rotated. On
-  // the video, the episode shows as filmed. Plan row 3.25.
-  const turn = $derived(clip && place !== "video" ? rotationAt(clip.rotations, frameAt) : 0);
-  // The piece that frame belongs to, or -1 for a frame of a cut or from
-  // outside the clip.
-  const framed = $derived(clip && place !== "video" ? pieceHolding(clip.segments, frameAt) : -1);
-  // The picture the piece shows, rotated or not, and its crop.
-  const picture = $derived(pictureOf(source, turn));
-  // The piece whose crop stands on the picture: the one the frame shows,
-  // or with a frame of a cut on the canvas the one nearest the playhead.
-  const cropped = $derived(framed >= 0 ? framed : piece);
+  // The dress of the frame on the canvas, as the Go side dressed it, see
+  // FrameDress in lib/frames/captions.ts: which piece holds it, which way
+  // it is turned, where the crop stands on it, held from a keyframe or
+  // gliding as the render crops it, and the keyframe on it. The crop, the
+  // turn and the captions over the picture are that frame's, and change
+  // in the frame it is put up in. It is the prop dressed, see above.
+  // How far that frame is turned: the picture is drawn rotated, and the
+  // crop and the captions stand on it rotated. On the video, the episode
+  // shows as filmed.
+  const turn = $derived(clip ? (dressed?.turn ?? 0) : 0);
 
   // For the app's log, see docs/LOGGING.md: the pieces of the clip in
   // front each time they change, with how each is turned and whether its
@@ -714,7 +690,7 @@
       const was = saidTurn;
       saidTurn = now;
       said(
-        `video preview: the picture turned from ${was} to ${now} for the frame at ${frameStart.toFixed(3)} s, piece ${framed} of clip ${clip?.id ?? "none"}, playhead ${time.toFixed(3)} s, ${paused ? "paused" : "playing"}`,
+        `video preview: the picture turned from ${was} to ${now} for the frame at ${frameStart.toFixed(3)} s, piece ${dressed?.in ? dressed.piece : -1} of clip ${clip?.id ?? "none"}, playhead ${time.toFixed(3)} s, ${paused ? "paused" : "playing"}`,
         { video: path },
       );
     };
@@ -725,113 +701,67 @@
     return () => clearTimeout(settled);
   });
 
-  // The left edge of the crop on the frame on the canvas, in pixels of the
-  // picture: that of the piece's keyframe it holds from, switching on each
-  // keyframe's frame while the clip plays, the way the render crops it, or
-  // the piece's own. Plan row 3.26 and #750.
-  const cropLeft = $derived.by(() => {
-    if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
-    return leftOn(clip, cropped, frameAt, picture, place !== "video");
-  });
-
-  // The left edge of the crop of a piece on the frame that starts at a
-  // moment, in pixels of the picture, held from a keyframe or the piece's
-  // own.
-  function leftOn(
-    c: ClipEntry,
-    at: number,
-    frame: number,
-    pic: { width: number; cropWidth: number },
-    steered: boolean,
-  ): number {
-    const held = steered ? heldLeft(c.cropSteps?.[at], frame, source.fps, source.videoStart ?? 0) : null;
-    return held ?? c.cropLefts[at] ?? (pic.width - pic.cropWidth) / 2;
-  }
-
-  // Whether a drag places the crop here: with the playhead on a keyframe,
-  // whose diamond or circle is lit then, so what is moved is seen, or in a
-  // piece no keyframe steers, which has one crop of its own. Anywhere else
-  // the crop frame shows the crop as the short has it, held or gliding,
-  // and takes only a click, Tim on #750. A circle that starts a glide has
-  // no crop of its own, the engine says so with opens: the glide starts
-  // from the crop before it, Tim on #778. The engine refuses a drag there
-  // too, see engine.SetCrop.
-  const markHere = $derived(clip ? markOn(clip.cropMarks, frameAt, source.fps, source.videoStart ?? 0) : null);
-  const cropMovable = $derived(
-    !!clip && (!clip.segments[cropped]?.marks?.length || (markHere !== null && !markHere.opens)),
-  );
+  // The keyframe on the frame on the canvas, whose diamond or circle is
+  // lit then, and whether a drag places the crop there: on a keyframe, so
+  // what is moved is seen, or in a piece no keyframe steers. Anywhere
+  // else the crop frame shows the crop as the short has it, held or
+  // gliding, and takes only a click, Tim on #750. The engine says both,
+  // see engine.FrameDress, and refuses a drag where it would not take one,
+  // see engine.SetCrop.
+  const markHere = $derived(clip ? (dressed?.mark ?? null) : null);
+  const cropMovable = $derived(!!clip && !!dressed?.movable);
 
   // The crop's left edge as the video preview shows it now, which a crop
   // mark put on this frame keeps.
   export function cropLeftNow(): number | null {
-    return cropLeft;
+    return clip && dressed ? dressed.left : null;
   }
 
   // Its crop, as shares of the video preview, with a drag applied.
   const crop = $derived.by(() => {
-    if (!clip || cropped < 0 || !picture.width || !picture.cropWidth || cropLeft === null) return null;
-    const left = dragLeft ?? cropLeft;
+    const d = dressed;
+    if (!clip || !d || !d.width || !d.cropWidth) return null;
+    const left = dragLeft ?? d.left;
     return {
-      left: (left / picture.width) * 100,
-      width: (picture.cropWidth / picture.width) * 100,
+      left: (left / d.width) * 100,
+      width: (d.cropWidth / d.width) * 100,
       // On the video the clip's rules are not in play, and the video
       // preview shows the episode alone, the clip's moments included.
       inside: place !== "video" && insideClip(clip.segments, time, oneFrame),
-      moved: !!clip.segments[cropped]?.moved || !!clip.segments[cropped]?.marks?.length,
+      moved: d.moved,
     };
   });
 
   // The video preview shows one moment at a time: a frame, and the crop
-  // frame, its shade and the captions that belong to that frame. A clip
-  // picked moved the crop frame at once and took the captions off the
-  // frame on screen, the picture came a few frames later, and its captions
-  // a few after that. Tim saw the three come one after another and wanted
-  // them at once, issue #383. So from a seek to another clip until that
-  // clip's frame is put up, with its captions, see readyAt, everything
-  // over the picture stays what it was, the clip before's, and the three
-  // change together in the frame the queue puts the new frame up in, see
-  // overAt. Shown is what was on screen in the last frame drawn: the crop
-  // as shares of the picture, the turn, the crop's left edge for the
-  // probes, the captions laid over the canvas, and whose clip.
+  // frame, its shade and the captions that belong to that frame, all of
+  // them its dress. A clip picked moved the crop frame at once and took
+  // the captions off the frame on screen, the picture came a few frames
+  // later, and its captions a few after that. Tim saw the three come one
+  // after another and wanted them at once, issue #383. So from a seek to
+  // another clip until that clip's frame is put up, with its dress, see
+  // readyAt, the frame on screen keeps what lay over it, the clip
+  // before's, and the three change together in the frame the queue puts
+  // the new frame up in, see overAt.
   //
   // The same hold keeps the frame on screen as it was while an edge
   // dragged over it leaves it out of the clip and the playhead goes with
   // the edge to a frame the clip has, see heading: the clip timeline
   // hands over the clip a frame before the playhead follows. Until the
   // frame the playhead goes to is put up, the frame on screen keeps its
-  // crop frame and its captions. Drawn as the clip now was, both went off
-  // for a frame each time a start dragged later passed a frame, and an
-  // end dragged earlier, and Tim saw the captions flicker, issue #755.
-  type Overlaid = { key: string; crop: typeof crop; turn: number; left: number | null };
-  let held = $state.raw<(Overlaid & { over: Over | null; since: number }) | null>(null);
-  let last: Overlaid = { key: "", crop: null, turn: 0, left: null };
+  // crop frame and its captions. Dressed as the clip now is, both went
+  // off for a frame each time a start dragged later passed a frame, and
+  // an end dragged earlier, and Tim saw the captions flicker, issue #755.
+  let holding: { over: Over | null; since: number } | null = null;
+  // What lay over the frame drawn last, and whose clip it was.
   let drawnOver: Over | null = null;
-  // The frame drawn last, as overAt was asked for it.
-  let drawnAt = NaN;
-  // Whether the frame drawn at a moment is one the clip the hand is
-  // shaping left out, while the playhead goes to a frame it has.
-  const leftBehind = (frame: number) =>
-    heading !== null && Number.isFinite(frame) && !framesClip(frame) && framesClip(heading);
-  // The hold begins at whichever comes first once the clip moved on: the
-  // frame on screen drawn again, or the clip's own change, which reach
-  // this component in either order.
-  function holdLeftBehind(frame: number) {
-    if (!held && queue && leftBehind(frame)) held = { ...last, over: drawnOver, since: performance.now() };
-  }
-  $effect.pre(() => {
-    const now = { key: clip?.key ?? "", crop, turn, left: crop?.inside ? (dragLeft ?? cropLeft) : null };
-    holdLeftBehind(drawnAt);
-    if (!held) last = now;
-  });
+  let drawnClip = "";
   // A seek to another clip than the one on screen holds what is over the
   // picture. A seek before the frame of the last came keeps the hold it
   // has: what is on screen is still the clip before's.
   function holdOverlay() {
-    if (held || !queue || last.key === (clip?.key ?? "")) return;
-    held = { ...last, over: drawnOver, since: performance.now() };
+    if (holding || !queue || drawnClip === (clip?.key ?? "")) return;
+    holding = { over: drawnOver, since: performance.now() };
   }
-  const shownCrop = $derived(held ? held.crop : crop);
-  const shownTurn = $derived(held ? held.turn : turn);
 
   // The word being corrected: where it stands in the caption, which word of
   // the episode it is, the whole of that word, and the piece of it drawn
@@ -895,7 +825,7 @@
     // The playhead can stand in the next caption while the frame still
     // shows the one before, and the caption box showed the next for a
     // moment and then went back, under the hand that was about to click.
-    const at = inClipTime(!fixing && framesClip(frameStart) ? frameStart : shown);
+    const at = inClipTime(!fixing && dressed?.clip ? frameStart : shown);
     return captions.captions.find((c) => at >= c.start && at < c.end) ?? null;
   });
 
@@ -1404,7 +1334,7 @@
 
   // The frame the captions sit in: the crop, or the whole preview when there
   // is none to place them in.
-  const box = $derived(shownCrop ?? { left: 0, width: 100 });
+  const box = $derived(crop ?? { left: 0, width: 100 });
 
   // The captions in the picture are the short's: libass draws them on the
   // Go side from the caption file the render burns in, for each frame at
@@ -1430,19 +1360,26 @@
   // caption box draws only what is typed, where libass puts the word, see
   // typed. Before libass knows where the words stand, the caption box
   // draws the whole caption itself.
+  // On the video, the frame is dressed as filmed, with no captions.
   const captionAsk = $derived.by((): CaptionAsk | null => {
     const ask = clip && askOf(clip, captions);
-    if (!ask || !captions?.captions) return null;
-    if (fixing && (!laidWords || typed < 0)) return null;
+    if (!ask) return null;
+    if (place === "video") return { ...ask, on: "video", track: undefined, drafts: {} };
+    if (!ask.track || !captions?.captions) return ask;
+    if (fixing && (!laidWords || typed < 0)) return { ...ask, track: undefined, drafts: {} };
     if (dragCaptions !== null) ask.drafts.y = String(dragCaptions);
     if (fixing && caption) ask.typing = `${captions.captions.indexOf(caption)} ${typed}`;
     return ask;
   });
-  // The captions of a clip as the Go side draws them over its frames, with
-  // the drafts of the clip set, or null when it has none to draw.
+  // What the frames of a clip are dressed with: its framing, and its
+  // captions as the Go side draws them over its frames, with the drafts
+  // of the clip set, when it has any to draw. Null for a clip whose
+  // frames the Go side cannot dress, of a video it never saw.
   function askOf(of: ClipEntry, view: CaptionsView | null | undefined): CaptionAsk | null {
-    if (!view?.track || !view.captions?.length || view.style.text === false) return null;
-    return { path, clip: of.key, track: view.track, drafts: { ...drafts } };
+    if (!of.framing) return null;
+    const ask: CaptionAsk = { path, clip: of.key, framing: of.framing, drafts: {} };
+    if (!view?.track || !view.captions?.length || view.style.text === false) return ask;
+    return { ...ask, track: view.track, drafts: { ...drafts } };
   }
   // The word being typed, counted across the lines of its caption.
   const typed = $derived.by(() => {
@@ -1511,35 +1448,10 @@
     untrack(() => queue?.repaint());
   });
 
-  // The crop of the frame that starts at a moment: how far it is turned,
-  // and where the crop stands and how wide it is, as shares of the picture
-  // as shown. The same rule as the crop frame's, worked out for the frame
-  // itself, since it is asked for as the frame is drawn, before the
-  // workspace hears which frame that is.
-  function framingOf(frame: number, of = clip): { turn: number; left: number; width: number } | null {
-    if (!of) return null;
-    const turn = rotationAt(of.rotations, frame);
-    const held = pieceHolding(of.segments, frame);
-    const at = held >= 0 ? held : of === clip ? piece : 0;
-    const pic = pictureOf(source, turn);
-    if (at < 0 || !pic.width || !pic.cropWidth) return null;
-    const left = (of === clip ? dragLeft : null) ?? leftOn(of, at, frame, pic, true);
-    return { turn, left: left / pic.width, width: pic.cropWidth / pic.width };
-  }
-
-  // The size the captions of a frame are drawn at: the crop as the screen
-  // shows it, in device pixels.
-  function layerSize(f: { turn: number; width: number }): [number, number] | null {
-    const [cw, ch] = pixels;
-    const [w, h] = quarters(f.turn) % 2 ? [ch, cw] : [cw, ch];
-    const size: [number, number] = [Math.round(f.width * w), h];
-    return size[0] >= 1 && size[1] >= 1 ? size : null;
-  }
-
-  // Whether the frame that starts at a moment is a frame of the short:
-  // the playhead is on the clip, and the frame holds a moment of it.
-  function framesClip(frame: number): boolean {
-    return !!clip && place !== "video" && frame + oneFrame > clipStart + 1e-6 && frame < clipEnd - 1e-6;
+  // The size of the video preview in device pixels, which a frame's
+  // captions are drawn in the crop of, or null before the canvas has one.
+  function canvasSize(): [number, number] | null {
+    return pixels[0] >= 1 && pixels[1] >= 1 ? [pixels[0], pixels[1]] : null;
   }
 
   // The light of the frame on screen. The colours the browser draws over
@@ -1561,29 +1473,40 @@
       : null,
   );
 
-  // The captions over the frame the canvas draws, and what they show for
-  // the caption box, see onScreen. Fresh is a frame put up for the newest
-  // gesture, which ends a hold, and anything else the frame on screen drawn
-  // again, which during a hold is drawn with what lay over it before.
-  // A frame the clip being shaped left out does not end a hold, though it
-  // was put up for a gesture: a seek to where the edge was a moment ago
-  // can land after the clip has moved on.
+  // The dress of the frame the canvas draws, and what its captions show
+  // for the caption box, see onScreen. Fresh is a frame put up for the
+  // newest gesture, which ends a hold, and anything else the frame on
+  // screen drawn again, which during a hold is drawn with what lay over
+  // it before. A frame the clip being shaped left out does not end a
+  // hold, though it was put up for a gesture: a seek to where the edge was
+  // a moment ago can land after the clip has moved on.
   function overAt(frame: number, light: Light, fresh = false): Over | null {
-    drawnAt = frame;
-    holdLeftBehind(frame);
-    if (held) {
-      if (!fresh || leftBehind(frame)) return held.over;
-      if (held.key !== (clip?.key ?? ""))
-        said(`video preview: clip ${clip?.id ?? "none"} has its frame up at ${frame.toFixed(3)} s, ${Math.round(performance.now() - held.since)} ms after it was picked`, { video: path });
-      held = null;
-    }
     if (light !== shownLight) shownLight = light;
     const ask = captionAsk;
-    const f = ask && framesClip(frame) ? framingOf(frame) : null;
-    const size = f && layerSize(f);
+    const size = canvasSize();
     const layer = ask && size ? layers.at(frame, size) : null;
+    const dress = layer?.dress ?? null;
+    const leftOut = heading !== null && !!dress && !dress.clip;
+    if (!holding && leftOut && dressed?.clip) holding = { over: drawnOver, since: performance.now() };
+    if (holding) {
+      if (!fresh || leftOut) return holding.over;
+      if (drawnClip !== (clip?.key ?? ""))
+        said(`video preview: clip ${clip?.id ?? "none"} has its frame up at ${frame.toFixed(3)} s, ${Math.round(performance.now() - holding.since)} ms after it was picked`, { video: path });
+      holding = null;
+    }
+    if (dress !== dressed) dressed = dress;
+    drawnClip = ask?.clip ?? "";
     onScreen(layer?.track ?? null, layer?.showing, layer?.scale);
-    drawnOver = f && size && layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
+    drawnOver =
+      dress && dress.width && layer && layer.w > 0 && layer.size
+        ? {
+            layer,
+            size: layer.size,
+            left: (dragLeft ?? dress.left) / dress.width,
+            width: dress.cropWidth / dress.width,
+            turn: dress.turn,
+          }
+        : null;
     const own = drawnOver && layers.own ? frame : null;
     if (own !== captioned) captioned = own;
     return drawnOver;
@@ -1603,9 +1526,8 @@
         });
       });
     layers.set(captionAsk);
-    const f = captionAsk && framesClip(frame) ? framingOf(frame) : null;
-    const size = f && layerSize(f);
-    return size ? layers.ready(frame, size) : null;
+    const size = canvasSize();
+    return captionAsk && size ? layers.ready(frame, size) : null;
   }
   let dueWaiters: (() => void)[] = [];
   $effect(() => {
@@ -1617,10 +1539,8 @@
   });
 
   function comingAt(frame: number) {
-    if (!captionAsk || !framesClip(frame)) return;
-    const f = framingOf(frame);
-    const size = f && layerSize(f);
-    if (size) layers.coming(frame, size);
+    const size = canvasSize();
+    if (captionAsk && size) layers.coming(frame, size);
   }
 
   // A share of the height of the video preview, as the stylesheet works it
@@ -1698,9 +1618,9 @@
   // of the clip leaves at its end, past its last frame, where the canvas
   // still shows that frame.
   function cropMoment(): number {
-    if (!clip) return time;
-    if (pieceHolding(clip.segments, frameAt) >= 0) return frameAt;
-    return clip.segments[piece].start;
+    if (!clip || !dressed) return time;
+    if (dressed.in) return frameStart;
+    return clip.segments[dressed.piece]?.start ?? time;
   }
 
   function dragCrop(event: PointerEvent) {
@@ -1710,9 +1630,10 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const startX = event.clientX;
-    const start = cropLeft ?? (picture.width - picture.cropWidth) / 2;
-    const scale = picture.width / screen.clientWidth;
-    const most = picture.width - picture.cropWidth;
+    if (!dressed) return;
+    const start = dressed.left;
+    const scale = dressed.width / screen.clientWidth;
+    const most = dressed.width - dressed.cropWidth;
     let moved = false;
     // Off a keyframe a drag moves nothing, and is still no click.
     const movable = cropMovable;
@@ -1748,8 +1669,8 @@
   export async function resetCrop() {
     if (!clip || !onresetcrop) return;
     const at = cropMoment();
-    const was = piece;
-    const turn = clip.segments[was]?.rotate ?? 0;
+    const was = dressed?.piece ?? 0;
+    const turned = turn;
     const had = clip.cropLefts[was] ?? null;
     const marked = clip.cropMarks ?? [];
     savingCrop = true;
@@ -1757,7 +1678,7 @@
       await onresetcrop(clip.key, at);
       const still = clip?.cropMarks ?? [];
       const marks = marked.filter((m) => !still.some((k) => k.at === m.at));
-      if (had !== null || marks.length) undoCrop = { key: clip!.key, turn, at, left: had, marks };
+      if (had !== null || marks.length) undoCrop = { key: clip!.key, turn: turned, at, left: had, marks };
     } finally {
       savingCrop = false;
     }
@@ -1889,16 +1810,16 @@
   <div
     class="screen asks"
     class:waiting={!pictured && !missing}
-    class:turned={shownTurn !== 0}
-    class:sideways={shownTurn % 180 !== 0}
+    class:turned={turn !== 0}
+    class:sideways={turn % 180 !== 0}
     bind:this={screen}
     data-playhead={time}
     data-shown={frameStart}
     data-captioned={captioned}
     data-captions-lost={captionsLost || undefined}
-    data-turn={shownTurn}
-    data-crop={held ? held.left : crop?.inside ? (dragLeft ?? cropLeft) : null}
-    style="--turn: {-shownTurn}deg"
+    data-turn={turn}
+    data-crop={crop?.inside && dressed ? (dragLeft ?? dressed.left) : null}
+    style="--turn: {-turn}deg"
   >
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
@@ -1929,13 +1850,13 @@
          it follows the frame's rounded corners and lies under its line,
          with nothing of the picture left bright between the two. The line
          itself is drawn in .atop, above the viewer's rounded corners. -->
-    {#if shownCrop?.inside}
+    {#if crop?.inside}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="crop"
         class:held={dragLeft !== null}
         class:fixed={!cropMovable}
-        style="left: {shownCrop.left}%; width: {shownCrop.width}%"
+        style="left: {crop.left}%; width: {crop.width}%"
         title={cropMovable
           ? "Drag sideways to place the crop"
           : markHere?.opens
@@ -2096,9 +2017,9 @@
        the same cell as the viewer, takes no clicks: the crop under it is
        what the hand moves. -->
   <div class="atop">
-    <div class="lid" class:sideways={shownTurn % 180 !== 0}>
-      {#if shownCrop?.inside}
-        <div class="frame" class:lit={dragLeft !== null} style="left: {shownCrop.left}%; width: {shownCrop.width}%"></div>
+    <div class="lid" class:sideways={turn % 180 !== 0}>
+      {#if crop?.inside}
+        <div class="frame" class:lit={dragLeft !== null} style="left: {crop.left}%; width: {crop.width}%"></div>
       {/if}
     </div>
   </div>

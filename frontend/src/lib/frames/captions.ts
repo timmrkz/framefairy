@@ -1,8 +1,14 @@
-// The captions of the video preview. They are not drawn here: libass draws
-// them on the Go side, in the episode's decoder, from the caption file the
+import type { CropMark } from "../api";
+
+// What the video preview draws over a frame, its dress: the crop, the turn
+// and the keyframe on it, and the captions. None of it is worked out here:
+// the Go side dresses each frame the way the render crops and turns it,
+// see engine.FrameDress, and libass draws
+// the captions on the Go side, in the episode's decoder, from the caption file the
 // render burns into the short, at the moment libass reads on that frame of
-// the short, see /frames/captions in cmd/framefairy-app/captions.go and
-// docs/CAPTIONS.md. What comes back is a layer, which the screen lays over
+// the short, see /frames/dress in cmd/framefairy-app/captions.go and
+// docs/CAPTIONS.md. Both come in one answer, so a frame is never drawn
+// with the crop of one moment and the captions of another. What comes back is a layer, which the screen lays over
 // the frame before it gives the frame its look, as colour plus frame times
 // one less alpha, the way the render blends it. So the video preview, the
 // thumbnails and the short show one drawing, pixel for pixel, the bounce
@@ -27,6 +33,9 @@
 // The Go side names a layer by tag, which the next frame's ask brings,
 // and a frame drawn the same is answered with nothing, not drawn again,
 // see layerTag in cmd/framefairy-app/captions.go.
+// Every layer comes with the dress of its frame, dress. A frame of a clip
+// with no captions to draw has a layer of nothing, which carries its
+// dress alone.
 export type Layer = {
   x: number;
   y: number;
@@ -39,7 +48,49 @@ export type Layer = {
   size?: [number, number];
   lift?: { layer: Layer; scale: number };
   tag?: string;
+  dress?: FrameDress;
 };
+
+// The dress of a frame, as the Go side sends it in the header
+// X-Frame-Dress, see engine.FrameDress: the piece that holds the frame,
+// or the one nearest to it, whether one holds it, whether the frame is
+// in the clip at all, how far it is turned, the picture turned and the
+// crop's width and left edge on it, in pixels of the video, whether the
+// crop was placed by hand, the keyframe on the frame and whether a drag
+// may place the crop there.
+export type FrameDress = {
+  piece: number;
+  in: boolean;
+  clip: boolean;
+  turn: number;
+  width: number;
+  height: number;
+  cropWidth: number;
+  left: number;
+  moved: boolean;
+  mark: CropMark | null;
+  movable: boolean;
+};
+
+export function readDress(header: string | null): FrameDress | undefined {
+  if (!header) return undefined;
+  try {
+    const d = JSON.parse(header) as FrameDress;
+    return typeof d === "object" && d !== null && Number.isFinite(d.left) && Number.isFinite(d.turn) ? d : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// The size a layer was drawn at, from the header X-Caption-Size,
+// "<w>x<h>".
+export function readSize(header: string | null): [number, number] | undefined {
+  const [w, h] = (header ?? "").split("x").map(Number);
+  return Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 ? [w, h] : undefined;
+}
+
+// A layer of nothing, for a frame with no captions over it.
+const bare = (): Layer => ({ x: 0, y: 0, w: 0, h: 0, pixels: new Uint8Array(0) });
 
 // How the video preview bounces a word after a word step: so many
 // milliseconds from rest to rest, rising for the share rise of them to
@@ -333,13 +384,35 @@ async function failure(r: Response): Promise<string> {
 
 // What the video preview asks the captions of: the episode, the captions
 // by their track, see engine.CaptionsView, and the drafts the hand is
-// changing on the way, as /frames/captions takes them.
+// changing on the way, as /frames/dress takes them.
 // Typing is the word being typed in the caption box, "<caption> <word>",
 // which libass leaves out, see engine.CaptionDrawing.Typing.
-// The captions a frame is drawn with. clip names the clip they belong
-// to: the track changes with every saved edit and every step of a drag,
-// and the layer given last stays up over those, never over another clip.
-export type CaptionAsk = { path: string; clip: string; track: string; drafts: Record<string, string>; typing?: string };
+// What a frame is dressed with: the framing of the clip, see
+// Framing.name, on the clip or, with on, on the video, which shows the
+// episode as filmed, and the captions of the track, if there are any to
+// draw. clip names the clip they belong to. The framing and the track
+// change with every saved edit and every step of a drag, and the layer
+// given last stays up over those, and over the frame on screen while
+// another clip's comes, see set.
+export type CaptionAsk = {
+  path: string;
+  clip: string;
+  framing: string;
+  on?: "video";
+  track?: string;
+  drafts: Record<string, string>;
+  typing?: string;
+};
+
+// What an ask asks the Go side for, a frame and a size aside.
+function asked(ask: CaptionAsk): Record<string, string> {
+  return {
+    path: ask.path,
+    framing: ask.framing,
+    ...(ask.on ? { on: ask.on } : {}),
+    ...(ask.track ? { track: ask.track, ...(ask.typing ? { typing: ask.typing } : {}), ...ask.drafts } : {}),
+  };
+}
 
 // How many layers are kept, and how many may be on their way at once. A
 // layer is the crop's width by the captions' height, a few hundred
@@ -362,7 +435,7 @@ type Wanted = { key: string; ask: CaptionAsk; frame: number; size: [number, numb
 
 // What tells one ask from another, and one layer of an ask from another.
 function keyOf(ask: CaptionAsk | null): string {
-  return ask ? `${ask.path}\n${ask.track}\n${ask.typing ?? ""}\n${new URLSearchParams(ask.drafts)}` : "";
+  return ask ? new URLSearchParams(asked(ask)).toString() : "";
 }
 
 function layerKey(askKey: string, frame: number, size: [number, number]): string {
@@ -555,9 +628,15 @@ export class CaptionLayers {
     return this.waiting !== null;
   }
 
+  // The layer given last stays while another clip's is on its way: it is
+  // the frame on screen's, which stays up until the new clip's frame
+  // comes with its own, so the crop, the turn and the captions over the
+  // picture change together, in the frame the new one is put up in. Tim
+  // saw them come one after another, issue #383. Only another video, or
+  // nothing to dress, takes it away.
   set(ask: CaptionAsk | null) {
     const key = keyOf(ask);
-    if (!ask || ask.path !== this.ask?.path || ask.clip !== this.ask?.clip) this.last = null;
+    if (!ask || ask.path !== this.ask?.path) this.last = null;
     const changed = key !== this.askKey;
     if (changed) {
       this.waiting = null;
@@ -761,15 +840,12 @@ export class CaptionLayers {
     if (bounce) this.stats.popped++;
     const part = (part: "word" | "rest") =>
       fetch(
-        `/frames/captions?${new URLSearchParams({
-          path: ask.path,
-          track: ask.track,
+        `/frames/dress?${new URLSearchParams({
+          ...asked(ask),
           at: frame.toFixed(6),
           w: String(size[0]),
           h: String(size[1]),
           part,
-          ...(ask.typing ? { typing: ask.typing } : {}),
-          ...ask.drafts,
         })}`,
         { signal: lift.off.signal },
       )
@@ -777,7 +853,8 @@ export class CaptionLayers {
           const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
           if (layer) {
             layer.track = ask.track;
-            layer.size = size;
+            layer.size = readSize(r.headers.get("X-Caption-Size")) ?? size;
+            layer.dress = readDress(r.headers.get("X-Frame-Dress"));
             layer.showing = showing;
             if (part === "word") lift.bounce = readBounce(r.headers.get("X-Caption-Bounce"));
           } else why = await failure(r);
@@ -925,26 +1002,23 @@ export class CaptionLayers {
     // words, and the Go side then says so and sends nothing.
     const kind = `${keyOf(ask)}\n${size[0]}x${size[1]}`;
     const had = this.recent?.kind === kind ? this.recent.layer : null;
-    const q = new URLSearchParams({
-      path: ask.path,
-      track: ask.track,
-      at: frame.toFixed(6),
-      w: String(size[0]),
-      h: String(size[1]),
-      ...(ask.typing ? { typing: ask.typing } : {}),
-      ...ask.drafts,
-    });
+    const q = new URLSearchParams({ ...asked(ask), at: frame.toFixed(6), w: String(size[0]), h: String(size[1]) });
     let why = "";
-    void fetch(`/frames/captions?${q}`, { signal: off.signal, headers: had?.tag ? { "X-Caption-Have": had.tag } : {} })
+    void fetch(`/frames/dress?${q}`, { signal: off.signal, headers: had?.tag ? { "X-Caption-Have": had.tag } : {} })
       .then(async (r) => {
+        const dress = readDress(r.headers.get("X-Frame-Dress"));
+        // The captions as the layer before, over a frame dressed its own way.
         if (r.status === 204 && had) {
           this.stats.same++;
-          return had;
+          return { ...had, dress };
         }
-        const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
+        const pixels = r.ok ? await r.arrayBuffer() : null;
+        // A frame with no captions to draw comes with its dress alone.
+        const layer = pixels && pixels.byteLength === 0 ? bare() : pixels && readLayer(pixels);
         if (layer) {
           layer.track = ask.track;
-          layer.size = size;
+          layer.size = readSize(r.headers.get("X-Caption-Size")) ?? size;
+          layer.dress = dress;
           layer.showing = readShowing(r.headers.get("X-Caption-Showing"));
           layer.scale = readScale(r.headers.get("X-Caption-Scale"));
           layer.tag = r.headers.get("X-Caption-Tag") ?? undefined;

@@ -60,7 +60,7 @@ func TestTheStateSaysHowEachPartOfTheChosenClipTurns(t *testing.T) {
 		{"rotations", shown.Rotations, answer.Rotations},
 		{"pieces", shown.Segments, answer.Segments},
 		{"crops", shown.CropLefts, answer.CropLefts},
-		{"crop steps", shown.CropSteps, answer.CropSteps},
+		{"framings", shown.Name, answer.Framing},
 		{"keyframes", shown.CropMarks, answer.CropMarks},
 	} {
 		if !reflect.DeepEqual(c.shown, c.said) {

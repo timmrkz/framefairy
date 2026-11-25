@@ -39,7 +39,9 @@ import (
 //	                                 frame of the clip comes with the
 //	                                 captions of that view as its body,
 //	                                 drawn in its crop of a video preview
-//	                                 width by height, see layerSize, as a
+//	                                 width by height, see layerSize, at
+//	                                 the size the header X-Caption-Size
+//	                                 says, "<w>x<h>", as a
 //	                                 framewire.Layer, with the caption and
 //	                                 the words it lights in the header
 //	                                 X-Caption-Showing, "<caption> <word>
@@ -236,6 +238,7 @@ func (s *FrameFairy) serveDress(w http.ResponseWriter, r *http.Request) {
 		// libass drawing the same layer over and over, issue #896.
 		tag := layerTag(q, drawing, source, o.RenderSettings(), at, layerW, layerH)
 		w.Header().Set("X-Caption-Tag", tag)
+		w.Header().Set("X-Caption-Size", fmt.Sprintf("%dx%d", layerW, layerH))
 		if r.Header.Get("X-Caption-Have") == tag {
 			p.layers.unchanged(path)
 			w.WriteHeader(http.StatusNoContent)

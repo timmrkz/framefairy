@@ -216,9 +216,10 @@ two above:
   The face finder samples rotated frames for a rotated part, so its
   automatic crop is found on the upright picture.
 - **The app.** The video preview rotates the frame it draws, with a
-  transform on the canvas, and the crop frame reads its left edge from
-  the steps the engine works out and sends with the clip, `CropSteps`, with a test that compares
-  both on the same keyframes. The clip timeline draws a keyframe with the thumbnail's mark, one
+  transform on the canvas, by the turn the engine sends with each frame,
+  and the crop frame takes its left edge from the same dress of the
+  frame, `SourceInfo.Dress`, with a test that compares it with the
+  render's on the same keyframes. The clip timeline draws a keyframe with the thumbnail's mark, one
   component with an icon of its own, and the rotate icon on a
   rotated part and its glow, through masks. `Rotate`,
   `SetCrop`, adding and removing a keyframe go through

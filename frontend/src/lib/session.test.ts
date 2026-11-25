@@ -91,7 +91,7 @@ describe("a video's state in its session", () => {
   test("takes the turns of every state in turn, though the state is held or passed over", async () => {
     const here = new EpisodeSession("/v.mp4", new JobStore());
     here.take(state(5));
-    const turned = { clip: "a", parts: [{ part: 1, rotations: [], segments: [], cropMarks: [], cropLefts: [], cropSteps: [], glides: [] }] } as unknown as VideoState["turns"];
+    const turned = { clip: "a", parts: [{ part: 1, rotations: [], segments: [], cropMarks: [], cropLefts: [], name: "t", glides: [] }] } as unknown as VideoState["turns"];
     let answer!: (c: ClipEntry) => void;
     const edited = here.edit("a", (c) => c, () => new Promise((done) => (answer = done)));
     here.take(state(8, { turns: turned }));

@@ -87,8 +87,7 @@
   import Pick from "../components/Pick.svelte";
   import Colour from "../components/Colour.svelte";
   import { act, said } from "../lib/said";
-  import { pieceHolding, rotationAt } from "../lib/rotate";
-  import { markOn } from "../lib/keyframes";
+  import type { FrameDress } from "../lib/frames/captions";
   import { toasts } from "../lib/toast.svelte";
   import { afterRest } from "../lib/rest";
   import { atOnce, onTick, type Headline } from "../lib/headline";
@@ -1488,6 +1487,9 @@
   // frame and the picture shows the last. So that moment, and the playhead
   // only before there is a picture.
   let shownStart = $state(NaN);
+  // The dress of that frame, as the Go side dressed it: which piece
+  // holds it, and the keyframe on it, see FrameDress.
+  let shownDress = $state.raw<FrameDress | null>(null);
   const shownMoment = $derived(Number.isFinite(shownStart) ? shownStart : time);
   // The thumbnail on the frame shown, told by the frame and never by how
   // far the playhead is from one, because the playhead is never quite
@@ -1504,7 +1506,7 @@
   // frame leave it a hair short of a frame's start, where the clip's first
   // frame was on screen and the buttons said it was not in the short.
   // Found by Tim on #192.
-  const inShort = $derived(!!current && pieceHolding(current.segments, shownMoment) >= 0);
+  const inShort = $derived(!!current && !!shownDress?.in);
 
   // A thumbnail added, moved or removed, shown at once and saved straight
   // after. A from below nought adds, a to below nought removes.
@@ -1525,9 +1527,7 @@
 
   // The keyframe on the frame shown, told by the frame, the way thumbHere
   // is. Plan row 3.26.
-  const cropHere = $derived(
-    current && source ? markOn(current.cropMarks, shownMoment, source.fps, source.videoStart ?? 0) : null,
-  );
+  const cropHere = $derived(current ? (shownDress?.mark ?? null) : null);
 
   // A keyframe added, moved or removed: the diamond or the circle shows at
   // once, and the crop it brings comes back with the clip. A from below
@@ -1543,7 +1543,7 @@
       next.push({
         at: Math.round(to * 1000) / 1000,
         x: moving?.x ?? x,
-        turn: moving?.turn ?? rotationAt(clip.rotations, to),
+        turn: moving?.turn ?? shownDress?.turn ?? 0,
         glide: moving ? !!moving.glide : glide,
       });
     next.sort((a, b) => a.at - b.at);
@@ -2113,7 +2113,7 @@
       segments: f.segments,
       cropMarks: f.cropMarks,
       cropLefts: f.cropLefts,
-      cropSteps: f.cropSteps,
+      framing: f.name,
       glides: f.glides,
     };
   });
@@ -2591,12 +2591,12 @@
     if (!current || renderingCurrent || !inShort) return;
     const clip = current;
     const at = time;
-    const i = pieceHolding(clip.segments, at);
+    const i = shownDress?.in ? shownDress.piece : -1;
     const turns = session.turns;
     const turn = i >= 0 && turns.clip === clip.key ? turns.parts.find((t) => t.part === clip.segments[i].part) : undefined;
     const shown = (c: ClipEntry): ClipEntry =>
       turn
-        ? { ...c, rotations: turn.rotations, segments: turn.segments, cropMarks: turn.cropMarks, cropLefts: turn.cropLefts, cropSteps: turn.cropSteps, glides: turn.glides }
+        ? { ...c, rotations: turn.rotations, segments: turn.segments, cropMarks: turn.cropMarks, cropLefts: turn.cropLefts, framing: turn.name, glides: turn.glides }
         : c;
     try {
       await session.edit(clip.key, shown, () => api.rotatePart(path, clip.plan, clip.id, at));
@@ -3364,6 +3364,7 @@
           opening={!opened}
           bind:pictured
           bind:frameStart={shownStart}
+          bind:dressed={shownDress}
           sleeping={away}
           bind:time
           captions={shownClip && captionsOf === shownClip.key ? shownCaptions : null}

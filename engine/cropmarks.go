@@ -697,7 +697,7 @@ func (r cropRun) gliding(i int) bool {
 // sum out in ffmpeg, see expr, step by step in the same order, each a
 // double rounded on its own. Each step is converted on its own here,
 // which keeps Go from fusing a multiply and an add into one instruction,
-// as it may on arm64. The video preview is sent the result, see CropSteps.
+// as it may on arm64. The video preview is sent the result, see Dress.
 func (r cropRun) at(k int64) float64 {
 	i := sort.Search(len(r.marks), func(i int) bool { return r.marks[i].k > k })
 	a := r.before(i)
@@ -856,56 +856,6 @@ func (s SourceInfo) cropFilters(seg Segment, cropW, cropH, cropY, width, outW, o
 	}
 	return append(out, "format="+deep,
 		fmt.Sprintf("crop=%d:%d:'floor((%s-%s)*%d/%d+0.5)':0:exact=1", outW, outH, x, at, wide, cropW+glideMargin))
-}
-
-// CropStep is the left edge of a piece's crop from a frame of the video
-// on, until the next step, on the picture. Frame counts the video's frames
-// the way the video preview counts the frame it shows, see frameAt in
-// lib/flow.ts. A glide is a step on each of its frames, to a hundredth of
-// a pixel, see stepEdge.
-type CropStep struct {
-	Frame int64   `json:"frame"`
-	X     float64 `json:"x"`
-}
-
-// CropSteps is how the crop of a piece runs over its frames, worked out
-// here for the video preview so the window keeps no rule of its own about
-// keyframes: its first frame with the left edge it starts with, and each
-// frame after it where the crop moves, the same the render crops by. Nil
-// for a piece whose crop is its own throughout, or a video whose frame
-// rate is not known, where the window shows the piece's own crop. cropW
-// and width are the crop and the picture as the piece stands, rotated or
-// not.
-func (s SourceInfo) CropSteps(v SegmentView, cropW, width int) []CropStep {
-	if len(v.Marks) == 0 || s.FPSNum <= 0 || s.FPSDen <= 0 || width <= 0 {
-		return nil
-	}
-	seg := segmentOf(v)
-	r := s.runOf(seg, cropW, width)
-	first, end := s.pieceFrames(seg.Start, seg.End)
-	var out []CropStep
-	if !r.glidesIn(first, end) {
-		// Only switches: a step where the piece starts and one at each
-		// switch, without a look at every frame between.
-		start, switches := r.heldCrops(first, end)
-		if len(switches) == 0 && start == r.base {
-			return nil
-		}
-		out = append(out, CropStep{Frame: first, X: float64(start)})
-		for _, m := range switches {
-			out = append(out, CropStep{Frame: m.k, X: float64(m.x)})
-		}
-		return out
-	}
-	for k := first; k < end; k++ {
-		if x := stepEdge(r.at(k)); len(out) == 0 || out[len(out)-1].X != x {
-			out = append(out, CropStep{Frame: k, X: x})
-		}
-	}
-	if len(out) == 1 && out[0].X == float64(r.base) {
-		return nil
-	}
-	return out
 }
 
 // stepEdge is the left edge of a gliding crop as the video preview is

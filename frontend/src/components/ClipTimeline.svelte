@@ -70,7 +70,6 @@
   import { keyOnPick } from "../lib/picked";
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
-  import { rotationAt } from "../lib/rotate";
   import { afterRest } from "../lib/rest";
   import { columnLevels, HeldLoudness, LoudnessLooks, silent } from "../lib/loudness";
 
@@ -468,7 +467,7 @@
   let hand = $state<Gesture | null>(null);
   let saving = $state(false);
   let shaped = $state.raw<null | {
-    pieces: { start: number; end: number; part: number }[];
+    pieces: { start: number; end: number; part: number; rotate?: number }[];
     framing?: Framing;
     cues: CaptionCue[];
     track?: string;
@@ -668,7 +667,7 @@
   // wash parts under the hand and the count under the timeline follows the
   // drag. What is happening is shown while it happens.
   const drawnPieces = $derived(
-    shapedShown && shaped ? shaped.pieces : segments.map((s) => ({ start: s.start, end: s.end, part: s.part })),
+    shapedShown && shaped ? shaped.pieces : segments.map((s) => ({ start: s.start, end: s.end, part: s.part, rotate: s.rotate })),
   );
   const start = $derived(drawnPieces.length ? drawnPieces[0].start : 0);
   const end = $derived(drawnPieces.length ? drawnPieces[drawnPieces.length - 1].end : 0);
@@ -1864,9 +1863,10 @@
   // The stretch each piece the clip draws is rotated in, for the rotate
   // icon in the middle of its wash: the pieces of one part, as the Go side
   // says each piece's part, turned alike, from the first one's start to the
-  // last one's end, or null for a piece as filmed. Issue #348.
+  // last one's end, or null for a piece as filmed. Issue #348. How far
+  // each piece is turned, the Go side says with it.
   const turnedRuns = $derived.by(() => {
-    const turns = drawnPieces.map((p) => rotationAt(clip?.rotations, p.start));
+    const turns = drawnPieces.map((p) => p.rotate ?? 0);
     return drawnPieces.map((p, i) => {
       if (!turns[i]) return null;
       let first = i;

@@ -60,7 +60,7 @@ pop in the short is libass's, on the short's frames, `popScales` in
 frame. The bounce after a word step is the app's own animation of what
 libass drew. libass draws the word with its pill apart from the rest of
 the caption, both once and at rest: `CaptionDrawing.Lifted` marks every
-caption `LiftWord` or `LiftRest`, and `/frames/captions` gives either
+caption `LiftWord` or `LiftRest`, and `/frames/dress` gives either
 with `part=word` or `part=rest`, the word with the curve in
 `X-Caption-Bounce`, "<ms> <rise> <peak>", from `BounceCurve`. The screen
 lays the rest over the frame and the word over that, scaled round the
@@ -164,10 +164,15 @@ the two disagreed by far more.
 
 ## The layer
 
-`/frames/captions` in `cmd/framefairy-app/captions.go` answers the video
-preview with the layer for one frame of the episode at the size the crop is
-shown, see `engine.Engine.PreviewCaptions` in `engine/captionlayer.go`. The
-caption view a clip's captions came with names them by its `track`, and
+`/frames/dress` in `cmd/framefairy-app/captions.go` answers the video
+preview with the dress of one frame of the episode, its crop, its turn
+and the keyframe on it, see `engine.FrameDress`, and with the layer of its
+captions, drawn at the size the crop is shown, see
+`engine.Engine.PreviewCaptions` in `engine/captionlayer.go`. The two come
+in one answer, so a frame is never drawn with the crop of one moment and
+the captions of another. The frame is asked for by the name of the
+clip's framing, `Framing.Name`, which the app keeps for every framing it
+sends. The caption view a clip's captions came with names them by its `track`, and
 the colours and the height being dragged on the way come along as drafts,
 checked the way the edit that saves them checks them. The caption file is
 written once, under a name made from what it is drawn from, in
@@ -311,7 +316,7 @@ The caption box over the picture stays: it is what the hand takes hold of
 to click a word, correct it and drag the captions up or down. It draws
 nothing while the captions are only shown. While a word is typed, libass
 draws the caption without that word, in its place, `typing` on
-`/frames/captions` and `CaptionDrawing.Typing`, and the caption box draws
+`/frames/dress` and `CaptionDrawing.Typing`, and the caption box draws
 only the letters being typed, on that word's box and in the caption's
 colour, since they are in no caption file yet. Nothing else of the
 caption moves. Before, the layer stepped aside and the browser drew the
@@ -449,7 +454,7 @@ The caption box shows the caption and the lit word of the layer on
 screen, not of the playhead. The playhead is the sound, and the frame on
 the canvas trails it while a clip plays, and libass reads its caption
 file to the hundredth of a second at the moment `CaptionMoment` names on
-the short's frames. So `/frames/captions` says with every layer which
+the short's frames. So `/frames/dress` says with every layer which
 caption and which word of it libass drew, in the header
 `X-Caption-Showing`, from `ShowingAt` in `engine/wordframes.go`, which
 reads the same times the caption file is written with, `litRuns`. The

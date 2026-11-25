@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"hash/maphash"
@@ -394,38 +393,15 @@ func (t *telling) trim(st VideoState) VideoState {
 	return st
 }
 
-// clipHash is what a clip holds, as a short text. Its crop steps are
-// hashed as numbers, not written as JSON first: a clip that glides has a
-// step on every frame, and writing them was most of the cost of a state
-// of its video, issue #893. A hash only ever meets hashes of the same
-// run of the app, so its seed is the run's own.
+// clipHash is what a clip holds, as a short text. A hash only ever meets
+// hashes of the same run of the app, so its seed is the run's own.
 func clipHash(c ClipEntry) string {
 	var h maphash.Hash
 	h.SetSeed(clipSeed)
-	steps := c.CropSteps
-	c.CropSteps = nil
 	if err := json.NewEncoder(&h).Encode(c); err != nil {
 		// Nothing in a clip fails to marshal. Should it, the clip is
 		// sent every time.
 		return ""
-	}
-	// How many pieces, and for each how many steps, one more than that
-	// where it has steps at all: a piece with none is sent as null.
-	var b [16]byte
-	binary.LittleEndian.PutUint64(b[:8], uint64(len(steps)))
-	_, _ = h.Write(b[:8])
-	for _, piece := range steps {
-		n := uint64(0)
-		if piece != nil {
-			n = uint64(len(piece)) + 1
-		}
-		binary.LittleEndian.PutUint64(b[:8], n)
-		_, _ = h.Write(b[:8])
-		for _, step := range piece {
-			binary.LittleEndian.PutUint64(b[:8], uint64(step.Frame))
-			binary.LittleEndian.PutUint64(b[8:], math.Float64bits(step.X))
-			_, _ = h.Write(b[:])
-		}
 	}
 	return strconv.FormatUint(h.Sum64(), 36)
 }

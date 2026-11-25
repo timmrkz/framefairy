@@ -659,7 +659,7 @@ export function changesOf(looks) {
 export async function clickedFromAhead(page, key, start, card) {
   // The captions the page asks the Go side to draw, by the moment.
   const drawn = [];
-  const asked = (r) => r.url().includes("/frames/captions?") && drawn.push(new URL(r.url()).searchParams.get("at"));
+  const asked = (r) => r.url().includes("/frames/dress?") && drawn.push(new URL(r.url()).searchParams.get("at"));
   page.on("request", asked);
   try {
     const got = await clickCard(page, key, start);

@@ -28,10 +28,6 @@ type ClipEntry struct {
 	// engine.ClipView.Unheard. It changes as the words land, so the
 	// captions of the clip are asked for again, issue #745.
 	Unheard [][2]float64 `json:"unheard,omitempty"`
-	// CropSteps is, for each piece with keyframes, how its crop switches
-	// over its frames, see engine.CropSteps, and null for a piece whose
-	// crop is CropLefts throughout.
-	CropSteps [][]engine.CropStep `json:"cropSteps"`
 	// Glides is where the crop glides, over every piece, for the clip
 	// timeline to draw, see engine.Glides.
 	Glides []engine.GlideSpan `json:"glides"`
@@ -119,14 +115,14 @@ func (s *FrameFairy) entryOf(path, plan string, c engine.ClipView, info engine.S
 	f := s.framingOf(path, info, c.Segments, c.CropMarks, c.Rotations)
 	entry.Framing = f.Name
 	entry.Segments, entry.CropMarks = f.Segments, f.CropMarks
-	entry.CropLefts, entry.CropSteps, entry.Glides = f.CropLefts, f.CropSteps, f.Glides
+	entry.CropLefts, entry.Glides = f.CropLefts, f.Glides
 	return entry
 }
 
 // Framing is how a clip's crop runs over its pieces, for the video preview
 // and the clip timeline: the pieces with the keyframes that steer each,
-// the keyframes on screen, the left edge of each piece's own crop, how it
-// switches or glides over its frames, and where a glide line is drawn. A
+// the keyframes on screen, the left edge of each piece's own crop, the
+// name its frames are dressed by, and where a glide line is drawn. A
 // clip saved and a clip under the hand while an edge or a cut is dragged
 // are both sent it, worked out here, so the keyframes, the glide line and
 // the crop all follow the hand together, Tim on #778.
@@ -140,10 +136,6 @@ type Framing struct {
 	Segments  []engine.SegmentView  `json:"segments"`
 	CropMarks []engine.CropMarkView `json:"cropMarks"`
 	CropLefts []int                 `json:"cropLefts"`
-	// CropSteps is, for each piece with keyframes, how its crop switches
-	// over its frames, see engine.CropSteps, and null for a piece whose
-	// crop is CropLefts throughout.
-	CropSteps [][]engine.CropStep `json:"cropSteps"`
 	// Glides is where the crop glides, over every piece, for the clip
 	// timeline to draw, see engine.Glides.
 	Glides []engine.GlideSpan `json:"glides"`
@@ -168,11 +160,7 @@ func (s *FrameFairy) framingOf(path string, info engine.SourceInfo, segments []e
 		upright := info.Rotated(seg.Rotate)
 		cw := s.cropWidth(upright)
 		f.CropLefts = append(f.CropLefts, engine.ClampCropX(seg.CropX, cw, upright.Width))
-		f.CropSteps = append(f.CropSteps, info.CropSteps(seg, cw, upright.Width))
 		f.Glides = append(f.Glides, info.Glides(seg, cw, upright.Width)...)
-	}
-	if f.CropSteps == nil {
-		f.CropSteps = make([][]engine.CropStep, len(f.CropLefts))
 	}
 	if info.Width > 0 {
 		o := s.store.Settings().options()
