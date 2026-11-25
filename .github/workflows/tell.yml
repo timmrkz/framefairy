@@ -13,6 +13,8 @@ permissions:
   contents: read
   actions: read
   issues: write
+  # To check the release tool's signature.
+  attestations: read
 
 jobs:
   tell:
@@ -20,10 +22,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: go.mod
-          cache: true
+      # main's own build of the tool, signed, from no cache anybody else
+      # wrote, see .github/actions/release-tool.
+      - uses: ./.github/actions/release-tool
       # framefairy-release opens the workflow's issue, or adds the run to
       # the one that is open. See cmd/framefairy-release/failed.go.
       - name: Tell of the failure
@@ -33,4 +34,4 @@ jobs:
           WORKFLOW: ${{ github.workflow }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT: ${{ github.sha }}
-        run: go run ./cmd/framefairy-release failed -workflow "$WORKFLOW" -run "$RUN" -commit "$COMMIT"
+        run: framefairy-release failed -workflow "$WORKFLOW" -run "$RUN" -commit "$COMMIT"

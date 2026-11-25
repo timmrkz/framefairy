@@ -986,7 +986,7 @@ func TestAScheduledRunThatFailsTellsOfItself(t *testing.T) {
 	told := false
 	for _, j := range tellYML.Jobs {
 		for _, s := range j.Steps {
-			told = told || strings.HasPrefix(s.Run, "go run ./cmd/framefairy-release failed ")
+			told = told || strings.HasPrefix(s.Run, "framefairy-release failed ")
 		}
 	}
 	if _, called := tellYML.On["workflow_call"]; !called || !told {

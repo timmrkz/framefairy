@@ -852,6 +852,24 @@ export async function pressOnTrack(page, x, y) {
   await page.mouse.down();
 }
 
+// A double-click on the clip timeline whose first press is never the
+// second of a double-click with the click before it, see clickOnTrack.
+// A double-click leaves no first press for the next one, see Presses in
+// lib/twice.ts, so the next press anywhere is one on its own.
+export async function doubleClickOnTrack(page, x, y) {
+  await notTwice(page, x, y);
+  await page.mouse.dblclick(x, y);
+  page.__pressed = null;
+}
+
+// A drag on the clip timeline whose press is never the second of a
+// double-click, see pressOnTrack and drag. A drag of an edge pressed
+// where the last click was put the edge back where it was found instead.
+export async function dragOnTrack(page, x, y, dx, shift) {
+  await notTwice(page, x, y);
+  await drag(page, x, y, dx, shift);
+}
+
 // Lands the hand eight pixels beside the last spot pressed on the clip
 // timeline first, when x and y are both within six pixels of it, see
 // clickOnTrack. A press over or under the last one is no double-click,
