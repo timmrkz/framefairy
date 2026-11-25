@@ -2407,17 +2407,25 @@ export const steps = {
   async "window transcribed"(walk) {
     const { page } = walk;
     const path = await episodeOn(page);
+    const jobs = async () => (await ask(page, "Jobs")).filter((j) => j.episode === path);
+    const of = (list) => JSON.stringify(list.map((j) => [j.id, j.state, j.step, j.progress?.covered]));
     for (;;) {
-      const search = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "search");
-      if (search?.state === "running" && search.step === "finding") return;
+      // What is looked at is what the wait below starts from, so a step
+      // that changed in between is a change, and nothing is waited for
+      // that has come already.
+      let seen = await news(page);
+      const now = await jobs();
+      const search = now.findLast((j) => j.kind === "search");
+      // Past its transcription: any step but transcribing or waiting.
+      if (search?.state === "running" && search.step && search.step !== "hearing" && search.step !== "waiting") return;
       if (search?.state !== "running" && search?.state !== "queued") {
         walk.wrong = `the search ended ${search?.state ?? "unstarted"} before it was finding its clips`;
         return;
       }
-      if (!(await onePiece(page, url, path))) {
-        walk.wrong = "no work on the video was left to transcribe the search's window";
-        return;
-      }
+      // A piece only while the search transcribes, else its next step is
+      // waited for.
+      if (search.step === "hearing") await control(url, "/speech?step=1");
+      while (of(await jobs()) === of(now)) seen = await nextNews(page, seen);
     }
   },
   // ["walks on with the clips"]
