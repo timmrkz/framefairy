@@ -3,9 +3,9 @@
 # what its machine needs: the checkout and .github/actions/prepare.
 #
 # A pull request starts only the jobs whose code it changed: the Go jobs
-# when Go changed, the interface's tests when the interface changed, the
-# walks, which test the whole app, when the interface or the Go the app
-# builds did, and the Go tests on a Mac when code only a Mac builds changed, a
+# when Go changed, the interface's tests when the interface changed, and
+# the jobs that test the whole app, the build and the walks, when either
+# did, and the Go tests on a Mac when code only a Mac builds changed, a
 # *_darwin.go or *_darwin_test.go file, or go.mod or go.sum, which bring
 # the modules' own code only a Mac builds. What counts as which is the
 # filters of the job changes, below. A change to the docs alone starts
@@ -57,7 +57,6 @@ jobs:
   # every file outside frontend/, the docs and .claude/, so a script, the
   # Makefile or a workflow is Go, and the files of frontend/ a Go test
   # reads, goread, which internal/workflows holds to what the tests read.
-  # The app is the interface, goread and walked, the Go the app builds.
   # The interface is frontend/, the Makefile, the workflows and the Node
   # pin. See One way to test in docs/BUILD.md.
   changes:
@@ -69,7 +68,7 @@ jobs:
     outputs:
       go: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' }}
       interface: ${{ github.event_name == 'push' || steps.filter.outputs.interface == 'true' }}
-      app: ${{ github.event_name == 'push' || steps.filter.outputs.walked == 'true' || steps.filter.outputs.goread == 'true' || steps.filter.outputs.interface == 'true' }}
+      app: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' || steps.filter.outputs.interface == 'true' }}
       mac: ${{ steps.filter.outputs.mac == 'true' }}
     steps:
       - id: filter
@@ -84,33 +83,6 @@ jobs:
               - '!docs/**'
               - '!**/*.md'
               - '!.claude/**'
-            # Go but what the app never builds: the programs that run on
-            # no customer's machine, the command line and the rules about
-            # the repository itself. A change to them alone starts no walk.
-            # internal/workflows holds it to what the app and its decoder
-            # import, in their tests too.
-            walked:
-              - '**'
-              - '!frontend/**'
-              - '!docs/**'
-              - '!**/*.md'
-              - '!.claude/**'
-              - '!cmd/framefairy/**'
-              - '!cmd/framefairy-dispenser/**'
-              - '!cmd/framefairy-release/**'
-              - '!cmd/framefairy-signer/**'
-              - '!cmd/framefairy-train/**'
-              - '!train/**'
-              - '!licence/dispenser/**'
-              - '!licence/paddle/**'
-              - '!licence/signer/**'
-              - '!internal/maccode/**'
-              - '!internal/naming/**'
-              - '!internal/offdisk/**'
-              - '!internal/outside/**'
-              - '!internal/workflows/**'
-              - '!scripts/models/**'
-              - '!scripts/speechbench/**'
             goread:
               - 'frontend/src/lib/{api.ts,testdata/*.cases.json}'
             interface:

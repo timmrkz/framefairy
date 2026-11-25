@@ -780,8 +780,7 @@ messages, pull request text, code comments and chat replies.
   around it: the checkout and `.github/actions/prepare`. A pull request
   starts only the jobs whose code it changed: no Go changed, no Go tests,
   no interface changed, no interface tests, and the walks, which test
-  the whole app, for either but Go the app never builds, and the Go
-  tests on a Mac only for code
+  the whole app, for either, and the Go tests on a Mac only for code
   only a Mac builds. Every pull request runs `make lint` and the
   build, since the repository's rules read the docs too, and a push to
   main runs everything but the Mac's tests, which run there every night.
