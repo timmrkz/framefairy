@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 )
 
@@ -17,12 +18,17 @@ const (
 	alreadyBuilt = "built"
 	// docsOnly: it only changes the docs against what is built.
 	docsOnly = "docs"
+	// outsideApp: it only changes Go the app is not built from, like the
+	// release tool, or tests, against what is built.
+	outsideApp = "outside"
 )
 
-// trees reads which files differ between two commits. git does it in a
-// checkout, and the tests hand in a repository they made.
+// trees reads which files differ between two commits, and a commit's Go.
+// git does it in a checkout, and the tests hand in a repository they
+// made.
 type trees interface {
 	changed(from, to string) ([]string, error)
+	source(commit string) (source, error)
 }
 
 // needsBuild says whether a pull request's commit needs a build of its
@@ -46,12 +52,30 @@ func needsBuild(t trees, builtFrom, newest string) (string, string) {
 	if len(files) == 0 {
 		return alreadyBuilt, fmt.Sprintf("%s has the same files as the build of %s.", newest, builtFrom)
 	}
-	for _, f := range files {
-		if !strings.HasPrefix(f, "docs/") && !strings.HasSuffix(f, ".md") {
-			return needed, fmt.Sprintf("%s changes the app against the build of %s.", newest, builtFrom)
-		}
+	if !slices.ContainsFunc(files, func(f string) bool { return !docs(f) }) {
+		return docsOnly, fmt.Sprintf("%s only changes the docs against the build of %s.", newest, builtFrom)
 	}
-	return docsOnly, fmt.Sprintf("%s only changes the docs against the build of %s.", newest, builtFrom)
+	src, err := t.source(newest)
+	if err != nil {
+		return needed, fmt.Sprintf("The Go of %s cannot be read, so it is built: %v", newest, err)
+	}
+	app, err := appFrom(src, false)
+	if err != nil {
+		return needed, fmt.Sprintf("What the app of %s is built from cannot be worked out, so it is built: %v", newest, err)
+	}
+	if r := app.reaching(files); len(r) > 0 {
+		return needed, fmt.Sprintf("%s changes the app against the build of %s, %s.", newest, builtFrom, sample(r))
+	}
+	return outsideApp, fmt.Sprintf("%s changes nothing the app is built from against the build of %s, only the docs, tests or code the app does not ship.", newest, builtFrom)
+}
+
+// sample names the first files of a list, and how many more there are.
+func sample(files []string) string {
+	const shown = 3
+	if len(files) <= shown {
+		return strings.Join(files, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(files[:shown], ", "), len(files)-shown)
 }
 
 // gitTrees asks git in the checkout the tool runs in, and fetches a
@@ -77,6 +101,14 @@ func (g gitTrees) changed(from, to string) ([]string, error) {
 		return nil, fmt.Errorf("git diff %s %s: %w", a, b, err)
 	}
 	return strings.Fields(string(out)), nil
+}
+
+func (g gitTrees) source(commit string) (source, error) {
+	sha, err := g.full(commit)
+	if err != nil {
+		return source{}, err
+	}
+	return gitSource(sha)
 }
 
 func (g gitTrees) full(commit string) (string, error) {

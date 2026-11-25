@@ -20,6 +20,9 @@ func (f fakeTrees) changed(from, to string) ([]string, error) {
 	return files, nil
 }
 
+// source reads no Go, so a change that is not the docs is built.
+func (f fakeTrees) source(string) (source, error) { return source{}, errNotFound }
+
 // outputs reads a plan the way the workflow's next steps do.
 func outputs(p plan) map[string]string {
 	m := map[string]string{}
