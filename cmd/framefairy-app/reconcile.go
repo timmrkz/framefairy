@@ -122,6 +122,12 @@ func (s *FrameFairy) look(changed []string, steps *lookSteps) (follow bool) {
 		if writesPlan(ep, changed) || touchesShort(s.shortsOf(ep), changed) {
 			follow = true
 		}
+		// What is made of a video is kept outside its folder as it is
+		// written, so deleting the folder, in the app or in Finder, never
+		// takes it with it, see engine.Machine.Keep.
+		if writesPlan(ep, changed) || writesTranscript(ep, changed) {
+			_ = s.keep(ep)
+		}
 	}
 	took(&steps.videos)
 	return follow
@@ -183,7 +189,16 @@ func (s *FrameFairy) lookFirst() {
 	if follow {
 		s.followTimed(&steps)
 	}
+	// What was written while the app was closed, by the command line, is
+	// kept too, after the window has its answers. A video kept already
+	// costs a look at its folder.
+	keeping := time.Now()
+	for _, ep := range s.store.Episodes() {
+		_ = s.keep(ep)
+	}
+	kept := time.Since(keeping)
 	theLog.line(zerolog.InfoLevel, "files").Int("videos", len(s.store.Episodes())).
+		Int64("kept_ms", kept.Milliseconds()).
 		Int64("models_ms", steps.models.Milliseconds()).Int64("videos_ms", steps.videos.Milliseconds()).
 		Int64("jobs_ms", jobs.Milliseconds()).Int64("window_ms", window.Milliseconds()).
 		Int64("watch_ms", steps.watch.Milliseconds()).
@@ -253,6 +268,19 @@ func writesPlan(video string, changed []string) bool {
 	logs := engine.LogsDir(video)
 	for _, p := range changed {
 		if ok, _ := filepath.Match("clips*.json", filepath.Base(p)); ok && filepath.Dir(p) == logs {
+			return true
+		}
+	}
+	return false
+}
+
+// writesTranscript says whether one of the paths is the transcript of
+// video, its words or their loudness, which transcription writes as it
+// goes.
+func writesTranscript(video string, changed []string) bool {
+	files := engine.TranscriptFiles(engine.LogsDir(video))
+	for _, p := range changed {
+		if slices.Contains(files, p) {
 			return true
 		}
 	}

@@ -124,6 +124,12 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	// A video added while the first look runs is weighed against the
 	// library it leaves, see lookFirst.
 	s.store.afterFirstLook()
+	// A video removed earlier, its folder deleted by Remove or in Finder,
+	// gets back the transcript and the clip sets the engine kept of it,
+	// under whatever name and in whatever folder it is now. It is put back
+	// before anything asks whether the video is new, so it is not: no
+	// first search starts on top of its clips. See engine.Machine.PutBack.
+	s.putBack(videos)
 	// Which of them have no work folder yet, so a video taken out again
 	// takes the folder this add made with it, and only that one.
 	fresh := map[string]bool{}
@@ -388,6 +394,12 @@ func (s *FrameFairy) removeEpisode(path string, deleteWork bool) error {
 	s.reconciling.Lock()
 	defer s.reconciling.Unlock()
 	if deleteWork {
+		// What was made of it is kept first, up to the last word, so it
+		// comes back when the video is added again. If it cannot be kept,
+		// nothing is deleted.
+		if err := s.keep(path); err != nil {
+			return fmt.Errorf("the transcript and clips of this video could not be kept, so nothing was deleted: %w", err)
+		}
 		if err := s.store.machine.DeleteWork(path); err != nil {
 			theLog.line(zerolog.WarnLevel, "library").Str("video", filepath.Base(path)).Err(err).
 				Msg("the work folder of a video being removed could not be deleted, so the video stays")
@@ -472,4 +484,38 @@ func startReaped(cmd *exec.Cmd) error {
 	}
 	go func() { _ = cmd.Wait() }()
 	return nil
+}
+
+// putBack puts back what the engine kept of each video being added that
+// is not in the library yet, see engine.Machine.PutBack. A video that is
+// a link is left to the add, which refuses it.
+func (s *FrameFairy) putBack(videos []string) {
+	known := s.store.Episodes()
+	for _, v := range videos {
+		abs, err := filepath.Abs(v)
+		if err != nil || slices.Contains(known, abs) || s.store.machine.Episode(abs).Linked() != "" {
+			continue
+		}
+		put, err := s.store.machine.PutBack(abs)
+		switch {
+		case err != nil:
+			theLog.line(zerolog.WarnLevel, "library").Str("video", filepath.Base(abs)).Err(err).
+				Msg("what was kept of a video added again could not be put back")
+		case put:
+			theLog.line(zerolog.InfoLevel, "library").Str("video", filepath.Base(abs)).
+				Msg("the transcript and clips kept of a video added again are put back")
+		}
+	}
+}
+
+// keep has the engine copy what changed of a video's transcript and clip
+// sets outside its work folder, see engine.Machine.Keep, and says in the
+// log when it could not.
+func (s *FrameFairy) keep(video string) error {
+	err := s.store.machine.Keep(video)
+	if err != nil {
+		theLog.line(zerolog.WarnLevel, "library").Str("video", filepath.Base(video)).Err(err).
+			Msg("the transcript and clips of a video could not be kept outside its folder")
+	}
+	return err
 }

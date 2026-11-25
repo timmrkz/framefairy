@@ -1056,8 +1056,9 @@
         <p>
           The transcript, the clip sets and the rendered clips are in
           <b>{workFolder(ep.source)}</b>, beside the video. Keeping that folder means adding the
-          video again picks up where this left off, deleting it starts from the beginning. The
-          video file itself always stays.
+          video again picks up where this left off. Deleting it takes the rendered clips with it,
+          and adding the video again still brings back its transcript and its clips. The video
+          file itself always stays.
         </p>
       {:else}
         <p>

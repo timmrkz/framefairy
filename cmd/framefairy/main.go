@@ -15,6 +15,7 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -493,6 +494,15 @@ func main() {
 		code = e.Run(ctx, p.opts)
 	}
 	stop()
+	// What the run made of the video is kept outside its folder too, the
+	// way the app keeps it, so the app finds it again when the video is
+	// added after the folder was deleted, see engine.Machine.Keep.
+	if p.opts.Source != "" {
+		if err := machine.Keep(p.opts.Source); err != nil {
+			log.Warn("the transcript and clips could not be kept outside %s: %s",
+				filepath.Base(engine.WorkDir(p.opts.Source)), err)
+		}
+	}
 	// A search keeps the model loaded for 30 seconds after its answer, in
 	// case it asks again, and a comparison keeps its last side's. The timer
 	// that would stop it dies with this program, which left llama-server

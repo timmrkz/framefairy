@@ -1,13 +1,13 @@
 # A removed video's transcript and clips come back when it is added again
 
-A spec, written before any code. The pull requests that build it name
-this record.
+Written as a spec on 24 and 25 November 2026, and built in the same
+pull request once the user chose when the copy is made.
 
 ## In 30 words
 
-When Remove deletes a video's folder, the transcript and the clip sets
-are set aside under a fingerprint of the video's content. Adding the
-same file again, from anywhere, puts them back.
+A copy of each video's transcript and clip sets is kept as they are
+written, under a fingerprint of the video's content. However the folder
+goes, adding the same file again puts them back.
 
 ## The problem
 
@@ -19,7 +19,12 @@ fingerprinting and then the restoring of the metadata of those three
 things", the transcript and how far transcription got, the clips with
 their rendered marks, and every word fixed in the captions. "Nothing
 else should change." The shorts stay where the settings put them, and
-the person can still delete everything else.
+the person can still delete everything else. Then, reading that a folder
+deleted in Finder would not be covered by a copy made at Remove: "maybe
+instead of doing a copy once on delete, is to actually maintain the
+data when it is being created in the first place ... it doesn't matter
+which method is used in order to clean up, because the recovery then
+works all the time."
 
 What happens today, read on main at ba5b224 and in the logs of the
 user's own reports:
@@ -56,18 +61,23 @@ user's own reports:
   `3f9a1c7e04b2d8a1`. The training records use it. It is the same for
   the same file under any name in any folder.
 
-## What a person sees once it is built
+## What a person sees
 
-1. **Remove a video with the red Remove.** Its folder is deleted as
-   today, shorts in its `out` folder included. Only the transcript and
-   the clip sets are kept, in the app's own folder.
+1. **Remove a video with the red Remove, delete its folder in Finder,
+   or delete the folder the video is in.** The folder goes as today,
+   shorts in its `out` folder included. The copy of the transcript and
+   the clip sets, kept as they were written, stays in
+   `~/.framefairy/kept/`.
 2. **Add the same file again,** under the same name or another, from
-   the same folder or another. The transcript is there and transcription goes
-   on from where it stopped. The clip cards are there, the rendered
-   ones green on the range picker, with every word fixed in their
-   captions. A short that was deleted with the folder no longer has
-   Show in folder, and its clip still says it was rendered, as today.
-3. **Keep** in the remove box and everything else work as today.
+   the same folder or another. The transcript is there and
+   transcription goes on from where it stopped. The clip cards are
+   there, the rendered ones green on the range picker, with every word
+   fixed in their captions. A short that was deleted with the folder no
+   longer has Show in folder, and its clip still says it was rendered,
+   as today.
+3. **Keep** in the remove box and everything else work as today. The
+   remove box says that deleting the folder takes the rendered clips
+   and that the transcript and the clips come back.
 
 ## Five simulations
 
@@ -90,10 +100,12 @@ deleted in Finder is not covered, because nothing sees it go in time.
 
 The principle: whatever deletes the folder, a copy survives. Every
 write of the transcript or a clip set also writes it under
-`~/.framefairy/kept/<key>/`. It covers a folder deleted in Finder. But
-it is a second copy of every file, written on every edge dragged, and
-ARCHITECTURE.md says why that is a bug waiting for the day the two
-disagree. The command line writes the folder without the mirror.
+`~/.framefairy/kept/<key>/`. It covers a folder deleted in Finder, and
+the folder the video is in deleted whole. Its cost is a second copy of
+every file, which ARCHITECTURE.md warns of: the day the two disagree,
+which is right? It holds if the copy is never read while the work
+folder has files of its own, and only one thing writes it, from the
+work folder.
 
 ### 3. Who may know about whom: read the training records
 
@@ -121,112 +133,104 @@ rename in one folder, and nothing deleted or moved elsewhere.
 ## What converges
 
 - **The key.** Simulations 1, 2, 3 and 5 know the video by its content.
-  The fingerprint is in the code already. Reading two megabytes takes a
-  few milliseconds on an SSD, reasoned, not measured.
+  The fingerprint is in the code already.
 - **A folder the engine owns, outside the video's folder.** Simulations
   1, 2 and 3. Only there does a removed video's work survive.
-- **One copy at a time.** Simulation 1 moves, simulation 2 copies. A
-  move cannot drift.
-- **Dropped:** the mirror (2) for its second copy, the training records
-  (3) by rule, leaving files behind (4) and looking around (5), which
-  cover too little.
+- **When the copy is made.** Simulation 1 moves the files once, at
+  Remove, and cannot drift, but misses every other way a folder goes.
+  Simulation 2 copies as the files are written and misses none. The
+  user chose simulation 2 for that.
+- **Dropped:** the training records (3) by rule, leaving files behind
+  (4) and looking around (5), which cover too little.
 
 ## The decision
 
-Simulation 1. Drawn as layers, each using only the ones under it:
+Simulation 2, with the key. Drawn as layers, each using only the ones
+under it:
 
 ```
-the app: Remove, and adding a video, as today
+the app: the watch hears a transcript or a clip set written, Remove,
+         the start, adding a video
+the command line: after a run
         │
         ▼
-the engine: SetAside(video, key), at the red Remove before the folder
-            goes, PutBack(video, key), when a video is added, before
-            the app decides whether it is new
+the engine: Machine.Keep(video), the copy brought up to date,
+            Machine.PutBack(video), when a video is added
         │
         ▼
 fileio over afero: the disk, or memory in a test
 ```
 
-On the disk, for `Folge 12.mp4` after the red Remove:
+On the disk, for `Folge 12.mp4`:
 
 ```
 ~/.framefairy/kept/3f9a1c7e04b2d8a1/
-  words.json, words.frames      the transcript and how far it got
-  clips-0-1800.json, ...        the clip sets, fixed words and renders in them
+  words.frames, words.json     the transcript and how far it got
+  clips-0-1800.json, ...       the clip sets, fixed words and renders in them
 ```
 
-A few megabytes for hours of video, most of it the transcript,
-reasoned, not measured.
+A few megabytes for hours of video, most of it the transcript.
 
 ### The rules
 
-- **The app works the key out and hands it to the engine.** At the red
-  Remove it reads the fingerprint from the video file. That covers the
-  videos already in the library when this is built, which have no key
-  saved anywhere. It also keeps the key in `added.json` when a video is
-  added, for the one case the file is gone by the time it is removed.
-  A video that is gone and was added before this was built has no key,
-  so nothing is kept for it, as today. The engine never reads
-  `added.json`, which is the app's.
-- **The kept folder is named on the `Machine`,** through `UseSystem`,
-  the way the caption ink file is, so a test keeps it in memory.
-- **Setting aside never loses anything.** The files are copied into a
-  new folder beside the kept one and then renamed into place, so a quit
-  halfway or a full disk leaves either the old set or the new one, never
-  a mix. Only regular files are taken, never through a link. When it
-  fails, the folder is not deleted, the video stays in the list, and a
-  toast says why. When a set for the same key is already there, the
-  newer one takes its place.
+- **One writer, from the work folder only.** `Machine.Keep` copies each
+  of `words.json`, `words.frames` and `clips*.json` whose size or time
+  differs from its copy, and gives the copy the time of what it copied,
+  so the next Keep with nothing new reads only the folder.
+- **Never deletes.** A work folder with nothing to keep, gone or not
+  written yet, leaves the copy as it is. A clip set is never deleted by
+  the app, so the copy never needs to delete one either.
+- **When it runs.** The app calls it when the watch hears a transcript
+  or a clip set written, `reconcile`, which is every save of an edit,
+  every clip set a search writes and every 8 seconds of transcription,
+  `checkpointDefault`. Before the red Remove deletes a folder, and if
+  it fails nothing is deleted. Once as the app starts, after the window
+  has its answers, for what the command line wrote while the app was
+  closed. The command line calls it after a run.
+- **The words are read before their loudness,** which only ever grows,
+  and the loudness is written first, the way `writeTranscript` writes
+  them, so the copy never has words that go further than their
+  loudness.
+- **Read only by `PutBack`, only into an empty place.** A video added
+  with a transcript or a clip set of its own, after Keep, keeps them.
+  So the work folder stays the truth while it is there.
+- **Putting back comes first.** The app decides whether an added video
+  is new, and so whether a first search starts, by whether it has a
+  folder, `fresh` in `library.go`. A video put back is not new, so it
+  is put back before that is decided.
 - **Putting back fits the transcript to the video it comes back to.**
   The fingerprint has proved it is the same content, so the
   transcript's stamp is written anew for the file's name, size and
   time. Without that, a renamed or downloaded-again video would be
   transcribed again from the start. The clip sets go back byte for
-  byte.
-- **Putting back comes first.** The app decides whether an added video
-  is new, and so whether a first search starts, by whether it has a
-  folder, `fresh` in `library.go`. A video put back is not new, so it
-  is put back before that is decided, and no search starts on top of
-  its clips. The build pull request times adding a video before and
-  after.
-- **Only into an empty place.** A video added again with a transcript
-  or clips of its own, after Keep, keeps them, and what was set aside
-  stays set aside.
-- **A key is checked before it is a path.** An empty fingerprint, which
-  `EpisodeKey` gives for a file it cannot open, sets nothing aside. A
-  key is taken only as sixteen lowercase hex characters, and the folder
-  is reached through `SafeChild`.
-- **What comes back is read like any file from outside,** through
-  `ReadPlan`, `LoadClips` and the transcript's own reader. A file that
-  fails is not put back.
-- **The command line** removes nothing, so it sets nothing aside. A
-  video put back by the app is the same folder to it as before.
-
-### How it is built
-
-1. **The key, setting aside at the red Remove, putting back when a
-   video is added.** One pull request, in the engine and in
-   `removeEpisode` and `AddEpisodes`, with tests for a rename, a move
-   and a file downloaded again.
-2. **A walk** that removes a video with a rendered clip and a fixed
-   word, adds it again under another name, and finds the green clip on
-   the range picker and the word as it was fixed.
-
-It adds one row to Where state lives in `docs/ARCHITECTURE.md`: the
-transcript and clip sets of a removed video, in
-`~/.framefairy/kept/<key>/`, written by the engine at Remove and taken
-back when the video is added.
+  byte, each read as a plan first, `writePlanFile`. A file that does
+  not read is not put back.
+- **A key is checked before it is a path.** The key of each video is
+  worked out once while its size and time stay the same. An empty one,
+  which `EpisodeKey` gives for a file it cannot open, keeps nothing. A
+  key is taken only as sixteen lowercase hex digits, and the folder is
+  reached through `SafeChildIn`. Only regular files are copied, never
+  a link.
+- **The kept folder is named on the `Machine`,** by `UseSystem`, the way
+  the caption ink file is, so a test keeps it in memory and a machine
+  with none keeps nothing.
 
 ## What follows
 
-What it buys: a video removed and added again comes back as it was,
-rendered clips green and words fixed, whatever it is called now and
-wherever it is.
+What it buys: a video comes back as it was, rendered clips green and
+words fixed, whatever it is called now and wherever it is, however its
+folder went.
 
-What it costs: two megabytes read when a video is added, and a few
-megabytes kept for each removed video that is never added again. They
-are not cleaned up. If they ever add up, a way to throw them away comes
-then.
+What it costs, measured with `BenchmarkKeep` in a cloud session, on a
+four hour transcript, 20 runs each, three times: a Keep with nothing
+new takes 0.03 ms, one after a save of the transcript 25 to 31 ms,
+which is once every 8 seconds while a long video is transcribed, on the
+watch's goroutine. Remove waits for one Keep. The first start after the
+update reads two megabytes of each video for its key and copies what
+each has. A few megabytes stay for each video ever added. They are not
+cleaned up. If they ever add up, a way to throw them away comes then.
 
-What it does not cover: a folder deleted in Finder, and a video
-exported again as a new file, which is a different fingerprint.
+What it does not cover: a video exported again as a new file, which is
+a different fingerprint. Writes made while the app was closed by
+anything but the command line, and a folder deleted before the next
+start, which is rare.
