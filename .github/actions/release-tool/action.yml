@@ -64,6 +64,6 @@ runs:
       env:
         TOOL: ${{ runner.temp }}/release-tool/framefairy-release-${{ steps.key.outputs.key }}
         BIN: ${{ runner.temp }}/release-tool/bin
-      run: |
+      run: | # zizmor: ignore[github-env] the tool checked or built just above
         mkdir -p "$BIN" && cp "$TOOL" "$BIN/framefairy-release" && chmod +x "$BIN/framefairy-release"
         echo "$BIN" >> "$GITHUB_PATH"
