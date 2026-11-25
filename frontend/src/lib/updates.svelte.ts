@@ -7,7 +7,7 @@
 // docs/UPDATES.md.
 
 import { api, onUpdates, size, type Job, type UpdateState } from "./api";
-import { live, transcribesWhole } from "./flow";
+import { live } from "./flow";
 import { said } from "./said";
 
 // A check that finds nothing is over in a tenth of a second, which is
@@ -53,14 +53,13 @@ function when(checked: string | undefined, now: number): string {
 
 const short = (commit: string) => commit.slice(0, 7);
 
-// The work Relaunch waits for, in the words of the work the person
-// started, the first there is, or "" when there is none: quitting into
-// the new build would stop it half way, issue #382. The Go side refuses
-// a Relaunch pressed all the same, see queue.closeIfIdle. The whole
-// video's transcription is not waited for: it can take an hour, the app
-// starts it by itself after a search, and what it heard stays.
+// The work Relaunch waits for, in the words of the work, the first there
+// is, or "" when there is none: quitting into the new build would stop it
+// half way, issue #382. Which work it waits for, the Go side says on each
+// job, see Job.waits, and it refuses a Relaunch pressed all the same, see
+// queue.closeIfIdle.
 export function relaunchWaitsFor(list: Job[]): string {
-  const job = list.find((j) => live(j) && !transcribesWhole(j));
+  const job = list.find((j) => live(j) && j.waits);
   if (!job) return "";
   switch (job.kind) {
     case "search":

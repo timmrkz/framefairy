@@ -70,10 +70,15 @@ video's menu, and Transcribe video carries it on. Stopped with Stop
 transcribing in the menu, it ends the way a search called off with Cancel
 does: its record says stopped, what it heard stays, and the menu offers
 Transcribe video again, after a restart too. A search or a clip made by
-hand of the same video stops it the same way, and it is refused while
-they run, `stopTranscribing` and `makeWayForTranscribe` in `jobs.go`,
-the user's report of 26 October, 12.27. Once that search, or that clip of a
-video searched before, is done, the transcription is asked for again.
+hand of the same video stops it too, and it is refused while they run,
+`stopWholeLocked` and `makeWayForTranscribe` in `jobs.go`, the user's
+report of 26 October, 12.27. Stopped that way it writes no stop in its
+record. Once the search or the clip has ended, done, stopped by hand or
+failed anywhere but in its transcription, the transcription carries on
+by itself, `searched` in `export.go`. It does not when the transcription
+failed or a person stopped it: that waits for Transcribe video. A
+transcription the app closing cut off, whatever stopped it, carries on
+once the app opens again, `transcribeCutOff` there.
 
 A transcription also hears a part of the video by itself, for the clip
 chosen, `hearChosen` in `export.go`, from the state the app

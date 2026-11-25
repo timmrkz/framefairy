@@ -48,7 +48,7 @@ func (s *FrameFairy) Transcribe(path string) Job {
 // around says the part is the stretch kept heard around a clip, see
 // partToHear. The whole video, a part of a clip and the stretch around a
 // clip each have their record, and run side by side: lanes.go says which
-// hears first. byItself is one the app asks for by itself, dropped
+// transcribes first. byItself is one the app asks for by itself, dropped
 // without a word when the queue refuses it, see transcribeRest.
 func (s *FrameFairy) transcribe(path string, part timed.Window, around, byItself bool) Job {
 	rec := engine.TranscribeRecord(part, around)
@@ -65,12 +65,38 @@ func (s *FrameFairy) transcribe(path string, part timed.Window, around, byItself
 // searched is told when a job that makes clips or transcribes has ended,
 // see queue.searched: the models are kept loaded again, and the work on a
 // video's clips that ended carries its transcription on, see
-// transcribeRest. One cut off by the app closing or by the video's
-// removal does not, see JobCancelled.
+// transcribeRest, whether the work was done, stopped or failed. Not after
+// work cut off by the app closing or by the video's removal, see
+// JobCancelled, nor after work that failed as it transcribed, since the
+// transcription would fail the same way. And never over a transcription
+// that failed or that a person stopped, see wholeHeldBack: those wait
+// for Transcribe video.
 func (s *FrameFairy) searched(j Job) {
 	s.keeping.ask()
-	if makesClips(j.Kind) && (j.State == JobDone || j.State == JobStopped || j.State == JobFailed) {
-		s.transcribeRest(j.Episode, j.Kind)
+	if !makesClips(j.Kind) {
+		return
+	}
+	switch {
+	case j.State == JobDone, j.State == JobStopped:
+	case j.State == JobFailed && j.Step != engine.StepHearing:
+	default:
+		return
+	}
+	if s.jobs == nil || s.jobs.wholeHeldBack(j.Episode) {
+		return
+	}
+	s.transcribeRest(j.Episode, j.Kind)
+}
+
+// transcribeCutOff carries on, as the app opens, the transcription of
+// every video that the app closing cut off, so a quit or a Relaunch
+// leaves no video transcribed in part. It runs once the jobs are read
+// back from their records, see restoreJobs.
+func (s *FrameFairy) transcribeCutOff() {
+	for _, j := range s.jobs.list() {
+		if j.Hears() == engine.HearsWhole && j.State == JobInterrupted {
+			s.transcribeRest(j.Episode, "restart")
+		}
 	}
 }
 

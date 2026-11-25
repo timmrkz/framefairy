@@ -152,22 +152,42 @@ func TestAnExportToADriveWithoutModesIsSaved(t *testing.T) {
 // transcription that started when the video was added, issue #447. So a
 // later search of a window transcribed already finds its clips at once.
 // A video transcribed to its end, work cut off by the app closing or by
-// the video's removal, more work on the video's clips on the way, and a
-// transcription that ended ask for nothing.
+// the video's removal, work that failed as it transcribed, more work on
+// the video's clips on the way, and a transcription that ended ask for
+// nothing. Nor does a transcription that failed or that a person
+// stopped: it waits for Transcribe video.
 func TestTheWorkOnClipsThatEndedTranscribesTheRestOfItsVideo(t *testing.T) {
 	t.Parallel()
 	words := [][3]any{{10.1, 10.4, "eins"}, {10.5, 10.9, "zwei"}}
+	// The whole video's transcription as it ended before the work on the
+	// clips did.
+	whole := func(state string, madeWay bool) func(svc *FrameFairy, path string) {
+		return func(svc *FrameFairy, path string) {
+			svc.jobs.mu.Lock()
+			defer svc.jobs.mu.Unlock()
+			svc.jobs.jobs = append(svc.jobs.jobs, &Job{ID: "whole", Episode: path, State: state, madeWay: madeWay,
+				JobRecord: engine.JobRecord{ID: engine.TranscribeID, Kind: engine.JobTranscribe}})
+		}
+	}
 	for _, c := range []struct {
 		name        string
 		end         float64
 		kind        string
 		state       string
+		step        string
 		before      func(svc *FrameFairy, path string)
 		transcribes bool
 	}{
 		{name: "a search that is done", end: 600, kind: engine.JobSearch, state: JobDone, transcribes: true},
 		{name: "a search of a video transcribed to its end", end: 30, kind: engine.JobSearch, state: JobDone},
-		{name: "a search that failed", end: 600, kind: engine.JobSearch, state: JobFailed, transcribes: true},
+		{name: "a search that failed", end: 600, kind: engine.JobSearch, state: JobFailed, step: engine.StepFinding, transcribes: true},
+		{name: "a search that failed as it transcribed", end: 600, kind: engine.JobSearch, state: JobFailed, step: engine.StepHearing},
+		{name: "a search that stopped the transcription", end: 600, kind: engine.JobSearch, state: JobDone,
+			before: whole(JobStopped, true), transcribes: true},
+		{name: "a search after a person stopped the transcription", end: 600, kind: engine.JobSearch, state: JobDone,
+			before: whole(JobStopped, false)},
+		{name: "a search after the transcription failed", end: 600, kind: engine.JobSearch, state: JobDone,
+			before: whole(JobFailed, false)},
 		{name: "a search stopped by hand", end: 600, kind: engine.JobSearch, state: JobStopped, transcribes: true},
 		{name: "a search cut off by the app closing", end: 600, kind: engine.JobSearch, state: JobCancelled},
 		{name: "a search with another of the video waiting", end: 600, kind: engine.JobSearch, state: JobDone,
@@ -185,8 +205,8 @@ func TestTheWorkOnClipsThatEndedTranscribesTheRestOfItsVideo(t *testing.T) {
 		if c.before != nil {
 			c.before(svc, path)
 		}
-		svc.searched(Job{Episode: path, State: c.state, JobRecord: engine.JobRecord{Kind: c.kind}})
-		if got := wholeHeard(svc.jobs.list()); got != c.transcribes {
+		svc.searched(Job{Episode: path, State: c.state, JobRecord: engine.JobRecord{Kind: c.kind, Step: c.step}})
+		if got := wholeJob(svc.jobs.list()) != nil; got != c.transcribes {
 			t.Errorf("%s: the rest of the video is transcribed %v, want %v", c.name, got, c.transcribes)
 		}
 	}
@@ -214,20 +234,20 @@ func TestTheRestOfAVideoIsNeverTranscribedBesideASearchPressedAtOnce(t *testing.
 			if !svc.jobs.makeWayForTranscribe(path) {
 				t.Fatalf("%s: the rest was refused before anything was asked for", kind)
 			}
-			var heard Job
+			var asked Job
 			if restFirst {
-				heard = rest()
+				asked = rest()
 				clips()
 			} else {
 				clips()
-				heard = rest()
+				asked = rest()
 			}
 			jobs := svc.jobs.list()
 			if whole := wholeJob(jobs); whole != nil {
 				t.Errorf("%s, the rest first %v: the rest of the video is transcribed beside the work on its clips: %+v", kind, restFirst, *whole)
 			}
-			if !restFirst && heard.ID != "" {
-				t.Errorf("%s: the rest asked for after it was added, not dropped: %+v", kind, heard)
+			if !restFirst && asked.ID != "" {
+				t.Errorf("%s: the rest asked for after it was added, not dropped: %+v", kind, asked)
 			}
 			for _, j := range jobs {
 				if j.State == JobFailed {

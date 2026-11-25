@@ -2400,8 +2400,29 @@ export const steps = {
     await watch.step("head", s);
     return;
   },
+  // ["window transcribed"]
+  //                    with the speech held, lets it on one piece at a
+  //                    time until the search on the video has its window
+  //                    transcribed and is finding its clips
+  async "window transcribed"(walk) {
+    const { page } = walk;
+    const path = await episodeOn(page);
+    for (;;) {
+      const search = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "search");
+      if (search?.state === "running" && search.step === "finding") return;
+      if (search?.state !== "running" && search?.state !== "queued") {
+        walk.wrong = `the search ended ${search?.state ?? "unstarted"} before it was finding its clips`;
+        return;
+      }
+      if (!(await onePiece(page, url, path))) {
+        walk.wrong = "no work on the video was left to transcribe the search's window";
+        return;
+      }
+    }
+  },
   // ["walks on with the clips"]
-  //                    lets the speech held go, and watches every frame
+  //                    lets the speech held go, or with "model" the
+  //                    model's held answer, and watches every frame
   //                    until the clips the search found show: in the first
   //                    frame they show, the window is already past where
   //                    it was, and once all is still, the window drawn is
@@ -2423,8 +2444,11 @@ export const steps = {
         requestAnimationFrame(frame);
       });
     });
-    await control(url, "/speech?go");
-    walk.speechHeld = false;
+    if (arg === "model") await control(url, "/model?hang=0&fail=0");
+    else {
+      await control(url, "/speech?go");
+      walk.speechHeld = false;
+    }
     const seen = await page.evaluate(() => window.__walksOn);
     // The first frame with the window at rest, the search's frame gone.
     const rest = seen.find((f) => f.from >= 0);

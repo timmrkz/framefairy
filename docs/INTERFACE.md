@@ -72,7 +72,7 @@ probes in the scratchpad.
 | `?busy` | a search finding, with progress |
 | `?unknown` | the same, with progress it cannot put a number on |
 | `?transcribing` | a search hearing, ahead of the saved transcript, stuck there |
-| `?growing` | a new video: a search hears from 10 minutes to its window's end, then finds, job events every 250 ms |
+| `?growing` | a new video: a search transcribes from 10 minutes to its window's end, then finds, job events every 250 ms |
 | `?lagging` | with `?growing`, the saved transcript trails what is heard, saved every 8 s of work like the engine |
 | `?hear=100` | hearing at 100 seconds of audio a second, not 600, slow enough to watch |
 | `?paused` | clips found, the video read part way, nothing reading on. `?short` reads only to 2500 |

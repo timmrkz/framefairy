@@ -12,7 +12,7 @@
   // Updates in the app menu. See docs/UPDATES.md.
   import { onDestroy, onMount } from "svelte";
   import { api, errorText } from "../lib/api";
-    import Busy from "../components/Busy.svelte";
+  import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import Pick from "../components/Pick.svelte";

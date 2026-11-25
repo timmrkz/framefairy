@@ -691,6 +691,60 @@ func TestPathASearchGoesFirstAndTheTranscriptionCarriesOn(t *testing.T) {
 	}
 }
 
+// A video whose transcription the app closing cut off is transcribed on
+// to its end once the app opens again, so a quit or a Relaunch leaves no
+// video transcribed in part. Found by the second review of #995.
+func TestPathAVideoCutOffAsItIsTranscribedCarriesOnOnceTheAppOpens(t *testing.T) {
+	// Not side by side: open sets HOME for the whole process.
+	d := open(t)
+	in, let := d.speech.hold()
+	t.Cleanup(let)
+	ep := d.episode("ep", "1200")
+	if added, err := d.svc.addEpisodes([]string{ep}); err != nil || len(added) != 1 {
+		t.Fatalf("adding %s: %v", ep, err)
+	}
+	<-in
+	whole, ok := d.svc.jobs.find(ep, engine.JobTranscribe)
+	if !ok || whole.Hears() != engine.HearsWhole {
+		t.Fatalf("the video added is not transcribed by itself: %+v", d.svc.Jobs())
+	}
+	d.closeWhileIn(whole, let)
+	if _, done := d.heard(ep); done {
+		t.Fatal("the video was transcribed to its end before the app closed")
+	}
+	d.reopen()
+	d.idle(ep)
+	if _, done := d.heard(ep); !done {
+		t.Errorf("the video is not transcribed to its end once the app opened again: %+v", d.svc.Jobs())
+	}
+}
+
+// A search that stopped the transcription and was cut off by the app
+// closing has the transcription carried on once the app opens again,
+// and not held back as one a person stopped.
+func TestPathASearchCutOffLeavesTheTranscriptionToCarryOn(t *testing.T) {
+	// Not side by side: open sets HOME for the whole process.
+	d := open(t)
+	in, let := d.speech.hold()
+	t.Cleanup(let)
+	ep := d.episode("ep", "1200")
+	if added, err := d.svc.addEpisodes([]string{ep}); err != nil || len(added) != 1 {
+		t.Fatalf("adding %s: %v", ep, err)
+	}
+	<-in
+	d.search(ep, window{600, 1200})
+	search, ok := d.svc.jobs.find(ep, engine.JobSearch)
+	if !ok {
+		t.Fatalf("no search: %+v", d.svc.Jobs())
+	}
+	d.closeWhileIn(search, let)
+	d.reopen()
+	d.idle(ep)
+	if _, done := d.heard(ep); !done {
+		t.Errorf("the video is not transcribed to its end once the app opened again: %+v", d.svc.Jobs())
+	}
+}
+
 // Search pressed on a window transcribed already stops the transcription
 // and finds its clips at once, issue #447: it transcribes nothing, so it
 // is done while the transcription it stopped is still inside the piece

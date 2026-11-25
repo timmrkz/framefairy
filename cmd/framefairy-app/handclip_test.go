@@ -131,12 +131,12 @@ func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 		t.Fatalf("made %+v", made)
 	}
 	// The clip done, the rest of the video is transcribed by itself, and
-	// hears nothing twice either: what is heard is the episode once, the
+	// nothing twice either: what is transcribed is the episode once, the
 	// piece the close cut off, and at most the shortest piece where a
-	// short gap is heard whole, 15 s, see chunkMin in engine/audio.go.
+	// short gap is transcribed whole, 15 s, see chunkMin in engine/audio.go.
 	d.idle(ep)
-	if heard := d.speech.seconds(); heard > 300+given+15 {
-		t.Errorf("%.0f s heard for a 300 s episode, %.0f s of them before the app closed", heard, given)
+	if done := d.speech.seconds(); done > 300+given+15 {
+		t.Errorf("%.0f s transcribed for a 300 s episode, %.0f s of them before the app closed", done, given)
 	}
 	if left := engine.ReadJobs(disk, ep); len(left) != 0 {
 		t.Errorf("records left: %+v", left)

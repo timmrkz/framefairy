@@ -139,21 +139,21 @@ describe("the line under the build", () => {
   });
 });
 
-// Relaunch waits for the work a person started, and not for the whole
-// video's transcription, which the app starts by itself after a search
-// and which can take an hour: what it heard stays.
+// Relaunch waits for the work the Go side says it waits for, and not for
+// the whole video's transcription, which the app carries on by itself
+// once it opens again.
 describe("what Relaunch waits for", () => {
   const job = (j: Partial<Job>) => ({ id: "j", episode: "/v.mp4", state: "running", ...j }) as Job;
   test("the whole video's transcription is not waited for", () => {
     expect(relaunchWaitsFor([job({ kind: "transcribe" })])).toBe("");
   });
-  test("a part of a clip being heard is", () => {
-    expect(relaunchWaitsFor([job({ kind: "transcribe", from: 120, to: 150 })])).toBe("the transcription");
+  test("a part of a clip being transcribed is", () => {
+    expect(relaunchWaitsFor([job({ kind: "transcribe", from: 120, to: 150, waits: true })])).toBe("the transcription");
   });
   test("a search beside the whole video's transcription is", () => {
-    expect(relaunchWaitsFor([job({ kind: "transcribe" }), job({ kind: "search" })])).toBe("the search");
+    expect(relaunchWaitsFor([job({ kind: "transcribe" }), job({ kind: "search", waits: true })])).toBe("the search");
   });
   test("work that ended is not", () => {
-    expect(relaunchWaitsFor([job({ kind: "render", state: "done" })])).toBe("");
+    expect(relaunchWaitsFor([job({ kind: "render", state: "done", waits: true })])).toBe("");
   });
 });

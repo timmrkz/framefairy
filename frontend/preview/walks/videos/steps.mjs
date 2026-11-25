@@ -1030,9 +1030,9 @@ export const steps = {
       if (!look.frame) walk.wrong = `while the whole video is transcribed, the range picker frames no part of it`;
       else if (!look.motes) walk.wrong = `while the whole video is transcribed, its frame on the range picker sheds no motes`;
       else if (!look.dots) walk.wrong = `while the whole video is transcribed, the part it works on shows no dots under its frame`;
-      // The work is about all of the video, so the window is left out,
-      // Tim's ask of 5 November.
-      else if (await page.locator(".aim").count()) walk.wrong = "while the whole video is transcribed, the range picker still marks the window";
+      // The window stays marked, so it can be placed for the next
+      // search while the video is transcribed.
+      else if (!(await page.locator(".aim").count())) walk.wrong = "while the whole video is transcribed, the range picker does not mark the window";
       return;
     }
     const whole = async () => (await ask(page, "Library")).find((e) => e.source === source)?.transcribed;

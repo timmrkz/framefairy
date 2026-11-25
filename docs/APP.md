@@ -171,8 +171,9 @@ menu's to show, the user's call:
   search after, a job of its own, `engine.JobTranscribe`, see [JOBS.md](JOBS.md),
   and carries on from what was heard. Why it failed is said in a toast as
   it fails.
-- **Stop transcribing** while it runs. What was heard stays, and the menu
-  says Transcribe video again from the frame it is clicked.
+- **Stop transcribing** while it runs. What was transcribed stays, and
+  the menu says Transcribe video again from the frame it is clicked. It
+  stays stopped until Transcribe video is clicked.
 
 A video added is transcribed to its end by itself, the same job, the
 user's workflow: add, let it transcribe, place the window, search. It and
@@ -183,10 +184,12 @@ transcribes what its window lacks, so a window transcribed already is
 searched at once, and once the search or the clip has ended, done,
 stopped or failed, the transcription starts again by itself and
 transcribes the rest of the video. In two searches of 20 minutes,
-transcribing took about 17 s of 41 s. So Stop transcribing holds until
-the next search, or clip made by hand, has ended. Relaunch on the
-Updates page does not wait for it, since it can take an hour: what it
-transcribed stays. The stop shows on the press, in the
+transcribing took about 17 s of 41 s. A transcription that failed, or
+that was stopped with Stop transcribing, is not started again by
+itself. Nor after a search that failed as it transcribed, which would
+fail again. Relaunch on the Updates page does not wait for it, since it
+can take an hour: what it transcribed stays, and it carries on once the
+app opens again. The stop shows on the press, in the
 menu, the video's dot and the range picker, though the transcription
 ends only once the speech model has heard the piece it is in: the menu
 said Stop transcribing for three and a half seconds after Search, the user's
@@ -235,13 +238,8 @@ nothing up, so the frame stays as it is. Stop transcribing stops everything on t
 range picker in the frame it is clicked: the dots stay where they are,
 because what the speech model was still hearing is let go, and the frame
 stands still and fades out.
-The window's mark is left off the range picker while the whole video is
-transcribed, because the work is about all of the video and not the
-window, the user's ask of 5 November. The Go side says so in the window it
-sends, and the mark comes back once the transcription is told to stop,
-by Stop transcribing, a search or a clip made by hand, or ends. On Stop
-transcribing it comes back in the frame of the click, as the part's
-frame starts to fade.
+The window stays marked on the range picker while the whole video is
+transcribed, so it can be placed for the next search, which goes first.
 The dots follow the work again once other work hears, or once the video
 is transcribed to its end. A stop on its last piece keeps the dots on
 that piece, like a stop anywhere else: the piece was once written down
@@ -1083,7 +1081,7 @@ bubble scrolled by those eight pixels.
   does, see above, and a search of the video stops it and starts it
   again once the search has ended. So there is nothing to control
   about it in the workspace but the search: **Search** starts it and
-  **Cancel** stops it, and what was heard stays, so the next search goes
+  **Cancel** stops it, and what was transcribed stays, so the next search goes
   on from there. While another
   episode's search finds its clips, a search that hears waits and carries
   on after, because the two models want the same memory.

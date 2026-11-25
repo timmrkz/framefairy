@@ -479,6 +479,7 @@ func (d *desk) openOn(st *store) {
 	st.standIns = d.fakes
 	d.start(st)
 	d.svc.restoreJobs(st.Episodes())
+	d.svc.transcribeCutOff()
 }
 
 // outcome is what the app says about an episode's last search where its
@@ -630,10 +631,10 @@ func (s *speech) open(string) (engine.Recognizer, error) {
 	return s, nil
 }
 
-// savesEach is the stand-in speech model saving what it heard after
-// every piece, in place of the clock, see hearing in engine/audio.go, so a test
+// savesEach is the stand-in speech model saving what it transcribed
+// after every piece, in place of the clock, see engine/audio.go, so a test
 // reads how far a video is transcribed from the disk the moment a piece
-// is heard.
+// is transcribed.
 type savesEach struct{ *speech }
 
 func (savesEach) SaveHeard() bool { return true }

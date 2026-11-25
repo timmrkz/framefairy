@@ -234,6 +234,9 @@ export default [
       ["head"],
       ["wait for", "Continue"],
       ["row", "Stopped. Click Continue"],
+      // The transcription carries on after the search, and the dot
+      // pulses while it runs, the way it does for all work.
+      ["transcribed"],
       ["dot", "warn"],
       ["remove search", "away and back"],
       ["wait for", "Search"],
@@ -251,6 +254,9 @@ export default [
     steps: [
       ["speech", "hold"],
       ["add", 120],
+      ["wait for", "Search"],
+      ["head"],
+      ["wait for", "Cancel"],
       ["hand stopped"],
       ["remove stopped", "put back"],
       ["remove stopped", "for good"],
@@ -342,12 +348,17 @@ export default [
     // room left over fell at the window.
     name: "a search that found its clips moves the window on in the frame they show, and the dots after it begin at that window, with a dashed edge",
     steps: [
+      // The model holds its answer and the speech stays held after the
+      // window, so the transcription that carries on after the search
+      // stands at the window's end, where the dots begin.
       ["speech", "hold"],
+      ["model", "holds"],
       ["add", 1200],
       ["wait for", "Search"],
       ["head"],
       ["wait for", "Cancel"],
-      ["walks on with the clips"],
+      ["window transcribed"],
+      ["walks on with the clips", "model"],
       ["dots begin at the window"],
     ],
   },

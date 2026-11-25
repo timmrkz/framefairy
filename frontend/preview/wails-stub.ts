@@ -491,7 +491,7 @@ const llmJob = () => {
 // cut off or failed, the way the app reads it at start. With ?waiting the
 // one cut off had heard the episode to 15 minutes of its half hour.
 // ?growing is an episode just added: a search is running from the moment
-// the window opens, hearing from 10 minutes.
+// the window opens, transcribing from 10 minutes.
 // ?lagging saves the transcript every 8 s of work, the way the engine does,
 // while the job reports every chunk it hears.
 // ---------------------------------------------------------------------------

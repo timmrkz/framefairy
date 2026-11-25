@@ -1390,23 +1390,31 @@ func (q *queue) find(episode, kind string) (Job, bool) {
 }
 
 // Relaunch does not wait for the whole video's transcription, which the
-// app starts by itself after every search and which can take an hour:
-// what it heard stays. A part of a clip being heard is waited for.
+// app starts by itself once a video is added and which can take an hour:
+// what it transcribed stays, and it carries on once the app opens again.
+// A part of a clip being transcribed is waited for. The job says which,
+// so the Updates page says what the queue does.
 func TestRelaunchDoesNotWaitForTheWholeVideosTranscription(t *testing.T) {
 	t.Parallel()
 	q := newIdleQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
 	const ep = "/eps/ep.mp4"
-	q.addSteps(ep, engine.JobTranscribe, "Transcribe whole video", true, func(j *Job) { j.JobRecord.ID = engine.TranscribeID }, nil)
+	whole := q.addSteps(ep, engine.JobTranscribe, "Transcribe whole video", true, func(j *Job) { j.JobRecord.ID = engine.TranscribeID }, nil)
+	if whole.Waits {
+		t.Error("the whole video's transcription says Relaunch waits for it")
+	}
 	reopen, idle := q.closeIfIdle()
 	if !idle {
 		t.Fatal("Relaunch waits for the whole video's transcription")
 	}
 	reopen()
-	q.addSteps(ep, engine.JobTranscribe, "Transcribe the clip", true, func(j *Job) {
+	part := q.addSteps(ep, engine.JobTranscribe, "Transcribe the clip", true, func(j *Job) {
 		j.JobRecord.ID, j.From, j.To = engine.TranscribePartID, 120, 150
 	}, nil)
+	if !part.Waits {
+		t.Error("a part of a clip being transcribed says Relaunch does not wait for it")
+	}
 	if reopen, idle := q.closeIfIdle(); idle {
 		reopen()
-		t.Error("Relaunch does not wait for a part of a clip being heard")
+		t.Error("Relaunch does not wait for a part of a clip being transcribed")
 	}
 }
