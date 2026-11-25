@@ -38,12 +38,60 @@ type FrameDress struct {
 	// glide, or anywhere in a piece no keyframe steers, see SetCrop.
 	Mark    *CropMarkView `json:"mark"`
 	Movable bool          `json:"movable"`
+	// From and To are the moments the stretch of frames around this one
+	// that are dressed alike starts and ends at, at most dressReach frames
+	// either side, so the video preview dresses a frame of it whose own
+	// dress is still on its way, while the hand drags the playhead, with
+	// this one. Dressed with the frame before, a frame past a cut stood
+	// turned the way the part before it was turned.
+	From float64 `json:"from"`
+	To   float64 `json:"to"`
 }
+
+// dressReach is how many frames either side of a frame its stretch of
+// frames dressed alike reaches at most, see FrameDress.From: five seconds
+// of a video of 25 frames a second, more than a drag passes over before
+// the dress of a frame on its way comes.
+const dressReach = 125
 
 // Dress is the dress of the frame that starts at a moment, for a clip of
 // these pieces, turned by rotations, with these keyframes on their frames,
 // see MarksOnFrames, cut to a short of outW by outH.
 func (s SourceInfo) Dress(segments []SegmentView, rotations []Rotation, marks []CropMarkView, at float64, outW, outH int) FrameDress {
+	runs := map[[3]int]cropRun{}
+	d := s.dressOf(segments, rotations, marks, at, outW, outH, runs)
+	d.From, d.To = at, at
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return d
+	}
+	k := s.frameHolding(at)
+	alike := func(j int64) bool {
+		return j >= 0 && sameDress(d, s.dressOf(segments, rotations, marks, s.keptAt(j), outW, outH, runs))
+	}
+	lo, hi := k, k
+	for lo > k-dressReach && alike(lo-1) {
+		lo--
+	}
+	for hi < k+dressReach && alike(hi+1) {
+		hi++
+	}
+	d.From, d.To = s.keptAt(lo), s.keptAt(hi+1)
+	return d
+}
+
+// sameDress says two frames are dressed alike, their stretches aside.
+func sameDress(a, b FrameDress) bool {
+	if (a.Mark == nil) != (b.Mark == nil) || a.Mark != nil && *a.Mark != *b.Mark {
+		return false
+	}
+	a.Mark, b.Mark = nil, nil
+	a.From, a.To, b.From, b.To = 0, 0, 0, 0
+	return a == b
+}
+
+// dressOf is the dress of a frame, its stretch aside, with the crop's run
+// over each piece kept in runs by the piece, the crop's width and the picture's.
+func (s SourceInfo) dressOf(segments []SegmentView, rotations []Rotation, marks []CropMarkView, at float64, outW, outH int, runs map[[3]int]cropRun) FrameDress {
 	d := FrameDress{Piece: -1, Turn: RotationAt(rotations, at)}
 	for i, seg := range segments {
 		if at >= seg.Start-frameHair && at < seg.End-frameHair {
@@ -81,7 +129,13 @@ func (s SourceInfo) Dress(segments []SegmentView, rotations []Rotation, marks []
 		// A frame of a cut beside the piece shows the crop of the
 		// piece's frame nearest to it, its first or its last.
 		first, end := s.pieceFrames(seg.Start, seg.End)
-		d.Left = stepEdge(s.runOf(segmentOf(seg), d.CropWidth, upright.Width).at(min(max(k, first), end-1)))
+		key := [3]int{d.Piece, d.CropWidth, upright.Width}
+		run, ok := runs[key]
+		if !ok {
+			run = s.runOf(segmentOf(seg), d.CropWidth, upright.Width)
+			runs[key] = run
+		}
+		d.Left = stepEdge(run.at(min(max(k, first), end-1)))
 	}
 	for i := range marks {
 		if s.markFrame(marks[i].At) == k {

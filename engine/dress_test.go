@@ -106,3 +106,41 @@ func TestADressSaysTheKeyframeOnItsFrameAndWhetherTheCropMoves(t *testing.T) {
 		}
 	}
 }
+
+// A dress says the stretch of frames around its frame dressed alike, so
+// the video preview can dress a frame of it whose own dress is on its
+// way: a part turned ends it, a cut ends it, and a keyframe stands alone.
+func TestADressSaysTheFramesDressedAlike(t *testing.T) {
+	t.Parallel()
+	source := SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1}
+	pieces := []SegmentView{{Start: 0, End: 2}, {Start: 2, End: 4, Rotate: 90}, {Start: 5, End: 30, CropX: intPtr(100), Marks: []CropMarkView{{At: 6, X: 400}}}}
+	turns := []Rotation{{From: 2, To: 4, Deg: 90}}
+	marks := []CropMarkView{{At: 6, X: 400}}
+	for _, c := range []struct {
+		at, from, to float64
+	}{
+		{1, 0, 2},
+		{2.4, 2, 4},
+		{4.4, 4, 4.52},
+		{5.2, 5, 6},
+		{6, 6, 6.04},
+		{7, 6.04, 12.04},
+	} {
+		d := source.Dress(pieces, turns, marks, c.at, 1080, 1920)
+		if math.Abs(d.From-c.from) > 1e-9 || math.Abs(d.To-c.to) > 1e-9 {
+			t.Errorf("the frame at %v s is dressed alike from %v to %v, want %v to %v", c.at, d.From, d.To, c.from, c.to)
+		}
+	}
+}
+
+// How long a frame takes to dress, with the stretch of frames dressed
+// alike around it, in a clip of three pieces with keyframes.
+func BenchmarkADress(b *testing.B) {
+	source := SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1}
+	marks := []CropMarkView{{At: 6, X: 400}, {At: 9, X: 100, Glide: true}, {At: 20, X: 700}}
+	pieces := []SegmentView{{Start: 0, End: 2}, {Start: 2, End: 4, Rotate: 90}, {Start: 5, End: 30, CropX: intPtr(100), Marks: marks}}
+	turns := []Rotation{{From: 2, To: 4, Deg: 90}}
+	for b.Loop() {
+		source.Dress(pieces, turns, marks, 14, 1080, 1920)
+	}
+}

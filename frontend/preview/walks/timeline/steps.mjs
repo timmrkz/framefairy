@@ -6,7 +6,7 @@
 // it. Below them the helpers only these steps use. See docs/TESTING.md.
 import { execFileSync } from "node:child_process";
 import { BITS, ask, caughtUp, chosen, clickOnTrack, control, drag, engineState, episodeOn, handles, high, hold, holdSound, inside, letHeld, middle, news, nextNews, nextPaint, pageUntil, playUntil, pressOnTrack, pressPlay, preview, reader, seenUntil, settle, shownOnPlayhead, timeline, xOf, playhead, inputHandled } from "../bridge.mjs";
-import { pieceCount, rate, url } from "../common/steps.mjs";
+import { pieceCount, rate, restAhead, url } from "../common/steps.mjs";
 
 export const steps = {
   // ["trim into", s]   drags the clip's start to s seconds before the end of
@@ -2070,6 +2070,9 @@ export const steps = {
     // at. On a busy machine R was pressed while the video preview
     // still showed the frame from before the click, issue #320.
     await shownOnPlayhead(page);
+    // The dress of the frame turned is read ahead once the frame stands,
+    // see Player.ahead, as a person looks at the frame before pressing R.
+    await restAhead(page);
     const turn = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.turn));
     const before = await turn();
     const frames = await keyShows(page, "r", (b) => Number(document.querySelector(".screen").dataset.turn) !== b, before);

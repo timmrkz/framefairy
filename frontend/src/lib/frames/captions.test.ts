@@ -192,6 +192,8 @@ describe("the layers of the captions", () => {
       moved: false,
       mark: null,
       movable: true,
+      from: 0,
+      to: 0,
     };
   }
 
@@ -221,6 +223,68 @@ describe("the layers of the captions", () => {
     const got = layers.at(1.0, [10, 20]);
     expect(got?.w).toBe(0);
     expect(got?.dress).toEqual(dressOf(7));
+  });
+
+  // A frame whose own dress is on its way, inside the stretch another
+  // frame's dress says is dressed alike, has that dress at once: under a
+  // dragged playhead a frame past a cut stood turned the way the part
+  // before it was. One outside every stretch keeps what was given last.
+  it("dresses a frame on its way with the stretch dressed alike it is in", async () => {
+    let answer: (() => void)[] = [];
+    const dresses = [
+      { ...dressOf(1), turn: 0, from: 1, to: 2 },
+      { ...dressOf(2), turn: 90, from: 2, to: 4 },
+    ];
+    let n = 0;
+    vi.stubGlobal("fetch", () => {
+      const dress = JSON.stringify(dresses[n++] ?? dresses[1]);
+      return new Promise((done) => answer.push(() => done(new Response(new ArrayBuffer(0), { headers: { "X-Frame-Dress": dress } }))));
+    });
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    layers.set({ path: "/v.mp4", clip: "a", framing: "fa", drafts: {} });
+    layers.at(1.0, [10, 20]);
+    answer.shift()!();
+    await layers.taken(1);
+    layers.at(2.0, [10, 20]);
+    answer.shift()!();
+    await layers.taken(2);
+    expect(layers.at(1.0, [10, 20])?.dress?.turn).toBe(0);
+    expect(layers.at(3.2, [10, 20])?.dress?.turn).toBe(90);
+    expect(layers.late).toBe(true);
+    expect(layers.known(3.6, [10, 20])).toBe(true);
+    expect(layers.known(5.0, [10, 20])).toBe(false);
+    expect(layers.at(1.5, [10, 20])?.dress?.turn).toBe(0);
+    expect(layers.at(5.0, [10, 20])?.dress?.turn).toBe(0);
+  });
+
+  // A crop taken gives the clip a new framing, and the frame on screen is
+  // drawn with the dress before until its new one comes. The walks wait
+  // for that, paused, and the frame is drawn again with it first.
+  it("says when the paused frame on screen has its own dress again", async () => {
+    let answer: (() => void)[] = [];
+    let n = 0;
+    vi.stubGlobal("fetch", () => {
+      const dress = JSON.stringify(dressOf(++n));
+      return new Promise((done) => answer.push(() => done(new Response(new ArrayBuffer(0), { headers: { "X-Frame-Dress": dress } }))));
+    });
+    let came = 0;
+    const layers = new CaptionLayers(() => came++, { paused: () => true });
+    layers.set({ path: "/v.mp4", clip: "a", framing: "fa", drafts: {} });
+    expect(layers.dressed()).toBeNull();
+    layers.at(1.0, [10, 20]);
+    answer.shift()!();
+    await layers.taken(1);
+    expect(layers.at(1.0, [10, 20])?.dress?.left).toBe(101);
+    layers.set({ path: "/v.mp4", clip: "a", framing: "fb", drafts: {} });
+    expect(layers.at(1.0, [10, 20])?.dress?.left).toBe(101);
+    expect(layers.dressing).toBe(true);
+    let drawnFirst = false;
+    const dressed = layers.dressed()!.then(() => (drawnFirst = came === 2));
+    answer.shift()!();
+    await dressed;
+    expect(drawnFirst).toBe(true);
+    expect(layers.dressing).toBe(false);
+    expect(layers.at(1.0, [10, 20])?.dress?.left).toBe(102);
   });
 
   // The answer to the nth ask, the way the Go side gives it: a layer whose

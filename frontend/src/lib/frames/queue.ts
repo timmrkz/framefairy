@@ -1162,6 +1162,12 @@ export class FrameQueue {
     if (this.dressFor === this.ticket) return;
     if (seq <= this.shownAsked) return;
     if (this.shown?.rank === rank) return;
+    // Nor one whose dress nothing says yet, see dress: its turn and its
+    // crop would be the frame before's.
+    if (this.over?.known?.(this.shownAt(rank)) === false) {
+      this.over.coming(this.shownAt(rank));
+      return;
+    }
     this.stats.open++;
     this.stats.keys++;
     this.stats.keysAt.push(this.shownAt(rank));
@@ -1186,6 +1192,9 @@ export class FrameQueue {
     at(frame: number, light: Light, fresh: boolean): Over | null;
     coming(frame: number): void;
     ready?(frame: number): Promise<void> | null;
+    // Whether the frame's dress is known, its own or that of the stretch
+    // dressed alike it is in, see dress.
+    known?(frame: number): boolean;
   } | null = null;
   // Starts the wait of a frame for what lies over it, see dress, and says
   // how to call it off: late is told once DRESS_WAIT has passed on the
@@ -1241,10 +1250,15 @@ export class FrameQueue {
   // Whether what lies over the frame that begins at begins is here, asked
   // for at once where it is not: a promise of whether the frame is still wanted once
   // it is, or once DRESS_WAIT has passed, or null when there is nothing to
-  // wait for. Nothing waits while the hand drags the playhead, where each
-  // place is passed in a moment and the picture follows the hand.
+  // wait for. While the hand drags the playhead, where each place is
+  // passed in a moment and the picture follows the hand, a frame waits
+  // only where nothing says how it is dressed, its turn and its crop, the
+  // first frame of a part the drag comes to: put up with the dress of the
+  // frame before, a frame past a cut stood turned the way the part before
+  // it was, #188.
   private dress(begins: number): Promise<boolean> | null {
-    if (this.gripped || !this.over?.ready || !this.video) return null;
+    if (!this.over?.ready || !this.video) return null;
+    if (this.gripped && this.over.known?.(begins) !== false) return null;
     const came = this.over.ready(begins);
     if (!came) return null;
     const ticket = this.ticket;

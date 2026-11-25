@@ -63,13 +63,13 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 
 // RotatePart rotates the part of a clip between two cuts that a moment is
 // in a quarter turn to the left, and returns the clip as it is now.
-func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
+func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, at float64) (RotatedClip, error) {
 	if !s.store.PlanOf(path, plan) {
-		return ClipEntry{}, errNotInLibrary
+		return RotatedClip{}, errNotInLibrary
 	}
 	info, err := s.probe(ctx, path)
 	if err != nil {
-		return ClipEntry{}, err
+		return RotatedClip{}, err
 	}
 	began := time.Now()
 	err = s.edit(path, func() error { return engine.RotatePart(s.store.files, plan, clipID, at, info) })
@@ -87,9 +87,19 @@ func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, 
 	}
 	line.Msg("rotate a part")
 	if err != nil {
-		return ClipEntry{}, err
+		return RotatedClip{}, err
 	}
-	return entry, nil
+	return RotatedClip{Clip: entry, Turns: s.turnsOf(path, s.plansOf(path), entry.Key, []ClipEntry{entry}, info)}, nil
+}
+
+// RotatedClip is the clip a part was rotated in, with how each of its
+// parts turns now. R pressed again before the next state of the video
+// came, at most a quarter of a second later, turned the part by the
+// turns from before the first press, and the video preview showed the
+// second turn only once its answer came.
+type RotatedClip struct {
+	Clip  ClipEntry `json:"clip"`
+	Turns *Turns    `json:"turns"`
 }
 
 // Turns is the clip chosen as it will be once one of its parts is

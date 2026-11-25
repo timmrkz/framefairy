@@ -40,7 +40,7 @@
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playMoves, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
-  import { CaptionLayers, type CaptionAsk, type FrameDress, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
+  import { CaptionLayers, sameDress, type CaptionAsk, type FrameDress, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
   import { shownColour, type Light } from "../lib/frames/light";
   import type { Picture } from "../lib/frames/picture";
   import Info from "./Info.svelte";
@@ -200,6 +200,12 @@
   let shell: HTMLDivElement;
 
   let dragLeft = $state<number | null>(null);
+  // The framing of the clip a crop drag was let go in, once the Go side
+  // took the crop: the crop stays where the hand left it until the frame
+  // on screen is dressed for the clip as it is now, see overAt. Let go
+  // to the dress before it, the crop frame went back for as long as the
+  // new dress took to come, then jumped to where it was put.
+  let cropTaken: string | null = null;
   let savingCrop = $state(false);
   let dragCaptions = $state<number | null>(null);
   let savingCaptions = $state(false);
@@ -290,7 +296,7 @@
     const woken = slept;
     const q = new FrameQueue(canvas, video, movieOf(source), woken);
     q.trace = (line) => said(`video preview: ${line}`, { video: path });
-    q.over = { at: overAt, coming: comingAt, ready: readyAt };
+    q.over = { at: overAt, coming: comingAt, ready: readyAt, known: knownAt };
     q.painted = (frame) => onframe?.(frame);
     queue = q;
     awake.push(forWalks);
@@ -514,13 +520,21 @@
   //
   // What was asked last is asked again of a queue as it opens, once it
   // knows the video: a workspace woken asks before its queue is there.
-  let askedAhead: [number[], { clip: ClipEntry; captions: CaptionsView | null }[]] = [[], []];
-  export function ahead(times: number[], clips: { clip: ClipEntry; captions: CaptionsView | null }[] = []) {
-    askedAhead = [times, clips];
+  //
+  // And turned, the framing R turns the part at the playhead to: the dress
+  // of the playhead's frame under it is read first, so R shows the part
+  // turned in the frame it is pressed on, as it did when the window
+  // turned the picture by itself.
+  let askedAhead: [number[], { clip: ClipEntry; captions: CaptionsView | null }[], string | null] = [[], [], null];
+  export function ahead(times: number[], clips: { clip: ClipEntry; captions: CaptionsView | null }[] = [], turned: string | null = null) {
+    askedAhead = [times, clips, turned];
     if (!queue) return;
     queue.ahead(times);
     const starts: number[] = [];
     const wants: Parameters<typeof layers.next>[0] = [];
+    const here = turned && captionAsk && place !== "video" ? queue.firstFrameAt(time) : null;
+    const room = canvasSize();
+    if (here !== null && captionAsk && room) wants.push({ ask: { ...captionAsk, framing: turned! }, frame: here, size: room });
     // The layers of the frames a word step goes to, first: a step waits
     // for its frame's captions before it is put up, see FrameQueue.dress,
     // and each step lights another word, so its layer is a new one. Found
@@ -1494,7 +1508,11 @@
         said(`video preview: clip ${clip?.id ?? "none"} has its frame up at ${frame.toFixed(3)} s, ${Math.round(performance.now() - holding.since)} ms after it was picked`, { video: path });
       holding = null;
     }
-    if (dress !== dressed) dressed = dress;
+    if (!sameDress(dress, dressed)) dressed = dress;
+    if (cropTaken !== null && dragLeft !== null && (!dress || !layers.late) && (ask?.framing !== cropTaken || dress?.left === dragLeft)) {
+      dragLeft = null;
+      cropTaken = null;
+    }
     drawnClip = ask?.clip ?? "";
     onScreen(layer?.track ?? null, layer?.showing, layer?.scale);
     drawnOver =
@@ -1541,6 +1559,11 @@
   function comingAt(frame: number) {
     const size = canvasSize();
     if (captionAsk && size) layers.coming(frame, size);
+  }
+
+  function knownAt(frame: number): boolean {
+    const size = canvasSize();
+    return !captionAsk || !size || layers.known(frame, size);
   }
 
   // A share of the height of the video preview, as the stylesheet works it
@@ -1653,11 +1676,17 @@
         return;
       }
       savingCrop = true;
+      const framing = clip?.framing ?? null;
       try {
         await oncrop(on, cropMoment(), dragLeft);
         undoCrop = null;
-      } finally {
+        // Kept until the frame on screen has the dress of the crop taken.
+        if (framing !== null && clip?.key === on) cropTaken = framing;
+        else dragLeft = null;
+      } catch (e) {
         dragLeft = null;
+        throw e;
+      } finally {
         savingCrop = false;
       }
     };

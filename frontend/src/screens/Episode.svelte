@@ -1956,7 +1956,11 @@
             for (const done of told) done();
           });
       }
-      player.ahead(times, cards.map((c) => ({ clip: c, captions: viewsAhead.get(c) ?? null })));
+      player.ahead(
+        times,
+        cards.map((c) => ({ clip: c, captions: viewsAhead.get(c) ?? null })),
+        turnAhead,
+      );
     });
   }
   // Settles once the captions of every card were asked for and what the
@@ -1986,8 +1990,18 @@
   // wakes: its video preview opens with frames of its own, which have
   // none of the cards', found by the review of #385.
   $effect(() => {
-    void [hovered, shown, current, ready, away];
+    void [hovered, shown, current, ready, away, turnAhead];
     readAhead();
+  });
+
+  // The framing R turns the part on screen to, whose dress the video
+  // preview reads ahead for the frame at the playhead, so R shows the
+  // part turned in the frame it is pressed on, see Player.ahead.
+  const turnAhead = $derived.by(() => {
+    const turns = session.turns;
+    if (!current || !shownDress?.in || turns.clip !== current.key) return null;
+    const part = current.segments[shownDress.piece]?.part;
+    return turns.parts.find((t) => t.part === part)?.name ?? null;
   });
 
   // Whether the workspace has the episode on it: the window on the range
@@ -2599,7 +2613,11 @@
         ? { ...c, rotations: turn.rotations, segments: turn.segments, cropMarks: turn.cropMarks, cropLefts: turn.cropLefts, framing: turn.name, glides: turn.glides }
         : c;
     try {
-      await session.edit(clip.key, shown, () => api.rotatePart(path, clip.plan, clip.id, at));
+      await session.edit(clip.key, shown, async () => {
+        const { clip: answer, turns } = await api.rotatePart(path, clip.plan, clip.id, at);
+        session.takeTurns(turns, answer.rev ?? 0);
+        return answer;
+      });
     } catch (err) {
       oops(errorText(err));
     }

@@ -185,6 +185,14 @@ const after = (() => {
         woken.push(look);
         return;
       }
+      // The frame on screen is dressed for the clip as it is now: a crop
+      // taken or a part rotated reaches the screen with the dress the Go
+      // side sends for the frame, see CaptionLayers.dressed.
+      const dressing = (window as any).__captionLayers?.dressed?.();
+      if (dressing) {
+        dressing.then(look);
+        return;
+      }
       const going = moving();
       if (!going.length && !timersAside && resting.size) {
         for (const run of [...resting.values()]) run();
@@ -201,7 +209,8 @@ const after = (() => {
         return;
       }
       const seen = back;
-      frame(() => after(() => (back === seen && !busy() && (timersAside || !resting.size) && !moving().length ? done() : look())));
+      const still = () => back === seen && !busy() && !(window as any).__captionLayers?.dressing && (timersAside || !resting.size) && !moving().length;
+      frame(() => after(() => (still() ? done() : look())));
     };
     look();
   });

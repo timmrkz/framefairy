@@ -634,6 +634,13 @@ export interface Turns {
   parts: Turn[];
 }
 
+// The clip a part was rotated in, with how each of its parts turns now,
+// see RotatedClip in edits.go.
+export interface RotatedClip {
+  clip: ClipEntry;
+  turns: Turns | null;
+}
+
 // The clip chosen with the part part rotated a quarter further.
 export interface Turn extends Framing {
   part: number;
@@ -1245,7 +1252,7 @@ export const api = {
   resetCrop: (path: string, plan: string, clip: string, at: number) =>
     call<ClipEntry>("ResetCrop", path, plan, clip, at),
   rotatePart: (path: string, plan: string, clip: string, at: number) =>
-    call<ClipEntry>("RotatePart", path, plan, clip, at),
+    call<RotatedClip>("RotatePart", path, plan, clip, at),
   setCaptionStyle: (path: string, plan: string, font: string, size: number) =>
     call<void>("SetCaptionStyle", path, plan, font, size),
   // The colour of the caption text and of the box behind it, as #rrggbb,

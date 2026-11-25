@@ -70,16 +70,42 @@ export type FrameDress = {
   moved: boolean;
   mark: CropMark | null;
   movable: boolean;
+  // The moments the frames dressed alike around this one start and end
+  // at, see engine.FrameDress.From.
+  from: number;
+  to: number;
 };
 
 export function readDress(header: string | null): FrameDress | undefined {
   if (!header) return undefined;
   try {
     const d = JSON.parse(header) as FrameDress;
-    return typeof d === "object" && d !== null && Number.isFinite(d.left) && Number.isFinite(d.turn) ? d : undefined;
+    if (typeof d !== "object" || d === null || !Number.isFinite(d.left) || !Number.isFinite(d.turn)) return undefined;
+    return d;
   } catch {
     return undefined;
   }
+}
+
+// Whether two frames are dressed alike, their stretches aside, so the
+// video preview keeps the dress it has for the frames of a stretch and
+// what is drawn from it is not worked out again for every frame.
+export function sameDress(a: FrameDress | null | undefined, b: FrameDress | null | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.piece === b.piece &&
+    a.in === b.in &&
+    a.clip === b.clip &&
+    a.turn === b.turn &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.cropWidth === b.cropWidth &&
+    a.left === b.left &&
+    a.moved === b.moved &&
+    a.movable === b.movable &&
+    JSON.stringify(a.mark) === JSON.stringify(b.mark)
+  );
 }
 
 // The size a layer was drawn at, from the header X-Caption-Size,
@@ -628,6 +654,26 @@ export class CaptionLayers {
     return this.waiting !== null;
   }
 
+  // Settles once the frame on screen, paused, is drawn with its own
+  // layer, or its own did not come, for the walks: the crop, the turn and
+  // the captions over it are then those of the clip as it is now. Null
+  // when nothing is on its way for it, or while playing, when the next
+  // frame comes before.
+  dressed(): Promise<void> | null {
+    if (!this.dressing) return null;
+    return new Promise((done) => this.dressWaiters.push(done));
+  }
+  get dressing(): boolean {
+    return this.waiting !== null && this.still?.paused() !== false;
+  }
+  private dressWaiters: (() => void)[] = [];
+  private unwait() {
+    this.waiting = null;
+    const was = this.dressWaiters;
+    this.dressWaiters = [];
+    for (const done of was) done();
+  }
+
   // The layer given last stays while another clip's is on its way: it is
   // the frame on screen's, which stays up until the new clip's frame
   // comes with its own, so the crop, the turn and the captions over the
@@ -639,7 +685,7 @@ export class CaptionLayers {
     if (!ask || ask.path !== this.ask?.path) this.last = null;
     const changed = key !== this.askKey;
     if (changed) {
-      this.waiting = null;
+      this.unwait();
       this.ahead = [];
       this.again.clear();
       // A layer of the new captions on its way, read for a card before it
@@ -666,6 +712,25 @@ export class CaptionLayers {
   private drawAgain() {
     this.came();
     this.settleRest();
+  }
+
+  // A layer kept for the captions there are now whose dress says the frame
+  // that starts at frame is dressed alike, see FrameDress.from.
+  private alike(frame: number): Layer | null {
+    const ask = `${this.askKey}\n`;
+    for (const [k, l] of this.kept) {
+      const d = l.dress;
+      if (d && k.startsWith(ask) && frame >= d.from - 0.0005 && frame < d.to - 0.0005) return l;
+    }
+    return null;
+  }
+
+  // Whether the dress of the frame that starts at frame is known, its own
+  // or that of a stretch dressed alike, so the frame can be put up under
+  // a dragged playhead without waiting for it. Nothing to dress is known.
+  known(frame: number, size: [number, number]): boolean {
+    const want = this.wanted(frame, size);
+    return !want || this.kept.has(want.key) || this.alike(frame) !== null;
   }
 
   // What lies over the frame that starts at frame, asked for now and before
@@ -782,7 +847,26 @@ export class CaptionLayers {
       this.stats.late++;
       this.waiting = want;
       this.fetch(want);
-      return this.lift ? this.lifted(this.lift) : this.last;
+      if (this.lift) return this.lifted(this.lift);
+      // The frame's own, drawn at another size, is its own dress and its
+      // own captions, laid over it at the size there is until the one
+      // at this size comes: the video preview turned with R is laid out
+      // at another size, and turned only once the layer at that size
+      // came, frames after the press.
+      const prefix = want.key.slice(0, want.key.lastIndexOf("\n") + 1);
+      for (const [k, l] of this.kept) if (k.startsWith(prefix)) return l;
+      // A frame of the stretch another frame's dress says is dressed
+      // alike has that dress, with the captions given last over it until
+      // its own come: under a dragged playhead a frame past a cut stood
+      // turned the way the part before it was, see FrameDress.from.
+      const alike = this.alike(frame);
+      if (alike) {
+        const d = alike.dress!;
+        const last = this.last;
+        const like = last?.dress && last.dress.turn === d.turn && last.dress.cropWidth === d.cropWidth && last.dress.width === d.width;
+        return like ? { ...last, dress: d } : alike;
+      }
+      return this.last;
     }
     // Drawn now, so the last to go when the layers kept are too many, see
     // fetch. Kept in the order they came, the layer of a card clicked
@@ -1063,7 +1147,7 @@ export class CaptionLayers {
               }
             }, AGAIN);
           } else {
-            if (w?.key === key) this.waiting = null;
+            if (w?.key === key) this.unwait();
             this.keep(key);
             this.gaveUp(ask, "a layer", why);
           }
@@ -1076,6 +1160,7 @@ export class CaptionLayers {
         if (w && this.kept.has(w.key)) {
           this.waiting = null;
           this.drawAgain();
+          this.unwait();
         }
         this.more();
       })

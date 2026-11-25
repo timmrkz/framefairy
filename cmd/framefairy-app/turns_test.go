@@ -46,10 +46,11 @@ func TestTheStateSaysHowEachPartOfTheChosenClipTurns(t *testing.T) {
 	}
 	// The part after the cut, the second, as R would show it.
 	shown := turns.Parts[1]
-	answer, err := svc.RotatePart(ctx, video, plan, "01", 13.5)
+	rotated, err := svc.RotatePart(ctx, video, plan, "01", 13.5)
 	if err != nil {
 		t.Fatal(err)
 	}
+	answer := rotated.Clip
 	if shown.Part != answer.Segments[2].Part {
 		t.Errorf("the turn is of part %d, the piece turned is in part %d", shown.Part, answer.Segments[2].Part)
 	}
@@ -69,6 +70,11 @@ func TestTheStateSaysHowEachPartOfTheChosenClipTurns(t *testing.T) {
 	}
 	if answer.Segments[2].Rotate != 90 || answer.Segments[0].Rotate != 0 {
 		t.Errorf("R turned the pieces %d, %d and %d", answer.Segments[0].Rotate, answer.Segments[1].Rotate, answer.Segments[2].Rotate)
+	}
+	// The answer says how the parts turn now, so R pressed again before
+	// the next state turns the part a quarter further.
+	if next := rotated.Turns; next == nil || next.Clip != "clips.json/01" || len(next.Parts) != 2 || next.Parts[1].Segments[2].Rotate != 180 {
+		t.Errorf("the answer says the parts turn %+v, want the second to 180", next)
 	}
 }
 
