@@ -31,8 +31,10 @@ user's own reports:
   the whole folder, `Machine.DeleteWork` in `engine/frames.go`.
 - In the user's logs from 7 to 21 November there are 14 removals, every
   one with the folder deleted, `work_deleted: true`. 8 of them were
-  followed by adding the same video again within 20 seconds, to start
-  it over. The other 6 were not added again within the logs there are.
+  followed by adding the same video again within 20 seconds. The other
+  6 were not added again within the logs there are. The user removes
+  videos while testing, or for any other reason, and wants a video
+  added again to come back with the progress made on it.
 - The three things to keep are small files in the folder's `logs`:
   - the transcript, `words.json`, with the parts transcribed so far, and its
     loudness, `words.frames`
@@ -228,8 +230,3 @@ then.
 
 What it does not cover: a folder deleted in Finder, and a video
 exported again as a new file, which is a different fingerprint.
-
-## The open question
-
-8 of the user's 14 removals were to start a video over. After this,
-adding it again brings everything back. Where does starting over go?
