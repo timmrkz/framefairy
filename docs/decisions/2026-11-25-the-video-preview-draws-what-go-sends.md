@@ -226,8 +226,15 @@ decoder     frames, sound, libass
 
 ## What follows
 
-What it costs: about 2,000 lines leave the window, a route and an
-engine function come in, and the play gains a way to take a change in.
+What it costs: a route and an engine function come in, and the play
+gains a way to take a change in. Steps 1 and 2 took the rules out of the
+window, `rotate.ts`, `keyframes.ts`, the lookups in `Player.svelte` and
+the take over, but the window did not get smaller: about 90 lines more,
+against about 690 more in Go. What the window gained hides that the
+dress is asked apart from the frame, the stretch dressed alike, the
+turned dress and the waits. Sent with every frame Go sends, candidate
+4, put off until a play knows its clip, which step 2 made true, the
+dress would take those with it. That goes with step 3.
 What it buys: a frame can no longer show without its captions, the crop
 and the captions cannot disagree, and the rules named under Not to copy
 for the video preview go. What would show it was wrong: a dress ask
