@@ -380,6 +380,8 @@ export default [
     steps: [
       ["speech", "hold"],
       ["add", 120],
+      ["wait for", "Search"],
+      ["head"],
       ["wait for", "Cancel"],
       ["updates", { from: "main", list: "main,pr-20" }],
       ["status", "A newer build is ready", "Relaunch once the search is done"],

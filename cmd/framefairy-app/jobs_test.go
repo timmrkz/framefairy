@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -953,16 +954,25 @@ func relaunchAfterWork(t *testing.T) {
 }
 
 // A search that has ended asks for the model to be kept again, because it
-// may have put the kept model aside for another one, see keep.go.
+// may have put the kept model aside for another one, see keep.go, and
+// says how it ended, so the work on a video's clips carries its
+// transcription on, see transcribeRest.
 func TestASearchThatEndsKeepsTheModelAgain(t *testing.T) {
 	t.Parallel()
 	q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
-	searched := make(chan struct{}, 1)
-	q.searched = func() { searched <- struct{}{} }
-	q.add("/home/tim/ep.mp4", engine.JobSearch, "Search", func(context.Context, *engine.Project) (string, error) {
-		return "", nil
-	})
-	<-searched
+	searched := make(chan Job, 1)
+	q.searched = func(j Job) { searched <- j }
+	for _, c := range []struct {
+		state string
+		err   error
+	}{{JobDone, nil}, {JobFailed, errors.New("the model did not answer")}} {
+		q.add("/home/tim/ep.mp4", engine.JobSearch, "Search", func(context.Context, *engine.Project) (string, error) {
+			return "", c.err
+		})
+		if j := <-searched; j.Episode != "/home/tim/ep.mp4" || j.Kind != engine.JobSearch || j.State != c.state {
+			t.Errorf("a search that ended %s was told as %s, %s of %s", c.state, j.State, j.Kind, j.Episode)
+		}
+	}
 }
 
 // A job that hears a video in parts has the library read again each time
@@ -1354,7 +1364,7 @@ func (q *queue) add(episode, kind, label string,
 func (q *queue) busy() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.busyLocked()
+	return slices.ContainsFunc(q.jobs, (*Job).going)
 }
 
 // cancelEpisode stops every job of an episode and waits until none of them
@@ -1377,4 +1387,34 @@ func (q *queue) find(episode, kind string) (Job, bool) {
 		}
 	}
 	return Job{}, false
+}
+
+// Relaunch does not wait for the whole video's transcription, which the
+// app starts by itself once a video is added and which can take an hour:
+// what it transcribed stays, and it carries on once the app opens again.
+// A part of a clip being transcribed is waited for. The job says which,
+// so the Updates page says what the queue does.
+func TestRelaunchDoesNotWaitForTheWholeVideosTranscription(t *testing.T) {
+	t.Parallel()
+	q := newIdleQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
+	const ep = "/eps/ep.mp4"
+	whole := q.addSteps(ep, engine.JobTranscribe, "Transcribe whole video", true, func(j *Job) { j.JobRecord.ID = engine.TranscribeID }, nil)
+	if whole.Waits {
+		t.Error("the whole video's transcription says Relaunch waits for it")
+	}
+	reopen, idle := q.closeIfIdle()
+	if !idle {
+		t.Fatal("Relaunch waits for the whole video's transcription")
+	}
+	reopen()
+	part := q.addSteps(ep, engine.JobTranscribe, "Transcribe the clip", true, func(j *Job) {
+		j.JobRecord.ID, j.From, j.To = engine.TranscribePartID, 120, 150
+	}, nil)
+	if !part.Waits {
+		t.Error("a part of a clip being transcribed says Relaunch does not wait for it")
+	}
+	if reopen, idle := q.closeIfIdle(); idle {
+		reopen()
+		t.Error("Relaunch does not wait for a part of a clip being transcribed")
+	}
 }

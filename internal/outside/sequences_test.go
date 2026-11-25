@@ -30,7 +30,7 @@ package outside
 //                          until it answers
 //   {"add video", seconds} adds a video so many seconds long, a length
 //                          internal/fixtures has, the way Add does once a
-//                          file is picked. Its first search starts by itself
+//                          file is picked. Its transcription starts by itself
 //   {"search and quit", from, to}
 //                          asks for a search of the window from and to, in
 //                          seconds, and quits the app in the same moment,

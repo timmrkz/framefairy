@@ -486,9 +486,11 @@ messages, pull request text, code comments and chat replies.
   closing, Stopped with Continue, because what it did stays and can be
   carried on. An empty column after Cancel reads as work that vanished.
 - **What the app can do by itself, it does.** Adding a video is enough: the
-  transcription starts, and the first search follows as soon as the
-  transcript covers the window. A state every episode passes
-  through, like having no transcript yet, is never reported as a failure.
+  whole video is transcribed from its start. Search pressed meanwhile
+  goes first: the transcription stops, the window is transcribed as far
+  as it is not yet, the clips are found, and the transcription carries
+  on. A state every episode passes through, like having no transcript
+  yet, is never reported as a failure.
 - **One space between two things.** Every gap in the workspace is `--gap`
   from `frontend/src/app.css`: between the columns, between the video
   preview and the range picker under it, between one row and the next, and

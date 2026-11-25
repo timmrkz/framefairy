@@ -130,8 +130,13 @@ func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 	if made := d.madeByHand(ep); len(made) != 1 || made[0].Start > 250 {
 		t.Fatalf("made %+v", made)
 	}
-	if heard := d.speech.seconds(); heard > 300+30 {
-		t.Errorf("%.0f s heard for a 300 s episode, %.0f s of them before the app closed", heard, given)
+	// The clip done, the rest of the video is transcribed by itself, and
+	// nothing twice either: what is transcribed is the episode once, the
+	// piece the close cut off, and at most the shortest piece where a
+	// short gap is transcribed whole, 15 s, see chunkMin in engine/audio.go.
+	d.idle(ep)
+	if done := d.speech.seconds(); done > 300+given+15 {
+		t.Errorf("%.0f s transcribed for a 300 s episode, %.0f s of them before the app closed", done, given)
 	}
 	if left := engine.ReadJobs(disk, ep); len(left) != 0 {
 		t.Errorf("records left: %+v", left)
@@ -461,16 +466,16 @@ func TestAClipsPartIsHeardBesideTheWholeVideo(t *testing.T) {
 	svc, eps := memoryLibrary(t, "ep.mp4")
 	svc.jobs = newIdleQueue(svc.store, func(JobUpdate) {}, func(string) {})
 	whole := svc.Transcribe(eps[0])
-	part := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}, false)
-	around := svc.transcribe(eps[0], timed.Window{Start: 60, End: 210}, true)
+	part := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}, false, false)
+	around := svc.transcribe(eps[0], timed.Window{Start: 60, End: 210}, true, false)
 	if whole.ID == part.ID || part.ID == around.ID || whole.Hears() != engine.HearsWhole ||
 		part.Hears() != engine.HearsPart || around.Hears() != engine.HearsAround {
 		t.Fatalf("the whole video is %+v, the part %+v, around it %+v", whole, part, around)
 	}
-	if again := svc.transcribe(eps[0], timed.Window{Start: 60, End: 210}, true); again.ID != around.ID {
+	if again := svc.transcribe(eps[0], timed.Window{Start: 60, End: 210}, true, false); again.ID != around.ID {
 		t.Errorf("around the clip asked for again is %s, not the one that runs, %s", again.ID, around.ID)
 	}
-	if again := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}, false); again.ID != part.ID {
+	if again := svc.transcribe(eps[0], timed.Window{Start: 120, End: 150}, false, false); again.ID != part.ID {
 		t.Errorf("the part asked for again is %s, not the one that runs, %s", again.ID, part.ID)
 	}
 	if again := svc.Transcribe(eps[0]); again.ID != whole.ID {

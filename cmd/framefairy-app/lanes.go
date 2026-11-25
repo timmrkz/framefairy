@@ -45,8 +45,10 @@ import (
 // minute or two of audio, heard in a second or two, and the next drag
 // may need it.
 //
-// And last: the whole video heard by itself, Transcribe whole video in
-// its menu, hears only when no search and no clip needs the lane. It can
+// And last: the whole video transcribed, Transcribe whole video in its
+// menu, or by itself once the video is added and again once a search or
+// a clip made by hand of it has ended, see transcribeRest,
+// transcribes only when no search and no clip needs the lane. It can
 // take an hour, and nobody waits on it the way somebody waits on a search
 // or a clip, so it goes behind every one of them that asks to hear, gives
 // the lane back to each, and waits while a search finds, like a search

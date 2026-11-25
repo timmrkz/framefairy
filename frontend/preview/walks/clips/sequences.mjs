@@ -97,7 +97,7 @@ export default [
   },
   {
     // Plan row 2.177. Tim added a video of 15 s with Shortest at 20 s:
-    // its first search failed, the range picker had no line on it and the
+    // its search failed, the range picker had no line on it and the
     // clip timeline showed a minute.
     name: "a video shorter than a clip is its own clip, with rulers that fit it",
     steps: [
@@ -105,6 +105,8 @@ export default [
       // way Tim saw them once the search had failed.
       ["speech", "hold"],
       ["add", 15],
+      ["wait for", "Search"],
+      ["head"],
       ["rulers fit", 15],
       ["speech", "go"],
       ["wait for", "Search"],
@@ -126,6 +128,8 @@ export default [
       // the app's timers are Playwright's from the start, see fakeClock.
       ["fake clock"],
       ["add", 15],
+      ["wait for", "Search"],
+      ["head"],
       ["wait for", "Search"],
       ["whole clip", 15],
       ["remove clip"],

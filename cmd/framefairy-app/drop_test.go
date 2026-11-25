@@ -15,7 +15,7 @@ import (
 )
 
 // A drop on the app adds what Add would add: the video among the files,
-// with its first search started, and every other file left out with its
+// with its transcription started, and every other file left out with its
 // name. The same video dropped again is added no second time, and is the
 // one to open, so the drop shows something rather than nothing.
 //
@@ -46,8 +46,8 @@ func TestDropAddsTheVideosAndOpensOne(t *testing.T) {
 		t.Errorf("%s is not in the library", filepath.Base(video))
 	}
 	<-d.svc.checked(video)
-	if !slices.ContainsFunc(d.svc.Jobs(), func(j Job) bool { return j.Episode == video }) {
-		t.Errorf("no first search started for %s, as Add starts one", filepath.Base(video))
+	if !slices.ContainsFunc(d.svc.Jobs(), func(j Job) bool { return j.Episode == video && j.Hears() == engine.HearsWhole }) {
+		t.Errorf("%s is not transcribed, as Add transcribes it", filepath.Base(video))
 	}
 
 	again := d.svc.dropFiles([]string{video})
@@ -153,8 +153,7 @@ func TestDropOpensTheVideoAdded(t *testing.T) {
 
 // Every drop is taken on a goroutine of its own, beside Add and the
 // queue, so many at once, while the window reads the jobs and the
-// library, put each video in the library once and start one first
-// search for it.
+// library, put each video in the library once and transcribe it once.
 func TestDropsAtOnce(t *testing.T) {
 	d := open(t)
 	videos := []string{d.episode("eins", "12"), d.episode("zwei", "12")}
@@ -180,14 +179,14 @@ func TestDropsAtOnce(t *testing.T) {
 		if n := len(slices.DeleteFunc(slices.Clone(library), func(p string) bool { return p != v })); n != 1 {
 			t.Errorf("%s is in the library %d times", filepath.Base(v), n)
 		}
-		searches := 0
+		transcribed := 0
 		for _, j := range d.svc.Jobs() {
-			if j.Episode == v && j.Kind == "search" {
-				searches++
+			if j.Episode == v && j.Hears() == engine.HearsWhole {
+				transcribed++
 			}
 		}
-		if searches != 1 {
-			t.Errorf("%s has %d first searches, want 1", filepath.Base(v), searches)
+		if transcribed != 1 {
+			t.Errorf("%s is transcribed %d times, want once", filepath.Base(v), transcribed)
 		}
 	}
 }
@@ -215,7 +214,7 @@ func TestADropThatPanicsSaysWhyNotTheAppGoing(t *testing.T) {
 // BenchmarkADrop is how long the window waits after a video it has not
 // seen is dropped, issue #832: until the drop is answered and the window
 // can open the video, and until its picture has been checked and its
-// first search started. Each round drops a 10 minute video copied under
+// transcription started. Each round drops a 10 minute video copied under
 // a new name, so nothing is known of it, and closes its decoder before
 // the next, the way a video dropped for the first time finds none.
 //

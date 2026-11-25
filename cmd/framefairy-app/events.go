@@ -81,6 +81,9 @@ func (s *FrameFairy) tellWindow(w emitter) {
 			jobEvent.to(w, u)
 		}
 	}, func(episode string) { episodeEvent.to(w, episode) })
+	// The work on a video's clips that ended carries its transcription on,
+	// see searched.
+	s.jobs.searched = s.searched
 	// A video's state is sent whole as its work goes on, see videostate.go.
 	s.news = newVideoNews(func(path string) (VideoState, error) {
 		return s.State(context.Background(), path)
