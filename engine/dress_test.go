@@ -58,6 +58,23 @@ func TestAFrameOfACutIsDressedWithTheNearestPiecesCrop(t *testing.T) {
 	}
 }
 
+// A piece whose edges lie inside frames holds the frame its start falls
+// in and the one its end falls in, which the video preview shows for
+// those moments, and the crop frame stands over them.
+func TestAPieceHoldsTheFramesItsEdgesFallIn(t *testing.T) {
+	t.Parallel()
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	pieces := []SegmentView{{Start: 1.01, End: 2.01}, {Start: 3, End: 4}}
+	for _, c := range []struct {
+		at float64
+		in bool
+	}{{0.96, false}, {1, true}, {1.5, true}, {2, true}, {2.04, false}, {2.96, false}, {3, true}, {3.96, true}, {4, false}} {
+		if d := source.Dress(pieces, nil, nil, c.at, 1080, 1920); d.In != c.in {
+			t.Errorf("the frame at %.2f s is held by a piece %v, want %v", c.at, d.In, c.in)
+		}
+	}
+}
+
 // A frame in a stretch a person rotated is turned, the picture is as large
 // as it stands turned, and the crop is cut out of it.
 func TestARotatedFrameIsDressedTurned(t *testing.T) {

@@ -36,7 +36,7 @@
   // video and nothing else.
   import { onMount, untrack, type Snippet } from "svelte";
   import { said } from "../lib/said";
-  import { insideClip, wordInEpisode, type Piece } from "../lib/flow";
+  import { wordInEpisode, type Piece } from "../lib/flow";
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playMoves, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Program, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
@@ -515,19 +515,9 @@
   //
   // What was asked last is asked again of a queue as it opens, once it
   // knows the video: a workspace woken asks before its queue is there.
-  //
-  // And turned, the framing R turns the part at the playhead to: the dress
-  // of the playhead's frame under it is read after the word steps' and
-  // before the cards', so R shows the part turned in the frame it is
-  // pressed on, as it did when the window turned the picture by itself.
-  // Read first, it held back the next word's layer at every step. Not
-  // while the hand drags the playhead, which passes a frame in a moment:
-  // read for each, a third of what libass drew was for frames nobody
-  // pressed R on, and the frames a step went to waited behind them.
-  let gripping = false;
-  let askedAhead: [number[], { clip: ClipEntry; captions: CaptionsView | null }[], string | null] = [[], [], null];
-  export function ahead(times: number[], clips: { clip: ClipEntry; captions: CaptionsView | null }[] = [], turned: string | null = null) {
-    askedAhead = [times, clips, turned];
+  let askedAhead: [number[], { clip: ClipEntry; captions: CaptionsView | null }[]] = [[], []];
+  export function ahead(times: number[], clips: { clip: ClipEntry; captions: CaptionsView | null }[] = []) {
+    askedAhead = [times, clips];
     if (!queue) return;
     queue.ahead(times);
     const starts: number[] = [];
@@ -542,8 +532,6 @@
       const frame = queue.firstFrameAt(at);
       if (frame !== null && ask && size) wants.push({ ask, frame, size });
     }
-    const here = turned && ask && place !== "video" && !gripping ? queue.firstFrameAt(time) : null;
-    if (here !== null && ask && size) wants.push({ ask: { ...ask, framing: turned! }, frame: here, size });
     for (const { clip: of, captions: view } of clips) {
       const frame = queue.firstFrameAt(of.start);
       if (frame === null) break;
@@ -599,11 +587,6 @@
   export function hold(held: boolean) {
     if (!queue) return;
     queue.grip(held);
-    // The turned dress waits for the hand to let go, see ahead.
-    if (gripping !== held) {
-      gripping = held;
-      if (!held && askedAhead[2]) ahead(...askedAhead);
-    }
     if (held) {
       if (paused || nailed) return;
       nailed = true;
@@ -745,7 +728,12 @@
       width: (d.cropWidth / d.width) * 100,
       // On the video the clip's rules are not in play, and the video
       // preview shows the episode alone, the clip's moments included.
-      inside: place !== "video" && insideClip(clip.segments, time, oneFrame),
+      // Otherwise the frame on screen's own dress says whether a piece
+      // holds it, so the crop frame stays with the frame: worked out from
+      // the playhead and the clip as it is now, it went off for an
+      // animation frame each time a start dragged later passed the frame
+      // on screen, before the playhead followed, issue #755.
+      inside: place !== "video" && d.in,
       moved: d.moved,
     };
   });

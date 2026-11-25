@@ -74,7 +74,11 @@ export type FrameDress = {
   // at, see engine.FrameDress.From.
   from: number;
   to: number;
+  // The frame's dress once R turns the part that holds it, and the
+  // framing the clip has then, see dressSent in cmd/framefairy-app/dress.go.
+  turned?: Turned | null;
 };
+export type Turned = FrameDress & { framing: string };
 
 export function readDress(header: string | null): FrameDress | undefined {
   if (!header) return undefined;
@@ -848,6 +852,14 @@ export class CaptionLayers {
       this.waiting = want;
       this.fetch(want);
       if (this.lift) return this.lifted(this.lift);
+      // The frame R turned, with the dress the Go side sent with it for
+      // the framing R turns it to, the captions given last over it until
+      // its own come, so R shows the part turned in the frame it is
+      // pressed on.
+      const turned = this.last?.dress?.turned;
+      if (turned && turned.framing === want.ask.framing && frame >= turned.from - 0.0005 && frame < turned.to - 0.0005) {
+        return { ...this.last!, dress: turned };
+      }
       // The frame's own, drawn at another size, is its own dress and its
       // own captions, laid over it at the size there is until the one
       // at this size comes: the video preview turned with R is laid out

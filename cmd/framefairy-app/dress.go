@@ -70,3 +70,44 @@ func layerSize(d engine.FrameDress, width, height int) (int, int) {
 	}
 	return int(float64(d.CropWidth)/float64(d.Width)*float64(width) + 0.5), height
 }
+
+// dressSent is a frame's dress as the window is sent it, with the dress
+// the frame has once R turns the part that holds it, see Turns.
+type dressSent struct {
+	engine.FrameDress
+	Turned *turnedDress `json:"turned,omitempty"`
+}
+
+// turnedDress is a frame's dress with its part turned a quarter further,
+// and the framing that turns it so, which the clip has once R is pressed.
+// The video preview turns the frame R is pressed on by it, in the frame
+// it is pressed in, until the frame's own dress under that framing comes.
+// It was read ahead for the frame at the playhead after every step, a
+// layer of captions libass drew for each, and the next step's frame
+// waited behind it.
+type turnedDress struct {
+	Framing string `json:"framing"`
+	engine.FrameDress
+}
+
+// dressSent is the dress of the frame at a moment, d, of the clip whose
+// framing is named name, with its dress turned where a piece of the clip
+// holds the frame and R would turn that piece's part.
+func (p *previews) dressSent(name string, clip framed, d engine.FrameDress, at float64) dressSent {
+	out := dressSent{FrameDress: d}
+	if !d.In || d.Piece < 0 || d.Piece >= len(clip.segments) {
+		return out
+	}
+	parts, ok := p.turns.get(name)
+	if !ok {
+		return out
+	}
+	turned := parts[clip.segments[d.Piece].Part]
+	if turned == "" {
+		return out
+	}
+	if g, ok := p.framings.get(turned); ok && g.episode == clip.episode {
+		out.Turned = &turnedDress{Framing: turned, FrameDress: g.dress(at, false)}
+	}
+	return out
+}

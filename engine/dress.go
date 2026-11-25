@@ -94,7 +94,7 @@ func sameDress(a, b FrameDress) bool {
 func (s SourceInfo) dressOf(segments []SegmentView, rotations []Rotation, marks []CropMarkView, at float64, outW, outH int, runs map[[3]int]cropRun) FrameDress {
 	d := FrameDress{Piece: -1, Turn: RotationAt(rotations, at)}
 	for i, seg := range segments {
-		if at >= seg.Start-frameHair && at < seg.End-frameHair {
+		if s.holdsFrame(seg, at) {
 			d.Piece, d.In = i, true
 			break
 		}
@@ -146,4 +146,17 @@ func (s SourceInfo) dressOf(segments []SegmentView, rotations []Rotation, marks 
 	}
 	d.Movable = len(seg.Marks) == 0 || (d.Mark != nil && !d.Mark.Opens)
 	return d
+}
+
+// holdsFrame says a piece holds the frame that starts at a moment: the
+// frame its start falls in, up to the one its end falls in, so the frame
+// the video preview shows for a moment of the piece is the piece's, also
+// where an edge lies inside a frame. A piece ends where the frame its end
+// starts begins, the frame before it is its last.
+func (s SourceInfo) holdsFrame(seg SegmentView, at float64) bool {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return at >= seg.Start-frameHair && at < seg.End-frameHair
+	}
+	k := s.frameHolding(at)
+	return k >= s.frameHolding(seg.Start) && k <= s.frameHolding(seg.End-2*frameHair) && seg.End > seg.Start
 }

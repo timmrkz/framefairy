@@ -257,6 +257,33 @@ describe("the layers of the captions", () => {
     expect(layers.at(5.0, [10, 20])?.dress?.turn).toBe(0);
   });
 
+  // R gives the clip the framing the dress of the frame on screen says it
+  // turns to, and the frame is dressed turned at once, with the captions
+  // given last over it, while its own dress under that framing is on its
+  // way. A framing it does not name, or a frame outside the stretch the
+  // turned dress covers, keeps what was given last.
+  it("dresses the frame R turned with the turned dress sent with it", async () => {
+    const turned = { ...dressOf(3), turn: 90, width: 270, height: 480, cropWidth: 270, from: 1, to: 2, framing: "fb" };
+    // The first ask is answered, the ones after stay on their way.
+    let answers = 0;
+    vi.stubGlobal("fetch", () =>
+      answers++ === 0
+        ? Promise.resolve(new Response(new ArrayBuffer(0), { headers: { "X-Frame-Dress": JSON.stringify({ ...dressOf(1), from: 1, to: 2, turned }) } }))
+        : new Promise(() => {}),
+    );
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    layers.set({ path: "/v.mp4", clip: "a", framing: "fa", drafts: {} });
+    layers.at(1.0, [10, 20]);
+    await layers.taken(1);
+    expect(layers.at(1.0, [10, 20])?.dress?.turn).toBe(0);
+    layers.set({ path: "/v.mp4", clip: "a", framing: "fb", drafts: {} });
+    const got = layers.at(1.0, [10, 20]);
+    expect(got?.dress).toEqual(turned);
+    expect(layers.late).toBe(true);
+    layers.set({ path: "/v.mp4", clip: "a", framing: "fc", drafts: {} });
+    expect(layers.at(1.0, [10, 20])?.dress?.turn).toBe(0);
+  });
+
   // A crop taken gives the clip a new framing, and the frame on screen is
   // drawn with the dress before until its new one comes. The walks wait
   // for that, paused, and the frame is drawn again with it first.

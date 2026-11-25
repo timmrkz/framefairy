@@ -1956,11 +1956,7 @@
             for (const done of told) done();
           });
       }
-      player.ahead(
-        times,
-        cards.map((c) => ({ clip: c, captions: viewsAhead.get(c) ?? null })),
-        turnAhead,
-      );
+      player.ahead(times, cards.map((c) => ({ clip: c, captions: viewsAhead.get(c) ?? null })));
     });
   }
   // Settles once the captions of every card were asked for and what the
@@ -1990,18 +1986,8 @@
   // wakes: its video preview opens with frames of its own, which have
   // none of the cards', found by the review of #385.
   $effect(() => {
-    void [hovered, shown, current, ready, away, turnAhead];
+    void [hovered, shown, current, ready, away];
     readAhead();
-  });
-
-  // The framing R turns the part on screen to, whose dress the video
-  // preview reads ahead for the frame at the playhead, so R shows the
-  // part turned in the frame it is pressed on, see Player.ahead.
-  const turnAhead = $derived.by(() => {
-    const turns = session.turns;
-    if (!current || !shownDress?.in || turns.clip !== current.key) return null;
-    const part = current.segments[shownDress.piece]?.part;
-    return turns.parts.find((t) => t.part === part)?.name ?? null;
   });
 
   // Whether the workspace has the episode on it: the window on the range
