@@ -634,7 +634,11 @@ scan made once is out of date the week after.
 - **Dependabot**, `.github/dependabot.yml`, opens a pull request once a
   week when a Go module, a package of the interface, an action or a
   Python package in `requirements.txt` has a newer version, and when the
-  Ubuntu image the CI image starts from has a newer build. Minor and patch versions come together, one pull request
+  Ubuntu image the CI image starts from has a newer build. A new
+  version waits seven days before Dependabot takes it, `cooldown` on
+  every ecosystem, so a hijacked release is usually found and pulled by
+  then. GitHub's own wait is three days. A security update never waits.
+  Minor and patch versions come together, one pull request
   for the Go modules and one for the interface, and a new major version
   comes in a pull request of its own, so a major that breaks the build
   holds back nothing else. The Go modules include the ones `go.mod`
@@ -675,8 +679,12 @@ scan made once is out of date the week after.
   vitest and the other build tools. A warning that has a fix the package bringing it
   does not accept yet is fixed instead, by pinning the fixed version in
   `overrides` in `frontend/package.json`, like minimatch 11 under ESLint,
-  and the pin is taken out once that package accepts the fix. Either
-  failing is a red check.
+  and the pin is taken out once that package accepts the fix.
+  osv-scanner reads both after them, in the same job as govulncheck,
+  against OSV's database, which also lists the packages known to be
+  malicious, where the two others read only flaws. Its version is pinned
+  in the workflow with the sha256 of its release, since Dependabot does
+  not move it. Any of them failing is a red check.
 - **No install scripts.** `frontend/.npmrc` says `ignore-scripts=true`,
   so no package of the interface runs code of its own while it is
   installed, in make, in CI or by hand. A hijacked release that runs on

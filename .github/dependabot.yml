@@ -24,6 +24,11 @@
 # go.mod first, by hand, and internal/workflows fails when the two part,
 # so a newer one in the group would hold back Ubuntu's fixes beside it.
 #
+# A new version waits a week before it is taken, see cooldown below
+# each ecosystem, so a hijacked release is caught by the people who
+# watch for that before it reaches a pull request here. GitHub's own
+# wait, when none is set, is three days. A security update never waits.
+#
 # Minor and patch versions come together, one pull request a week for the
 # Go modules and one for the interface. A new major version comes alone,
 # because a major can break the build, and a broken one in the group
@@ -39,14 +44,20 @@ multi-ecosystem-groups:
       interval: weekly
 updates:
   - package-ecosystem: gomod
+    cooldown:
+      default-days: 7
     directory: /
     patterns: ["github.com/wailsapp/wails/v3"]
     multi-ecosystem-group: wails
   - package-ecosystem: npm
+    cooldown:
+      default-days: 7
     directory: /frontend
     patterns: ["@wailsio/runtime"]
     multi-ecosystem-group: wails
   - package-ecosystem: gomod
+    cooldown:
+      default-days: 7
     directory: /
     schedule:
       interval: weekly
@@ -65,6 +76,8 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
   - package-ecosystem: npm
+    cooldown:
+      default-days: 7
     directory: /frontend
     schedule:
       interval: weekly
@@ -81,6 +94,8 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
   - package-ecosystem: github-actions
+    cooldown:
+      default-days: 7
     # The workflows, and the setup every CI job shares.
     directories: [/, /.github/actions/prepare, /.github/actions/save]
     schedule:
@@ -89,6 +104,8 @@ updates:
       actions:
         patterns: ["*"]
   - package-ecosystem: docker
+    cooldown:
+      default-days: 7
     directory: /.github/ci-image
     schedule:
       interval: weekly
@@ -104,6 +121,8 @@ updates:
         patterns: ["*"]
   # The Python packages CI installs, requirements.txt, with their hashes.
   - package-ecosystem: pip
+    cooldown:
+      default-days: 7
     directory: /
     schedule:
       interval: weekly
