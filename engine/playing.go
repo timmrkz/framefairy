@@ -64,8 +64,10 @@ type Play struct {
 
 	mu      sync.Mutex
 	program Program
-	// retake is the play that takes over from this one, see Retake.
-	retake *retaking
+	// retake is the play that takes over from this one, see Retake, and
+	// stopped says this one was stopped, so it hands over to none.
+	retake  *retaking
+	stopped bool
 	// retakes keeps one change at a time going to the play, and gens
 	// counts them, see Retake.
 	retakes sync.Mutex
@@ -219,9 +221,13 @@ func (p *Play) Current() (*Play, float64) {
 
 // handOver gives the decoder to the play that takes over, where this one
 // has it, and stops this one: its frames from the place on are the new
-// play's.
-func (p *Play) handOver() *retaking {
+// play's. A play stopped hands over to none, and says so.
+func (p *Play) handOver() bool {
 	p.mu.Lock()
+	if p.stopped {
+		p.mu.Unlock()
+		return false
+	}
 	r := p.retake
 	r.switched, r.entered = true, true
 	p.mu.Unlock()
@@ -232,16 +238,18 @@ func (p *Play) handOver() *retaking {
 		r.next.Go()
 	}
 	p.cancel()
-	return r
+	return true
 }
 
 // end stops the play, and the play of a changed clip waiting to take
 // over from it.
 func (p *Play) end() {
 	p.mu.Lock()
+	p.stopped = true
 	r := p.retake
+	switched := r != nil && r.switched
 	p.mu.Unlock()
-	if r != nil && !r.switched {
+	if r != nil && !switched {
 		r.next.end()
 	}
 	p.cancel()
@@ -394,13 +402,22 @@ func (p *Play) Locate(at float64) (int, float64, bool) {
 
 // Stop stops the play.
 func (p *Play) Stop() {
-	p.end()
-	p.s.mu.Lock()
-	if p.s.play == p {
-		p.s.play = nil
-		p.s.plan()
+	// And every play that took over from it since, so a play stopped by
+	// the one it was started as stops whatever plays on in its place.
+	for cur := p; ; {
+		cur.end()
+		cur.s.mu.Lock()
+		if cur.s.play == cur {
+			cur.s.play = nil
+			cur.s.plan()
+		}
+		cur.s.mu.Unlock()
+		r, switched := cur.retaking()
+		if !switched {
+			return
+		}
+		cur = r.next
 	}
-	p.s.mu.Unlock()
 }
 
 // Pictures hands over the play's frames in the order they are drawn, from
@@ -461,7 +478,9 @@ func (p *Play) pictures(ctx context.Context, got func(PlayFrame) error) error {
 		for f := range cur.out {
 			if r := p.retaken(); r != nil && f.At >= r.at-1e-9 {
 				p.s.Give(f.Picture)
-				p.handOver()
+				if !p.handOver() {
+					return context.Canceled
+				}
 				return errRetaken
 			}
 			if err := got(f); err != nil {
@@ -478,7 +497,9 @@ func (p *Play) pictures(ctx context.Context, got func(PlayFrame) error) error {
 		cur, next = next, p.startRun(ctx, runs.next())
 	}
 	if r := p.retaken(); r != nil {
-		p.handOver()
+		if !p.handOver() {
+			return context.Canceled
+		}
 		return errRetaken
 	}
 	return nil

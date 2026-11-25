@@ -5,7 +5,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"sync"
 	"testing"
+
+	"framefairy/internal/framewire"
 )
 
 // A play is a function of the pieces and of what the decoder hands over,
@@ -509,5 +512,87 @@ func TestAChangeBeforeTheLastTookOverTakesItsPlace(t *testing.T) {
 	cur.Hold()
 	if _, ok := p.Retake([]PlayPiece{{1, 2}}, false, 0.4); ok {
 		t.Error("a change was taken into a play paused")
+	}
+}
+
+// freeDecoder makes every frame at once, from the one a stream asks for
+// on, until the stream is stopped, so a play runs as fast as it is read.
+type freeDecoder struct{}
+
+func (freeDecoder) Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int, _ bool,
+	_ func() float64, got func(at float64, frame []byte) error) error {
+	for f := grid.Holding(from); f < grid.Count; f++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := got(grid.At(f), make([]byte, width*height*4)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (freeDecoder) Give([]byte) {}
+
+// Changes taken into a play from several goroutines at once, while its
+// pictures and its sound are read and its loop is switched, each take a
+// change of their own, and the pictures and the sound each go from one
+// change to a later one, never back. Stop on the play first asked for
+// stops whichever play took over from it. The window hands in a change
+// from every drag step while the play runs on its own goroutines.
+func TestChangesTakenInFromSeveralGoroutinesAtOnceKeepTheirOrder(t *testing.T) {
+	t.Parallel()
+	s := newSchedule(freeDecoder{})
+	p := s.Play(PlayAsk{Grid: lookGrid, W: 4, H: 2, Pieces: []PlayPiece{{1, 3}}, Loop: true, Moment: 1})
+	var streams, takes sync.WaitGroup
+	order := func(what string, gen int, last *int) {
+		if gen < *last {
+			t.Errorf("the %s went back from change %d to %d", what, *last, gen)
+		}
+		*last = gen
+	}
+	pictures, sounds := 0, 0
+	streams.Go(func() {
+		last := 0
+		_ = p.Pictures(context.Background(), func(f PlayFrame) error {
+			order("pictures", f.Gen, &last)
+			pictures++
+			return nil
+		})
+	})
+	streams.Go(func() {
+		last := 0
+		_ = p.Sound(context.Background(), ones(make(chan float64, 4096)), 1000, 1, func(_ int64, gen int, _ []byte) error {
+			order("sound", gen, &last)
+			sounds++
+			return nil
+		})
+	})
+	gens := make(chan int, 64)
+	for g := range 4 {
+		takes.Go(func() {
+			for i := range 8 {
+				at := 0.1 + 0.05*float64(i)
+				if got, ok := p.Retake([]PlayPiece{{1 + 0.1*float64(g), 3}}, true, at); ok {
+					gens <- got.Gen
+				}
+				p.Loop(true, at)
+				p.Current()
+			}
+		})
+	}
+	takes.Wait()
+	p.Stop()
+	streams.Wait()
+	close(gens)
+	seen := map[int]bool{}
+	for g := range gens {
+		if seen[g] {
+			t.Errorf("two changes were taken in as change %d", g)
+		}
+		seen[g] = true
+	}
+	if len(seen) == 0 || pictures == 0 || sounds == 0 {
+		t.Errorf("%d changes were taken in, over %d pictures and %d chunks of sound", len(seen), pictures, sounds)
 	}
 }
