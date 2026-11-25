@@ -127,7 +127,7 @@ jobs:
     needs: image
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    container: ${{ needs.image.outputs.ref }}
+    container: ${{ needs.image.outputs.ref }} # zizmor: ignore[unpinned-images] the CI image, by the sum of its Dockerfile, see ci-image.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -164,7 +164,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
-      image: ${{ needs.image.outputs.ref }}
+      image: ${{ needs.image.outputs.ref }} # zizmor: ignore[unpinned-images] the CI image, by the sum of its Dockerfile, see ci-image.yml
       options: --init
       volumes:
         - /home/runner/work:/home/runner/work
@@ -206,7 +206,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
-      image: ${{ needs.image.outputs.walks }}
+      image: ${{ needs.image.outputs.walks }} # zizmor: ignore[unpinned-images] the CI image, by the sum of its Dockerfile, see ci-image.yml
       options: --init --ipc=host
       volumes:
         - /home/runner/work:/home/runner/work
@@ -247,7 +247,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
-      image: ${{ needs.image.outputs.ref }}
+      image: ${{ needs.image.outputs.ref }} # zizmor: ignore[unpinned-images] the CI image, by the sum of its Dockerfile, see ci-image.yml
       options: --init
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

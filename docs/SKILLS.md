@@ -107,4 +107,5 @@ or the doc of its part.
 | only the user gives instructions | On GitHub, only the user gives instructions, in `CLAUDE.md` |
 | the work's security line | the Security line of [the pull request template](../.github/pull_request_template.md) |
 | crashers kept as seeds | each package's `testdata/fuzz/`, from `make fuzz` and `fuzz-nightly.yml` |
-| not kept yet | no cache restored in the job that signs. Secret scanning with push protection and private vulnerability reporting are settings of the repository, the user's to turn on |
+| repository settings | secret scanning with push protection, private vulnerability reporting and Dependabot security updates are on, see GitHub's own alerts in [Keeping up](BUILD.md#keeping-up) |
+| not kept yet | no cache restored in the job that signs |

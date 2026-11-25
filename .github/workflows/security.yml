@@ -5,7 +5,8 @@
 # reports only what the code really calls, npm audit over the
 # interface's packages, through audit-ci, which lets through only the
 # warnings frontend/audit-ci.jsonc names, and osv-scanner over both,
-# which knows the packages that are malicious. Any failing is a red check.
+# which fails on a package known to be malicious. Any failing is a red
+# check.
 #
 # Every Monday also scripts/upstream.sh, which compares ffmpeg, the
 # libraries it is built with, llama.cpp, the speech library and Node with
@@ -51,7 +52,7 @@ jobs:
   go:
     needs: image
     runs-on: ubuntu-24.04
-    container: ${{ needs.image.outputs.ref }}
+    container: ${{ needs.image.outputs.ref }} # zizmor: ignore[unpinned-images] the CI image, by the sum of its Dockerfile, see ci-image.yml
     # A container runs a step with sh, see the walks in ci.yml.
     defaults:
       run:
@@ -74,21 +75,23 @@ jobs:
       # request, where it can be read first.
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-      # OSV's database, which lists the packages known to be malicious
-      # too, the MAL entries, where govulncheck and npm audit read only
-      # flaws. Over the Go modules and the interface's packages, after
-      # govulncheck even when that failed. Go's are weighed by what the
-      # code calls, which is why it runs here, beside Go and the app's
-      # libraries. A release from GitHub, checked against its sha256 here,
-      # since Dependabot does not move it: raising it is a pull request.
+      # OSV's database lists the packages known to be malicious, the MAL
+      # entries, which govulncheck and npm audit do not read. osv-scanner
+      # reads it over the Go modules and the interface's packages, after
+      # govulncheck even when that failed, and fails on a MAL entry
+      # alone, which it prints. A flaw is govulncheck's and npm audit's to
+      # judge, with what audit-ci.jsonc lets through, so one finding never
+      # has two judges that disagree. It exits 1 when it finds anything,
+      # flaws too, and more on an error of its own. A release from GitHub,
+      # checked against its sha256 here, since Dependabot does not move
+      # it, scripts/upstream.sh says when a newer one is out.
       - name: osv-scanner
         if: ${{ !cancelled() }}
         run: |
           OSV=$RUNNER_TEMP/osv-scanner
-          curl -sSfL -o "$OSV" https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_linux_amd64
-          echo "fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8  $OSV" | sha256sum -c -
-          chmod +x "$OSV"
-          "$OSV" scan source --lockfile go.mod --lockfile frontend/package-lock.json
+          curl -sSfL -o "$OSV" https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_linux_amd64 && echo "fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8  $OSV" | sha256sum -c - && chmod +x "$OSV"
+          "$OSV" scan source --format json --lockfile go.mod --lockfile frontend/package-lock.json > "$RUNNER_TEMP/osv.json" || [ $? = 1 ]
+          ! grep -o '"MAL-[0-9]*-[0-9]*"' "$RUNNER_TEMP/osv.json"
 
   npm:
     runs-on: ubuntu-24.04

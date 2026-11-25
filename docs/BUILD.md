@@ -681,10 +681,12 @@ scan made once is out of date the week after.
   `overrides` in `frontend/package.json`, like minimatch 11 under ESLint,
   and the pin is taken out once that package accepts the fix.
   osv-scanner reads both after them, in the same job as govulncheck,
-  against OSV's database, which also lists the packages known to be
-  malicious, where the two others read only flaws. Its version is pinned
-  in the workflow with the sha256 of its release, since Dependabot does
-  not move it. Any of them failing is a red check.
+  against OSV's database, and fails only on a package known to be
+  malicious, a MAL entry, which the two others do not read. A flaw stays
+  theirs to judge, so a warning `audit-ci.jsonc` lets through is not
+  failed again. Its version is pinned in the workflow with the sha256 of
+  its release, since Dependabot does not move it. Any of them failing is
+  a red check.
 - **The workflows keep no token on disk and are read by a linter.**
   Every checkout says `persist-credentials: false`, so a later step, a
   build of code a bump just brought in among them, finds no token in the
@@ -724,8 +726,9 @@ scan made once is out of date the week after.
   [2026-11-24-the-release-tool-built-once.md](decisions/2026-11-24-the-release-tool-built-once.md).
 - **The tools we build ourselves**, and the pins Dependabot cannot move,
   which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
-  four libraries it is built with, llama.cpp, the speech library and Node
-  with their newest releases, and
+  four libraries it is built with, llama.cpp, the speech library, Node,
+  and the checkers CI fetches by a pin of its own, golangci-lint, zizmor,
+  govulncheck and osv-scanner, with their newest releases, and
   the same workflow keeps one issue open while anything is behind and
   closes it once everything is current, through `framefairy-release
   behind`, which reads how `upstream.sh` ended. llama.cpp makes a build a day, so
@@ -751,9 +754,10 @@ scan made once is out of date the week after.
   version, so those came from it as they were on the day, and now
   `scripts/build-tools.sh` puts them in an environment of their own.
   nasm went with Homebrew: only ffmpeg's Intel code needs it.
-- **GitHub's own alerts**, once switched on in the settings: Dependabot
-  alerts, secret scanning with push protection, and private vulnerability
-  reporting, so somebody who finds a hole has a place to say so.
+- **GitHub's own alerts**, switched on in the settings: Dependabot
+  alerts and security updates, secret scanning with push protection, and
+  private vulnerability reporting, so somebody who finds a hole has a
+  place to say so.
 
 An issue or a pull request is what reaches the user, because GitHub tells
 whoever watches the repository. Nothing here polls or writes a message
