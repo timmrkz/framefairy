@@ -716,7 +716,8 @@ func TestDependabotMovesNothingUnderGitHubButTheActions(t *testing.T) {
 			continue
 		}
 		for _, d := range append([]string{u.Directory}, u.Directories...) {
-			if d == "/.github" || strings.HasPrefix(d, "/.github/") {
+			// Dependabot reads a directory with or without its leading slash.
+			if p := strings.TrimPrefix(d, "/"); p == ".github" || strings.HasPrefix(p, ".github/") {
 				t.Errorf("dependabot.yml's %s entry reads %s, under .github/, where GitHub refuses its pull requests: move the files out of .github/", u.Ecosystem, d)
 			}
 		}
