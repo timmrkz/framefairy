@@ -526,9 +526,6 @@ export interface WindowView extends KeptWindow {
   // How long the clips a search asks for may be, as they are set.
   shortest: number;
   longest: number;
-  // The range picker leaves the window out: the whole video is being
-  // transcribed, which is about all of it and not about the window.
-  hidden?: boolean;
   // A search has read some of the window before, so Search looks there
   // again and keeps the clips there are.
   searched?: boolean;
@@ -598,10 +595,6 @@ export interface VideoState {
   status: EpisodeStatus;
   clips: ClipEntry[];
   jobs: Job[];
-  // The video's first search is on its way: the video was just added, its
-  // picture is being checked, and the Go side asks for the search once it
-  // is, see VideoState.SearchComing.
-  searchComing?: boolean;
   // The video's window, or none while the video cannot be read.
   window?: WindowView | null;
   // Go's stamp of the cards of what the video says, the transcript
@@ -808,6 +801,9 @@ export interface Job {
   // For work that runs, that it was told to stop and has not ended yet,
   // from the moment it was told, see Job.Stopping in jobs.go.
   stopping?: boolean;
+  // Relaunch waits for the job while it runs or waits its turn, as the Go
+  // side says, see Job.Waits there.
+  waits?: boolean;
   // Grows with every change to any job. Of two snapshots of a job, the one
   // with the larger number is the later one.
   seq?: number;

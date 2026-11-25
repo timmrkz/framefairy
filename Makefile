@@ -296,10 +296,12 @@ $(BIN)/framefairy$(EXE): modules
 # of every package in the interface bundle, written by the build from what
 # it really has and built into the app beside notices/. It is never in the
 # repository, so a new version needs nothing written by hand. It stops the
-# build on a licence that is not on the list in notices/licence.
+# build on a licence that is not on the list in notices/licence. go
+# generate runs it, from the directive beside the app's go:embed, which
+# names this file, so the release tool sees the app is built with it.
 $(LICENCES_BUILT): go.mod go.sum $(UI_BUILT)
 	@echo "Writing the licences of the Go modules and the interface's packages"
-	@$(GO) run ./notices/gen -built $@
+	@$(GO) generate ./cmd/framefairy-app
 
 $(BIN)/framefairy-app$(EXE): modules $(UI_BUILT) $(LICENCES_BUILT) frames
 	@echo "Building $@"

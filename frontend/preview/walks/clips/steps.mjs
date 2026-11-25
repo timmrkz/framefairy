@@ -303,6 +303,24 @@ export const steps = {
     const list = await clipList(page);
     if (!list?.rows.some((r) => r.what === arg)) walk.wrong = `no row says "${arg}": ${JSON.stringify(list?.rows)}`;
   },
+  // ["empty list"]    a video with no clips, Target above one and its
+  //                    transcription running, shows one row in its clip
+  //                    list, which says why it is empty. It showed as many
+  //                    blank rows as Target asks for, and the user could
+  //                    not tell what they were for.
+  async "empty list"(walk) {
+    const { page } = walk;
+    const path = await episodeOn(page);
+    const target = (await ask(page, "State", path))?.window?.count ?? 0;
+    const transcribing = (await ask(page, "Jobs")).some((j) => j.episode === path && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
+    const rows = await page.evaluate(() => {
+      const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+      return [...(pane?.querySelectorAll("ol > li") ?? [])].map((li) => (li.querySelector(".title")?.textContent ?? "").replace(/\s+/g, " ").trim());
+    });
+    if (target < 2) walk.wrong = `Target is ${target}, so the list shows one row either way`;
+    else if (!transcribing) walk.wrong = "the video is not being transcribed, and this step is about the list while it is";
+    else if (rows.length !== 1 || rows[0] !== "No clips yet") walk.wrong = `with Target at ${target}, the empty list shows ${JSON.stringify(rows)}, not one row that says No clips yet`;
+  },
   // ["no row", words] no row of the clip list says this
   async "no row"(walk, arg) {
     const { page } = walk;

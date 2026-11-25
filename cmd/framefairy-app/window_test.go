@@ -160,50 +160,24 @@ func TestASearchHoldsItsWindowAsItIs(t *testing.T) {
 	}
 }
 
-// While the whole video is transcribed the state says the window is not
-// drawn, because that work is about all of the video, Tim, 5 November.
-// It is drawn again once the transcription was told to stop or ended,
-// and a search that holds the window is drawn as ever.
-func TestTheWindowIsHiddenWhileTheWholeVideoIsTranscribed(t *testing.T) {
+// While the whole video is transcribed the state carries the window, so
+// the range picker marks it and it can be placed for the next search, the
+// user's ask of 25 November.
+func TestTheWindowIsThereWhileTheWholeVideoIsTranscribed(t *testing.T) {
 	t.Parallel()
-	for _, c := range []struct {
-		name   string
-		jobs   []Job
-		hidden bool
-	}{
-		{"nothing runs", nil, false},
-		{"transcribing", []Job{{State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, true},
-		{"waiting its turn", []Job{{State: JobQueued, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, true},
-		{"stopping", []Job{{State: JobRunning, Stopping: true, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
-		{"stopped", []Job{{State: JobStopped, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
-		{"done", []Job{{State: JobDone, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
-		{"cancelled", []Job{{State: JobCancelled, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
-		{"interrupted", []Job{{State: JobInterrupted, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}}}, false},
-		{"a search", []Job{{State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobSearch}}}, false},
-		// The part of a clip the app hears by itself is about that clip.
-		{"a clip's part", []Job{{State: JobRunning, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe,
-			ID: engine.TranscribePartID, From: 120, To: 150}}}, false},
-		{"a search that stops it", []Job{
-			{State: JobRunning, Stopping: true, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}},
-			{State: JobQueued, JobRecord: engine.JobRecord{Kind: engine.JobSearch}},
-		}, false},
-	} {
-		t.Run(c.name, func(t *testing.T) {
+	for _, state := range []string{JobRunning, JobQueued} {
+		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			svc, source, _ := anUnevenVideo(t)
 			svc.jobs.mu.Lock()
-			for i := range c.jobs {
-				j := c.jobs[i]
-				j.ID, j.Episode = fmt.Sprintf("j%d", i), source
-				svc.jobs.jobs = append(svc.jobs.jobs, &j)
-			}
+			svc.jobs.jobs = append(svc.jobs.jobs, &Job{ID: "j0", Episode: source, State: state, JobRecord: engine.JobRecord{Kind: engine.JobTranscribe}})
 			svc.jobs.mu.Unlock()
 			st, err := svc.State(context.Background(), source)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if st.Window == nil || st.Window.Hidden != c.hidden {
-				t.Errorf("the window came as %+v, not hidden %v", st.Window, c.hidden)
+			if st.Window == nil || !(st.Window.To > st.Window.From) {
+				t.Errorf("while the whole video is transcribed the window came as %+v", st.Window)
 			}
 		})
 	}

@@ -20,6 +20,9 @@ func (f fakeTrees) changed(from, to string) ([]string, error) {
 	return files, nil
 }
 
+// source reads no Go, so a change that is not the docs is built.
+func (f fakeTrees) source(string) (source, error) { return source{}, errNotFound }
+
 // outputs reads a plan the way the workflow's next steps do.
 func outputs(p plan) map[string]string {
 	m := map[string]string{}
@@ -84,6 +87,40 @@ func TestWhatAPushBuilds(t *testing.T) {
 	}
 	if p, _ := buildPlan(gh, trees, "push", "main", commit, []byte(doc)); outputs(p)["build"] != "false" {
 		t.Error("a push was built with no update key in the repository")
+	}
+}
+
+// A pull request with no build yet is judged against main where it
+// branched, so one that only changes code the app does not ship takes no
+// Mac, not even for its first build. Every doubt builds.
+//
+// On the real disk: the release tool reads the public key from its file in the repository.
+func TestAPullRequestsFirstBuildIsJudgedAgainstMain(t *testing.T) {
+	release(t)
+	commit := "0123456789abcdef0123456789abcdef01234567"
+	branched := map[string]string{commit: "fedcba9876543210fedcba9876543210fedcba98"}
+	cases := []struct {
+		name  string
+		bases map[string]string
+		trees memTrees
+		build string
+	}{
+		{"the release tool alone", branched, memTrees{files: []string{"cmd/framefairy-release/main.go"}, src: shaped}, "false"},
+		{"a test alone", branched, memTrees{files: []string{"engine/run_test.go"}, src: shaped}, "false"},
+		{"the engine", branched, memTrees{files: []string{"engine/run.go"}, src: shaped}, "true"},
+		{"nothing changed against main", branched, memTrees{src: shaped}, "true"},
+		{"where it branched cannot be read", nil, memTrees{files: []string{"cmd/framefairy-release/main.go"}, src: shaped}, "true"},
+		{"its Go cannot be read", branched, memTrees{files: []string{"cmd/framefairy-release/main.go"}, srcErr: errNotFound}, "true"},
+	}
+	for _, c := range cases {
+		gh := &fakeGitHub{open: []pull{{number: 8, title: "T", head: commit, branch: "c"}}, bases: c.bases}
+		p, err := buildPlan(gh, c.trees, "push", "c", commit, []byte(doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := outputs(p)["build"]; got != c.build {
+			t.Errorf("%s: build %q, %s, want %q", c.name, got, p.notice, c.build)
+		}
 	}
 }
 

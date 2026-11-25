@@ -85,6 +85,10 @@ type desk struct {
 	// What the app sends by itself when the models change is shown the
 	// same way.
 	setup func(SetupState) SetupState
+	// searching holds the videos add pressed Search for, which is
+	// pressed the moment each one's picture is checked, see
+	// FrameFairy.whenChecked.
+	searching sync.Map
 }
 
 // open starts the app over a new, empty library. Adding a video asks the
@@ -134,6 +138,12 @@ func (d *desk) start(st *store) {
 	} else {
 		// A path test has no window to tell.
 		svc.jobs = newQueue(st, func(JobUpdate) {}, func(string) {})
+		svc.jobs.searched = svc.searched
+	}
+	d.svc.whenChecked = func(video string) {
+		if _, ok := d.searching.LoadAndDelete(video); ok {
+			d.searchAsShown(video)
+		}
 	}
 	d.svc.listening.still = d.still
 	d.svc.listening.beats = d.beats
@@ -193,10 +203,11 @@ func (d *desk) start(st *store) {
 	}
 	// Whatever is still running when the test ends is stopped before its
 	// folder goes: the checks of videos just added first, since each
-	// starts a first search and a measuring of loudness when it ends, then
-	// the jobs and the measuring. A drop the test did not wait for went on
-	// checking once the test was over, and on CI's Mac its first search
-	// wrote into the folder as it was taken away, "directory not empty".
+	// starts a transcription and a measuring of loudness when it ends,
+	// then the jobs and the measuring. A drop the test did not wait for
+	// went on checking once the test was over, and on CI's Mac its first
+	// search wrote into the folder as it was taken away, "directory not
+	// empty".
 	d.t.Cleanup(func() {
 		svc.watch.stop()
 		svc.news.stop()
@@ -282,8 +293,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// firstWindow is the window of an episode's first search: the first half
-// hour, which for the short episodes of these tests is all of it.
+// firstWindow is the window a video just added has: the first half hour,
+// which for the short episodes of these tests is all of it.
 var firstWindow = window{0, 0}
 
 type window struct{ from, to float64 }
@@ -291,7 +302,7 @@ type window struct{ from, to float64 }
 // checked is closed once the picture of a video just added has been
 // checked, and what the check starts or takes out is done: at once for a
 // video that is not being checked. A test waits on it before it looks at
-// the first search or the library.
+// the transcription or the library.
 func (s *FrameFairy) checked(video string) <-chan struct{} {
 	s.checkMu.Lock()
 	defer s.checkMu.Unlock()
@@ -308,15 +319,46 @@ func (w window) request() engine.PlanRequest {
 	return engine.PlanRequest{From: w.from, To: w.to, Count: 1, Min: 5, Max: 30}
 }
 
-// add adds a video to the library, the way the Add button does. The app
-// starts its first search by itself.
+// add adds a video to the library, the way the Add button does, and
+// presses Search on its window the moment the video is in, before the app
+// starts to transcribe it by itself. The search goes first, and the
+// transcription follows once it has ended, see transcribeRest.
 func (d *desk) add(name, seconds string) string {
 	d.t.Helper()
 	path := d.episode(name, seconds)
+	if abs, err := filepath.Abs(path); err == nil {
+		d.searching.Store(abs, true)
+	}
 	if added, err := d.svc.addEpisodes([]string{path}); err != nil || len(added) != 1 {
 		d.t.Fatalf("adding %s: %v", path, err)
 	}
 	return path
+}
+
+// searchAsShown presses Search on the video's window as the workspace
+// draws it, with what that window suggests, the way Search pressed with
+// nothing changed in the workspace does. A window to the end of the video
+// is To 0, which is transcribed to its end before it is searched. It may
+// run on the goroutine that checks a video just added, so it says what
+// went wrong and goes on, and the test fails on what then is missing.
+func (d *desk) searchAsShown(path string) {
+	d.t.Helper()
+	ctx := context.Background()
+	info, err := d.svc.probe(ctx, path)
+	if err != nil || info.Duration <= 0 {
+		d.t.Errorf("the length of %s: %v", filepath.Base(path), err)
+		return
+	}
+	w, ok := d.svc.videoWindow(ctx, path)
+	if !ok {
+		d.t.Errorf("%s has no window", filepath.Base(path))
+		return
+	}
+	req := engine.PlanRequest{From: w.From, To: w.To}
+	if w.To >= info.Duration-0.05 {
+		req.To = 0
+	}
+	d.svc.Search(path, req, "")
 }
 
 // search presses Search on a window.
@@ -437,6 +479,7 @@ func (d *desk) openOn(st *store) {
 	st.standIns = d.fakes
 	d.start(st)
 	d.svc.restoreJobs(st.Episodes())
+	d.svc.transcribeCutOff()
 }
 
 // outcome is what the app says about an episode's last search where its
@@ -474,10 +517,10 @@ func (d *desk) outcome(path string) outcome {
 func (d *desk) idle(path string) {
 	d.t.Helper()
 	// A video just added has its picture checked behind the answer, and
-	// its first search starts once it is.
+	// its transcription starts once it is.
 	<-d.svc.checked(path)
 	d.svc.jobs.until(func(jobs []*Job) bool {
-		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == path && j.going() })
+		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == path && (j.going() || j.following) })
 	}, nil)
 }
 
@@ -533,6 +576,9 @@ type speech struct {
 	skip    int
 	gate    chan struct{}
 	samples atomic.Int64
+	// savesEach, set before the model is opened, saves the transcript
+	// after every piece, see savesEach.
+	savesEach atomic.Bool
 }
 
 // breaks makes the speech model fail to load, the way a missing or damaged
@@ -579,8 +625,19 @@ func (s *speech) open(string) (engine.Recognizer, error) {
 	if s.broken != nil {
 		return nil, s.broken
 	}
+	if s.savesEach.Load() {
+		return savesEach{s}, nil
+	}
 	return s, nil
 }
+
+// savesEach is the stand-in speech model saving what it transcribed
+// after every piece, in place of the clock, see engine/audio.go, so a test
+// reads how far a video is transcribed from the disk the moment a piece
+// is transcribed.
+type savesEach struct{ *speech }
+
+func (savesEach) SaveHeard() bool { return true }
 
 // seconds is how much audio the speech model has been given in all.
 func (s *speech) seconds() float64 {

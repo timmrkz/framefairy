@@ -22,6 +22,7 @@ type fakeGitHub struct {
 	main     string
 	shorts   map[string]string    // a shortened commit to its whole name
 	compares map[string]string    // base...head to GitHub's word
+	bases    map[string]string    // a commit to main's commit it branched from
 	runs     map[string][2]string // a commit's newest build: status, conclusion
 	readies  map[string]string    // a commit's Ready to update to
 	open     []pull
@@ -59,6 +60,13 @@ func (f *fakeGitHub) commit(short string) (string, error) {
 
 func (f *fakeGitHub) compare(base, head string) (string, error) {
 	return f.compares[base+"..."+head], f.failing()
+}
+
+func (f *fakeGitHub) mergeBase(head string) (string, error) {
+	if b, ok := f.bases[head]; ok {
+		return b, f.failing()
+	}
+	return "", errNotFound
 }
 
 func (f *fakeGitHub) buildRun(commit string) (string, string, error) {

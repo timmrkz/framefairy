@@ -10,12 +10,13 @@ import (
 
 // The rule for a build is silent when it is wrong: a commit gets no build
 // and the Updates page goes on offering the one before, or it says a build
-// is coming that never will. Every case below is one a push really
+// is coming that never will. A commit that only changes code the app does
+// not ship, like the release tool, or tests, takes no Mac. Every case below is one a push really
 // arrives as, in a repository the test makes, read by git the way the
 // workflows read it.
 //
 // On the real disk: git reads the commits from a repository of its own.
-func TestACommitNeedsABuildWhenItChangesTheApp(t *testing.T) {
+func TestACommitNeedsABuildWhenItChangesWhatTheAppIsBuiltFrom(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Fatal("git is needed to read which files two commits differ in")
 	}
@@ -47,19 +48,32 @@ func TestACommitNeedsABuildWhenItChangesTheApp(t *testing.T) {
 		return run("rev-parse", "HEAD")
 	}
 	run("init", "-q")
-	write("engine/run.go", "a")
+	write("go.mod", "module framefairy\n")
+	write("cmd/framefairy-app/main.go", "package main\n\nimport \"framefairy/engine\"\n")
+	write("engine/run.go", "package engine\n\n// a\n")
+	write("cmd/framefairy-release/main.go", "package main\n")
 	app := commit("app")
 	write(filepath.Join("docs", "APP.md"), "b")
 	docs := commit("docs")
 	write("README.md", "c")
 	readme := commit("readme")
-	write("engine/run.go", "d")
+	write("engine/run.go", "package engine\n\n// d\n")
 	code := commit("code")
 	empty := commit("nothing")
 	// A change taken back: the files are the ones built, whatever
 	// happened on the way.
-	write("engine/run.go", "a")
+	write("engine/run.go", "package engine\n\n// a\n")
 	back := commit("back")
+	write("cmd/framefairy-release/main.go", "package main\n\n// e\n")
+	tool := commit("tool")
+	write("engine/run_test.go", "package engine\n")
+	test := commit("test")
+	write("scripts/build.sh", "f")
+	script := commit("script")
+	// A file of the app moved into the release tool: the app no longer
+	// has it, which changes the app.
+	run("mv", "engine/run.go", "cmd/framefairy-release/run.go")
+	moved := commit("moved")
 
 	// GitHub knows nothing, the way it knows no commit that was never
 	// pushed.
@@ -75,6 +89,11 @@ func TestACommitNeedsABuildWhenItChangesTheApp(t *testing.T) {
 		{"code, measured from what is built", docs, code, needed},
 		{"nothing changed in the commit", code, empty, alreadyBuilt},
 		{"code changed and changed back", app, back, docsOnly},
+		{"the release tool, which the app does not ship", back, tool, outsideApp},
+		{"a test of the engine after the tool", back, test, outsideApp},
+		{"a script", test, script, needed},
+		{"the tool after code", code, tool, needed},
+		{"a file of the app moved out of it", script, moved, needed},
 		{"a commit nobody can read", app, "0123456789abcdef0123456789abcdef01234567", needed},
 		{"a build nobody can read", "0123456789ab", code, needed},
 	}

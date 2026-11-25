@@ -33,7 +33,8 @@ func aVideoThatKeeps(t *testing.T) (*FrameFairy, string) {
 // The user removed a video with its files and added it again later: its
 // clips were gone. Now what Remove deletes was kept first, and the add
 // puts it back, under another name in another folder, and the video is
-// not new, so no first search starts on top of its clips.
+// not new, so a check of its picture that fails does not take the folder
+// with it.
 func TestAVideoRemovedWithItsFilesGetsItsClipsBackWhenAddedAgain(t *testing.T) {
 	s, source := aVideoThatKeeps(t)
 	if err := s.RemoveEpisode(source, true); err != nil {
@@ -51,7 +52,7 @@ func TestAVideoRemovedWithItsFilesGetsItsClipsBackWhenAddedAgain(t *testing.T) {
 		t.Fatalf("added %v, %v", added, err)
 	}
 	if fresh[again] {
-		t.Error("the video added again is taken as new, so a first search would start on top of its clips")
+		t.Error("the video added again is taken as new, so its folder would go with a failed check")
 	}
 	back, err := afero.ReadFile(s.store.files, filepath.Join(engine.LogsDir(again), "clips-0-1800.json"))
 	if err != nil || !bytes.Equal(back, []byte(keptPlan)) {
@@ -199,26 +200,28 @@ func TestOnlyTheTranscriptsFilesAreTheTranscript(t *testing.T) {
 	}
 }
 
-// A video added again through Add, the way the user does it, has its clip
-// set back once its picture is checked, and no first search starts on
-// top of it.
+// A video added again through Add, the way the user does it, has its
+// transcript and clip set back once its picture is checked, and is not
+// transcribed again: the transcription it had got to its end.
 //
 // On the real disk: the episode's decoder reads what is added.
-func TestAVideoAddedAgainStartsNoFirstSearchOverItsClips(t *testing.T) {
+func TestAVideoAddedAgainIsNotTranscribedAgain(t *testing.T) {
+	// Not side by side: open sets HOME for the whole process.
 	d := open(t)
 	d.svc.store.machine.KeepIn(filepath.Join(d.home, "kept"))
 	video := d.episode("folge", "12")
-	plan := filepath.Join(engine.LogsDir(video), "clips-0-1800.json")
-	if err := engine.MakeDir(d.svc.store.files, filepath.Dir(plan)); err != nil {
-		t.Fatal(err)
-	}
-	if err := afero.WriteFile(d.svc.store.files, plan, []byte(keptPlan), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	if added, err := d.svc.addEpisodes([]string{video}); err != nil || len(added) != 1 {
 		t.Fatalf("added %v, %v", added, err)
 	}
 	<-d.svc.checked(video)
+	d.idle(video)
+	if _, done := d.heard(video); !done {
+		t.Fatalf("the video added was not transcribed to its end: %+v", d.svc.Jobs())
+	}
+	plan := filepath.Join(engine.LogsDir(video), "clips-0-1800.json")
+	if err := afero.WriteFile(d.svc.store.files, plan, []byte(keptPlan), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := d.svc.RemoveEpisode(video, true); err != nil {
 		t.Fatal(err)
 	}
@@ -233,11 +236,15 @@ func TestAVideoAddedAgainStartsNoFirstSearchOverItsClips(t *testing.T) {
 		t.Fatalf("added again %v, %v", added, err)
 	}
 	<-d.svc.checked(again)
+	d.idle(again)
 	back, err := afero.ReadFile(d.svc.store.files, filepath.Join(engine.LogsDir(again), "clips-0-1800.json"))
 	if err != nil || !bytes.Equal(back, []byte(keptPlan)) {
 		t.Errorf("the clip set came back as %q, %v", back, err)
 	}
-	if slices.ContainsFunc(d.svc.Jobs(), func(j Job) bool { return j.Episode == again }) {
-		t.Errorf("a first search started on top of the clips put back: %+v", d.svc.Jobs())
+	if _, done := d.heard(again); !done {
+		t.Error("the transcript put back is not the whole video's")
+	}
+	if slices.ContainsFunc(d.svc.Jobs(), func(j Job) bool { return j.Episode == again && j.Kind == engine.JobTranscribe }) {
+		t.Errorf("the video added again was transcribed again: %+v", d.svc.Jobs())
 	}
 }

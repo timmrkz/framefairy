@@ -148,14 +148,25 @@ func buildPlan(gh gitHub, t trees, event, branch, commit string, engineDoc []byt
 		}
 		channel, number = fmt.Sprintf("pr-%d", pr.number), fmt.Sprint(pr.number)
 		// main is always built. A pull request's commit that is built
-		// already, or only changes the docs against its build, is not, and
-		// Tim gets no restart for nothing.
+		// already, or only changes the docs, tests or code the app does
+		// not ship against its build, is not, and Tim gets no restart for
+		// nothing.
 		// A build that cannot be read is no build, so a doubt builds, the
 		// way every doubt in needsBuild does.
 		from, err := builtCommit(gh, channel)
 		if err != nil {
 			p.notice = "The build there is could not be read, so this commit is built: " + err.Error()
 			from = ""
+		} else if from == "" {
+			// A pull request with no build yet is measured against main
+			// where it branched, so one that changes nothing the app is
+			// built from takes no Mac at all, not even once. A doubt
+			// builds.
+			if base, err := gh.mergeBase(commit); err == nil {
+				if answer, why := needsBuild(t, base, commit); answer != needed && answer != alreadyBuilt {
+					return no("The pull request has no build yet, and against main where it branched: " + why)
+				}
+			}
 		}
 		if answer, why := needsBuild(t, from, commit); answer != needed {
 			return no(why)

@@ -52,7 +52,9 @@ Cancel, because nothing could tell the two apart.
 
 A job is one piece of work a person started, or the app started for them:
 a **search**, a **clip** made by hand, a **render**, or the whole video
-**transcribed** to its end from its menu. It is owned by the
+**transcribed** to its end from its menu, or by itself once the video is
+added and again once a search or a clip made by hand of it has ended,
+`transcribeRest` in `export.go`. It is owned by the
 Go side. It has what it was asked for and a step it is in. An episode has
 at most one search at a time, and any number of clips and renders.
 
@@ -68,9 +70,15 @@ video's menu, and Transcribe video carries it on. Stopped with Stop
 transcribing in the menu, it ends the way a search called off with Cancel
 does: its record says stopped, what it heard stays, and the menu offers
 Transcribe video again, after a restart too. A search or a clip made by
-hand of the same video stops it the same way, and it is refused while
-they run, `stopTranscribing` and `makeWayForTranscribe` in `jobs.go`,
-the user's report of 26 October, 12.27.
+hand of the same video stops it too, and it is refused while they run,
+`stopWholeLocked` and `makeWayForTranscribe` in `jobs.go`, the user's
+report of 26 October, 12.27. Stopped that way it writes no stop in its
+record. Once the search or the clip has ended, done, stopped by hand or
+failed anywhere but in its transcription, the transcription carries on
+by itself, `searched` in `export.go`. It does not when the transcription
+failed or a person stopped it: that waits for Transcribe video. A
+transcription the app closing cut off, whatever stopped it, carries on
+once the app opens again, `transcribeCutOff` there.
 
 A transcription also hears a part of the video by itself, for the clip
 chosen, `hearChosen` in `export.go`, from the state the app
@@ -282,8 +290,8 @@ command line keeps its flags and its own run, and keeps no records.
 When it starts, it reads the records of the episodes in its library: a
 record in a running step is a job in the list in the state `interrupted`,
 one in the step `stopped` a job that is `stopped`, and a failed one a job
-that `failed`, with its reason. Adding a video asks for
-its first search, of the video's window, which the Go side places then:
+that `failed`, with its reason. Adding a video transcribes it to its
+end, and places the video's window, the one Search searches:
 the first of the windows the video is cut into, see
 `engine.SuggestedWindow`, on a round step, and no longer than the model
 can read at once, see `engine.Episode.PlaceWindow`, kept by
@@ -576,8 +584,8 @@ the files.
 
 The paths:
 
-- A video added, and the first search going by itself through every step
-  to clips in the list.
+- A video added and searched at once, the search going through every
+  step to clips in the list, and the transcription carried on after it.
 - The app closed while it hears and while it finds, which in a test is a
   new queue reading the same work folders, and the search reported as
   interrupted.

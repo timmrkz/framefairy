@@ -486,9 +486,11 @@ messages, pull request text, code comments and chat replies.
   closing, Stopped with Continue, because what it did stays and can be
   carried on. An empty column after Cancel reads as work that vanished.
 - **What the app can do by itself, it does.** Adding a video is enough: the
-  transcription starts, and the first search follows as soon as the
-  transcript covers the window. A state every episode passes
-  through, like having no transcript yet, is never reported as a failure.
+  whole video is transcribed from its start. Search pressed meanwhile
+  goes first: the transcription stops, the window is transcribed as far
+  as it is not yet, the clips are found, and the transcription carries
+  on. A state every episode passes through, like having no transcript
+  yet, is never reported as a failure.
 - **One space between two things.** Every gap in the workspace is `--gap`
   from `frontend/src/app.css`: between the columns, between the video
   preview and the range picker under it, between one row and the next, and
@@ -783,8 +785,9 @@ messages, pull request text, code comments and chat replies.
   around it: the checkout and `.github/actions/prepare`. A pull request
   starts only the jobs whose code it changed: no Go changed, no Go tests,
   no interface changed, no interface tests, and the walks, which test
-  the whole app, for either, and the Go tests on a Mac only for code
-  only a Mac builds. Every pull request runs `make lint` and the
+  the whole app, for the interface, or for Go that reaches what the app
+  is built from, which the release tool works out of the code, and the
+  Go tests on a Mac only for code only a Mac builds. Every pull request runs `make lint` and the
   build, since the repository's rules read the docs too, and a push to
   main runs everything but the Mac's tests, which run there every night.
   Within a Go job, Go's own test cache, restored from main, runs only
@@ -851,8 +854,9 @@ request.
 - **A Mac only for what is different on a Mac.** The account runs five Mac
   jobs at once, for every branch together, so each Mac job a push takes
   is a push of someone else's that waits. A push takes one, the build to
-  update to, without warnings, and a second, the Go tests on a Mac, only
-  when it changes code only a Mac builds, a `_darwin` file, `go.mod` or
+  update to, without warnings, when it changes what the app is built
+  from, and a second, the Go tests on a Mac, only when it changes code
+  only a Mac builds, a `_darwin` file, `go.mod` or
   `go.sum`. What a Mac does differently is in a file named for it,
   `*_darwin.go` or `*_darwin_test.go`, never behind `runtime.GOOS` in a
   file every system builds, and `internal/maccode` fails a pull request

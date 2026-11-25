@@ -286,7 +286,8 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 
 // addEpisodes is AddEpisodes, and says too which of the videos added are
 // new: no work folder before the add and nothing put back into one, so
-// their first search follows.
+// a video taken out again because its picture cannot be decoded takes
+// with it the folder this add made, and only that one, see checkAdded.
 //
 // A video removed earlier, its folder deleted by Remove or in Finder, gets
 // back the transcript and the clip sets the engine kept of it, under

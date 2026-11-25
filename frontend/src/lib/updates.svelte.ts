@@ -6,7 +6,8 @@
 // wore the warning while the sidebar showed nothing, issue #406. See
 // docs/UPDATES.md.
 
-import { api, onUpdates, size, type UpdateState } from "./api";
+import { api, onUpdates, size, type Job, type UpdateState } from "./api";
+import { live } from "./flow";
 import { said } from "./said";
 
 // A check that finds nothing is over in a tenth of a second, which is
@@ -51,6 +52,28 @@ function when(checked: string | undefined, now: number): string {
 }
 
 const short = (commit: string) => commit.slice(0, 7);
+
+// The work Relaunch waits for, in the words of the work, the first there
+// is, or "" when there is none: quitting into the new build would stop it
+// half way, issue #382. Which work it waits for, the Go side says on each
+// job, see Job.waits, and it refuses a Relaunch pressed all the same, see
+// queue.closeIfIdle.
+export function relaunchWaitsFor(list: Job[]): string {
+  const job = list.find((j) => live(j) && j.waits);
+  if (!job) return "";
+  switch (job.kind) {
+    case "search":
+      return "the search";
+    case "render":
+      return "the render";
+    case "clip":
+      return "the clip being made";
+    case "transcribe":
+      return "the transcription";
+    default:
+      return "the download";
+  }
+}
 
 // Where things stand, in the words of the line under the build: its mark,
 // what it is in a few words, then what that means. working is the work

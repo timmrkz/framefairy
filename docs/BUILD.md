@@ -132,10 +132,30 @@ whose code it changed, by the filters of the job `changes` in `ci.yml`:
 
 | Changed | Starts |
 | --- | --- |
-| Go: any file outside `frontend/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `frontend/` a Go test reads, the filter `goread` | `linux`, `fuzz` and the walks |
+| Go: any file outside `frontend/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `frontend/` a Go test reads, the filter `goread` | `linux` and `fuzz`, and the walks when it reaches what the app is built from, see below |
 | code only a Mac builds, a `*_darwin*.go` file, or `go.mod` or `go.sum`, which bring the modules' own, the filter `mac` | `macos` too |
 | the interface: `frontend/`, the Makefile, `.github/workflows/`, `.github/actions/` and `.node-version` | `interface` and the walks |
 | only the docs, `docs/`, any `.md`, `.claude/` | only `build` |
+
+The walks build the app's programs, so a change of Go alone starts them
+only when it reaches what those are built from. `framefairy-release
+walks` works that out of the code on every run: the programs the app
+ships are the packages `main` named after them, wherever they live, and
+the app is every package of ours they import, by every file but the
+tests, every program of ours their `go generate` runs, like
+`notices/gen`, which writes the licences the app carries, and the app's
+own tests, which is where the walks are. So a program the app's build
+runs is run through `go generate`, where the tool can see it. A change
+to a Go file of any other package, like the release tool, the licence
+server or a test of the engine, starts no walk. Every other file starts
+them, and so does any doubt: a commit or Go that cannot be read. No
+folder is named anywhere, so nothing goes stale, and a test holds what
+it works out to what `go list` says Go builds. See
+[the decision record](decisions/2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md).
+The same rule decides whether a push to a pull request needs a build to
+update to, without tests, so code the app does not ship takes no Mac. A
+pull request with no build yet is judged against main where it
+branched.
 
 A push to main starts every job but `macos`, which runs on main every
 night instead, see [On a Mac](#on-a-mac). Inside a Go job Go's own test cache
@@ -354,12 +374,12 @@ command, the one a person runs:
 
 | Job | Machine | Starts for | What it runs |
 | --- | --- | --- | --- |
-| `changes` | Linux | a pull request | `dorny/paths-filter`, which reads the files GitHub lists for the pull request. Starts nothing itself |
+| `changes` | Linux | a pull request | `dorny/paths-filter`, which reads the files GitHub lists for the pull request, and for a change of Go alone `framefairy-release walks`, the signed build `.github/actions/release-tool` brings, on the merge commit. Starts nothing itself, and `image` does not wait for it |
 | `image` | Linux | Go or the interface | the CI image `build`, `linux`, `fuzz` and the walks run in, see [The CI image](#the-ci-image), by `.github/workflows/ci-image.yml`, which the nightly fuzzing and the security check call too. Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not |
 | `interface` | Linux | the interface | `make interface`, ESLint among it. Needs only Node, so it is first back by a long way |
 | `build` | Linux, in the CI image | Go or the interface | `make lint`, then `make NOTOOLS=1`, the programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. In CI `make` fails on a `go.mod` that is not tidy, where it would tidy it elsewhere |
 | `linux (1/3)` to `linux (3/3)` | Linux, in the CI image | Go | `make unit UNITSHARD=1/3` to `3/3`, a third of the tests each by the first letters of their names. On one machine they took six minutes |
-| `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | Go or the interface | `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, `walk-times.tsv`, so a run that hangs is named in minutes. After the walks, the log says how busy the walkers were and what every run took, slowest first. Every walk walks in Chromium, and every night in WebKit too, see Two browsers in [TESTING.md](TESTING.md#two-browsers). On four machines the jobs took 181 to 226 seconds in Chromium, in three runs on 5 November, and 223 to 377 while every walk walked in WebKit |
+| `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | the interface, or Go that reaches the app | `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, `walk-times.tsv`, so a run that hangs is named in minutes. After the walks, the log says how busy the walkers were and what every run took, slowest first. Every walk walks in Chromium, and every night in WebKit too, see Two browsers in [TESTING.md](TESTING.md#two-browsers). On four machines the jobs took 181 to 226 seconds in Chromium, in three runs on 5 November, and 223 to 377 while every walk walked in WebKit |
 | `fuzz` | Linux, in the CI image | Go | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | code only a Mac builds | `make unit` against the ffmpeg we ship, built by its script and kept until the script changes. On a Mac it leaves out the race detector, which Linux runs, and the licence server's packages, which never run on a Mac |
 
@@ -460,7 +480,8 @@ Every test runs on Linux under the race detector, with the same
 changes code only a Mac builds and every night on main. The account runs
 five Mac jobs at once for every branch together, so a push takes two at
 most, `macos` in `ci.yml` when the Mac's code changed and `build` in
-`builds.yml`, see [On a Mac](#on-a-mac). The
+`builds.yml` when it changed what the app is built from, see
+[On a Mac](#on-a-mac). The
 two fuzz targets about paths are fuzzed on a Mac at night, because a
 case-insensitive filesystem is a different thing to explore. The others
 read text and numbers, which Go reads the same on both. The known inputs

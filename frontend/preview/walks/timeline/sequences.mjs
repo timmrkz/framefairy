@@ -6,9 +6,11 @@ export default [
   {
     // Tim's report of 7 November, 14.21, issue #745: he dragged the start
     // of a clip made with O back past what was heard, and it had no
-    // captions there. The part is heard by itself and its words come.
+    // captions there. The part is heard by itself and its words come. The
+    // video added is transcribed by itself, and stopped from its menu
+    // early, so most of it is not transcribed yet.
     name: "a clip dragged back past what was heard gets its captions there",
-    steps: [["speech", "go"], ["add", 1500], ["wait for", "Search"], ["drag past what was heard"]],
+    steps: [["speech", "hold"], ["add", 1500], ["transcript", "stop"], ["drag past what was heard"]],
   },
   {
     // Tim made a clip with O, moved the clip timeline and held the
@@ -16,7 +18,7 @@ export default [
     // put it back in the middle and the playhead on its start, and undid
     // what his hand was doing, issue #767.
     name: "a clip made with O stays where the hand moved the clip timeline once it is written",
-    steps: [["speech", "go"], ["add", 1500], ["wait for", "Search"], ["swipe while it is made"]],
+    steps: [["speech", "hold"], ["add", 1500], ["transcript", "stop"], ["swipe while it is made"]],
   },
   {
     // A paused video preview is held under the hand while an edge is

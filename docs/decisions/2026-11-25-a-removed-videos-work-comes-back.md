@@ -209,9 +209,11 @@ A few megabytes for hours of video, most of it the transcript.
 - **Read only by `PutBack`, only into an empty place.** A video added
   with a transcript or a clip set of its own, after Keep, keeps them.
   So the work folder stays the truth while it is there.
-- **Putting back comes first, and inside the add.** The app decides
-  whether an added video is new, and so whether a first search starts,
-  by whether it had a folder. A video put back is not new. The put back
+- **Putting back comes first, and inside the add.** A video added is
+  transcribed to its end, from where its transcript got, so the
+  transcript has to be back before that is asked for. And a video whose
+  picture cannot be decoded is taken out again with the folder its add
+  made, so a video put back is not new, and keeps its folder. The put back
   runs inside the store's add, `store.addEpisodes`, after the checks
   that refuse a video sharing a folder with another, so a video refused
   writes nothing, and under the lock the delete of what was written
