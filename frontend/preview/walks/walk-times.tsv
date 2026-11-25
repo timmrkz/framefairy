@@ -91,7 +91,7 @@
   7	sequences.mjs SEQUENCE=a word typed sits on the pill libass draws, its selection in it, and lets go of its caret for a button
   7	sequences.mjs SEQUENCE=every caption block clicked lights a word of its caption
   7	sequences.mjs SEQUENCE=several words typed into one keep the captions in the picture and the corrections before
-  7	sequences.mjs SEQUENCE=the keyboard's frame goes from word to word with the pill
+  8	sequences.mjs SEQUENCE=the keyboard's frame goes from word to word with the pill, and the caption box stays on the frame's caption while a saved word's layers come
   7	sequences.mjs SEQUENCE=the number keys put the playhead that many tenths into the clip, past its cut, playing or paused
   7	sequences.mjs SEQUENCE=the picture comes back after the playhead reached the end of the episode
   7	sequences.mjs SEQUENCE=the playhead's time is in a field beside the buttons, and the clip's numbers on its card

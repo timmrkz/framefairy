@@ -1423,10 +1423,108 @@ export const steps = {
       const frames = (left) => new Promise((done) => (left ? frame(() => frames(left - 1).then(done)) : done()));
       window.fetch = async (input, init) => {
         const answer = real(input, init);
+        // A layer the app calls off while it is held back fails then, and
+        // the app hears that once it is handed the answer. Until then
+        // nothing is waiting on it, and the page would report it as an
+        // error nobody handled.
+        answer.catch(() => {});
         if (String(input).startsWith("/frames/captions?")) await frames(n);
         return answer;
       };
     }, arg);
+  },
+  // ["saved past a caption's end", word, typed]
+  //                    puts the playhead on the word, wherever the walk
+  //                    stands, types typed after it and saves, which takes
+  //                    the word typed on to the next caption, and undoes
+  //                    it, to learn where that caption will begin. Then
+  //                    puts the playhead just past there, on a frame that
+  //                    starts before it, and does it again: the playhead
+  //                    stands in the next caption while the frame on
+  //                    screen still shows the one before. From the press
+  //                    of Enter until the layers have come, the caption
+  //                    box shows the caption of the frame, and never the
+  //                    next one on the way, which went from under the hand
+  //                    about to click a word in it
+  async "saved past a caption's end"(walk, [name, typed], s) {
+    const { page, settled, watch, word } = walk;
+    const fps = await rate(page);
+    const { videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
+    const pieces = (await engineState(page, watch.at)).segments;
+    const into = (t) => {
+      let sum = 0;
+      for (const p of pieces) {
+        if (t < sum + p.end - p.start) return p.start + t - sum;
+        sum += p.end - p.start;
+      }
+      return null;
+    };
+    const said = (await engineState(page, watch.at)).captions.flatMap((c) => c.lines.flatMap((l) => l.words)).find((w) => w.text === name);
+    const on = said && into((said.start + said.end) / 2);
+    if (on === null || on === undefined || !(await seekTo(page, on, fps))) {
+      walk.wrong = `the playhead never stood on "${name}"`;
+      return;
+    }
+    const save = async () => {
+      await word(name).click();
+      await page.keyboard.press("End");
+      await page.keyboard.type(typed);
+      await page.keyboard.press("Enter");
+      await settle(page);
+    };
+    await save();
+    const first = typed.trim().split(/\s+/)[0];
+    const next = (await engineState(page, watch.at)).captions.find((c) => c.lines[0]?.words[0]?.text === first);
+    await page.evaluate(() => window.__menu("undo"));
+    await settle(page);
+    const begins = next && into(next.start);
+    if (begins === null || begins === undefined) {
+      walk.wrong = `"${first}" typed after "${name}" began no caption of its own`;
+      return;
+    }
+    const frame = videoStart + Math.floor((begins - videoStart) * fps + 1e-6) / fps;
+    if (begins - frame < 0.002) {
+      walk.wrong = `the caption "${first}" begins with a frame, at ${begins.toFixed(3)}, so no frame starts before it`;
+      return;
+    }
+    if (!(await seekTo(page, (begins + frame + 1 / fps) / 2, fps))) {
+      walk.wrong = `the video preview never showed the frame at ${frame.toFixed(3)}`;
+      return;
+    }
+    const landed = await playhead(page);
+    if (landed <= begins) {
+      walk.wrong = `the playhead landed at ${landed.toFixed(3)}, not past ${begins.toFixed(3)} where the next caption will begin, so nothing is proven`;
+      return;
+    }
+    await word(name).click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(typed);
+    // The first word of the caption box on every frame the page paints.
+    await page.evaluate(() => {
+      const firsts = (window.__firsts = []);
+      const look = () => {
+        if (window.__firsts !== firsts) return;
+        const at = document.querySelector(".captions .word")?.dataset.at ?? "none";
+        if (firsts.at(-1) !== at) firsts.push(at);
+        requestAnimationFrame(look);
+      };
+      look();
+    });
+    await page.keyboard.press("Enter");
+    await settle(page);
+    await settled();
+    if (!(await walk.captioned())) {
+      walk.wrong = "the layer of the saved captions was given up on, so the caption box was never seen with it";
+      return;
+    }
+    await settled();
+    const firsts = await page.evaluate(() => {
+      const got = window.__firsts;
+      window.__firsts = null;
+      return got;
+    });
+    if (firsts.length !== 1) walk.wrong = `the caption box began with the word at ${firsts.join(", then ")} once Enter was pressed`;
+    await watch.step("press", s);
   },
   // ["frame on the pill while it plays", seconds]
   //                    puts the playhead a second before the end of the
