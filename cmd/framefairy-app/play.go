@@ -79,7 +79,7 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) 
 			return got(previewFrame{at: f.At, stamp: []float64{f.Moment, grid.At(f.Frame), edge, float64(f.Gen)}, data: f.Picture})
 		})
 	})
-	s.play = play
+	s.play, s.episode = play, path
 	e := engine.NewEngine(engineLog("files", path), st.machine)
 	sound, _ := p.startStamped("playsound", nil, dec.Give, func(ctx context.Context, got func(previewFrame) error) error {
 		source := func(ctx context.Context, from float64, rate, channels int, got func(float64, []byte) error) error {
@@ -156,14 +156,15 @@ const takeAhead = 0.15
 // pieces ends, see engine.Play.Retake. Where the new pieces do not hold
 // that moment, an edge of the clip dragged past the playhead, the play
 // goes on as a play of the video from there and says so, the playhead
-// being outside the clip. 409 where the play is paused or past its end,
-// and the window's next play plays the clip as it is now.
+// being outside the clip. A framing of another video is not taken. 409
+// where the play is paused or past its end, and the window's next play
+// plays the clip as it is now.
 func (p *previews) servePlayTake(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	s := p.get(q.Get("id"))
 	f, known := p.framings.get(q.Get("framing"))
 	heard, err := strconv.ParseFloat(q.Get("heard"), 64)
-	if s == nil || s.play == nil || !known || len(f.segments) == 0 || err != nil || math.IsNaN(heard) || math.IsInf(heard, 0) {
+	if s == nil || s.play == nil || !known || f.episode != s.episode || len(f.segments) == 0 || err != nil || math.IsNaN(heard) || math.IsInf(heard, 0) {
 		http.NotFound(w, r)
 		return
 	}

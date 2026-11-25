@@ -137,8 +137,10 @@ type preview struct {
 	light func() framewire.Light
 	// Takes back a frame once nothing reads it, see start.
 	give func([]byte)
-	// The play whose frames or sound it is, see servePlay.
-	play *engine.Play
+	// The play whose frames or sound it is, see servePlay, and the video
+	// it plays.
+	play    *engine.Play
+	episode string
 }
 
 type atomicTime struct {

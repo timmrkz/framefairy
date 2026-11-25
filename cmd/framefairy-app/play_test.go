@@ -147,16 +147,20 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 	// The clip changed while it plays is taken in a little past the place
 	// its sound reached, at the moment the play stands at there.
 	source := engine.SourceInfo{Width: 32, Height: 18, FPSNum: 1, FPSDen: 1, Duration: 4}
-	framing := func(name string, start, end float64) {
-		svc.previews.framings.put(name, framed{episode: mine, source: source, segments: []engine.SegmentView{{Start: start, End: end}}}, nil)
+	framingOf := func(name, episode string, start, end float64) {
+		svc.previews.framings.put(name, framed{episode: episode, source: source, segments: []engine.SegmentView{{Start: start, End: end}}}, nil)
 	}
-	framing("first", g.At(2), g.At(7))
-	framing("last", g.At(12), g.At(17))
+	framingOf("first", mine, g.At(2), g.At(7))
+	framingOf("last", mine, g.At(12), g.At(17))
+	framingOf("elsewhere", mine+".other", g.At(2), g.At(7))
 	take := func(name, heard string) (int, map[string]any) {
 		rec := get("/frames/play/take", url.Values{"id": {play.Pictures}, "framing": {name}, "heard": {heard}})
 		var took map[string]any
 		_ = json.NewDecoder(rec.Body).Decode(&took)
 		return rec.Code, took
+	}
+	if code, _ := take("elsewhere", "0.25"); code != http.StatusNotFound {
+		t.Errorf("a framing of another video answered %d", code)
 	}
 	if code, _ := take("first", "5"); code != http.StatusConflict {
 		t.Errorf("a change past the play's end answered %d", code)
