@@ -147,38 +147,34 @@ func TestAnExportToADriveWithoutModesIsSaved(t *testing.T) {
 	}
 }
 
-// A search that is done hears the rest of its video, the way Transcribe
-// video does, so a later search of a window heard already starts finding
-// at once, issue #447. A video heard to its end, a search that did not
-// end done, more work on the video's clips on the way, and a clip made by
-// hand of a video never searched ask for nothing.
-func TestASearchThatIsDoneHearsTheRestOfItsVideo(t *testing.T) {
+// The work on a video's clips that ended transcribes the rest of its
+// video, the way Transcribe video does, since it stopped the
+// transcription that started when the video was added, issue #447. So a
+// later search of a window transcribed already finds its clips at once.
+// A video transcribed to its end, work cut off by the app closing or by
+// the video's removal, more work on the video's clips on the way, and a
+// transcription that ended ask for nothing.
+func TestTheWorkOnClipsThatEndedTranscribesTheRestOfItsVideo(t *testing.T) {
 	t.Parallel()
 	words := [][3]any{{10.1, 10.4, "eins"}, {10.5, 10.9, "zwei"}}
 	for _, c := range []struct {
-		name   string
-		end    float64
-		kind   string
-		state  string
-		before func(svc *FrameFairy, path string)
-		hears  bool
+		name        string
+		end         float64
+		kind        string
+		state       string
+		before      func(svc *FrameFairy, path string)
+		transcribes bool
 	}{
-		{name: "a search that is done", end: 600, kind: engine.JobSearch, state: JobDone, hears: true},
-		{name: "a search of a video heard to its end", end: 30, kind: engine.JobSearch, state: JobDone},
-		{name: "a search that failed", end: 600, kind: engine.JobSearch, state: JobFailed},
-		{name: "a search that was stopped", end: 600, kind: engine.JobSearch, state: JobStopped},
+		{name: "a search that is done", end: 600, kind: engine.JobSearch, state: JobDone, transcribes: true},
+		{name: "a search of a video transcribed to its end", end: 30, kind: engine.JobSearch, state: JobDone},
+		{name: "a search that failed", end: 600, kind: engine.JobSearch, state: JobFailed, transcribes: true},
+		{name: "a search stopped by hand", end: 600, kind: engine.JobSearch, state: JobStopped, transcribes: true},
+		{name: "a search cut off by the app closing", end: 600, kind: engine.JobSearch, state: JobCancelled},
 		{name: "a search with another of the video waiting", end: 600, kind: engine.JobSearch, state: JobDone,
 			before: func(svc *FrameFairy, path string) {
 				svc.jobs.add(path, engine.JobSearch, "Search", func(context.Context, *engine.Project) (string, error) { return "", nil })
 			}},
-		{name: "a clip made by hand of a video never searched", end: 600, kind: engine.JobClip, state: JobDone},
-		{name: "a clip made by hand of a video searched before", end: 600, kind: engine.JobClip, state: JobDone,
-			before: func(svc *FrameFairy, path string) {
-				rec := engine.JobRecord{ID: engine.SearchID, Kind: engine.JobSearch, To: 60, Step: engine.StepStopped}
-				if err := engine.WriteJob(svc.store.files, path, rec); err != nil {
-					t.Fatal(err)
-				}
-			}, hears: true},
+		{name: "a clip made by hand", end: 600, kind: engine.JobClip, state: JobDone, transcribes: true},
 		{name: "a transcription that is done", end: 600, kind: engine.JobTranscribe, state: JobDone},
 	} {
 		svc, eps := memoryLibrary(t, "ep.mp4")
@@ -190,19 +186,19 @@ func TestASearchThatIsDoneHearsTheRestOfItsVideo(t *testing.T) {
 			c.before(svc, path)
 		}
 		svc.searched(Job{Episode: path, State: c.state, JobRecord: engine.JobRecord{Kind: c.kind}})
-		if hears := wholeHeard(svc.jobs.list()); hears != c.hears {
-			t.Errorf("%s: the rest of the video is heard %v, want %v", c.name, hears, c.hears)
+		if got := wholeHeard(svc.jobs.list()); got != c.transcribes {
+			t.Errorf("%s: the rest of the video is transcribed %v, want %v", c.name, got, c.transcribes)
 		}
 	}
 }
 
-// The rest of a video asked for by itself the moment Search or a clip
-// made by hand is pressed never runs beside them, the way the user's
+// The rest of a video transcribed by itself, asked for the moment Search
+// or a clip made by hand is pressed, never runs beside them, the way the user's
 // report of 26 October asked: the two orders the calls can land in, made
 // to happen on purpose. The rest asked for after the work on the clips
 // was added is dropped, without a word, and the work on the clips added
 // after the rest is asked for calls it off.
-func TestTheRestOfAVideoNeverHearsBesideASearchPressedAtOnce(t *testing.T) {
+func TestTheRestOfAVideoIsNeverTranscribedBesideASearchPressedAtOnce(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{engine.JobSearch, engine.JobClip} {
 		for _, restFirst := range []bool{false, true} {
@@ -228,7 +224,7 @@ func TestTheRestOfAVideoNeverHearsBesideASearchPressedAtOnce(t *testing.T) {
 			}
 			jobs := svc.jobs.list()
 			if whole := wholeJob(jobs); whole != nil {
-				t.Errorf("%s, the rest first %v: the rest of the video is heard beside the work on its clips: %+v", kind, restFirst, *whole)
+				t.Errorf("%s, the rest first %v: the rest of the video is transcribed beside the work on its clips: %+v", kind, restFirst, *whole)
 			}
 			if !restFirst && heard.ID != "" {
 				t.Errorf("%s: the rest asked for after it was added, not dropped: %+v", kind, heard)

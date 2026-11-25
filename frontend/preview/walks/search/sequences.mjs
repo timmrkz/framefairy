@@ -223,11 +223,13 @@ export default [
     // Issue #431: the same for a search called off with Cancel. Tim saw
     // Removed slide in again each time he came back to the video while it
     // ran down. A video added first gives it another video to go to, and
-    // its first search is the one Cancel stops.
+    // its search is the one Cancel stops.
     name: "a search stopped with Cancel can be removed, and stays removed",
     steps: [
       ["model", "holds"],
       ["add", 60],
+      ["wait for", "Search"],
+      ["head"],
       ["wait for", "Cancel"],
       ["head"],
       ["wait for", "Continue"],
@@ -267,6 +269,8 @@ export default [
       // let through, and nothing depends on how fast the speech is.
       ["speech", "hold"],
       ["add", 120],
+      ["wait for", "Search"],
+      ["head"],
       ["wait for", "Cancel"],
       ["heard part", [0.2, 120]],
       ["cancel held"],
@@ -282,19 +286,21 @@ export default [
     // video with no sound at all is the same, and its clip timeline says
     // No sound.
     name: "a clip made by hand that failed says where it lies, and why in a toast",
-    steps: [["speech", "wordless"], ["speech", "hold"], ["add", 120], ["wait for", "Cancel"], ["hand failed"], ["no speech"], ["no sound", 20]],
+    steps: [["speech", "wordless"], ["speech", "hold"], ["add", 120], ["wait for", "Search"], ["head"], ["wait for", "Cancel"], ["hand failed"], ["no speech"], ["no sound", 20]],
   },
   {
     // Tim on #456: I at the end of the video made a card that could only
     // fail. Nothing is said after the last word, so I is not offered there.
-    // And Tim's report of 14 November, issue #852: the first search of a
-    // video just added ended while he picked cards in the transcript, and
-    // its first clip took the playhead, the cards and the clip timeline
-    // away from him. None of its clips is chosen then.
-    name: "I after the last word is not offered, and says why, and a first search leaves the cards a hand works in alone",
+    // And Tim's report of 14 November, issue #852: the search of a video
+    // just added ended while he picked cards in the transcript, and its
+    // first clip took the playhead, the cards and the clip timeline away
+    // from him. None of its clips is chosen then.
+    name: "I after the last word is not offered, and says why, and a search leaves the cards a hand works in alone",
     steps: [
       ["model", "holds"],
       ["add", 120],
+      ["wait for", "Search"],
+      ["head"],
       ["wait for", "Cancel"],
       ["work in the cards"],
       ["model", "answers"],
@@ -311,6 +317,8 @@ export default [
     steps: [
       ["speech", "hold"],
       ["add", 1200],
+      ["wait for", "Search"],
+      ["head"],
       ["wait for", "Cancel"],
       ["head"],
       ["speech", "go"],
@@ -336,22 +344,25 @@ export default [
     steps: [
       ["speech", "hold"],
       ["add", 1200],
+      ["wait for", "Search"],
+      ["head"],
+      ["wait for", "Cancel"],
       ["walks on with the clips"],
       ["dots begin at the window"],
     ],
   },
   {
     // Tim's report of 24 October, 21.42. The first search of a video just
-    // added is the Go side's, with its window an even share of the video,
-    // here 751.5 s, off the range picker's step. The window placed on the
-    // step took its place, so Cancel while it heard left a search on a
-    // window that was not the one drawn: set aside, it said Search, with
-    // the sidebar's dot yellow. And the frame over the window dropped the
-    // moment the search ended, where it now fades from the press.
-    name: "Cancel while a video just added is transcribed says Stopped with Continue, and the window's frame fades",
+    // added was once the Go side's, with its window an even share of the
+    // video, here 751.5 s, off the range picker's step. The window placed
+    // on the step took its place, so Cancel while it heard left a search
+    // on a window that was not the one drawn: set aside, it said Search,
+    // with the sidebar's dot yellow. And the frame over the window dropped
+    // the moment the search ended, where it now fades from the press.
+    name: "Cancel on the search of a video just added says Stopped with Continue, and the window's frame fades",
     steps: [
       ["speech", "hold"],
-      ["add, until its search shows", 1503],
+      ["add and search", 1503],
       ["cancel fades"],
       ["speech", "go"],
       ["wait for", "Continue"],

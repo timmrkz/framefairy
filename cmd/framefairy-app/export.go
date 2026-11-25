@@ -49,7 +49,7 @@ func (s *FrameFairy) Transcribe(path string) Job {
 // partToHear. The whole video, a part of a clip and the stretch around a
 // clip each have their record, and run side by side: lanes.go says which
 // hears first. byItself is one the app asks for by itself, dropped
-// without a word when the queue refuses it, see hearRest.
+// without a word when the queue refuses it, see transcribeRest.
 func (s *FrameFairy) transcribe(path string, part timed.Window, around, byItself bool) Job {
 	rec := engine.TranscribeRecord(part, around)
 	// One that stopped is taken up by this one, which writes the record
@@ -62,34 +62,32 @@ func (s *FrameFairy) transcribe(path string, part timed.Window, around, byItself
 	})
 }
 
-// searched is told when a job that makes clips or hears has ended, see
-// queue.searched: the models are kept loaded again, and work on a video's
-// clips that is done carries its hearing on, see hearRest.
+// searched is told when a job that makes clips or transcribes has ended,
+// see queue.searched: the models are kept loaded again, and the work on a
+// video's clips that ended carries its transcription on, see
+// transcribeRest. One cut off by the app closing or by the video's
+// removal does not, see JobCancelled.
 func (s *FrameFairy) searched(j Job) {
 	s.keeping.ask()
-	if makesClips(j.Kind) && j.State == JobDone {
-		s.hearRest(j.Episode, j.Kind)
+	if makesClips(j.Kind) && (j.State == JobDone || j.State == JobStopped || j.State == JobFailed) {
+		s.transcribeRest(j.Episode, j.Kind)
 	}
 }
 
-// hearRest hears the rest of a video to its end once a search of it is
-// done, the way Transcribe video does, issue #447: a later search of a
-// window heard already starts finding at once. In two searches of 20
-// minutes, hearing took about 17 s of 41 s. The transcription gives way
-// to every search and clip made by hand of every video, see lanes.go, and
-// one of its own video stops it, see makeWayForTranscribe, and asks again
-// once it is done. A clip made by hand asks again too, once the video
-// was searched, since it stopped the transcription a search had started.
-// So Stop transcribing holds until the next search or clip made by hand. A video heard to
-// its end, or with more work on its clips on the way, asks nothing.
-func (s *FrameFairy) hearRest(path, kind string) {
+// transcribeRest transcribes a video to its end, by itself, the way
+// Transcribe video does, issue #447: once the video is added, and again
+// once a search or a clip made by hand of it has ended, since those go
+// first and stop it, see makeWayForSearch. So a search of a window
+// transcribed already finds its clips at once. after says what it
+// follows, for the log. A video transcribed to its end, or with more work
+// on its clips on the way, asks nothing.
+func (s *FrameFairy) transcribeRest(path, after string) {
 	if s.jobs == nil || !s.store.Known(path) {
 		return
 	}
-	if kind == engine.JobClip && !s.store.machine.Episode(path).EverSearched() {
-		return
-	}
-	if h, err := s.heardIn(path); err != nil || h.Done {
+	// A video with nothing transcribed yet has no transcript, and is
+	// transcribed from its start.
+	if t, err := s.heardIn(path); err == nil && t.Done || err != nil && !errors.Is(err, engine.ErrNoTranscript) {
 		return
 	}
 	if !s.jobs.makeWayForTranscribe(path) {
@@ -98,8 +96,8 @@ func (s *FrameFairy) hearRest(path, kind string) {
 	// A search pressed since is looked for again as the job is added, see
 	// addSteps.
 	if j := s.transcribe(path, timed.Window{}, false, true); j.ID != "" {
-		theLog.line(zerolog.InfoLevel, "app").Str("video", filepath.Base(path)).Str("after", kind).
-			Msg("the rest of the video is heard, after the work on its clips")
+		theLog.line(zerolog.InfoLevel, "app").Str("video", filepath.Base(path)).Str("after", after).
+			Msg("the rest of the video is transcribed")
 	}
 }
 

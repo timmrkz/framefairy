@@ -166,24 +166,27 @@ way a menu item does on the Mac. How far the work has come is not the
 menu's to show, the user's call:
 
 - **Transcribe video** while the transcript has not reached the video's
-  end, whether it never started, was stopped by hand, by a search, by the
-  app closing or by failing. It hears the video to its end with no search
-  after, a job of its own, `engine.JobTranscribe`, see [JOBS.md](JOBS.md),
+  end and nothing transcribes it, whether it was stopped by hand, by the
+  app closing or by failing. It transcribes the video to its end with no
+  search after, a job of its own, `engine.JobTranscribe`, see [JOBS.md](JOBS.md),
   and carries on from what was heard. Why it failed is said in a toast as
   it fails.
 - **Stop transcribing** while it runs. What was heard stays, and the menu
   says Transcribe video again from the frame it is clicked.
 
-It and the work on the video's clips go one at a time, the user's report of 26
-October, 12.27. A search or a clip made by hand of the video stops its
-transcription, the way Stop transcribing does. Once a search or a clip
-made by hand of a video searched before is done, the transcription
-starts again by itself and hears the rest of the video, so a later
-search of a window heard already starts finding at once: in two searches
-of 20 minutes, hearing took about 17 s of 41 s. So Stop transcribing
-holds until the next search, or clip made by hand, is done. Relaunch on
-the Updates page does not wait for it, since it can take an hour: what
-it heard stays. The stop shows on the press, in the
+A video added is transcribed to its end by itself, the same job, the
+user's workflow: add, let it transcribe, place the window, search. It and
+the work on the video's clips go one at a time, the user's report of 26
+October, 12.27. A search or a clip made by hand of the video goes first
+and stops its transcription, the way Stop transcribing does. The search
+transcribes what its window lacks, so a window transcribed already is
+searched at once, and once the search or the clip has ended, done,
+stopped or failed, the transcription starts again by itself and
+transcribes the rest of the video. In two searches of 20 minutes,
+transcribing took about 17 s of 41 s. So Stop transcribing holds until
+the next search, or clip made by hand, has ended. Relaunch on the
+Updates page does not wait for it, since it can take an hour: what it
+transcribed stays. The stop shows on the press, in the
 menu, the video's dot and the range picker, though the transcription
 ends only once the speech model has heard the piece it is in: the menu
 said Stop transcribing for three and a half seconds after Search, the user's
@@ -1075,12 +1078,10 @@ bubble scrolled by those eight pixels.
 - **The transcription is the first step of a search, and nothing else.**
   A search is one job on the Go side, see [JOBS.md](JOBS.md): it hears the
   episode from where the transcript ends to the end of its window, stops
-  exactly on its edge, and then finds. Adding a video asks for its first
-  search, of its first window, so the Go side starts it and the
-  workspace only shows it. Once the search is done, the rest of the
-  video is heard by itself, the way **Transcribe video** in its menu in
-  the sidebar hears it, see above, and a search of the video stops it and
-  asks for it again once it is done. So there is nothing to control
+  exactly on its edge, and then finds. Adding a video transcribes all of
+  it by itself, the way **Transcribe video** in its menu in the sidebar
+  does, see above, and a search of the video stops it and starts it
+  again once the search has ended. So there is nothing to control
   about it in the workspace but the search: **Search** starts it and
   **Cancel** stops it, and what was heard stays, so the next search goes
   on from there. While another
@@ -1353,10 +1354,11 @@ bubble scrolled by those eight pixels.
     - The clips lie on a surface of their own, the grey of every row in
       the app, parted from each other by lighter lines than the ones that
       part one area of the workspace from another.
-    - **A new episode finds its first clips by itself.** Adding a video is
-      all it takes: the Go side asks for its first search, of the first
-      window of the episode, and no longer than the model can read at
-      once, and the range picker goes to that window.
+    - **A new video is transcribed by itself, and searched when Search
+      is pressed.** Adding a video is all it takes for its transcript: the
+      Go side transcribes it from its start to its end, and the range
+      picker shows its first window, no longer than the model can read at
+      once, which can be moved while the video is transcribed.
       **The windows grow with the episode**, as the square root of its
       length, so a short episode shows its first clips soon and a long one
       is not cut into dozens: half an hour makes windows of 10 minutes,
@@ -1382,13 +1384,11 @@ bubble scrolled by those eight pixels.
       model hears is cut on the window's edge, so it hears nothing past
       it, and the search finds at once. A word that runs across the edge
       is not in the window, and is heard whole by the next search that
-      needs it. The first search happens only for an episode nobody has
-      ever searched, which is one with no plan and no `jobs/` folder, so
-      removing every clip again does not bring a search of its own back:
-      a search is the machine's time, and nobody asked for it. Deleting
-      the work folder makes the episode new, and then it starts over as a
-      new one does. The rule is `firstSearch` in
-      `cmd/framefairy-app/search.go`, and the path tests follow it.
+      needs it. The app once searched a video's first window by itself
+      the moment it was added, and the user turned that off: it searched a
+      window nobody had chosen, while the user wanted to place the window
+      during the transcription first. See `transcribeRest` in
+      `cmd/framefairy-app/export.go`, and the path tests follow it.
     - **The target follows the window.** Until it is changed, Target
       holds how many clips the next window suggests, as a number like any
       other: 6 for half an hour of clips of 20 to 30 seconds,
@@ -1397,8 +1397,7 @@ bubble scrolled by those eight pixels.
       an hour. A number typed there is for the window it was typed for, and
       kept with that window's length. A window of another length, drawn
       anew or the first window of the next episode, follows its own
-      suggestion again, and so does the first search the app starts by
-      itself when a video is added. Three typed for the six minutes of one
+      suggestion again. Three typed for the six minutes of one
       episode went on asking for three in the half hour of the next.
       Cleared, the field follows the window again and shows its
       suggestion. What may be typed comes with the window in the video's
@@ -1661,8 +1660,7 @@ bubble scrolled by those eight pixels.
       the fewest searches have been, earliest first, as long as the
       video's windows are, placed by the Go side, and a double-click on
       the window's marks puts it back there. Every search starts on the
-      video's window, the first search of a video just added too, and a
-      search that found its clips moves it on before it says it is done.
+      video's window, and a search that found its clips moves it on before it says it is done.
       The workspace draws it, and writes it only when a hand moves it or
       when it no longer fits what a search can read. The first search
       once placed its window here and the workspace placed another on the
@@ -2328,12 +2326,8 @@ decoder that answers is the one the video preview reads from, so asking
 costs no start later. Asked first, the probe and the first frame kept
 the workspace from opening for 0.3 to 1.4 s on a Mac. A file
 with no picture leaves the list and the workspace again, the folder its
-add made goes with it, and a toast says why. A new video's first search
-starts once its picture is known to be there. Until then the video's
-state says the search is on its way, `SearchComing`, so the clip list
-says Cancel from the moment the video opens, the way it does from a
-press of Search, and Cancel there calls the search off before it starts:
-it comes stopped, with Continue. The list said Search in that moment.
+add made goes with it, and a toast says why. A new video's transcription
+starts once its picture is known to be there.
 A file with no picture,
 and one that is no video at all, said nothing at Add before and failed in
 the video preview after.

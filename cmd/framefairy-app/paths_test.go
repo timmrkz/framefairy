@@ -190,8 +190,8 @@ func TestPathCancelWhileHearing(t *testing.T) {
 
 // Removed and added again, a video says how its work ended only as far as
 // its work folder still holds it. Kept, the search called off says Stopped
-// again. Deleted, nothing of it is left, and its first search starts again
-// by itself. Tim removed a video, added the same file again, and its menu
+// again. Deleted, nothing of it is left, and it is transcribed again from
+// its start by itself. Tim removed a video, added the same file again, and its menu
 // offered to carry on a transcription the video he added never had, his
 // report of 24 October on #458.
 //
@@ -244,8 +244,11 @@ func TestPathAVideoRemovedAndAddedAgainSaysOnlyWhatItsFolderHolds(t *testing.T) 
 	again()
 	d.idle(ep)
 	ended("added again without its folder")
-	if n := len(d.clips(ep)); n == 0 {
-		t.Error("added again without its folder, its first search found no clips")
+	if n := len(d.clips(ep)); n != 0 {
+		t.Errorf("added again without its folder, it has %d clips nobody searched for", n)
+	}
+	if _, done := d.heard(ep); !done {
+		t.Error("added again without its folder, it is not transcribed to its end")
 	}
 }
 
@@ -451,6 +454,10 @@ func TestPathTwoEpisodesAndARender(t *testing.T) {
 	a, b := d.episode("a", minutes5), d.episode("b", minutes5)
 	var wg sync.WaitGroup
 	for _, path := range []string{a, b} {
+		// Search is pressed on each the moment it is in.
+		if abs, err := filepath.Abs(path); err == nil {
+			d.searching.Store(abs, true)
+		}
 		wg.Go(func() {
 			if added, err := d.svc.addEpisodes([]string{path}); err != nil || len(added) != 1 {
 				t.Errorf("adding %s: %v", path, err)
@@ -573,8 +580,8 @@ func TestPathATargetStaysWithItsWindow(t *testing.T) {
 	}
 }
 
-// A video has one window. The first search of a video just added is on
-// it, the window the workspace draws, a search cancelled on it says
+// A video has one window. Search pressed on a video just added is on it,
+// the window the workspace draws, a search cancelled on it says
 // Continue, moved off it the search is set aside and the job says so,
 // Undo brings it back, and a search that found its clips moves the window
 // on. The first search once placed a window of its own, two seconds off
@@ -593,14 +600,14 @@ func TestPathAVideoHasOneWindow(t *testing.T) {
 	<-in
 	j, ok := d.svc.jobs.find(ep, "search")
 	if !ok {
-		t.Fatal("the video just added was not searched")
+		t.Fatal("Search pressed on the video just added did not search it")
 	}
 	w := keptWindow(d.svc, ep)
 	if w == nil || *w != (KeptWindow{From: 0, To: 600, Length: 600}) {
 		t.Fatalf("the video's window is %+v, want the first ten minutes", w)
 	}
 	if j.From != w.From || j.To != w.To {
-		t.Errorf("the first search is of %v to %v, the video's window %v to %v", j.From, j.To, w.From, w.To)
+		t.Errorf("the search is of %v to %v, the video's window %v to %v", j.From, j.To, w.From, w.To)
 	}
 	d.cancel(ep)
 	let()
@@ -637,45 +644,86 @@ func TestPathAVideoHasOneWindow(t *testing.T) {
 	}
 }
 
-// The whole video's transcription and the work on its clips go one at a
-// time, Tim's report of 26 October, 12.27. Transcribe video is refused
-// while a search runs, and a search asked for while the whole video is
-// transcribed stops it, for good: it does not carry on by itself once the
-// search is done.
-func TestPathTheWholeVideoAndASearchGoOneAtATime(t *testing.T) {
+// A video added is transcribed to its end by itself, and Search pressed
+// meanwhile goes first, issue #447: the transcription stops, the search
+// transcribes its own window, finds its clips, and the transcription then
+// carries on to the end. The whole video's transcription and the work on
+// its clips go one at a time, the user's report of 26 October, 12.27, so
+// Transcribe video is refused while the search runs.
+func TestPathASearchGoesFirstAndTheTranscriptionCarriesOn(t *testing.T) {
 	// Not side by side: open sets HOME for the whole process.
 	d := open(t)
 	in, let := d.speech.hold()
 	t.Cleanup(let)
-	ep := d.add("ep", "1200")
-	<-in
-	if refused := d.svc.Transcribe(ep); refused.State != JobFailed || refused.Error != errClipsFirst {
-		t.Errorf("Transcribe video asked for while the first search hears is %s: %q", refused.State, refused.Error)
-	}
-	let()
-	d.idle(ep)
-
-	in, let = d.speech.hold()
-	t.Cleanup(let)
-	whole := d.svc.Transcribe(ep)
-	if whole.State == JobFailed {
-		t.Fatalf("Transcribe video with nothing running was refused: %q", whole.Error)
+	ep := d.episode("ep", "1200")
+	if added, err := d.svc.addEpisodes([]string{ep}); err != nil || len(added) != 1 {
+		t.Fatalf("adding %s: %v", ep, err)
 	}
 	<-in
+	whole, ok := d.svc.jobs.find(ep, engine.JobTranscribe)
+	if !ok || whole.Hears() != engine.HearsWhole {
+		t.Fatalf("the video added is not transcribed by itself: %+v", d.svc.Jobs())
+	}
 	d.search(ep, window{600, 1200})
+	if refused := d.svc.Transcribe(ep); refused.State != JobFailed || refused.Error != errClipsFirst {
+		t.Errorf("Transcribe video asked for while the search runs is %s: %q", refused.State, refused.Error)
+	}
 	let()
 	d.idle(ep)
-	// The transcription the search stopped, and none started after it.
-	var after []Job
+	if o := d.outcome(ep); o.stopped || o.interrupted || o.failed != "" {
+		t.Errorf("the search that went first says %+v", o)
+	}
+	search, _ := d.svc.jobs.find(ep, engine.JobSearch)
+	var carried *Job
 	for _, j := range d.svc.Jobs() {
-		if j.Episode == ep && j.Kind == engine.JobTranscribe && j.Seq >= whole.Seq {
-			after = append(after, j)
+		if j.Episode == ep && j.Hears() == engine.HearsWhole && j.ID != whole.ID && j.Error != errClipsFirst {
+			carried = &j
 		}
 	}
-	if len(after) != 1 || after[0].ID != whole.ID || after[0].State != JobStopped {
-		t.Fatalf("a search asked for while the whole video was transcribed left %+v, not the transcription stopped", after)
+	switch {
+	case carried == nil:
+		t.Errorf("the transcription was not carried on once the search was done: %+v", d.svc.Jobs())
+	case carried.State != JobDone || carried.Seq < search.Seq:
+		t.Errorf("the transcription carried on is %s with news %d, the search's last %d", carried.State, carried.Seq, search.Seq)
 	}
+	if _, done := d.heard(ep); !done {
+		t.Error("the video is not transcribed to its end")
+	}
+}
+
+// Search pressed on a window transcribed already stops the transcription
+// and finds its clips at once, issue #447: it transcribes nothing, so it
+// is done while the transcription it stopped is still inside the piece
+// it was in.
+func TestPathASearchOfAWindowTranscribedFindsAtOnce(t *testing.T) {
+	// Not side by side: open sets HOME for the whole process.
+	d := open(t)
+	d.speech.savesEach.Store(true)
+	in, let := d.speech.holdAfter(4)
+	t.Cleanup(let)
+	ep := d.episode("ep", "1200")
+	if added, err := d.svc.addEpisodes([]string{ep}); err != nil || len(added) != 1 {
+		t.Fatalf("adding %s: %v", ep, err)
+	}
+	<-in
+	covered, _ := d.heard(ep)
+	if covered < 30 {
+		t.Fatalf("four pieces transcribed cover %.1f s, too little to search", covered)
+	}
+	given := d.speech.seconds()
+	d.search(ep, window{0, covered})
+	d.svc.jobs.until(func(jobs []*Job) bool {
+		return slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == ep && j.Kind == engine.JobSearch && !j.going() })
+	}, nil)
 	if o := d.outcome(ep); o.stopped || o.interrupted || o.failed != "" {
-		t.Errorf("the search that stopped the transcription says %+v", o)
+		t.Errorf("the search of a window transcribed already says %+v", o)
+	}
+	if got := d.speech.seconds(); got != given {
+		t.Errorf("the search of a window transcribed already gave the speech model %.1f s more", got-given)
+	}
+	let()
+	d.idle(ep)
+	if _, done := d.heard(ep); !done {
+		t.Error("the video is not transcribed to its end once the search was done")
 	}
 }

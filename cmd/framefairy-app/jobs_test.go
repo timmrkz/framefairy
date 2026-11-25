@@ -955,8 +955,8 @@ func relaunchAfterWork(t *testing.T) {
 
 // A search that has ended asks for the model to be kept again, because it
 // may have put the kept model aside for another one, see keep.go, and
-// says how it ended, so one that is done carries the hearing on, see
-// hearRest.
+// says how it ended, so the work on a video's clips carries its
+// transcription on, see transcribeRest.
 func TestASearchThatEndsKeepsTheModelAgain(t *testing.T) {
 	t.Parallel()
 	q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})

@@ -72,7 +72,7 @@ probes in the scratchpad.
 | `?busy` | a search finding, with progress |
 | `?unknown` | the same, with progress it cannot put a number on |
 | `?transcribing` | a search hearing, ahead of the saved transcript, stuck there |
-| `?growing` | a new video: the Go side's first search hears from 10 minutes to its window's end, then finds, job events every 250 ms |
+| `?growing` | a new video: a search hears from 10 minutes to its window's end, then finds, job events every 250 ms |
 | `?lagging` | with `?growing`, the saved transcript trails what is heard, saved every 8 s of work like the engine |
 | `?hear=100` | hearing at 100 seconds of audio a second, not 600, slow enough to watch |
 | `?paused` | clips found, the video read part way, nothing reading on. `?short` reads only to 2500 |
@@ -84,7 +84,7 @@ probes in the scratchpad.
 | `?slowhand` | a clip made with I or O takes 4 s to place its crop and 4 more to be heard past the transcript, so its card shows on the way, not a second |
 | `?slowgo=80` | every Go call answers 0.5 to 1.5 times 80 ms late, per method, like the real bridge |
 | `?lagclips` | every clip list comes back 300 ms late, so a card on its way must hold its place until the list has its clip |
-| `?asked=4` | with `?growing`, the Go side's first search asks for 4 clips, not the workspace's number, which the rows and target must follow |
+| `?asked=4` | with `?growing`, the search asks for 4 clips, not the workspace's number now, which the rows and target must follow |
 | `?crossclips` | one clip list read comes back 400 ms late and the next at once, so the later read answers first. A card on its way and its clip must never both show |
 | `?setup` | a bare machine: the first run, then an empty library. Download really runs both model installs, each on its own clock. One language model fits the machine, one does not |
 | `?refuse` | the engine refuses edits: correcting a word and picking a caption face fail, to show a control's no |

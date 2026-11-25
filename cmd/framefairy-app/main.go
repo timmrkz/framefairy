@@ -84,7 +84,6 @@ func main() {
 	svc.tellWindow(emitterFunc(func(name string, data ...any) bool {
 		return app != nil && app.Event.Emit(name, data...)
 	}))
-	svc.jobs.searched = svc.searched
 	// The log as Settings shows it, while Settings is open, as lines are
 	// written, about once a second at most. See watch in applog.go.
 	go theLog.watch(func(st LogStatus) { appLogEvent.to(svc.tell, st) },
@@ -435,12 +434,16 @@ type FrameFairy struct {
 	// the clock, see undecodable. A test sets it, so it waits for no
 	// limit of the clock.
 	frameLate <-chan struct{}
+	// whenChecked, when set, is told of each video just added whose picture
+	// is there, before its transcription starts, see checkAdded. A test
+	// presses Search there, the way a person can the moment the video is
+	// in, so the search it is about goes first by its own order and not
+	// by how quickly the speech stand-in got to the video.
+	whenChecked func(video string)
 	// checking holds each video just added whose picture is still being
-	// checked, see addEpisodes and stopCheck. checks counts the checks,
-	// so the first search each one starts has a press of its own.
+	// checked, see addEpisodes and stopCheck.
 	checkMu  sync.Mutex
 	checking map[string]*check
-	checks   int
 	// naming is held while a clip made by hand is given its id and queued,
 	// so two pressed at once never take the same one, see makeClip.
 	naming sync.Mutex

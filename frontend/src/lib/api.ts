@@ -598,10 +598,6 @@ export interface VideoState {
   status: EpisodeStatus;
   clips: ClipEntry[];
   jobs: Job[];
-  // The video's first search is on its way: the video was just added, its
-  // picture is being checked, and the Go side asks for the search once it
-  // is, see VideoState.SearchComing.
-  searchComing?: boolean;
   // The video's window, or none while the video cannot be read.
   window?: WindowView | null;
   // Go's stamp of the cards of what the video says, the transcript

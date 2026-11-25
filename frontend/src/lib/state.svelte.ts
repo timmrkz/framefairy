@@ -38,14 +38,6 @@ export class JobStore {
   // press, and not when the work ends a second or two later.
   starting = $state.raw<Press[]>([]);
   stopping = $state.raw<Press[]>([]);
-  // The videos whose first search the Go side has on its way, from the
-  // moment it answered Add until the search is queued, as their newest
-  // states say, see VideoState.searchComing. It is a start the same as a
-  // press of Search on its way, one the Go side made, so everything that
-  // shows a press shows it: Cancel at the head of the clip list, the
-  // video's dot, and a stop pressed meanwhile lasts until the search
-  // comes stopping.
-  coming = $state.raw<string[]>([]);
 
   // The status of each video in the newest state of it, so the sidebar
   // draws how the video stands and the line under its name from one
@@ -76,10 +68,6 @@ export class JobStore {
     if (state.rev <= (this.revs.get(state.video) ?? 0)) return;
     this.revs.set(state.video, state.rev);
     if (state.status) this.statuses = { ...this.statuses, [state.video]: state.status };
-    if (!!state.searchComing !== this.coming.includes(state.video)) {
-      this.coming = state.searchComing ? [...this.coming, state.video] : this.coming.filter((v) => v !== state.video);
-      this.settle();
-    }
     const held = new Set(state.jobs.map((j) => j.id));
     const kept = this.list.filter((j) => j.episode !== state.video || held.has(j.id) || (j.seq ?? 0) > state.rev);
     if (kept.length < this.list.length) {
@@ -96,9 +84,8 @@ export class JobStore {
   }
 
   // Whether a start of the work is on its way: a press the Go side has
-  // not answered, or the first search it has on its way itself.
+  // not answered.
   isStarting(path: string, work: Work, what?: string): boolean {
-    if (work === "clips" && (what === undefined || what === "search") && this.coming.includes(path)) return true;
     return this.starting.some((p) => of(path, work)(p) && (what === undefined || p.what === what));
   }
 

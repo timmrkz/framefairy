@@ -52,8 +52,9 @@ Cancel, because nothing could tell the two apart.
 
 A job is one piece of work a person started, or the app started for them:
 a **search**, a **clip** made by hand, a **render**, or the whole video
-**transcribed** to its end from its menu, or by itself once a search of
-the video is done, `hearRest` in `export.go`. It is owned by the
+**transcribed** to its end from its menu, or by itself once the video is
+added and again once a search or a clip made by hand of it has ended,
+`transcribeRest` in `export.go`. It is owned by the
 Go side. It has what it was asked for and a step it is in. An episode has
 at most one search at a time, and any number of clips and renders.
 
@@ -284,8 +285,8 @@ command line keeps its flags and its own run, and keeps no records.
 When it starts, it reads the records of the episodes in its library: a
 record in a running step is a job in the list in the state `interrupted`,
 one in the step `stopped` a job that is `stopped`, and a failed one a job
-that `failed`, with its reason. Adding a video asks for
-its first search, of the video's window, which the Go side places then:
+that `failed`, with its reason. Adding a video transcribes it to its
+end, and places the video's window, the one Search searches:
 the first of the windows the video is cut into, see
 `engine.SuggestedWindow`, on a round step, and no longer than the model
 can read at once, see `engine.Episode.PlaceWindow`, kept by
@@ -578,8 +579,8 @@ the files.
 
 The paths:
 
-- A video added, and the first search going by itself through every step
-  to clips in the list.
+- A video added and searched at once, the search going through every
+  step to clips in the list, and the transcription carried on after it.
 - The app closed while it hears and while it finds, which in a test is a
   new queue reading the same work folders, and the search reported as
   interrupted.

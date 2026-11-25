@@ -11,7 +11,7 @@ import (
 // A search says how many clips it was asked for, from the moment it is
 // asked for to the moment it is over, so the clip list holds that many rows
 // open, not what the workspace would ask for now. The first search of an
-// episode is asked for by the Go side, and the workspace worked out
+// episode was once asked for by the Go side, and the workspace worked out
 // another number and opened three rows for a search that looked for six.
 func TestASearchSaysHowManyItWasAskedFor(t *testing.T) {
 	d := open(t)
@@ -118,7 +118,7 @@ func TestAContinueCountsTheClipsOfTheSearchItCarriesOn(t *testing.T) {
 		}
 	}
 	if found.State != JobDone || found.Written == 0 {
-		t.Fatalf("the first search ended %s with %d clips, and this test needs one that wrote clips", found.State, found.Written)
+		t.Fatalf("the search ended %s with %d clips, and this test needs one that wrote clips", found.State, found.Written)
 	}
 	// Called off after it wrote them, the way Cancel leaves its record.
 	stopped := engine.JobRecord{ID: engine.SearchID, Kind: engine.JobSearch, From: found.From, To: found.To,

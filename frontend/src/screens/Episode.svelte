@@ -152,8 +152,7 @@
   const max = $derived(win?.longest ?? 30);
   // A click has to show at once, long before the job it starts reports in.
   // The store keeps the press, the same for this work as for the whole
-  // video heard from its menu, and the first search the Go side has on its
-  // way while it checks the picture of a video just added.
+  // video transcribed from its menu.
   const starting = $derived(jobs.isStarting(path, "clips", "search"));
   // The press of Search or Continue the work in hand was asked for by. Cancel
   // names it, so it stops that search whether or not the Go side has heard
@@ -1070,8 +1069,8 @@
       onTheWay.length +
       (busy
         ? // The rows the search itself was asked for, not what the
-          // workspace would ask for now: the first search of an episode
-          // is asked for by the Go side.
+          // workspace would ask for now: Continue asks for what the
+          // search cut off was asked for.
           working?.whole ? 0 : Math.max(0, (working?.count || count) - searchTook)
         : shown.length === 0 && onTheWay.length === 0 && closing.length === 0
           ? count

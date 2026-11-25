@@ -142,36 +142,26 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 		// left off, so what its records say stopped says so again, the way
 		// it does when the app starts.
 		s.restoreJobs([]string{v})
-		// A video with no work folder before this add was never searched,
-		// and is not read for it: the answer waits on every read here.
-		ctx, search, done := s.startCheck(v, fresh[v] || !s.store.machine.Episode(v).EverSearched())
+		ctx, done := s.startCheck(v)
 		go func() {
 			defer done()
-			s.checkAdded(ctx, v, fresh[v], search)
+			s.checkAdded(ctx, v, fresh[v])
 		}()
 	}
 	return added, err
 }
 
 // check is the picture of a video just added being checked: done is
-// closed once it is, and stop calls it off. search is the press the
-// video's first search is asked for with once the check has passed, and
-// "" for a video searched before, which waits for a search to be asked
-// for. The video's state says that search is on its way for as long as
-// the check runs, see searchComingLocked.
+// closed once it is, and stop calls it off.
 type check struct {
-	done   chan struct{}
-	stop   context.CancelFunc
-	search string
+	done chan struct{}
+	stop context.CancelFunc
 }
 
 // startCheck says that the picture of a video just added is being
-// checked, and with first that its first search follows. It gives back
-// what the check runs under, called off by stopCheck, the press that
-// search is asked for with, and what says the check is done. Done, the
-// window is told, so the video's state no longer says a search is on its
-// way, see searchComingLocked.
-func (s *FrameFairy) startCheck(video string, first bool) (context.Context, string, func()) {
+// checked. It gives back what the check runs under, called off by
+// stopCheck, and what says the check is done.
+func (s *FrameFairy) startCheck(video string) (context.Context, func()) {
 	ctx, stop := context.WithCancel(context.Background())
 	c := &check{done: make(chan struct{}), stop: stop}
 	s.checkMu.Lock()
@@ -179,12 +169,8 @@ func (s *FrameFairy) startCheck(video string, first bool) (context.Context, stri
 	if s.checking == nil {
 		s.checking = map[string]*check{}
 	}
-	s.checks++
-	if first {
-		c.search = fmt.Sprintf("first search %d", s.checks)
-	}
 	s.checking[video] = c
-	return ctx, c.search, func() {
+	return ctx, func() {
 		s.checkMu.Lock()
 		if s.checking[video] == c {
 			delete(s.checking, video)
@@ -192,7 +178,6 @@ func (s *FrameFairy) startCheck(video string, first bool) (context.Context, stri
 		stop()
 		close(c.done)
 		s.checkMu.Unlock()
-		s.told(video)
 	}
 }
 
@@ -203,21 +188,9 @@ func (s *FrameFairy) checkOf(video string) *check {
 	return s.checking[video]
 }
 
-// searchComingLocked is the press the first search of a video just added is
-// asked for with, while its picture is checked, or "". From the moment Add
-// answers until that search is queued nothing of the video runs, and the
-// clip list offered Search, which a walk took for the search being over,
-// issue #848. s.checkMu is held.
-func (s *FrameFairy) searchComingLocked(video string) string {
-	if c := s.checking[video]; c != nil {
-		return c.search
-	}
-	return ""
-}
-
 // stopCheck calls off the check of a video's picture, and waits until it
-// has ended, so a video removed while it is checked starts no search on
-// its way out and takes nothing out after it was added again.
+// has ended, so a video removed while it is checked starts no
+// transcription on its way out and takes nothing out after it was added again.
 func (s *FrameFairy) stopCheck(video string) {
 	if c := s.checkOf(video); c != nil {
 		c.stop()
@@ -230,11 +203,10 @@ func (s *FrameFairy) stopCheck(video string) {
 // library again, with the folder its add made, and the window is told why
 // the way it is told why a file given to it was left out: the video
 // preview would have nothing to show, and the render nothing to cut. A
-// new video's first search starts once its picture is known to be there,
-// asked for with the press search, see startCheck. It hears the episode
-// as far as its window and no further. An episode that has been searched
-// before has no search, and waits for a search to be asked for.
-func (s *FrameFairy) checkAdded(ctx context.Context, video string, fresh bool, search string) {
+// video whose picture is there is transcribed to its end, see
+// transcribeRest, and waits for Search: a search pressed meanwhile goes
+// first, and the transcription carries on once it has ended.
+func (s *FrameFairy) checkAdded(ctx context.Context, video string, fresh bool) {
 	defer func() {
 		if caught := recover(); caught != nil {
 			theLog.line(zerolog.ErrorLevel, "app").Str("video", filepath.Base(video)).Str("stack", string(debug.Stack())).
@@ -248,9 +220,10 @@ func (s *FrameFairy) checkAdded(ctx context.Context, video string, fresh bool, s
 	}
 	if why == "" {
 		s.levels.start(video)
-		if search != "" {
-			s.firstSearch(ctx, video, search)
+		if s.whenChecked != nil {
+			s.whenChecked(video)
 		}
+		s.transcribeRest(video, "add")
 		return
 	}
 	said := fmt.Sprintf("the picture of %s cannot be decoded, %s, so it cannot be added", filepath.Base(video), why)

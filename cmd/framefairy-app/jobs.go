@@ -171,8 +171,13 @@ type Job struct {
 	// heard.
 	wrote bool
 	// byItself is work the app asked for by itself, not a press: refused,
-	// it is dropped without a word, see hearRest.
+	// it is dropped without a word, see transcribeRest.
 	byItself bool
+	// following is work on clips that has ended and whose ending is still
+	// being told to queue.searched, which may carry the video's
+	// transcription on. Set in the same step as the job ends, so whoever
+	// waits for a video's work to end sees that carry-on too.
+	following bool
 }
 
 // going says whether a job is queued or running.
@@ -258,8 +263,9 @@ type queue struct {
 	// with the job as it ended, so the app keeps its models loaded again,
 	// see keep.go: such a job may have put the kept local model aside for
 	// another one, or for a bigger copy of it, and the speech model kept
-	// gives way to a hearing with another. And a search that is done
-	// carries the hearing of its video on to the end, see hearRest.
+	// gives way to a transcription with another. And the work on a
+	// video's clips that ended carries the transcription of the video on
+	// to its end, see transcribeRest.
 	searched func(Job)
 	// changed tells whoever waits on the jobs of every change to one, so
 	// a wait for jobs to stop goes on the moment they have, see until.
@@ -465,36 +471,42 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 // run side by side, see transcribe.
 func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*Job),
 	steps func(ctx context.Context, p *engine.Project, host engine.Host) (string, error)) Job {
-	q.mu.Lock()
-	if q.closed[episode] > 0 {
-		q.mu.Unlock()
-		return q.refuse(episode, kind, label, "the video is being removed", prepare)
-	}
-	if q.shut {
-		q.mu.Unlock()
-		return q.refuse(episode, kind, label, "the app is closing", prepare)
-	}
-	if q.relaunching {
-		q.mu.Unlock()
-		return q.refuse(episode, kind, label, "the app is relaunching into a new build", prepare)
-	}
 	// What is asked for, read off a job of its own, never added: a clip
 	// made by hand keeps its pick only for the job that runs.
 	asked := Job{Episode: episode, JobRecord: engine.JobRecord{Kind: kind}}
 	if prepare != nil && (once || kind == engine.JobTranscribe) {
 		prepare(&asked)
 	}
-	// The whole video's transcription and the work on its clips go one at
-	// a time, looked at under the same lock as the job is added, so a
-	// search pressed the moment the app asks for the rest of the video to
-	// be heard never runs beside it, see hearRest. The calls before the
-	// add, makeWayForTranscribe and stopTranscribing, say so at once.
-	if asked.Hears() == engine.HearsWhole && q.clipWorkLocked(episode) {
-		q.mu.Unlock()
+	// Work the app asks for by itself and cannot have now is dropped
+	// without a word: nobody asked, so nothing failed.
+	refuse := func(why string) Job {
 		if asked.byItself {
 			return Job{}
 		}
-		return q.refuse(episode, kind, label, errClipsFirst, prepare)
+		return q.refuse(episode, kind, label, why, prepare)
+	}
+	q.mu.Lock()
+	if q.closed[episode] > 0 {
+		q.mu.Unlock()
+		return refuse("the video is being removed")
+	}
+	if q.shut {
+		q.mu.Unlock()
+		return refuse("the app is closing")
+	}
+	if q.relaunching {
+		q.mu.Unlock()
+		return refuse("the app is relaunching into a new build")
+	}
+	// The whole video's transcription and the work on its clips go one at
+	// a time, looked at under the same lock as the job is added, so a
+	// search pressed the moment the app asks for the rest of the video to
+	// be transcribed never runs beside it, see transcribeRest. The calls
+	// before the add, makeWayForTranscribe and stopTranscribing, say so at
+	// once.
+	if asked.Hears() == engine.HearsWhole && q.clipWorkLocked(episode) {
+		q.mu.Unlock()
+		return refuse(errClipsFirst)
 	}
 	var stopped []Job
 	if makesClips(kind) {
@@ -795,8 +807,8 @@ func (q *queue) refuse(episode, kind, label, reason string, with ...func(*Job)) 
 // lock: a search started between Relaunch finding the queue idle and the
 // app quitting was stopped half way by the quit, issue #382. The whole
 // video's transcription is not waited for: it can take an hour, the app
-// starts it by itself once a search is done, see hearRest, and the quit
-// cuts it off with what it heard kept.
+// starts it by itself once a video is added, see transcribeRest, and the
+// quit cuts it off with what it transcribed kept.
 func (q *queue) closeIfIdle() (reopen func(), idle bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -1235,6 +1247,10 @@ func (q *queue) runJob(job *Job) {
 			ended := *job
 			q.mu.Unlock()
 			q.searched(ended)
+			q.mu.Lock()
+			job.following = false
+			q.changed.WakeLocked()
+			q.mu.Unlock()
 		}()
 	}
 	q.waitForThoseBefore(job)
@@ -1389,6 +1405,7 @@ func (q *queue) runJob(job *Job) {
 			j.onTheWay(*j.endingWay)
 			j.endingWay = nil
 		}
+		j.following = makesClips(j.Kind) && q.searched != nil
 		switch {
 		case err == nil:
 			j.State, j.Underway = JobDone, nil
@@ -1513,19 +1530,10 @@ func (s *FrameFairy) CancelJob(id string) {
 // StopClipWork is Cancel at the head of the clip list: it stops all the
 // work on the clips of an episode, and the search the press of Search or
 // Continue named click asked for, whether or not that has reached the Go
-// side yet, see stopClips. While the first search of a video just added
-// is on its way, the clip list says Cancel and no press of Search can be
-// on its way, so it is that search that is called off: it is queued
-// stopped once the picture is checked, and says Stopped with Continue,
-// the way a search called off before it began does.
+// side yet, see stopClips.
 func (s *FrameFairy) StopClipWork(path, click string) {
 	if !s.store.Known(path) {
 		return
 	}
-	s.checkMu.Lock()
-	if coming := s.searchComingLocked(path); coming != "" {
-		click = coming
-	}
-	s.checkMu.Unlock()
 	s.jobs.stopClips(path, click)
 }
