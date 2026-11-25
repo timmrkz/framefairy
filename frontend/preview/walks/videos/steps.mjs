@@ -1260,17 +1260,17 @@ export const steps = {
       return;
     }
     if (arg === "stop") {
-      // The search before was cancelled, and the dots follow the whole
-      // video again: they stood still under it until the next search,
-      // found on #458. Twenty reports of the work, counted, are many
-      // pieces of the audio, let on one at a time.
+      // The dots follow the whole video's transcription, after a search
+      // that was cancelled too: they stood still under it until the next
+      // search, found on #458. One piece of the audio is let on, and the
+      // bridge answers once it is transcribed and the next piece waits,
+      // so the transcription has said how far it came. A video just added
+      // has its audio read first, which took more reports of the work in
+      // CI than a count of them allowed for.
       const before = await page.evaluate(() => window.dotsNow());
-      let moved = false;
-      for (let seen = await news(page), n = 0; !moved && n < 20; n++) {
-        await control(url, "/speech?step=1");
-        seen = await nextNews(page, seen);
-        moved = (await page.evaluate(() => window.dotsNow())) !== before;
-      }
+      await control(url, "/speech?step=1&heard");
+      await caughtUp(page, url);
+      const moved = (await page.evaluate(() => window.dotsNow())) !== before;
       if (!moved) {
         walk.wrong = "a search cancelled while the whole video is transcribed, the dots no longer follow the transcription";
         await page.keyboard.press("Escape");
