@@ -220,7 +220,7 @@ func (s SourceInfo) litRuns(c LaidCaption, start, end int) []litRun {
 // counted across its lines, both -1 for none yet. It is one word but where
 // words too short for a frame of their own are lit together, see
 // litRuns. The caption box over the video preview shows what the layer
-// under it shows by it, see /frames/captions.
+// under it shows by it, see /frames/dress.
 type CaptionShowing struct {
 	Caption int `json:"caption"`
 	Word    int `json:"word"`

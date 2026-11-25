@@ -85,10 +85,12 @@ type previews struct {
 	schedules map[*engine.EpisodeFrames]*engine.Schedule
 	// Started with the first stream, it closes the ones nobody pulls.
 	reaping bool
-	// tracks are the caption views the window was given, and layers
-	// counts the caption layers drawn, see captions.go.
-	tracks tracks
-	layers layerTally
+	// tracks are the caption views the window was given, framings the
+	// framings of the clips it was given, and layers counts the caption
+	// layers drawn, see captions.go and dress.go.
+	tracks   tracks
+	framings recent[framed]
+	layers   layerTally
 	// within gives the context a request for captions runs in, see
 	// captionsWithin. Nil in the app. A test hands in its own, to end a
 	// request's time at once, never by the clock.
@@ -177,8 +179,8 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 		}
 		n, _ := strconv.Atoi(q.Get("n"))
 		writeFrames(w, r, stream, min(max(n, 1), 16))
-	case "/frames/captions":
-		s.serveCaptions(w, r)
+	case "/frames/dress":
+		s.serveDress(w, r)
 	case "/frames/captions/words":
 		s.serveWordFrames(w, r)
 	case "/frames/levels":

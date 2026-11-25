@@ -15,6 +15,10 @@ type FrameDress struct {
 	// preview shows over it. In is whether a piece holds it.
 	Piece int  `json:"piece"`
 	In    bool `json:"in"`
+	// Clip is whether the frame shows a moment between the clip's first
+	// piece's start and its last piece's end, which the clip's captions
+	// are drawn over.
+	Clip bool `json:"clip"`
 	// Turn is how far the frame is rotated to the left, in degrees, see
 	// RotationAt.
 	Turn int `json:"turn"`
@@ -46,6 +50,13 @@ func (s SourceInfo) Dress(segments []SegmentView, rotations []Rotation, marks []
 			d.Piece, d.In = i, true
 			break
 		}
+	}
+	if len(segments) > 0 {
+		length := 0.001
+		if s.FPSNum > 0 && s.FPSDen > 0 {
+			length = float64(s.FPSDen) / float64(s.FPSNum)
+		}
+		d.Clip = at+length > segments[0].Start+1e-6 && at < segments[len(segments)-1].End-1e-6
 	}
 	if d.Piece < 0 {
 		near := math.Inf(1)

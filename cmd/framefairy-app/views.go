@@ -21,6 +21,8 @@ type ClipEntry struct {
 	Key       string `json:"key"`
 	Plan      string `json:"plan"`
 	CropLefts []int  `json:"cropLefts"`
+	// Framing names how the clip's frames are dressed, see Framing.Name.
+	Framing string `json:"framing,omitempty"`
 	// Unheard is what of the clip's pieces the video's transcript has not
 	// heard yet, which has no captions until it is, see
 	// engine.ClipView.Unheard. It changes as the words land, so the
@@ -61,7 +63,7 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 			return nil, err
 		}
 	}
-	return s.clipsOf(s.plansOf(path), info, s.heard(path)), nil
+	return s.clipsOf(path, s.plansOf(path), info, s.heard(path)), nil
 }
 
 // heard is every part of a video its transcript has heard, see
@@ -74,11 +76,11 @@ func (s *FrameFairy) heard(path string) [][2]float64 {
 // clipsOf is the clips of these plans, in time order, their crops fitted
 // to the picture info says and what of them is not heard yet by what
 // heard says, see entryOf.
-func (s *FrameFairy) clipsOf(plans []engine.PlanSummary, info engine.SourceInfo, heard [][2]float64) []ClipEntry {
+func (s *FrameFairy) clipsOf(path string, plans []engine.PlanSummary, info engine.SourceInfo, heard [][2]float64) []ClipEntry {
 	out := []ClipEntry{}
 	for _, summary := range plans {
 		for _, c := range summary.View().Clips {
-			out = append(out, s.entryOf(summary.Path, c, info, heard))
+			out = append(out, s.entryOf(path, summary.Path, c, info, heard))
 		}
 	}
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Start < out[b].Start })
@@ -105,7 +107,7 @@ func (s *FrameFairy) cropWidth(info engine.SourceInfo) int {
 // entryOf is a clip of the plan at plan as the clip list holds it. A
 // rotated piece has its crop on the picture rotated, so its crop is worked
 // out on that, see SourceView.TurnedCropWidth.
-func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceInfo, heard [][2]float64) ClipEntry {
+func (s *FrameFairy) entryOf(path, plan string, c engine.ClipView, info engine.SourceInfo, heard [][2]float64) ClipEntry {
 	entry := ClipEntry{ClipView: c, Key: filepath.Base(plan) + "/" + c.ID, Plan: plan}
 	// A video never heard has nothing heard of any clip, which says
 	// nothing new: its first search hears it.
@@ -114,7 +116,8 @@ func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceI
 			entry.Unheard = append(entry.Unheard, [2]float64{gap.Start, gap.End})
 		}
 	}
-	f := s.framingOf(info, c.Segments, c.CropMarks)
+	f := s.framingOf(path, info, c.Segments, c.CropMarks, c.Rotations)
+	entry.Framing = f.Name
 	entry.Segments, entry.CropMarks = f.Segments, f.CropMarks
 	entry.CropLefts, entry.CropSteps, entry.Glides = f.CropLefts, f.CropSteps, f.Glides
 	return entry
@@ -128,6 +131,12 @@ func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceI
 // are both sent it, worked out here, so the keyframes, the glide line and
 // the crop all follow the hand together, Tim on #778.
 type Framing struct {
+	// Name is what the video preview asks a frame's dress by, see
+	// /frames/dress: the crop, the turn and the keyframe on the frame
+	// as this framing has them. Each framing sent is kept by it, see
+	// previews.framings. Nothing for a video whose picture the app never
+	// saw, whose frames are not dressed.
+	Name      string                `json:"name,omitempty"`
 	Segments  []engine.SegmentView  `json:"segments"`
 	CropMarks []engine.CropMarkView `json:"cropMarks"`
 	CropLefts []int                 `json:"cropLefts"`
@@ -138,12 +147,15 @@ type Framing struct {
 	// Glides is where the crop glides, over every piece, for the clip
 	// timeline to draw, see engine.Glides.
 	Glides []engine.GlideSpan `json:"glides"`
+	// framed is what the framing's frames are dressed from.
+	framed framed
 }
 
-// framingOf works out a clip's Framing from its pieces and the keyframes
-// it shows, each keyframe sent on the frame it stands on, see
-// engine.MarksOnFrames.
-func (s *FrameFairy) framingOf(info engine.SourceInfo, segments []engine.SegmentView, marks []engine.CropMarkView) Framing {
+// framingOf works out a clip of the video at path's Framing from its
+// pieces, the keyframes it shows, each keyframe sent on the frame it
+// stands on, see engine.MarksOnFrames, and its rotations, and keeps it by
+// its name for the video preview to dress its frames by.
+func (s *FrameFairy) framingOf(path string, info engine.SourceInfo, segments []engine.SegmentView, marks []engine.CropMarkView, rotations []engine.RotationView) Framing {
 	f := Framing{Segments: make([]engine.SegmentView, len(segments)), CropMarks: info.MarksOnFrames(marks),
 		CropLefts: make([]int, 0, len(segments)), Glides: []engine.GlideSpan{}}
 	for i, seg := range segments {
@@ -161,6 +173,13 @@ func (s *FrameFairy) framingOf(info engine.SourceInfo, segments []engine.Segment
 	}
 	if f.CropSteps == nil {
 		f.CropSteps = make([][]engine.CropStep, len(f.CropLefts))
+	}
+	if info.Width > 0 {
+		o := s.store.Settings().options()
+		f.framed = framed{episode: path, source: info, segments: segments, marks: f.CropMarks,
+			rotations: engine.Rotations(rotations), width: o.Width, height: o.Height}
+		f.Name = f.framed.name(rotations)
+		s.previews.framings.put(f.Name, f.framed, nil)
 	}
 	return f
 }
@@ -385,7 +404,7 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 	}
 	for _, c := range view.Clips {
 		if c.ID == clipID {
-			entry := s.entryOf(plan, c, info, s.heard(path))
+			entry := s.entryOf(path, plan, c, info, s.heard(path))
 			entry.Rev = rev
 			return entry, nil
 		}

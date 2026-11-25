@@ -823,7 +823,7 @@ func logged(rec *recorded, r *http.Request, serve func(http.ResponseWriter, *htt
 		case ended:
 			what += ", the play ended"
 		}
-	case "/frames/captions":
+	case "/frames/dress":
 		// One for every frame drawn while a clip plays, so a layer drawn
 		// is counted, not written, and said for a stretch of playing at
 		// a time, see layerTally in captions.go. A failure is written

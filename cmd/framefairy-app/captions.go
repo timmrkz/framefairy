@@ -28,10 +28,18 @@ import (
 // decoder from the caption file the render burns in, see
 // engine.Engine.PreviewCaptions and docs/CAPTIONS.md:
 //
-//	/frames/captions?path=<episode>&track=<track>&at=<seconds>&w=<width>&h=<height>[&part=word|rest][&typing=<caption> <word>][&<drafts>]
-//	                                 the captions of a view, by its track,
-//	                                 on the frame of the episode that starts
-//	                                 at, at width by height, as a
+//	/frames/dress?path=<episode>&framing=<framing>&at=<seconds>&w=<width>&h=<height>[&on=video][&track=<track>[&part=word|rest][&typing=<caption> <word>][&<drafts>]]
+//	                                 the dress of the frame of the episode
+//	                                 that starts at, as the clip of that
+//	                                 framing has it, see Framing.Name, or
+//	                                 with on=video as the video shows it,
+//	                                 as filmed, in the header
+//	                                 X-Frame-Dress as JSON, see
+//	                                 engine.FrameDress. With a track, a
+//	                                 frame of the clip comes with the
+//	                                 captions of that view as its body,
+//	                                 drawn in its crop of a video preview
+//	                                 width by height, see layerSize, as a
 //	                                 framewire.Layer, with the caption and
 //	                                 the words it lights in the header
 //	                                 X-Caption-Showing, "<caption> <word>
@@ -55,8 +63,9 @@ import (
 //	                                 header X-Caption-Tag names the
 //	                                 layer, and a request whose header
 //	                                 X-Caption-Have names the layer of
-//	                                 its frame is answered 204, with
-//	                                 nothing drawn or sent, see layerTag
+//	                                 its frame is answered 204, with the
+//	                                 dress and nothing drawn or sent, see
+//	                                 layerTag
 //
 //	/frames/captions/words?path=<episode>&track=<track>[&<drafts>]
 //	                                 where the words of a view stand in the
@@ -74,13 +83,10 @@ import (
 // tracks are the drawings of the caption views the interface was given
 // lately, by their tracks, each with the episode it belongs to. A view is
 // asked for again whenever the captions change, so the latest few hundred
-// are plenty. The one used last goes last, so the captions on screen are
-// never the ones forgotten, however many a drag makes. The video
-// preview's streams keep them, see previews. Its zero value is ready.
+// are plenty, see recent. The video preview's streams keep them, see
+// previews. Its zero value is ready.
 type tracks struct {
-	mu       sync.Mutex
-	drawings map[string]trackOf
-	order    []string
+	recent[trackOf]
 }
 
 type trackOf struct {
@@ -88,63 +94,92 @@ type trackOf struct {
 	drawing *engine.CaptionDrawing
 }
 
-const tracksKept = 512
-
 // keep notes what a caption view of an episode was made from, so the
 // video preview can ask for its captions by its track.
 func (t *tracks) keep(episode string, v *engine.CaptionsView) {
 	if v == nil || v.Drawing() == nil {
 		return
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.drawings == nil {
-		t.drawings = map[string]trackOf{}
-	}
-	t.used(v.Track)
 	// A step of a drag that draws what a saved clip draws, under the same
 	// track, leaves the saved drawing kept: a drawing in the hand gets no
 	// whole caption file, see engine.Engine.previewTrackAt, and the clip
 	// played after a drag that changed nothing would never get one.
-	if was, ok := t.drawings[v.Track]; ok && was.episode == episode && !was.drawing.InHand() && v.Drawing().InHand() {
+	t.put(v.Track, trackOf{episode: episode, drawing: v.Drawing()}, func(was trackOf) bool {
+		return was.episode == episode && !was.drawing.InHand() && v.Drawing().InHand()
+	})
+}
+
+// recent keeps what the window was sent lately, by its name. The one
+// used last goes last, so what is on screen is never what is forgotten,
+// however many a drag makes. Its zero value is ready.
+type recent[T any] struct {
+	mu     sync.Mutex
+	byName map[string]T
+	order  []string
+}
+
+// recentKept is how many a recent keeps.
+const recentKept = 512
+
+// put keeps v by name, unless what is kept by that name is one keepWas
+// says to keep. keepWas may be nil.
+func (r *recent[T]) put(name string, v T, keepWas func(was T) bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.byName == nil {
+		r.byName = map[string]T{}
+	}
+	r.used(name)
+	if was, ok := r.byName[name]; ok && keepWas != nil && keepWas(was) {
 		return
 	}
-	t.drawings[v.Track] = trackOf{episode: episode, drawing: v.Drawing()}
-	for len(t.order) > tracksKept {
-		delete(t.drawings, t.order[0])
-		t.order = t.order[1:]
+	r.byName[name] = v
+	for len(r.order) > recentKept {
+		delete(r.byName, r.order[0])
+		r.order = r.order[1:]
 	}
 }
 
-func (t *tracks) get(track string) (trackOf, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	d, ok := t.drawings[track]
+func (r *recent[T]) get(name string) (T, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.byName[name]
 	if ok {
-		t.used(track)
+		r.used(name)
 	}
-	return d, ok
+	return v, ok
 }
 
-// used puts a track last in the order, as the one used most lately.
-func (t *tracks) used(track string) {
-	if i := slices.Index(t.order, track); i >= 0 {
-		t.order = slices.Delete(t.order, i, i+1)
+// used puts a name last in the order, as the one used most lately.
+func (r *recent[T]) used(name string) {
+	if i := slices.Index(r.order, name); i >= 0 {
+		r.order = slices.Delete(r.order, i, i+1)
 	}
-	t.order = append(t.order, track)
+	r.order = append(r.order, name)
 }
 
-// serveCaptions answers /frames/captions. The engine's caption code runs
+// serveDress answers /frames/dress: the dress of a frame of a clip, see
+// engine.FrameDress, in the header X-Frame-Dress as JSON, and with a
+// track the captions over it as the body. The engine's caption code runs
 // here outside a job, so a panic in it fails the request, not the app,
 // see mediaMiddleware.
-func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
+func (s *FrameFairy) serveDress(w http.ResponseWriter, r *http.Request) {
 	st, p := s.store, &s.previews
 	q := r.URL.Query()
 	path := q.Get("path")
-	kept, ok := p.tracks.get(q.Get("track"))
-	if !ok || kept.episode != path || !episodeFile(st, path) {
+	// A dress reads no file, and the captions are drawn from the video's
+	// file, which must be one of the library's.
+	clip, ok := p.framings.get(q.Get("framing"))
+	if !ok || clip.episode != path || !st.Known(path) {
 		http.NotFound(w, r)
 		return
+	}
+	var kept trackOf
+	if q.Has("track") {
+		if kept, ok = p.tracks.get(q.Get("track")); !ok || kept.episode != path || !episodeFile(st, path) {
+			http.NotFound(w, r)
+			return
+		}
 	}
 	at, err := strconv.ParseFloat(q.Get("at"), 64)
 	width, _ := strconv.Atoi(q.Get("w"))
@@ -162,12 +197,27 @@ func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil || math.IsNaN(at) || math.IsInf(at, 0) || !framewire.LayerFits(width, height) {
-		http.Error(w, "captions need a moment, a width and a height", http.StatusBadRequest)
+		http.Error(w, "a dress needs a moment, a width and a height", http.StatusBadRequest)
 		return
 	}
 	drafts, err := captionDrafts(q.Get)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	dress := clip.dress(at, q.Get("on") == "video")
+	head, _ := json.Marshal(dress)
+	w.Header().Set("X-Frame-Dress", string(head))
+	// Captions lie over a frame of the clip, in its crop.
+	if kept.drawing == nil || !dress.Clip {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	// A layer the wire to the decoder cannot carry is the ask's fault, and
+	// is refused before the decoder is asked for it.
+	layerW, layerH := layerSize(dress, width, height)
+	if !framewire.LayerFits(layerW, layerH) {
+		http.Error(w, "the captions of a frame this large cannot be drawn", http.StatusBadRequest)
 		return
 	}
 	ctx, cancel := p.captionsWithin(r.Context())
@@ -184,7 +234,7 @@ func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
 		// answered unchanged, without drawing it or sending it again.
 		// Between two words of a playing clip that was every other frame,
 		// libass drawing the same layer over and over, issue #896.
-		tag := layerTag(q, drawing, source, o.RenderSettings(), at)
+		tag := layerTag(q, drawing, source, o.RenderSettings(), at, layerW, layerH)
 		w.Header().Set("X-Caption-Tag", tag)
 		if r.Header.Get("X-Caption-Have") == tag {
 			p.layers.unchanged(path)
@@ -204,7 +254,7 @@ func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
 				http.NotFound(w, r)
 				return
 			}
-			l, err = e.PreviewCaptions(ctx, dec, engine.WorkDir(path), drawing, drafts, source, o.RenderSettings(), at, width, height)
+			l, err = e.PreviewCaptions(ctx, dec, engine.WorkDir(path), drawing, drafts, source, o.RenderSettings(), at, layerW, layerH)
 			err = waitedOn(ctx, r, "drawing the captions", err)
 			if errors.Is(err, engine.ErrNoWorkFolder) {
 				http.NotFound(w, r)
@@ -251,19 +301,19 @@ func (s *FrameFairy) serveCaptions(w http.ResponseWriter, r *http.Request) {
 // layerTag names the layer a request for captions asks for: by all it
 // asks but the frame, and by what of the frame the drawing depends on,
 // the moments of the short around it over which the caption file changes
-// nothing, see engine.CaptionDrawing.Steady, and the size of the short
-// there. Two frames with one tag are drawn the same, so a request that
+// nothing, see engine.CaptionDrawing.Steady, the size of the short
+// there, and the size the layer is drawn at. Two frames with one tag are drawn the same, so a request that
 // brings the tag of the layer it has is answered that it is unchanged.
 // It is a header of our own, not HTTP's If-None-Match and 304: Wails
 // takes If-None-Match off every request on Windows, because WebView2
 // hangs on a 304, see request_windows.go in Wails' assetserver.
-func layerTag(q url.Values, d *engine.CaptionDrawing, source engine.SourceInfo, rs engine.RenderSettings, at float64) string {
+func layerTag(q url.Values, d *engine.CaptionDrawing, source engine.SourceInfo, rs engine.RenderSettings, at float64, layerW, layerH int) string {
 	from, to := d.Steady(source, at)
 	shortW, shortH := d.ShortSize(source, rs, at)
 	asked := maps.Clone(q)
 	delete(asked, "at")
 	h := sha256.New()
-	fmt.Fprintf(h, "%s\x00%d %d %dx%d", asked.Encode(), from, to, shortW, shortH)
+	fmt.Fprintf(h, "%s\x00%d %d %dx%d %dx%d", asked.Encode(), from, to, shortW, shortH, layerW, layerH)
 	return hex.EncodeToString(h.Sum(nil)[:12])
 }
 

@@ -249,6 +249,23 @@ func RotationViews(spans []Rotation) []RotationView {
 	return out
 }
 
+// Rotations are a clip's rotations as the window is sent them, read
+// back, see RotationViews.
+func Rotations(views []RotationView) []Rotation {
+	out := make([]Rotation, 0, len(views))
+	for _, v := range views {
+		r := Rotation{From: math.Inf(-1), To: math.Inf(1), Deg: v.Deg}
+		if v.From != nil {
+			r.From = *v.From
+		}
+		if v.To != nil {
+			r.To = *v.To
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 func rotationView(r Rotation) RotationView {
 	v := RotationView{Deg: r.Deg}
 	if !math.IsInf(r.From, 0) {

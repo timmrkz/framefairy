@@ -164,7 +164,7 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 	serve("/frames/close?id=none", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	// A caption layer is bytes, one for every frame drawn: a trace line,
 	// without them.
-	serve("/frames/captions?path=/videos/start.mp4&at=1.5&w=270&h=480", func(w http.ResponseWriter, r *http.Request) {
+	serve("/frames/dress?path=/videos/start.mp4&at=1.5&w=270&h=480", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = w.Write(make([]byte, 2048))
 	})
@@ -172,7 +172,7 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 	// once, and counted after. It wrote two lines a frame before, found by
 	// the second review. testLog forgets what the log counted before.
 	for _, at := range []string{"1.6", "1.64", "1.68"} {
-		serve("/frames/captions?path=/videos/start.mp4&at="+at+"&w=270&h=480", func(w http.ResponseWriter, r *http.Request) {
+		serve("/frames/dress?path=/videos/start.mp4&at="+at+"&w=270&h=480", func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "the captions could not be drawn", http.StatusInternalServerError)
 		})
 	}

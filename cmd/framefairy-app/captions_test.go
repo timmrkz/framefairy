@@ -36,7 +36,7 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	draw := func(q url.Values) (*httptest.ResponseRecorder, framewire.Layer) {
 		t.Helper()
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/dress?"+q.Encode(), nil))
 		if rec.Code != http.StatusOK {
 			return rec, framewire.Layer{}
 		}
@@ -46,7 +46,7 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 		}
 		return rec, l
 	}
-	ask := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}}
+	ask := url.Values{"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}, "w": {"864"}, "h": {"480"}}
 	rec, l := draw(ask)
 	if rec.Code != http.StatusOK || l.W == 0 || l.H == 0 || l.X+l.W > 270 || l.Y+l.H > 480 {
 		t.Fatalf("the captions answered %d %q, a layer at %d,%d of %dx%d", rec.Code, rec.Body.String(), l.X, l.Y, l.W, l.H)
@@ -123,12 +123,12 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 		t.Errorf("switched off, the captions still draw %dx%d", none.W, none.H)
 	}
 	for name, q := range map[string]url.Values{
-		"no track":       {"path": {mine}, "track": {"0123"}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}},
-		"another path":   {"path": {"/not/mine.mp4"}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}},
-		"no size":        {"path": {mine}, "track": {view.Track}, "at": {"10.2"}},
-		"no colour":      {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "text": {"red"}},
-		"no such part":   {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "part": {"box"}},
-		"typing nothing": {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "typing": {"x"}},
+		"no track":       {"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {"0123"}, "at": {"10.2"}, "w": {"864"}, "h": {"480"}},
+		"another path":   {"path": {"/not/mine.mp4"}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}, "w": {"864"}, "h": {"480"}},
+		"no size":        {"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}},
+		"no colour":      {"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}, "w": {"864"}, "h": {"480"}, "text": {"red"}},
+		"no such part":   {"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}, "w": {"864"}, "h": {"480"}, "part": {"box"}},
+		"typing nothing": {"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}, "w": {"864"}, "h": {"480"}, "typing": {"x"}},
 	} {
 		if rec, _ := draw(q); rec.Code == http.StatusOK {
 			t.Errorf("%s was answered", name)
@@ -136,7 +136,7 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	}
 	// A size the wire to the decoder cannot carry is the ask's fault, and
 	// is refused before the decoder is asked for it.
-	big := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"7680"}, "h": {"7680"}}
+	big := url.Values{"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}, "w": {"7680"}, "h": {"7680"}}
 	if rec, _ := draw(big); rec.Code != http.StatusBadRequest {
 		t.Errorf("captions at 7680x7680 answered %d, want %d", rec.Code, http.StatusBadRequest)
 	}
@@ -157,7 +157,7 @@ func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
 	ask := func(q url.Values, tag string) *httptest.ResponseRecorder {
 		t.Helper()
 		rec := httptest.NewRecorder()
-		r := httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil)
+		r := httptest.NewRequest("GET", "/frames/dress?"+q.Encode(), nil)
 		if tag != "" {
 			r.Header.Set("X-Caption-Have", tag)
 		}
@@ -167,7 +167,7 @@ func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
 		}
 		return rec
 	}
-	q := url.Values{"path": {mine}, "track": {view.Track}, "w": {"270"}, "h": {"480"}}
+	q := url.Values{"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "w": {"864"}, "h": {"480"}}
 	var had *httptest.ResponseRecorder
 	unchanged, changed := 0, 0
 	for at := 10.0; at < 11.4; at += 0.02 {
@@ -195,7 +195,7 @@ func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
 	q.Set("at", "10.8")
 	tag := ask(q, "").Header().Get("X-Caption-Tag")
 	for name, change := range map[string][2]string{
-		"another size":  {"w", "272"},
+		"another size":  {"w", "870"},
 		"another track": {"track", "0123"},
 		"another draft": {"text", "#ff0000"},
 		"a word typed":  {"typing", "0 1"},
@@ -207,7 +207,7 @@ func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
 		}
 		other.Set(change[0], change[1])
 		rec := httptest.NewRecorder()
-		r := httptest.NewRequest("GET", "/frames/captions?"+other.Encode(), nil)
+		r := httptest.NewRequest("GET", "/frames/dress?"+other.Encode(), nil)
 		r.Header.Set("X-Caption-Have", tag)
 		handler.ServeHTTP(rec, r)
 		if rec.Code == http.StatusNoContent {
@@ -313,7 +313,34 @@ func captionsEpisode(t *testing.T) (*FrameFairy, string, *engine.CaptionsView) {
 	if err != nil || view.Track == "" || len(view.Captions) == 0 {
 		t.Fatalf("the view %+v: %v", view, err)
 	}
+	clipFraming(t, svc, mine)
 	return svc, mine, view
+}
+
+// framingsOf are the framings clipFraming found, by the video.
+var framingsOf sync.Map
+
+// clipFraming is the name of the framing of the clip 01 of a video, as
+// the clip list sends it, which the video preview asks the dress of its
+// frames by. It is found once for each video, when captionsEpisode makes
+// it, and is the same after, whatever a test does to the video's folder.
+func clipFraming(t *testing.T, svc *FrameFairy, video string) string {
+	if name, ok := framingsOf.Load(video); ok {
+		return name.(string)
+	}
+	t.Helper()
+	clips, err := svc.Clips(context.Background(), video)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range clips {
+		if c.ID == "01" && c.Framing != "" {
+			framingsOf.Store(video, c.Framing)
+			return c.Framing
+		}
+	}
+	t.Fatalf("the clip 01 of %s has no framing in %+v", video, clips)
+	return ""
 }
 
 // Once the bridge has closed the app, nothing it started writes into a
@@ -330,9 +357,9 @@ func TestNothingWritesOnceTheBridgeHasClosedTheApp(t *testing.T) {
 	svc.report = newReporting(svc.store.machine, filepath.Join(t.TempDir(), "report"))
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
 	ask := func() *httptest.ResponseRecorder {
-		q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}}
+		q := url.Values{"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}, "w": {"864"}, "h": {"480"}}
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/dress?"+q.Encode(), nil))
 		return rec
 	}
 	if rec := ask(); rec.Code != http.StatusOK {
@@ -343,9 +370,9 @@ func TestNothingWritesOnceTheBridgeHasClosedTheApp(t *testing.T) {
 		t.Fatal("the app did not stop its work in time")
 	}
 	// Another colour, so its caption file would be a new one.
-	q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "text": {"#00ff00"}}
+	q := url.Values{"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}, "w": {"864"}, "h": {"480"}, "text": {"#00ff00"}}
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/dress?"+q.Encode(), nil))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("a caption ask once the app closed answered %d %s", rec.Code, rec.Body.String())
 	}
@@ -410,9 +437,9 @@ func TestACaptionRequestOutOfTimeSaysWhatItWaitedOn(t *testing.T) {
 	} {
 		svc.probeVideo = c.probe
 		// Another colour for each, so its caption file is a new one.
-		q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "text": {fmt.Sprintf("#00ff%02d", i)}}
+		q := url.Values{"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}, "w": {"864"}, "h": {"480"}, "text": {fmt.Sprintf("#00ff%02d", i)}}
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/dress?"+q.Encode(), nil))
 		said := rec.Body.String()
 		if rec.Code != http.StatusInternalServerError || !strings.HasPrefix(said, c.step+" took more than the 10s a request for captions may take") {
 			t.Errorf("the captions out of time while %s answered %d %q", c.step, rec.Code, said)
@@ -444,8 +471,8 @@ func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 		at, size, draft int
 	}
 	query := func(a ask) string {
-		q := url.Values{"path": {mine}, "track": {view.Track}, "at": {fmt.Sprintf("%.2f", 10.2+0.04*float64(a.at))}}
-		q.Set("w", []string{"270", "180"}[a.size])
+		q := url.Values{"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {fmt.Sprintf("%.2f", 10.2+0.04*float64(a.at))}}
+		q.Set("w", []string{"864", "576"}[a.size])
 		q.Set("h", []string{"480", "320"}[a.size])
 		switch a.draft {
 		case 1:
@@ -453,7 +480,7 @@ func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 		case 2:
 			q.Set("y", "120")
 		}
-		return "/frames/captions?" + q.Encode()
+		return "/frames/dress?" + q.Encode()
 	}
 	serve := func(ctx context.Context, a ask) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -522,7 +549,7 @@ func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 	// is proven every time by TestACaptionFileOutlivesTheRequestThatAskedFirst
 	// in engine.
 	for i := range 40 {
-		q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.20"}, "w": {"270"}, "h": {"480"},
+		q := url.Values{"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.20"}, "w": {"864"}, "h": {"480"},
 			"text": {fmt.Sprintf("#%02x8040", 16+i)}}
 		ctx, cancel := context.WithCancel(context.Background())
 		rec := httptest.NewRecorder()
@@ -530,13 +557,13 @@ func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 		asked := make(chan struct{})
 		both.Go(func() {
 			close(asked)
-			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil).WithContext(ctx))
+			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/frames/dress?"+q.Encode(), nil).WithContext(ctx))
 		})
 		<-asked
 		second := make(chan struct{})
 		both.Go(func() {
 			close(second)
-			handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil))
+			handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/dress?"+q.Encode(), nil))
 		})
 		<-second
 		cancel()
@@ -564,13 +591,13 @@ func TestTheCaptionsOfAVideoWhoseFolderIsGoneWriteNothingBack(t *testing.T) {
 	if err := os.RemoveAll(engine.WorkDir(mine)); err != nil {
 		t.Fatal(err)
 	}
-	ask := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}}
+	ask := url.Values{"path": {mine}, "framing": {clipFraming(t, svc, mine)}, "track": {view.Track}, "at": {"10.2"}, "w": {"864"}, "h": {"480"}}
 	for _, part := range []string{"", "word", "rest"} {
 		if part != "" {
 			ask.Set("part", part)
 		}
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+ask.Encode(), nil))
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/dress?"+ask.Encode(), nil))
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("the captions of a video whose folder is gone answered %d, part %q", rec.Code, part)
 		}

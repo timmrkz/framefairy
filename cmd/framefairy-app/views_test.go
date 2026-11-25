@@ -204,8 +204,11 @@ func TestTheKeyframesAndTheCropFollowAnEdgeTheHandDrags(t *testing.T) {
 	if want := []engine.GlideSpan{{From: 11, To: 13}}; !reflect.DeepEqual(before.Glides, want) {
 		t.Fatalf("the clip glides over %v before the drag, not %v", before.Glides, want)
 	}
+	// The framing as the window is sent it, its name too, so a frame under
+	// the hand is dressed as the saved clip's is.
 	framing := func(e ClipEntry) Framing {
-		return Framing{e.Segments, e.CropMarks, e.CropLefts, e.CropSteps, e.Glides}
+		return Framing{Name: e.Framing, Segments: e.Segments, CropMarks: e.CropMarks, CropLefts: e.CropLefts,
+			CropSteps: e.CropSteps, Glides: e.Glides}
 	}
 	last := framing(before)
 	for _, g := range []engine.Gesture{
@@ -220,6 +223,7 @@ func TestTheKeyframesAndTheCropFollowAnEdgeTheHandDrags(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s %s: %v", g.Kind, g.Edge, err)
 		}
+		shaped.Framing.framed = framed{}
 		if reflect.DeepEqual(shaped.Framing, last) {
 			t.Errorf("%s %s: the crop stays as it was under the hand, %+v", g.Kind, g.Edge, shaped.Framing)
 		}

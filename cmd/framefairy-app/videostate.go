@@ -200,7 +200,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 			info = probed
 		}
 	}
-	st.Clips = s.clipsOf(plans, info, st.Status.Heard)
+	st.Clips = s.clipsOf(path, plans, info, st.Status.Heard)
 	st.Heard = s.heardView(path, st.Status, info.Duration)
 	st.Heard.Whole = wholePart(st.Jobs, st.Heard.Unheard)
 	st.Cards = s.saidStamp(path, plans, info)
@@ -210,7 +210,7 @@ func (s *FrameFairy) State(ctx context.Context, path string) (VideoState, error)
 		st.Marking = engine.MarkingOf(st.Status.HeardIn(info.Duration), st.Status.Said, info.Duration)
 	}
 	st.Chosen = s.chosenFor(path, st)
-	st.Turns = s.turnsOf(plans, st.Chosen, st.Clips, info)
+	st.Turns = s.turnsOf(path, plans, st.Chosen, st.Clips, info)
 	s.hearChosen(path, st, info.Duration)
 	return st, nil
 }

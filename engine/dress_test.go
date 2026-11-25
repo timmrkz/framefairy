@@ -19,7 +19,7 @@ func TestADressedFrameHasTheCropTheRenderCropsBy(t *testing.T) {
 	for k := int64(10); k < 75; k++ {
 		at := source.keptAt(k)
 		d := source.Dress([]SegmentView{view}, nil, view.Marks, at, 1080, 1920)
-		if !d.In || d.Piece != 0 || d.CropWidth != 152 || d.Width != 480 || d.Height != 270 {
+		if !d.In || !d.Clip || d.Piece != 0 || d.CropWidth != 152 || d.Width != 480 || d.Height != 270 {
 			t.Fatalf("frame %d at %.3f s is dressed %+v", k, at, d)
 		}
 		if render := run.at(k); math.Abs(d.Left-render) > 0.005 {
@@ -33,7 +33,8 @@ func TestADressedFrameHasTheCropTheRenderCropsBy(t *testing.T) {
 
 // A frame of a cut, or from outside the clip, shows the crop of the piece
 // nearest to it, as that piece's own frame next to it has it, and says no
-// piece holds it.
+// piece holds it. A cut inside the clip is still the clip's, for its
+// captions.
 func TestAFrameOfACutIsDressedWithTheNearestPiecesCrop(t *testing.T) {
 	t.Parallel()
 	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
@@ -44,14 +45,15 @@ func TestAFrameOfACutIsDressedWithTheNearestPiecesCrop(t *testing.T) {
 		at    float64
 		piece int
 		left  float64
+		clip  bool
 	}{
-		{1.2, 0, 20},
-		{1.8, 1, 100},
-		{3.4, 1, 300},
+		{1.2, 0, 20, true},
+		{1.8, 1, 100, true},
+		{3.4, 1, 300, false},
 	} {
 		d := source.Dress(pieces, nil, nil, c.at, 1080, 1920)
-		if d.In || d.Piece != c.piece || d.Left != c.left {
-			t.Errorf("the frame at %.1f s is dressed %+v, not piece %d with the crop at %v", c.at, d, c.piece, c.left)
+		if d.In || d.Piece != c.piece || d.Left != c.left || d.Clip != c.clip {
+			t.Errorf("the frame at %.1f s is dressed %+v, not piece %d with the crop at %v, in the clip %v", c.at, d, c.piece, c.left, c.clip)
 		}
 	}
 }
