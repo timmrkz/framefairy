@@ -178,6 +178,18 @@ Three steps, in one pull request, a commit each.
    body where the layer is the one the window has. `/frames/captions`
    goes. The window draws the frame with its dress, and keeps no rule
    about either.
+
+   A piece holds the frames its start and its end fall in, so the crop
+   frame stands over a frame when its own dress says a piece holds it,
+   and goes with the frame. Worked out by the window from the playhead
+   and the clip as it was a moment later, the crop frame went off for
+   an animation frame each time a start dragged later passed the frame.
+   Each dress of a clip's frame also says how the frame is dressed once
+   R turns its part, and by which framing, so R turns the frame it is
+   pressed on at once. Read ahead by the window for the playhead's
+   frame after every step, that turned dress cost a layer of captions
+   each time, and a frame step back waited behind it, half as long
+   again at the 90th percentile.
 2. **Go runs the play.** A play is asked for a clip by its framing's
    name, or for the video. A clip changed while it plays is handed to
    that play by the name of its new framing, with where the window's
