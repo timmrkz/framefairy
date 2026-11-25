@@ -96,7 +96,9 @@ func (g gitTrees) changed(from, to string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := exec.Command("git", "diff", "--name-only", a, b).Output()
+	// Both names of a file moved, since where it came from may be the
+	// app, and git otherwise lists only where it went.
+	out, err := exec.Command("git", "diff", "--name-only", "--no-renames", a, b).Output()
 	if err != nil {
 		return nil, fmt.Errorf("git diff %s %s: %w", a, b, err)
 	}

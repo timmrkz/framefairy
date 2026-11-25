@@ -53,17 +53,29 @@ What was measured, on main at ca94322:
    one step in `changes`.
 2. **What changes together.** The list of folders changes whenever a
    package is added or moved, which is the trouble. What changes with
-   the app is its imports. Asking `go list -deps` on every run would be
-   the toolchain's own answer, but it needs the modules downloaded, or a
-   cache, in a job that has neither, and it would come to the same
-   packages. The tool's parser comes to a superset, every file whatever
-   its build tags, which is the safe side. A test holds it to `go list`
-   for the Mac and for Linux, with no network. This converges on the
-   first.
-3. **Where state lives.** No state: the answer is worked out from the
-   commit every time, out of `git archive` of its Go files, 6 MB in
-   50 ms. Nothing is kept between runs that could go stale, and the
-   channel list, which asks the same question about other commits from
+   the app is its imports. `go list -e -deps` of the two programs is the
+   toolchain's own answer, and it needs no network: with no module cache
+   and `GOPROXY=off` it names the same 15 packages in 0.09 s. Its cost is
+   a Go 1.27 toolchain set up in `changes`, 10 to 20 s, in a job that has
+   none, and a `go` command to run where the channel list asks about
+   other commits. The tool's parser comes to a superset, every file
+   whatever its build tags, which is the safe side, with nothing to set
+   up. A test holds it to `go list` for the Mac and for Linux. This
+   converges on the first.
+3. **What the build runs, not only what it links.** The app is built
+   with more than it imports: `make` runs `notices/gen`, which writes the
+   licences the app carries in `dist/`. A change to it changes the app,
+   and no import shows it. Reading the Makefile for what it runs would
+   be reading shell, and it runs the release tool too, for `make
+   update-key`. Go has its own word for a program a package's build
+   runs: a `//go:generate` line. So `make` runs `go generate` for the
+   app, the line beside the app's `go:embed` names `notices/gen`, and
+   the tool follows `go run` in every such line of the app's packages
+   as it follows an import. A line it cannot judge, anything but `go
+   run` of a package of ours, is a doubt, and everything runs. The
+   answer is worked out from the commit every time, out of `git archive`
+   of its Go files, 6 MB in 50 ms, so nothing is kept that could go
+   stale, and the channel list, which asks about other commits from
    main's checkout, reads each commit's own Go the same way.
 4. **What runs together.** The decision could be made inside each walks
    job, which has Go already, and end it early. That saves no runner,
@@ -75,19 +87,21 @@ What was measured, on main at ca94322:
    starts the walks anyway.
 5. **What a test has to build.** The answer is only safe if it never
    misses a package the app is built from. So: a table of every kind of
-   file, a moved program, a program missing, Go that cannot be read,
-   each answering on the side of running, and the test against
-   `go list` on this repository's own code. A file that is not Go always
-   reaches the app, a script, the Makefile, a file a package embeds,
-   since nothing can say what reads it. That is the first with its
-   tests.
+   file, a moved program, a program missing, a file moved out of the
+   app, which git lists under both names only with `--no-renames`, a
+   `go generate` line, Go that cannot be read, each answering on the
+   side of running, and the test against `go list` on this repository's
+   own code. A file that is not Go always reaches the app, a script, the
+   Makefile, a file a package embeds, since nothing can say what reads
+   it. That is the first with its tests.
 
 ## What converges
 
-The release tool answers from the imports, worked out of the commit on
-every run, with no folder named anywhere: the first, the second, the
-third and the fifth. The fourth places it in `changes`, once, with
-`image` no longer waiting.
+The release tool answers from the imports and the `go generate` lines,
+worked out of the commit on every run, with no folder named anywhere:
+the first, the second, the third and the fifth. The second is the same
+answer from the toolchain, for the cost of setting it up. The fourth
+places it in `changes`, once, with `image` no longer waiting.
 
 ## The decision
 
@@ -99,15 +113,19 @@ third and the fifth. The fourth places it in `changes`, once, with
     .github/actions/release-tool: main's signed build, or one built here
                                   |
     reach.go:            the programs in linked, found by name,
-                         every package of ours they import,
-                         read out of the commit with git archive
+                         every package of ours they import or their
+                         go generate runs, read out of the commit
+                         with git archive
 
 A change reaches the app when it is not the docs and is either a file
-that is not Go, or a Go file of a package the programs import, or a
-test of a program itself for the walks. Every doubt runs: a commit that
-cannot be read, Go that cannot be parsed, no program found. The build
-never ships a test, so a pull request that only changes tests, or the
-release tool, or the licence server, takes no Mac for a build. The
+that is not Go, or a Go file of a package the programs import or their
+build runs, or a test of a program itself for the walks. Every doubt
+runs: a commit that cannot be read, Go that cannot be parsed, a `go
+generate` line that is not `go run` of ours, no program found. The
+build never ships a test, so a pull request that only changes tests, or
+the release tool, or the licence server, takes no Mac for a build. A
+pull request with no build yet is judged against main where it
+branched, so not even its first push takes one. The
 `builds.yml` job `which` takes the signed tool too, instead of building
 it with `go run`.
 
@@ -122,7 +140,10 @@ it with `go run`.
   12 s, until main has a signed build of it.
 - Nobody keeps a list. A package added, moved or renamed is judged by
   its imports on the next run.
-- Wrong if: a walk or a build that should have run did not, which only a
-  file that is not Go but is read by name could cause, and such a file
-  always runs everything. Or `changes` takes so long that the jobs after
+- A program the app's build runs is run through `go generate`, or the
+  tool cannot see it. That is the toolchain's own place for it, and the
+  one program the build runs today, `notices/gen`, is there.
+- Wrong if: a walk or a build that should have run did not. A file that
+  is not Go always runs everything, so it would take a program of ours
+  that the app's build runs some other way than `go generate`. Or `changes` takes so long that the jobs after
   it start later than `image` lets them.

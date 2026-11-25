@@ -25,6 +25,8 @@ type gitHub interface {
 	// compare is GitHub's word for how head stands to base: identical,
 	// ahead when head has base in its history, behind or diverged.
 	compare(base, head string) (string, error)
+	// mergeBase is the commit of main a commit branched from.
+	mergeBase(head string) (string, error)
 	// buildRun is the status and the conclusion of the newest run of
 	// builds.yml on a push of the commit, both empty when it has none.
 	buildRun(commit string) (status, conclusion string, err error)
@@ -192,6 +194,21 @@ func (g *restGitHub) compare(base, head string) (string, error) {
 	var c struct{ Status string }
 	err := g.get("compare/"+url.PathEscape(base)+"..."+url.PathEscape(head), &c)
 	return c.Status, err
+}
+
+func (g *restGitHub) mergeBase(head string) (string, error) {
+	var c struct {
+		MergeBase struct {
+			SHA string `json:"sha"`
+		} `json:"merge_base_commit"`
+	}
+	if err := g.get("compare/main..."+url.PathEscape(head), &c); err != nil {
+		return "", err
+	}
+	if c.MergeBase.SHA == "" {
+		return "", fmt.Errorf("GitHub names no commit of main that %s branched from", head)
+	}
+	return c.MergeBase.SHA, nil
 }
 
 func (g *restGitHub) buildRun(commit string) (string, string, error) {

@@ -22,7 +22,9 @@ import (
 // Go names a program after the last element of its package's path, so a
 // package main of that name is that program, wherever it lives. Every
 // package of this module it imports, and they import in turn, is the app,
-// by every file but the tests and whatever its build tags. See
+// by every file but the tests and whatever its build tags, and so is
+// every program of ours their go generate runs, which writes something
+// the app is built with. See
 // docs/decisions/2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md.
 
 // source is a commit's Go files by their paths, and the path of its module.
@@ -158,15 +160,69 @@ func appFrom(s source, tests bool) (programs, error) {
 			}
 			for _, imp := range file.Imports {
 				p, _ := strconv.Unquote(imp.Path.Value)
-				if p == s.module {
-					queue = append(queue, ".")
-				} else if own, ok := strings.CutPrefix(p, s.module+"/"); ok {
+				if own, ok := s.own(p); ok {
 					queue = append(queue, own)
 				}
 			}
+			runs, err := generates(s, dir, f)
+			if err != nil {
+				return b, err
+			}
+			queue = append(queue, runs...)
 		}
 	}
 	return b, nil
+}
+
+// own is the folder of a package of the module, by its import path.
+func (s source) own(importPath string) (string, bool) {
+	if importPath == s.module {
+		return ".", true
+	}
+	return strings.CutPrefix(importPath, s.module+"/")
+}
+
+// generates are the folders of the programs a file has go generate run,
+// the way the build of a package runs a program of ours it does not
+// import, like the one that writes the app's licences. go generate reads
+// a directive as a line of text, so it is read the same way here. A
+// directive that runs anything but a package of ours with go run cannot
+// be judged, and is an error, so everything runs.
+func generates(s source, dir, file string) ([]string, error) {
+	var runs []string
+	for line := range strings.Lines(string(s.files[file])) {
+		args, ok := strings.CutPrefix(line, "//go:generate ")
+		if !ok {
+			continue
+		}
+		f := strings.Fields(args)
+		from := dir
+		if len(f) >= 3 && f[0] == "go" && f[1] == "-C" {
+			from = path.Join(dir, f[2])
+			f = append(f[:1], f[3:]...)
+		}
+		if len(f) < 3 || f[0] != "go" || f[1] != "run" {
+			return nil, fmt.Errorf("%s has go generate run %q, which is no go run of a package of ours", file, strings.TrimSpace(args))
+		}
+		pkg := ""
+		for _, a := range f[2:] {
+			if !strings.HasPrefix(a, "-") {
+				pkg = a
+				break
+			}
+		}
+		switch {
+		case strings.HasPrefix(pkg, "./"), strings.HasPrefix(pkg, "../"):
+			runs = append(runs, path.Join(from, pkg))
+		default:
+			own, ok := s.own(pkg)
+			if !ok {
+				return nil, fmt.Errorf("%s has go generate run %q, which is no go run of a package of ours", file, strings.TrimSpace(args))
+			}
+			runs = append(runs, own)
+		}
+	}
+	return runs, nil
 }
 
 // docs is a file nothing is built from: the docs, a README, the agents'

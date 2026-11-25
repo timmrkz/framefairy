@@ -70,6 +70,10 @@ func TestACommitNeedsABuildWhenItChangesWhatTheAppIsBuiltFrom(t *testing.T) {
 	test := commit("test")
 	write("scripts/build.sh", "f")
 	script := commit("script")
+	// A file of the app moved into the release tool: the app no longer
+	// has it, which changes the app.
+	run("mv", "engine/run.go", "cmd/framefairy-release/run.go")
+	moved := commit("moved")
 
 	// GitHub knows nothing, the way it knows no commit that was never
 	// pushed.
@@ -89,6 +93,7 @@ func TestACommitNeedsABuildWhenItChangesWhatTheAppIsBuiltFrom(t *testing.T) {
 		{"a test of the engine after the tool", back, test, outsideApp},
 		{"a script", test, script, needed},
 		{"the tool after code", code, tool, needed},
+		{"a file of the app moved out of it", script, moved, needed},
 		{"a commit nobody can read", app, "0123456789abcdef0123456789abcdef01234567", needed},
 		{"a build nobody can read", "0123456789ab", code, needed},
 	}

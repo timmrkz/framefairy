@@ -142,7 +142,10 @@ only when it reaches what those are built from. `framefairy-release
 walks` works that out of the code on every run: the programs the app
 ships are the packages `main` named after them, wherever they live, and
 the app is every package of ours they import, by every file but the
-tests, and the app's own tests, which is where the walks are. A change
+tests, every program of ours their `go generate` runs, like
+`notices/gen`, which writes the licences the app carries, and the app's
+own tests, which is where the walks are. So a program the app's build
+runs is run through `go generate`, where the tool can see it. A change
 to a Go file of any other package, like the release tool, the licence
 server or a test of the engine, starts no walk. Every other file starts
 them, and so does any doubt: a commit or Go that cannot be read. No
@@ -150,7 +153,9 @@ folder is named anywhere, so nothing goes stale, and a test holds what
 it works out to what `go list` says Go builds. See
 [the decision record](decisions/2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md).
 The same rule decides whether a push to a pull request needs a build to
-update to, without tests, so code the app does not ship takes no Mac.
+update to, without tests, so code the app does not ship takes no Mac. A
+pull request with no build yet is judged against main where it
+branched.
 
 A push to main starts every job but `macos`, which runs on main every
 night instead, see [On a Mac](#on-a-mac). Inside a Go job Go's own test cache

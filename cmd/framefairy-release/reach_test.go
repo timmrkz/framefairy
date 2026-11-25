@@ -134,6 +134,49 @@ func TestTheAppsProgramsAreFoundByTheirNames(t *testing.T) {
 	}
 }
 
+// A program the app's build runs through go generate, like the one that
+// writes the licences the app carries, is built with it, and so is
+// everything that program imports. A directive that runs anything else
+// cannot be judged, and everything runs.
+func TestWhatTheAppsBuildRunsIsTheApp(t *testing.T) {
+	t.Parallel()
+	app := "package main\n\n//go:generate go -C ../.. run ./notices/gen -built cmd/framefairy-app/dist/licences.json\n//go:embed all:dist\nvar dist embed.FS\n"
+	s := goSource(map[string]string{
+		"cmd/framefairy-app/main.go":     app,
+		"notices/gen/main.go":            "package main\nimport \"framefairy/notices/licence\"\n",
+		"notices/licence/licence.go":     "package licence\n",
+		"cmd/framefairy-frames/main.go":  "package main\n\n//go:generate go run framefairy/tools/table -out table.go\n",
+		"tools/table/main.go":            "package main\n",
+		"cmd/framefairy-release/main.go": "package main\n",
+	})
+	for _, tests := range []bool{false, true} {
+		b, err := appFrom(s, tests)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range []string{"notices/gen/main.go", "notices/licence/licence.go", "tools/table/main.go"} {
+			if !b.reaches(f) {
+				t.Errorf("tests %v: the app's build runs what %s is part of, and a change to it would not reach the app", tests, f)
+			}
+		}
+		if b.reaches("cmd/framefairy-release/main.go") {
+			t.Errorf("tests %v: the release tool was taken as part of the app", tests)
+		}
+	}
+	for _, directive := range []string{
+		"stringer -type=Kind",
+		"go run golang.org/x/tools/cmd/stringer -type=Kind",
+		"go -C ../.. build ./notices/gen",
+		"go run -tags production ./notices/gen",
+		"go",
+	} {
+		s := goSource(map[string]string{"cmd/framefairy-app/main.go": "package main\n\n//go:generate " + directive + "\n"})
+		if _, err := appFrom(s, false); err == nil {
+			t.Errorf("go generate runs %q, which cannot be judged, and the app was taken as built without it", directive)
+		}
+	}
+}
+
 // What the walks would build is said for every doubt as something to
 // walk: a change that cannot be read, Go that cannot be read, an app that
 // cannot be found.
