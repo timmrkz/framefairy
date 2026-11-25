@@ -1,10 +1,10 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"hash/maphash"
+	"slices"
 	"strconv"
 
 	"framefairy/engine"
@@ -94,14 +94,14 @@ type turnedDress struct {
 // dressSent is the dress of the frame at a moment, d, of the clip whose
 // framing is named name, with its dress turned where a piece of the clip
 // holds the frame and R would turn that piece's part.
-func (s *FrameFairy) dressSent(ctx context.Context, path, name string, clip framed, d engine.FrameDress, at float64) dressSent {
+func (s *FrameFairy) dressSent(path, name string, clip framed, d engine.FrameDress, at float64) dressSent {
 	out := dressSent{FrameDress: d}
 	if !d.In || d.Piece < 0 || d.Piece >= len(clip.segments) {
 		return out
 	}
 	parts, ok := s.previews.turns.get(name)
 	if !ok {
-		parts = s.turnsFor(ctx, path, name)
+		parts = s.turnsFor(path, name, clip.source)
 	}
 	turned := parts[clip.segments[d.Piece].Part]
 	if turned == "" {
@@ -122,15 +122,22 @@ type clipRef struct{ plan, id string }
 // and then clicked, or the answer of an edit. R pressed on its frame
 // turned it only once the turned layer came. Kept empty where there are
 // none to be had, so a play of a clip asks the plan once, not each frame.
-func (s *FrameFairy) turnsFor(ctx context.Context, path, name string) map[int]string {
+func (s *FrameFairy) turnsFor(path, name string, info engine.SourceInfo) map[int]string {
 	none := map[int]string{}
 	ref, ok := s.previews.clips.get(name)
 	if !ok {
 		return none
 	}
-	entry, err := s.clipEntry(ctx, path, ref.plan, ref.id)
-	info, perr := s.probe(ctx, path)
-	if err != nil || perr != nil || entry.Framing != name {
+	view, err := s.store.machine.Episode(path).ReadPlan(ref.plan)
+	i := -1
+	if err == nil {
+		i = slices.IndexFunc(view.Clips, func(c engine.ClipView) bool { return c.ID == ref.id })
+	}
+	var entry ClipEntry
+	if i >= 0 {
+		entry = s.entryOf(path, ref.plan, view.Clips[i], info, nil)
+	}
+	if entry.Framing != name {
 		s.previews.turns.put(name, none, nil)
 		return none
 	}

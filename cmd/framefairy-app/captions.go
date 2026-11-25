@@ -208,7 +208,7 @@ func (s *FrameFairy) serveDress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dress := clip.dress(at, q.Get("on") == "video")
-	head, _ := json.Marshal(s.dressSent(r.Context(), path, q.Get("framing"), clip, dress, at))
+	head, _ := json.Marshal(s.dressSent(path, q.Get("framing"), clip, dress, at))
 	w.Header().Set("X-Frame-Dress", string(head))
 	// Captions lie over a frame of the clip, in its crop.
 	if kept.drawing == nil || !dress.Clip {
