@@ -1,0 +1,17 @@
+# What zizmor, in make lint, lets through, each with why. Everything else
+# it finds fails the lint. A finding on one line is let through on that
+# line instead, with a comment that starts zizmor: ignore and says why.
+rules:
+  # The Linux jobs run in the CI image, named by its tag in our own
+  # registry. The tag is a sum of the Dockerfile, whose own images are
+  # pinned by digest, and only ci-image.yml pushes it. See ci-image.yml.
+  unpinned-images:
+    ignore:
+      - ci.yml
+      - fuzz-nightly.yml
+      - security.yml
+      - walks-nightly.yml
+  # Asks for GitHub's newer way of naming an action of this repository.
+  # A style, not a risk.
+  self-repository:
+    disable: true

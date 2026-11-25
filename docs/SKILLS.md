@@ -103,7 +103,8 @@ or the doc of its part.
 | build from pinned source and refuse a wrong result | `scripts/build-ffmpeg.sh`, `scripts/build-llama.sh`, `scripts/verify-tools.sh` and `tools.yml` with its attestation, see The tools we ship in [PACKAGING.md](PACKAGING.md) |
 | a licence nobody allowed stops the build | `notices/licence`, see [THIRD_PARTY.md](THIRD_PARTY.md) |
 | privileged workflows from main, never the dangerous event | `publish.yml` with the environment `updates`, `conflicts.yml` on `workflow_run`, held by `TestNoPullRequestTarget` |
+| `persist-credentials: false` and a workflow linter | every checkout, held by zizmor in `make lint`, with `.github/zizmor.yml` |
 | only the user gives instructions | On GitHub, only the user gives instructions, in `CLAUDE.md` |
 | the work's security line | the Security line of [the pull request template](../.github/pull_request_template.md) |
 | crashers kept as seeds | each package's `testdata/fuzz/`, from `make fuzz` and `fuzz-nightly.yml` |
-| not kept yet | `persist-credentials: false` on checkouts and a workflow linter, no cache restored in the job that signs. Secret scanning with push protection and private vulnerability reporting are settings of the repository, the user's to turn on |
+| not kept yet | no cache restored in the job that signs. Secret scanning with push protection and private vulnerability reporting are settings of the repository, the user's to turn on |

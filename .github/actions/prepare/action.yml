@@ -154,7 +154,7 @@ runs:
     # cache. The CI image has its own.
     - if: inputs.ffmpeg == 'true' && runner.os == 'macOS'
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] a folder this step made, of tools pinned by hash
         sh scripts/build-tools.sh .build/tools ${{ (steps.ffmpeg.outputs.cache-hit == 'true' && (inputs.llama != 'true' || steps.llama.outputs.cache-hit == 'true')) && 'pkgconf' || '' }}
         echo "$PWD/.build/tools/bin" >> "$GITHUB_PATH"
     - if: inputs.ffmpeg == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
@@ -168,6 +168,6 @@ runs:
     # through VideoToolbox, as a customer's does.
     - if: inputs.ffmpeg == 'true' && runner.os == 'macOS'
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] the ffmpeg this job built or took from its own cache
         .build/ffmpeg/bin/ffmpeg -hide_banner -encoders | grep videotoolbox
         echo "$PWD/.build/ffmpeg/bin" >> "$GITHUB_PATH"

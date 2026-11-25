@@ -92,7 +92,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make notices` | writes the licence notices in `notices/` again, for what is pinned by hand: Go, the source trees ffmpeg and llama-server are built from, the speech runtime, the fonts, the hyphenation patterns and the models. Run it when a test says a notice is out of date. The Go modules and the interface's packages need nothing: every build writes theirs. See [THIRD_PARTY.md](THIRD_PARTY.md) |
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make test` | everything below: `lint`, `interface`, `unit`, `fuzz` and `walks`, which is what CI runs, see [One way to test](#one-way-to-test) |
-| `make lint` | everything that reads the code without running it: `gofmt`, `go vet`, that `./...` is our packages alone, golangci-lint, which refuses a new wait on the clock in a Go test, see [No test waits on the clock](#no-test-waits-on-the-clock), every script read by its shell, the test of the rule for a build, `scripts/needs-build-test.sh`, that `docs/GUI-PLAN.md` is as it was, by the hash git gives it, and the tests of the repository's own rules, `internal/workflows` and `internal/naming`, which read the workflows, the docs and the interface's words. It fetches the golangci-lint the Makefile pins into `.build/` the first time, in CI too |
+| `make lint` | everything that reads the code without running it: `gofmt`, `go vet`, that `./...` is our packages alone, golangci-lint, which refuses a new wait on the clock in a Go test, see [No test waits on the clock](#no-test-waits-on-the-clock), every script read by its shell, zizmor over the workflows and the actions, see [Keeping up](#keeping-up), the test of the rule for a build, `scripts/needs-build-test.sh`, that `docs/GUI-PLAN.md` is as it was, by the hash git gives it, and the tests of the repository's own rules, `internal/workflows` and `internal/naming`, which read the workflows, the docs and the interface's words. It fetches the golangci-lint and the zizmor the Makefile pins into `.build/` the first time, in CI too |
 | `make unit` | every Go test under the race detector, the fuzz seeds included. On a Mac without the race detector and without the licence server's packages, which run on a Linux server only. `RACE=` and `UNITSKIP=` say otherwise. `UNITSHARD=1/3` to `3/3` runs a third of the tests, which is how CI spreads them over three machines. `UNITFLAGS` adds one flag for go test, like `-run`. `UNITPKGS` names the packages, `./...` unless it says. `UNITTIMEOUT` is how long one package's tests may take before go test ends them and prints every goroutine, Go's own 10m unless it says, and 4m in CI: a test waits on signals, so one whose signal never comes hangs until then. go test runs through [gotestsum](https://github.com/gotestyourself/gotestsum), which prints what go test prints and, at the end, every test that failed with what it printed. Then every test that took over `SLOWEST`, 5s, slowest first. Every test's time is kept in `.build/unit-tests.json` for a closer look. `COVERAGE=` a folder counts the lines the tests run, see [Coverage](TESTING.md#coverage) |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `CORES` how many run at once |
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node. `COVERAGE=` a folder counts the lines its tests run |
@@ -685,6 +685,16 @@ scan made once is out of date the week after.
   malicious, where the two others read only flaws. Its version is pinned
   in the workflow with the sha256 of its release, since Dependabot does
   not move it. Any of them failing is a red check.
+- **The workflows keep no token on disk and are read by a linter.**
+  Every checkout says `persist-credentials: false`, so a later step, a
+  build of code a bump just brought in among them, finds no token in the
+  checkout to take. zizmor, in `make lint`, reads the workflows and the
+  actions for this and for the other ways a run can be taken over: text
+  pasted into a shell, a dangerous event, a cooldown missing. What it
+  finds fails the lint, but for what `.github/zizmor.yml` lets through,
+  or a `zizmor: ignore` comment on the line, each with why. The version
+  is pinned in the Makefile with the sha256 of each machine's archive,
+  since its release lists none.
 - **No install scripts.** `frontend/.npmrc` says `ignore-scripts=true`,
   so no package of the interface runs code of its own while it is
   installed, in make, in CI or by hand. A hijacked release that runs on
