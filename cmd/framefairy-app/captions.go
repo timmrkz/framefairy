@@ -315,6 +315,11 @@ func layerTag(q url.Values, d *engine.CaptionDrawing, source engine.SourceInfo, 
 	shortW, shortH := d.ShortSize(source, rs, at)
 	asked := maps.Clone(q)
 	delete(asked, "at")
+	// The framing says where the crop stands and how the frame turns,
+	// which the layer's size already holds. A crop moved draws the same
+	// captions, and the window keeps the layer it had, see
+	// CaptionLayers.fetch.
+	delete(asked, "framing")
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%d %d %dx%d %dx%d", asked.Encode(), from, to, shortW, shortH, layerW, layerH)
 	return hex.EncodeToString(h.Sum(nil)[:12])

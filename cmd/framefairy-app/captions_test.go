@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -213,6 +214,19 @@ func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
 		if rec.Code == http.StatusNoContent {
 			t.Errorf("%s was answered unchanged by the tag of the layer before", name)
 		}
+	}
+	// The crop moved draws the same captions over the frame: the framing
+	// the clip has then is answered unchanged, with its own dress.
+	f, _ := svc.previews.framings.get(q.Get("framing"))
+	moved := f
+	moved.segments = slices.Clone(f.segments)
+	x := 3
+	moved.segments[0].CropX = &x
+	svc.previews.framings.put("moved", moved, nil)
+	before := ask(q, "").Header().Get("X-Frame-Dress")
+	q.Set("framing", "moved")
+	if rec := ask(q, tag); rec.Code != http.StatusNoContent || rec.Header().Get("X-Frame-Dress") == before {
+		t.Errorf("the crop moved answered %d with the dress %s, before it %s", rec.Code, rec.Header().Get("X-Frame-Dress"), before)
 	}
 }
 

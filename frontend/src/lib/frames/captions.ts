@@ -468,6 +468,14 @@ function keyOf(ask: CaptionAsk | null): string {
   return ask ? new URLSearchParams(asked(ask)).toString() : "";
 }
 
+// A layer's key with the framing left out, see CaptionLayers.drawnBefore.
+function unframed(key: string): string {
+  const cut = key.indexOf("\n");
+  const q = new URLSearchParams(cut < 0 ? key : key.slice(0, cut));
+  q.delete("framing");
+  return cut < 0 ? q.toString() : `${q.toString()}${key.slice(cut)}`;
+}
+
 function layerKey(askKey: string, frame: number, size: [number, number]): string {
   return `${askKey}\n${frame.toFixed(6)}\n${size[0]}x${size[1]}`;
 }
@@ -1088,6 +1096,16 @@ export class CaptionLayers {
     }
   }
 
+  // A layer kept for the same frame at the same size, with the same
+  // captions, under another framing: the captions over a frame do not
+  // change with where its crop stands. Each crop moved drew every layer
+  // again.
+  private drawnBefore(key: string): Layer | null {
+    const mine = unframed(key);
+    for (const [k, l] of this.kept) if (k !== key && l.tag && unframed(k) === mine) return l;
+    return null;
+  }
+
   private fetch(want: Wanted) {
     const { key, ask, frame, size } = want;
     if (this.going.has(key) || this.going.size >= GOING) return;
@@ -1095,9 +1113,10 @@ export class CaptionLayers {
     this.going.set(key, off);
     this.stats.asked++;
     // The frame is drawn like the layer that came last, between two
-    // words, and the Go side then says so and sends nothing.
+    // words, or like its own layer under the framing before, a crop moved
+    // or a keyframe put, and the Go side then says so and sends nothing.
     const kind = `${keyOf(ask)}\n${size[0]}x${size[1]}`;
-    const had = this.recent?.kind === kind ? this.recent.layer : null;
+    const had = this.drawnBefore(key) ?? (this.recent?.kind === kind ? this.recent.layer : null);
     const q = new URLSearchParams({ ...asked(ask), at: frame.toFixed(6), w: String(size[0]), h: String(size[1]) });
     let why = "";
     void fetch(`/frames/dress?${q}`, { signal: off.signal, headers: had?.tag ? { "X-Caption-Have": had.tag } : {} })

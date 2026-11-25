@@ -426,6 +426,15 @@ describe("the layers of the captions", () => {
     layers.coming(1.2, [12, 20]);
     await layers.taken(6);
     expect(asked[5].have).toBeNull();
+    // A crop moved gives the clip another framing, over the same
+    // captions: a frame is asked by the tag of its own layer under the
+    // framing before, and keeps its pixels.
+    same = true;
+    layers.set({ ...ask, framing: "fb" });
+    layers.coming(1.08, [10, 20]);
+    await layers.taken(7);
+    expect(asked[6].have).toBe("tag3");
+    expect(layers.at(1.08, [10, 20])?.pixels[0]).toBe(3);
   });
 
   // A fetch that answers each ask in turn: a layer whose first red is the
