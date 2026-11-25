@@ -229,9 +229,6 @@ export default [
       ["model", "holds"],
       ["add", 60],
       ["wait for", "Search"],
-      // Adding a video searches nothing, and the empty list says why
-      // rather than standing blank.
-      ["row", "No clips yet"],
       ["head"],
       ["wait for", "Cancel"],
       ["head"],
@@ -327,6 +324,10 @@ export default [
       ["speech", "hold"],
       ["add", 1200],
       ["wait for", "Search"],
+      // Adding a video searches nothing, and while it is transcribed its
+      // empty list is one row that says why, not a blank card for each
+      // clip Target asks for.
+      ["empty list"],
       ["head"],
       ["wait for", "Cancel"],
       ["head"],

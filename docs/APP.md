@@ -1553,18 +1553,17 @@ bubble scrolled by those eight pixels.
       locked from Search until the search has run, and dimmed. Changing Target
       used to change the rows still to come while the model looked for the
       number it had been given.
-    - **An empty list is never empty.** With nothing in the list and no
-      search on its way, the rows Search will fill stand there as many as
-      Target says, following it as it changes, and still, because nothing
-      is filling them yet. The first of them says why the list is empty.
-      A video never searched says **No clips yet**, **Search finds them in
-      the window**, because adding a video only transcribes it. A blank
-      card there read as something broken. When every clip there was has
-      been removed, it says **All clips removed**, **Search looks for others**,
-      so the empty rows read as something that happened. It gives no
+    - **An empty list says why.** With nothing in the list and no
+      search on its way, the list is one row that says why it is empty.
+      A video with no clips says **No clips yet**, **Search finds them in
+      the window**, with how to search in its title, because adding a
+      video only transcribes it. Blank rows there, one for each clip
+      Target asks for, read as something broken. When every clip there
+      was has been removed, it says **All clips removed**, **Search looks
+      for others**, so the list reads as something that happened. It gives no
       number, because the plan keeps every clip ever removed, and a count
-      of them was more than the list had just shown. The empty rows open
-      only once the last removed row has closed, so they never push it
+      of them was more than the list had just shown. The row opens
+      only once the last removed row has closed, so it never pushes it
       down the column as it goes. An episode whose first search was stopped, by
       quitting among other things, had a bare column there before.
     - **A search that found nothing new says so.** A search that ends

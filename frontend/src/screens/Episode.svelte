@@ -967,9 +967,10 @@
   // The list is empty and nothing is on its way: the first row still to
   // come says why, in the words a row that says how work ended uses,
   // rather than leaving empty rows that look like nothing happened or
-  // something broke. A video never searched has no clips yet, since
-  // adding it only transcribes it: the user saw a blank card there and
-  // could not tell what it was for. Every clip removed says so instead,
+  // something broke. A video with no clips says so, since adding it only
+  // transcribes it and a search may find nothing: the user saw a blank
+  // card there and could not tell what it was for. Every clip removed
+  // says so instead,
   // with no number: the plan keeps every clip ever removed, from earlier
   // searches and earlier days too, so a count of them was more than the
   // list had just shown.
@@ -1083,7 +1084,12 @@
           // search cut off was asked for.
           working?.whole ? 0 : Math.max(0, (working?.count || count) - searchTook)
         : shown.length === 0 && onTheWay.length === 0 && closing.length === 0
-          ? count
+          ? // An empty list is the one row that says why, not a blank
+            // row for every clip Target asks for: the user saw them
+            // after adding a video and could not tell what they were.
+            note
+            ? 1
+            : count
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
             stopped || foundNothing || speechless ? 1 : 0),
