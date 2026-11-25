@@ -23,6 +23,15 @@ type framed struct {
 	height    int
 }
 
+// pieces is what a play of the framing's clip plays, see servePlay.
+func (f framed) pieces() []engine.PlayPiece {
+	out := make([]engine.PlayPiece, len(f.segments))
+	for i, seg := range f.segments {
+		out[i] = engine.PlayPiece{Start: seg.Start, End: seg.End}
+	}
+	return out
+}
+
 // name is what tells this framing from any other: all it dresses a frame
 // from, so a clip that changed anything over its frames has a new name,
 // and one that changed nothing keeps it.

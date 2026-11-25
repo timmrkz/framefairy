@@ -45,7 +45,7 @@ import (
 //	                                 what to read while the hand rests,
 //	                                 answered by the frames read that the
 //	                                 window does not hold, see serveAhead
-//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&pieces=<start>:<end>,...&at=<seconds>[&loop=1][&cue=1]
+//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&(framing=<framing>|pieces=<start>:<end>,...)&at=<seconds>[&loop=1][&cue=1]
 //	                                 a play of a clip, its pictures and its
 //	                                 sound as two streams, see servePlay. The
 //	                                 grid is the one the engine named, see
@@ -54,6 +54,9 @@ import (
 //	/frames/play/go?id=<pictures>
 //	/frames/play/hold?id=<pictures>
 //	/frames/play/loop?id=<pictures>&at=<seconds>[&loop=1]
+//	/frames/play/take?id=<pictures>&framing=<framing>&heard=<seconds>[&loop=1]
+//	                                 the clip changed while it plays, see
+//	                                 servePlayTake
 //	/frames/read?id=<id>&n=<frames>  frames, see writeFrames
 //	/frames/close?id=<id>
 //	/frames/levels?path=<episode>  the loudness, see serveLoudness
@@ -165,6 +168,8 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 		p.servePlayHold(w, r)
 	case "/frames/play/loop":
 		p.servePlayLoop(w, r)
+	case "/frames/play/take":
+		p.servePlayTake(w, r)
 	case "/frames/look":
 		p.serveLook(st, w, r)
 	case "/frames/near":

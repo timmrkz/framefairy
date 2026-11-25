@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { movieOf } from "./movie";
-import { GoPlay } from "./play";
+import { GoPlay, type Taken } from "./play";
 import { FrameQueue, type Shown } from "./queue";
 
 // The queue without a browser: a canvas that draws nothing, no sound card
@@ -108,18 +108,18 @@ describe("the pieces changed while playing", () => {
 
   test("are taken in without starting the play again", () => {
     const { q, said } = playing(58.2);
-    q.seek(58.2, [clip, false]);
+    q.seek(58.2, [clip, false, "a"]);
     said.length = 0;
-    q.setProgram([clip[0]], false);
-    q.setProgram([{ start: clip[0].start, end: clip[0].end - 0.5 }], true);
+    q.setProgram([clip[0]], false, "b");
+    q.setProgram([{ start: clip[0].start, end: clip[0].end - 0.5 }], true, "c");
     expect(said).toEqual([]);
     expect(wanted(q)).toBe(JSON.stringify([[{ start: clip[0].start, end: clip[0].end - 0.5 }], true]));
   });
 
   test("are what the next play plays", () => {
     const { q, said } = playing(58.2);
-    q.seek(58.2, [clip, false]);
-    q.setProgram([clip[0]], false);
+    q.seek(58.2, [clip, false, "a"]);
+    q.setProgram([clip[0]], false, "b");
     said.length = 0;
     q.seek(58.5);
     expect(said.map((s) => s.at)).toEqual([58.5]);
@@ -130,10 +130,10 @@ describe("the pieces changed while playing", () => {
   // The play plays the clip as it is again, to its old end.
   test("and put back by an undo, play as they were", () => {
     const { q, said } = playing(58.2);
-    q.seek(58.2, [clip, false]);
+    q.seek(58.2, [clip, false, "a"]);
     said.length = 0;
-    q.setProgram([clip[0]], false);
-    q.setProgram(clip, false);
+    q.setProgram([clip[0]], false, "b");
+    q.setProgram(clip, false, "a");
     expect(said).toEqual([]);
     expect(wanted(q)).toBe(JSON.stringify([clip, false]));
   });
@@ -750,79 +750,74 @@ describe("a play the Go side closed", () => {
   });
 });
 
-// A clip changed while it plays: the new play was taken at once on the
-// Go side, which stopped the play under way while the window still pulled
-// from it, and the window, told it was closed, started the play again.
-describe("a play taking over from the one under way", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  function underWay() {
+// A clip changed while it plays is taken into the play by the Go side,
+// which says where. The window opens no second play: what it holds of the
+// clip as it was from there on makes way, and the play goes on.
+describe("a change of the clip taken into the play under way", () => {
+  function underWay(answer: Taken | null) {
     const q = new FrameQueue(
       canvas(),
       "/episode.mp4",
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
     type Inside = {
-      app: unknown;
       goPlay: unknown;
       state: string;
       c0: number | null;
       m0: number;
+      soundTo: number;
       audio: { currentTime: number; sampleRate: number };
       stats: { starts: number };
+      sources: Map<{ stop(at: number): void }, number>;
       pump(): void;
-      previewSize(): unknown;
-      takeOver(was: unknown, at: number, pieces: unknown, loop: boolean): Promise<void>;
+      start(at: number): void;
+      takeIn(play: unknown, framing: string, loop: boolean): Promise<void>;
     };
     const inside = q as unknown as Inside;
     const said: string[] = [];
-    const was = { shots: [], close: () => said.push("old closed") };
-    inside.app = {};
-    inside.goPlay = was;
+    const play = {
+      take: async (framing: string, loop: boolean, heard: number) => {
+        said.push(`take ${framing} ${loop} ${heard.toFixed(2)}`);
+        return answer;
+      },
+    };
+    inside.goPlay = play;
     inside.state = "playing";
     inside.c0 = 0;
     inside.m0 = 61 * 48000;
+    inside.soundTo = 62 * 48000;
     inside.audio = { currentTime: 0.1, sampleRate: 48000 };
     inside.pump = () => {};
-    inside.previewSize = () => ({ width: 2, height: 2 });
-    return { inside, was, said };
+    inside.start = (at) => said.push(`started again at ${at}`);
+    const stops: number[] = [];
+    inside.sources.set({ stop: (at) => stops.push(at) }, 0.5);
+    inside.sources.set({ stop: (at) => stops.push(at) }, 0.2);
+    return { q, inside, play, said, stops };
   }
 
-  function next(said: string[]) {
-    return { shots: [], moment: 61.25, go: () => said.push("new let go"), close: () => said.push("new closed") } as unknown as GoPlay;
-  }
-
-  test("comes as a cue, and takes the decoder only once it is the one drawn", async () => {
-    const { inside, was, said } = underWay();
-    const asks: { cue: boolean }[] = [];
-    vi.spyOn(GoPlay, "open").mockImplementation(async (_app, ask) => {
-      asks.push(ask);
-      said.push("asked");
-      return next(said);
-    });
-    await inside.takeOver(was, 61.25, [{ start: 60, end: 64 }], false);
-    expect(asks.map((a) => a.cue)).toEqual([true]);
-    expect(said).toEqual(["asked", "new let go", "old closed"]);
-    expect(inside.goPlay).not.toBe(was);
+  test("cuts the sound handed over where the Go side took it in, and starts nothing", async () => {
+    const { inside, play, said, stops } = underWay({ gen: 1, at: 61.25, end: 64, lap: 64, video: false });
+    await inside.takeIn(play, "b", false);
+    expect(said).toEqual(["take b false 61.10"]);
+    expect(stops).toEqual([0.25]);
+    expect(inside.soundTo).toBe(61.25 * 48000);
     expect(inside.stats.starts).toBe(0);
   });
 
-  test("whose place the sound passed while it was asked for, is asked for again further on", async () => {
-    const { inside, was, said } = underWay();
-    const places: number[] = [];
-    vi.spyOn(GoPlay, "open").mockImplementation(async (_app, ask) => {
-      places.push(ask.after?.at ?? NaN);
-      // The answer came after the sound had passed the first place.
-      if (places.length === 1) inside.audio.currentTime = 0.3;
-      return next(said);
-    });
-    await inside.takeOver(was, 61.25, [{ start: 60, end: 64 }], false);
-    expect(places.length).toBe(2);
-    expect(places[1]).toBeGreaterThan(61.3);
-    expect(said).toEqual(["new closed", "new let go", "old closed"]);
-    expect(inside.stats.starts).toBe(0);
+  test("whose place the sound passed while the Go side answered, starts the play again from the playhead", async () => {
+    const { inside, play, said } = underWay({ gen: 1, at: 61.05, end: 64, lap: 64, video: false });
+    await inside.takeIn(play, "b", false);
+    expect(said.length).toBe(2);
+    expect(said[1]).toMatch(/^started again at /);
+  });
+
+  test("where the playhead was left outside the clip, goes on as a play of the video and says so", async () => {
+    const { q, inside, play } = underWay({ gen: 1, at: 61.25, end: 120, lap: 120, video: true });
+    let left = 0;
+    q.leftClip = () => left++;
+    await inside.takeIn(play, "b", false);
+    expect(left).toBe(1);
+    expect((q as unknown as { wantedKey: string }).wantedKey).toBe(JSON.stringify([null, false]));
   });
 });
 

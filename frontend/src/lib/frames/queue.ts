@@ -42,6 +42,9 @@ import { FADE, heard } from "./heard";
 import { GoPlay, type Chunk, type Piece, type Shot } from "./play";
 
 export type { Piece } from "./play";
+// What a play plays: the pieces of a clip, or null for the video, whether
+// they loop, and the name of the clip's framing, see FrameQueue.setProgram.
+export type Program = [pieces: Piece[] | null, loop: boolean, framing?: string | null];
 
 // Where the playhead is and what is on the canvas, told to whoever
 // listens each time either changes, which while playing is every
@@ -142,13 +145,6 @@ const SOUND_AHEAD = 1;
 const SOUND_BEHIND = 3;
 // Sound pulled before a play starts, seconds.
 const SOUND_FIRST = 0.15;
-// How far ahead of the sound heard a play taking over from the one before
-// starts, seconds: its first frames are kept on the Go side, and its
-// sound has to come before that place is heard, see changed.
-const TAKE_OVER = 0.15;
-// How many times a take over is tried with its place moved on, see
-// takeOver, before the play starts again from the playhead.
-const TAKE_OVER_TRIES = 3;
 // How far ahead of the sound card's clock a play's first sound is put,
 // seconds. The sound card renders a buffer at a time, and a stretch put
 // where it has rendered already starts late and out of step with the
@@ -308,10 +304,17 @@ export class FrameQueue {
   private began: { at: number; drawn: number; late: number; lateSound: number; when: number; even: Even } | null = null;
 
   // What play plays, as it was asked for: pieces, or null for the whole
-  // episode straight on, and whether it loops.
-  private wanted: { pieces: Piece[] | null; loop: boolean } = { pieces: null, loop: false };
+  // episode straight on, whether it loops, and the name of the clip's
+  // framing the Go side plays them by, see GoPlay.open. The key is the
+  // pieces and the loop: a framing that changed only the crop or a turn
+  // plays the same frames.
+  private wanted: { pieces: Piece[] | null; loop: boolean; framing: string | null } = { pieces: null, loop: false, framing: null };
   private wantedKey = "";
-  private asked: [Piece[] | null, boolean] | null = null;
+  private asked: Program | null = null;
+  // Told when the Go side left the playhead outside the clip while the
+  // clip played, an edge dragged past it, and the play went on as a play
+  // of the video, see changed.
+  leftClip: () => void = () => {};
 
   private state: State = "paused";
   // Where the playhead is, in the episode.
@@ -526,7 +529,7 @@ export class FrameQueue {
   get program(): { end: number; length: number; loop: boolean } {
     const p = this.goPlay;
     if (!p) return { end: Infinity, length: 0, loop: this.wanted.loop };
-    return { end: p.end, length: p.length + p.shift, loop: p.end === Infinity };
+    return { end: p.end, length: p.length, loop: p.end === Infinity };
   }
 
   // The pieces play plays: the clip's, or the whole episode straight on.
@@ -534,30 +537,32 @@ export class FrameQueue {
     return this.wanted.pieces ?? [{ start: 0, end: this.movie?.duration ?? 0 }];
   }
 
-  // What play plays: the pieces of a clip, cuts jumped, or null for the
-  // whole episode straight on, and whether it loops. The same program
-  // again changes nothing. A new one while playing is taken into the play
-  // ahead of the playhead, see changed, and a cue made for the old one is
-  // made again.
-  setProgram(pieces: Piece[] | null, loop: boolean) {
-    if (this.relooped(pieces, loop)) return;
+  // What play plays: the pieces of a clip, cuts jumped, by the name of
+  // its framing, or null for the whole episode straight on, and whether it
+  // loops. The same program again changes nothing. A new one while
+  // playing is taken into the play by the Go side, see changed, and a cue
+  // made for the old one is made again.
+  setProgram(pieces: Piece[] | null, loop: boolean, framing: string | null = null) {
+    if (this.relooped(pieces, loop, framing)) return;
     if (this.state === "playing" || this.state === "starting") {
       const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
       if (JSON.stringify([copy, loop]) === this.wantedKey) {
         this.asked = null;
+        if (pieces) this.wanted.framing = framing;
         return;
       }
       // The clip's pieces changed under a play of the clip are taken in,
       // see changed. A play of the video and a play of a clip do not turn
       // into each other here: a clip made with I or O while the video
-      // plays is the next play's, and the clip timeline says when the
-      // playhead was left outside the clip, see playOn. So is a program
-      // where the playhead is in none of the pieces now.
-      if (!pieces || !this.wanted?.pieces || this.changed(pieces, loop) === "outside") this.asked = [pieces, loop];
+      // plays is the next play's.
+      if (!pieces || !framing || !this.wanted?.pieces) this.asked = [pieces, loop, framing];
+      else this.changed(pieces, loop, framing);
       return;
     }
     this.asked = null;
-    if (!this.want(pieces, loop)) return;
+    const was = this.wantedKey;
+    this.want(pieces, loop, framing);
+    if (this.wantedKey === was) return;
     if (this.state === "cued" || this.goPlay) this.seek(this.at);
   }
 
@@ -577,13 +582,16 @@ export class FrameQueue {
   // a play taking over does, see changed. Started again for the loop, the
   // play threw away what was decoded, and the picture and the sound
   // stopped for a moment at every press, found by Tim.
-  private relooped(pieces: Piece[] | null, loop: boolean): boolean {
+  private relooped(pieces: Piece[] | null, loop: boolean, framing: string | null): boolean {
     if (this.state !== "playing" && this.state !== "starting") return false;
     const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
     if (JSON.stringify([copy, !loop]) !== this.wantedKey) return false;
     const play = this.goPlay;
-    if (play && loop) return this.changed(pieces, loop) !== "outside";
-    this.wanted = { pieces: copy, loop };
+    if (play && loop && pieces && framing) {
+      this.changed(pieces, loop, framing);
+      return true;
+    }
+    this.wanted = { pieces: copy, loop, framing };
     this.wantedKey = JSON.stringify([copy, loop]);
     // A play still on its way from the Go side is opened again with what
     // is wanted, see start.
@@ -597,81 +605,51 @@ export class FrameQueue {
   }
 
   // The clip changed under a running play, by a drag, an undo or a redo,
-  // or its loop switched on: a play of the new pieces takes over at once,
-  // a moment ahead of the sound heard, from the moment the play under way
+  // or its loop switched on: the Go side takes the new pieces into the
+  // play, a moment ahead of the sound heard, from the moment the play
   // stands at there, and the picture and the sound go on with no stop,
-  // Tim's rule on #277 and his report on it. Its first frames are the ones
-  // the play before decoded and the Go side kept. A clip edge or a cut
+  // Tim's rule on #277 and his report on it. The frames there are the
+  // ones the play decoded and the Go side kept. A clip edge or a cut
   // dragged while the clip played used to start the play again at every
   // step, and the picture, the sound and the playhead stuttered with the
-  // hand, so that is the one thing this never does.
-  //
-  // Says "outside" and changes nothing where the playhead is in none of
-  // the new pieces.
-  private changed(pieces: Piece[] | null, loop: boolean): "taken" | "outside" | "started" {
-    const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
-    const list = copy ?? [{ start: 0, end: this.movie?.duration ?? 0 }];
-    if (!list.some((p) => this.at >= p.start && this.at < p.end)) return "outside";
-    this.want(pieces, loop);
+  // hand, so that is the one thing this never does. Where the new pieces
+  // do not hold the moment, an edge dragged past the playhead, the Go
+  // side goes on as a play of the video, Tim's rule on #277: the playhead
+  // is no longer in the clip.
+  private changed(pieces: Piece[], loop: boolean, framing: string) {
+    this.want(pieces, loop, framing);
     const play = this.goPlay;
     // Still on its way from the Go side: it is opened again with what is
     // wanted, see start.
-    if (!play) return "taken";
+    if (!play) return;
     if (this.c0 === null) {
       // Not playing yet: the play starts again with what is wanted.
       this.start(this.startFrom, "again");
-      return "started";
+      return;
     }
-    this.takenOver = this.takeOver(play, Math.max(this.reached, this.sounded()) + TAKE_OVER, list, loop);
-    return "taken";
+    this.takenOver = this.takeIn(play, framing, loop);
   }
 
-  // A play of the pieces takes over from the one under way at a place on
-  // its clock, see changed. Where the Go side says the new pieces do not
-  // hold the moment that place stands for, the play goes on as it was,
-  // and the pieces are the next play's.
-  //
-  // The new play comes as a cue and takes the decoder only once it is the
-  // one drawn: taken at once, the Go side stopped the play under way
-  // while the window still pulled from it, and the window, told it was
-  // closed, started the play again, the stop this exists to prevent.
-  private async takeOver(was: GoPlay, at: number, pieces: Piece[], loop: boolean, tries = 1): Promise<void> {
-    if (!this.app) return;
-    const key = this.wantedKey;
-    const next = await GoPlay.open(
-      this.app,
-      { pieces, loop, at: this.at, rate: this.sampleRate, channels: this.channels, cue: true, after: { play: was, at } },
-      this.previewSize(),
-    );
-    if (typeof next === "string") {
-      this.fault(`The play could not take the change in: ${next.replace(/\.$/, "")}.`);
-      return;
+  // What the Go side made of a change of the clip the play plays, see
+  // changed and GoPlay.take: the frames and the sound of the clip as it
+  // was from the place it took over at make way for the new pieces'.
+  private async takeIn(play: GoPlay, framing: string, loop: boolean): Promise<void> {
+    const got = await play.take(framing, loop, Math.max(this.reached, this.sounded()));
+    if (!got || play !== this.goPlay || this.closed || this.c0 === null) return;
+    if (got.video) {
+      this.trace(`the playhead was left outside the clip at ${this.at.toFixed(3)} s, the play goes on as a play of the video`);
+      this.want(null, false, null);
+      this.leftClip();
     }
-    if (!next) {
-      if (was === this.goPlay && key === this.wantedKey) this.asked = [this.wanted.pieces, loop];
-      return;
-    }
-    if (was !== this.goPlay || this.closed || key !== this.wantedKey || this.c0 === null) {
-      next.close();
-      return;
-    }
-    // The sound went past the place while the Go side answered: the
-    // place is moved on, a few times, before the play starts again.
-    if (at <= this.sounded()) {
-      next.close();
-      this.trace(`the take over at ${at.toFixed(3)} s came after the sound had passed it, try ${tries}`);
-      if (tries < TAKE_OVER_TRIES) return this.takeOver(was, Math.max(this.reached, this.sounded()) + TAKE_OVER, pieces, loop, tries + 1);
+    // The sound went past the place while the Go side answered: the play
+    // starts again from the playhead.
+    if (got.at <= this.sounded()) {
+      this.trace(`the change taken in at ${got.at.toFixed(3)} s came after the sound had passed it`);
       this.start(this.at);
       return;
     }
-    this.trace(`the clip changed while it plays, a play of it takes over at ${next.moment.toFixed(3)} s, ${((at - this.sounded()) * 1000).toFixed(0)} ms ahead of the sound`);
-    // The frames and the sound of the play before from that place on make
-    // way for the new play's.
-    for (const s of was.shots.splice(0)) {
-      if (s.at < at) was.shots.push(s);
-      else this.closeFrame(s.frame);
-    }
-    const stop = this.c0 + (Math.round(at * this.sampleRate) - this.m0) / this.sampleRate;
+    this.trace(`the clip changed while it plays, taken in at ${got.at.toFixed(3)} s, ${((got.at - this.sounded()) * 1000).toFixed(0)} ms ahead of the sound`);
+    const stop = this.c0 + (Math.round(got.at * this.sampleRate) - this.m0) / this.sampleRate;
     for (const [src, end] of this.sources) {
       if (end <= stop) continue;
       try {
@@ -680,42 +658,19 @@ export class FrameQueue {
       this.sources.set(src, stop);
     }
     this.handedTo = Math.min(this.handedTo, stop);
-    this.soundTo = Math.min(this.soundTo, Math.round(at * this.sampleRate));
-    // What the play before has come up to that place is drawn first.
-    next.shots.unshift(...was.shots.splice(0));
-    // The new play takes the decoder before the old one lets it go, so
-    // nothing is read ahead in between.
-    next.go();
-    was.close();
-    this.goPlay = next;
-    if (!this.sound) next.soundEnded = true;
-    this.listenTo(next);
+    this.soundTo = Math.min(this.soundTo, Math.round(got.at * this.sampleRate));
     this.pump();
-  }
-
-  // The playhead was left outside the clip while the clip plays, by an
-  // edge of the clip dragged past it or an undo, so the play goes on as a
-  // play of the video, Tim's rule on #277: from the piece the playhead is
-  // in straight on to the episode's end, taken in the way any change of
-  // the clip is, see changed.
-  playOn() {
-    if (this.state !== "playing" && this.state !== "starting") return;
-    this.trace(`the playhead was left outside the clip at ${this.at.toFixed(3)} s, the play goes on as a play of the video`);
-    if (this.changed(null, false) !== "outside") return;
-    // The playhead in none of the pieces of the program it plays, past the
-    // episode's end, which a moment of the episode never is.
-    this.want(null, false);
-    this.start(this.at);
   }
 
   // Takes a program as the one play plays, and says whether it is another
   // than the one before. Nothing is started.
-  private want(pieces: Piece[] | null, loop: boolean): boolean {
+  private want(pieces: Piece[] | null, loop: boolean, framing: string | null = null): boolean {
     const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
     const key = JSON.stringify([copy, loop]);
+    this.wanted.framing = pieces ? framing : null;
     if (key === this.wantedKey) return false;
     this.wantedKey = key;
-    this.wanted = { pieces: copy, loop };
+    this.wanted = { pieces: copy, loop, framing: pieces ? framing : null };
     return true;
   }
 
@@ -729,7 +684,7 @@ export class FrameQueue {
   // the queue started again from where it was and said so, and that old
   // moment came back as the playhead the seek after it was sent to: the
   // click was lost.
-  seek(at: number, program?: [Piece[] | null, boolean]) {
+  seek(at: number, program?: Program) {
     if (this.closed) return;
     this.gestures++;
     this.app?.still();
@@ -1395,7 +1350,7 @@ export class FrameQueue {
     const key = this.wantedKey;
     const play = await GoPlay.open(
       this.app,
-      { pieces: this.pieces(), loop: this.wanted.loop, at, rate: this.sampleRate, channels: this.channels, cue: true },
+      { framing: this.wanted.framing, pieces: this.pieces(), loop: this.wanted.loop, at, rate: this.sampleRate, channels: this.channels, cue: true },
       this.previewSize(),
     );
     if (!play || typeof play === "string") return;
@@ -1475,7 +1430,7 @@ export class FrameQueue {
         const key = this.wantedKey;
         const play = await GoPlay.open(
           this.app,
-          { pieces: this.pieces(), loop: this.wanted.loop, at: from, rate: this.sampleRate, channels: this.channels, cue: false },
+          { framing: this.wanted.framing, pieces: this.pieces(), loop: this.wanted.loop, at: from, rate: this.sampleRate, channels: this.channels, cue: false },
           this.previewSize(),
         );
         if (ticket !== this.ticket || this.closed) {

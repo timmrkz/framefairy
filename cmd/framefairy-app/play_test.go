@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"testing"
 
+	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/fixtures"
 	"framefairy/internal/framewire"
@@ -17,11 +18,12 @@ import (
 
 // A play of two pieces hands over every frame of each, in the order they
 // are drawn, each stamped with where on the program it goes, the moment
-// it stands for and where its frame begins, the same frames a look at
-// them answers with, and the sound of both pieces, end to end on the
-// program. A play with no pieces is refused, a play paused gives the
-// decoder to a look and goes on after, and its loop is switched while it
-// plays.
+// it stands for, where its frame begins and the changes of the clip taken
+// in, the same frames a look at them answers with, and the sound of both
+// pieces, end to end on the program. A play with no pieces is refused, a
+// play paused gives the decoder to a look and goes on after, a clip
+// changed while it plays is taken in, or played on as the video where it
+// leaves the playhead outside, and its loop is switched while it plays.
 //
 // Not parallel: library sets the environment the store reads.
 func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
@@ -62,7 +64,7 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 		t.Errorf("the play goes from %v to %v", play.From, play.End)
 	}
 
-	size := 32 + 32*18*4
+	size := 40 + 32*18*4
 	// Paused, the play gives the decoder back: a look has it meanwhile,
 	// and the play goes on after with no frame lost or twice.
 	pictures := get("/frames/read", url.Values{"id": {play.Pictures}, "n": {"3"}}).Body.Bytes()
@@ -99,6 +101,9 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 		moment := math.Float64frombits(binary.LittleEndian.Uint64(head[8:]))
 		begins := math.Float64frombits(binary.LittleEndian.Uint64(head[16:]))
 		edge := math.Float64frombits(binary.LittleEndian.Uint64(head[24:]))
+		if gen := math.Float64frombits(binary.LittleEndian.Uint64(head[32:])); gen != 0 {
+			t.Errorf("frame %d is of change %v", k, gen)
+		}
 		if wantEdge := k == 0 || k == 4 || k == 5 || k == 9; (edge == 1) != wantEdge {
 			t.Errorf("frame %d says edge %v", k, edge)
 		}
@@ -106,7 +111,7 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 			t.Errorf("frame %d is drawn at %v, stands at %v and begins at %v", k, at, moment, begins)
 		}
 		look := get("/frames/look", url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {text}, "frame": {fmt.Sprint(frame)}, "shown": {"-1"}})
-		if string(look.Body.Bytes()[8:]) != string(head[32:size]) {
+		if string(look.Body.Bytes()[8:]) != string(head[40:size]) {
 			t.Errorf("frame %d of the play is not the frame a look at %d answers with", k, frame)
 		}
 	}
@@ -126,7 +131,7 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 			if out != next {
 				t.Fatalf("a chunk starts at %d, the one before ended at %d", out, next)
 			}
-			next, off = out+int64(n), off+16+n*8
+			next, off = out+int64(n), off+24+n*8
 		}
 		if rec.Header().Get("X-Frames-End") != "" {
 			if e := rec.Header().Get("X-Frames-Error"); e != "" {
@@ -139,21 +144,31 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 		t.Errorf("the play's sound is %d moments, the clip lasts %d", next, want)
 	}
 
-	// A play that takes over from this one starts at the moment it stands
-	// at, where the new pieces hold it, and is refused where they do not.
-	over := url.Values{}
-	for k, v := range ask {
-		over[k] = v
+	// The clip changed while it plays is taken in a little past the place
+	// its sound reached, at the moment the play stands at there.
+	source := engine.SourceInfo{Width: 32, Height: 18, FPSNum: 1, FPSDen: 1, Duration: 4}
+	framing := func(name string, start, end float64) {
+		svc.previews.framings.put(name, framed{episode: mine, source: source, segments: []engine.SegmentView{{Start: start, End: end}}}, nil)
 	}
-	over["after"], over["place"] = []string{play.Pictures}, []string{"0.4"}
-	rec = get("/frames/play", over)
-	var took struct{ Moment, From float64 }
-	if err := json.NewDecoder(rec.Body).Decode(&took); err != nil || math.Abs(took.Moment-(g.At(2)+0.4)) > 1e-9 || math.Abs(took.From-0.4) > 1e-9 {
-		t.Errorf("the play taking over answered %d %q", rec.Code, rec.Body.String())
+	framing("first", g.At(2), g.At(7))
+	framing("last", g.At(12), g.At(17))
+	take := func(name, heard string) (int, map[string]any) {
+		rec := get("/frames/play/take", url.Values{"id": {play.Pictures}, "framing": {name}, "heard": {heard}})
+		var took map[string]any
+		_ = json.NewDecoder(rec.Body).Decode(&took)
+		return rec.Code, took
 	}
-	over["pieces"] = []string{fmt.Sprintf("%v:%v", g.At(12), g.At(17))}
-	if rec := get("/frames/play", over); rec.Code != http.StatusConflict {
-		t.Errorf("a play taking over where its pieces do not hold the playhead answered %d", rec.Code)
+	if code, _ := take("first", "5"); code != http.StatusConflict {
+		t.Errorf("a change past the play's end answered %d", code)
+	}
+	if code, took := take("first", "0.25"); code != http.StatusOK || took["gen"] != 1.0 || math.Abs(took["at"].(float64)-0.4) > 1e-9 ||
+		math.Abs(took["end"].(float64)-length/2) > 1e-9 || took["video"] != false {
+		t.Errorf("the clip changed was taken in %d %v", code, took)
+	}
+	// Where the new pieces do not hold that moment, the play goes on as
+	// a play of the video, from the same place.
+	if code, took := take("last", "0.25"); code != http.StatusOK || took["gen"] != 2.0 || math.Abs(took["at"].(float64)-0.4) > 1e-9 || took["video"] != true {
+		t.Errorf("a change that leaves the playhead outside the clip was taken in %d %v", code, took)
 	}
 
 	loop := get("/frames/play/loop", url.Values{"id": {play.Pictures}, "at": {"0"}, "loop": {"1"}})

@@ -38,7 +38,7 @@
   import { said } from "../lib/said";
   import { insideClip, wordInEpisode, type Piece } from "../lib/flow";
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playMoves, type About, type Place, type Playhead } from "../lib/playhead";
-  import { FrameQueue, type Shown } from "../lib/frames/queue";
+  import { FrameQueue, type Program, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
   import { CaptionLayers, sameDress, type CaptionAsk, type FrameDress, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
   import { shownColour, type Light } from "../lib/frames/light";
@@ -307,6 +307,16 @@
     q.listen((s) => {
       if (queue === q) heard(s);
     });
+    // An edge of the clip dragged past the playhead while the clip plays
+    // leaves the playhead outside the clip, on the video, and the Go side
+    // plays on as a play of the video, through to the episode's end. Tim's
+    // rule on #277: making the clip shorter than where the playhead is
+    // says the playhead is no longer in it.
+    q.leftClip = () => {
+      if (queue !== q) return;
+      playedClip = false;
+      placed = onVideo;
+    };
     // What the video preview had when it still showed no picture, for the
     // app's log, see lib/said.ts. Plan row 2.185.
     said(`video preview: opening${woken ? ", woken" : ""}, canvas ${canvas.width}x${canvas.height}, playhead ${time.toFixed(3)} s${untrack(() => opening) ? ", the workspace still opening" : ""}`, { video: path });
@@ -391,9 +401,10 @@
   }
 
   // What play plays for a place: on the video the whole episode straight
-  // on, on the clip its pieces with the cuts jumped, looping or not.
-  function programOf(where: Place): [Piece[] | null, boolean] {
-    return where === "video" || !pieces.length ? [null, false] : [pieces, looping];
+  // on, on the clip its pieces with the cuts jumped, looping or not, by
+  // the name of its framing, which the Go side plays them by.
+  function programOf(where: Place): Program {
+    return where === "video" || !pieces.length ? [null, false] : [pieces, looping, clip?.framing ?? null];
   }
 
   // The canvas is told its device pixels as the stylesheet lays it out.
@@ -457,22 +468,6 @@
     onClip = place !== "video";
   });
 
-  // An edge of the clip dragged past the playhead while the clip plays
-  // leaves the playhead outside the clip, on the video, so the play goes
-  // on as a play of the video, through to the episode's end. Tim's rule on
-  // #277: making the clip shorter than where the playhead is says the
-  // playhead is no longer in it.
-  $effect(() => {
-    const now = pieces;
-    untrack(() => {
-      if (paused || !playedClip || !clip || !queue || !now.length) return;
-      if (placeOf(now, clip.key, time, 1 / oneFrame, undefined, source.videoStart ?? 0).place !== "video") return;
-      playedClip = false;
-      placed = onVideo;
-      queue.playOn();
-    });
-  });
-
   // The queue plays what the place says, and a clip whose pieces change
   // while it plays, a cut made, moved or put back, or loop switched on or
   // off, goes on from the playhead on what it is now. The same program
@@ -522,9 +517,14 @@
   // knows the video: a workspace woken asks before its queue is there.
   //
   // And turned, the framing R turns the part at the playhead to: the dress
-  // of the playhead's frame under it is read first, so R shows the part
-  // turned in the frame it is pressed on, as it did when the window
-  // turned the picture by itself.
+  // of the playhead's frame under it is read after the word steps' and
+  // before the cards', so R shows the part turned in the frame it is
+  // pressed on, as it did when the window turned the picture by itself.
+  // Read first, it held back the next word's layer at every step. Not
+  // while the hand drags the playhead, which passes a frame in a moment:
+  // read for each, a third of what libass drew was for frames nobody
+  // pressed R on, and the frames a step went to waited behind them.
+  let gripping = false;
   let askedAhead: [number[], { clip: ClipEntry; captions: CaptionsView | null }[], string | null] = [[], [], null];
   export function ahead(times: number[], clips: { clip: ClipEntry; captions: CaptionsView | null }[] = [], turned: string | null = null) {
     askedAhead = [times, clips, turned];
@@ -532,9 +532,6 @@
     queue.ahead(times);
     const starts: number[] = [];
     const wants: Parameters<typeof layers.next>[0] = [];
-    const here = turned && captionAsk && place !== "video" ? queue.firstFrameAt(time) : null;
-    const room = canvasSize();
-    if (here !== null && captionAsk && room) wants.push({ ask: { ...captionAsk, framing: turned! }, frame: here, size: room });
     // The layers of the frames a word step goes to, first: a step waits
     // for its frame's captions before it is put up, see FrameQueue.dress,
     // and each step lights another word, so its layer is a new one. Found
@@ -545,6 +542,8 @@
       const frame = queue.firstFrameAt(at);
       if (frame !== null && ask && size) wants.push({ ask, frame, size });
     }
+    const here = turned && ask && place !== "video" && !gripping ? queue.firstFrameAt(time) : null;
+    if (here !== null && ask && size) wants.push({ ask: { ...ask, framing: turned! }, frame: here, size });
     for (const { clip: of, captions: view } of clips) {
       const frame = queue.firstFrameAt(of.start);
       if (frame === null) break;
@@ -600,6 +599,11 @@
   export function hold(held: boolean) {
     if (!queue) return;
     queue.grip(held);
+    // The turned dress waits for the hand to let go, see ahead.
+    if (gripping !== held) {
+      gripping = held;
+      if (!held && askedAhead[2]) ahead(...askedAhead);
+    }
     if (held) {
       if (paused || nailed) return;
       nailed = true;
@@ -646,7 +650,7 @@
     playedClip = !!clip && from.clip;
     if (clip && from.clip) {
       placed = { place: "clip", clip: clip.key };
-      queue.setProgram(pieces, looping);
+      queue.setProgram(pieces, looping, clip.framing ?? null);
       // Only where the play does not start at the playhead, from the
       // clip's start or the end of a cut. Anywhere else the play is cued
       // already, its first frames and sound decoded.

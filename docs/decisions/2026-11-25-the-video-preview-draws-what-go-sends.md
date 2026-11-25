@@ -179,11 +179,22 @@ Three steps, in one pull request, a commit each.
    goes. The window draws the frame with its dress, and keeps no rule
    about either.
 2. **Go runs the play.** A play is asked for a clip by its framing's
-   name, or for the video. A gesture or an edit that makes a new framing
-   of a clip being played hands it to that play, which takes it in a
-   little past the clock the window last said its sound reached, and
-   says so with its next frames. The window drops what it holds past
-   that place and plays on. It opens no second play.
+   name, or for the video. A clip changed while it plays is handed to
+   that play by the name of its new framing, with where the window's
+   sound reached, `/frames/play/take`. The play takes it in a little
+   past there, from the moment it stands at, and answers where, and
+   whether the playhead was left outside the clip, so it goes on as a
+   play of the video. Its frames and its sound say how many changes
+   they were made after. The window drops what it holds of the clip as
+   it was past that place and plays on. It opens no second play, tries
+   nothing again and decides nothing about the pieces.
+
+   Planned first, Go took the change in by itself, as a gesture or an
+   edit made the framing, and said so with its next frames. A pull of
+   frames comes every four frames, so that word came up to 160 ms
+   late, past the 150 ms the place lies ahead of the sound. The window
+   hands the play the framing it was sent instead, and has the answer
+   in one call, the way its own take over had it.
 3. **The playhead comes from Go.** A look and a play are asked for with
    what the gesture was about, the clip or the video, and Go answers
    with the place of the playhead, the moment on the clip's clock and

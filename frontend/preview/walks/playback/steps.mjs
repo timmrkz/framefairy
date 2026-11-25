@@ -378,12 +378,12 @@ export const steps = {
     // fast as its frames are decoded, so a play not held ran on into the
     // clip's end and round to its start between two presses, and the loop
     // went off at the clip's start. The first press too: the loop switched
-    // on takes over 150 ms of the play ahead of the sound, TAKE_OVER in
-    // lib/frames/queue.ts, which a sound card plays in 150 ms, and the
-    // walk's clock on a busy runner in a few. Not held, it passed the
-    // place three times while the Go side opened the new play, and the
-    // queue started the play again, #976. settle does not wait for the
-    // Go side to open it, so the hand lets go once it has, see takenOver.
+    // on is taken into the play 150 ms ahead of the sound, takeAhead in
+    // cmd/framefairy-app/play.go, which a sound card plays in 150 ms, and
+    // the walk's clock on a busy runner in a few. Not held, it passed the
+    // place while the Go side took it in, and the queue started the play
+    // again, #976. settle does not wait for the Go side's answer, so the
+    // hand lets go once it has come, see takenOver.
     await holdSound(page, true);
     await page.keyboard.press("l");
     await settle(page);

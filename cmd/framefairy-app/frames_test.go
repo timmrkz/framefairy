@@ -60,7 +60,7 @@ func TestTheFramesRouteStreamsAPlay(t *testing.T) {
 		return rec
 	}
 	pictures, _ := playOf(t, handler, mine, "0:10", 2.1, 64, 36)
-	size := 32 + 64*36*4
+	size := 40 + 64*36*4
 	var begins []float64
 	for len(begins) < 4 {
 		rec := get("/frames/read", url.Values{"id": {pictures}, "n": {"4"}})
@@ -113,7 +113,7 @@ func TestTheFramesRouteSaysAnHDREpisodesLight(t *testing.T) {
 		if rec.Code != http.StatusOK || rec.Body.Len() == 0 {
 			t.Fatalf("read answered %d with %d bytes: %s", rec.Code, rec.Body.Len(), rec.Header().Get("X-Frames-Error"))
 		}
-		if rec.Body.Len()%(32+64*36*4) != 0 {
+		if rec.Body.Len()%(40+64*36*4) != 0 {
 			t.Errorf("%d bytes is no whole number of frames of 4 bytes a pixel", rec.Body.Len())
 		}
 		if light := rec.Header().Get("X-Frames-Light"); light != "hlg" {
@@ -134,7 +134,7 @@ func TestTheFramesRouteSaysWhenAPlayEnds(t *testing.T) {
 	for range 20 {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/read?id="+pictures+"&n=16", nil))
-		frames += rec.Body.Len() / (32 + 32*18*4)
+		frames += rec.Body.Len() / (40 + 32*18*4)
 		if rec.Header().Get("X-Frames-End") != "" {
 			if frames != 5 {
 				t.Errorf("the end came after %d frames of a second at five a second", frames)
@@ -208,10 +208,10 @@ func TestThePlaysSoundIsTheVideosSound(t *testing.T) {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/read?id="+sound+"&n=16", nil))
 		body := rec.Body.Bytes()
-		for off := 0; off+16 <= len(body); {
+		for off := 0; off+24 <= len(body); {
 			n := int(math.Float64frombits(binary.LittleEndian.Uint64(body[off+8:])))
-			heard = append(heard, body[off+16:off+16+n*8]...)
-			off += 16 + n*8
+			heard = append(heard, body[off+24:off+24+n*8]...)
+			off += 24 + n*8
 		}
 		if rec.Header().Get("X-Frames-End") != "" {
 			if e := rec.Header().Get("X-Frames-Error"); e != "" {
@@ -581,7 +581,7 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 	read := httptest.NewRecorder()
 	handler.ServeHTTP(read, httptest.NewRequest("GET", "/frames/read?id="+pictures+"&n=1", nil))
 	svc.previews.close(pictures)
-	if got := read.Body.Bytes(); len(got) != 32+32*18*4 || string(got[32:]) != string(look.Body.Bytes()[8:]) {
+	if got := read.Body.Bytes(); len(got) != 40+32*18*4 || string(got[40:]) != string(look.Body.Bytes()[8:]) {
 		t.Error("the look's frame is not the frame a play from there hands over")
 	}
 

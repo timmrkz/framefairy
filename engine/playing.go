@@ -40,25 +40,211 @@ type PlayAsk struct {
 type PlayFrame struct {
 	Shot
 	Picture []byte
+	// Gen is how many times the play had taken a changed clip in when
+	// the frame was made, see Retake.
+	Gen int
 }
 
 // Play is a play of the video preview.
 type Play struct {
-	s    *Schedule
-	grid framewire.Grid
-	w, h int
-	p0   float64
-	ctx  context.Context
-	stop context.CancelFunc
+	s      *Schedule
+	grid   framewire.Grid
+	w, h   int
+	p0     float64
+	ctx    context.Context
+	cancel context.CancelFunc
 	// going is closed while the play has the decoder, see Go, and made
 	// again when it gives it back, see Hold. lease is cancelled then, which
 	// stops the decoder's stream, under the schedule's lock.
 	going chan struct{}
 	lease context.Context
 	free  context.CancelFunc
+	// held says the play is paused, see Hold, under the schedule's lock.
+	held bool
 
 	mu      sync.Mutex
 	program Program
+	// retake is the play that takes over from this one, see Retake.
+	retake *retaking
+	// retakes keeps one change at a time going to the play, and gens
+	// counts them, see Retake.
+	retakes sync.Mutex
+	gens    int
+}
+
+// retaking is the play of a clip changed while a play plays, which takes
+// over from it at a place on its program, at, and counts on its clock,
+// its own places moved by shift. Gen is what its frames and its sound are
+// stamped with. Switched says it took the decoder over, and entered that
+// its frames or its sound went out, so no change takes its place.
+type retaking struct {
+	at       float64
+	next     *Play
+	shift    float64
+	gen      int
+	switched bool
+	entered  bool
+}
+
+// errRetaken ends what a play hands over where the play of its clip
+// changed takes over, see Retake.
+var errRetaken = errors.New("the play of the changed clip takes over")
+
+// Retaken is how a play took a changed clip in, see Play.Retake: from At
+// on its program what it hands over is the play of the new pieces, whose
+// frames and sound carry Gen, and it now ends at End, +Inf while it loops,
+// its first time through the new pieces ending at Lap.
+type Retaken struct {
+	Gen          int
+	At, End, Lap float64
+}
+
+// Retake hands a play the pieces of its clip changed while it plays, at a
+// place on its program the sound heard has not reached yet: from there on
+// it plays the new pieces, from the moment of the video it stands at
+// there, counted on the same clock, so the picture and the sound go on
+// with no stop. The frames and the sound it handed over from there on are
+// the old pieces' and make way, which the Gen of the new ones tells. The
+// play of the new pieces waits as a cue until the frames reach the place,
+// and takes the decoder there, see Go, so the frames kept for it come
+// first. A change that comes before the last one took over takes its
+// place, at its place. False where the new pieces do not hold the moment,
+// or the play is stopped, paused or past its end there, and the play goes
+// on as it was. Only the play the window started is handed changes. See
+// docs/decisions/2026-11-25-the-video-preview-draws-what-go-sends.md.
+func (p *Play) Retake(pieces []PlayPiece, loop bool, at float64) (Retaken, bool) {
+	p.retakes.Lock()
+	defer p.retakes.Unlock()
+	if playing, _ := p.Current(); playing.isHeld() {
+		return Retaken{}, false
+	}
+	cur, shift := p, 0.0
+	for {
+		r, entered := cur.entered()
+		if entered {
+			at = math.Max(at, r.at+shift)
+			shift += r.shift
+			cur = r.next
+			continue
+		}
+		// The play that plays now. A change that has not taken over yet
+		// makes way for this one, at its place.
+		place := at - shift
+		if r != nil {
+			place = r.at
+		}
+		moment, ok := cur.MomentAt(place)
+		if !ok || cur.ctx.Err() != nil || !NewProgram(pieces, loop).Holds(moment) {
+			return Retaken{}, false
+		}
+		next := p.s.Play(PlayAsk{Grid: p.grid, W: p.w, H: p.h, Pieces: pieces, Loop: loop, Moment: moment, Cue: true})
+		p.gens++
+		mine := &retaking{at: place, next: next, shift: place - next.From(), gen: p.gens}
+		cur.mu.Lock()
+		same := cur.retake == r && (r == nil || !r.entered)
+		if same {
+			cur.retake = mine
+		}
+		cur.mu.Unlock()
+		if !same {
+			// The change before took over meanwhile: this one goes to
+			// the play that took over.
+			next.end()
+			continue
+		}
+		if r != nil {
+			r.next.end()
+		}
+		if _, entered := cur.entered(); cur.ctx.Err() != nil && !entered {
+			next.end()
+			return Retaken{}, false
+		}
+		return Retaken{Gen: mine.gen, At: place + shift, End: next.End() + mine.shift + shift, Lap: next.Length() + mine.shift + shift}, true
+	}
+}
+
+// retaking is the play of a changed clip that takes over from this one,
+// or nil, and whether it took the decoder over.
+func (p *Play) retaking() (*retaking, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.retake, p.retake != nil && p.retake.switched
+}
+
+// entered is the play of a changed clip that takes over from this one, or
+// nil, and whether its frames or its sound went out, see enter.
+func (p *Play) entered() (*retaking, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.retake, p.retake != nil && p.retake.entered
+}
+
+// enter says the frames or the sound of the play that takes over from
+// this one go out, and is that play.
+func (p *Play) enter() *retaking {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.retake.entered = true
+	return p.retake
+}
+
+// retaken is the play that takes over from this one, or nil.
+func (p *Play) retaken() *retaking {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.retake
+}
+
+// isHeld says the play is paused, see Hold.
+func (p *Play) isHeld() bool {
+	p.s.mu.Lock()
+	defer p.s.mu.Unlock()
+	return p.held
+}
+
+// Current is the play that plays now: this one, or the play of the
+// changed clip that took over from it, see Retake, with where its places
+// stand on this one's program.
+func (p *Play) Current() (*Play, float64) {
+	cur, shift := p, 0.0
+	for {
+		r, switched := cur.retaking()
+		if !switched {
+			return cur, shift
+		}
+		shift += r.shift
+		cur = r.next
+	}
+}
+
+// handOver gives the decoder to the play that takes over, where this one
+// has it, and stops this one: its frames from the place on are the new
+// play's.
+func (p *Play) handOver() *retaking {
+	p.mu.Lock()
+	r := p.retake
+	r.switched, r.entered = true, true
+	p.mu.Unlock()
+	p.s.mu.Lock()
+	going := p.s.play == p
+	p.s.mu.Unlock()
+	if going {
+		r.next.Go()
+	}
+	p.cancel()
+	return r
+}
+
+// end stops the play, and the play of a changed clip waiting to take
+// over from it.
+func (p *Play) end() {
+	p.mu.Lock()
+	r := p.retake
+	p.mu.Unlock()
+	if r != nil && !r.switched {
+		r.next.end()
+	}
+	p.cancel()
 }
 
 // playDepth is how many frames of a run of a play are decoded ahead of
@@ -73,7 +259,7 @@ const playDepth = 4
 func (s *Schedule) Play(a PlayAsk) *Play {
 	program := NewProgram(a.Pieces, a.Loop)
 	ctx, stop := context.WithCancel(context.Background())
-	p := &Play{s: s, grid: a.Grid, w: a.W, h: a.H, program: program, p0: program.Place(a.Moment), ctx: ctx, stop: stop, going: make(chan struct{})}
+	p := &Play{s: s, grid: a.Grid, w: a.W, h: a.H, program: program, p0: program.Place(a.Moment), ctx: ctx, cancel: stop, going: make(chan struct{})}
 	if !a.Cue {
 		p.Go()
 	}
@@ -95,6 +281,7 @@ func (p *Play) Go() {
 	if p.free != nil {
 		p.free()
 	}
+	p.held = false
 	p.lease, p.free = context.WithCancel(p.ctx)
 	select {
 	case <-p.going:
@@ -102,7 +289,7 @@ func (p *Play) Go() {
 		close(p.going)
 	}
 	if old := s.play; old != nil {
-		old.stop()
+		old.end()
 	}
 	s.play = p
 	s.overtake()
@@ -126,6 +313,7 @@ func (p *Play) Hold() {
 		return
 	}
 	p.free()
+	p.held = true
 	p.going = make(chan struct{})
 	s.play = nil
 	s.plan()
@@ -135,7 +323,7 @@ func (p *Play) Hold() {
 // lock.
 func (s *Schedule) stopPlay() {
 	if p := s.play; p != nil {
-		p.stop()
+		p.end()
 		s.play = nil
 	}
 }
@@ -175,10 +363,19 @@ func (p *Play) End() float64 {
 // Loop switches the loop while the play plays, at a place on the program,
 // see Program.Loop, and says where it now ends.
 func (p *Play) Loop(on bool, at float64) float64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.program.Loop(on, at)
-	return p.program.End()
+	cur, shift := p.Current()
+	cur.mu.Lock()
+	cur.program.Loop(on, at-shift)
+	end := cur.program.End() + shift
+	r := cur.retake
+	cur.mu.Unlock()
+	// A change waiting to take over loops as this one does.
+	if r != nil {
+		r.next.mu.Lock()
+		r.next.program.Loop(on, at-shift-r.shift)
+		r.next.mu.Unlock()
+	}
+	return end
 }
 
 // Visit is Program.Visit, while the loop may be switched.
@@ -197,7 +394,7 @@ func (p *Play) Locate(at float64) (int, float64, bool) {
 
 // Stop stops the play.
 func (p *Play) Stop() {
-	p.stop()
+	p.end()
 	p.s.mu.Lock()
 	if p.s.play == p {
 		p.s.play = nil
@@ -215,6 +412,25 @@ func (p *Play) Stop() {
 // clip changed under it, starts at once. A frame handed to got is got's
 // to give back, whatever it answers.
 func (p *Play) Pictures(ctx context.Context, got func(PlayFrame) error) error {
+	cur, shift, gen := p, 0.0, 0
+	for {
+		at, g := shift, gen
+		err := cur.pictures(ctx, func(f PlayFrame) error {
+			f.At += at
+			f.Gen = g
+			return got(f)
+		})
+		if !errors.Is(err, errRetaken) {
+			return err
+		}
+		r := cur.retaken()
+		cur, shift, gen = r.next, shift+r.shift, r.gen
+	}
+}
+
+// pictures is Pictures of this play alone, which ends with errRetaken
+// where the play of a changed clip takes over.
+func (p *Play) pictures(ctx context.Context, got func(PlayFrame) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
@@ -243,6 +459,11 @@ func (p *Play) Pictures(ctx context.Context, got func(PlayFrame) error) error {
 	}()
 	for cur != nil {
 		for f := range cur.out {
+			if r := p.retaken(); r != nil && f.At >= r.at-1e-9 {
+				p.s.Give(f.Picture)
+				p.handOver()
+				return errRetaken
+			}
 			if err := got(f); err != nil {
 				return err
 			}
@@ -255,6 +476,10 @@ func (p *Play) Pictures(ctx context.Context, got func(PlayFrame) error) error {
 			return cur.err
 		}
 		cur, next = next, p.startRun(ctx, runs.next())
+	}
+	if r := p.retaken(); r != nil {
+		p.handOver()
+		return errRetaken
 	}
 	return nil
 }
@@ -422,21 +647,60 @@ var errStretchDone = errors.New("the stretch has its sound")
 // Stretch. It runs until the program ends, got says no more, or the play
 // or ctx is stopped. A chunk is in a buffer of its own, which got may keep
 // or give back, see EpisodeFrames.Give.
-func (p *Play) Sound(ctx context.Context, sound SoundSource, rate, channels int, got func(out int64, chunk []byte) error) error {
+func (p *Play) Sound(ctx context.Context, sound SoundSource, rate, channels int, got func(out int64, gen int, chunk []byte) error) error {
+	cur, places, shift, gen := p, 0.0, int64(0), 0
+	for {
+		at, g := shift, gen
+		err := cur.sound(ctx, sound, rate, channels, func(out int64, chunk []byte) error {
+			return got(out+at, g, chunk)
+		})
+		if !errors.Is(err, errRetaken) {
+			return err
+		}
+		r := cur.enter()
+		cur, places, gen = r.next, places+r.shift, r.gen
+		shift = int64(math.Round(places * float64(rate)))
+	}
+}
+
+// sound is Sound of this play alone, which ends with errRetaken where the
+// play of a changed clip takes over. It goes on to that place though the
+// pictures took over first and stopped the play.
+func (p *Play) sound(ctx context.Context, sound SoundSource, rate, channels int, got func(out int64, chunk []byte) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
 		select {
 		case <-p.ctx.Done():
-			cancel()
+			// Stopped where a changed clip took over, the sound goes on
+			// to the place, unless the play that took over was stopped
+			// too.
+			if r := p.retaken(); r == nil || r.next.ctx.Err() != nil {
+				cancel()
+			}
 		case <-ctx.Done():
 		}
 	}()
+	// Where the play of a changed clip takes over, in samples, or -1.
+	cut := func() int64 {
+		if r := p.retaken(); r != nil {
+			return int64(math.Round(r.at * float64(rate)))
+		}
+		return -1
+	}
 	stretches := NewStretches(p, p.p0, rate)
 	for st, ok := stretches.Next(); ok; st, ok = stretches.Next() {
+		if c := cut(); c >= 0 && st.Out >= c {
+			return errRetaken
+		}
 		m, left := st.Out, st.To-st.From
 		err := sound(ctx, float64(st.From)/float64(rate), rate, channels, func(_ float64, chunk []byte) error {
 			n := min(int64(len(chunk)/(4*channels)), left)
+			end := cut()
+			retaken := end >= 0 && m+n > end
+			if retaken {
+				n = max(end-m, 0)
+			}
 			chunk = chunk[:n*int64(4*channels)]
 			for i := range n {
 				g := st.Gain(m+i, rate)
@@ -449,8 +713,13 @@ func (p *Play) Sound(ctx context.Context, sound SoundSource, rate, channels int,
 					binary.LittleEndian.PutUint32(chunk[at:], math.Float32bits(float32(float64(v)*g)))
 				}
 			}
-			if err := got(m, chunk); err != nil {
-				return err
+			if n > 0 {
+				if err := got(m, chunk); err != nil {
+					return err
+				}
+			}
+			if retaken {
+				return errRetaken
 			}
 			m, left = m+n, left-n
 			if left == 0 {
@@ -461,6 +730,9 @@ func (p *Play) Sound(ctx context.Context, sound SoundSource, rate, channels int,
 		if err != nil && !errors.Is(err, errStretchDone) {
 			return err
 		}
+	}
+	if cut() >= 0 {
+		return errRetaken
 	}
 	return ctx.Err()
 }
