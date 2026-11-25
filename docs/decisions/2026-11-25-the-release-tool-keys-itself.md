@@ -56,13 +56,20 @@ What was measured, in a cloud session:
    compare, and asking GitHub for it is a token and a round trip in
    every job. The key in the binary is the answer itself, kept inside
    the bytes the attestation signs. This converges on the first.
-4. **What runs together.** `release-tool.yml` started only for the
-   listed paths. With no list, it starts on every push to main, and the
-   action answers: the signed build fits, nothing is built or signed,
-   about 10 s of a Linux runner, or it does not, and the tool is built,
-   signed and kept. Nothing waits on it, and no pull request runs it. A
-   filter of kinds of files, docs alone, would save some of those runs,
-   for one more rule to hold. Not done.
+4. **Who may vouch for whom.** The checkout, not the downloaded bytes,
+   should decide what may run. Before, it did: it named the build it
+   wanted, and the attestation had to sign that very name. With no list,
+   the checkout cannot name it, so the downloaded build says whether it
+   fits, and any build main ever signed can be uploaded again and answer
+   for itself. The checkout could take that back by keeping only the
+   newest build signed: `release-tool.yml` deletes the attestations of
+   older builds when it keeps a new one. That is an API call on every
+   build, with a permission the token may not have. Every build since
+   this change refuses other code, so the question is only a build that
+   was ever bad, and then deleting its attestation retires it. The same
+   principle splits `release-tool.yml`: the job that asks the downloaded
+   build holds a token that only reads, and the job that signs as main
+   runs nothing it downloaded, only a build of its own checkout.
 5. **What a test has to build.** The key is safe only if it never
    leaves out a package the tool is built from, and a download is safe
    only if it is checked before it runs. So: a table of the tool's
@@ -79,13 +86,20 @@ What was measured, in a cloud session:
 
 The tool keys itself from its own imports, stamps the key into its
 build, and says whether it fits the checkout: the first, the second, the
-third and the fifth. The fourth starts the workflow on every push to
-main.
+third and the fifth. The fourth splits the workflow into a job that asks
+and a job that signs, and leaves an older signed build to answer for
+itself, with its attestation as the way to retire it. `release-tool.yml`
+starts on every push to main, since no list says when the tool changed:
+the build fits and nothing more runs, about 10 s of a Linux runner, or
+it does not and the tool is built, signed and kept. Nothing waits on it,
+and no pull request runs it.
 
 ## The decision
 
-    release-tool.yml:   every push to main, the action, and only when
-                        it built the tool: attest, keep as the asset
+    release-tool.yml:   every push to main. check, a token that reads:
+                        the action. build, only when check built the
+                        tool, signing as main: the action with
+                        download false, attest, keep as the asset
                         framefairy-release of the release release-tool
                                   |
     .github/actions/release-tool: gh release download, gh attestation
@@ -95,14 +109,23 @@ main.
     self.go:            the tool's inputs, go.mod, go.sum and the
                         folders of the packages it imports or its
                         go generate runs, hashed over their git
-                        objects, stamped with -ldflags -X
+                        objects, stamped with -ldflags -X, with no C.
+                        No key, no build: self fails
 
 An older build of main's is still signed by main, and any branch can
 upload it. It carries the key of the older code, so it does not fit a
 newer checkout, and the action builds the tool. What the earlier design
 checked with the name the attestation signs is now checked with the key
 inside the bytes it signs. What remains trusted is the `fits` of a build
-main once signed, which is main's own reviewed code.
+main once signed, which is main's own reviewed code, and only in jobs
+that cannot sign as main. A build that ever turns out bad is retired by
+deleting its attestation, by the build's digest on GitHub, so
+`gh attestation verify` refuses it from then on.
+
+The key leaves out the system the tool runs on, which the earlier key
+held. A build for another system does not start, so the step that asks
+it fails, and the action builds the tool. Every job that uses it runs on
+Linux today.
 
 ## What follows
 
@@ -116,6 +139,10 @@ main once signed, which is main's own reviewed code.
 - The asset is called `framefairy-release` from now on. The first push to
   main after this builds it, and the step that keeps it removes the
   older assets named by key.
+- A change that makes the tool's key impossible to work out, like a
+  `go generate` line in its packages that is no `go run` of ours, fails
+  every job that builds the tool on that pull request, instead of leaving
+  main a build that never fits.
 - Wrong if: a job runs a tool built from other code than its checkout,
   which takes a package the tool is built from that its imports and its
   `go generate` do not name. Or every job builds the tool, which shows

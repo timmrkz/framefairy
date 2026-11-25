@@ -65,11 +65,17 @@ func gitKey(commit string, inputs []string) (string, error) {
 	if len(found) != len(inputs) {
 		return "", fmt.Errorf("git named %d objects for %d inputs", len(found), len(inputs))
 	}
+	return keyOf(inputs, found), nil
+}
+
+// keyOf is the key of the inputs by their git objects: the first 16 hex
+// digits of a hash over each input's name and object, in order.
+func keyOf(inputs, objects []string) string {
 	h := sha256.New()
-	for i, o := range found {
+	for i, o := range objects {
 		fmt.Fprintf(h, "%s %s\n", inputs[i], o)
 	}
-	return hex.EncodeToString(h.Sum(nil))[:16], nil
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 // ownKey is the key of what this program is built from at a commit, found
@@ -129,8 +135,9 @@ func fitsCommand(out io.Writer) error {
 }
 
 // selfCommand builds this program from the checkout, stamped with the key
-// of what it is built from, and puts it on the job's path. go build runs
-// with the environment the job gives it, CGO_ENABLED=0 and no cache.
+// of what it is built from, with no C, and puts it on the job's path. A
+// checkout whose key cannot be worked out fails here, on the pull request
+// that made it so, rather than leaving main a build that never fits.
 func selfCommand(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("self", flag.ExitOnError)
 	to := fs.String("out", "", "where to write the build")
@@ -144,15 +151,14 @@ func selfCommand(args []string, out io.Writer) error {
 	}
 	key, err := ownKey("HEAD")
 	if err != nil {
-		// Built all the same, with no key, so it never fits and the
-		// next job builds it again: slower, never wrong.
-		fmt.Fprintf(out, "::warning::The release tool is built with no key, since what it is built from cannot be worked out: %s\n", err)
+		return fmt.Errorf("what the release tool is built from cannot be worked out, so no build of it could ever fit: %w", err)
 	}
 	abs, err := filepath.Abs(*to)
 	if err != nil {
 		return err
 	}
 	build := exec.Command("go", "build", "-trimpath", "-ldflags=-X main.stamped="+key, "-o", abs, info.Path)
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	build.Stdout, build.Stderr = out, os.Stderr
 	if err := build.Run(); err != nil {
 		return fmt.Errorf("go build %s: %w", info.Path, err)

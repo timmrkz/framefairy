@@ -18,9 +18,15 @@
 # With no such asset, one that fails the check, or one built from other
 # code, right after a change to the tool, it builds the tool from the
 # checkout with setup-go and no cache, stamped with its key, which takes
-# about 12 s.
+# about 12 s. With download false it only builds: the job that signs the
+# tool as main runs no tool it downloaded.
 name: Release tool
 description: framefairy-release on the path, as main built and signed it, or built here with no cache
+
+inputs:
+  download:
+    description: false to build the tool here and never run a downloaded one.
+    default: "true"
 
 outputs:
   built:
@@ -31,6 +37,7 @@ runs:
   using: composite
   steps:
     - id: download
+      if: inputs.download != 'false'
       continue-on-error: true
       shell: bash
       env:
@@ -46,6 +53,9 @@ runs:
         TOOL: ${{ runner.temp }}/release-tool/framefairy-release
         SIGNER: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/release-tool.yml@refs/heads/main
       run: gh attestation verify "$TOOL" --repo "$GITHUB_REPOSITORY" --cert-identity "$SIGNER" --source-ref refs/heads/main --deny-self-hosted-runners
+    - if: steps.verify.outcome == 'failure'
+      shell: bash
+      run: echo "::warning::The release tool in the release release-tool is not signed by main's release-tool.yml, so it is not run and is built here."
     - id: fits
       if: steps.verify.outcome == 'success'
       continue-on-error: true
@@ -61,6 +71,8 @@ runs:
     - if: steps.fits.outputs.fits != 'true'
       shell: bash
       env:
+        # self builds with no C either way. The same here lets its build
+        # find every package in this one's cache.
         CGO_ENABLED: "0"
         TOOL: ${{ runner.temp }}/release-tool/framefairy-release
       run: go run -trimpath ./cmd/framefairy-release self -out "$TOOL"

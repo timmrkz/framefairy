@@ -121,16 +121,24 @@ func TestTheReleaseToolIsCheckedAgainstMainsSignature(t *testing.T) {
 	readYAML(t, filepath.Join("..", "..", filepath.FromSlash(strings.TrimPrefix(releaseToolAction, "./")), "action.yml"), &action)
 	var fetch *cacheStep
 	verify := ""
+	ran := 0
 	for _, s := range action.Runs.Steps {
 		if strings.Contains(s.Run, "gh attestation verify") {
 			fetch = &s.cacheStep
 			verify = s.ID
 		}
-		if regexp.MustCompile(`"\$TOOL" fits`).MatchString(s.Run) {
+		if regexp.MustCompile(`\bfits\b`).MatchString(s.Run) {
+			ran++
 			if want := "steps." + verify + ".outcome == 'success'"; verify == "" || s.If != want {
 				t.Errorf("%s runs the downloaded tool if %q, and should only if %q", releaseToolAction, s.If, want)
 			}
+			if fetch != nil && fmt.Sprint(s.Env["TOOL"]) != fmt.Sprint(fetch.Env["TOOL"]) {
+				t.Errorf("%s runs %v, and checked %v", releaseToolAction, s.Env["TOOL"], fetch.Env["TOOL"])
+			}
 		}
+	}
+	if ran == 0 {
+		t.Errorf("%s asks no downloaded tool whether it fits, so this test checks nothing", releaseToolAction)
 	}
 	if fetch == nil {
 		t.Fatalf("%s runs no gh attestation verify", releaseToolAction)
@@ -203,5 +211,48 @@ func TestAJobThatUsesTheReleaseToolMayReadItsSignature(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Error("no job uses the release tool, so this test checks nothing")
+	}
+}
+
+// The job that signs the tool as main runs no tool it downloaded: it only
+// builds one from its own checkout. A build anybody could upload, run
+// there, could make an attestation that says main.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestTheJobThatSignsTheReleaseToolRunsNothingItDownloaded(t *testing.T) {
+	t.Parallel()
+	files, err := filepath.Glob(filepath.Join("..", "..", ".github", "workflows", "*.y*ml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signs := 0
+	for _, f := range files {
+		var wf struct {
+			Permissions any                 `yaml:"permissions"`
+			Jobs        map[string]cacheJob `yaml:"jobs"`
+		}
+		readYAML(t, f, &wf)
+		for name, job := range wf.Jobs {
+			perms := job.Permissions
+			if perms == nil {
+				perms = wf.Permissions
+			}
+			p, _ := perms.(map[string]any)
+			if p["id-token"] != "write" {
+				continue
+			}
+			for _, s := range job.Steps {
+				if s.Uses != releaseToolAction {
+					continue
+				}
+				signs++
+				if fmt.Sprint(s.With["download"]) != "false" {
+					t.Errorf("%s: the job %s can sign as this repository and runs the release tool it downloads: give %s download: \"false\"", filepath.Base(f), name, releaseToolAction)
+				}
+			}
+		}
+	}
+	if signs == 0 {
+		t.Error("no job that signs uses the release tool, so this test checks nothing")
 	}
 }

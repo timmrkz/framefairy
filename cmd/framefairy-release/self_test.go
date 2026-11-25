@@ -152,12 +152,32 @@ func TestTheToolsKeyCoversWhatGoBuildsIntoIt(t *testing.T) {
 	if len(key) != 16 {
 		t.Errorf("the key %q is not 16 hex digits", key)
 	}
-	// A folder more is another key.
-	other, err := gitKey("HEAD", append(slices.Clone(inputs), "docs"))
-	if err != nil {
-		t.Fatal(err)
+}
+
+// The key changes with what any input holds, and with where it is: a
+// tool built from other code never fits.
+func TestTheKeyChangesWithWhatTheToolIsBuiltFrom(t *testing.T) {
+	t.Parallel()
+	inputs := []string{"go.mod", "go.sum", "cmd/framefairy-release", "updates"}
+	objects := []string{"a1", "b2", "c3", "d4"}
+	key := keyOf(inputs, objects)
+	if keyOf(slices.Clone(inputs), slices.Clone(objects)) != key {
+		t.Fatal("the same code gives another key")
 	}
-	if other == key {
-		t.Error("a key over one more folder is the same key")
+	for i := range inputs {
+		changed := slices.Clone(objects)
+		changed[i] = "e5"
+		if keyOf(inputs, changed) == key {
+			t.Errorf("a change to %s keeps the key", inputs[i])
+		}
+		moved := slices.Clone(inputs)
+		moved[i] = "elsewhere"
+		if keyOf(moved, objects) == key {
+			t.Errorf("%s moved keeps the key", inputs[i])
+		}
+	}
+	more := keyOf(append(slices.Clone(inputs), "engine"), append(slices.Clone(objects), "f6"))
+	if more == key {
+		t.Error("a package more keeps the key")
 	}
 }

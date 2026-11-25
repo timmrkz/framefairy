@@ -742,11 +742,15 @@ scan made once is out of date the week after.
   `framefairy-release fits`, whether the checkout is still what it was
   built from. When it is not, right after a change to the tool or for an
   older commit, it builds the tool itself with no cache,
-  `framefairy-release self`, which stamps the key in. `internal/workflows`
-  fails on a job with an environment, a secret or a write permission
-  that restores a cache or builds the tool any other way, on a downloaded
-  tool run before its check, and on a workflow that lists what the tool
-  is built from. This keeps the key's own
+  `framefairy-release self`, which stamps the key in. The job of
+  `release-tool.yml` that signs as main never runs a downloaded build:
+  another job, with a token that only reads, asks it. A build main
+  signed that turns out bad is retired by deleting its attestation.
+  `internal/workflows` fails on a job with an environment, a secret or a
+  write permission that restores a cache or builds the tool any other
+  way, on a downloaded tool run before its check or in a job that can
+  sign, and on a workflow that lists what the tool is built from. This
+  keeps the key's own
   tools clean. The build they sign is made in `builds.yml` from main's
   shared cache still, which saves minutes on every build to update to.
   See
