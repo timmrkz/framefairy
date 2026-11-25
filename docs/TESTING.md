@@ -171,7 +171,7 @@ each with a POST:
 | `/fresh`, `/fresh?memory=8`, `/fresh?arrive=speech`, `/fresh?arrive=clip` | makes the bridge's machine one the app never ran on: no model, no video in the app and nothing said yet about how clips are found, on a machine of 32 GB like the user's, or of the gigabytes `memory` gives, so the setup offers the same models on every machine. A key saved there is kept by the bridge, never the keychain, and counted as there. A walk opens the page again to see the setup. Download there runs as a job like any other, through a stand-in that says it has fetched two fifths and holds there until `arrive` lets that kind of model arrive, so a walk sees both downloads at once for as long as it looks, on any machine. `/reset` makes the machine the bridge's again |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
 | `/reset` | the app closed the one way it quits, `closeDown` in `quit.go`, and what the end of its process stops stopped too, see `quit` in `bridge_test.go`, so nothing it started writes while its folders go, and then as it was once its first episode was searched: the models answer quickly, every episode a walk added is gone, the work folder and the settings are what they were, the speech stand-in goes on from the word it had come to then, the episode's decoders the walk before left are closed, and the app is opened again on them, on a machine that keeps only what the one before learned about the computer's programs, what ffmpeg offers and what it said about files that stay as they are, see `engine.Machine.LearnFrom`. So a video a walk adds is heard with the same words, however many walks came before it, and a walk that moves the playhead far starts from no decoder rather than one left where the walk before stopped, which let a drag go on without a key frame |
-| `/reset?seconds=30&rate=25&timing=turned` | the same, with a second video in the app, of the kind `add` picks with the same words, heard and searched the way adding it and its first search leave it, and answers with its path. The first bridge asked for a kind adds it and keeps what the app made of it, and every bridge after it puts that back, see the `added` step |
+| `/reset?seconds=30&rate=25&timing=turned` | the same, with a second video in the app, of the kind `add` picks with the same words, transcribed and searched the way adding it and a press of Search leave it, and answers with its path. The first bridge asked for a kind adds it and keeps what the app made of it, and every bridge after it puts that back, see the `added` step |
 
 To open it by hand:
 
@@ -424,7 +424,7 @@ rules, besides every walk's:
 
 | Rule | |
 | --- | --- |
-| A new video gets its first clips with no click | while the models answer and the speech hears on by itself, judged once its first search has ended and nothing of the video runs, by the engine's reports. Broken too when nothing of the engine runs, the app has caught up, and the video has no search |
+| A new video is transcribed to its end by itself, and waits for Search | while the speech is not held, judged once its transcription has ended and nothing of the video runs, by the engine's reports: the transcription done, no search, and the clip list's head says Search. Broken too when nothing of the engine runs, the app has caught up, and the video has no transcription |
 | Cancel shows at once: in the frame after the click the head no longer says Cancel, or a row says Stopping | held to a press of the button while it said Cancel |
 | The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, Search otherwise | the engine is asked, and the screen read once the app has heard everything the engine told it until then and settled, `caughtUp`. Asked again while the engine's work moves on in between, up to 24 looks, and broken the first time it stood still and the two disagree |
 | No row speaks of a failure the engine did not have | |
@@ -1509,7 +1509,7 @@ at the top of that file. The first sequence reads:
 
 The second sequence is the walk `searching.mjs` that pressed Search and
 closed the app at once: it adds a video of 90 seconds, made with the
-ffmpeg the app carries, waits for its first search to end, asks for a
+ffmpeg the app carries, waits until no search of it runs, asks for a
 search of 30 to 60 seconds and quits in the same moment, starts the app
 again and asks the probe how that search ended. It has to be interrupted,
 about the window it was asked for, which the clip list shows as

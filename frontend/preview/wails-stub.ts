@@ -490,8 +490,8 @@ const llmJob = () => {
 // ?interrupted and ?failed start with a search whose record says it was
 // cut off or failed, the way the app reads it at start. With ?waiting the
 // one cut off had heard the episode to 15 minutes of its half hour.
-// ?growing is an episode just added: its first search is running from the
-// moment the window opens, started by the Go side, hearing from 10 minutes.
+// ?growing is an episode just added: a search is running from the moment
+// the window opens, transcribing from 10 minutes.
 // ?lagging saves the transcript every 8 s of work, the way the engine does,
 // while the job reports every chunk it hears.
 // ---------------------------------------------------------------------------
@@ -679,8 +679,8 @@ const fakeSearches = (): FakeSearch[] => {
       });
     }
     if (q.includes("growing")) {
-      // ?asked=4 is a first search the Go side asked for another number
-      // than the workspace would, the way a target typed for a window of
+      // ?asked=4 is a search asked for another number than the workspace
+      // would now, the way a target typed for a window of
       // this length, or none, can make it.
       const asked = Number(/asked=(\d+)/.exec(q)?.[1] ?? 0) || undefined;
       w.__searches.push({ id: "s1", n: 1, from: 0, to: 1800, heardFrom: 600, wall: (w.__started ??= now), count: asked });

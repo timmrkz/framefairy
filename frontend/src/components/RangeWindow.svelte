@@ -49,7 +49,6 @@
     rounds = [],
     reachSays = "",
     resumes = false,
-    hidden = false,
     unheard = [],
     unheardLit = -1,
     unheardOn = -1,
@@ -109,9 +108,6 @@
     // A search stands stopped on the window, so the mark is where Continue
     // carries it on rather than where Search looks.
     resumes?: boolean;
-    // The window at rest is left out, as the Go side says while the whole
-    // video is transcribed, which is about all of it and not the window.
-    hidden?: boolean;
     // The parts of the video not transcribed yet, always, so where a search
     // has to transcribe first, and how much is left to Transcribe whole
     // video, is seen without opening the cards of what was said. Tim
@@ -486,7 +482,7 @@
       off a search that stopped, Search starts afresh where they are. It is at least as long as its clips need and at most as long as
       the model reads at once, and flashes red when a triangle runs into either. While clips are
       being found, the window is drawn over the track. While the whole video is transcribed, the
-      marks are left out, because that work is about all of it. How far a search has come is on its cards in
+      window can be placed for the next search, which goes first. How far a search has come is on its cards in
       the clip list.
     </Info>
   </span>
@@ -530,7 +526,7 @@
     </div>
   {/key}
 {/if}
-{#if !shown && !hidden && to > from && duration > 0}
+{#if !shown && to > from && duration > 0}
   <!-- The window at rest, marked at its four corners and not drawn over
        the track. A bar on the top border and one on the bottom border
        join the marks, and past them only the tips of the triangles reach

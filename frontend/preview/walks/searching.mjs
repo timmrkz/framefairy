@@ -1,4 +1,4 @@
-// A walk over finding clips: adding a video, its first search starting by
+// A walk over finding clips: adding a video, transcribed to its end by
 // itself, Search, Cancel, Continue, the app closed and opened again, with the
 // language model holding its answers or failing and the speech model held
 // or hearing on by itself, in an order a seed decides. Besides the rules every walk
@@ -46,23 +46,22 @@ async function hearing() {
   return (await ask(page, "Jobs")).some((j) => j.state === "running" && j.step === "hearing");
 }
 
-// Waits on the engine's reports until the first search of a video just
-// added has ended and nothing of the video runs any more, and hands back
-// that search. A search started late, once the video is heard, is waited
-// for, since starting is reported too. Once nothing of the engine runs at
-// all and the app has caught up with it, and the video still has no
-// search, nothing is left to start one: that hands back null.
-async function firstSearch(path) {
+// Waits on the engine's reports until a video just added has been
+// transcribed to its end, by itself, and nothing of the video runs any
+// more, and hands back that transcription. Once nothing of the engine
+// runs at all and the app has caught up with it, and the video still has
+// none, nothing is left to start one: that hands back null.
+async function transcribed(path) {
   for (;;) {
     const seen = await news(page);
     const all = await ask(page, "Jobs");
     const jobs = all.filter((j) => j.episode === path);
-    const search = jobs.find((j) => j.kind === "search");
-    if (search && !jobs.some(running)) return search;
-    if (!search && !all.some(running)) {
+    const whole = jobs.find((j) => j.kind === "transcribe" && !j.to);
+    if (whole && !jobs.some(running)) return whole;
+    if (!whole && !all.some(running)) {
       await caughtUp(page, url, jobs);
       const again = (await ask(page, "Jobs")).filter((j) => j.episode === path);
-      if (!again.some((j) => j.kind === "search")) return null;
+      if (!again.some((j) => j.kind === "transcribe")) return null;
       continue;
     }
     await nextNews(page, seen);
@@ -156,18 +155,19 @@ const gestures = [
       const seconds = [60, 90, 120][rng.int(3)];
       const path = await control(url, `/pick?seconds=${seconds}`);
       await sidebar(() => page.locator("aside").getByText("Add", { exact: true }).first().click());
-      // A new video is transcribed and its first search starts by itself.
-      // With the model answering and the speech quick, the clips come
-      // without a click. With the speech held the walk goes on while it is
-      // transcribed, so the next steps land in the middle of it.
-      if (!model.hang && !model.fail && !held) {
-        const search = await firstSearch(path);
-        await caughtUp(page, url, search ? [search] : []);
+      // A new video is transcribed to its end by itself, and waits for
+      // Search. With the speech quick, it is transcribed without a click.
+      // With the speech held the walk goes on while it is transcribed, so
+      // the next steps land in the middle of it.
+      if (!held) {
+        const whole = await transcribed(path);
+        await caughtUp(page, url, whole ? [whole] : []);
+        const searches = (await ask(page, "Jobs")).filter((j) => j.episode === path && j.kind === "search");
         const list = await clipList(page);
-        if (search?.state !== "done" || list?.head !== "Search" || !list.cards.length) {
+        if (whole?.state !== "done" || searches.length || list?.head !== "Search") {
           watch.broke(
-            "a new video gets its first clips by itself",
-            `added ${seconds} s, its first search ${search ? `${search.state}${search.step ? ` (${search.step})` : ""}` : "never started"}, and the list says ${list?.head} with ${list?.cards.length ?? 0} cards`,
+            "a new video is transcribed to its end by itself, and waits for Search",
+            `added ${seconds} s, its transcription ${whole ? whole.state : "never started"}, ${searches.length} searches, and the list says ${list?.head}`,
           );
         }
       }

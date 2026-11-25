@@ -63,11 +63,14 @@ export default [
     // found its first clip, and when he went back its clip timeline had
     // no waveform until he clicked around. The clip timeline of the video
     // away from the screen took the clip and drew its waveform out of the
-    // page, a pixel high and black. And the first clip came with no click.
-    name: "a new video shows its waveform before its first clip, gets that clip with no click, and has the waveform after it came while the video was away",
+    // page, a pixel high and black. Search is pressed the moment the video
+    // is in, since a video added is only transcribed by itself, issue #447.
+    name: "a new video shows its waveform before its first clip, and has the waveform after that clip came while the video was away",
     steps: [
       ["speech", "hold"],
       ["add", 120],
+      ["wait for", "Search"],
+      ["head"],
       ["waveform"],
       ["cards", 0],
       ["away", 20],
@@ -88,12 +91,14 @@ export default [
   {
     // Plan row 2.192. Tim asked for a video dropped anywhere on the app,
     // whatever page it is on, to do what Add does: it is added, it opens,
-    // and its first search finds its clips with no click.
+    // and Search finds its clips.
     name: "a video dropped on any page is added and opens, the way Add adds one",
     steps: [
       ["drop", 30, "settings"],
       ["dropped in front"],
       ["in front before its picture"],
+      ["wait for", "Search"],
+      ["head"],
       ["wait for", "Search"],
       ["cards", 1],
       ["drop not a video", "workspace"],
@@ -147,7 +152,7 @@ export default [
     name: "a video whose folder is deleted outside the app leaves the list",
     steps: [
       ["add", 20],
-      ["wait for", "Search"],
+      ["transcribed"],
       ["folder removed", "in front"],
       ["let go"],
     ],
@@ -164,9 +169,9 @@ export default [
     name: "a video whose file is moved away says File not found at once while the app is in front, says so once in a toast when opened, and shows again once it is back",
     steps: [
       ["add", 20],
-      ["wait for", "Search"],
+      ["transcribed"],
       ["add", 20],
-      ["wait for", "Search"],
+      ["transcribed"],
       ["file moved in front"],
       ["file moved away"],
     ],
@@ -193,21 +198,19 @@ export default [
     ],
   },
   {
-    // Issue #432: a video just added, still being heard by its first
-    // search, is transcribed to its end from its menu, stopped and carried
-    // on, and then offers its transcript.
-    name: "a video added is transcribed to its end from its menu",
+    // Issue #432 and #447: a video just added is transcribed to its end by
+    // itself, a search started meanwhile stops it and it carries on once
+    // the search has ended, its menu stops it and carries it on, and then
+    // it offers its transcript. The speech is held, so the transcription
+    // goes on only as far as the walk lets it.
+    name: "a video added is transcribed to its end by itself, after a search, and from its menu",
     steps: [
-      // Its first search hears the first of its two windows and ends, so
-      // half of it is still to come when Transcribe whole video is
-      // clicked, and the click holds the speech so it stays to come.
-      ["speech", "go"],
+      ["speech", "hold"],
       ["add", 1500],
-      ["transcript", "transcribe"],
-      // A search started meanwhile stops it, for good.
       ["transcript", "search stops it"],
-      // Asked for again, stopped and asked for again, each said in the
-      // frame of the click.
+      // Stopped, asked for again, stopped and asked for again, each said
+      // in the frame of the click.
+      ["transcript", "stop"],
       ["transcript", "continue"],
       ["transcript", "stop"],
       ["speech", "go"],
@@ -218,8 +221,9 @@ export default [
   },
   {
     // Tim's report of 26 October, 12.27: the whole video's transcription
-    // and the work on its clips go one at a time.
-    name: "Transcribe video waits until the search is done",
-    steps: [["speech", "hold"], ["add", 1500], ["wait for", "Cancel"], ["transcript", "waits for the search"]],
+    // and the work on its clips go one at a time. Issue #447: the
+    // transcription carries on once the search is done.
+    name: "Transcribe video waits until the search is done, and the transcription carries on after it",
+    steps: [["speech", "hold"], ["add", 1500], ["wait for", "Search"], ["head"], ["wait for", "Cancel"], ["transcript", "waits for the search"]],
   },
 ];

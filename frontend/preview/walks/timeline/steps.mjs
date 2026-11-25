@@ -64,8 +64,8 @@ export const steps = {
     await watch.step("join", s);
   },
   // ["drag past what was heard"]
-  //                    on a video heard as far as its first search's
-  //                    window, makes a clip with O two hundred seconds past
+  //                    on a video transcribed only in part, makes a clip
+  //                    with O two hundred seconds past
   //                    it, drags its start past the clip timeline's left
   //                    side, which goes along at the zoom it had with the
   //                    caption blocks still drawn, then pinches the clip
@@ -222,9 +222,9 @@ export const steps = {
     }
   },
   // ["swipe while it is made"]
-  //                    on a video heard as far as its first search's
-  //                    window, holds the speech model and makes a clip
-  //                    with O two hundred seconds past it, so its card
+  //                    on a video transcribed only in part, holds the
+  //                    speech model and makes a clip with O two hundred
+  //                    seconds past what is transcribed, so its card
   //                    stays on its way while it waits to be heard. The
   //                    clip timeline is swiped by hand and the playhead
   //                    pressed and held, the way Tim's log of 9 November

@@ -40,7 +40,7 @@ func (s *FrameFairy) Transcribe(path string) Job {
 	if !s.jobs.makeWayForTranscribe(path) {
 		return s.jobs.refuse(path, engine.JobTranscribe, label, errClipsFirst)
 	}
-	return s.transcribe(path, timed.Window{}, false)
+	return s.transcribe(path, timed.Window{}, false, false)
 }
 
 // transcribe queues the video's transcription of a part, the whole video
@@ -48,17 +48,83 @@ func (s *FrameFairy) Transcribe(path string) Job {
 // around says the part is the stretch kept heard around a clip, see
 // partToHear. The whole video, a part of a clip and the stretch around a
 // clip each have their record, and run side by side: lanes.go says which
-// hears first.
-func (s *FrameFairy) transcribe(path string, part timed.Window, around bool) Job {
+// transcribes first. byItself is one the app asks for by itself, dropped
+// without a word when the queue refuses it, see transcribeRest.
+func (s *FrameFairy) transcribe(path string, part timed.Window, around, byItself bool) Job {
 	rec := engine.TranscribeRecord(part, around)
 	// One that stopped is taken up by this one, which writes the record
 	// again in its place.
 	s.jobs.settle(path, engine.JobTranscribe, rec.ID)
 	return s.jobs.addSteps(path, engine.JobTranscribe, jobLabel(rec), true, func(j *Job) {
-		j.JobRecord.ID, j.From, j.To = rec.ID, rec.From, rec.To
+		j.JobRecord.ID, j.From, j.To, j.byItself = rec.ID, rec.From, rec.To, byItself
 	}, func(ctx context.Context, p *engine.Project, host engine.Host) (string, error) {
 		return "", p.TranscribeJob(ctx, part, around, host)
 	})
+}
+
+// searched is told when a job that makes clips or transcribes has ended,
+// see queue.searched: the models are kept loaded again, and the work on a
+// video's clips that ended carries its transcription on, see
+// transcribeRest, whether the work was done, stopped or failed. Not after
+// work cut off by the app closing or by the video's removal, see
+// JobCancelled, nor after work that failed as it transcribed, since the
+// transcription would fail the same way. And never over a transcription
+// that failed or that a person stopped, see wholeHeldBack: those wait
+// for Transcribe video.
+func (s *FrameFairy) searched(j Job) {
+	s.keeping.ask()
+	if !makesClips(j.Kind) {
+		return
+	}
+	switch {
+	case j.State == JobDone, j.State == JobStopped:
+	case j.State == JobFailed && j.Step != engine.StepHearing:
+	default:
+		return
+	}
+	if s.jobs == nil || s.jobs.wholeHeldBack(j.Episode) {
+		return
+	}
+	s.transcribeRest(j.Episode, j.Kind)
+}
+
+// transcribeCutOff carries on, as the app opens, the transcription of
+// every video that the app closing cut off, so a quit or a Relaunch
+// leaves no video transcribed in part. It runs once the jobs are read
+// back from their records, see restoreJobs.
+func (s *FrameFairy) transcribeCutOff() {
+	for _, j := range s.jobs.list() {
+		if j.Hears() == engine.HearsWhole && j.State == JobInterrupted {
+			s.transcribeRest(j.Episode, "restart")
+		}
+	}
+}
+
+// transcribeRest transcribes a video to its end, by itself, the way
+// Transcribe video does, issue #447: once the video is added, and again
+// once a search or a clip made by hand of it has ended, since those go
+// first and stop it, see makeWayForSearch. So a search of a window
+// transcribed already finds its clips at once. after says what it
+// follows, for the log. A video transcribed to its end, or with more work
+// on its clips on the way, asks nothing.
+func (s *FrameFairy) transcribeRest(path, after string) {
+	if s.jobs == nil || !s.store.Known(path) {
+		return
+	}
+	// A video with nothing transcribed yet has no transcript, and is
+	// transcribed from its start.
+	if t, err := s.heardIn(path); err == nil && t.Done || err != nil && !errors.Is(err, engine.ErrNoTranscript) {
+		return
+	}
+	if !s.jobs.makeWayForTranscribe(path) {
+		return
+	}
+	// A search pressed since is looked for again as the job is added, see
+	// addSteps.
+	if j := s.transcribe(path, timed.Window{}, false, true); j.ID != "" {
+		theLog.line(zerolog.InfoLevel, "app").Str("video", filepath.Base(path)).Str("after", after).
+			Msg("the rest of the video is transcribed")
+	}
 }
 
 // The stretch kept heard on each side of a clip made by hand, so an edge
@@ -93,7 +159,7 @@ func (s *FrameFairy) hearChosen(path string, st VideoState, duration float64) {
 		}
 		theLog.line(zerolog.InfoLevel, "app").Str("video", filepath.Base(path)).Str("clip", st.Chosen).
 			Float64("from", part.Start).Float64("to", part.End).Msg(msg)
-		s.transcribe(path, part, around)
+		s.transcribe(path, part, around, true)
 	}
 }
 

@@ -1,5 +1,5 @@
  53	sequences.mjs SEQUENCE=the parts not transcribed yet light one way, the arrows walk onto and off them, they give way as the work hears, and a search of what was said shows them
- 45	sequences.mjs SEQUENCE=a video added is transcribed to its end from its menu
+ 45	sequences.mjs SEQUENCE=a video added is transcribed to its end by itself, after a search, and from its menu
  44	sequences.mjs SEQUENCE=a step onto a word pops it over the paused frame
  42	timeline.mjs
  39	searching.mjs
@@ -19,8 +19,8 @@
  24	sequences.mjs SEQUENCE=a video whose file is moved away says File not found at once while the app is in front, says so once in a toast when opened, and shows again once it is back
  23	sequences.mjs SEQUENCE=a clip card clicked changes the picture, the crop frame and the captions in one frame
  23	sequences.mjs SEQUENCE=the app dragged a pixel at a time moves every part one way, the sides equal and set by the width
- 22	sequences.mjs SEQUENCE=Transcribe video waits until the search is done
- 21	sequences.mjs SEQUENCE=a new video shows its waveform before its first clip, gets that clip with no click, and has the waveform after it came while the video was away
+ 22	sequences.mjs SEQUENCE=Transcribe video waits until the search is done, and the transcription carries on after it
+ 21	sequences.mjs SEQUENCE=a new video shows its waveform before its first clip, and has the waveform after that clip came while the video was away
  21	sequences.mjs SEQUENCE=a search at the end of a video ends in one frame
  21	sequences.mjs SEQUENCE=an edge taken again at once after a drag is the edge's, before the drag before it is answered and while it saves
  20	sequences.mjs SEQUENCE=a clip stays rendered after its short is removed from its folder
@@ -36,7 +36,7 @@
  14	sequences.mjs SEQUENCE=a short rendered into the folder for shorts is known as rendered
  14	sequences.mjs SEQUENCE=an edge dragged while the clip plays changes nothing that plays
  14	sequences.mjs SEQUENCE=loop switched off near the end stops the play at the clip's end
- 14	sequences.mjs SEQUENCE=I after the last word is not offered, and says why, and a first search leaves the cards a hand works in alone
+ 14	sequences.mjs SEQUENCE=I after the last word is not offered, and says why, and a search leaves the cards a hand works in alone
  13	sequences.mjs SEQUENCE=a rotated part keeps its keyframe, and has the rotate icon drawn in its middle
  12	sequences.mjs SEQUENCE=one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it
  12	sequences.mjs SEQUENCE=the episode played through a clip with cuts shows only the video, and the clip its frame and captions
@@ -124,7 +124,7 @@
   5	sequences.mjs SEQUENCE=After Attach while dictating, the field has the focus again and Tab goes to Report
   5	sequences.mjs SEQUENCE=After typing at the end of a dictation, what is said next pushes the cursor along
   5	sequences.mjs SEQUENCE=Bugs opens one report window and brings it back
-  5	sequences.mjs SEQUENCE=Cancel while a video just added is transcribed says Stopped with Continue, and the window's frame fades
+  5	sequences.mjs SEQUENCE=Cancel on the search of a video just added says Stopped with Continue, and the window's frame fades
   5	sequences.mjs SEQUENCE=Dictation nobody talks into stops by itself and keeps what was said
   5	sequences.mjs SEQUENCE=Escape lets go of every list, pop-up and field with no ring left
   5	sequences.mjs SEQUENCE=Pictures come from the paperclip, a drop and a paste, and what is not one is left out

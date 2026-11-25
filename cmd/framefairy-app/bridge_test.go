@@ -1432,6 +1432,8 @@ func openBridge(t *testing.T) *bridge {
 			t.Fatalf("adding %s: %v", b.first, err)
 		}
 		d.idle(b.first)
+		d.searchAsShown(b.first)
+		d.idle(b.first)
 	}
 	if len(d.clips(b.first)) == 0 {
 		t.Fatalf("the episode has no clip to work on: %+v", d.svc.jobs.list())
@@ -1456,8 +1458,8 @@ func openBridge(t *testing.T) *bridge {
 // side.
 var frameTimings = map[string]bool{"late": true, "late4ms": true, "turned": true}
 
-// startWith puts a second video in the app reset a moment ago, heard and
-// searched, the way Add and its first search leave it, for a walk that
+// startWith puts a second video in the app reset a moment ago,
+// transcribed and searched, the way Add and a press of Search leave it, for a walk that
 // only needs a video of this kind to work on: seconds long, filmed at
 // rate, with its frames timed by timing, see pick. It says where the video is. The first bridge of the walks to be
 // asked for a kind adds it and keeps what the app made of it in the
@@ -1530,6 +1532,8 @@ func (b *bridge) startWith(seconds, rate, timing string) (string, error) {
 		if added.Error != "" || len(added.Added) != 1 {
 			return "", fmt.Errorf("adding %s: %s", file, added.Error)
 		}
+		b.d.idle(path)
+		b.d.searchAsShown(path)
 		b.d.idle(path)
 		if len(b.d.clips(path)) == 0 {
 			return "", fmt.Errorf("%s has no clip once searched: %+v", file, b.d.svc.jobs.list())

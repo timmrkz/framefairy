@@ -160,7 +160,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 	case engine.HearsWhole:
 		return s.Transcribe(path)
 	case engine.HearsPart, engine.HearsAround:
-		return s.transcribe(path, carry.Part(), carry.Hears() == engine.HearsAround)
+		return s.transcribe(path, carry.Part(), carry.Hears() == engine.HearsAround, false)
 	}
 	return s.render(path, carry.Render(), carry)
 }
@@ -290,35 +290,6 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 		theLog.line(zerolog.InfoLevel, "chosen").Str("video", filepath.Base(path)).Str("clip", key).Str("why", "the clip made by hand was asked for").Msg("the app chose a clip")
 	}
 	return job
-}
-
-// firstSearch asks for the first search of an episode that has never been
-// searched, the moment it is added. It searches the video's window, which
-// it places, see videoWindow, the same one the workspace draws, and looks
-// for the clips that window suggests, or for the target typed. click is
-// the press it is asked for with, so Cancel at the head of the clip list
-// stops it even while it is on its way, see StopClipWork.
-func (s *FrameFairy) firstSearch(ctx context.Context, path, click string) {
-	if s.store.machine.Episode(path).EverSearched() {
-		return
-	}
-	info, err := s.probe(ctx, path)
-	if err != nil || info.Duration <= 0 {
-		return
-	}
-	w, ok := s.videoWindow(ctx, path)
-	if !ok {
-		return
-	}
-	req := engine.PlanRequest{From: w.From, To: w.To}
-	// A window to the end of the episode is To 0, which is heard to its
-	// end before it is searched.
-	if w.To >= info.Duration-0.05 {
-		req.To = 0
-	}
-	// A target typed for a window this long, or what this window
-	// suggests, see asKept.
-	s.Search(path, req, click)
 }
 
 // cancelSteps calls off a search or a render, or takes away the note of

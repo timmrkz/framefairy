@@ -180,6 +180,8 @@ func (s *FrameFairy) lookFirst() {
 	jobs := time.Since(restoring)
 	answered()
 	window := time.Since(began)
+	// Once the window has its answers: it waits for none of this.
+	s.transcribeCutOff()
 	if follow {
 		s.followTimed(&steps)
 	}

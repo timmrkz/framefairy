@@ -73,13 +73,6 @@ type WindowView struct {
 	// for may be, in seconds, as they are set.
 	Shortest float64 `json:"shortest"`
 	Longest  float64 `json:"longest"`
-	// Hidden is that the range picker leaves the window out: the whole
-	// video is being transcribed, which is about all of it and not about
-	// the window, Tim, 5 November. It comes back once the transcription is
-	// told to stop, by Stop transcribing, a search or a clip made by hand,
-	// and once it ends. The workspace shows it back from the press of Stop
-	// transcribing, see Episode.svelte.
-	Hidden bool `json:"hidden,omitempty"`
 	// Searched is that a search has read some of the window before, see
 	// engine.Searched, so Search looks there again and keeps the clips
 	// there are, which its title says.
@@ -115,7 +108,7 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 	passes := engine.SearchPasses(st.Status.Plans, duration)
 	view := func(w KeptWindow, l engine.WindowLimits) *WindowView {
 		heard := st.Heard.Heard
-		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: o.Min, Longest: o.Max, Hidden: wholeHeard(st.Jobs),
+		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: o.Min, Longest: o.Max,
 			Searched: engine.Searched(passes, timed.Window{Start: w.From, End: w.To}),
 			Heard:    engine.HeardOf(heard, w.From, w.To), HeardAll: engine.HeardOver(heard, w.From, w.To)}
 	}
@@ -196,12 +189,6 @@ func searchHolds(jobs []Job) bool {
 		}
 	}
 	return false
-}
-
-// wholeHeard says whether the whole video is being transcribed, see
-// wholeJob.
-func wholeHeard(jobs []Job) bool {
-	return wholeJob(jobs) != nil
 }
 
 // wholeJob is the video's transcription to its end among jobs, while it

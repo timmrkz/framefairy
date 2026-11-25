@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type { UpdateState } from "./api";
-import { railDot, standing, Updates } from "./updates.svelte";
+import type { Job, UpdateState } from "./api";
+import { railDot, relaunchWaitsFor, standing, Updates } from "./updates.svelte";
 
 const at = (u: Partial<UpdateState>): UpdateState => ({
   version: "0.3.0-pr400.102dc91",
@@ -136,5 +136,24 @@ describe("the line under the build", () => {
   test("says when it last checked, by the hour and minute", () => {
     const earlier = new Date(2026, 10, 13, 7, 5).toISOString();
     expect(standing(at({ checked: earlier }), { now: Date.parse(earlier) + 3_600_000 }).more).toBe("This is the newest build of PR #400. Checked at 07:05.");
+  });
+});
+
+// Relaunch waits for the work the Go side says it waits for, and not for
+// the whole video's transcription, which the app carries on by itself
+// once it opens again.
+describe("what Relaunch waits for", () => {
+  const job = (j: Partial<Job>) => ({ id: "j", episode: "/v.mp4", state: "running", ...j }) as Job;
+  test("the whole video's transcription is not waited for", () => {
+    expect(relaunchWaitsFor([job({ kind: "transcribe" })])).toBe("");
+  });
+  test("a part of a clip being transcribed is", () => {
+    expect(relaunchWaitsFor([job({ kind: "transcribe", from: 120, to: 150, waits: true })])).toBe("the transcription");
+  });
+  test("a search beside the whole video's transcription is", () => {
+    expect(relaunchWaitsFor([job({ kind: "transcribe" }), job({ kind: "search", waits: true })])).toBe("the search");
+  });
+  test("work that ended is not", () => {
+    expect(relaunchWaitsFor([job({ kind: "render", state: "done", waits: true })])).toBe("");
   });
 });

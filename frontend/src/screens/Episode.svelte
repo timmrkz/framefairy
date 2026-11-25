@@ -152,8 +152,7 @@
   const max = $derived(win?.longest ?? 30);
   // A click has to show at once, long before the job it starts reports in.
   // The store keeps the press, the same for this work as for the whole
-  // video heard from its menu, and the first search the Go side has on its
-  // way while it checks the picture of a video just added.
+  // video transcribed from its menu.
   const starting = $derived(jobs.isStarting(path, "clips", "search"));
   // The press of Search or Continue the work in hand was asked for by. Cancel
   // names it, so it stops that search whether or not the Go side has heard
@@ -965,15 +964,26 @@
   // the rows still to come and the cards add up in every frame.
   const searchKept = $derived(session.jobs.find((j) => j.id === working?.id));
   const searchTook = $derived((searchKept?.written ?? 0) + (searchKept?.underway?.length ?? 0));
-  // Every clip the episode had was removed, and nothing is on its way:
-  // the first row still to come says so, in the words a row that says how
-  // work ended uses, rather than leaving empty rows that look like nothing
-  // happened or something broke. It gives no number: the plan keeps every
-  // clip ever removed, from earlier searches and earlier days too, so a
-  // count of them was more than the list had just shown.
+  // The list is empty and nothing is on its way: the first row still to
+  // come says why, in the words a row that says how work ended uses,
+  // rather than leaving empty rows that look like nothing happened or
+  // something broke. A video with no clips says so, since adding it only
+  // transcribes it and a search may find nothing: the user saw a blank
+  // card there and could not tell what it was for. Every clip removed
+  // says so instead,
+  // with no number: the plan keeps every clip ever removed, from earlier
+  // searches and earlier days too, so a count of them was more than the
+  // list had just shown.
   const emptied = $derived.by(() => {
     if (busy || stopped || shown.length > 0 || onTheWay.length > 0 || closing.length > 0) return null;
-    if (clips.length === 0 || !clips.every((c) => c.rejected)) return null;
+    if (clips.length === 0) {
+      return {
+        what: "No clips yet",
+        left: "Click Search to find them",
+        full: "Place the window on the range picker and press Search. The clips it finds come into these rows",
+      };
+    }
+    if (!clips.every((c) => c.rejected)) return null;
     return { what: "All clips removed", left: "Search looks for others" };
   });
   // The newest search ended and found nothing beyond the clips there are,
@@ -1070,11 +1080,16 @@
       onTheWay.length +
       (busy
         ? // The rows the search itself was asked for, not what the
-          // workspace would ask for now: the first search of an episode
-          // is asked for by the Go side.
+          // workspace would ask for now: Continue asks for what the
+          // search cut off was asked for.
           working?.whole ? 0 : Math.max(0, (working?.count || count) - searchTook)
         : shown.length === 0 && onTheWay.length === 0 && closing.length === 0
-          ? count
+          ? // An empty list is the one row that says why, not a blank
+            // row for every clip Target asks for: the user saw them
+            // after adding a video and could not tell what they were.
+            note
+            ? 1
+            : count
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
             stopped || foundNothing || speechless ? 1 : 0),
@@ -2962,7 +2977,6 @@
     {to}
     shown={busy && !stopping}
     resumes={!!stopped}
-    hidden={!!win?.hidden && !wholeStopping}
     {marks}
     {selected}
     {hovered}

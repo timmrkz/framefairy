@@ -2092,16 +2092,18 @@ export const steps = {
   },
   // ["no sound", seconds]
   //                    adds a video of that many seconds with no sound at
-  //                    all, and once its first search has ended and its
-  //                    loudness is measured, the search is done, not
-  //                    failed, the clip list says No speech in this video,
+  //                    all, and once the transcription its add started
+  //                    has ended and its loudness is measured, the
+  //                    transcription is done, not failed, the clip list
+  //                    says No speech in this video,
   //                    the clip timeline says No sound, and no toast says
   //                    anything failed
   async "no sound"(walk, arg, s) {
     const { page, watch } = walk;
     // Issue #831: a screen recording with the sound off failed its search,
     // since ffmpeg was asked for a sound that is not there, and its clip
-    // timeline was empty, as if never measured.
+    // timeline was empty, as if never measured. A video added is
+    // transcribed by itself, so that is what reads it now.
     await control(url, `/pick?seconds=${arg}&sound=none`);
     const before = new Set((await ask(page, "Library")).map((e) => e.source));
     await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
@@ -2109,11 +2111,11 @@ export const steps = {
     let job, video;
     for (let seen = await news(page); ; seen = await nextNews(page, seen)) {
       video = (await ask(page, "Library")).find((e) => !before.has(e.source));
-      job = video && (await ask(page, "Jobs")).findLast((j) => j.kind === "search" && j.episode === video.source);
+      job = video && (await ask(page, "Jobs")).findLast((j) => j.kind === "transcribe" && j.episode === video.source);
       if (job && job.state !== "running" && job.state !== "queued" && video.measuredAll) break;
     }
-    if (job.state !== "done" || !job.silent || !video.speechless || !video.silent) {
-      walk.wrong = `a video with no sound: its search is ${job.state}, silent ${!!job.silent}, speechless ${!!video.speechless}, measured silent ${!!video.silent}`;
+    if (job.state !== "done" || !video.speechless || !video.silent) {
+      walk.wrong = `a video with no sound: its transcription is ${job.state}, speechless ${!!video.speechless}, measured silent ${!!video.silent}`;
       return;
     }
     await caughtUp(page, url, [job]);
@@ -2398,8 +2400,37 @@ export const steps = {
     await watch.step("head", s);
     return;
   },
+  // ["window transcribed"]
+  //                    with the speech held, lets it on one piece at a
+  //                    time until the search on the video has its window
+  //                    transcribed and is finding its clips
+  async "window transcribed"(walk) {
+    const { page } = walk;
+    const path = await episodeOn(page);
+    const jobs = async () => (await ask(page, "Jobs")).filter((j) => j.episode === path);
+    const of = (list) => JSON.stringify(list.map((j) => [j.id, j.state, j.step, j.progress?.covered]));
+    for (;;) {
+      // What is looked at is what the wait below starts from, so a step
+      // that changed in between is a change, and nothing is waited for
+      // that has come already.
+      let seen = await news(page);
+      const now = await jobs();
+      const search = now.findLast((j) => j.kind === "search");
+      // Past its transcription: any step but transcribing or waiting.
+      if (search?.state === "running" && search.step && search.step !== "hearing" && search.step !== "waiting") return;
+      if (search?.state !== "running" && search?.state !== "queued") {
+        walk.wrong = `the search ended ${search?.state ?? "unstarted"} before it was finding its clips`;
+        return;
+      }
+      // A piece only while the search transcribes, else its next step is
+      // waited for.
+      if (search.step === "hearing") await control(url, "/speech?step=1");
+      while (of(await jobs()) === of(now)) seen = await nextNews(page, seen);
+    }
+  },
   // ["walks on with the clips"]
-  //                    lets the speech held go, and watches every frame
+  //                    lets the speech held go, or with "model" the
+  //                    model's held answer, and watches every frame
   //                    until the clips the search found show: in the first
   //                    frame they show, the window is already past where
   //                    it was, and once all is still, the window drawn is
@@ -2421,8 +2452,11 @@ export const steps = {
         requestAnimationFrame(frame);
       });
     });
-    await control(url, "/speech?go");
-    walk.speechHeld = false;
+    if (arg === "model") await control(url, "/model?hang=0&fail=0");
+    else {
+      await control(url, "/speech?go");
+      walk.speechHeld = false;
+    }
     const seen = await page.evaluate(() => window.__walksOn);
     // The first frame with the window at rest, the search's frame gone.
     const rest = seen.find((f) => f.from >= 0);
