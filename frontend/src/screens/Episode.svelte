@@ -979,7 +979,7 @@
     if (clips.length === 0) {
       return {
         what: "No clips yet",
-        left: "Search finds them in the window",
+        left: "Click Search to find them",
         full: "Place the window on the range picker and press Search. The clips it finds come into these rows",
       };
     }

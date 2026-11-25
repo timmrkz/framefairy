@@ -1555,8 +1555,8 @@ bubble scrolled by those eight pixels.
       number it had been given.
     - **An empty list says why.** With nothing in the list and no
       search on its way, the list is one row that says why it is empty.
-      A video with no clips says **No clips yet**, **Search finds them in
-      the window**, with how to search in its title, because adding a
+      A video with no clips says **No clips yet**, **Click Search to find
+      them**, with how to search in its title, because adding a
       video only transcribes it. Blank rows there, one for each clip
       Target asks for, read as something broken. When every clip there
       was has been removed, it says **All clips removed**, **Search looks
