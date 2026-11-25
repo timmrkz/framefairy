@@ -2,13 +2,10 @@ package workflows
 
 import (
 	"fmt"
-	"go/parser"
-	"go/token"
 	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -20,98 +17,39 @@ const (
 	releaseToolAction = "./.github/actions/release-tool"
 )
 
-// ownImports names the directories of this module's packages that the
-// package in dir imports, itself and the ones they import in turn, from
-// every file but the tests, whatever its build tags.
+// The tool works out the key of what it is built from itself, from its
+// imports, so nothing in a workflow may list what that is: a list goes
+// stale the day the tool imports one more package. release-tool.yml
+// starts on every push to main, and the action names no folder but the
+// one it builds the tool from, see
+// docs/decisions/2026-11-25-the-release-tool-keys-itself.md.
 //
-// On the real disk: what is read is the repository's own code.
-func ownImports(t *testing.T, root, dir string) []string {
-	t.Helper()
-	seen := map[string]bool{}
-	var walk func(dir string)
-	walk = func(dir string) {
-		if seen[dir] {
-			return
-		}
-		seen[dir] = true
-		files, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(dir), "*.go"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, f := range files {
-			if strings.HasSuffix(f, "_test.go") {
-				continue
-			}
-			file, err := parser.ParseFile(token.NewFileSet(), f, nil, parser.ImportsOnly)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, imp := range file.Imports {
-				p, _ := strconv.Unquote(imp.Path.Value)
-				if own, ok := strings.CutPrefix(p, "framefairy/"); ok {
-					walk(own)
-				}
-			}
-		}
-	}
-	walk(dir)
-	dirs := make([]string, 0, len(seen))
-	for d := range seen {
-		dirs = append(dirs, d)
-	}
-	slices.Sort(dirs)
-	return dirs
-}
-
-// The paths the action's key is worked out of.
-var keyed = regexp.MustCompile(`HEAD:([^\s;]+)`)
-
-// The key the action finds the tool by covers everything the tool is
-// built from: go.mod, go.sum and every package of ours it imports. A
-// package it imports and the key leaves out would let a change to it keep
-// the old build, and release-tool.yml would not build the new one either.
-//
-// On the real disk: what is read is the repository's own code and workflows.
-func TestTheReleaseToolIsKeyedOnWhatItIsBuiltFrom(t *testing.T) {
+// On the real disk: what is read is the repository's own workflow and action.
+func TestNoWorkflowListsWhatTheReleaseToolIsBuiltFrom(t *testing.T) {
 	t.Parallel()
-	root := filepath.Join("..", "..")
-	want := append([]string{"go.mod", "go.sum"}, ownImports(t, root, releaseTool)...)
-	slices.Sort(want)
-
-	var key []string
-	for _, s := range localAction(t)(releaseToolAction) {
-		for _, m := range keyed.FindAllStringSubmatch(s.Run, -1) {
-			key = append(key, m[1])
-		}
-	}
-	slices.Sort(key)
-	if !slices.Equal(key, want) {
-		t.Errorf("the release tool's key is worked out of %v, and the tool is built from %v", key, want)
-	}
-
 	var wf struct {
 		On struct {
 			Push struct {
-				Branches []string `yaml:"branches"`
-				Paths    []string `yaml:"paths"`
+				Branches    []string `yaml:"branches"`
+				Paths       []string `yaml:"paths"`
+				PathsIgnore []string `yaml:"paths-ignore"`
 			} `yaml:"push"`
 		} `yaml:"on"`
 	}
-	readYAML(t, filepath.Join(root, ".github", "workflows", "release-tool.yml"), &wf)
+	readYAML(t, filepath.Join("..", "..", ".github", "workflows", "release-tool.yml"), &wf)
 	if !slices.Equal(wf.On.Push.Branches, []string{"main"}) {
 		t.Errorf("release-tool.yml builds on a push to %v, where only main's build may be kept", wf.On.Push.Branches)
 	}
-	paths := []string{".github/actions/release-tool/**", ".github/workflows/release-tool.yml"}
-	for _, k := range want {
-		if path.Ext(k) == "" {
-			k += "/**"
-		}
-		paths = append(paths, k)
+	if len(wf.On.Push.Paths) > 0 || len(wf.On.Push.PathsIgnore) > 0 {
+		t.Errorf("release-tool.yml starts only for some paths, %v and not %v, and only the tool knows what it is built from", wf.On.Push.Paths, wf.On.Push.PathsIgnore)
 	}
-	slices.Sort(paths)
-	got := slices.Sorted(slices.Values(wf.On.Push.Paths))
-	if !slices.Equal(got, paths) {
-		t.Errorf("release-tool.yml starts on a push to %v, and should on %v, what the tool and its key are made of", got, paths)
+	for _, s := range localAction(t)(releaseToolAction) {
+		if regexp.MustCompile(`HEAD:|git\s+(rev-parse|ls-tree|ls-files)`).MatchString(s.Run) {
+			t.Errorf("%s works something out of the checkout's files itself: %q. The tool says what it is built from", releaseToolAction, s.Run)
+		}
+		if regexp.MustCompile(`\bgo\s+(run|build)\b`).MatchString(s.Run) && !strings.Contains(s.Run, "framefairy-release self ") {
+			t.Errorf("%s builds the tool with no key: %q. Build it with framefairy-release self", releaseToolAction, s.Run)
+		}
 	}
 }
 
@@ -161,20 +99,37 @@ func TestAJobThatHoldsAKeyRunsTheSignedReleaseTool(t *testing.T) {
 }
 
 // The action takes the tool it downloads only when main's own
-// release-tool.yml signed it, on GitHub's own runner, under the very name
-// it was downloaded by. A branch can upload any file under that name: a
-// build of its own, which main never signed, or an older build of main's,
-// which main signed under its own name. Each of these flags is what refuses
-// one of them.
+// release-tool.yml signed it, on GitHub's own runner, and only then asks it
+// whether it fits the checkout. A branch can upload any file under that
+// name: a build of its own, which main never signed, or an older build of
+// main's, which carries the key of older code and does not fit. Each of
+// these flags is what refuses one of them, and nothing runs the download
+// before the check passed.
 //
 // On the real disk: what is read is the repository's own action.
 func TestTheReleaseToolIsCheckedAgainstMainsSignature(t *testing.T) {
 	t.Parallel()
+	var action struct {
+		Runs struct {
+			Steps []struct {
+				cacheStep `yaml:",inline"`
+				ID        string `yaml:"id"`
+				If        string `yaml:"if"`
+			} `yaml:"steps"`
+		} `yaml:"runs"`
+	}
+	readYAML(t, filepath.Join("..", "..", filepath.FromSlash(strings.TrimPrefix(releaseToolAction, "./")), "action.yml"), &action)
 	var fetch *cacheStep
-	steps := localAction(t)(releaseToolAction)
-	for i, s := range steps {
+	verify := ""
+	for _, s := range action.Runs.Steps {
 		if strings.Contains(s.Run, "gh attestation verify") {
-			fetch = &steps[i]
+			fetch = &s.cacheStep
+			verify = s.ID
+		}
+		if regexp.MustCompile(`"\$TOOL" fits`).MatchString(s.Run) {
+			if want := "steps." + verify + ".outcome == 'success'"; verify == "" || s.If != want {
+				t.Errorf("%s runs the downloaded tool if %q, and should only if %q", releaseToolAction, s.If, want)
+			}
 		}
 	}
 	if fetch == nil {
@@ -188,7 +143,6 @@ func TestTheReleaseToolIsCheckedAgainstMainsSignature(t *testing.T) {
 		`--cert-identity "$SIGNER"`,
 		`--source-ref refs/heads/main`,
 		`--deny-self-hosted-runners`,
-		`.statement.subject[].name' | grep -xF "$NAME" >/dev/null`,
 	} {
 		if !strings.Contains(fetch.Run, flag) {
 			t.Errorf("%s checks the tool's signature without %s", releaseToolAction, flag)

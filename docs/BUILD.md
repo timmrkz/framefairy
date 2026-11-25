@@ -733,18 +733,26 @@ scan made once is out of date the week after.
   before too, and Go trusts what it finds in its build cache without
   checking it again. Such a job runs `framefairy-release`, which
   `.github/actions/release-tool` brings: main's own build of it, made by
-  `release-tool.yml` whenever its code changes, signed with a build
-  attestation and kept in the release `release-tool` under a key of what
-  it was built from. The action checks the attestation before the tool
-  runs, that main's `release-tool.yml` signed it under that very name, and with no signed build of the key, right after a change to the
-  tool, it builds the tool itself with no cache. `internal/workflows`
+  `release-tool.yml` on main, signed with a build attestation and kept
+  as the asset `framefairy-release` of the release `release-tool`. The
+  build carries the key of what it was built from, which the tool works
+  out itself from its own imports, so no workflow lists its folders. The
+  action checks the attestation before the tool runs, that main's
+  `release-tool.yml` signed it on GitHub's own runner, and then asks it,
+  `framefairy-release fits`, whether the checkout is still what it was
+  built from. When it is not, right after a change to the tool or for an
+  older commit, it builds the tool itself with no cache,
+  `framefairy-release self`, which stamps the key in. `internal/workflows`
   fails on a job with an environment, a secret or a write permission
-  that restores a cache or builds the tool any other way, and on a key
-  that leaves out a package the tool imports. This keeps the key's own
+  that restores a cache or builds the tool any other way, on a downloaded
+  tool run before its check, and on a workflow that lists what the tool
+  is built from. This keeps the key's own
   tools clean. The build they sign is made in `builds.yml` from main's
   shared cache still, which saves minutes on every build to update to.
   See
-  [2026-11-24-the-release-tool-built-once.md](decisions/2026-11-24-the-release-tool-built-once.md).
+  [2026-11-24-the-release-tool-built-once.md](decisions/2026-11-24-the-release-tool-built-once.md)
+  and
+  [2026-11-25-the-release-tool-keys-itself.md](decisions/2026-11-25-the-release-tool-keys-itself.md).
 - **The tools we build ourselves**, and the pins Dependabot cannot move,
   which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
   four libraries it is built with, llama.cpp, the speech library, Node,

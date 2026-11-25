@@ -1,0 +1,122 @@
+# The release tool keys itself
+
+Builds on
+[2026-11-24-the-release-tool-built-once.md](2026-11-24-the-release-tool-built-once.md)
+and
+[2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md](2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md).
+
+## The problem
+
+The jobs that hold a key download main's signed build of
+`framefairy-release`. They found it by a key of what it is built from,
+which the action worked out in shell from a list of paths, `go.mod`,
+`go.sum`, `cmd/framefairy-release` and `updates`, and `release-tool.yml`
+started on a push of the same list. A test held the list to the tool's
+imports. That is the kind of list the user rejected for CI: "this can
+break with every single commit", and CI should not rely "on those easily
+modified code paths". And "none of this should be done in shell
+scripts".
+
+What was measured, in a cloud session:
+
+- The tool's inputs changed in 18 of the 203 commits on main in the month
+  to 25 November, Dependabot's `go.mod` and `go.sum` included.
+- A cold build of the tool took 12.0, 11.6 and 13.4 s. Built by itself,
+  `go run -trimpath` and then `go build -trimpath` with the key stamped
+  in, it took 12.4, 12.8 and 12.4 s, since the second build finds every
+  package in the first one's cache. Without `-trimpath` on `go run` the
+  two share nothing and it took 24 to 25 s.
+- Asking the signed build whether it fits the checkout, which reads the
+  commit's Go with `git archive` and parses its imports, took 111 to
+  140 ms over five runs.
+
+## Five simulations
+
+1. **Who may know about whom.** Only Go knows what the tool is built
+   from, by its imports, and the tool already reads them for the app in
+   `reach.go`. So the tool keys itself: `framefairy-release self` builds
+   the tool with the key of its own imports stamped in, and
+   `framefairy-release fits` says whether a checkout is still what the
+   build was made from. The tool finds its own folder by the import path
+   Go stamps into every program. The action downloads one asset of a
+   fixed name, checks its attestation, and asks it. Names that cross:
+   the asset's name and the two commands. Next changes: an import added
+   to the tool changes the key by itself. Cost: one file in the tool,
+   one action and one workflow rewritten.
+2. **What changes together.** The key could come from the toolchain,
+   `go list -deps` of the tool, in the action. But then every job sets
+   up Go before it can download anything, 10 to 20 s, which is what
+   downloading the tool was meant to save. The tool's own parser comes
+   to a superset of the same answer with nothing to set up, which a test
+   holds to `go list`. This converges on the first.
+3. **Where state lives.** The asset could be named by main's commit, or
+   carry the commit Go stamps in with `-buildvcs`, and the tool would
+   compare that commit's code with the checkout's. But a job checks out
+   one commit and no history, so the older commit's code is not there to
+   compare, and asking GitHub for it is a token and a round trip in
+   every job. The key in the binary is the answer itself, kept inside
+   the bytes the attestation signs. This converges on the first.
+4. **What runs together.** `release-tool.yml` started only for the
+   listed paths. With no list, it starts on every push to main, and the
+   action answers: the signed build fits, nothing is built or signed,
+   about 10 s of a Linux runner, or it does not, and the tool is built,
+   signed and kept. Nothing waits on it, and no pull request runs it. A
+   filter of kinds of files, docs alone, would save some of those runs,
+   for one more rule to hold. Not done.
+5. **What a test has to build.** The key is safe only if it never
+   leaves out a package the tool is built from, and a download is safe
+   only if it is checked before it runs. So: a table of the tool's
+   inputs, its imports, those in turn, a moved tool, what its `go
+   generate` runs, and Go that cannot be read, which gives no key and so
+   a build. The key of this repository's own tool against `go list`. A
+   build with no stamp, another key or no key for the checkout does not
+   fit. And the workflows: `release-tool.yml` lists no paths, the action
+   reads no paths itself, builds only through `self`, and runs the
+   download only once `gh attestation verify` passed. That is the first
+   with its tests.
+
+## What converges
+
+The tool keys itself from its own imports, stamps the key into its
+build, and says whether it fits the checkout: the first, the second, the
+third and the fifth. The fourth starts the workflow on every push to
+main.
+
+## The decision
+
+    release-tool.yml:   every push to main, the action, and only when
+                        it built the tool: attest, keep as the asset
+                        framefairy-release of the release release-tool
+                                  |
+    .github/actions/release-tool: gh release download, gh attestation
+                        verify, framefairy-release fits, or
+                        go run -trimpath ./cmd/framefairy-release self
+                                  |
+    self.go:            the tool's inputs, go.mod, go.sum and the
+                        folders of the packages it imports or its
+                        go generate runs, hashed over their git
+                        objects, stamped with -ldflags -X
+
+An older build of main's is still signed by main, and any branch can
+upload it. It carries the key of the older code, so it does not fit a
+newer checkout, and the action builds the tool. What the earlier design
+checked with the name the attestation signs is now checked with the key
+inside the bytes it signs. What remains trusted is the `fits` of a build
+main once signed, which is main's own reviewed code.
+
+## What follows
+
+- No workflow and no action names what the tool is built from. A package
+  the tool starts to import is in its key on the next run.
+- `release-tool.yml` runs on every push to main, about 10 s of a Linux
+  runner, and builds on the pushes that change the tool's code, 18 of
+  203 in the last month. No pull request waits on it.
+- The jobs that use the tool take as long as before: a download and a
+  check, and 12 s to build when the tool changed.
+- The asset is called `framefairy-release` from now on. The first push to
+  main after this builds it, and the step that keeps it removes the
+  older assets named by key.
+- Wrong if: a job runs a tool built from other code than its checkout,
+  which takes a package the tool is built from that its imports and its
+  `go generate` do not name. Or every job builds the tool, which shows
+  as `fits: false` in the step that asks.

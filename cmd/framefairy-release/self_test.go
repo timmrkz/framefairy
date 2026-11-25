@@ -1,0 +1,163 @@
+package main
+
+import (
+	"errors"
+	"os/exec"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The tool is keyed on what it is built from, found the way the app is:
+// go.mod, go.sum and every package of ours it imports or its go generate
+// runs, and nothing it does not, wherever the folders are.
+func TestTheToolIsKeyedOnWhatItIsBuiltFrom(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		files map[string]string
+		dir   string
+		want  []string
+	}{
+		{
+			name: "the packages it imports, and those in turn",
+			files: map[string]string{
+				"cmd/framefairy-release/main.go":      "package main\nimport \"framefairy/updates\"\n",
+				"cmd/framefairy-release/main_test.go": "package main\nimport \"framefairy/internal/standin\"\n",
+				"updates/updates.go":                  "package updates\nimport \"framefairy/updates/feed\"\n",
+				"updates/feed/feed.go":                "package feed\n",
+				"engine/run.go":                       "package engine\n",
+				"internal/standin/standin.go":         "package standin\n",
+			},
+			dir:  "cmd/framefairy-release",
+			want: []string{"go.mod", "go.sum", "cmd/framefairy-release", "updates", "updates/feed"},
+		},
+		{
+			name: "moved, it is found where it is",
+			files: map[string]string{
+				"tools/release/main.go": "package main\nimport \"framefairy/updates\"\n",
+				"updates/updates.go":    "package updates\n",
+			},
+			dir:  "tools/release",
+			want: []string{"go.mod", "go.sum", "tools/release", "updates"},
+		},
+		{
+			name: "what its go generate runs",
+			files: map[string]string{
+				"cmd/framefairy-release/main.go":     "package main\n\n//go:generate go run ./gen\n",
+				"cmd/framefairy-release/gen/main.go": "package main\nimport \"framefairy/updates\"\n",
+				"updates/updates.go":                 "package updates\n",
+			},
+			dir:  "cmd/framefairy-release",
+			want: []string{"go.mod", "go.sum", "cmd/framefairy-release", "cmd/framefairy-release/gen", "updates"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := toolInputs(goSource(c.files), c.dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := append(c.want[:2:2], slices.Sorted(slices.Values(c.want[2:]))...)
+			if !slices.Equal(got, want) {
+				t.Errorf("the tool is keyed on %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// Go that cannot be read, or a go generate line that cannot be judged,
+// gives no key, and so the tool is built here.
+func TestAToolThatCannotBeKeyedIsBuilt(t *testing.T) {
+	t.Parallel()
+	for name, files := range map[string]map[string]string{
+		"Go that cannot be read": {
+			"cmd/framefairy-release/main.go": "package main\nimport (\n",
+		},
+		"a go generate line that is no go run of ours": {
+			"cmd/framefairy-release/main.go": "package main\n\n//go:generate sh make.sh\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := toolInputs(goSource(files), "cmd/framefairy-release")
+			if err == nil {
+				t.Fatal("the tool got a key")
+			}
+			if ok, _ := fits("abc", "", err); ok {
+				t.Error("a tool with no key fits")
+			}
+		})
+	}
+}
+
+// Only a build stamped with the checkout's own key fits. One with no
+// stamp, built some other way, or main's build of other code, is built
+// again here.
+func TestOnlyABuildOfTheCheckoutsCodeFits(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, stamped, key string
+		keyErr             error
+		want               bool
+	}{
+		{"stamped with the checkout's key", "0123456789abcdef", "0123456789abcdef", nil, true},
+		{"stamped with another key", "0123456789abcdef", "fedcba9876543210", nil, false},
+		{"not stamped", "", "0123456789abcdef", nil, false},
+		{"no key for the checkout", "0123456789abcdef", "", errors.New("no commit"), false},
+		{"neither", "", "", errors.New("no commit"), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ok, why := fits(c.stamped, c.key, c.keyErr)
+			if ok != c.want {
+				t.Errorf("fits says %v (%s), want %v", ok, why, c.want)
+			}
+		})
+	}
+}
+
+// The key of this repository's own tool covers every package of ours Go
+// builds into it.
+//
+// On the real disk: git reads this repository's own commit, and go list
+// its own packages, with no network.
+func TestTheToolsKeyCoversWhatGoBuildsIntoIt(t *testing.T) {
+	t.Parallel()
+	s, err := gitSource("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const dir = "cmd/framefairy-release"
+	inputs, err := toolInputs(s, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "list", "-e", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}", "framefairy/"+dir)
+	cmd.Env = append(cmd.Environ(), "GOPROXY=off", "GOFLAGS=-mod=mod")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+	for line := range strings.Lines(string(out)) {
+		own, ok := strings.CutPrefix(strings.TrimSpace(line), "framefairy/")
+		if ok && !slices.Contains(inputs, own) {
+			t.Errorf("Go builds %s into the release tool and its key leaves it out", own)
+		}
+	}
+
+	key, err := gitKey("HEAD", inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(key) != 16 {
+		t.Errorf("the key %q is not 16 hex digits", key)
+	}
+	// A folder more is another key.
+	other, err := gitKey("HEAD", append(slices.Clone(inputs), "docs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other == key {
+		t.Error("a key over one more folder is the same key")
+	}
+}

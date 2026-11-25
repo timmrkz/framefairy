@@ -44,13 +44,20 @@
 //	    for ci.yml: whether a pull request's merge commit changes what
 //	    the walks build, the app's programs and the app's own tests, see
 //	    reach.go
+//	framefairy-release fits
+//	    for .github/actions/release-tool: whether this build of the tool,
+//	    main's signed one, is built from the checkout's code, and if so
+//	    put it on the job's path, see self.go
+//	framefairy-release self -out F
+//	    build the tool from the checkout, stamped with the key of what it
+//	    is built from, and put it on the job's path
 //	framefairy-release behind -status N -table F
 //	    keep the issue of the tools the app ships that are behind their
 //	    newest release, from how scripts/upstream.sh --behind ended and
 //	    what it wrote, see behind.go
 //
-// Every command but key, check, sign and walks asks GitHub, with GH_TOKEN and
-// GH_REPO, through the interface in github.go.
+// Every command but key, check, sign, walks, fits and self asks GitHub,
+// with GH_TOKEN and GH_REPO, through the interface in github.go.
 package main
 
 import (
@@ -112,6 +119,10 @@ func main() {
 		err = behindCommand(args, gitHubFromEnv(), time.Now(), os.Stdout)
 	case "walks":
 		err = walksPlan(gitTrees{gitHubFromEnv()}, "HEAD^1", "HEAD").write(os.Stdout, os.Getenv("GITHUB_OUTPUT"))
+	case "fits":
+		err = fitsCommand(os.Stdout)
+	case "self":
+		err = selfCommand(args, os.Stdout)
 	default:
 		usage()
 	}
@@ -122,7 +133,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick | failed | behind | walks, see the head of main.go")
+	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick | failed | behind | walks | fits | self, see the head of main.go")
 	os.Exit(2)
 }
 
