@@ -103,6 +103,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+          persist-credentials: false
       - if: steps.filter.outputs.go == 'true' && steps.filter.outputs.goread != 'true' && steps.filter.outputs.interface != 'true'
         uses: ./.github/actions/release-tool
       - id: walks
@@ -126,6 +127,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -142,9 +145,11 @@ jobs:
     needs: image
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    container: ${{ needs.image.outputs.ref }}
+    container: ${{ needs.image.outputs.ref }} # zizmor: ignore[unpinned-images] the CI image, by the sum of its Dockerfile, see ci-image.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/prepare
         with:
           key: go-v2-build-${{ runner.os }}-${{ github.sha }}
@@ -177,12 +182,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
-      image: ${{ needs.image.outputs.ref }}
+      image: ${{ needs.image.outputs.ref }} # zizmor: ignore[unpinned-images] the CI image, by the sum of its Dockerfile, see ci-image.yml
       options: --init
       volumes:
         - /home/runner/work:/home/runner/work
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/prepare
         with:
           key: go-v4-linux-${{ runner.os }}-${{ strategy.job-index }}-${{ github.sha }}
@@ -217,12 +224,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
-      image: ${{ needs.image.outputs.walks }}
+      image: ${{ needs.image.outputs.walks }} # zizmor: ignore[unpinned-images] the CI image, by the sum of its Dockerfile, see ci-image.yml
       options: --init --ipc=host
       volumes:
         - /home/runner/work:/home/runner/work
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/prepare
         with:
           key: go-v3-walks-${{ runner.os }}-${{ github.sha }}
@@ -256,10 +265,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
-      image: ${{ needs.image.outputs.ref }}
+      image: ${{ needs.image.outputs.ref }} # zizmor: ignore[unpinned-images] the CI image, by the sum of its Dockerfile, see ci-image.yml
       options: --init
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/prepare
         with:
           key: fuzz-v3-${{ runner.os }}-${{ github.sha }}
@@ -289,6 +300,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/prepare
         with:
           key: go-v2-macos-${{ runner.os }}-${{ github.sha }}

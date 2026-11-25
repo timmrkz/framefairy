@@ -35,7 +35,8 @@
 #                   runs each part in a job of its own, with the same
 #                   command
 #   make lint       gofmt, go vet, golangci-lint, that the scripts read by
-#                   their shell, that docs/GUI-PLAN.md stays as it was, and
+#                   their shell, zizmor over the workflows, that
+#                   docs/GUI-PLAN.md stays as it was, and
 #                   the tests of the repository's rules
 #   make unit       the Go tests, under the race detector except on a Mac.
 #                   UNITSHARD=1/3 runs a third of them, as CI does, and
@@ -178,7 +179,7 @@ APP_LDFLAGS := $(SHIP_LDFLAGS) $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) 
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: frames all run app install update-key dispenser icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks lint golangci-lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: frames all run app install update-key dispenser icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks lint golangci-lint zizmor outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain frames $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -699,11 +700,15 @@ interface:
 # work is in the issues. And the tests of the repository's own rules,
 # LINTPKGS, which read the docs, the workflows and the interface's code,
 # and so run with lint on every pull request rather than with the Go tests.
+# zizmor reads the workflows and the actions for the ways a run can be
+# taken over or its token taken, a checkout that keeps its token first,
+# and fails on anything .github/zizmor.yml or a comment on the line does
+# not let through with its reason. Offline, so it asks GitHub nothing.
 LINTPKGS := framefairy/internal/workflows framefairy/internal/naming
 PLAN_HASH := d3164fbdd865de7cdc61b4bc1631e909f20c6725
 GOLANGCI_LINT_VERSION := 2.14.0
 GOLANGCI_LINT := $(STAMPS)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
-lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
+lint: toolchain modules golangci-lint zizmor frontend/node_modules/.package-lock.json
 	@out=$$(gofmt -l $$(git ls-files '*.go')); [ -z "$$out" ] || { echo "gofmt -w these:"; echo "$$out"; exit 1; }
 	@printf 'ok  \tgofmt\n'
 	@$(GO) vet ./...
@@ -718,6 +723,8 @@ lint: toolchain modules golangci-lint frontend/node_modules/.package-lock.json
 		case $$(head -n 1 "$$s") in *bash*) bash -n "$$s" ;; *) sh -n "$$s" ;; esac || exit 1; \
 	done
 	@printf 'ok  \tscripts read\n'
+	@out=$$($(ZIZMOR) --offline --quiet --no-progress .github 2>&1) || { echo "$$out"; exit 1; }
+	@printf 'ok  \tworkflows read by zizmor\n'
 	@[ "$$(git hash-object docs/GUI-PLAN.md)" = $(PLAN_HASH) ] || { echo "docs/GUI-PLAN.md is history and does not change: open work is in the issues"; exit 1; }
 	@printf 'ok  \tdocs/GUI-PLAN.md is as it was\n'
 	@$(GO) test $(LINTPKGS)
@@ -736,6 +743,26 @@ $(GOLANGCI_LINT):
 		(cd $$tmp && curl -sSfLO $$url/$$name.tar.gz && curl -sSfLO $$url/golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt && \
 			grep " $$name.tar.gz$$" golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt | shasum -a 256 -c - >/dev/null && \
 			tar -xzf $$name.tar.gz) && mkdir -p $(@D) && mv $$tmp/$$name/golangci-lint $@; \
+		status=$$?; rm -rf $$tmp; exit $$status
+
+# zizmor's release lists no checksums, so each machine's archive is
+# checked against the sha256 pinned here, taken when the version was
+# raised. Fetched into the build folder like golangci-lint above.
+ZIZMOR_VERSION := 1.32.0
+ZIZMOR := $(STAMPS)/zizmor-$(ZIZMOR_VERSION)/zizmor
+zizmor: $(ZIZMOR)
+$(ZIZMOR):
+	@echo "Fetching zizmor $(ZIZMOR_VERSION)"
+	@case $$(uname -s)-$$(uname -m) in \
+		Darwin-arm64) target=aarch64-apple-darwin sum=6efed18c4539a663fd3c851a2be9533fd8456c4e646d9416206da059154a0d3c ;; \
+		Linux-x86_64) target=x86_64-unknown-linux-gnu sum=bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b ;; \
+		Linux-aarch64) target=aarch64-unknown-linux-gnu sum=cb152b207f815116d7fa1c1ee4614f61578803351395052908095e79adfd9fd0 ;; \
+		*) echo "zizmor $(ZIZMOR_VERSION) has no sum pinned for $$(uname -sm)"; exit 1 ;; \
+	esac; \
+		tmp=$$(mktemp -d); \
+		(cd $$tmp && curl -sSfLO https://github.com/zizmorcore/zizmor/releases/download/v$(ZIZMOR_VERSION)/zizmor-$$target.tar.gz && \
+			echo "$$sum  zizmor-$$target.tar.gz" | shasum -a 256 -c - >/dev/null && \
+			tar -xzf zizmor-$$target.tar.gz) && mkdir -p $(@D) && mv $$tmp/zizmor $@; \
 		status=$$?; rm -rf $$tmp; exit $$status
 
 check:
