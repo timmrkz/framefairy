@@ -87,6 +87,8 @@ jobs:
     steps:
       - if: github.event_name == 'push'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - if: github.event_name == 'push'
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
@@ -112,6 +114,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The branch as it is, not merged with main: the build Tim tests is
           # the pull request's own.
           ref: ${{ needs.which.outputs.sha }}
@@ -132,12 +135,18 @@ jobs:
           ffmpeg: true
           llama: true
 
+      # Through the environment, never pasted into the shell, like every
+      # value a step did not write itself. zizmor in make lint holds it.
       - name: The app
+        env:
+          VERSION: ${{ needs.which.outputs.version }}
+          CHANNEL: ${{ needs.which.outputs.channel }}
+          COMMIT: ${{ needs.which.outputs.commit }}
         run: >-
           make app WERROR=1
-          BUILD_VERSION='${{ needs.which.outputs.version }}'
-          BUILD_CHANNEL='${{ needs.which.outputs.channel }}'
-          BUILD_COMMIT='${{ needs.which.outputs.commit }}'
+          BUILD_VERSION="$VERSION"
+          BUILD_CHANNEL="$CHANNEL"
+          BUILD_COMMIT="$COMMIT"
 
       # One entry at the top, Frame Fairy.app, which is what Wails' updater
       # asks of a zip. --norsrc, because ditto otherwise adds a ._ file

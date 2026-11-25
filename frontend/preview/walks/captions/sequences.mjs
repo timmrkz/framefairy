@@ -447,11 +447,17 @@ export default [
   {
     // Found by Tim on #201: Shift and an arrow put the keyboard's frame
     // on the next word a frame before the pill came, while the picture's
-    // captions were on their way.
-    name: "the keyboard's frame goes from word to word with the pill",
+    // captions were on their way. And found by a nightly words walk: a
+    // word saved with the playhead past where its caption now ends, on a
+    // frame from before, showed the next caption in the caption box until
+    // the layers came, and then the one before again, so the word the
+    // walk was about to click went away. Both wait on late layers, so
+    // they share the walk's start.
+    name: "the keyboard's frame goes from word to word with the pill, and the caption box stays on the frame's caption while a saved word's layers come",
     steps: [
       ["layers late", 7],
       ["walk the words with the frame on the pill", 8],
+      ["saved past a caption's end", ["alt,", " Schulhof"]],
     ],
   },
   {

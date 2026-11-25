@@ -1260,9 +1260,16 @@ walk now takes about 15 seconds, and a busy machine makes it slower
 without making it check a step sooner. Steps that come sooner meet the
 app's own sense of time where a person's hand has one: the clip
 timeline reads two presses within half a second and six pixels as a
-double-click, which cuts a part out. A walk that clicks where it clicked
-a step before uses `clickOnTrack`, which lands eight pixels beside the
-last spot first, so the click is one on its own. Opening
+double-click, which cuts a part out. So `walks/bridge.mjs` has
+`clickOnTrack`, `doubleClickOnTrack`, `pressOnTrack` and `dragOnTrack`,
+which land eight pixels beside the last spot first when they come within
+six of it, so a click is one on its own and a double-click is only the
+one meant. Every press of the random walks on the clip timeline goes
+through them, since where they press is the seed's choice: two steps
+that clicked on the same spot one after the other cut a part out under
+the playhead, and the walk judged the picture against the pieces from
+before the cut. A sequence presses where it was written to, and one
+that clicks where it clicked a step before uses them too. Opening
 the browser takes a second or two. The rest is the gestures. The ones
 that play once waited in real time, and playing a clip to its end took
 most of the playback walk. Now a play takes the refreshes that draw its
@@ -1439,6 +1446,15 @@ person, whose speech model takes seconds to load. Which app is
 in front comes from `lsappinfo`, which needs no permission a runner does
 not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
 as well, and the test shows it when a check fails.
+
+A crash outside Go, in Cocoa or in WebKit, writes nothing to that log,
+and the step only sees its connection end. So a step that fails also
+says whether the app's process still runs, and shows every crash report
+macOS wrote of it in `~/Library/Logs/DiagnosticReports` since the step
+began. The error the check leaves on the pull request says both. macOS
+writes a report once the process has died, which can be after the step
+failed, so the job's step The app's crash reports shows them again once
+the test has ended.
 
 No check waits on the clock, the same as every other test. Each waits to
 be told:

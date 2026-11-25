@@ -99,11 +99,13 @@ or the doc of its part.
 | verify the whole artifact, fall back to the whole | Wails' updater checks the zip's signature, `updates/` puts it together from parts and falls back to the packed zip, see [the decision record](decisions/2026-11-18-an-update-downloads-only-what-changed.md) |
 | one key per job, rotation planned | the release key and the development key in [UPDATES.md](UPDATES.md), the licence signer's keys in [LICENCE.md](LICENCE.md) |
 | licences and payments | `licence/`, `licence/dispenser` and `licence/signer`, with `FuzzSimulation` and the model of the dispenser, see Security, privacy, testing in [LICENCE.md](LICENCE.md) |
-| pins, the bot, scans, install scripts off | [Keeping up](BUILD.md#keeping-up): `.github/dependabot.yml`, `security.yml`, `frontend/audit-ci.jsonc`, `frontend/.npmrc`, held by `TestEveryActionIsPinned`, `TestNoPackageRunsCodeWhenInstalled` and `TestDependabotMovesEveryGoModule` |
+| pins, the bot, a cooldown, scans, install scripts off | [Keeping up](BUILD.md#keeping-up): `.github/dependabot.yml` with a cooldown of seven days, `security.yml` with govulncheck, npm audit and osv-scanner, `frontend/audit-ci.jsonc`, `frontend/.npmrc`, held by `TestEveryActionIsPinned`, `TestNoPackageRunsCodeWhenInstalled` and `TestDependabotMovesEveryGoModule` |
 | build from pinned source and refuse a wrong result | `scripts/build-ffmpeg.sh`, `scripts/build-llama.sh`, `scripts/verify-tools.sh` and `tools.yml` with its attestation, see The tools we ship in [PACKAGING.md](PACKAGING.md) |
 | a licence nobody allowed stops the build | `notices/licence`, see [THIRD_PARTY.md](THIRD_PARTY.md) |
 | privileged workflows from main, never the dangerous event | `publish.yml` with the environment `updates`, `conflicts.yml` on `workflow_run`, held by `TestNoPullRequestTarget` |
+| `persist-credentials: false` and a workflow linter | every checkout, held by zizmor in `make lint`, with `.github/zizmor.yml` |
 | only the user gives instructions | On GitHub, only the user gives instructions, in `CLAUDE.md` |
 | the work's security line | the Security line of [the pull request template](../.github/pull_request_template.md) |
 | crashers kept as seeds | each package's `testdata/fuzz/`, from `make fuzz` and `fuzz-nightly.yml` |
-| not kept yet | a cooldown for the dependency bot and `osv-scanner` in `security.yml`, `persist-credentials: false` on checkouts and a workflow linter, no cache restored in the job that signs. Secret scanning with push protection and private vulnerability reporting are settings of the repository, the user's to turn on |
+| repository settings | secret scanning with push protection, private vulnerability reporting and Dependabot security updates are on, see GitHub's own alerts in [Keeping up](BUILD.md#keeping-up) |
+| not kept yet | no cache restored in the job that signs |

@@ -1,7 +1,7 @@
 #!/bin/sh
-# Says, for each program and library we build from source and ship, the
-# version pinned here and the newest release upstream, and whether we are
-# behind.
+# Says, for each program and library we build from source and ship, and
+# each checker CI fetches by a pin of its own, the version pinned here and
+# the newest release upstream, and whether we are behind.
 #
 #   scripts/upstream.sh          the whole table
 #   scripts/upstream.sh --behind only what is behind, and exit 1 if anything is
@@ -13,7 +13,9 @@
 #
 # llama.cpp makes a build a day, so it counts as behind only once it is
 # LLAMA_SLACK builds back, about a month. Node is here too, since
-# Dependabot does not move it, #591.
+# Dependabot does not move it, #591, and so are golangci-lint and zizmor,
+# which make lint fetches, and govulncheck and osv-scanner, which
+# security.yml runs: Dependabot moves none of them.
 set -e
 LLAMA_SLACK=${LLAMA_SLACK:-30}
 behind_only=0
@@ -37,6 +39,11 @@ libass=$(pinned LIBASS_VERSION scripts/build-ffmpeg.sh)
 llama=$(pinned LLAMA_VERSION scripts/build-llama.sh)
 node=$(cat .node-version)
 sherpa=$(awk '/k2-fsa\/sherpa-onnx-go(\/v[0-9]+)? /{ print $2; exit }' go.mod | sed 's/^v//')
+made() { awk -v k="$1" '$1 == k && $2 == ":=" { print $3; exit }' Makefile; }
+golangci=$(made GOLANGCI_LINT_VERSION)
+zizmor=$(made ZIZMOR_VERSION)
+govulncheck=$(sed -n 's/.*govulncheck@v\([0-9.]*\).*/\1/p' .github/workflows/security.yml | head -1)
+osv=$(sed -n 's/.*osv-scanner\/releases\/download\/v\([0-9.]*\)\/.*/\1/p' .github/workflows/security.yml | head -1)
 
 out=""
 any=0
@@ -51,7 +58,7 @@ row() {
 		state="current"
 	fi
 	if [ "$behind_only" = 0 ] || [ "$state" != current ]; then
-		out="$out$(printf '| %-9s | %-9s | %-9s | %-23s |' "$name" "$have" "$want" "$state")
+		out="$out$(printf '| %-13s | %-9s | %-9s | %-23s |' "$name" "$have" "$want" "$state")
 "
 	fi
 }
@@ -69,6 +76,10 @@ check sherpa "$sherpa" "$(newest https://github.com/k2-fsa/sherpa-onnx '^v[0-9]+
 # Node within its major, the long-term support line the interface is
 # built on. A new major is a choice of its own, not a fix to catch up on.
 check node "$node" "$(newest https://github.com/nodejs/node "^v${node%%.*}\\.[0-9]+\\.[0-9]+\$" '^v')"
+check golangci-lint "$golangci" "$(newest https://github.com/golangci/golangci-lint '^v[0-9]+(\.[0-9]+)+$' '^v')"
+check zizmor "$zizmor" "$(newest https://github.com/zizmorcore/zizmor '^v[0-9]+(\.[0-9]+)+$' '^v')"
+check govulncheck "$govulncheck" "$(newest https://github.com/golang/vuln '^v[0-9]+(\.[0-9]+)+$' '^v')"
+check osv-scanner "$osv" "$(newest https://github.com/google/osv-scanner '^v[0-9]+(\.[0-9]+)+$' '^v')"
 latest=$(newest https://github.com/ggml-org/llama.cpp '^b[0-9]+$' '^b')
 if [ -n "$latest" ] && [ "$((latest - ${llama#b}))" -ge "$LLAMA_SLACK" ]; then
 	row llama.cpp "$llama" "b$latest" 1
@@ -77,8 +88,8 @@ else
 fi
 
 if [ -n "$out" ]; then
-	printf '| %-9s | %-9s | %-9s | %-23s |\n' what pinned newest ""
-	printf '| %-9s | %-9s | %-9s | %-23s |\n' --------- --------- --------- -----------------------
+	printf '| %-13s | %-9s | %-9s | %-23s |\n' what pinned newest ""
+	printf '| %-13s | %-9s | %-9s | %-23s |\n' ------------- --------- --------- -----------------------
 	printf '%s' "$out"
 fi
 if [ "$behind_only" = 1 ] && [ "$any" = 1 ]; then

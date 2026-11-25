@@ -1,0 +1,8 @@
+# What zizmor, in make lint, lets through, each with why. Everything else
+# it finds fails the lint. A finding on one line is let through on that
+# line instead, with a comment that starts zizmor: ignore and says why.
+rules:
+  # Asks for GitHub's newer way of naming an action of this repository.
+  # A style, not a risk.
+  self-repository:
+    disable: true

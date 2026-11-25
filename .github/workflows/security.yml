@@ -2,9 +2,11 @@
 #
 # On a pull request that changes the Go modules or the interface's
 # packages, and on main every Monday: govulncheck over the Go code, which
-# reports only what the code really calls, and npm audit over the
+# reports only what the code really calls, npm audit over the
 # interface's packages, through audit-ci, which lets through only the
-# warnings frontend/audit-ci.jsonc names. Either failing is a red check.
+# warnings frontend/audit-ci.jsonc names, and osv-scanner over both,
+# which fails on a package known to be malicious. Any failing is a red
+# check.
 #
 # Every Monday also scripts/upstream.sh, which compares ffmpeg, the
 # libraries it is built with, llama.cpp, the speech library and Node with
@@ -50,13 +52,15 @@ jobs:
   go:
     needs: image
     runs-on: ubuntu-24.04
-    container: ${{ needs.image.outputs.ref }}
+    container: ${{ needs.image.outputs.ref }} # zizmor: ignore[unpinned-images] the CI image, by the sum of its Dockerfile, see ci-image.yml
     # A container runs a step with sh, see the walks in ci.yml.
     defaults:
       run:
         shell: bash -e {0}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The checkout is the runner's user's and the job runs as root, see
       # the walks in ci.yml.
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -71,11 +75,30 @@ jobs:
       # request, where it can be read first.
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      # OSV's database lists the packages known to be malicious, the MAL
+      # entries, which govulncheck and npm audit do not read. osv-scanner
+      # reads it over the Go modules and the interface's packages, after
+      # govulncheck even when that failed, and fails on a MAL entry
+      # alone, which it prints. A flaw is govulncheck's and npm audit's to
+      # judge, with what audit-ci.jsonc lets through, so one finding never
+      # has two judges that disagree. It exits 1 when it finds anything,
+      # flaws too, and more on an error of its own. A release from GitHub,
+      # checked against its sha256 here, since Dependabot does not move
+      # it, scripts/upstream.sh says when a newer one is out.
+      - name: osv-scanner
+        if: ${{ !cancelled() }}
+        run: |
+          OSV=$RUNNER_TEMP/osv-scanner
+          curl -sSfL -o "$OSV" https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_linux_amd64 && echo "fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8  $OSV" | sha256sum -c - && chmod +x "$OSV"
+          "$OSV" scan source --format json --lockfile go.mod --lockfile frontend/package-lock.json > "$RUNNER_TEMP/osv.json" || [ $? = 1 ]
+          ! grep -o '"MAL-[0-9]*-[0-9]*"' "$RUNNER_TEMP/osv.json"
 
   npm:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -97,12 +120,15 @@ jobs:
     permissions:
       contents: read
       issues: write
+      # To check the release tool's signature.
+      attestations: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version-file: go.mod
-          cache: true
+          persist-credentials: false
+      # main's own build of the tool, signed, from no cache anybody else
+      # wrote, see .github/actions/release-tool.
+      - uses: ./.github/actions/release-tool
       # upstream.sh says what is behind, and framefairy-release keeps the
       # issue from its answer, see cmd/framefairy-release/behind.go.
       - name: Newer releases of what we ship
@@ -112,7 +138,7 @@ jobs:
         run: |
           status=0
           sh scripts/upstream.sh --behind > "$RUNNER_TEMP/behind.md" || status=$?
-          go run ./cmd/framefairy-release behind -status "$status" -table "$RUNNER_TEMP/behind.md"
+          framefairy-release behind -status "$status" -table "$RUNNER_TEMP/behind.md"
 
   # A run that fails on main tells of itself, in an issue of its own, see
   # tell.yml. A run by hand on a branch is its session's to read, and a
@@ -124,4 +150,5 @@ jobs:
       contents: read
       actions: read
       issues: write
+      attestations: read
     uses: ./.github/workflows/tell.yml

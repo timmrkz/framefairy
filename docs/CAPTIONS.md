@@ -458,6 +458,13 @@ the frame round a word go on to the next caption a few frames before the
 pill did, when the caption box worked the word out from the
 playhead.
 
+Until a layer of the captions as they now are is on screen, after a word
+was saved or a clip picked, the caption box shows the caption of the
+frame on screen, the one that layer will show, and not the playhead's.
+The playhead can stand in the next caption while the frame still shows
+the one before, and the caption box then showed the next caption for a
+moment and went back, from under a hand about to click a word in it.
+
 The keyboard goes by the frames too. Each word frame also says when the
 picture lights the word, `from` and `to` on the episode's clock, from
 `WordsLit` in `engine/wordframes.go`: it reads every frame of the clip at

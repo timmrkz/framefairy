@@ -164,7 +164,7 @@ func TestNoWorkflowStepIsAScript(t *testing.T) {
 			t.Fatalf("%s: %v", f, err)
 		}
 		name := filepath.Base(f)
-		if name == "action.yml" {
+		if name == "action.yml" || name == "action.yaml" {
 			name = filepath.ToSlash(filepath.Join(".github", "actions", filepath.Base(filepath.Dir(f)), name))
 		}
 		lists := map[string][]step{}

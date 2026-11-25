@@ -890,7 +890,12 @@
     if (!clip || !captions?.captions?.length || place === "video") return null;
     if (shown < clipStart - 0.05 || shown > clipEnd + 0.05) return null;
     if (showing) return captions.captions[showing.caption] ?? null;
-    const at = inClipTime(shown);
+    // Until a layer of these captions is on screen, after an edit landed,
+    // the caption of the frame on screen, the one its layer will show.
+    // The playhead can stand in the next caption while the frame still
+    // shows the one before, and the caption box showed the next for a
+    // moment and then went back, under the hand that was about to click.
+    const at = inClipTime(!fixing && framesClip(frameStart) ? frameStart : shown);
     return captions.captions.find((c) => at >= c.start && at < c.end) ?? null;
   });
 
