@@ -38,6 +38,8 @@ export default [
     steps: [
       ["add cameras", 30, 12],
       ["wait for", "Search"],
+      ["head"],
+      ["wait for", "Search"],
       // #717, Tim's idea: the video preview leaves a faint reflection at
       // the foot of the workspace, as if the video shone towards him, and
       // it lies behind every control, so nothing that is read or worked
