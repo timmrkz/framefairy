@@ -36,10 +36,12 @@
 # build is of the branch as it is, not merged with main, so a conflict
 # does not make it wrong to test.
 #
-# A commit that is built already, or that only changes the docs against
-# the build there is, gets no build of its own. needsBuild in
+# A commit that is built already, or that only changes the docs, tests or
+# code the app does not ship, like the release tool, against the build
+# there is, gets no build of its own and takes no Mac. needsBuild in
 # cmd/framefairy-release decides that for the build and for the list
-# alike.
+# alike, from what the app's programs import, see
+# docs/decisions/2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md.
 #
 # Two jobs:
 #
@@ -78,6 +80,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      attestations: read
     outputs:
       build: ${{ steps.which.outputs.build }}
       channel: ${{ steps.which.outputs.channel }}
@@ -89,11 +92,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The build main made and signed, see .github/actions/release-tool.
       - if: github.event_name == 'push'
-        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: go.mod
-          cache: true
+        uses: ./.github/actions/release-tool
       - id: which
         if: github.event_name == 'push'
         name: What this is a build of
@@ -101,7 +102,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
-        run: go run ./cmd/framefairy-release build-plan -event push -branch "$BRANCH" -commit "$GITHUB_SHA"
+        run: framefairy-release build-plan -event push -branch "$BRANCH" -commit "$GITHUB_SHA"
 
   build:
     needs: which

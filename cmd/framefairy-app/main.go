@@ -32,7 +32,13 @@ import (
 
 // dist/app/ holds the interface that make builds from frontend/. It is not
 // in the repository. dist/.keep is, so this compiles before the first build.
+// dist/licences.json is the licence of every Go module and interface
+// package the app is built with, which make has notices/gen write through
+// go generate, from the top of the repository, where it reads go.mod and
+// the interface. Run through go generate, the release tool sees that the
+// app is built with it, see cmd/framefairy-release/reach.go.
 //
+//go:generate go -C ../.. run ./notices/gen -built cmd/framefairy-app/dist/licences.json
 //go:embed all:dist
 var dist embed.FS
 

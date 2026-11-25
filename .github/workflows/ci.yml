@@ -4,8 +4,8 @@
 #
 # A pull request starts only the jobs whose code it changed: the Go jobs
 # when Go changed, the interface's tests when the interface changed, and
-# the jobs that test the whole app, the build and the walks, when either
-# did, and the Go tests on a Mac when code only a Mac builds changed, a
+# the walks, which test the whole app, when either did, Go only when it
+# reaches what the app is built from, and the Go tests on a Mac when code only a Mac builds changed, a
 # *_darwin.go or *_darwin_test.go file, or go.mod or go.sum, which bring
 # the modules' own code only a Mac builds. What counts as which is the
 # filters of the job changes, below. A change to the docs alone starts
@@ -59,16 +59,23 @@ jobs:
   # reads, goread, which internal/workflows holds to what the tests read.
   # The interface is frontend/, the Makefile, the workflows and the Node
   # pin. See One way to test in docs/BUILD.md.
+  #
+  # The walks build the app, so a change of Go alone is walked only when
+  # it reaches what the app is built from. The release tool works that out
+  # of the code itself, from what the app's programs import, so no list of
+  # folders says it, and every doubt walks. See
+  # docs/decisions/2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
+      attestations: read
     outputs:
       go: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' }}
       interface: ${{ github.event_name == 'push' || steps.filter.outputs.interface == 'true' }}
-      app: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' || steps.filter.outputs.interface == 'true' }}
+      app: ${{ github.event_name == 'push' || steps.filter.outputs.goread == 'true' || steps.filter.outputs.interface == 'true' || steps.walks.outputs.walks == 'true' }}
       mac: ${{ steps.filter.outputs.mac == 'true' }}
     steps:
       - id: filter
@@ -91,11 +98,22 @@ jobs:
             # both match.
             mac:
               - '{**/*_darwin*.go,go.mod,go.sum}'
+      # The pull request's merge commit and main's under it.
+      - if: steps.filter.outputs.go == 'true' && steps.filter.outputs.goread != 'true' && steps.filter.outputs.interface != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - if: steps.filter.outputs.go == 'true' && steps.filter.outputs.goread != 'true' && steps.filter.outputs.interface != 'true'
+        uses: ./.github/actions/release-tool
+      - id: walks
+        if: steps.filter.outputs.go == 'true' && steps.filter.outputs.goread != 'true' && steps.filter.outputs.interface != 'true'
+        run: framefairy-release walks
 
   # The machine the Linux jobs run on, with every system package they use,
   # so none waits on the Ubuntu mirror, see ci-image.yml.
+  # Waits for nothing, so the release tool in changes costs no time.
   image:
-    needs: changes
     permissions:
       contents: read
       packages: write

@@ -40,12 +40,16 @@
 //	framefairy-release failed -workflow W -run URL -commit X
 //	    open the issue that says a scheduled run of W failed on main, or
 //	    add the run to the one that is open, see failed.go
+//	framefairy-release walks
+//	    for ci.yml: whether a pull request's merge commit changes what
+//	    the walks build, the app's programs and the app's own tests, see
+//	    reach.go
 //	framefairy-release behind -status N -table F
 //	    keep the issue of the tools the app ships that are behind their
 //	    newest release, from how scripts/upstream.sh --behind ended and
 //	    what it wrote, see behind.go
 //
-// Every command but key, check and sign asks GitHub, with GH_TOKEN and
+// Every command but key, check, sign and walks asks GitHub, with GH_TOKEN and
 // GH_REPO, through the interface in github.go.
 package main
 
@@ -106,6 +110,8 @@ func main() {
 		err = failedCommand(args, gitHubFromEnv(), time.Now(), os.Stdout)
 	case "behind":
 		err = behindCommand(args, gitHubFromEnv(), time.Now(), os.Stdout)
+	case "walks":
+		err = walksPlan(gitTrees{gitHubFromEnv()}, "HEAD^1", "HEAD").write(os.Stdout, os.Getenv("GITHUB_OUTPUT"))
 	default:
 		usage()
 	}
@@ -116,7 +122,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick | failed | behind, see the head of main.go")
+	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick | failed | behind | walks, see the head of main.go")
 	os.Exit(2)
 }
 
