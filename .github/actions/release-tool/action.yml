@@ -1,0 +1,69 @@
+# Puts framefairy-release on the path for a job that holds a key or a
+# token that writes, without building it from a cache any run on main can
+# write. See docs/decisions/2026-11-24-the-release-tool-built-once.md.
+#
+# The tool is built by release-tool.yml on main whenever what it is built
+# from changes, signed there with a build attestation, and kept as an
+# asset of the release release-tool, named by a key of what it was built
+# from: the git objects of the paths below, which git has without Go, and
+# the system it runs on. This action works the key out of the checkout,
+# downloads that asset and checks that the attestation says main's
+# release-tool.yml made it, under that very name, on GitHub's own runner.
+# The tool is then at $RUNNER_TEMP/release-tool/framefairy-release-<key>.
+# Any branch can upload an asset, since a push runs the branch's own
+# workflow file, but none can make an attestation that says main. Nor can
+# it pass off an older build of main's under a newer key, because the
+# attestation names the file it signed.
+#
+# With no such asset yet, right after a change to the tool, or one that
+# fails the check, it builds the tool from the checkout with setup-go and
+# no cache, which takes about 12 s. internal/workflows holds the paths of
+# the key to the packages the tool imports.
+name: Release tool
+description: framefairy-release on the path, as main built and signed it, or built here with no cache
+
+outputs:
+  key:
+    description: The key of what the tool is built from.
+    value: ${{ steps.key.outputs.key }}
+  built:
+    description: true when no signed build of the key was there and the tool was built here.
+    value: ${{ steps.fetch.outputs.found != 'true' }}
+
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      run: |
+        key=$({ git rev-parse HEAD:go.mod HEAD:go.sum HEAD:cmd/framefairy-release HEAD:updates; echo "$RUNNER_OS $RUNNER_ARCH"; } | sha256sum | cut -c1-16)
+        echo "key=$key" >> "$GITHUB_OUTPUT"
+    - id: fetch
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        NAME: framefairy-release-${{ steps.key.outputs.key }}
+        DIR: ${{ runner.temp }}/release-tool
+        SIGNER: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/release-tool.yml@refs/heads/main
+      run: |
+        gh release download release-tool --repo "$GITHUB_REPOSITORY" --pattern "$NAME" --dir "$DIR" || { echo "No signed build $NAME yet, so it is built here"; exit 0; }
+        gh attestation verify "$DIR/$NAME" --repo "$GITHUB_REPOSITORY" --cert-identity "$SIGNER" --source-ref refs/heads/main --deny-self-hosted-runners --format json --jq '.[].verificationResult.statement.subject[].name' | grep -xF "$NAME" >/dev/null || { echo "::warning::$NAME is not signed as $NAME by main's release-tool.yml, so it is built here"; rm -f "$DIR/$NAME"; exit 0; }
+        echo "found=true" >> "$GITHUB_OUTPUT"
+    - if: steps.fetch.outputs.found != 'true'
+      uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      with:
+        go-version-file: go.mod
+        cache: false
+    - if: steps.fetch.outputs.found != 'true'
+      shell: bash
+      env:
+        CGO_ENABLED: "0"
+        TOOL: ${{ runner.temp }}/release-tool/framefairy-release-${{ steps.key.outputs.key }}
+      run: go build -trimpath -o "$TOOL" ./cmd/framefairy-release
+    - shell: bash
+      env:
+        TOOL: ${{ runner.temp }}/release-tool/framefairy-release-${{ steps.key.outputs.key }}
+        BIN: ${{ runner.temp }}/release-tool/bin
+      run: |
+        mkdir -p "$BIN" && cp "$TOOL" "$BIN/framefairy-release" && chmod +x "$BIN/framefairy-release"
+        echo "$BIN" >> "$GITHUB_PATH"

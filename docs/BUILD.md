@@ -685,6 +685,25 @@ scan made once is out of date the week after.
   our packages needs its script. `npm run` still runs the scripts in
   `package.json`, only their `pre` and `post` steps are skipped.
   `internal/workflows` fails when the setting is gone.
+- **The key's tools come signed, not from a cache.** A job that holds
+  a key, a secret or a token that writes, the job that signs updates
+  first of all, restores no cache. Every run on main can write the
+  caches main's runs share, a run that builds a dependency nobody has run
+  before too, and Go trusts what it finds in its build cache without
+  checking it again. Such a job runs `framefairy-release`, which
+  `.github/actions/release-tool` brings: main's own build of it, made by
+  `release-tool.yml` whenever its code changes, signed with a build
+  attestation and kept in the release `release-tool` under a key of what
+  it was built from. The action checks the attestation before the tool
+  runs, that main's `release-tool.yml` signed it under that very name, and with no signed build of the key, right after a change to the
+  tool, it builds the tool itself with no cache. `internal/workflows`
+  fails on a job with an environment, a secret or a write permission
+  that restores a cache or builds the tool any other way, and on a key
+  that leaves out a package the tool imports. This keeps the key's own
+  tools clean. The build they sign is made in `builds.yml` from main's
+  shared cache still, which saves minutes on every build to update to.
+  See
+  [2026-11-24-the-release-tool-built-once.md](decisions/2026-11-24-the-release-tool-built-once.md).
 - **The tools we build ourselves**, and the pins Dependabot cannot move,
   which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
   four libraries it is built with, llama.cpp, the speech library and Node
