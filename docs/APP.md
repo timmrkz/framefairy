@@ -1556,8 +1556,11 @@ bubble scrolled by those eight pixels.
     - **An empty list is never empty.** With nothing in the list and no
       search on its way, the rows Search will fill stand there as many as
       Target says, following it as it changes, and still, because nothing
-      is filling them yet. When every clip there was has been removed, the
-      first of them says so, **All clips removed**, **Search looks for others**,
+      is filling them yet. The first of them says why the list is empty.
+      A video never searched says **No clips yet**, **Search finds them in
+      the window**, because adding a video only transcribes it. A blank
+      card there read as something broken. When every clip there was has
+      been removed, it says **All clips removed**, **Search looks for others**,
       so the empty rows read as something that happened. It gives no
       number, because the plan keeps every clip ever removed, and a count
       of them was more than the list had just shown. The empty rows open

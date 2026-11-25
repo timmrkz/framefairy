@@ -229,6 +229,9 @@ export default [
       ["model", "holds"],
       ["add", 60],
       ["wait for", "Search"],
+      // Adding a video searches nothing, and the empty list says why
+      // rather than standing blank.
+      ["row", "No clips yet"],
       ["head"],
       ["wait for", "Cancel"],
       ["head"],

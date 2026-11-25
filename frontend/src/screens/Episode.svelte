@@ -964,15 +964,25 @@
   // the rows still to come and the cards add up in every frame.
   const searchKept = $derived(session.jobs.find((j) => j.id === working?.id));
   const searchTook = $derived((searchKept?.written ?? 0) + (searchKept?.underway?.length ?? 0));
-  // Every clip the episode had was removed, and nothing is on its way:
-  // the first row still to come says so, in the words a row that says how
-  // work ended uses, rather than leaving empty rows that look like nothing
-  // happened or something broke. It gives no number: the plan keeps every
-  // clip ever removed, from earlier searches and earlier days too, so a
-  // count of them was more than the list had just shown.
+  // The list is empty and nothing is on its way: the first row still to
+  // come says why, in the words a row that says how work ended uses,
+  // rather than leaving empty rows that look like nothing happened or
+  // something broke. A video never searched has no clips yet, since
+  // adding it only transcribes it: the user saw a blank card there and
+  // could not tell what it was for. Every clip removed says so instead,
+  // with no number: the plan keeps every clip ever removed, from earlier
+  // searches and earlier days too, so a count of them was more than the
+  // list had just shown.
   const emptied = $derived.by(() => {
     if (busy || stopped || shown.length > 0 || onTheWay.length > 0 || closing.length > 0) return null;
-    if (clips.length === 0 || !clips.every((c) => c.rejected)) return null;
+    if (clips.length === 0) {
+      return {
+        what: "No clips yet",
+        left: "Search finds them in the window",
+        full: "Place the window on the range picker and press Search. The clips it finds come into these rows",
+      };
+    }
+    if (!clips.every((c) => c.rejected)) return null;
     return { what: "All clips removed", left: "Search looks for others" };
   });
   // The newest search ended and found nothing beyond the clips there are,
