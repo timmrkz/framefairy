@@ -560,7 +560,7 @@ because it runs by hand, takes half an hour anyway and holds up nothing.
 
 `build`, `linux`, `fuzz`, the walks, the nightly fuzzing and govulncheck
 run in a container, the CI image, built from
-`.github/ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
+`ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
 with every package the Go side compiles against,
 ffmpeg, meson, ninja, nasm and patchelf beside them. The walks run in a
 second image of the same file, the first with the headless Chromium of
@@ -634,7 +634,12 @@ scan made once is out of date the week after.
 - **Dependabot**, `.github/dependabot.yml`, opens a pull request once a
   week when a Go module, a package of the interface, an action or a
   Python package in `requirements.txt` has a newer version, and when the
-  Ubuntu image the CI image starts from has a newer build. A new
+  Ubuntu image the CI image starts from has a newer build of 24.04, the
+  runners' own system, which it stays on. Nothing it moves but the
+  actions lies under `.github/`, because GitHub refuses its pull request
+  for a file there from any other ecosystem, which is how the CI image's
+  Dockerfile, under `.github/` until then, got no update for a month.
+  `internal/workflows` fails on such a directory. A new
   version waits seven days before Dependabot takes it, `cooldown` on
   every ecosystem, so a hijacked release is usually found and pulled by
   then. GitHub's own wait is three days. A security update never waits.

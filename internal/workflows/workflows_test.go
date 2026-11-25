@@ -154,7 +154,7 @@ func TestNodeIsPinnedOnce(t *testing.T) {
 			t.Errorf("%s names a Node of its own: take it from node-version-file: .node-version", filepath.Base(f))
 		}
 	}
-	docker, err := os.ReadFile(filepath.Join("..", "..", ".github", "ci-image", "Dockerfile"))
+	docker, err := os.ReadFile(filepath.Join("..", "..", "ci-image", "Dockerfile"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestTheCIImageBringsTheGoOfGoMod(t *testing.T) {
 	if m := regexp.MustCompile(`(?m)^go (\d+\.\d+)`).FindSubmatch(mod); m != nil {
 		want = string(m[1])
 	}
-	docker, err := os.ReadFile(filepath.Join("..", "..", ".github", "ci-image", "Dockerfile"))
+	docker, err := os.ReadFile(filepath.Join("..", "..", "ci-image", "Dockerfile"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,11 +602,12 @@ func TestNoPackageRunsCodeWhenInstalled(t *testing.T) {
 type dependabotConfig struct {
 	Groups  map[string]any `yaml:"multi-ecosystem-groups"`
 	Updates []struct {
-		Ecosystem string   `yaml:"package-ecosystem"`
-		Directory string   `yaml:"directory"`
-		Group     string   `yaml:"multi-ecosystem-group"`
-		Patterns  []string `yaml:"patterns"`
-		Allow     []struct {
+		Ecosystem   string   `yaml:"package-ecosystem"`
+		Directory   string   `yaml:"directory"`
+		Directories []string `yaml:"directories"`
+		Group       string   `yaml:"multi-ecosystem-group"`
+		Patterns    []string `yaml:"patterns"`
+		Allow       []struct {
 			Type string `yaml:"dependency-type"`
 		} `yaml:"allow"`
 		Ignore []struct {
@@ -694,6 +695,31 @@ func TestDependabotMovesWailsInOnePullRequest(t *testing.T) {
 	}
 	if _, ok := config.Groups[group["gomod"]]; !ok && group["gomod"] != "" {
 		t.Errorf("dependabot.yml names the group %q, which multi-ecosystem-groups does not define", group["gomod"])
+	}
+}
+
+// Dependabot opens no pull request that changes a file under .github/
+// for any ecosystem but the actions: GitHub answers "invalid or
+// unauthorized changes", and the update fails in its log, where nobody
+// reads it. The CI image's Dockerfile lay under .github/ and got no
+// update for a month that way.
+//
+// On the real disk: what is read is the repository's own Dependabot settings.
+func TestDependabotMovesNothingUnderGitHubButTheActions(t *testing.T) {
+	t.Parallel()
+	updates := readDependabot(t).Updates
+	if len(updates) == 0 {
+		t.Fatal("dependabot.yml has no updates, so this test reads it wrong")
+	}
+	for _, u := range updates {
+		if u.Ecosystem == "github-actions" {
+			continue
+		}
+		for _, d := range append([]string{u.Directory}, u.Directories...) {
+			if d == "/.github" || strings.HasPrefix(d, "/.github/") {
+				t.Errorf("dependabot.yml's %s entry reads %s, under .github/, where GitHub refuses its pull requests: move the files out of .github/", u.Ecosystem, d)
+			}
+		}
 	}
 }
 
