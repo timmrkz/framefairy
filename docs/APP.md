@@ -3960,8 +3960,8 @@ speech model took, never what they were, see [LOGGING.md](LOGGING.md).
 - **Word corrections and removed words:** in each clip's plan entry,
   `corrections` and `removed_words`. They change what that clip's
   captions show, never the stored transcript or another clip.
-- **Training records:** in `~/.framefairy/training/`, one folder for every
-  episode. The app writes them and shows nothing about them. See [TRAINING.md](TRAINING.md).
+- **Training records:** in `~/.framefairy/training/`, one folder for the
+  records of all episodes together. The app writes them and shows nothing about them. See [TRAINING.md](TRAINING.md).
 - **The app's own log:** `~/Library/Logs/Frame Fairy/app.log` on macOS,
   where the Console app shows it, and `Frame Fairy/logs/app.log` in the
   user's cache folder elsewhere. It says enough that a fault is found by

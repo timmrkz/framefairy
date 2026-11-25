@@ -32,20 +32,22 @@ user's own reports:
 - In the user's logs from 7 to 21 November there are 14 removals, every
   one with the folder deleted, `work_deleted: true`. 8 of them were
   followed by adding the same video again within 20 seconds, to start
-  it over. The other 6 lost their work for good.
+  it over. The other 6 were not added again within the logs there are.
 - The three things to keep are small files in the folder's `logs`:
   - the transcript, `words.json`, with the parts transcribed so far, and its
     loudness, `words.frames`
   - the clip sets, `clips*.json`. Each clip holds its edges, cuts,
-    crop, the words fixed in its captions, `corrections`, the words
-    removed from them, `removed_words`, and under `shorts` where its
-    short went, which is what makes it green
+    crop, the words fixed in its captions, `corrections`, and the words
+    removed from them, `removed_words`. Each clip set notes under
+    `shorts`, by clip id, where each short went, which is what makes a
+    clip green
   - nothing else: a fixed word lives in its clip, never in the
     transcript, see docs/WORDS.md
 - The transcript is held to its video by the video's name, size and
   time, `sourceStamp` in `engine/transcript.go`. A video renamed, or
   downloaded again with a new time, finds its transcript out of date
-  and is transcribed again. Each clip set names its video's path, `source`.
+  and is transcribed again. Each clip set names its video's path,
+  `source`, which nothing reads.
 - A fingerprint of a video's content is already in the code,
   `EpisodeKey` in `engine/training.go`: the file's size and its first
   and last megabyte, hashed, sixteen letters and digits like
@@ -135,9 +137,9 @@ Simulation 1. Drawn as layers, each using only the ones under it:
 the app: Remove, and adding a video, as today
         │
         ▼
-the engine: SetAside(video), at the red Remove before the folder goes,
-            PutBack(video), when a video is added with no transcript
-            and no clips of its own
+the engine: SetAside(video, key), at the red Remove before the folder
+            goes, PutBack(video, key), when a video is added, before
+            the app decides whether it is new
         │
         ▼
 fileio over afero: the disk, or memory in a test
@@ -156,13 +158,35 @@ reasoned, not measured.
 
 ### The rules
 
-- **The key is worked out once, when the video is added,** and kept in
-  `added.json` in its folder. Remove reads it from there.
-- **Putting back fits the files to the video they come back to.** The
-  fingerprint has proved it is the same content, so the transcript's
-  stamp is written anew for the file's name, size and time, and each
-  clip set's `source` for its path. Without that, a renamed or
-  downloaded-again video would be transcribed again from the start.
+- **The app works the key out and hands it to the engine.** At the red
+  Remove it reads the fingerprint from the video file. That covers the
+  videos already in the library when this is built, which have no key
+  saved anywhere. It also keeps the key in `added.json` when a video is
+  added, for the one case the file is gone by the time it is removed.
+  A video that is gone and was added before this was built has no key,
+  so nothing is kept for it, as today. The engine never reads
+  `added.json`, which is the app's.
+- **The kept folder is named on the `Machine`,** through `UseSystem`,
+  the way the caption ink file is, so a test keeps it in memory.
+- **Setting aside never loses anything.** The files are copied into a
+  new folder beside the kept one and then renamed into place, so a quit
+  halfway or a full disk leaves either the old set or the new one, never
+  a mix. Only regular files are taken, never through a link. When it
+  fails, the folder is not deleted, the video stays in the list, and a
+  toast says why. When a set for the same key is already there, the
+  newer one takes its place.
+- **Putting back fits the transcript to the video it comes back to.**
+  The fingerprint has proved it is the same content, so the
+  transcript's stamp is written anew for the file's name, size and
+  time. Without that, a renamed or downloaded-again video would be
+  transcribed again from the start. The clip sets go back byte for
+  byte.
+- **Putting back comes first.** The app decides whether an added video
+  is new, and so whether a first search starts, by whether it has a
+  folder, `fresh` in `library.go`. A video put back is not new, so it
+  is put back before that is decided, and no search starts on top of
+  its clips. The build pull request times adding a video before and
+  after.
 - **Only into an empty place.** A video added again with a transcript
   or clips of its own, after Keep, keeps them, and what was set aside
   stays set aside.
@@ -178,8 +202,8 @@ reasoned, not measured.
 
 ### How it is built
 
-1. **The key in `added.json`, setting aside at the red Remove, putting
-   back when a video is added.** One pull request, in the engine and in
+1. **The key, setting aside at the red Remove, putting back when a
+   video is added.** One pull request, in the engine and in
    `removeEpisode` and `AddEpisodes`, with tests for a rename, a move
    and a file downloaded again.
 2. **A walk** that removes a video with a rendered clip and a fixed
