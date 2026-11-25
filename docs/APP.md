@@ -1401,9 +1401,12 @@ bubble scrolled by those eight pixels.
       needs it. The first search happens only for an episode nobody has
       ever searched, which is one with no plan and no `jobs/` folder, so
       removing every clip again does not bring a search of its own back:
-      a search is the machine's time, and nobody asked for it. Deleting
-      the work folder makes the episode new, and then it starts over as a
-      new one does. The rule is `firstSearch` in
+      a search is the machine's time, and nobody asked for it. A video
+      whose work folder was deleted and that is added again gets its
+      transcript and clip sets back first, see What comes back, so it is
+      not new and no first search starts on top of its clips. One that
+      had no clip set kept is new, and starts over as a new one does. The
+      rule is `firstSearch` in
       `cmd/framefairy-app/search.go`, and the path tests follow it.
     - **The target follows the window.** Until it is changed, Target
       holds how many clips the next window suggests, as a number like any

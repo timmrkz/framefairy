@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -38,19 +39,28 @@ func KeptDir() string {
 }
 
 // keptPlace is where a machine keeps the copies, and the key of each
-// video it worked out, by the video's size and time, so a video is read
-// for its key once while it stays as it is.
+// video it worked out, by the video's size and time. The keys are kept
+// too, in keysName beside the copies, so a video is read for its key once
+// while it stays as it is, and not again at every start: that is two
+// megabytes of each video in the library, read from a drive that may
+// have to wake up for it.
 type keptPlace struct {
-	mu   sync.Mutex
-	dir  string
-	keys map[string]keyedVideo
+	mu     sync.Mutex
+	dir    string
+	keys   map[string]keyedVideo
+	loaded bool
 }
 
-// keyedVideo is the key of a video and the stamp it was worked out for.
+// keysName is the file beside the copies that holds the key of every
+// video worked out so far, by its path.
+const keysName = "keys.json"
+
+// keyedVideo is the key of a video and the size and time it was worked
+// out for.
 type keyedVideo struct {
-	size int64
-	mod  time.Time
-	key  string
+	Size int64     `json:"size"`
+	Mod  time.Time `json:"modified"`
+	Key  string    `json:"key"`
 }
 
 // KeepIn names the folder the copies are kept in. UseSystem names
@@ -59,35 +69,75 @@ func (m *Machine) KeepIn(dir string) {
 	m.kept.mu.Lock()
 	defer m.kept.mu.Unlock()
 	m.kept.dir = dir
+	m.kept.keys = nil
+	m.kept.loaded = false
 }
 
 // keptFor is the folder of a video's copy, and false when it has none:
 // the machine keeps no copies, or the video cannot be read for its key.
-// The caller holds m.kept.mu.
+// It takes m.kept.mu only to look the key up and to note it, so a video
+// read for its key holds up no Keep or PutBack of another video.
 func (m *Machine) keptFor(source string) (string, bool) {
-	if m.kept.dir == "" {
-		return "", false
-	}
 	info, err := m.Files.Stat(source)
 	if err != nil || !info.Mode().IsRegular() {
 		return "", false
 	}
-	known, ok := m.kept.keys[source]
-	if !ok || known.size != info.Size() || !known.mod.Equal(info.ModTime()) {
-		known = keyedVideo{size: info.Size(), mod: info.ModTime(), key: EpisodeKey(m.Files, source)}
-		if m.kept.keys == nil {
-			m.kept.keys = map[string]keyedVideo{}
-		}
-		m.kept.keys[source] = known
-	}
-	// The key becomes a folder name, and a mistake there would reach
-	// every copy, so only a key of the one shape EpisodeKey makes is
-	// taken: an empty one, from a file that could not be opened, is none.
-	if !validKey(known.key) {
+	m.kept.mu.Lock()
+	dir := m.kept.dir
+	known, ok := m.knownKey(source)
+	m.kept.mu.Unlock()
+	if dir == "" {
 		return "", false
 	}
-	dir, err := fileio.SafeChildIn(m.Files, m.kept.dir, known.key)
-	return dir, err == nil
+	if !ok || known.Size != info.Size() || !known.Mod.Equal(info.ModTime()) {
+		known = keyedVideo{Size: info.Size(), Mod: info.ModTime(), Key: EpisodeKey(m.Files, source)}
+		// The key becomes a folder name, and a mistake there would reach
+		// every copy, so only a key of the one shape EpisodeKey makes is
+		// taken: an empty one, from a file that could not be opened, is
+		// none, and is not noted.
+		if !validKey(known.Key) {
+			return "", false
+		}
+		m.kept.mu.Lock()
+		if m.kept.dir == dir {
+			m.noteKey(source, known)
+		}
+		m.kept.mu.Unlock()
+	}
+	if !validKey(known.Key) {
+		return "", false
+	}
+	child, err := fileio.SafeChildIn(m.Files, dir, known.Key)
+	return child, err == nil
+}
+
+// knownKey is the key noted for a video, read from keysName the first
+// time. A file that does not read is taken as no keys at all, so each
+// video is read for its key again. The caller holds m.kept.mu.
+func (m *Machine) knownKey(source string) (keyedVideo, bool) {
+	if !m.kept.loaded && m.kept.dir != "" {
+		m.kept.loaded = true
+		if body, err := afero.ReadFile(m.Files, filepath.Join(m.kept.dir, keysName)); err == nil {
+			_ = json.Unmarshal(body, &m.kept.keys)
+		}
+	}
+	known, ok := m.kept.keys[source]
+	return known, ok
+}
+
+// noteKey notes the key of a video and writes the keys to keysName. One
+// that cannot be written costs only a read of the video at the next
+// start. The caller holds m.kept.mu.
+func (m *Machine) noteKey(source string, known keyedVideo) {
+	if m.kept.keys == nil {
+		m.kept.keys = map[string]keyedVideo{}
+	}
+	m.kept.keys[source] = known
+	body, err := json.Marshal(m.kept.keys)
+	if err != nil || m.Files.MkdirAll(m.kept.dir, 0o755) != nil {
+		return
+	}
+	_ = fileio.WriteAtomic(m.Files, filepath.Join(m.kept.dir, keysName), body)
 }
 
 // validKey says whether key is what EpisodeKey makes: sixteen lowercase
@@ -154,12 +204,12 @@ func keptNames(fsys afero.Fs, dir string) []string {
 // nothing but the folder. A work folder with nothing to keep, gone or
 // not written yet, leaves the copy as it is.
 func (m *Machine) Keep(source string) error {
-	m.kept.mu.Lock()
-	defer m.kept.mu.Unlock()
 	dir, ok := m.keptFor(source)
 	if !ok {
 		return nil
 	}
+	m.kept.mu.Lock()
+	defer m.kept.mu.Unlock()
 	logs := LogsDir(source)
 	names := keptNames(m.Files, logs)
 	if len(names) == 0 {
@@ -221,12 +271,12 @@ func (m *Machine) Keep(source string) error {
 // or downloaded again would be transcribed again from the start. The
 // copy stays where it is, so the video can come back again.
 func (m *Machine) PutBack(source string) (bool, error) {
-	m.kept.mu.Lock()
-	defer m.kept.mu.Unlock()
 	dir, ok := m.keptFor(source)
 	if !ok {
 		return false, nil
 	}
+	m.kept.mu.Lock()
+	defer m.kept.mu.Unlock()
 	names := keptNames(m.Files, dir)
 	logs := LogsDir(source)
 	if len(names) == 0 || len(keptNames(m.Files, logs)) > 0 {

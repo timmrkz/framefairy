@@ -149,7 +149,7 @@ Simulation 2, with the key. Drawn as layers, each using only the ones
 under it:
 
 ```
-the app: the watch hears a transcript or a clip set written, Remove,
+the app: the watch sees a transcript or a clip set written, Remove,
          the start, adding a video
 the command line: after a run
         │
@@ -178,15 +178,30 @@ A few megabytes for hours of video, most of it the transcript.
   differs from its copy, and gives the copy the time of what it copied,
   so the next Keep with nothing new reads only the folder.
 - **Never deletes.** A work folder with nothing to keep, gone or not
-  written yet, leaves the copy as it is. A clip set is never deleted by
-  the app, so the copy never needs to delete one either.
-- **When it runs.** The app calls it when the watch hears a transcript
+  written yet, leaves the copy as it is. The app deletes a clip set file
+  in one place only, an undo of the search that made it. The copy keeps
+  that one, because a folder deleted file by file looks the same to
+  Keep while it goes, and a copy that followed it would lose what it is
+  for.
+- **When it runs.** The app calls it when the watch sees a transcript
   or a clip set written, `reconcile`, which is every save of an edit,
   every clip set a search writes and every 8 seconds of transcription,
   `checkpointDefault`. Before the red Remove deletes a folder, and if
   it fails nothing is deleted. Once as the app starts, after the window
   has its answers, for what the command line wrote while the app was
   closed. The command line calls it after a run.
+- **Why not the writers themselves.** Simulation 2 has every write
+  copy itself. `writeTranscript` and `replacePlan`, the two writers,
+  hold only an `afero.Fs`, not the `Machine` that knows the kept folder
+  and the keys, and eighteen callers reach them from the app, the
+  command line and the engine's own jobs. Passing the `Machine` to all
+  of them is a change of its own, and transcription's goroutine would
+  then pay the 20 ms copy of every save. The watch already sees every
+  one of those writes, on a goroutine of its own, so the copy follows it
+  there, and the four places that call Keep all call the one function
+  in the engine. What that costs is the start, which has to catch up on
+  what was written while the app was closed, and the gaps named under
+  What follows.
 - **The words are read before their loudness,** which only ever grows,
   and the loudness is written first, the way `writeTranscript` writes
   them, so the copy never has words that go further than their
@@ -194,10 +209,14 @@ A few megabytes for hours of video, most of it the transcript.
 - **Read only by `PutBack`, only into an empty place.** A video added
   with a transcript or a clip set of its own, after Keep, keeps them.
   So the work folder stays the truth while it is there.
-- **Putting back comes first.** The app decides whether an added video
-  is new, and so whether a first search starts, by whether it has a
-  folder, `fresh` in `library.go`. A video put back is not new, so it
-  is put back before that is decided.
+- **Putting back comes first, and inside the add.** The app decides
+  whether an added video is new, and so whether a first search starts,
+  by whether it had a folder. A video put back is not new. The put back
+  runs inside the store's add, `store.addEpisodes`, after the checks
+  that refuse a video sharing a folder with another, so a video refused
+  writes nothing, and under the lock the delete of what was written
+  back into the folder of a video let go also takes, so that delete
+  never falls between the put back and the add.
 - **Putting back fits the transcript to the video it comes back to.**
   The fingerprint has proved it is the same content, so the
   transcript's stamp is written anew for the file's name, size and
@@ -206,7 +225,9 @@ A few megabytes for hours of video, most of it the transcript.
   byte, each read as a plan first, `writePlanFile`. A file that does
   not read is not put back.
 - **A key is checked before it is a path.** The key of each video is
-  worked out once while its size and time stay the same. An empty one,
+  worked out once while its size and time stay the same, and noted in
+  `keys.json` beside the copies, so a start does not read every video
+  again. It is worked out outside the lock Keep and PutBack take. An empty one,
   which `EpisodeKey` gives for a file it cannot open, keeps nothing. A
   key is taken only as sixteen lowercase hex digits, and the folder is
   reached through `SafeChildIn`. Only regular files are copied, never
@@ -222,15 +243,19 @@ words fixed, whatever it is called now and wherever it is, however its
 folder went.
 
 What it costs, measured with `BenchmarkKeep` in a cloud session, on a
-four hour transcript, 20 runs each, three times: a Keep with nothing
-new takes 0.03 ms, one after a save of the transcript 25 to 31 ms,
-which is once every 8 seconds while a long video is transcribed, on the
-watch's goroutine. Remove waits for one Keep. The first start after the
-update reads two megabytes of each video for its key and copies what
-each has. A few megabytes stay for each video ever added. They are not
+four hour transcript, five runs each: a Keep with nothing new takes
+0.02 ms, one after a save of the transcript 20 ms, which is once every
+8 seconds while a long video is transcribed, on the watch's goroutine.
+Remove waits for one Keep. Adding a video reads two megabytes of it for
+its key, once, 3 ms, and putting a four hour video's work back takes
+57 ms, which the add waits for. The first start after the update reads
+each video for its key, 3 ms each, and copies what each has. Later
+starts read the keys from `keys.json`, 0.03 ms a video. A few megabytes stay for each video ever added. They are not
 cleaned up. If they ever add up, a way to throw them away comes then.
 
 What it does not cover: a video exported again as a new file, which is
-a different fingerprint. Writes made while the app was closed by
+a different fingerprint. A search undone whole comes back with the
+video, as a clip set, when the video is added again after its folder
+was deleted. Writes made while the app was closed by
 anything but the command line, and a folder deleted before the next
 start, which is rare.

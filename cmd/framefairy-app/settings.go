@@ -280,17 +280,36 @@ func (s *store) Episodes() []string {
 // transcript, the same clip sets, the same rendered names. The second of
 // them is not added, and the caller is told which.
 func (s *store) AddEpisodes(paths []string) ([]string, error) {
+	added, _, err := s.addEpisodes(paths)
+	return added, err
+}
+
+// addEpisodes is AddEpisodes, and says too which of the videos added are
+// new: no work folder before the add and nothing put back into one, so
+// their first search follows.
+//
+// A video removed earlier, its folder deleted by Remove or in Finder, gets
+// back the transcript and the clip sets the engine kept of it, under
+// whatever name and in whatever folder it is now, see
+// engine.Machine.PutBack. That happens here, under adding, so the delete
+// of what was written back into the folder of a video let go, clearLetGo,
+// runs before it or after the video is in the library, never in between:
+// in between it deleted what had just been put back, the video started
+// as new, and its new work was then kept over the old. It happens only
+// for a video that passed the checks, so a video refused for sharing a
+// folder writes nothing into the folder of the other. The store's lock
+// is not held while it runs, so the window reads the library meanwhile.
+func (s *store) addEpisodes(paths []string) ([]string, map[string]bool, error) {
 	s.adding <- struct{}{}
 	defer func() { <-s.adding }()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	seen := map[string]bool{}
 	taken := map[string]string{}
 	for _, p := range s.episodes {
 		seen[p] = true
 		taken[engine.WorkDir(p)] = p
 	}
-	var clash, added []string
+	var clash, take []string
 	for _, p := range paths {
 		abs, err := filepath.Abs(p)
 		if err != nil || seen[abs] {
@@ -305,23 +324,52 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 				filepath.Base(abs), filepath.Base(other), filepath.Base(engine.WorkDir(abs))))
 			continue
 		}
+		seen[abs] = true
+		taken[engine.WorkDir(abs)] = abs
+		take = append(take, abs)
+	}
+	s.mu.Unlock()
+	fresh := map[string]bool{}
+	for _, abs := range take {
+		_, err := s.files.Stat(engine.WorkDir(abs))
+		put := s.putBack(abs)
+		fresh[abs] = err != nil && !put
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var added []string
+	for _, abs := range take {
 		if err := markAdded(s.files, abs); err != nil {
 			clash = append(clash, fmt.Sprintf("the folder %s beside %s cannot be written, %v",
 				filepath.Base(engine.WorkDir(abs)), filepath.Base(abs), err))
 			continue
 		}
 		s.episodes = append(s.episodes, abs)
-		seen[abs] = true
-		taken[engine.WorkDir(abs)] = abs
 		added = append(added, abs)
 	}
 	if err := s.save("library.json", s.episodes); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(clash) > 0 {
-		return added, errors.New(strings.Join(clash, ", ") + ", so it cannot be added")
+		return added, fresh, errors.New(strings.Join(clash, ", ") + ", so it cannot be added")
 	}
-	return added, nil
+	return added, fresh, nil
+}
+
+// putBack puts back what the engine kept of a video being added, and
+// says whether it did. One that could not be put back is said in the log
+// and added without it.
+func (s *store) putBack(video string) bool {
+	put, err := s.machine.PutBack(video)
+	switch {
+	case err != nil:
+		theLog.line(zerolog.WarnLevel, "library").Str("video", filepath.Base(video)).Err(err).
+			Msg("what was kept of a video added again could not be put back")
+	case put:
+		theLog.line(zerolog.InfoLevel, "library").Str("video", filepath.Base(video)).
+			Msg("the transcript and clips kept of a video added again are put back")
+	}
+	return put
 }
 
 func (s *store) RemoveEpisode(path string) error {

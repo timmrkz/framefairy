@@ -305,9 +305,10 @@ func reshapes(video string, changed []string) bool {
 
 // letGoIfRemoved takes a video whose folder was deleted outside the app,
 // with the video or without it, see deletedOutside, out of the library,
-// the way Remove with Delete does, and says whether it did: its folder
-// is everything the app has of it, so with the folder gone the video is
-// gone from the app too, and adding it again starts it from nothing.
+// the way Remove with Delete does, and says whether it did: with its
+// folder gone the video is gone from the app too, and adding it again
+// brings back only the transcript and the clip sets the engine kept of
+// it as they were written, see engine.Machine.Keep.
 //
 // Its work stops and the library no longer has it before anything else,
 // so nothing new starts on it. Whatever was still writing its folder is

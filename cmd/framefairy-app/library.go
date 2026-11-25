@@ -124,23 +124,9 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	// A video added while the first look runs is weighed against the
 	// library it leaves, see lookFirst.
 	s.store.afterFirstLook()
-	// A video removed earlier, its folder deleted by Remove or in Finder,
-	// gets back the transcript and the clip sets the engine kept of it,
-	// under whatever name and in whatever folder it is now. It is put back
-	// before anything asks whether the video is new, so it is not: no
-	// first search starts on top of its clips. See engine.Machine.PutBack.
-	s.putBack(videos)
-	// Which of them have no work folder yet, so a video taken out again
-	// takes the folder this add made with it, and only that one.
-	fresh := map[string]bool{}
-	for _, v := range videos {
-		if abs, err := filepath.Abs(v); err == nil {
-			if _, err := s.store.files.Stat(engine.WorkDir(abs)); err != nil {
-				fresh[abs] = true
-			}
-		}
-	}
-	added, err := s.store.AddEpisodes(videos)
+	// Which of them are new, with no work folder before this add and
+	// nothing put back into one, see store.addEpisodes.
+	added, fresh, err := s.store.addEpisodes(videos)
 	for _, v := range added {
 		s.jobs.openEpisode(v)
 		s.levels.openEpisode(v)
@@ -340,8 +326,10 @@ func (s *FrameFairy) undecodable(ctx context.Context, video string, late <-chan 
 var errFirstFrame = errors.New("a frame came")
 
 // RemoveEpisode takes an episode out of the library. With deleteWork, it
-// also deletes everything made for it, so adding it again starts from
-// nothing. The episode file itself always stays.
+// also deletes its work folder, rendered clips and all, after the engine
+// kept its transcript and clip sets, so adding it again brings back those
+// and nothing else, see engine.Machine.Keep. The episode file itself
+// always stays.
 func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	// A video removed while its picture is being checked: the check is
 	// called off first, so nothing it starts outlives the video.
@@ -484,28 +472,6 @@ func startReaped(cmd *exec.Cmd) error {
 	}
 	go func() { _ = cmd.Wait() }()
 	return nil
-}
-
-// putBack puts back what the engine kept of each video being added that
-// is not in the library yet, see engine.Machine.PutBack. A video that is
-// a link is left to the add, which refuses it.
-func (s *FrameFairy) putBack(videos []string) {
-	known := s.store.Episodes()
-	for _, v := range videos {
-		abs, err := filepath.Abs(v)
-		if err != nil || slices.Contains(known, abs) || s.store.machine.Episode(abs).Linked() != "" {
-			continue
-		}
-		put, err := s.store.machine.PutBack(abs)
-		switch {
-		case err != nil:
-			theLog.line(zerolog.WarnLevel, "library").Str("video", filepath.Base(abs)).Err(err).
-				Msg("what was kept of a video added again could not be put back")
-		case put:
-			theLog.line(zerolog.InfoLevel, "library").Str("video", filepath.Base(abs)).
-				Msg("the transcript and clips kept of a video added again are put back")
-		}
-	}
 }
 
 // keep has the engine copy what changed of a video's transcript and clip

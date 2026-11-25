@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -125,7 +126,7 @@ func TestAWorkFolderDeletedInFinderLeavesTheCopyAsItWas(t *testing.T) {
 		t.Fatal(err)
 	}
 	folderGone(t, m, source)
-	// The watch hears the folder go, and keeping again finds nothing to
+	// The watch sees the folder go, and keeping again finds nothing to
 	// keep, which must not empty the copy.
 	if err := m.Keep(source); err != nil {
 		t.Fatal(err)
@@ -234,5 +235,71 @@ func TestOnlyAKeyOfTheShapeEpisodeKeyMakesIsAFolder(t *testing.T) {
 		if got := validKey(key); got != want {
 			t.Errorf("validKey(%q) = %v, want %v", key, got, want)
 		}
+	}
+}
+
+// unreadable is a disk on which one file cannot be opened, while it can
+// still be looked at, the way a video is on a drive that is asleep.
+type unreadable struct {
+	afero.Fs
+	path string
+}
+
+func (u unreadable) Open(name string) (afero.File, error) {
+	if name == u.path {
+		return nil, afero.ErrFileNotFound
+	}
+	return u.Fs.Open(name)
+}
+
+func (u unreadable) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	if name == u.path {
+		return nil, afero.ErrFileNotFound
+	}
+	return u.Fs.OpenFile(name, flag, perm)
+}
+
+// The app keeps every video in the library when it starts. A video was
+// read for its key at every start, two megabytes of each, so the key is
+// kept beside the copies and read from there while the video stays as it
+// is.
+func TestAVideoIsReadForItsKeyOnceNotAtEveryStart(t *testing.T) {
+	t.Parallel()
+	m, source := keptVideo(t)
+	if err := m.Keep(source); err != nil {
+		t.Fatal(err)
+	}
+	// The app starts again, and the video cannot be read now.
+	again := NewMachine(unreadable{Fs: m.Files, path: source})
+	again.KeepIn("/kept")
+	path := filepath.Join(LogsDir(source), "clips-0-1800.json")
+	if err := editPlan(again.Files, path, func(_ *object, clips []*object) error {
+		clips[0].set("slug", "b")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := again.Keep(source); err != nil {
+		t.Fatal(err)
+	}
+	dir, _ := m.keptFor(source)
+	_, clips, err := LoadClips(m.Files, filepath.Join(dir, "clips-0-1800.json"))
+	if err != nil || clips[0].Slug != "b" {
+		t.Errorf("the edit was not kept without reading the video again: %v", err)
+	}
+}
+
+// A video changed in place, the same name with other content, is read
+// for its key again, so it does not take the copy of the video it was.
+func TestAVideoChangedInPlaceIsReadForItsKeyAgain(t *testing.T) {
+	t.Parallel()
+	m, source := keptVideo(t)
+	before, _ := m.keptFor(source)
+	if err := afero.WriteFile(m.Files, source, bytes.Repeat([]byte("other"), 1200), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after, ok := m.keptFor(source)
+	if !ok || after == before {
+		t.Errorf("a video with other content kept its old key, %s", after)
 	}
 }
