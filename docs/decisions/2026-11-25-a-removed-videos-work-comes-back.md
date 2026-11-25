@@ -16,7 +16,7 @@ later, the information about the clips that I have already generated
 and that I have already rendered are gone ... I then have to go through
 the entire video again." On 25 November they set the scope: "The
 fingerprinting and then the restoring of the metadata of those three
-things", the transcript and how far the hearing got, the clips with
+things", the transcript and how far transcription got, the clips with
 their rendered marks, and every word fixed in the captions. "Nothing
 else should change." The shorts stay where the settings put them, and
 the person can still delete everything else.
@@ -34,7 +34,7 @@ user's own reports:
   followed by adding the same video again within 20 seconds, to start
   it over. The other 6 lost their work for good.
 - The three things to keep are small files in the folder's `logs`:
-  - the transcript, `words.json`, with the parts heard so far, and its
+  - the transcript, `words.json`, with the parts transcribed so far, and its
     loudness, `words.frames`
   - the clip sets, `clips*.json`. Each clip holds its edges, cuts,
     crop, the words fixed in its captions, `corrections`, the words
@@ -45,7 +45,7 @@ user's own reports:
 - The transcript is held to its video by the video's name, size and
   time, `sourceStamp` in `engine/transcript.go`. A video renamed, or
   downloaded again with a new time, finds its transcript out of date
-  and is heard again. Each clip set names its video's path, `source`.
+  and is transcribed again. Each clip set names its video's path, `source`.
 - A fingerprint of a video's content is already in the code,
   `EpisodeKey` in `engine/training.go`: the file's size and its first
   and last megabyte, hashed, sixteen letters and digits like
@@ -58,7 +58,7 @@ user's own reports:
    today, shorts in its `out` folder included. Only the transcript and
    the clip sets are kept, in the app's own folder.
 2. **Add the same file again,** under the same name or another, from
-   the same folder or another. The transcript is there and hearing goes
+   the same folder or another. The transcript is there and transcription goes
    on from where it stopped. The clip cards are there, the rendered
    ones green on the range picker, with every word fixed in their
    captions. A short that was deleted with the folder no longer has
@@ -162,7 +162,7 @@ reasoned, not measured.
   fingerprint has proved it is the same content, so the transcript's
   stamp is written anew for the file's name, size and time, and each
   clip set's `source` for its path. Without that, a renamed or
-  downloaded-again video would be heard again from the start.
+  downloaded-again video would be transcribed again from the start.
 - **Only into an empty place.** A video added again with a transcript
   or clips of its own, after Keep, keeps them, and what was set aside
   stays set aside.
