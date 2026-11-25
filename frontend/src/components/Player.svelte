@@ -1537,7 +1537,14 @@
       });
     layers.set(captionAsk);
     const size = canvasSize();
-    return captionAsk && size ? layers.ready(frame, size) : null;
+    if (!captionAsk || !size) return null;
+    // Nothing is waited for where nothing lies over the frame that is not
+    // known yet: on the video, which shows the frame as filmed, and in a
+    // clip with no captions to draw, where the stretch dressed alike the
+    // frame is in says its dress. Its dress comes after it all the same.
+    // A step on the video waited for each dress, which nothing drew.
+    if (captionAsk.on === "video" || (!captionAsk.track && layers.known(frame, size))) return null;
+    return layers.ready(frame, size);
   }
   let dueWaiters: (() => void)[] = [];
   $effect(() => {
