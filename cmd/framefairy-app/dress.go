@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/maphash"
@@ -93,21 +94,49 @@ type turnedDress struct {
 // dressSent is the dress of the frame at a moment, d, of the clip whose
 // framing is named name, with its dress turned where a piece of the clip
 // holds the frame and R would turn that piece's part.
-func (p *previews) dressSent(name string, clip framed, d engine.FrameDress, at float64) dressSent {
+func (s *FrameFairy) dressSent(ctx context.Context, path, name string, clip framed, d engine.FrameDress, at float64) dressSent {
 	out := dressSent{FrameDress: d}
 	if !d.In || d.Piece < 0 || d.Piece >= len(clip.segments) {
 		return out
 	}
-	parts, ok := p.turns.get(name)
+	parts, ok := s.previews.turns.get(name)
 	if !ok {
-		return out
+		parts = s.turnsFor(ctx, path, name)
 	}
 	turned := parts[clip.segments[d.Piece].Part]
 	if turned == "" {
 		return out
 	}
-	if g, ok := p.framings.get(turned); ok && g.episode == clip.episode {
+	if g, ok := s.previews.framings.get(turned); ok && g.episode == clip.episode {
 		out.Turned = &turnedDress{Framing: turned, FrameDress: g.dress(at, false)}
 	}
 	return out
+}
+
+// clipRef is the clip of a plan a framing of the clip list is of.
+type clipRef struct{ plan, id string }
+
+// turnsFor works out the framings R turns each part of the clip whose
+// framing is named name to, and keeps them by it, for a clip whose frame
+// was dressed before a state said them: a clip whose card was read ahead
+// and then clicked, or the answer of an edit. R pressed on its frame
+// turned it only once the turned layer came. Kept empty where there are
+// none to be had, so a play of a clip asks the plan once, not each frame.
+func (s *FrameFairy) turnsFor(ctx context.Context, path, name string) map[int]string {
+	none := map[int]string{}
+	ref, ok := s.previews.clips.get(name)
+	if !ok {
+		return none
+	}
+	entry, err := s.clipEntry(ctx, path, ref.plan, ref.id)
+	info, perr := s.probe(ctx, path)
+	if err != nil || perr != nil || entry.Framing != name {
+		s.previews.turns.put(name, none, nil)
+		return none
+	}
+	s.turnsOf(path, s.plansOf(path), entry.Key, []ClipEntry{entry}, info)
+	if parts, ok := s.previews.turns.get(name); ok {
+		return parts
+	}
+	return none
 }

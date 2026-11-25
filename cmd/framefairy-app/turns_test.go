@@ -175,7 +175,9 @@ func BenchmarkTheStateOfAVideoWithAChosenClip(b *testing.B) {
 // turns the part that holds it, so R shows the part turned in the frame
 // it is pressed on without the turned dress being read ahead after every
 // step. It is what the framing R turns to answers for the same frame. A
-// frame of a cut, which R does not turn, comes with none.
+// frame of a cut, which R does not turn, comes with none. A clip not
+// chosen, whose card's frame is read ahead, has its frames dressed
+// turned too, so R pressed at once after the card is clicked turns it.
 func TestAFramesDressSaysHowRTurnsIt(t *testing.T) {
 	t.Parallel()
 	svc, eps := memoryLibrary(t, "ep.mp4")
@@ -187,7 +189,8 @@ func TestAFramesDressSaysHowRTurnsIt(t *testing.T) {
 	plan := filepath.Join(engine.LogsDir(video), "clips.json")
 	body := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "eins",
 	  "segments": [{"start": 10.0, "end": 12.0, "crop_x": 120},
-	               {"start": 13.0, "end": 14.0, "crop_x": 120}]}]}`
+	               {"start": 13.0, "end": 14.0, "crop_x": 120}]},
+	  {"id": "02", "slug": "zwei", "segments": [{"start": 30.0, "end": 32.0, "crop_x": 120}]}]}`
 	if err := afero.WriteFile(svc.store.files, plan, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +198,7 @@ func TestAFramesDressSaysHowRTurnsIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Turns == nil || len(st.Turns.Parts) != 2 || len(st.Clips) != 1 {
+	if st.Turns == nil || len(st.Turns.Parts) != 2 || len(st.Clips) != 2 {
 		t.Fatalf("the state has the turns %+v and %d clips", st.Turns, len(st.Clips))
 	}
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
@@ -220,5 +223,8 @@ func TestAFramesDressSaysHowRTurnsIt(t *testing.T) {
 	}
 	if cut := ask(st.Clips[0].Framing, "12.480"); cut.Turned != nil {
 		t.Errorf("a frame of the cut is dressed turned %+v", cut.Turned)
+	}
+	if card := ask(st.Clips[1].Framing, "30.000"); card.Turned == nil || card.Turned.Turn != 90 || card.Turned.Width != 1080 {
+		t.Errorf("the first frame of a clip not chosen is dressed turned %+v", card.Turned)
 	}
 }
