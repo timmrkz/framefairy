@@ -11,10 +11,9 @@
 # The job check asks the signed build whether it fits, with a token that
 # only reads. Only when it does not, the job build, which holds main's
 # signing identity, builds the tool from the checkout and runs nothing it
-# downloaded. On main it keeps the build and takes the signature of every
-# older build away. Started by hand on a branch, it builds and signs and
-# keeps the tool as an artifact of the run, takes the signature away
-# again and uploads nothing: only main's build is the release's.
+# downloaded. On main it keeps the build in the release. Started by hand
+# on a branch, it builds and signs and keeps the tool as an artifact of
+# the run, and uploads nothing: only main's build is the release's.
 name: Release tool
 
 on:
@@ -71,17 +70,11 @@ jobs:
           name: framefairy-release
           path: ${{ runner.temp }}/release-tool/built/framefairy-release
           retention-days: 3
-      # Only the newest build is kept and signed: keep takes the signature
-      # of every older build away, so none can be put back for a job to
-      # run. A job of an older commit finds a build of newer code, which
+      # The release holds the one file the jobs download. What makes a job
+      # trust it is main's signature and its fingerprint, never that it is
+      # there: a job of an older commit finds a build of newer code, which
       # does not fit, and builds.
       - if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: framefairy-release keep -file "$RUNNER_TEMP/release-tool/built/framefairy-release"
-      # A branch's build is never taken. Its signature is taken away again,
-      # which shows the token may do what keep does on main.
-      - if: github.ref != 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: framefairy-release unsign -file "$RUNNER_TEMP/release-tool/built/framefairy-release"

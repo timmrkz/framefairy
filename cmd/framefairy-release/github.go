@@ -94,9 +94,6 @@ type asset struct {
 	name    string
 	created time.Time
 	updated time.Time
-	// digest is GitHub's sha256 of the file, "sha256:" and hex, empty
-	// when GitHub gave none.
-	digest string
 }
 
 type waitingRun struct {
@@ -374,7 +371,6 @@ type devRelease struct {
 		Name    string    `json:"name"`
 		Created time.Time `json:"created_at"`
 		Updated time.Time `json:"updated_at"`
-		Digest  string    `json:"digest"`
 	} `json:"assets"`
 }
 
@@ -394,7 +390,7 @@ func (g *restGitHub) assets() ([]asset, error) {
 	}
 	all := make([]asset, 0, len(r.Assets))
 	for _, a := range r.Assets {
-		all = append(all, asset{id: a.ID, name: a.Name, created: a.Created, updated: a.Updated, digest: a.Digest})
+		all = append(all, asset{id: a.ID, name: a.Name, created: a.Created, updated: a.Updated})
 	}
 	return all, nil
 }

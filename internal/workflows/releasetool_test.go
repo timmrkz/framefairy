@@ -271,13 +271,11 @@ func TestTheJobThatSignsTheReleaseToolRunsNothingItDownloaded(t *testing.T) {
 	}
 }
 
-// release-tool.yml keeps a build only through framefairy-release keep,
-// which takes the signature of every older build away, so only main's
-// newest build can be handed to a job. A build put into the release any
-// other way would leave the one it replaced signed.
+// release-tool.yml keeps a build in the release only through
+// framefairy-release keep, never with lines of shell.
 //
 // On the real disk: what is read is the repository's own workflow.
-func TestOnlyTheNewestReleaseToolStaysSigned(t *testing.T) {
+func TestTheReleaseToolIsKeptByTheTool(t *testing.T) {
 	t.Parallel()
 	var wf struct {
 		Jobs map[string]cacheJob `yaml:"jobs"`

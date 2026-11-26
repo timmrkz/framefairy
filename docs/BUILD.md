@@ -744,9 +744,12 @@ scan made once is out of date the week after.
   older commit, it builds the tool itself with no cache,
   `framefairy-release self`, which stamps the key in. The job of
   `release-tool.yml` that signs as main never runs a downloaded build:
-  another job, with a token that only reads, asks it. When it keeps a
-  new build, `framefairy-release keep` deletes the attestation of every
-  older one, so only main's newest build can ever pass the check.
+  another job, with a token that only reads, asks it, and
+  `framefairy-release keep` puts the new build in the release. An older
+  build main signed stays signed and could be put back by anyone who may
+  write to the release, so what guards a job is `fits`: any build main
+  signed runs only on the code it was built from, and every other answer
+  ends in a build of the checkout.
   `internal/workflows` fails on a job with an environment, a secret or a
   write permission that restores a cache or builds the tool any other
   way, on a downloaded tool run before its check or in a job that can

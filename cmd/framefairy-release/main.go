@@ -53,11 +53,7 @@
 //	    is built from, and put it on the job's path
 //	framefairy-release keep -file F
 //	    for release-tool.yml on main: keep the build in the release
-//	    release-tool and take the signature of every older one away, see
-//	    keep.go
-//	framefairy-release unsign -file F
-//	    take the signature of a build away, which release-tool.yml started
-//	    on a branch does to its own
+//	    release-tool, the one file there, see keep.go
 //	framefairy-release behind -status N -table F
 //	    keep the issue of the tools the app ships that are behind their
 //	    newest release, from how scripts/upstream.sh --behind ended and
@@ -132,8 +128,6 @@ func main() {
 		err = selfCommand(args, os.Stdout)
 	case "keep":
 		err = keepCommand(args, toolReleaseFromEnv(), os.Stdout)
-	case "unsign":
-		err = unsignCommand(args, toolReleaseFromEnv(), os.Stdout)
 	default:
 		usage()
 	}
@@ -144,7 +138,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick | failed | behind | walks | fits | self | keep | unsign, see the head of main.go")
+	fmt.Fprintln(os.Stderr, "usage: framefairy-release key | build-plan | publish-plan | pack | check | sign | publish | not-published | channels | unstick | failed | behind | walks | fits | self | keep, see the head of main.go")
 	os.Exit(2)
 }
 
