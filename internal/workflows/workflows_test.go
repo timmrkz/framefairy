@@ -154,7 +154,7 @@ func TestNodeIsPinnedOnce(t *testing.T) {
 			t.Errorf("%s names a Node of its own: take it from node-version-file: .node-version", filepath.Base(f))
 		}
 	}
-	docker, err := os.ReadFile(filepath.Join("..", "..", "ci-image", "Dockerfile"))
+	docker, err := os.ReadFile(filepath.Join("..", "..", "docker", "ci", "Dockerfile"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestTheCIImageBringsTheGoOfGoMod(t *testing.T) {
 	if m := regexp.MustCompile(`(?m)^go (\d+\.\d+)`).FindSubmatch(mod); m != nil {
 		want = string(m[1])
 	}
-	docker, err := os.ReadFile(filepath.Join("..", "..", "ci-image", "Dockerfile"))
+	docker, err := os.ReadFile(filepath.Join("..", "..", "docker", "ci", "Dockerfile"))
 	if err != nil {
 		t.Fatal(err)
 	}
