@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -53,8 +55,8 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 		t.Fatalf("the captions answered %d %q, a layer at %d,%d of %dx%d", rec.Code, rec.Body.String(), l.X, l.Y, l.W, l.H)
 	}
 	// How large the pill of the word is drawn on it.
-	if s, err := strconv.ParseFloat(rec.Header().Get("X-Caption-Scale"), 64); err != nil || s < 1 || s > 1.2 {
-		t.Errorf("the captions say the pill is drawn at %q", rec.Header().Get("X-Caption-Scale"))
+	if s := dressIn(t, rec).Scale; s < 1 || s > 1.2 {
+		t.Errorf("the captions say the pill is drawn at %q", dressIn(t, rec).scale())
 	}
 	// The frame round the word grows with a pill that does, and stays
 	// still where no pill is drawn: with the highlight off it grew to 1.15
@@ -66,7 +68,7 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	grown := ""
 	for at := 10.0; at < 12 && grown == ""; at += 0.02 {
 		popped.Set("at", fmt.Sprintf("%.2f", at))
-		if rec, _ := draw(popped); rec.Header().Get("X-Caption-Scale") > "1.0100" {
+		if rec, _ := draw(popped); dressIn(t, rec).scale() > "1.0100" {
 			grown = popped.Get("at")
 		}
 	}
@@ -74,8 +76,8 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 		t.Fatalf("no frame from 10 s to 12 s says its pill is grown")
 	}
 	popped.Set("highlightOn", "0")
-	if rec, _ := draw(popped); rec.Code != http.StatusOK || rec.Header().Get("X-Caption-Scale") != "1.0000" {
-		t.Errorf("at %s with the highlight off the captions say the pill is drawn at %q", grown, rec.Header().Get("X-Caption-Scale"))
+	if rec, _ := draw(popped); rec.Code != http.StatusOK || dressIn(t, rec).scale() != "1.0000" {
+		t.Errorf("at %s with the highlight off the captions say the pill is drawn at %q", grown, dressIn(t, rec).scale())
 	}
 	// With the word being typed left out.
 	typing := url.Values{}
@@ -96,13 +98,13 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	for _, p := range []string{"word", "rest"} {
 		part.Set("part", p)
 		rec, pl := draw(part)
-		if rec.Code != http.StatusOK || pl.W == 0 || pl.W > l.W || rec.Header().Get("X-Caption-Scale") != "1.0000" {
+		if rec.Code != http.StatusOK || pl.W == 0 || pl.W > l.W || dressIn(t, rec).scale() != "1.0000" {
 			t.Errorf("the %s apart answered %d with a layer %dx%d of %dx%d at %q", p, rec.Code, pl.W, pl.H, l.W, l.H,
-				rec.Header().Get("X-Caption-Scale"))
+				dressIn(t, rec).scale())
 		}
 		// Only the word says how it bounces.
-		if bounce := rec.Header().Get("X-Caption-Bounce"); (p == "word") != (bounce == "220 0.55 1.15") {
-			t.Errorf("the %s apart says it bounces by %q", p, bounce)
+		if bounce := dressIn(t, rec).Bounce; (p == "word") != (bounce != nil && *bounce == [3]float64{220, 0.55, 1.15}) {
+			t.Errorf("the %s apart says it bounces by %v", p, bounce)
 		}
 	}
 	// Lower on the picture where the captions are drafted lower.
@@ -158,11 +160,14 @@ func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
 	ask := func(q url.Values, tag string) *httptest.ResponseRecorder {
 		t.Helper()
 		rec := httptest.NewRecorder()
-		r := httptest.NewRequest("GET", "/frames/dress?"+q.Encode(), nil)
-		if tag != "" {
-			r.Header.Set("X-Caption-Have", tag)
+		asked := url.Values{}
+		for k, v := range q {
+			asked[k] = v
 		}
-		handler.ServeHTTP(rec, r)
+		if tag != "" {
+			asked.Set("have", tag)
+		}
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/dress?"+asked.Encode(), nil))
 		if rec.Code != http.StatusOK && rec.Code != http.StatusNoContent {
 			t.Fatalf("at %s the captions answered %d %q", q.Get("at"), rec.Code, rec.Body.String())
 		}
@@ -177,7 +182,7 @@ func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
 			had = ask(q, "")
 			continue
 		}
-		rec := ask(q, had.Header().Get("X-Caption-Tag"))
+		rec := ask(q, dressIn(t, had).Tag)
 		whole := ask(q, "")
 		if rec.Code == http.StatusNoContent {
 			unchanged++
@@ -194,7 +199,7 @@ func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
 		t.Errorf("from 10.0 s to 11.4 s %d frames were answered unchanged and %d drawn anew", unchanged, changed)
 	}
 	q.Set("at", "10.8")
-	tag := ask(q, "").Header().Get("X-Caption-Tag")
+	tag := dressIn(t, ask(q, "")).Tag
 	for name, change := range map[string][2]string{
 		"another size":  {"w", "870"},
 		"another track": {"track", "0123"},
@@ -207,10 +212,9 @@ func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
 			other[k] = v
 		}
 		other.Set(change[0], change[1])
+		other.Set("have", tag)
 		rec := httptest.NewRecorder()
-		r := httptest.NewRequest("GET", "/frames/dress?"+other.Encode(), nil)
-		r.Header.Set("X-Caption-Have", tag)
-		handler.ServeHTTP(rec, r)
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/dress?"+other.Encode(), nil))
 		if rec.Code == http.StatusNoContent {
 			t.Errorf("%s was answered unchanged by the tag of the layer before", name)
 		}
@@ -732,4 +736,171 @@ func TestAStepThatChangedNothingLeavesTheSavedCaptionsKept(t *testing.T) {
 	if kept, ok := svc.previews.tracks.get(saved.Track); !ok || kept.drawing.InHand() {
 		t.Errorf("the saved clip's track is kept %v, with a drawing in the hand %v, want the saved drawing", ok, ok && kept.drawing.InHand())
 	}
+}
+
+// dressIn is the dress an answer of /frames/dress sent in its header.
+func dressIn(t *testing.T, rec *httptest.ResponseRecorder) sentDress {
+	t.Helper()
+	var d sentDress
+	if err := json.Unmarshal([]byte(rec.Header().Get("X-Frame-Dress")), &d); err != nil {
+		t.Fatalf("the dress %q: %v", rec.Header().Get("X-Frame-Dress"), err)
+	}
+	return d
+}
+
+// scale is how large the pill of the word is drawn, as the window was
+// told it once, four decimals.
+func (d sentDress) scale() string {
+	return strconv.FormatFloat(d.Scale, 'f', 4, 64)
+}
+
+// dressedFrame is a frame as the window is sent it, with its dress and
+// the layer of captions over it, see writeDress.
+type dressedFrame struct {
+	at    float64
+	dress *sentDress
+	layer []byte
+}
+
+// dressedFrames reads the frames of an answer, each with a head of head
+// bytes, a picture of pixels bytes and its dress after.
+func dressedFrames(t *testing.T, body []byte, head, pixels int) []dressedFrame {
+	t.Helper()
+	var out []dressedFrame
+	for len(body) > 0 {
+		if len(body) < head+pixels+4 {
+			t.Fatalf("%d bytes left are no frame", len(body))
+		}
+		f := dressedFrame{at: math.Float64frombits(binary.LittleEndian.Uint64(body))}
+		body = body[head+pixels:]
+		n := int(binary.LittleEndian.Uint32(body))
+		if n > 0 {
+			f.dress = &sentDress{}
+			if err := json.Unmarshal(body[4:4+n], f.dress); err != nil {
+				t.Fatalf("the dress %q: %v", body[4:4+n], err)
+			}
+		}
+		body = body[4+n:]
+		m := int(binary.LittleEndian.Uint32(body))
+		f.layer = body[4 : 4+m]
+		body = body[4+m:]
+		out = append(out, f)
+	}
+	return out
+}
+
+// A frame the video preview is sent comes with its dress and the
+// captions over it, in the same answer, so the window never waits for a
+// frame's captions apart from the frame: a look, and each picture of a
+// play. A layer the window has is not sent again, the one it names or
+// the one the frame before brought, and the frames a word lasts send it
+// once. A change of the clip that plays the same pieces, a crop moved
+// while the clip plays, dresses the play's frames from then on, with no
+// new play.
+//
+// On the real disk: the decoder is a program of its own and reads the
+// episode and the caption file from there.
+func TestAFrameComesWithItsDress(t *testing.T) {
+	svc, mine, view := captionsEpisode(t)
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
+	grid := gridOf(t, mine)
+	g, _ := framewire.ReadGrid(grid)
+	frameAt := func(at float64) int {
+		f := 0
+		for f+1 < g.Count && g.At(f+1) <= at {
+			f++
+		}
+		return f
+	}
+	framing := clipFraming(t, svc, mine)
+	const w, h = 64, 36
+	look := func(at float64, have string) []dressedFrame {
+		t.Helper()
+		q := url.Values{"path": {mine}, "w": {fmt.Sprint(w)}, "h": {fmt.Sprint(h)}, "grid": {grid}, "frame": {fmt.Sprint(frameAt(at))},
+			"shown": {"-1"}, "framing": {framing}, "track": {view.Track}, "have": {have}}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/look?"+q.Encode(), nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("the look at %v s answered %d", at, rec.Code)
+		}
+		return dressedFrames(t, rec.Body.Bytes(), 8, w*h*4)
+	}
+	first := look(10.2, "")
+	if len(first) != 1 || first[0].dress == nil || !first[0].dress.Clip || first[0].dress.Tag == "" || len(first[0].layer) == 0 {
+		t.Fatalf("the look at 10.2 s came with %+v", first)
+	}
+	if l, err := framewire.ReadLayer(first[0].layer); err != nil || l.W == 0 {
+		t.Fatalf("the layer that came with the frame: %+v, %v", l, err)
+	}
+	// The layer named is not sent again.
+	again := look(10.2, first[0].dress.Tag)
+	if len(again) != 1 || again[0].dress == nil || again[0].dress.Tag != first[0].dress.Tag || len(again[0].layer) != 0 {
+		t.Errorf("the look naming the layer it has came with %d bytes of layer and the tag %q", len(again[0].layer), again[0].dress.Tag)
+	}
+	// Before the clip, the frame is the video's, with nothing over it.
+	if before := look(2, ""); before[0].dress == nil || before[0].dress.Clip || len(before[0].layer) != 0 {
+		t.Errorf("a frame before the clip came with %+v", before[0])
+	}
+
+	// A play of the clip: each picture with its dress, a layer sent once
+	// for the frames it lasts.
+	rec := httptest.NewRecorder()
+	q := url.Values{"path": {mine}, "w": {fmt.Sprint(w)}, "h": {fmt.Sprint(h)}, "grid": {grid}, "rate": {"48000"}, "ch": {"2"},
+		"framing": {framing}, "track": {view.Track}, "at": {"10.0"}}
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/play?"+q.Encode(), nil))
+	var play struct{ Pictures, Sound string }
+	if err := json.NewDecoder(rec.Body).Decode(&play); err != nil || play.Pictures == "" {
+		t.Fatalf("the play answered %d %q: %v", rec.Code, rec.Body.String(), err)
+	}
+	defer svc.previews.close(play.Pictures)
+	defer svc.previews.close(play.Sound)
+	read := func(n int) []dressedFrame {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", fmt.Sprintf("/frames/read?id=%s&n=%d", play.Pictures, n), nil))
+		return dressedFrames(t, rec.Body.Bytes(), 40, w*h*4)
+	}
+	var pictures []dressedFrame
+	for len(pictures) < 8 {
+		pictures = append(pictures, read(8-len(pictures))...)
+	}
+	layers := 0
+	for i, f := range pictures {
+		if f.dress == nil || f.dress.Tag == "" {
+			t.Fatalf("picture %d of the play came with %+v", i, f.dress)
+		}
+		if len(f.layer) > 0 {
+			layers++
+		} else if i == 0 || pictures[i-1].dress.Tag != f.dress.Tag {
+			t.Errorf("picture %d came with no layer, and its tag is not the one before's", i)
+		}
+	}
+	if layers == 0 || layers == len(pictures) {
+		t.Errorf("%d of %d pictures came with a layer of their own", layers, len(pictures))
+	}
+	// The crop moved while it plays: the same pieces, a new framing. The
+	// play goes on, and dresses its frames as the new framing says.
+	f, _ := svc.previews.framings.get(framing)
+	f.segments = slices.Clone(f.segments)
+	left := 50
+	if x := f.segments[0].CropX; x != nil {
+		left += *x
+	}
+	f.segments[0].CropX = &left
+	svc.previews.framings.put("moved", f, nil)
+	take := httptest.NewRecorder()
+	handler.ServeHTTP(take, httptest.NewRequest("GET", "/frames/play/take?"+url.Values{"id": {play.Pictures}, "framing": {"moved"},
+		"heard": {"0.3"}, "w": {fmt.Sprint(w)}, "h": {fmt.Sprint(h)}, "track": {view.Track}}.Encode(), nil))
+	if take.Code != http.StatusNoContent {
+		t.Fatalf("a crop moved while it plays answered %d %q", take.Code, take.Body.String())
+	}
+	was := pictures[len(pictures)-1].dress.Left
+	for range 4 {
+		for _, p := range read(4) {
+			if p.dress.Left != was {
+				return
+			}
+		}
+	}
+	t.Errorf("the play's frames after the crop moved are still dressed with its left edge at %v", was)
 }

@@ -370,61 +370,21 @@ describe("the picture standing still", () => {
 });
 
 describe("a frame waiting for its captions", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   // A paused queue with a video, whose frame a gesture put the playhead on
-  // waits for what lies over it, see dress. The captions come when the
-  // test says, or never, and the wait ends when the test says, or after
-  // the 600 ms of the browser's clock, which the test moves.
+  // waits until the captions of its clip are known, see captioned. They
+  // come when the test says.
   function waiting() {
     const q = new FrameQueue(
       canvas(),
       "/episode.mp4",
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
-    const inside = q as unknown as { video: unknown; dress(rank: number): Promise<boolean> | null };
+    const inside = q as unknown as { video: unknown; captioned(): Promise<boolean> | null };
     inside.video = { width: 2, height: 2, samples: { count: 3, timescale: 25, start: 0, step: 1 } };
     let came = () => {};
-    q.over = {
-      at: () => null,
-      coming() {},
-      ready: () => new Promise<void>((done) => (came = done)),
-    };
-    const said: string[] = [];
-    q.trace = (line) => said.push(line);
-    return { q, dress: () => inside.dress(1)!, came: () => came(), said };
+    q.over = { at: () => null, ready: () => new Promise<void>((done) => (came = done)) };
+    return { q, captioned: () => inside.captioned()!, came: () => came() };
   }
-
-  // A clip clicked whose captions never come still shows its picture: Tim
-  // saw a picture stand still while its captions were slow, issue #383,
-  // and a picture that stands still is worse than captions a moment late.
-  test("is put up without them once its wait runs out", async () => {
-    const { q, dress, said } = waiting();
-    let late = () => {};
-    q.dressWait = (l) => {
-      late = l;
-      return () => {};
-    };
-    const wanted = dress();
-    expect(q.stats.waitedForDress).toBe(1);
-    late();
-    expect(await wanted).toBe(true);
-    expect(q.stats.bare).toBe(1);
-    expect(said.some((l) => l.includes("did not come"))).toBe(true);
-  });
-
-  test("is put up with them when they come first, and its wait is called off", async () => {
-    const { q, dress, came } = waiting();
-    let calledOff = 0;
-    q.dressWait = () => () => calledOff++;
-    const wanted = dress();
-    came();
-    expect(await wanted).toBe(true);
-    expect(q.stats.bare).toBe(0);
-    expect(calledOff).toBe(1);
-  });
 
   // A clip made with Mark In was sought to the mark and then to its first
   // sentence, and its card was clicked while the frame of the sentence
@@ -433,14 +393,11 @@ describe("a frame waiting for its captions", () => {
   // preview changed twice for one click, the picture of another moment
   // under the clip's captions and then the clip's own frame.
   test("keeps a frame of an older place off the screen until it is up", async () => {
-    const { q, dress, came } = waiting();
-    q.dressWait = () => () => {};
-    const inside = q as unknown as {
-      shown: { rank: number } | null;
-      passing(rank: number, frame: unknown, seq: number, key?: boolean): void;
-    };
-    const picture = () => ({ width: 2, height: 2, close() {}, clone: () => picture() });
-    const wanted = dress();
+    const { q, captioned, came } = waiting();
+    const inside = q as unknown as { shown: { rank: number } | null; passing(rank: number, frame: unknown, seq: number, key?: boolean): void };
+    const picture = () => ({ width: 2, height: 2, over: null, close() {}, clone: () => picture() });
+    const wanted = captioned();
+    expect(q.stats.waitedForDress).toBe(1);
     inside.passing(2, picture(), 1);
     expect(inside.shown).toBe(null);
     came();
@@ -450,19 +407,61 @@ describe("a frame waiting for its captions", () => {
     inside.passing(2, picture(), 2);
     expect(inside.shown?.rank).toBe(2);
   });
+});
 
-  test("waits 600 ms of the browser's clock unless a wait is handed in", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const { q, dress } = waiting();
-    const wanted = dress();
-    let ended = false;
-    void wanted.then(() => (ended = true));
-    await vi.advanceTimersByTimeAsync(599);
-    expect(ended).toBe(false);
-    expect(q.stats.bare).toBe(0);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(ended).toBe(true);
-    expect(q.stats.bare).toBe(1);
+// The frame on screen keeps the dress it came with. A crop moved or a
+// word corrected dresses it again, and another clip's dress never lands
+// on it: the clip's own frame brings that, issue #383.
+describe("the frame on screen dressed again", () => {
+  function paused() {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const dressed: number[] = [];
+    let key = "";
+    const app = {
+      dressWith: (a: { framing: string } | null) => (key = a?.framing ?? ""),
+      get dressKey() {
+        return key;
+      },
+      dress: async (_: unknown, begins: number) => void dressed.push(begins),
+    };
+    const shown = { frame: { over: null }, rank: 2, begins: 0.08, at: -Infinity };
+    Object.assign(q, { app, shown });
+    const drawn: unknown[] = [];
+    q.painted = (frame) => drawn.push(frame);
+    return { q, dressed, drawn, shown };
+  }
+  const ask = (clip: string, framing: string) => ({ path: "/episode.mp4", clip, framing, drafts: {} });
+
+  test("dresses the frame on screen of the same clip again, and draws it once its dress is here", async () => {
+    const { q, dressed, drawn, shown } = paused();
+    expect(q.dressWith(ask("a", "f1"))).toBeNull();
+    const again = q.dressWith(ask("a", "f2"));
+    expect(dressed).toEqual([0.08]);
+    await again;
+    expect(drawn).toEqual([shown.frame]);
+    // The same dress again asks for nothing.
+    expect(q.dressWith(ask("a", "f2"))).toBeNull();
+  });
+
+  test("leaves the frame on screen as it is for another clip", () => {
+    const { q, dressed } = paused();
+    q.dressWith(ask("a", "f1"));
+    expect(q.dressWith(ask("b", "f3"))).toBeNull();
+    expect(dressed).toEqual([]);
+  });
+
+  test("dresses again once, with what is wanted last, for changes that come while one is on its way", async () => {
+    const { q, dressed } = paused();
+    q.dressWith(ask("a", "f1"));
+    const first = q.dressWith(ask("a", "f2"));
+    q.dressWith(ask("a", "f3"));
+    q.dressWith(ask("a", "f4"));
+    await first;
+    expect(dressed).toEqual([0.08, 0.08]);
   });
 });
 
@@ -564,37 +563,6 @@ describe("sound handed to the sound card late", () => {
   });
 });
 
-describe("a frame that came for a play", () => {
-  // A play asks for what lies over each frame as it comes from the Go
-  // side, before its turn on screen, so its captions are on their way
-  // while the frames before it are shown, issue #288. The order is read,
-  // not the time it takes, so no machine is too busy for it, issue #338.
-  test("asks for what lies over it before it is shown", () => {
-    const q = new FrameQueue(
-      canvas(),
-      "/episode.mp4",
-      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
-    );
-    const inside = q as unknown as { goPlay: unknown; listenTo(play: unknown): void };
-    const asked: number[] = [];
-    const drawn: number[] = [];
-    q.over = {
-      at: (frame) => {
-        drawn.push(frame);
-        return null;
-      },
-      coming: (frame) => asked.push(frame),
-    };
-    const play = { shots: [] as unknown[], onShots: (came: number) => void came, more() {} };
-    inside.goPlay = play;
-    inside.listenTo(play);
-    play.shots.push({ at: 0.08, moment: 0.08, begins: 2 / 25, edge: false, frame: { close() {} } });
-    play.onShots(1);
-    expect(asked).toEqual([2 / 25]);
-    expect(drawn).toEqual([]);
-  });
-});
-
 describe("the clock a play runs on", () => {
   function queue() {
     return new FrameQueue(
@@ -631,19 +599,8 @@ describe("the clock a play runs on", () => {
   // come from the Go side and not drawn yet, each by where on the clock
   // it is drawn and where it begins in the video, and whether the Go side
   // has sent the last.
-  function standing(
-    shots: { at: number; begins: number }[],
-    picturesEnded = false,
-    over: FrameQueue["over"] = null,
-    sound: { handedTo: number; soundEnded: boolean } | null = null,
-  ) {
-    const inside = queue() as unknown as {
-      reached: number;
-      over: FrameQueue["over"];
-      video: unknown;
-      unshown(play: unknown): { at: number; ready: () => boolean };
-    };
-    inside.over = over;
+  function standing(shots: { at: number; begins: number }[], picturesEnded = false, sound: { handedTo: number; soundEnded: boolean } | null = null) {
+    const inside = queue() as unknown as { reached: number; video: unknown; unshown(play: unknown): { at: number; ready: () => boolean } };
     inside.video = { width: 2, height: 2, samples: { count: 3000, timescale: 25, start: 0, step: 1 } };
     inside.reached = 35.4;
     // A play with sound, started at 35 s of the clock on the sound card's
@@ -678,25 +635,6 @@ describe("the clock a play runs on", () => {
     expect(standing([], true).at).toBe(Infinity);
   });
 
-  // A clock that goes on to a frame as soon as it is ready, the walk's,
-  // drew a frame a refresh, faster than its captions came, and the frame
-  // stood without them. The captions of the frame are asked for as it is
-  // asked, by the moment it starts at in the video.
-  test("is told the frame is ready only once its captions are here", () => {
-    const asked: number[] = [];
-    let here = false;
-    const over = {
-      at: () => null,
-      coming() {},
-      ready: (frame: number) => (asked.push(frame), here ? null : new Promise<void>(() => {})),
-    };
-    const next = standing([{ at: 35.6, begins: 103 / 25 }], false, over);
-    expect(next.ready()).toBe(false);
-    here = true;
-    expect(next.ready()).toBe(true);
-    expect(asked).toEqual([103 / 25, 103 / 25]);
-  });
-
   // The walk's clock goes on as fast as the frames come, and the sound
   // comes as it is pulled, on a busy machine later than the frames. A
   // clock that went on to a frame before its sound was on the sound card
@@ -704,7 +642,7 @@ describe("the clock a play runs on", () => {
   // in 288 of 675 quanta. The play started at 35 s of the clock on the
   // sound card's 10 s, and the frame due is drawn at 35.6 s.
   test("is told the frame is ready only once its sound is on the sound card", () => {
-    const at = (handedTo: number, soundEnded = false) => standing([{ at: 35.6, begins: 103 / 25 }], false, null, { handedTo, soundEnded }).ready();
+    const at = (handedTo: number, soundEnded = false) => standing([{ at: 35.6, begins: 103 / 25 }], false, { handedTo, soundEnded }).ready();
     expect(at(10.5)).toBe(false);
     expect(at(10.6)).toBe(true);
     expect(at(-Infinity, true)).toBe(true);

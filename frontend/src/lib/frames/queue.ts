@@ -32,7 +32,7 @@
 import { AppFrames, type Waiter } from "./app";
 import { afterRest } from "../rest";
 import type { Picture } from "./picture";
-import type { Over } from "./captions";
+import type { CaptionAsk, Layer, Over } from "./captions";
 import type { Light } from "./light";
 import { screenOf, type Screen } from "./screen";
 import { describeEvenness, Even, type Source } from "./even";
@@ -76,7 +76,7 @@ export type Shown = {
 // Where a play is on the program, see tick: from where the sound card says
 // it is, heard, and where the first frame of the play not on screen yet
 // starts, unshown, and whether that frame is ready, decoded and waiting
-// with what lies over it here and its sound handed over, see unshown. Ready is asked only by a clock
+// with its sound handed over, see unshown. Ready is asked only by a clock
 // that wants it, so the app's, which goes by the sound card alone, costs
 // nothing for it.
 export type PlayClock = (heard: number, unshown: number, ready: () => boolean) => number;
@@ -110,15 +110,9 @@ export type Stats = {
   // so a walk that sets late sound aside knows it was not L's, issue #466.
   soundThrown: number;
   soundTwice: number;
-  // The longest a frame a gesture put the playhead on waited for what lies
-  // over it, milliseconds, see dress.
-  dressWait: number;
-  // Frames a gesture put the playhead on that were put up without what
-  // lies over it, because it did not come in DRESS_WAIT, see dress.
-  bare: number;
-  // Frames a gesture put the playhead on that waited for what lies over
-  // it, counted as each starts to wait, so a walk knows the frame is
-  // being held for its captions, see dress.
+  // Frames a gesture put the playhead on that waited for the captions of
+  // their clip, counted as each starts to wait, so a walk knows the frame
+  // is being held for them, see captioned.
   waitedForDress: number;
   // Plays started, a seek while playing and a new program included. A
   // press of L starts none, see relooped.
@@ -158,13 +152,6 @@ const START_LEAD = 0.025;
 // in milliseconds, the mark docs/VIDEO-PREVIEW.md sets, for the log of a
 // drag. Only said, never acted on.
 const DRAG_FRAME_MS = 50;
-// The longest a frame a gesture put the playhead on waits for what lies
-// over it, the captions, milliseconds, see dress. A layer comes in tens of
-// milliseconds, and one that did not come is asked for once more after a
-// quarter of a second, see AGAIN in captions.ts. Past this the frame is put
-// up without it: a picture that stands still because its captions are slow
-// is worse than captions that come a moment after it.
-const DRESS_WAIT = 600;
 
 // Starts the episode's decoder on the Go side, ffmpeg with the file open,
 // the moment a workspace starts to open, rather than once the workspace
@@ -237,8 +224,6 @@ export class FrameQueue {
     lateSoundAt: [],
     soundThrown: 0,
     soundTwice: 0,
-    dressWait: 0,
-    bare: 0,
     waitedForDress: 0,
     starts: 0,
     keys: 0,
@@ -384,15 +369,14 @@ export class FrameQueue {
     waitFrom: number;
     ways: { kept: number; looks: number; near: number; overtaken: number };
   } | null = null;
-  // The first frame of a play that is waiting for what lies over it, and
-  // the one that has it, each by its ticket and where it begins, see
-  // dressed.
-  private dressing = "";
-  private dressedKey = "";
-  // The ticket whose frame is decoded or on its way and waits for what
-  // lies over it, see dress, and -1 when none waits. A frame passing is
-  // not put up meanwhile, see passing.
-  private dressFor = -1;
+  // The ticket whose frame waits for the captions of its clip, see
+  // captioned, and -1 when none waits. A frame passing is not put up
+  // meanwhile, see passing.
+  private captionsFor = -1;
+  // What the frames are dressed with, see dressWith, and what the play
+  // under way was last told of it.
+  private dressAsk: CaptionAsk | null = null;
+  private playDressed = "";
 
 
   // path is the episode's, and movie what the engine says of it, see
@@ -475,6 +459,7 @@ export class FrameQueue {
     app.onPassing = (rank, frame, seq) => this.passing(rank, frame, seq);
     app.paused = () => this.state !== "playing" && this.state !== "starting";
     app.shownRank = () => this.shown?.rank ?? -1;
+    app.dressWith(this.dressAsk);
     return app;
   }
 
@@ -549,6 +534,7 @@ export class FrameQueue {
       if (JSON.stringify([copy, loop]) === this.wantedKey) {
         this.asked = null;
         if (pieces) this.wanted.framing = framing;
+        this.dressPlay();
         return;
       }
       // The clip's pieces changed under a play of the clip are taken in,
@@ -627,6 +613,7 @@ export class FrameQueue {
       this.start(this.startFrom, "again");
       return;
     }
+    this.playDressed = this.app?.dressKey ?? "";
     this.takenOver = this.takeIn(play, framing, loop);
   }
 
@@ -799,12 +786,15 @@ export class FrameQueue {
   // The clips on the cards, by their starts, the likeliest to be clicked
   // first: the frame each opens on is read once nothing else is wanted and
   // held for a click on its card, see AppFrames.cards.
-  cards(starts: number[]) {
+  cards(starts: number[], asks: (CaptionAsk | null)[] = []) {
     this.cardsGiven = this.ready.then(
       () => {
         if (this.closed || !this.app) return;
         const s = this.video!.samples;
-        this.app.cards(starts.map((at) => rankAt(s, at)));
+        this.app.cards(
+          starts.map((at) => rankAt(s, at)),
+          asks,
+        );
       },
       () => {},
     );
@@ -1084,6 +1074,10 @@ export class FrameQueue {
     }
     this.paint(true);
     this.stats.drawn++;
+    // A frame asked for before the clip changed, a crop moved as it came,
+    // is dressed as the clip is now.
+    const key = frame.over?.dress?.key;
+    if (!passing && key !== undefined && this.app && key !== this.app.dressKey) void this.redress();
   }
 
 
@@ -1105,7 +1099,7 @@ export class FrameQueue {
   // came for, whose own frame still comes and replaces it, so it never
   // stays once the hand rests.
   //
-  // Nor while the frame of the newest gesture waits for what lies over it.
+  // Nor while the frame of the newest gesture waits for its captions.
   // A clip card clicked puts up the clip's first frame with its captions,
   // in one change, and a frame of an older place came in between: a clip
   // made with Mark In was sought to the mark and then to its first
@@ -1114,15 +1108,9 @@ export class FrameQueue {
   // the clip's captions, then the clip's own frame.
   private passing(rank: number, frame: Picture, seq: number) {
     if (this.closed || (this.state !== "paused" && this.state !== "cued") || this.putFor === this.ticket) return;
-    if (this.dressFor === this.ticket) return;
+    if (this.captionsFor === this.ticket) return;
     if (seq <= this.shownAsked) return;
     if (this.shown?.rank === rank) return;
-    // Nor one whose dress nothing says yet, see dress: its turn and its
-    // crop would be the frame before's.
-    if (this.over?.known?.(this.shownAt(rank)) === false) {
-      this.over.coming(this.shownAt(rank));
-      return;
-    }
     this.stats.open++;
     this.stats.keys++;
     this.stats.keysAt.push(this.shownAt(rank));
@@ -1131,36 +1119,17 @@ export class FrameQueue {
     this.report(true, true);
   }
 
-  // What lies over the frames, the captions: asked for each frame as it
-  // is drawn, by the moment of the episode it starts at, and told of each
-  // frame on its way to the screen a few frames ahead, so what lies over it
-  // can be there when it is drawn, with the light of the frame, which
-  // decides how a colour laid over it is shown. See captions.ts.
+  // What lies over the frames: each frame comes with its own, its dress
+  // and the layer of captions the Go side drew for it, see
+  // AppFrames.dressWith, which at says how to lay over it, with the light
+  // of the frame, which decides how a colour laid over it is shown. See
+  // captions.ts. At says with fresh whether the frame is put up for the
+  // newest gesture, or is the frame on screen drawn again.
   //
   // A frame a gesture put the playhead on, paused, waits to be put up until
-  // what lies over it is here, ready, so the picture and its captions come
-  // in one frame, see dress. At says with fresh whether the frame is put up
-  // for the newest gesture, or is the frame on screen drawn again: until a
-  // clip just picked has its frame up, the frame on screen is the clip
-  // before's and is drawn with what lay over it then. Issue #383.
-  over: {
-    at(frame: number, light: Light, fresh: boolean): Over | null;
-    coming(frame: number): void;
-    ready?(frame: number): Promise<void> | null;
-    // Whether the frame's dress is known, its own or that of the stretch
-    // dressed alike it is in, see dress.
-    known?(frame: number): boolean;
-  } | null = null;
-  // Starts the wait of a frame for what lies over it, see dress, and says
-  // how to call it off: late is told once DRESS_WAIT has passed on the
-  // browser's clock. A walk hands in a wait that it ends itself, so a
-  // frame whose captions it holds back waits for them on any machine,
-  // where the walk's own steps on a busy one used up the 600 ms, issue
-  // #468.
-  dressWait: (late: () => void) => () => void = (late) => {
-    const timer = setTimeout(late, DRESS_WAIT);
-    return () => clearTimeout(timer);
-  };
+  // the captions of its clip are known, which ready says, so the picture
+  // and its captions come in one frame, see captioned. Issue #383.
+  over: { at(frame: number, own: Layer | null, light: Light, fresh: boolean): Over | null; ready?(): Promise<void> | null } | null = null;
   // The clock this queue plays on, see PlayClock. The app's is the sound
   // card's, so a machine too slow to decode every frame in time shows
   // fewer of them, which is right for the app. What runs the queue hands
@@ -1188,7 +1157,7 @@ export class FrameQueue {
   // newest gesture, see over.
   private paint(fresh = false) {
     const s = this.shown;
-    this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(s.begins, s.frame.light, fresh) : null);
+    this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(s.begins, s.frame.over, s.frame.light, fresh) : null);
     this.painted?.(s?.frame ?? null);
   }
 
@@ -1202,60 +1171,78 @@ export class FrameQueue {
     if (!this.closed && this.shown) this.paint();
   }
 
-  // Whether what lies over the frame that begins at begins is here, asked
-  // for at once where it is not: a promise of whether the frame is still wanted once
-  // it is, or once DRESS_WAIT has passed, or null when there is nothing to
-  // wait for. While the hand drags the playhead, where each place is
-  // passed in a moment and the picture follows the hand, a frame waits
-  // only where nothing says how it is dressed, its turn and its crop, the
-  // first frame of a part the drag comes to: put up with the dress of the
-  // frame before, a frame past a cut stood turned the way the part before
-  // it was, #188.
-  private dress(begins: number): Promise<boolean> | null {
-    if (!this.over?.ready || !this.video) return null;
-    if (this.gripped && this.over.known?.(begins) !== false) return null;
-    const came = this.over.ready(begins);
-    if (!came) return null;
-    const ticket = this.ticket;
-    const asked = performance.now();
-    this.stats.waitedForDress++;
-    this.dressFor = ticket;
-    let stop = () => {};
-    const late = new Promise<"late">((done) => (stop = this.dressWait(() => done("late"))));
-    return Promise.race([came.then(() => "came" as const), late]).then((how) => {
-      stop();
-      if (this.dressFor === ticket) this.dressFor = -1;
-      const wanted = ticket === this.ticket && !this.closed;
-      if (how === "late" && wanted) {
-        this.stats.bare++;
-        this.trace(`the captions of the frame at ${begins.toFixed(3)} s did not come in ${DRESS_WAIT} ms, the frame is put up without them`);
-      }
-      else if (wanted) this.stats.dressWait = Math.max(this.stats.dressWait, Math.round(performance.now() - asked));
-      return wanted;
-    });
+  // What the frames are dressed with from now on, see AppFrames.dressWith.
+  // The frame on screen is dressed again where it is the same clip, a
+  // crop moved, a word corrected or the captions dragged, and drawn again
+  // once its dress is here. Another clip's frame keeps its own until the
+  // clip's frame comes with the clip's, so the two never mix, issue #383.
+  // A play takes the new dress in, see dressPlay.
+  // It says when the frame on screen has its new dress, or null when it
+  // keeps the one it has.
+  dressWith(ask: CaptionAsk | null): Promise<void> | null {
+    const was = this.dressAsk;
+    this.dressAsk = ask;
+    const app = this.app;
+    if (!app) return null;
+    const key = app.dressKey;
+    app.dressWith(ask);
+    if (app.dressKey === key) return null;
+    this.dressPlay();
+    if (!ask || !was || was.clip !== ask.clip || was.on !== ask.on) return null;
+    return this.redress();
   }
 
-  // Whether the first frame of the cue or play under way, at begins, may be
-  // put up: what lies over it is here, or nothing has to be. Asked the
-  // first time, it asks for it and puts the frame up through maybeBegin
-  // once it comes.
-  private dressed(begins: number): boolean {
-    const key = `${this.ticket} ${begins}`;
-    if (this.dressedKey === key) return true;
-    if (this.dressing === key) return false;
-    const waits = this.dress(begins);
-    if (!waits) {
-      this.dressedKey = key;
-      return true;
+  // The frame on screen, paused, dressed as the frames are now and drawn
+  // again. One at a time: a change on the way, a drag of the captions,
+  // dresses it once more as it is when the one before is here.
+  private redress(): Promise<void> | null {
+    if (!this.shown || this.state === "playing" || this.state === "starting") return null;
+    if (this.redressing) {
+      this.redressAgain = true;
+      return this.redressing;
     }
-    this.dressing = key;
-    void waits.then((wanted) => {
-      if (this.dressing === key) this.dressing = "";
-      if (!wanted) return;
-      this.dressedKey = key;
-      this.maybeBegin();
+    const run = async () => {
+      do {
+        this.redressAgain = false;
+        const s = this.shown;
+        if (!s || !this.app || this.closed) return;
+        await this.app.dress(s.frame, s.begins);
+        if (this.shown === s && !this.closed) this.paint();
+      } while (this.redressAgain);
+    };
+    this.redressing = run().finally(() => (this.redressing = null));
+    return this.redressing;
+  }
+  private redressing: Promise<void> | null = null;
+  private redressAgain = false;
+
+  // The play of a clip under way told how its frames are dressed now,
+  // once the clip it plays is the one they are dressed for: a crop moved
+  // or a word corrected changes the frames it sends from there on, and
+  // the pieces it plays stay, see GoPlay.take.
+  private dressPlay() {
+    const play = this.goPlay;
+    const ask = this.dressAsk;
+    if (!play || !ask || !this.wanted.framing || ask.framing !== this.wanted.framing || this.c0 === null) return;
+    const key = this.app?.dressKey ?? "";
+    if (key === this.playDressed) return;
+    this.playDressed = key;
+    void play.take(ask.framing, this.wanted.loop, Math.max(this.reached, this.sounded()));
+  }
+
+  // Whether the frame a gesture put the playhead on may be put up: the
+  // captions of its clip are known, or a promise of whether it is still
+  // wanted once they are, see over.ready.
+  private captioned(): Promise<boolean> | null {
+    const came = this.over?.ready?.();
+    if (!came) return null;
+    const ticket = this.ticket;
+    this.stats.waitedForDress++;
+    this.captionsFor = ticket;
+    return came.then(() => {
+      if (this.captionsFor === ticket) this.captionsFor = -1;
+      return ticket === this.ticket && !this.closed;
     });
-    return false;
   }
 
   // The moment the frame starts that a clip starting at a moment opens on,
@@ -1301,9 +1288,9 @@ export class FrameQueue {
     this.stillAsks.clear();
     const rank = rankAt(this.video!.samples, holds);
     const begins = this.shownAt(rank);
-    // What lies over the frame is asked for as the frame is, so the two
-    // come in the time the slower takes, not one after the other.
-    const dressed = this.dress(begins);
+    // The captions of the clip are waited for as the frame is asked
+    // for, so the two come in the time the slower takes.
+    const dressed = this.captioned();
     // Already on screen, at the canvas's size: nothing to ask for. What
     // lies over it may be another clip's still, see over.
     if (this.shown && this.shown.rank === rank && this.sharp(this.shown.frame)) {
@@ -1320,14 +1307,13 @@ export class FrameQueue {
       this.stats.open++;
       this.stats.mostOpen = Math.max(this.stats.mostOpen, this.stats.open);
       this.stats.decoded++;
-      this.over?.coming(begins);
     }
     if (ticket !== this.ticket) {
       if (frame) this.closeFrame(frame);
       return;
     }
-    // The frame waits for what lies over it, and a seek made meanwhile
-    // takes its place.
+    // The frame waits for its captions, and a seek made meanwhile takes
+    // its place.
     if (dressed && !(await dressed)) {
       if (frame) this.closeFrame(frame);
       return gaveUp();
@@ -1475,10 +1461,9 @@ export class FrameQueue {
     this.out.gain.cancelScheduledValues(this.audio.currentTime);
     this.out.gain.setValueAtTime(1, this.audio.currentTime);
     this.reached = play.from;
+    this.playDressed = this.app?.dressKey ?? "";
     this.m0 = Math.round(play.from * this.sampleRate);
     this.soundTo = this.m0;
-    // What lies over the first frame is asked for as it comes.
-    if (play.first >= 0 && this.state === "starting") this.dressed(play.first);
     this.pump();
   }
 
@@ -1490,7 +1475,6 @@ export class FrameQueue {
       this.stats.open += came;
       this.stats.mostOpen = Math.max(this.stats.mostOpen, this.stats.open);
       this.stats.decoded += came;
-      for (const s of play.shots.slice(-came)) this.over?.coming(s.begins);
       if (play.trouble && play.picturesEnded) this.fault(`The app could not decode the picture: ${play.trouble.replace(/\.$/, "")}.`);
       if (this.state === "starting" || this.state === "cued") this.maybeBegin();
       this.pump();
@@ -1535,8 +1519,8 @@ export class FrameQueue {
       this.due = first;
       this.drawnFor = first.moment;
       frameIn = true;
-    } else if (!frameIn && this.state === "starting" && this.dressed(first.begins)) {
-      // The first frame comes with what lies over it, see dress.
+    } else if (!frameIn && this.state === "starting") {
+      // The first frame comes with what lies over it.
       this.draw(play, 0);
       frameIn = true;
       this.report(true);
@@ -1754,21 +1738,17 @@ export class FrameQueue {
   }
 
   // Where the first frame of the play not on screen yet is drawn on the
-  // clock, see playClock, and whether it is ready: come and waiting with
-  // what lies over it here, so a clock that goes on to it at once shows it
-  // with its captions, the way the app does, which has the frame's time to
-  // fetch them, and with the sound up to its place on the sound card, so a
-  // clock that goes on as fast as the frames come never plays past the
-  // sound, which the app's sound card plays as it comes. A layer still on
-  // its way is asked for first. A frame still on its way from the Go side
+  // clock, see playClock, and whether it is ready: come, with the sound up
+  // to its place on the sound card, so a clock that goes on as fast as
+  // the frames come never plays past the sound, which the app's sound
+  // card plays as it comes. A frame still on its way from the Go side
   // holds the clock where it is, and once the Go side has sent the last,
   // the play goes by the sound card's time the way it does in the app.
   private unshown(play: GoPlay): { at: number; ready: () => boolean } {
     const s = play.shots[0];
     if (!s) return { at: play.picturesEnded ? Infinity : this.reached, ready: () => false };
     const sounded = () => play.soundEnded || (this.c0 !== null && this.m0 / this.sampleRate + (this.handedTo - this.c0) >= s.at);
-    const ready = () => !(this.video && this.over?.ready?.(s.begins)) && sounded();
-    return { at: s.at, ready };
+    return { at: s.at, ready: sounded };
   }
 
   // When the page next has nothing to do after an animation frame: a

@@ -117,6 +117,8 @@ export class GoPlay {
     else q.set("pieces", ask.pieces.map((p) => `${p.start}:${p.end}`).join(","));
     if (ask.loop) q.set("loop", "1");
     if (ask.cue) q.set("cue", "1");
+    // Its frames come dressed as the frames are, see AppFrames.dressWith.
+    app.dressing(q);
     try {
       const r = await fetch(`/frames/play?${q}`);
       if (!r.ok) return `the play could not start, it answered ${r.status}: ${(await r.text()).trim()}`;
@@ -132,7 +134,7 @@ export class GoPlay {
     if (this.pullingPictures || this.picturesEnded || this.closed || this.shots.length >= want) return;
     this.pullingPictures = true;
     const { width, height } = this.size;
-    void this.app.puller.pull(`/frames/read?id=${this.pictures}&n=${BATCH}`, width, height, 40, BATCH).then((got) => {
+    void this.app.pull(`/frames/read?id=${this.pictures}&n=${BATCH}`, width, height, 40, BATCH).then((got) => {
       this.pullingPictures = false;
       if (this.closed) {
         for (const { frame } of got.frames) frame.close();
@@ -218,17 +220,23 @@ export class GoPlay {
   // Hands the play the clip changed while it plays, by the name of its
   // new framing, and where on the clock its sound reached: the Go side
   // takes it in a little past there and says how, see servePlayTake, or
-  // null where it cannot, the play paused or past its end. The frames
-  // come and waiting of the clip as it was from there on go at once, and
-  // what is pulled after.
+  // null where it cannot, the play paused or past its end, or where the
+  // pieces are the same and only how the frames are dressed changed,
+  // which the frames pulled from then on show. The frames come and
+  // waiting of the clip as it was from there on go at once, and what is
+  // pulled after.
   async take(framing: string, loop: boolean, heard: number): Promise<Taken | null> {
     if (this.closed) return null;
-    const q = new URLSearchParams({ id: this.pictures, framing, heard: String(heard) });
+    const q = new URLSearchParams({ id: this.pictures, heard: String(heard), w: String(this.size.width), h: String(this.size.height) });
     if (loop) q.set("loop", "1");
+    // The frames taken in are dressed as the frames are, by the framing
+    // taken in.
+    this.app.dressing(q);
+    q.set("framing", framing);
     let got: Taken;
     try {
       const r = await fetch(`/frames/play/take?${q}`);
-      if (!r.ok) return null;
+      if (r.status !== 200) return null;
       got = await r.json();
     } catch {
       return null;

@@ -60,7 +60,7 @@ func TestTheFramesRouteStreamsAPlay(t *testing.T) {
 		return rec
 	}
 	pictures, _ := playOf(t, handler, mine, "0:10", 2.1, 64, 36)
-	size := 40 + 64*36*4
+	size := 40 + 64*36*4 + noDress
 	var begins []float64
 	for len(begins) < 4 {
 		rec := get("/frames/read", url.Values{"id": {pictures}, "n": {"4"}})
@@ -113,7 +113,7 @@ func TestTheFramesRouteSaysAnHDREpisodesLight(t *testing.T) {
 		if rec.Code != http.StatusOK || rec.Body.Len() == 0 {
 			t.Fatalf("read answered %d with %d bytes: %s", rec.Code, rec.Body.Len(), rec.Header().Get("X-Frames-Error"))
 		}
-		if rec.Body.Len()%(40+64*36*4) != 0 {
+		if rec.Body.Len()%(40+64*36*4+noDress) != 0 {
 			t.Errorf("%d bytes is no whole number of frames of 4 bytes a pixel", rec.Body.Len())
 		}
 		if light := rec.Header().Get("X-Frames-Light"); light != "hlg" {
@@ -543,7 +543,7 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 	if look.Code != http.StatusOK || look.Header().Get("X-Frames-Exact") != "1" || look.Header().Get("X-Frames-Near") != "1" || look.Header().Get("X-Frames-Error") != "" {
 		t.Fatalf("the look answered %d, %v", look.Code, look.Header())
 	}
-	if n := look.Body.Len(); n != 8+32*18*4 {
+	if n := look.Body.Len(); n != 8+32*18*4+noDress {
 		t.Fatalf("the look answered %d bytes, want one frame", n)
 	}
 	g, _ := framewire.ReadGrid(grid)
@@ -556,7 +556,7 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 	// after.
 	near := httptest.NewRecorder()
 	handler.ServeHTTP(near, httptest.NewRequest("GET", "/frames/near?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {grid}, "frame": {"30"}, "has": {"29"}}.Encode(), nil))
-	if n := near.Body.Len(); near.Code != http.StatusOK || n != 18*(8+32*18*4) {
+	if n := near.Body.Len(); near.Code != http.StatusOK || n != 18*(8+32*18*4+noDress) {
 		t.Errorf("the frames near answered %d with %d bytes, want the 14 frames before the click and the 4 after", near.Code, n)
 	}
 
@@ -568,7 +568,7 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 	}
 	// The frames read ahead come with the answer, for the window to keep:
 	// the word's with the frame before and four after, and the card's.
-	if size := 8 + 32*18*4; ahead.Body.Len() != 7*size {
+	if size := 8 + 32*18*4 + noDress; ahead.Body.Len() != 7*size {
 		t.Errorf("reading ahead handed over %d bytes, not 7 frames of %d", ahead.Body.Len(), size)
 	}
 	for _, f := range []string{fmt.Sprint(g.Count / 2), fmt.Sprint(g.Count - 3)} {
@@ -581,7 +581,7 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 	read := httptest.NewRecorder()
 	handler.ServeHTTP(read, httptest.NewRequest("GET", "/frames/read?id="+pictures+"&n=1", nil))
 	svc.previews.close(pictures)
-	if got := read.Body.Bytes(); len(got) != 40+32*18*4 || string(got[40:]) != string(look.Body.Bytes()[8:]) {
+	if got := read.Body.Bytes(); len(got) != 40+32*18*4+noDress || string(got[40:40+32*18*4]) != string(look.Body.Bytes()[8:8+32*18*4]) {
 		t.Error("the look's frame is not the frame a play from there hands over")
 	}
 
@@ -618,3 +618,7 @@ func TestARequestSaysWhereItStandsAmongWhatItsWindowSent(t *testing.T) {
 		}
 	}
 }
+
+// noDress is what follows a frame sent with no dress: two lengths of 0,
+// see writeDress.
+const noDress = 8

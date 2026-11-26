@@ -93,7 +93,7 @@ func TestTheHarnessGetsItsFramesFromTheDecoder(t *testing.T) {
 	}
 	pictures, _ := playOf(t, handler, mine, "0:1", 0, 32, 18)
 	read := get("/frames/read", url.Values{"id": {pictures}, "n": {"2"}})
-	if read.Code != http.StatusOK || read.Body.Len() == 0 || read.Body.Len()%(40+32*18*4) != 0 {
+	if read.Code != http.StatusOK || read.Body.Len() == 0 || read.Body.Len()%(40+32*18*4+noDress) != 0 {
 		t.Fatalf("read answered %d with %d bytes: %s", read.Code, read.Body.Len(), read.Header().Get("X-Frames-Error"))
 	}
 	// A file beside it that is no episode of the harness is not served.

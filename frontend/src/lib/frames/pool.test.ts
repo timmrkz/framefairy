@@ -88,13 +88,16 @@ describe("Picture's bytes", () => {
 describe("pull", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  // A reply of the Go side with frames of 2 by 2, each its time and its
-  // bytes, in pieces of 5 bytes as a network hands them.
+  // A reply of the Go side with frames of 2 by 2, each its time, its
+  // bytes and what it is dressed with, the second a dress and a layer and
+  // the first neither, in pieces of 5 bytes as a network hands them.
   function reply(times: number[], cut = 0) {
     const parts: number[] = [];
+    const sized = (bytes: number[]) => [...new Uint8Array(new Uint32Array([bytes.length]).buffer), ...bytes];
     for (const [i, t] of times.entries()) {
       parts.push(...new Uint8Array(new Float64Array([t]).buffer));
       parts.push(...new Array(16).fill(i + 1));
+      parts.push(...sized(i ? [...new TextEncoder().encode('{"left":1}')] : []), ...sized(i ? [7, 8, 9] : []));
     }
     const all = new Uint8Array(parts.slice(0, parts.length - cut));
     const body = new ReadableStream<Uint8Array>({
@@ -113,6 +116,9 @@ describe("pull", () => {
     expect(got.frames.map((f) => f.at)).toEqual([0, 0.04]);
     for (const f of got.frames) expect(spare).toContain(f.data);
     expect(new Uint8Array(got.frames[1].data)).toEqual(new Uint8Array(16).fill(2));
+    expect(got.frames.map((f) => f.dress)).toEqual(["", '{"left":1}']);
+    expect(got.frames[0].layer).toBeNull();
+    expect([...new Uint8Array(got.frames[1].layer!)]).toEqual([7, 8, 9]);
     expect(got.spare).toHaveLength(1);
     expect(spare).toContain(got.spare[0]);
   });

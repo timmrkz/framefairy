@@ -64,7 +64,7 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 		t.Errorf("the play goes from %v to %v", play.From, play.End)
 	}
 
-	size := 40 + 32*18*4
+	size := 40 + 32*18*4 + noDress
 	// Paused, the play gives the decoder back: a look has it meanwhile,
 	// and the play goes on after with no frame lost or twice.
 	pictures := get("/frames/read", url.Values{"id": {play.Pictures}, "n": {"3"}}).Body.Bytes()
@@ -72,7 +72,7 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 		t.Errorf("the play held answered %d", rec.Code)
 	}
 	held := get("/frames/look", url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {text}, "frame": {"15"}, "shown": {"-1"}})
-	if held.Code != http.StatusOK || held.Body.Len() != 8+32*18*4 {
+	if held.Code != http.StatusOK || held.Body.Len() != 8+32*18*4+noDress {
 		t.Errorf("a look while the play is held answered %d with %d bytes", held.Code, held.Body.Len())
 	}
 	if rec := get("/frames/play/go", url.Values{"id": {play.Pictures}}); rec.Code != http.StatusNoContent {
@@ -154,7 +154,7 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 	framingOf("last", mine, g.At(12), g.At(17))
 	framingOf("elsewhere", mine+".other", g.At(2), g.At(7))
 	take := func(name, heard string) (int, map[string]any) {
-		rec := get("/frames/play/take", url.Values{"id": {play.Pictures}, "framing": {name}, "heard": {heard}})
+		rec := get("/frames/play/take", url.Values{"id": {play.Pictures}, "framing": {name}, "heard": {heard}, "w": {"32"}, "h": {"18"}})
 		var took map[string]any
 		_ = json.NewDecoder(rec.Body).Decode(&took)
 		return rec.Code, took

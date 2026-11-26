@@ -34,8 +34,8 @@ import (
 //	/frames/play/go?id=<pictures>
 //	/frames/play/hold?id=<pictures>
 //	/frames/play/loop?id=<pictures>&at=<seconds>[&loop=1]  {"end": <seconds>}
-//	/frames/play/take?id=<pictures>&framing=<framing>&heard=<seconds>[&loop=1]  {"gen": <n>, "at": <seconds>, "end": <seconds>, "lap": <seconds>, "video": <bool>}
-func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) {
+//	/frames/play/take?id=<pictures>&framing=<framing>&heard=<seconds>&w=<width>&h=<height>[&loop=1][&<dress words>]  {"gen": <n>, "at": <seconds>, "end": <seconds>, "lap": <seconds>, "video": <bool>}
+func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request, d *dresser) {
 	path, hand, ok := handArgs(st, w, r, false)
 	if !ok {
 		return
@@ -69,17 +69,20 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request) 
 		Cue: q.Get("cue") == "1"})
 	grid := hand.Grid
 	// The pictures are the schedule's, kept for a play started there
-	// again, and go back to it once written.
+	// again, and go back to it once written. Each is dressed as it is made,
+	// as the change of the clip it was made after asks, see dresser.
 	pictures, s := p.startStamped("play", dec.Light, sched.Give, func(ctx context.Context, got func(previewFrame) error) error {
+		d.ctx = ctx
 		return play.Pictures(ctx, func(f engine.PlayFrame) error {
 			edge := 0.0
 			if f.Edge {
 				edge = 1
 			}
-			return got(previewFrame{at: f.At, stamp: []float64{f.Moment, grid.At(f.Frame), edge, float64(f.Gen)}, data: f.Picture})
+			return got(previewFrame{at: f.At, stamp: []float64{f.Moment, grid.At(f.Frame), edge, float64(f.Gen)}, data: f.Picture,
+				dressed: d.dress(f.Gen, f.Frame, grid.At(f.Frame))})
 		})
 	})
-	s.play, s.episode = play, path
+	s.play, s.episode, s.dresser = play, path, d
 	e := engine.NewEngine(engineLog("files", path), st.machine)
 	sound, _ := p.startStamped("playsound", nil, dec.Give, func(ctx context.Context, got func(previewFrame) error) error {
 		source := func(ctx context.Context, from float64, rate, channels int, got func(float64, []byte) error) error {
@@ -148,33 +151,59 @@ const takeAhead = 0.15
 
 // servePlayTake hands the play under way the clip changed while it
 // plays, by a drag, an undo or a redo, or its loop switched on, by the
-// name of its new framing. The play takes it in a little past the place
-// its sound reached, heard, from the moment of the video it stands at
-// there, so the picture and the sound go on with no stop, and answers how
-// many changes it has taken in, where this one took over, where the play
-// now ends, -1 while it loops, and where its first time through the new
-// pieces ends, see engine.Play.Retake. Where the new pieces do not hold
-// that moment, an edge of the clip dragged past the playhead, the play
-// goes on as a play of the video from there and says so, the playhead
-// being outside the clip. A framing of another video is not taken. 409
-// where the play is paused or past its end, and the window's next play
-// plays the clip as it is now.
-func (p *previews) servePlayTake(w http.ResponseWriter, r *http.Request) {
+// name of its new framing, with what its frames are dressed with now,
+// the dress words of /frames/dress. The play takes it in a little past
+// the place its sound reached, heard, from the moment of the video it
+// stands at there, so the picture and the sound go on with no stop, and
+// answers how many changes it has taken in, where this one took over,
+// where the play now ends, -1 while it loops, and where its first time
+// through the new pieces ends, see engine.Play.Retake. Its frames from
+// there come dressed as it asks. Where the new pieces do not hold that
+// moment, an edge of the clip dragged past the playhead, the play goes
+// on as a play of the video from there and says so, the playhead being
+// outside the clip, its frames dressed as the video's. A change that
+// plays the same pieces, a crop moved or the captions changed, is no
+// change of the play: its frames from now on are dressed as it asks, and
+// it answers with no content. A framing of another video is not taken.
+// 409 where the play is paused or past its end, and the window's next
+// play plays the clip as it is now.
+func (s *FrameFairy) servePlayTake(w http.ResponseWriter, r *http.Request) {
+	p := &s.previews
 	q := r.URL.Query()
-	s := p.get(q.Get("id"))
+	stream := p.get(q.Get("id"))
 	f, known := p.framings.get(q.Get("framing"))
 	heard, err := strconv.ParseFloat(q.Get("heard"), 64)
-	if s == nil || s.play == nil || !known || f.episode != s.episode || len(f.segments) == 0 || err != nil || math.IsNaN(heard) || math.IsInf(heard, 0) {
+	if stream == nil || stream.play == nil || stream.dresser == nil || !known || f.episode != stream.episode || len(f.segments) == 0 ||
+		err != nil || math.IsNaN(heard) || math.IsInf(heard, 0) {
 		http.NotFound(w, r)
 		return
 	}
-	at := heard + takeAhead
-	got, ok := s.play.Retake(f.pieces(), q.Get("loop") == "1", at)
-	video := false
-	if !ok && f.source.Duration > 0 {
-		got, ok = s.play.Retake([]engine.PlayPiece{{Start: 0, End: f.source.Duration}}, false, at)
-		video = ok
+	width, _ := strconv.Atoi(q.Get("w"))
+	height, _ := strconv.Atoi(q.Get("h"))
+	ask, err := s.readDress(stream.episode, q, width, height)
+	if err != nil || ask == nil {
+		http.NotFound(w, r)
+		return
 	}
+	loop := q.Get("loop") == "1"
+	if stream.play.Plays(f.pieces()) {
+		stream.dresser.redress(ask)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	at := heard + takeAhead
+	var got engine.Retaken
+	video := false
+	ok := stream.dresser.take(func() (int, *dressAsk, bool) {
+		var ok bool
+		got, ok = stream.play.Retake(f.pieces(), loop, at)
+		if ok || f.source.Duration <= 0 {
+			return got.Gen, ask, ok
+		}
+		got, ok = stream.play.Retake([]engine.PlayPiece{{Start: 0, End: f.source.Duration}}, false, at)
+		video = ok
+		return got.Gen, ask.with(ask.clip, nil, "", true), ok
+	})
 	if !ok {
 		w.WriteHeader(http.StatusConflict)
 		return

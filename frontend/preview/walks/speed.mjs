@@ -105,7 +105,7 @@ try {
             const holds = window.__frameAt(at, 1 / fps) / fps;
             const took = performance.now() - window.__keyAt;
             const layers = window.__captionLayers;
-            const captioned = !layers || (!layers.waiting && !(layers.lift && !layers.lift.word));
+            const captioned = !layers || !layers.busy;
             const moved = still || at !== before;
             if (frame < 0 && moved && Math.abs(shown - holds) < 1e-3) frame = took;
             if (over) return;

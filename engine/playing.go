@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"slices"
 	"sync"
 
 	"framefairy/internal/framewire"
@@ -384,6 +385,22 @@ func (p *Play) Loop(on bool, at float64) float64 {
 		r.next.mu.Unlock()
 	}
 	return end
+}
+
+// Plays says whether the play, or the change of the clip it takes in
+// next, plays these pieces: a clip changed in nothing a play plays, its
+// crop moved or its captions changed, is no change of the play.
+func (p *Play) Plays(pieces []PlayPiece) bool {
+	cur, _ := p.Current()
+	cur.mu.Lock()
+	r := cur.retake
+	cur.mu.Unlock()
+	if r != nil && !r.switched {
+		cur = r.next
+	}
+	cur.mu.Lock()
+	defer cur.mu.Unlock()
+	return slices.Equal(cur.program.pieces, NewProgram(pieces, false).pieces)
 }
 
 // Visit is Program.Visit, while the loop may be switched.

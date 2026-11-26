@@ -89,14 +89,10 @@ type previews struct {
 	// Started with the first stream, it closes the ones nobody pulls.
 	reaping bool
 	// tracks are the caption views the window was given, framings the
-	// framings of the clips it was given, clips the clip each framing of
-	// the clip list is of, turns the framing R turns each part of a clip
-	// to, by the clip's framing, and layers counts the caption layers
-	// drawn, see captions.go and dress.go.
+	// framings of the clips it was given, and layers counts the caption
+	// layers drawn, see captions.go and dress.go.
 	tracks   tracks
 	framings recent[framed]
-	clips    recent[clipRef]
-	turns    recent[map[int]string]
 	layers   layerTally
 	// within gives the context a request for captions runs in, see
 	// captionsWithin. Nil in the app. A test hands in its own, to end a
@@ -119,6 +115,8 @@ type previewFrame struct {
 	// say of each frame, see servePlay.
 	stamp []float64
 	data  []byte
+	// dressed is what a play's picture is dressed with, see dresser.
+	dressed *dressed
 }
 
 type preview struct {
@@ -141,6 +139,9 @@ type preview struct {
 	// it plays.
 	play    *engine.Play
 	episode string
+	// dresser dresses a play's pictures, each written with its dress, see
+	// writeDress. Nil for sound.
+	dresser *dresser
 }
 
 type atomicTime struct {
@@ -167,7 +168,7 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	switch r.URL.Path {
 	case "/frames/play":
-		p.servePlay(st, w, r)
+		p.servePlay(st, w, r, s.answerDresser(r))
 	case "/frames/play/go":
 		p.servePlayGo(w, r)
 	case "/frames/play/hold":
@@ -175,13 +176,13 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 	case "/frames/play/loop":
 		p.servePlayLoop(w, r)
 	case "/frames/play/take":
-		p.servePlayTake(w, r)
+		s.servePlayTake(w, r)
 	case "/frames/look":
-		p.serveLook(st, w, r)
+		p.serveLook(st, w, r, s.answerDresser(r))
 	case "/frames/near":
-		p.serveNear(st, w, r)
+		p.serveNear(st, w, r, s.answerDresser(r))
 	case "/frames/ahead":
-		p.serveAhead(st, w, r)
+		p.serveAhead(st, w, r, s.answerDresser(r))
 	case "/frames/read":
 		stream := p.get(q.Get("id"))
 		if stream == nil {
@@ -234,7 +235,7 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 // only says where the hand is, for the frames around it to be read, and
 // has names the frames around it the window holds. One the decoder failed has
 // X-Frames-Error and no frame.
-func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) {
+func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request, d *dresser) {
 	q := r.URL.Query()
 	path, hand, ok := handArgs(st, w, r, true)
 	if !ok {
@@ -283,7 +284,7 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request) 
 	if seen.Exact && sched.HasNear(hand) {
 		w.Header().Set("X-Frames-Near", "1")
 	}
-	writeSeen(w, dec, []engine.Seen{seen})
+	writeSeen(w, dec, []engine.Seen{seen}, d)
 }
 
 // give hands the pictures of frames a schedule sent back to it, once
@@ -295,8 +296,9 @@ func give(sched *engine.Schedule, seen []engine.Seen) {
 	}
 }
 
-// writeSeen writes frames a schedule sent, each as writeFrames writes one.
-func writeSeen(w http.ResponseWriter, dec *engine.EpisodeFrames, seen []engine.Seen) {
+// writeSeen writes frames a schedule sent, each as writeFrames writes
+// one, dressed as d says.
+func writeSeen(w http.ResponseWriter, dec *engine.EpisodeFrames, seen []engine.Seen, d *dresser) {
 	if light := dec.Light(); light != framewire.SDR {
 		w.Header().Set("X-Frames-Light", string(light))
 	}
@@ -307,6 +309,9 @@ func writeSeen(w http.ResponseWriter, dec *engine.EpisodeFrames, seen []engine.S
 			return
 		}
 		if _, err := w.Write(f.Picture); err != nil {
+			return
+		}
+		if err := writeDress(w, d.dress(0, f.Frame, f.At)); err != nil {
 			return
 		}
 	}
@@ -385,7 +390,7 @@ func intList(frames []int) string {
 // serveNear answers with the frames kept around a place the hand rests on
 // that the window does not hold, has, once the decoder has read them,
 // each as writeFrames writes one. See engine.Schedule.Near.
-func (p *previews) serveNear(st *store, w http.ResponseWriter, r *http.Request) {
+func (p *previews) serveNear(st *store, w http.ResponseWriter, r *http.Request, d *dresser) {
 	path, hand, ok := handArgs(st, w, r, true)
 	if !ok {
 		return
@@ -404,7 +409,7 @@ func (p *previews) serveNear(st *store, w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
-	writeSeen(w, dec, near)
+	writeSeen(w, dec, near, d)
 }
 
 // serveAhead hands the schedule what to read while the hand rests, see
@@ -412,7 +417,7 @@ func (p *previews) serveNear(st *store, w http.ResponseWriter, r *http.Request) 
 // does not hold, each as writeFrames writes one, with no content when a
 // newer ask took its place, and with X-Frames-Error when the decoder
 // could not be opened.
-func (p *previews) serveAhead(st *store, w http.ResponseWriter, r *http.Request) {
+func (p *previews) serveAhead(st *store, w http.ResponseWriter, r *http.Request, d *dresser) {
 	path, hand, ok := handArgs(st, w, r, false)
 	if !ok {
 		return
@@ -439,8 +444,60 @@ func (p *previews) serveAhead(st *store, w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(http.StatusOK)
 	default:
 		w.Header().Set("X-Frames-Keep", intList(ahead.Keep()))
-		writeSeen(w, dec, seen)
+		writeSeen(w, dec, seen, d)
 	}
+}
+
+// answerDresser is what dresses the frames of a look, a near or an
+// ahead, as the request's dress words say, see /frames/dress, and the
+// frames of the cards of an ahead each as its clip says, by the framing,
+// the track and the key at the same place in cardFramings, cardTracks
+// and the cardKeys as its frame in cards. A framing the app does not know, forgotten since it was
+// sent, sends its frames bare. Have is the tag of the layer of captions
+// on screen, which is not sent again.
+func (s *FrameFairy) answerDresser(r *http.Request) *dresser {
+	q := r.URL.Query()
+	path := q.Get("path")
+	width, _ := strconv.Atoi(q.Get("w"))
+	height, _ := strconv.Atoi(q.Get("h"))
+	ask, err := s.readDress(path, q, width, height)
+	if err != nil {
+		theLog.line(zerolog.DebugLevel, "files").Str("video", filepath.Base(path)).Err(err).Msg("frames sent bare")
+	}
+	d := newDresser(s, r.Context(), ask, q.Get("have"))
+	cards := strings.Split(q.Get("cards"), ",")
+	framings := strings.Split(q.Get("cardFramings"), ",")
+	tracks := strings.Split(q.Get("cardTracks"), ",")
+	keys := q["cardKeys"]
+	if q.Get("cards") == "" || len(framings) != len(cards) || len(tracks) != len(cards) || len(keys) != len(cards) {
+		return d
+	}
+	d.cards = map[int]*dressAsk{}
+	for i, c := range cards {
+		frame, err := strconv.Atoi(c)
+		if err != nil || framings[i] == "" {
+			continue
+		}
+		card := url.Values{}
+		for _, k := range dressWords {
+			if q.Has(k) {
+				card.Set(k, q.Get(k))
+			}
+		}
+		card.Del("on")
+		card.Del("typing")
+		card.Del("part")
+		card.Set("framing", framings[i])
+		card.Del("track")
+		if tracks[i] != "" {
+			card.Set("track", tracks[i])
+		}
+		card.Set("dressKey", keys[i])
+		if a, err := s.readDress(path, card, width, height); err == nil && a != nil {
+			d.cards[frame] = a
+		}
+	}
+	return d
 }
 
 // schedule is the schedule of the decoder, made with its first look.
@@ -743,7 +800,8 @@ func (p *previews) reapOnce(idle time.Duration) bool {
 // n in all, as many as are there by then without waiting for more. Each is
 // where it goes, 8 bytes, a float64 in little endian, then its stamp, 8
 // bytes for each number, then the frame in colours, RGBA with 8 bits each
-// and an opaque alpha, or a chunk of sound, see servePlay. A stream that
+// and an opaque alpha, or a chunk of sound, see servePlay, and a picture
+// of a play then with its dress, see writeDress. A stream that
 // has ended answers with no frame and X-Frames-End, and with the reason
 // when it failed.
 func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int) {
@@ -769,8 +827,10 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int) {
 				return false
 			}
 		}
-		_, err := w.Write(f.data)
-		return err == nil
+		if _, err := w.Write(f.data); err != nil {
+			return false
+		}
+		return s.dresser == nil || writeDress(w, f.dressed) == nil
 	}
 	for waiting := true; waiting; {
 		select {

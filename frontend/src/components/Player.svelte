@@ -40,7 +40,7 @@
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playMoves, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Program, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
-  import { CaptionLayers, sameDress, type CaptionAsk, type FrameDress, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
+  import { CaptionLayers, keyOf as dressKey, sameDress, type CaptionAsk, type FrameDress, type Layer, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
   import { shownColour, type Light } from "../lib/frames/light";
   import type { Picture } from "../lib/frames/picture";
   import Info from "./Info.svelte";
@@ -95,7 +95,7 @@
     // Where the playhead is on its way to while the hand drags an edge of
     // the clip: the frame the clip now starts or ends on. The clip
     // timeline hands over the clip as the edge leaves it, and puts the
-    // playhead there a frame later, see holding.
+    // playhead there a frame later, see overAt.
     heading?: number | null;
     // The key of the clip on its way that is chosen, which the video
     // preview has nothing of yet but the place of the playhead, see claim.
@@ -270,7 +270,6 @@
       paused = true;
       nailed = false;
       if (queue === going) queue = null;
-      holding = null;
       setTimeout(() => going.close());
     };
   });
@@ -296,7 +295,8 @@
     const woken = slept;
     const q = new FrameQueue(canvas, video, movieOf(source), woken);
     q.trace = (line) => said(`video preview: ${line}`, { video: path });
-    q.over = { at: overAt, coming: comingAt, ready: readyAt, known: knownAt };
+    q.over = { at: overAt, ready: readyAt };
+    q.dressWith(captionAsk);
     q.painted = (frame) => onframe?.(frame);
     queue = q;
     awake.push(forWalks);
@@ -492,8 +492,10 @@
   // CaptionLayers.sought.
   export function seek(t: number, about?: About, wordStep = false) {
     const at = Math.max(0, Math.min(t, source.duration));
-    holdOverlay();
     layers.sought(wordStep);
+    // The frame asked for comes dressed as the clip is now: the effect
+    // that tells the queue runs after the seek.
+    queue?.dressWith(captionAsk);
     time = at;
     placed = placeOf(pieces, clip?.key ?? "", at, 1 / oneFrame, about, source.videoStart ?? 0);
     if (!queue) return;
@@ -506,12 +508,10 @@
   // are read while it rests, see FrameQueue.ahead: the words either side
   // of the playhead. And the clips on the cards, the likeliest to be
   // clicked first: the frame each opens on is read once nothing else is
-  // wanted, with the layer of its captions, and both are kept for a click
-  // on its card, see FrameQueue.cards and CaptionLayers.next. How many
-  // frames that is, the frames decide, see AppFrames.cards. Every layer is
-  // kept, being only the box its words are drawn in, a few hundred
-  // kilobytes. On a video of hours a card clicked for the first time took
-  // half a second, issue #383.
+  // wanted, dressed as its clip is, and kept for a click on its card, see
+  // FrameQueue.cards. How many frames that is, the frames decide, see
+  // AppFrames.cards. On a video of hours a card clicked for the first
+  // time took half a second, issue #383.
   //
   // What was asked last is asked again of a queue as it opens, once it
   // knows the video: a workspace woken asks before its queue is there.
@@ -520,31 +520,14 @@
     askedAhead = [times, clips];
     if (!queue) return;
     queue.ahead(times);
-    const starts: number[] = [];
-    const wants: Parameters<typeof layers.next>[0] = [];
-    // The layers of the frames a word step goes to, first: a step waits
-    // for its frame's captions before it is put up, see FrameQueue.dress,
-    // and each step lights another word, so its layer is a new one. Found
-    // by the review of #385.
-    const ask = captionAsk;
-    const size = canvasSize();
-    for (const at of ask ? times : []) {
-      const frame = queue.firstFrameAt(at);
-      if (frame !== null && ask && size) wants.push({ ask, frame, size });
-    }
-    for (const { clip: of, captions: view } of clips) {
-      const frame = queue.firstFrameAt(of.start);
-      if (frame === null) break;
-      const card = askOf(of, view);
-      starts.push(of.start);
-      if (card && size) wants.push({ ask: card, frame, size });
-    }
-    queue.cards(starts);
-    layers.next(wants);
+    queue.cards(
+      clips.map(({ clip: of }) => of.start),
+      clips.map(({ clip: of, captions: view }) => askOf(of, view)),
+    );
   }
 
-  // Settles once what was read ahead is in, the frames and the layers of
-  // their captions, for the walks, which wait on it rather than on the
+  // Settles once what was read ahead is in, and no word bounces, for the
+  // walks, which wait on it rather than on the
   // clock.
   export async function rested(): Promise<void> {
     // Woken, the queue opens in the task after the frame that shows the
@@ -740,34 +723,18 @@
 
   // The video preview shows one moment at a time: a frame, and the crop
   // frame, its shade and the captions that belong to that frame, all of
-  // them its dress. A clip picked moved the crop frame at once and took
-  // the captions off the frame on screen, the picture came a few frames
-  // later, and its captions a few after that. Tim saw the three come one
-  // after another and wanted them at once, issue #383. So from a seek to
-  // another clip until that clip's frame is put up, with its dress, see
-  // readyAt, the frame on screen keeps what lay over it, the clip
-  // before's, and the three change together in the frame the queue puts
-  // the new frame up in, see overAt.
+  // them its dress, which comes with the frame, see AppFrames.dressWith.
+  // A clip picked changes the three together, in the frame the queue puts
+  // the clip's frame up in, issue #383.
   //
-  // The same hold keeps the frame on screen as it was while an edge
-  // dragged over it leaves it out of the clip and the playhead goes with
-  // the edge to a frame the clip has, see heading: the clip timeline
-  // hands over the clip a frame before the playhead follows. Until the
-  // frame the playhead goes to is put up, the frame on screen keeps its
-  // crop frame and its captions. Dressed as the clip now is, both went
-  // off for a frame each time a start dragged later passed a frame, and
-  // an end dragged earlier, and Tim saw the captions flicker, issue #755.
-  let holding: { over: Over | null; since: number } | null = null;
-  // What lay over the frame drawn last, and whose clip it was.
+  // While an edge dragged over the frame on screen leaves it out of the
+  // clip, and the playhead goes with the edge to a frame the clip has, see
+  // heading, the frame on screen keeps what lay over it: the clip timeline
+  // hands over the clip a frame before the playhead follows. Dressed as
+  // the clip now is, the crop frame and the captions went off for a frame
+  // each time a start dragged later passed a frame, and an end dragged
+  // earlier, and Tim saw the captions flicker, issue #755.
   let drawnOver: Over | null = null;
-  let drawnClip = "";
-  // A seek to another clip than the one on screen holds what is over the
-  // picture. A seek before the frame of the last came keeps the hold it
-  // has: what is on screen is still the clip before's.
-  function holdOverlay() {
-    if (holding || !queue || drawnClip === (clip?.key ?? "")) return;
-    holding = { over: drawnOver, since: performance.now() };
-  }
 
   // The word being corrected: where it stands in the caption, which word of
   // the episode it is, the whole of that word, and the piece of it drawn
@@ -1449,8 +1416,16 @@
   // Everything the captions over a frame are worked out from, so a change
   // to any of them draws the frame on screen again.
   $effect(() => {
-    layers.set(captionAsk);
-    void [place, dragLeft, clip, source];
+    const ask = captionAsk;
+    layers.set(ask);
+    untrack(() => {
+      const dressing = queue?.dressWith(ask);
+      if (dressing) layers.waitFor(dressing);
+    });
+  });
+  // The crop being dragged is drawn where the hand has it.
+  $effect(() => {
+    void dragLeft;
     untrack(() => queue?.repaint());
   });
 
@@ -1479,36 +1454,25 @@
       : null,
   );
 
-  // The dress of the frame the canvas draws, and what its captions show
-  // for the caption box, see onScreen. Fresh is a frame put up for the
-  // newest gesture, which ends a hold, and anything else the frame on
-  // screen drawn again, which during a hold is drawn with what lay over
-  // it before. A frame the clip being shaped left out does not end a
-  // hold, though it was put up for a gesture: a seek to where the edge was
-  // a moment ago can land after the clip has moved on.
-  function overAt(frame: number, light: Light, fresh = false): Over | null {
+  // What lies over the frame the canvas draws, from the dress and the
+  // layer that came with it, own, and what its captions show for the
+  // caption box, see onScreen.
+  function overAt(frame: number, own: Layer | null, light: Light): Over | null {
     if (light !== shownLight) shownLight = light;
     const ask = captionAsk;
     const size = canvasSize();
-    const layer = ask && size ? layers.at(frame, size) : null;
+    const layer = size ? layers.at(frame, size, own) : null;
     const dress = layer?.dress ?? null;
-    const leftOut = heading !== null && !!dress && !dress.clip;
-    if (!holding && leftOut && dressed?.clip) holding = { over: drawnOver, since: performance.now() };
-    if (holding) {
-      if (!fresh || leftOut) return holding.over;
-      if (drawnClip !== (clip?.key ?? ""))
-        said(`video preview: clip ${clip?.id ?? "none"} has its frame up at ${frame.toFixed(3)} s, ${Math.round(performance.now() - holding.since)} ms after it was picked`, { video: path });
-      holding = null;
-    }
+    // A frame the edge being dragged left out, see heading.
+    if (heading !== null && dress && !dress.clip && dressed?.clip) return drawnOver;
     if (!sameDress(dress, dressed)) dressed = dress;
-    if (cropTaken !== null && dragLeft !== null && (!dress || !layers.late) && (ask?.framing !== cropTaken || dress?.left === dragLeft)) {
+    if (cropTaken !== null && dragLeft !== null && (dress?.key === dressKey(ask) || ask?.framing !== cropTaken)) {
       dragLeft = null;
       cropTaken = null;
     }
-    drawnClip = ask?.clip ?? "";
     onScreen(layer?.track ?? null, layer?.showing, layer?.scale);
     drawnOver =
-      dress && dress.width && layer && layer.w > 0 && layer.size
+      dress && dress.width && layer && layer.size
         ? {
             layer,
             size: layer.size,
@@ -1517,34 +1481,17 @@
             turn: dress.turn,
           }
         : null;
-    const own = drawnOver && layers.own ? frame : null;
-    if (own !== captioned) captioned = own;
+    const mine = drawnOver && layer!.w > 0 && layers.own ? frame : null;
+    if (mine !== captioned) captioned = mine;
     return drawnOver;
   }
 
-  // What lies over the frame that starts at a moment is here, or is on its
-  // way and the promise says when: the captions of the clip, asked of the
-  // Go side when the clip was picked, then the layer of the frame. Null
-  // when nothing is to be laid over it.
-  function readyAt(frame: number): Promise<void> | null {
-    if (captionsDue && clip && place !== "video")
-      return new Promise((done) => {
-        dueWaiters.push(() => {
-          const next = readyAt(frame);
-          if (next) void next.then(done);
-          else done();
-        });
-      });
-    layers.set(captionAsk);
-    const size = canvasSize();
-    if (!captionAsk || !size) return null;
-    // Nothing is waited for where nothing lies over the frame that is not
-    // known yet: on the video, which shows the frame as filmed, and in a
-    // clip with no captions to draw, where the stretch dressed alike the
-    // frame is in says its dress. Its dress comes after it all the same.
-    // A step on the video waited for each dress, which nothing drew.
-    if (captionAsk.on === "video" || (!captionAsk.track && layers.known(frame, size))) return null;
-    return layers.ready(frame, size);
+  // Settles once the captions of the clip are known, which a frame of it
+  // waits for before it is put up, so it comes with them. Null when they
+  // are known.
+  function readyAt(): Promise<void> | null {
+    if (!captionsDue || !clip || place === "video") return null;
+    return new Promise((done) => dueWaiters.push(done));
   }
   let dueWaiters: (() => void)[] = [];
   $effect(() => {
@@ -1554,16 +1501,6 @@
     dueWaiters = [];
     untrack(() => waiting.forEach((w) => w()));
   });
-
-  function comingAt(frame: number) {
-    const size = canvasSize();
-    if (captionAsk && size) layers.coming(frame, size);
-  }
-
-  function knownAt(frame: number): boolean {
-    const size = canvasSize();
-    return !captionAsk || !size || layers.known(frame, size);
-  }
 
   // A share of the height of the video preview, as the stylesheet works it
   // out: .screen is a container, and 100cqh is its height in the same pass

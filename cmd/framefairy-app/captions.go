@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -21,53 +20,41 @@ import (
 
 	"framefairy/engine"
 	"framefairy/engine/runes"
-	"framefairy/internal/framewire"
 )
 
 // The captions of the video preview, drawn by libass in the episode's
 // decoder from the caption file the render burns in, see
 // engine.Engine.PreviewCaptions and docs/CAPTIONS.md:
 //
-//	/frames/dress?path=<episode>&framing=<framing>&at=<seconds>&w=<width>&h=<height>[&on=video][&track=<track>[&part=word|rest][&typing=<caption> <word>][&<drafts>]]
+//	/frames/dress?path=<episode>&framing=<framing>&at=<seconds>&w=<width>&h=<height>[&on=video][&track=<track>[&part=word|rest][&typing=<caption> <word>][&<drafts>]][&dressKey=<key>][&have=<tag>]
 //	                                 the dress of the frame of the episode
 //	                                 that starts at, as the clip of that
 //	                                 framing has it, see Framing.Name, or
 //	                                 with on=video as the video shows it,
 //	                                 as filmed, in the header
-//	                                 X-Frame-Dress as JSON, see
-//	                                 engine.FrameDress. With a track, a
-//	                                 frame of the clip comes with the
-//	                                 captions of that view as its body,
-//	                                 drawn in its crop of a video preview
-//	                                 width by height, see layerSize, at
-//	                                 the size the header X-Caption-Size
-//	                                 says, "<w>x<h>", as a
-//	                                 framewire.Layer, with the caption and
-//	                                 the words it lights in the header
-//	                                 X-Caption-Showing, "<caption> <word>
-//	                                 <last>", see engine.CaptionShowing,
-//	                                 and in
-//	                                 X-Caption-Scale how large the pill of
-//	                                 that word is drawn on it, 1 at rest,
-//	                                 see engine.PopScale. With part, only
-//	                                 the word being spoken with its pill,
-//	                                 or all but those, at rest, which the
-//	                                 video preview bounces the word with
-//	                                 after a word step, see
+//	                                 X-Frame-Dress as JSON, see sentDress:
+//	                                 engine.FrameDress, the ask's key, and
+//	                                 with a track the layer of captions
+//	                                 over it, its tag, the size it is
+//	                                 drawn at, what it shows and how large
+//	                                 its pill is. The layer itself, drawn
+//	                                 in the crop of a video preview width
+//	                                 by height, see layerSize, is the body,
+//	                                 as a framewire.Layer, or nothing with
+//	                                 204 where have names it, see layerTag.
+//	                                 With part, only the word being spoken
+//	                                 with its pill, or all but those, at
+//	                                 rest, which the video preview bounces
+//	                                 the word with after a word step, see
 //	                                 engine.CaptionDrawing.Lifted, the
-//	                                 word with the curve in the header
-//	                                 X-Caption-Bounce, "<ms> <rise>
-//	                                 <peak>", see engine.BounceCurve. With
-//	                                 typing, the caption without the ink
-//	                                 of that word, which the caption box
-//	                                 draws as it is typed, see
-//	                                 engine.CaptionDrawing.Typing. The
-//	                                 header X-Caption-Tag names the
-//	                                 layer, and a request whose header
-//	                                 X-Caption-Have names the layer of
-//	                                 its frame is answered 204, with the
-//	                                 dress and nothing drawn or sent, see
-//	                                 layerTag
+//	                                 word with the curve it bounces by,
+//	                                 see engine.BounceCurve. With typing,
+//	                                 the caption without the ink of that
+//	                                 word, which the caption box draws as
+//	                                 it is typed, see
+//	                                 engine.CaptionDrawing.Typing. Every
+//	                                 frame the window is sent comes with
+//	                                 the same, see writeDress
 //
 //	/frames/captions/words?path=<episode>&track=<track>[&<drafts>]
 //	                                 where the words of a view stand in the
@@ -160,144 +147,57 @@ func (r *recent[T]) used(name string) {
 	r.order = append(r.order, name)
 }
 
-// serveDress answers /frames/dress: the dress of a frame of a clip, see
-// engine.FrameDress, in the header X-Frame-Dress as JSON, and with a
-// track the captions over it as the body. The engine's caption code runs
-// here outside a job, so a panic in it fails the request, not the app,
-// see mediaMiddleware.
+// serveDress answers /frames/dress: the dress of a frame of a clip the
+// window holds, see engine.FrameDress, in the header X-Frame-Dress as
+// JSON, see sentDress, and with a track the captions over it as the body,
+// or no body where have names the layer the window has, see dressFrame. A frame the window is sent comes with its dress, see
+// writeDress, so this is for a frame it holds whose clip changed, and for
+// the parts of a word that bounces after a word step.
 func (s *FrameFairy) serveDress(w http.ResponseWriter, r *http.Request) {
-	st, p := s.store, &s.previews
 	q := r.URL.Query()
-	path := q.Get("path")
-	// A dress reads no file, and the captions are drawn from the video's
-	// file, which must be one of the library's.
-	clip, ok := p.framings.get(q.Get("framing"))
-	if !ok || clip.episode != path || !st.Known(path) {
-		http.NotFound(w, r)
-		return
-	}
-	var kept trackOf
-	if q.Has("track") {
-		if kept, ok = p.tracks.get(q.Get("track")); !ok || kept.episode != path || !episodeFile(st, path) {
-			http.NotFound(w, r)
-			return
-		}
-	}
-	at, err := strconv.ParseFloat(q.Get("at"), 64)
 	width, _ := strconv.Atoi(q.Get("w"))
 	height, _ := strconv.Atoi(q.Get("h"))
-	part := q.Get("part")
-	if part != "" && part != engine.LiftWord && part != engine.LiftRest {
-		err = fmt.Errorf("part is %q", runes.Scrub(part, 20))
-	}
-	// The word being typed in the caption box, which libass leaves out.
-	typing := engine.CaptionShowing{Caption: -1, Word: -1}
-	if err == nil && q.Has("typing") {
-		var n int
-		if n, err = fmt.Sscanf(q.Get("typing"), "%d %d", &typing.Caption, &typing.Word); err == nil && n != 2 {
-			err = fmt.Errorf("typing is %q", q.Get("typing"))
-		}
-	}
-	if err != nil || math.IsNaN(at) || math.IsInf(at, 0) || !framewire.LayerFits(width, height) {
-		http.Error(w, "a dress needs a moment, a width and a height", http.StatusBadRequest)
+	at, err := strconv.ParseFloat(q.Get("at"), 64)
+	if err != nil || math.IsNaN(at) || math.IsInf(at, 0) {
+		http.Error(w, "a dress needs a moment", http.StatusBadRequest)
 		return
 	}
-	drafts, err := captionDrafts(q.Get)
-	if err != nil {
+	a, err := s.readDress(q.Get("path"), q, width, height)
+	switch {
+	case errors.Is(err, errDressUnknown) || (err == nil && a == nil):
+		http.NotFound(w, r)
+		return
+	case err != nil:
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	dress := clip.dress(at, q.Get("on") == "video")
-	head, _ := json.Marshal(s.dressSent(path, q.Get("framing"), clip, dress, at))
-	w.Header().Set("X-Frame-Dress", string(head))
-	// Captions lie over a frame of the clip, in its crop.
-	if kept.drawing == nil || !dress.Clip {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	// A layer the wire to the decoder cannot carry is the ask's fault, and
-	// is refused before the decoder is asked for it.
-	layerW, layerH := layerSize(dress, width, height)
-	if !framewire.LayerFits(layerW, layerH) {
-		http.Error(w, "the captions of a frame this large cannot be drawn", http.StatusBadRequest)
-		return
-	}
-	ctx, cancel := p.captionsWithin(r.Context())
+	ctx, cancel := s.previews.captionsWithin(r.Context())
 	defer cancel()
-	source, err := s.probe(ctx, path)
-	err = waitedOn(ctx, r, "probing the video", err)
-	if err == nil {
-		// The short's size as the render takes it, which is what the
-		// caption file is laid out at.
-		e := engine.NewEngine(engineLog("captions", path), st.machine)
-		o := jobOptions(st, e)
-		drawing := kept.drawing.Typing(typing).Lifted(part)
-		// A frame drawn the same as the layer the video preview has is
-		// answered unchanged, without drawing it or sending it again.
-		// Between two words of a playing clip that was every other frame,
-		// libass drawing the same layer over and over, issue #896.
-		tag := layerTag(q, drawing, source, o.RenderSettings(), at, layerW, layerH)
-		w.Header().Set("X-Caption-Tag", tag)
-		w.Header().Set("X-Caption-Size", fmt.Sprintf("%dx%d", layerW, layerH))
-		if r.Header.Get("X-Caption-Have") == tag {
-			p.layers.unchanged(path)
-			w.WriteHeader(http.StatusNoContent)
+	d, err := s.dressFrame(ctx, a, at, q.Get("have"))
+	if errors.Is(err, engine.ErrNoWorkFolder) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		// The app's log says it once, with the reason, see logged. A
+		// request the window called off is told nothing.
+		if r.Context().Err() == nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	head, _ := json.Marshal(d.sent)
+	w.Header().Set("X-Frame-Dress", string(head))
+	// The layer the window has: nothing drawn or sent again.
+	if d.sent.Tag != "" && d.layer == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	for _, part := range d.layer {
+		if _, err := w.Write(part); err != nil {
 			return
 		}
-		var dec *engine.EpisodeFrames
-		dec, err = p.decoder(st.machine, path)
-		if err == nil {
-			var l engine.CaptionLayer
-			// A video whose folder was deleted outside the app is let go
-			// as the app hears of it, see reconcile, and until then its
-			// captions write nothing into a folder that is gone, which
-			// would bring the folder back. The engine checks
-			// again as it writes, see engine.ErrNoWorkFolder.
-			if ok, _ := marked(st.files, path); !ok {
-				http.NotFound(w, r)
-				return
-			}
-			l, err = e.PreviewCaptions(ctx, dec, engine.WorkDir(path), drawing, drafts, source, o.RenderSettings(), at, layerW, layerH)
-			err = waitedOn(ctx, r, "drawing the captions", err)
-			if errors.Is(err, engine.ErrNoWorkFolder) {
-				http.NotFound(w, r)
-				return
-			}
-			if err == nil {
-				// A layer slower than a frame is a pill behind the sound
-				// while the clip plays, and on a customer's machine the log
-				// is the only place that shows it. Counted, and said once
-				// the clip stops asking, see layerTally.
-				if source.FPSNum > 0 {
-					p.layers.add(path, l.Drew, time.Duration(float64(time.Second)*float64(source.FPSDen)/float64(source.FPSNum)))
-				}
-				// What the layer shows, which the caption box over it shows.
-				showing := kept.drawing.Showing(source, at)
-				w.Header().Set("Content-Type", "application/octet-stream")
-				w.Header().Set("X-Caption-Showing", fmt.Sprintf("%d %d %d", showing.Caption, showing.Word, showing.Last))
-				// A part is drawn at rest, and the word comes with the
-				// curve the video preview bounces it by.
-				scale := 1.0
-				if part == "" {
-					scale = l.Scale
-				}
-				if part == engine.LiftWord {
-					length, rise, peak := engine.BounceCurve()
-					w.Header().Set("X-Caption-Bounce", fmt.Sprintf("%g %g %g", length, rise, peak))
-				}
-				w.Header().Set("X-Caption-Scale", strconv.FormatFloat(scale, 'f', 4, 64))
-				// The box and then the pixels as they came from the
-				// decoder, so a layer is not copied once more to be sent.
-				if _, err := w.Write(l.Head()); err == nil {
-					_, _ = w.Write(l.Pixels)
-				}
-				return
-			}
-		}
-	}
-	// The app's log says it once, with the reason, see logged.
-	if r.Context().Err() == nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
@@ -310,18 +210,11 @@ func (s *FrameFairy) serveDress(w http.ResponseWriter, r *http.Request) {
 // It is a header of our own, not HTTP's If-None-Match and 304: Wails
 // takes If-None-Match off every request on Windows, because WebView2
 // hangs on a 304, see request_windows.go in Wails' assetserver.
-func layerTag(q url.Values, d *engine.CaptionDrawing, source engine.SourceInfo, rs engine.RenderSettings, at float64, layerW, layerH int) string {
+func layerTag(named url.Values, d *engine.CaptionDrawing, source engine.SourceInfo, rs engine.RenderSettings, at float64, layerW, layerH int) string {
 	from, to := d.Steady(source, at)
 	shortW, shortH := d.ShortSize(source, rs, at)
-	asked := maps.Clone(q)
-	delete(asked, "at")
-	// The framing says where the crop stands and how the frame turns,
-	// which the layer's size already holds. A crop moved draws the same
-	// captions, and the window keeps the layer it had, see
-	// CaptionLayers.fetch.
-	delete(asked, "framing")
 	h := sha256.New()
-	fmt.Fprintf(h, "%s\x00%d %d %dx%d %dx%d", asked.Encode(), from, to, shortW, shortH, layerW, layerH)
+	fmt.Fprintf(h, "%s\x00%d %d %dx%d %dx%d", named.Encode(), from, to, shortW, shortH, layerW, layerH)
 	return hex.EncodeToString(h.Sum(nil)[:12])
 }
 

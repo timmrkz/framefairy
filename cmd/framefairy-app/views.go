@@ -114,9 +114,6 @@ func (s *FrameFairy) entryOf(path, plan string, c engine.ClipView, info engine.S
 	}
 	f := s.framingOf(path, info, c.Segments, c.CropMarks, c.Rotations)
 	entry.Framing = f.Name
-	if f.Name != "" {
-		s.previews.clips.put(f.Name, clipRef{plan: plan, id: c.ID}, nil)
-	}
 	entry.Segments, entry.CropMarks = f.Segments, f.CropMarks
 	entry.CropLefts, entry.Glides = f.CropLefts, f.Glides
 	return entry

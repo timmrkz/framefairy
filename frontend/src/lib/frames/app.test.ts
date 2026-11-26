@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { AppFrames } from "./app";
+import { dressedOf, keyOf } from "./captions";
 import type { VideoTrack } from "./movie";
 import { Picture } from "./picture";
 import { frames as framePool } from "./pool";
@@ -143,6 +144,64 @@ describe("AppFrames", () => {
     expect(told.searchParams.get("shown")).toBe("40");
     expect(told.searchParams.get("kept")).toBe("1");
     expect(told.searchParams.get("has")).toBe("39,40");
+    app.close();
+  });
+
+  // A frame kept from before a crop moved or a word corrected is dressed
+  // again, the picture kept, before it is shown, and keeps that dress.
+  test("a place kept here dressed for an ask before is dressed as the clip is now", async () => {
+    const ask = { path: "/v.mp4", clip: "a", framing: "f2", drafts: {} };
+    const dressed: URL[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (!url.startsWith("/frames/dress")) return new Promise(() => {});
+      dressed.push(new URL(url, "http://x"));
+      const sent = {
+        piece: 0,
+        in: true,
+        clip: true,
+        turn: 0,
+        width: 4,
+        height: 2,
+        cropWidth: 2,
+        left: 1,
+        moved: true,
+        mark: null,
+        movable: true,
+        key: keyOf(ask),
+      };
+      return new Response(null, { status: 200, headers: { "X-Frame-Dress": JSON.stringify(sent) } });
+    });
+    const { app, picture } = frames(() => ({ width: 4, height: 2 }));
+    app.paused = () => true;
+    const kept = picture(40, 4, 2);
+    kept.over = dressedOf(
+      JSON.stringify({
+        piece: 0,
+        in: true,
+        clip: true,
+        turn: 0,
+        width: 4,
+        height: 2,
+        cropWidth: 2,
+        left: 0,
+        moved: false,
+        mark: null,
+        movable: true,
+        key: "old",
+      }),
+      null,
+      () => null,
+    );
+    app.keep(40, kept);
+    app.dressWith(ask);
+    const f = await app.frame(40, 0);
+    expect(f?.over?.dress?.left).toBe(1);
+    expect(dressed[0].searchParams.get("framing")).toBe("f2");
+    expect(dressed[0].searchParams.get("at")).toBe(String(app.ptsOf(40)));
+    expect(kept.over?.dress?.key).toBe(keyOf(ask));
+    // Kept with that dress, it is shown at once the next time.
+    await app.frame(40, 0);
+    expect(dressed.length).toBe(1);
     app.close();
   });
 

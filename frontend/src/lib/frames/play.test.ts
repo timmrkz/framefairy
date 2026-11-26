@@ -107,10 +107,11 @@ describe("a change taken into a play", () => {
       return Response.json(answers.shift());
     });
     const closed: number[] = [];
-    const app = { path: "/v.mp4", gridText: "g" } as unknown as AppFrames;
+    const app = { path: "/v.mp4", gridText: "g", dressing: (q: URLSearchParams) => q.set("dressKey", "k") } as unknown as AppFrames;
     const play = await GoPlay.open(app, { framing: "a", pieces: [], loop: false, at: 60, rate: 48000, channels: 1, cue: false }, { width: 2, height: 2 });
     if (typeof play === "string") throw new Error(play);
     expect(asked[0]).toContain("framing=a");
+    expect(asked[0]).toContain("dressKey=k");
     for (const [at, gen] of [
       [0.16, 0],
       [0.2, 0],
@@ -119,7 +120,7 @@ describe("a change taken into a play", () => {
     ])
       play.shots.push({ at, gen, moment: 60 + at, begins: 60 + at, edge: false, frame: { close: () => closed.push(at) } as unknown as Picture });
     const got = await play.take("b", true, 0.05);
-    expect(asked[1]).toBe("/frames/play/take?id=p&framing=b&heard=0.05&loop=1");
+    expect(asked[1]).toBe("/frames/play/take?id=p&heard=0.05&w=2&h=2&loop=1&dressKey=k&framing=b");
     expect(got?.end).toBe(Infinity);
     expect(play.end).toBe(Infinity);
     expect(play.length).toBe(3);
