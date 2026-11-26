@@ -560,7 +560,7 @@ because it runs by hand, takes half an hour anyway and holds up nothing.
 
 `build`, `linux`, `fuzz`, the walks, the nightly fuzzing and govulncheck
 run in a container, the CI image, built from
-`ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
+`scripts/ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
 with every package the Go side compiles against,
 ffmpeg, meson, ninja, nasm and patchelf beside them. The walks run in a
 second image of the same file, the first with the headless Chromium of
