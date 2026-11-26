@@ -16,6 +16,8 @@ type toolRelease struct {
 	data       map[string][]byte
 	signed     map[string]bool
 	unsignFail error
+	// unsignIgnored is GitHub saying yes to a delete it did not do.
+	unsignIgnored bool
 }
 
 func (r *toolRelease) assets() ([]asset, error) { return slices.Clone(r.files), nil }
@@ -44,8 +46,17 @@ func (r *toolRelease) unsign(digest string) error {
 	if r.unsignFail != nil {
 		return r.unsignFail
 	}
-	delete(r.signed, digest)
+	if !r.unsignIgnored {
+		delete(r.signed, digest)
+	}
 	return nil
+}
+
+func (r *toolRelease) signatures(digest string) (int, error) {
+	if r.signed[digest] {
+		return 1, nil
+	}
+	return 0, nil
 }
 
 // A build kept in the release takes the signature of every older build
@@ -113,6 +124,22 @@ func TestASignatureThatStaysFailsTheRun(t *testing.T) {
 	}
 }
 
+// A delete GitHub answers but does not do fails the run too: whether a
+// signature is gone is asked, not assumed.
+func TestASignatureGitHubKeptFailsTheRun(t *testing.T) {
+	t.Parallel()
+	older := []byte("older")
+	r := &toolRelease{
+		files:         []asset{{name: toolName, digest: digestOf(older)}},
+		data:          map[string][]byte{toolName: older},
+		signed:        map[string]bool{digestOf(older): true},
+		unsignIgnored: true,
+	}
+	if err := keepTool(r, []byte("newer"), io.Discard); err == nil {
+		t.Error("the run passed with the older build still signed")
+	}
+}
+
 // A file with no digest that cannot be read is no build to keep beside:
 // nothing is uploaded, since its signature would stay.
 func TestAnOlderBuildThatCannotBeReadKeepsNothing(t *testing.T) {
@@ -154,5 +181,26 @@ func TestASignatureIsTakenAwayByItsDigest(t *testing.T) {
 	want := []string{"DELETE /users/o/attestations/digest/sha256:abc", "DELETE /users/o/attestations/digest/sha256:gone"}
 	if !slices.Equal(got, want) {
 		t.Errorf("asked %v, want %v", got, want)
+	}
+}
+
+// GitHub lists a digest's signatures under the repository, and says not
+// found when there is none.
+func TestTheSignaturesOfADigestAreCounted(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/o/r/attestations/sha256:two":
+			_, _ = w.Write([]byte(`{"attestations":[{"bundle":{}},{"bundle":{}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	gh := &restGitHub{api: srv.URL, repo: "o/r", token: "t", client: srv.Client(), release: toolBuilds}
+	for digest, want := range map[string]int{"sha256:two": 2, "sha256:none": 0} {
+		if n, err := gh.signatures(digest); err != nil || n != want {
+			t.Errorf("%s has %d signatures, %v, want %d", digest, n, err, want)
+		}
 	}
 }
