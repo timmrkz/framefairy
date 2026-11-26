@@ -11,9 +11,10 @@
 # The job check asks the signed build whether it fits, with a token that
 # only reads. Only when it does not, the job build, which holds main's
 # signing identity, builds the tool from the checkout and runs nothing it
-# downloaded. Started by
-# hand on a branch, it builds and signs and keeps the tool as an artifact
-# of the run, and uploads nothing: only main's build is the release's.
+# downloaded. On main it keeps the build and takes the signature of every
+# older build away. Started by hand on a branch, it builds and signs and
+# keeps the tool as an artifact of the run, takes the signature away
+# again and uploads nothing: only main's build is the release's.
 name: Release tool
 
 on:
@@ -70,15 +71,17 @@ jobs:
           name: framefairy-release
           path: ${{ runner.temp }}/release-tool/framefairy-release
           retention-days: 3
-      # The release is a prerelease and never the latest, and keeps only
-      # the newest build: a job of an older commit finds a build of newer
-      # code, which does not fit, and builds.
+      # Only the newest build is kept and signed: keep takes the signature
+      # of every older build away, so none can be put back for a job to
+      # run. A job of an older commit finds a build of newer code, which
+      # does not fit, and builds.
       - if: github.ref == 'refs/heads/main'
-        name: Keep it in the release
         env:
           GH_TOKEN: ${{ github.token }}
-          NAME: framefairy-release
-        run: |
-          gh release view release-tool >/dev/null 2>&1 || gh release create release-tool --prerelease --latest=false --title "Release tool" --notes "The build of framefairy-release the workflows run, see .github/workflows/release-tool.yml."
-          gh release upload release-tool "$RUNNER_TEMP/release-tool/$NAME" --clobber
-          gh release view release-tool --json assets --jq '.assets[].name' | grep -vxF "$NAME" | xargs -r -n1 gh release delete-asset release-tool -y
+        run: framefairy-release keep -file "$RUNNER_TEMP/release-tool/framefairy-release"
+      # A branch's build is never taken. Its signature is taken away again,
+      # which shows the token may do what keep does on main.
+      - if: github.ref != 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: framefairy-release unsign -file "$RUNNER_TEMP/release-tool/framefairy-release"

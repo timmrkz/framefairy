@@ -338,7 +338,7 @@ func TestGitHubIsAskedWhatTheToolNeeds(t *testing.T) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	gh := &restGitHub{api: srv.URL, repo: "o/r", token: "t", client: srv.Client()}
+	gh := &restGitHub{api: srv.URL, repo: "o/r", token: "t", client: srv.Client(), release: devBuilds}
 
 	check := func(what string, got, want any, err error) {
 		t.Helper()

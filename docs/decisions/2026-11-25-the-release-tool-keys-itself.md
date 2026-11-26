@@ -60,16 +60,16 @@ What was measured, in a cloud session:
    should decide what may run. Before, it did: it named the build it
    wanted, and the attestation had to sign that very name. With no list,
    the checkout cannot name it, so the downloaded build says whether it
-   fits, and any build main ever signed can be uploaded again and answer
-   for itself. The checkout could take that back by keeping only the
-   newest build signed: `release-tool.yml` deletes the attestations of
-   older builds when it keeps a new one. That is an API call on every
-   build, with a permission the token may not have. Every build since
-   this change refuses other code, so the question is only a build that
-   was ever bad, and then deleting its attestation retires it. The same
-   principle splits `release-tool.yml`: the job that asks the downloaded
-   build holds a token that only reads, and the job that signs as main
-   runs nothing it downloaded, only a build of its own checkout.
+   fits, and any build main ever signed could be uploaded again and
+   answer for itself. The user asked for the most secure way. So only
+   the newest build stays signed: when `release-tool.yml` keeps a new
+   build, `framefairy-release keep` deletes the attestation of every
+   older one, by its digest. A job then runs main's newest build or
+   builds the tool, which is the trust the earlier design had, with no
+   list. The same principle splits `release-tool.yml`: the job that asks
+   the downloaded build holds a token that only reads, and the job that
+   signs as main runs nothing it downloaded, only a build of its own
+   checkout.
 5. **What a test has to build.** The key is safe only if it never
    leaves out a package the tool is built from, and a download is safe
    only if it is checked before it runs. So: a table of the tool's
@@ -79,16 +79,18 @@ What was measured, in a cloud session:
    build with no stamp, another key or no key for the checkout does not
    fit. And the workflows: `release-tool.yml` lists no paths, the action
    reads no paths itself, builds only through `self`, and runs the
-   download only once `gh attestation verify` passed. That is the first
-   with its tests.
+   download only once `gh attestation verify` passed. Keeping a build
+   takes the signatures of the older ones away, keeps the signature of
+   the same build kept again, and fails the run when one stays. That is
+   the first with its tests.
 
 ## What converges
 
 The tool keys itself from its own imports, stamps the key into its
 build, and says whether it fits the checkout: the first, the second, the
 third and the fifth. The fourth splits the workflow into a job that asks
-and a job that signs, and leaves an older signed build to answer for
-itself, with its attestation as the way to retire it. `release-tool.yml`
+and a job that signs, and keeps only the newest build signed.
+`release-tool.yml`
 starts on every push to main, since no list says when the tool changed:
 the build fits and nothing more runs, about 10 s of a Linux runner, or
 it does not and the tool is built, signed and kept. Nothing waits on it,
@@ -99,8 +101,10 @@ and no pull request runs it.
     release-tool.yml:   every push to main. check, a token that reads:
                         the action. build, only when check built the
                         tool, signing as main: the action with
-                        download false, attest, keep as the asset
-                        framefairy-release of the release release-tool
+                        download false, attest, framefairy-release
+                        keep: the asset framefairy-release of the
+                        release release-tool, and every older build's
+                        attestation deleted
                                   |
     .github/actions/release-tool: gh release download, gh attestation
                         verify, framefairy-release fits, or
@@ -112,15 +116,15 @@ and no pull request runs it.
                         objects, stamped with -ldflags -X, with no C.
                         No key, no build: self fails
 
-An older build of main's is still signed by main, and any branch can
-upload it. It carries the key of the older code, so it does not fit a
-newer checkout, and the action builds the tool. What the earlier design
-checked with the name the attestation signs is now checked with the key
-inside the bytes it signs. What remains trusted is the `fits` of a build
-main once signed, which is main's own reviewed code, and only in jobs
-that cannot sign as main. A build that ever turns out bad is retired by
-deleting its attestation, by the build's digest on GitHub, so
-`gh attestation verify` refuses it from then on.
+Any branch can upload a file to the release, but none can sign as main,
+and every build but main's newest has lost its signature, so
+`gh attestation verify` refuses it. What remains trusted is the `fits`
+of main's newest build, main's own reviewed code, and only in jobs that
+cannot sign as main. The builds from before this change still hold
+their signatures and have no `fits`, so the step that asks one fails and
+the action builds the tool. `release-tool.yml` started by hand on a
+branch takes its own build's signature away again, which shows the token
+may delete attestations before main relies on it.
 
 The key leaves out the system the tool runs on, which the earlier key
 held. A build for another system does not start, so the step that asks
@@ -137,8 +141,10 @@ Linux today.
 - The jobs that use the tool take as long as before: a download and a
   check, and 12 s to build when the tool changed.
 - The asset is called `framefairy-release` from now on. The first push to
-  main after this builds it, and the step that keeps it removes the
-  older assets named by key.
+  main after this builds it, and `keep` removes the older assets named
+  by key and their signatures.
+- A signature that cannot be deleted fails `release-tool.yml` on main,
+  so it is seen rather than left valid.
 - A change that makes the tool's key impossible to work out, like a
   `go generate` line in its packages that is no `go run` of ours, fails
   every job that builds the tool on that pull request, instead of leaving

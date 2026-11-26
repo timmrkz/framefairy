@@ -256,3 +256,29 @@ func TestTheJobThatSignsTheReleaseToolRunsNothingItDownloaded(t *testing.T) {
 		t.Error("no job that signs uses the release tool, so this test checks nothing")
 	}
 }
+
+// release-tool.yml keeps a build only through framefairy-release keep,
+// which takes the signature of every older build away, so only main's
+// newest build can be handed to a job. A build put into the release any
+// other way would leave the one it replaced signed.
+//
+// On the real disk: what is read is the repository's own workflow.
+func TestOnlyTheNewestReleaseToolStaysSigned(t *testing.T) {
+	t.Parallel()
+	var wf struct {
+		Jobs map[string]cacheJob `yaml:"jobs"`
+	}
+	readYAML(t, filepath.Join("..", "..", ".github", "workflows", "release-tool.yml"), &wf)
+	kept := false
+	for name, job := range wf.Jobs {
+		for _, s := range job.Steps {
+			if regexp.MustCompile(`gh\s+release\s+(upload|create|delete-asset)`).MatchString(s.Run) {
+				t.Errorf("release-tool.yml: the job %s changes the release by hand: %q. Keep the build with framefairy-release keep", name, s.Run)
+			}
+			kept = kept || regexp.MustCompile(`(?m)^\s*framefairy-release keep\s`).MatchString(s.Run)
+		}
+	}
+	if !kept {
+		t.Error("release-tool.yml keeps no build with framefairy-release keep")
+	}
+}

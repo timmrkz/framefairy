@@ -94,6 +94,9 @@ type asset struct {
 	name    string
 	created time.Time
 	updated time.Time
+	// digest is GitHub's sha256 of the file, "sha256:" and hex, empty
+	// when GitHub gave none.
+	digest string
 }
 
 type waitingRun struct {
@@ -102,10 +105,31 @@ type waitingRun struct {
 }
 
 // restGitHub asks GitHub's REST API, as the token and the repository in
-// the workflow's environment allow.
+// the workflow's environment allow. Its files are those of one release,
+// dev unless it says another.
 type restGitHub struct {
 	api, repo, token string
 	client           *http.Client
+	release          releaseInfo
+}
+
+// releaseInfo is a release the tool keeps files in, and how it is made
+// when there is none yet.
+type releaseInfo struct {
+	tag, title, body string
+}
+
+// devBuilds is the release dev, the builds to update to.
+var devBuilds = releaseInfo{
+	tag: "dev", title: "Builds to update to",
+	body: "The builds of main and of each open pull request, for the app to update itself to while it is being made. Not for customers. See docs/UPDATES.md.",
+}
+
+// toolBuilds is the release release-tool, main's signed build of this
+// tool, see .github/workflows/release-tool.yml.
+var toolBuilds = releaseInfo{
+	tag: "release-tool", title: "Release tool",
+	body: "The build of framefairy-release the workflows run, see .github/workflows/release-tool.yml.",
 }
 
 // gitHubFromEnv is GitHub as the workflow hands it over: GH_TOKEN and
@@ -120,7 +144,15 @@ func gitHubFromEnv() *restGitHub {
 		repo = os.Getenv("GITHUB_REPOSITORY")
 	}
 	return &restGitHub{api: api, repo: repo, token: os.Getenv("GH_TOKEN"),
-		client: &http.Client{Timeout: 5 * time.Minute}}
+		client: &http.Client{Timeout: 5 * time.Minute}, release: devBuilds}
+}
+
+// toolReleaseFromEnv is GitHub as gitHubFromEnv, with the release
+// release-tool in place of dev.
+func toolReleaseFromEnv() *restGitHub {
+	g := gitHubFromEnv()
+	g.release = toolBuilds
+	return g
 }
 
 // errNotFound is GitHub's 404, which for a release or a file means it is
@@ -333,7 +365,7 @@ func (g *restGitHub) fileAt(name, commit string) ([]byte, error) {
 	return decodeBase64Lines(f.Content)
 }
 
-// release is the release dev, the one the builds live in.
+// a release as GitHub gives it.
 type devRelease struct {
 	ID        int64  `json:"id"`
 	UploadURL string `json:"upload_url"`
@@ -342,17 +374,18 @@ type devRelease struct {
 		Name    string    `json:"name"`
 		Created time.Time `json:"created_at"`
 		Updated time.Time `json:"updated_at"`
+		Digest  string    `json:"digest"`
 	} `json:"assets"`
 }
 
-func (g *restGitHub) release() (devRelease, error) {
+func (g *restGitHub) current() (devRelease, error) {
 	var r devRelease
-	err := g.get("releases/tags/dev", &r)
+	err := g.get("releases/tags/"+url.PathEscape(g.release.tag), &r)
 	return r, err
 }
 
 func (g *restGitHub) assets() ([]asset, error) {
-	r, err := g.release()
+	r, err := g.current()
 	if errors.Is(err, errNotFound) {
 		return nil, nil
 	}
@@ -361,7 +394,7 @@ func (g *restGitHub) assets() ([]asset, error) {
 	}
 	all := make([]asset, 0, len(r.Assets))
 	for _, a := range r.Assets {
-		all = append(all, asset{id: a.ID, name: a.Name, created: a.Created, updated: a.Updated})
+		all = append(all, asset{id: a.ID, name: a.Name, created: a.Created, updated: a.Updated, digest: a.Digest})
 	}
 	return all, nil
 }
@@ -389,19 +422,18 @@ func (g *restGitHub) download(a asset) ([]byte, error) {
 }
 
 func (g *restGitHub) upload(name string, data []byte) error {
-	r, err := g.release()
+	r, err := g.current()
 	if errors.Is(err, errNotFound) {
 		body, _ := json.Marshal(map[string]any{
-			"tag_name": "dev", "target_commitish": "main", "name": "Builds to update to",
-			"prerelease": true, "make_latest": "false",
-			"body": "The builds of main and of each open pull request, for the app to update itself to while it is being made. Not for customers. See docs/UPDATES.md.",
+			"tag_name": g.release.tag, "target_commitish": "main", "name": g.release.title,
+			"prerelease": true, "make_latest": "false", "body": g.release.body,
 		})
 		if err := g.call(http.MethodPost, "releases", bytes.NewReader(body), "application/json", nil); err != nil {
 			// Made by a run beside this one, which is as good.
-			if r, err = g.release(); err != nil {
+			if r, err = g.current(); err != nil {
 				return err
 			}
-		} else if r, err = g.release(); err != nil {
+		} else if r, err = g.current(); err != nil {
 			return err
 		}
 	} else if err != nil {
