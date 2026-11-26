@@ -16,13 +16,21 @@
 # checksum beside the Go module's version. scripts/upstream.sh watches it
 # instead, with ffmpeg and llama.cpp.
 #
-# The CI image, .github/ci-image/Dockerfile, starts from images pinned to
+# The CI image, docker/ci/Dockerfile, starts from images pinned to
 # a digest. Dependabot moves Ubuntu's digest when the tag gets a new build,
-# with the security fixes in it, and the version when there is a newer
-# one, all in one pull request a week, which builds the image anew. Go's
-# image moves only within the Go go.mod names: a newer Go is taken in
-# go.mod first, by hand, and internal/workflows fails when the two part,
-# so a newer one in the group would hold back Ubuntu's fixes beside it.
+# with the security fixes in it, in one pull request a week, which builds
+# the image anew. Ubuntu stays on 24.04, the system the runners run, whose
+# ffmpeg cache the jobs in the image use: a newer Ubuntu is a change to
+# the runners too, made by hand. Go's image moves only within the Go
+# go.mod names: a newer Go is taken in go.mod first, by hand, and
+# internal/workflows fails when the two part, so a newer one in the group
+# would hold back Ubuntu's fixes beside it.
+#
+# Nothing Dependabot moves, but for the actions, lies under .github/.
+# GitHub refuses a pull request that changes a file there from every
+# other ecosystem, "invalid or unauthorized changes", which is how the
+# CI image, under .github/ until then, got no update for a month.
+# internal/workflows fails on such a directory.
 #
 # A new version waits a week before it is taken, see cooldown below
 # each ecosystem, so a hijacked release is caught by the people who
@@ -106,7 +114,7 @@ updates:
   - package-ecosystem: docker
     cooldown:
       default-days: 7
-    directory: /.github/ci-image
+    directory: /docker/ci
     schedule:
       interval: weekly
     # The image's Node is the one .node-version pins, which Dependabot
@@ -116,6 +124,10 @@ updates:
       - dependency-name: node
       - dependency-name: golang
         update-types: [version-update:semver-major, version-update:semver-minor]
+      # Its digest still moves, see the head of this file. Dependabot
+      # cannot tell what kind of update 24.04 to 26.04 is, so a range.
+      - dependency-name: ubuntu
+        versions: [">24.04"]
     groups:
       ci-image:
         patterns: ["*"]

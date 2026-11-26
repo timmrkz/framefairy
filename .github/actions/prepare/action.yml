@@ -55,7 +55,7 @@ runs:
     # the commit it stamps, fails with it.
     - shell: bash
       run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-    # The CI image brings Go, see .github/ci-image/Dockerfile. It is taken
+    # The CI image brings Go, see docker/ci/Dockerfile. It is taken
     # when it is the version go.mod names, and setup-go downloads that one
     # otherwise, as it does on a runner of its own.
     - id: image-go
@@ -74,9 +74,9 @@ runs:
       if: steps.image-go.outputs.there != 'true'
       shell: bash
       run: |
-        version=$(sed -n 's/^FROM golang:\([0-9.]*\)-.*/\1/p' .github/ci-image/Dockerfile)
+        version=$(sed -n 's/^FROM golang:\([0-9.]*\)-.*/\1/p' docker/ci/Dockerfile)
         if [ -z "$version" ]; then
-          echo "::error::no Go version in the FROM golang: line of .github/ci-image/Dockerfile"
+          echo "::error::no Go version in the FROM golang: line of docker/ci/Dockerfile"
           exit 1
         fi
         echo "version=$version" >> "$GITHUB_OUTPUT"
