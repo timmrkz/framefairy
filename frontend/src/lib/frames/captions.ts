@@ -61,7 +61,9 @@ export type Layer = {
 // was dressed for, see keyOf, and track the captions over it. The layer
 // of captions over it is named by tag, drawn at size, shows the caption
 // and the words lit in showing, its pill drawn at scale, and the word of
-// a word step bounces by bounce.
+// a word step bounces by bounce. Turned is its dress once R turns the
+// part that holds it, under the framing R turns the clip to, see
+// turnedDress in cmd/framefairy-app/dress.go.
 export type FrameDress = {
   piece: number;
   in: boolean;
@@ -81,6 +83,7 @@ export type FrameDress = {
   showing?: [number, number, number];
   scale?: number;
   bounce?: [number, number, number];
+  turned?: FrameDress & { framing: string };
 };
 
 // Whether two dresses draw the same crop, turn and keyframe.
@@ -420,7 +423,18 @@ async function failure(r: Response): Promise<string> {
 // change with every saved edit and every step of a drag. Every frame the
 // Go side sends is dressed as the ask it is asked with says, see
 // AppFrames.dressWith.
-export type CaptionAsk = { path: string; clip: string; framing: string; on?: "video"; track?: string; drafts: Record<string, string>; typing?: string };
+// size is the canvas's in device pixels, which the captions are drawn
+// at, whatever size the frames are decoded at.
+export type CaptionAsk = {
+  path: string;
+  clip: string;
+  framing: string;
+  on?: "video";
+  track?: string;
+  drafts: Record<string, string>;
+  typing?: string;
+  size?: [number, number];
+};
 
 // What an ask asks the Go side for, a frame and a size aside, with the key
 // it is known by, which each frame's dress says back, see keyOf.
@@ -429,6 +443,7 @@ export function asked(ask: CaptionAsk): Record<string, string> {
     framing: ask.framing,
     ...(ask.on ? { on: ask.on } : {}),
     ...(ask.track ? { track: ask.track, ...(ask.typing ? { typing: ask.typing } : {}), ...ask.drafts } : {}),
+    ...(ask.size ? { lw: String(ask.size[0]), lh: String(ask.size[1]) } : {}),
     dressKey: keyOf(ask),
   };
 }
@@ -441,6 +456,7 @@ export function keyOf(ask: CaptionAsk | null): string {
     framing: ask.framing,
     ...(ask.on ? { on: ask.on } : {}),
     ...(ask.track ? { track: ask.track, ...(ask.typing ? { typing: ask.typing } : {}), ...ask.drafts } : {}),
+    ...(ask.size ? { lw: String(ask.size[0]), lh: String(ask.size[1]) } : {}),
   }).toString();
 }
 

@@ -24,6 +24,7 @@ import (
 // play paused gives the decoder to a look and goes on after, a clip
 // changed while it plays is taken in, or played on as the video where it
 // leaves the playhead outside, and its loop is switched while it plays.
+// A play of the video dressed as a clip on the video plays the video.
 //
 // Not parallel: library sets the environment the store reads.
 func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
@@ -154,7 +155,7 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 	framingOf("last", mine, g.At(12), g.At(17))
 	framingOf("elsewhere", mine+".other", g.At(2), g.At(7))
 	take := func(name, heard string) (int, map[string]any) {
-		rec := get("/frames/play/take", url.Values{"id": {play.Pictures}, "framing": {name}, "heard": {heard}, "w": {"32"}, "h": {"18"}})
+		rec := get("/frames/play/take", url.Values{"id": {play.Pictures}, "program": {name}, "framing": {name}, "heard": {heard}, "w": {"32"}, "h": {"18"}})
 		var took map[string]any
 		_ = json.NewDecoder(rec.Body).Decode(&took)
 		return rec.Code, took
@@ -180,4 +181,21 @@ func TestThePlayRouteStreamsAClipsFramesAndSound(t *testing.T) {
 	if err := json.NewDecoder(loop.Body).Decode(&looped); err != nil || looped.End != -1 {
 		t.Errorf("the loop switched on answered %d %q", loop.Code, loop.Body.String())
 	}
+
+	// A play of the video dressed as a clip on the video plays the video's
+	// pieces, not the clip's: the dress names the clip's framing too.
+	video := url.Values{}
+	for k, v := range ask {
+		video[k] = v
+	}
+	video["framing"], video["on"] = []string{"first"}, []string{"video"}
+	var whole struct {
+		Pictures, Sound string
+		End             float64
+	}
+	if rec := get("/frames/play", video); json.NewDecoder(rec.Body).Decode(&whole) != nil || math.Abs(whole.End-length) > 1e-9 {
+		t.Errorf("a play of the video dressed as a clip ends at %v, not %v", whole.End, length)
+	}
+	get("/frames/close", url.Values{"id": {whole.Pictures}})
+	get("/frames/close", url.Values{"id": {whole.Sound}})
 }

@@ -26,7 +26,7 @@ import (
 // decoder from the caption file the render burns in, see
 // engine.Engine.PreviewCaptions and docs/CAPTIONS.md:
 //
-//	/frames/dress?path=<episode>&framing=<framing>&at=<seconds>&w=<width>&h=<height>[&on=video][&track=<track>[&part=word|rest][&typing=<caption> <word>][&<drafts>]][&dressKey=<key>][&have=<tag>]
+//	/frames/dress?path=<episode>&framing=<framing>&at=<seconds>&w=<width>&h=<height>[&on=video][&track=<track>[&part=word|rest][&typing=<caption> <word>][&<drafts>]][&lw=<width>&lh=<height>][&dressKey=<key>][&have=<tag>]
 //	                                 the dress of the frame of the episode
 //	                                 that starts at, as the clip of that
 //	                                 framing has it, see Framing.Name, or
@@ -150,9 +150,10 @@ func (r *recent[T]) used(name string) {
 // serveDress answers /frames/dress: the dress of a frame of a clip the
 // window holds, see engine.FrameDress, in the header X-Frame-Dress as
 // JSON, see sentDress, and with a track the captions over it as the body,
-// or no body where have names the layer the window has, see dressFrame. A frame the window is sent comes with its dress, see
-// writeDress, so this is for a frame it holds whose clip changed, and for
-// the parts of a word that bounces after a word step.
+// or no body where have names the layer the window has, see dressFrame.
+// A frame the window is sent comes with its dress, see writeDress, so
+// this is for a frame it holds whose clip changed, and for the parts of a
+// word that bounces after a word step.
 func (s *FrameFairy) serveDress(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	width, _ := strconv.Atoi(q.Get("w"))

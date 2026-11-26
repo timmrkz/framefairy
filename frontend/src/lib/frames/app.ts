@@ -305,12 +305,18 @@ export class AppFrames {
   cards(ranks: number[], asks: (CaptionAsk | null)[] = []) {
     this.cardAsks = asks.filter((_, i) => ranks[i] >= 0);
     this.cardOrder = ranks.filter((r) => r >= 0);
-    const on = new Set(this.cardOrder);
-    for (const [r, f] of this.cardKept)
-      if (!on.has(r)) {
-        this.cardKept.delete(r);
-        f.close();
-      }
+    // A card's frame whose card went, the clip of a card clicked, is kept
+    // as the frames around the hand are, dressed as it came. One whose
+    // clip is dressed otherwise since, its captions came or its crop
+    // moved, is read again, so a click puts it up as it came.
+    const keys = new Map(this.cardOrder.map((r, i) => [r, keyOf(this.cardAsks[i] ?? null)]));
+    for (const [r, f] of this.cardKept) {
+      const key = keys.get(r);
+      if (key === (f.over?.dress?.key ?? "")) continue;
+      this.cardKept.delete(r);
+      if (key === undefined) this.keep(r, f, false);
+      else f.close();
+    }
     this.aheadNow();
   }
 
@@ -359,6 +365,7 @@ export class AppFrames {
       cards: this.cardOrder.join(","),
     });
     if (held) q.set("held", "1");
+    for (const a of this.cardAsks) q.append("cardKeys", keyOf(a));
     const ask = q.toString();
     if (ask === this.aheadSent) return;
     this.aheadSent = ask;
@@ -373,7 +380,6 @@ export class AppFrames {
     if (this.cardOrder.length) {
       q.set("cardFramings", this.cardAsks.map((a) => a?.framing ?? "").join(","));
       q.set("cardTracks", this.cardAsks.map((a) => a?.track ?? "").join(","));
-      for (const a of this.cardAsks) q.append("cardKeys", keyOf(a));
     }
     const sent = this.pull(`/frames/ahead?${q}`, width, height).then((got) => {
       // The words' frames held here already, which the Go side did not
@@ -421,7 +427,11 @@ export class AppFrames {
   // need not send.
   private keptHere(width: number, height: number): number[] {
     const out: number[] = [];
-    for (const m of [this.kept, this.cardKept]) for (const [r, f] of m) if (f.width === width && f.height === height) out.push(r);
+    // A card's frame kept only as another frame is sent again, dressed as
+    // its card.
+    const cards = new Set(this.cardOrder);
+    for (const [r, f] of this.kept) if (f.width === width && f.height === height && !cards.has(r)) out.push(r);
+    for (const [r, f] of this.cardKept) if (f.width === width && f.height === height) out.push(r);
     return out;
   }
 
@@ -522,36 +532,25 @@ export class AppFrames {
     // A kept frame of another size is not this frame: one decoded before
     // the canvas had its size, or before the app grew, stays as blurred as
     // it was.
+    // A card's frame first: it is dressed as its clip, which a click on
+    // the card chooses.
+    const card = this.cardKept.get(w.rank);
+    if (card && card.width === width && card.height === height) {
+      this.tookKept(w.rank);
+      w.done(card);
+      this.tell(w);
+      return;
+    }
     const have = this.kept.get(w.rank);
     if (have && have.width === width && have.height === height) {
       this.tookKept(w.rank);
       this.used(w.rank);
-      this.handOver(w, have);
-      this.tell(w);
-      return;
-    }
-    const card = this.cardKept.get(w.rank);
-    if (card && card.width === width && card.height === height) {
-      this.tookKept(w.rank);
-      this.handOver(w, card);
+      w.done(have);
       this.tell(w);
       return;
     }
     // Where the hand is: the Go side's to decide, see look.
     void this.look(w);
-  }
-
-  // A kept frame, handed over dressed as the frames are dressed now: one
-  // dressed for an ask before, a crop moved or a word corrected since,
-  // is dressed again first, see dress.
-  private handOver(w: Waiter, f: Picture) {
-    if (!this.ask || f.over?.dress?.key === keyOf(this.ask)) return w.done(f);
-    const mine = f.clone();
-    void this.dress(mine, this.ptsOf(w.rank)).then(() => {
-      if (!f.closed) f.over = mine.over;
-      w.done(mine);
-      mine.close();
-    });
   }
 
   // What the frames are dressed with from now on: the clip's framing and
@@ -576,9 +575,18 @@ export class AppFrames {
 
   // Dresses a frame that begins at a moment as the frames are dressed now,
   // the frame on screen after a crop moved or a word corrected, see
-  // FrameQueue.dressWith. It keeps its dress where none came.
-  async dress(f: Picture, begins: number): Promise<void> {
+  // FrameQueue.dressWith. It keeps its dress where none came. A frame
+  // sent with its dress as R turns it, which the framing asked for now
+  // is, takes that dress at once, before libass has drawn its captions,
+  // and early is told, so a part rotated with R turns in the frame R is
+  // pressed in, and its captions follow a frame or two later.
+  async dress(f: Picture, begins: number, early?: () => void): Promise<void> {
     if (!this.ask) return;
+    const turned = f.over?.dress?.turned;
+    if (f.over && turned?.framing === this.ask.framing) {
+      f.over = { ...f.over, dress: turned };
+      early?.();
+    }
     const q = new URLSearchParams({ path: this.path, at: String(begins), w: String(f.width), h: String(f.height) });
     this.dressing(q);
     try {
@@ -615,8 +623,11 @@ export class AppFrames {
     return got;
   }
 
-  keep(rank: number, frame: Picture) {
-    if (!this.closed) this.stats.fromGo++;
+  // Keeps a frame by its rank, the one used longest ago going first once
+  // the room is full. fromGo counts it as a frame the Go side sent, which
+  // a card's frame kept on was already.
+  keep(rank: number, frame: Picture, fromGo = true) {
+    if (!this.closed && fromGo) this.stats.fromGo++;
     const old = this.kept.get(rank);
     if (old === frame) return;
     if (old) {

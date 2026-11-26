@@ -388,9 +388,10 @@ func (p *Play) Loop(on bool, at float64) float64 {
 }
 
 // Plays says whether the play, or the change of the clip it takes in
-// next, plays these pieces: a clip changed in nothing a play plays, its
-// crop moved or its captions changed, is no change of the play.
-func (p *Play) Plays(pieces []PlayPiece) bool {
+// next, plays these pieces and loops as asked: a clip changed in nothing
+// a play plays, its crop moved or its captions changed, is no change of
+// the play. Its loop switched on is one, the play then goes on round.
+func (p *Play) Plays(pieces []PlayPiece, loop bool) bool {
 	cur, _ := p.Current()
 	cur.mu.Lock()
 	r := cur.retake
@@ -400,7 +401,7 @@ func (p *Play) Plays(pieces []PlayPiece) bool {
 	}
 	cur.mu.Lock()
 	defer cur.mu.Unlock()
-	return slices.Equal(cur.program.pieces, NewProgram(pieces, false).pieces)
+	return slices.Equal(cur.program.pieces, NewProgram(pieces, false).pieces) && (cur.program.times < 0) == loop
 }
 
 // Visit is Program.Visit, while the loop may be switched.

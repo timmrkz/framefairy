@@ -429,7 +429,8 @@ describe("the frame on screen dressed again", () => {
       dress: async (_: unknown, begins: number) => void dressed.push(begins),
     };
     const shown = { frame: { over: null }, rank: 2, begins: 0.08, at: -Infinity };
-    Object.assign(q, { app, shown });
+    // The frame on screen is the one the last still put up.
+    Object.assign(q, { app, shown, putFor: 0 });
     const drawn: unknown[] = [];
     q.painted = (frame) => drawn.push(frame);
     return { q, dressed, drawn, shown };
@@ -452,6 +453,20 @@ describe("the frame on screen dressed again", () => {
     q.dressWith(ask("a", "f1"));
     expect(q.dressWith(ask("b", "f3"))).toBeNull();
     expect(dressed).toEqual([]);
+  });
+
+  test("leaves the frame on screen to a still on its way, which dresses its own as it puts it up", async () => {
+    const { q, dressed } = paused();
+    Object.assign(q, { ticket: 1 });
+    q.dressWith(ask("a", "f1"));
+    expect(q.dressWith(ask("a", "f2"))).toBeNull();
+    expect(dressed).toEqual([]);
+    const still = q as unknown as { dressedAsNow(f: unknown, begins: number, ticket: number): Promise<boolean> };
+    expect(await still.dressedAsNow({ over: { dress: { key: "f1" } } }, 0.4, 1)).toBe(true);
+    expect(await still.dressedAsNow({ over: { dress: { key: "f2" } } }, 0.48, 1)).toBe(true);
+    expect(dressed).toEqual([0.4]);
+    // A still a newer seek took the place of is wanted no more.
+    expect(await still.dressedAsNow({ over: { dress: { key: "f2" } } }, 0.4, 0)).toBe(false);
   });
 
   test("dresses again once, with what is wanted last, for changes that come while one is on its way", async () => {

@@ -89,10 +89,14 @@ type previews struct {
 	// Started with the first stream, it closes the ones nobody pulls.
 	reaping bool
 	// tracks are the caption views the window was given, framings the
-	// framings of the clips it was given, and layers counts the caption
-	// layers drawn, see captions.go and dress.go.
+	// framings of the clips it was given, clips the clip each framing of
+	// the clip list is of, turns the framing R turns each part of a clip
+	// to, by the clip's framing, and layers counts the caption layers
+	// drawn, see captions.go and dress.go.
 	tracks   tracks
 	framings recent[framed]
+	clips    recent[clipRef]
+	turns    recent[map[int]string]
 	layers   layerTally
 	// within gives the context a request for captions runs in, see
 	// captionsWithin. Nil in the app. A test hands in its own, to end a

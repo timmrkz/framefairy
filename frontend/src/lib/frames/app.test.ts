@@ -147,9 +147,10 @@ describe("AppFrames", () => {
     app.close();
   });
 
-  // A frame kept from before a crop moved or a word corrected is dressed
-  // again, the picture kept, before it is shown, and keeps that dress.
-  test("a place kept here dressed for an ask before is dressed as the clip is now", async () => {
+  // A frame from before a crop moved or a word corrected is dressed again,
+  // the picture kept, as the frames are dressed now, see
+  // FrameQueue.dressedAsNow.
+  test("dresses a frame as the frames are dressed now", async () => {
     const ask = { path: "/v.mp4", clip: "a", framing: "f2", drafts: {} };
     const dressed: URL[] = [];
     vi.stubGlobal("fetch", async (url: string) => {
@@ -192,16 +193,12 @@ describe("AppFrames", () => {
       null,
       () => null,
     );
-    app.keep(40, kept);
     app.dressWith(ask);
-    const f = await app.frame(40, 0);
-    expect(f?.over?.dress?.left).toBe(1);
+    await app.dress(kept, app.ptsOf(40));
+    expect(kept.over?.dress?.left).toBe(1);
+    expect(kept.over?.dress?.key).toBe(app.dressKey);
     expect(dressed[0].searchParams.get("framing")).toBe("f2");
     expect(dressed[0].searchParams.get("at")).toBe(String(app.ptsOf(40)));
-    expect(kept.over?.dress?.key).toBe(keyOf(ask));
-    // Kept with that dress, it is shown at once the next time.
-    await app.frame(40, 0);
-    expect(dressed.length).toBe(1);
     app.close();
   });
 
@@ -422,13 +419,31 @@ describe("the frames read while the hand rests", () => {
     app.ahead([70]);
     await pulls(before + 1);
     expect(new URL(asked[before].url, "http://x").searchParams.get("has")?.split(",")).toContain("150");
+    // Its card gone, the clip of a card clicked, its frame is kept on as
+    // any other.
     app.cards([]);
     asked[before].give([]);
-    const look = app.frame(150, 0);
-    await pulls(before + 3);
-    expect(asked.slice(before).some((a) => a.url.includes("/frames/look?") && a.url.includes("frame=150"))).toBe(true);
+    before = asked.length;
+    expect(await rankOf(app.frame(150, 0))).toBe(150);
+    expect(asked.slice(before).filter((a) => a.url.startsWith("/frames/look?") && !a.url.includes("kept=1"))).toEqual([]);
     app.close();
-    void look;
+  });
+
+  // A card's frame dressed for its clip as it was, its captions not come
+  // yet, is read again once they are, and not named as held.
+  test("a card's frame is read again once its clip is dressed otherwise", async () => {
+    const { app, asked, pulls } = goSide();
+    app.paused = () => true;
+    app.cards([150]);
+    await pulls(1);
+    asked[0].give([150]);
+    await app.rested();
+    app.cards([150], [{ path: "/v.mp4", clip: "a", framing: "f", drafts: {} }]);
+    await pulls(2);
+    const q = new URL(asked[1].url, "http://x").searchParams;
+    expect(q.get("has")?.split(",")).not.toContain("150");
+    expect(q.get("cardFramings")).toBe("f");
+    app.close();
   });
 
   // A word's frames held here are not sent again, and the frames that

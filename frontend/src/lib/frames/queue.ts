@@ -76,9 +76,9 @@ export type Shown = {
 // Where a play is on the program, see tick: from where the sound card says
 // it is, heard, and where the first frame of the play not on screen yet
 // starts, unshown, and whether that frame is ready, decoded and waiting
-// with its sound handed over, see unshown. Ready is asked only by a clock
-// that wants it, so the app's, which goes by the sound card alone, costs
-// nothing for it.
+// with its sound handed over and no change of the clip on its way, see
+// unshown. Ready is asked only by a clock that wants it, so the app's,
+// which goes by the sound card alone, costs nothing for it.
 export type PlayClock = (heard: number, unshown: number, ready: () => boolean) => number;
 // What a clock may reach of the queue it runs: the sound card, and whether
 // a play goes on.
@@ -614,8 +614,14 @@ export class FrameQueue {
       return;
     }
     this.playDressed = this.app?.dressKey ?? "";
-    this.takenOver = this.takeIn(play, framing, loop);
+    this.taking++;
+    this.takenOver = this.takeIn(play, framing, loop).finally(() => {
+      this.taking--;
+      this.dressPlay();
+    });
   }
+  // Changes of the clip on their way to the Go side, see dressPlay.
+  private taking = 0;
 
   // What the Go side made of a change of the clip the play plays, see
   // changed and GoPlay.take: the frames and the sound of the clip as it
@@ -1196,7 +1202,9 @@ export class FrameQueue {
   // again. One at a time: a change on the way, a drag of the captions,
   // dresses it once more as it is when the one before is here.
   private redress(): Promise<void> | null {
-    if (!this.shown || this.state === "playing" || this.state === "starting") return null;
+    // A still on its way dresses its frame as it puts it up, see
+    // dressedAsNow, and the frame up meanwhile is of the place before.
+    if (!this.shown || this.state === "playing" || this.state === "starting" || this.putFor !== this.ticket) return null;
     if (this.redressing) {
       this.redressAgain = true;
       return this.redressing;
@@ -1206,8 +1214,9 @@ export class FrameQueue {
         this.redressAgain = false;
         const s = this.shown;
         if (!s || !this.app || this.closed) return;
-        await this.app.dress(s.frame, s.begins);
-        if (this.shown === s && !this.closed) this.paint();
+        const drawn = () => this.shown === s && !this.closed && this.paint();
+        await this.app.dress(s.frame, s.begins, drawn);
+        drawn();
       } while (this.redressAgain);
     };
     this.redressing = run().finally(() => (this.redressing = null));
@@ -1219,15 +1228,17 @@ export class FrameQueue {
   // The play of a clip under way told how its frames are dressed now,
   // once the clip it plays is the one they are dressed for: a crop moved
   // or a word corrected changes the frames it sends from there on, and
-  // the pieces it plays stay, see GoPlay.take.
+  // the pieces it plays stay, see GoPlay.take. While a change of the
+  // clip is on its way it waits for it, so the dress never reaches the
+  // Go side before the pieces it is for, see changed.
   private dressPlay() {
     const play = this.goPlay;
     const ask = this.dressAsk;
-    if (!play || !ask || !this.wanted.framing || ask.framing !== this.wanted.framing || this.c0 === null) return;
+    if (!play || !ask || !this.wanted.framing || ask.framing !== this.wanted.framing || this.c0 === null || this.taking) return;
     const key = this.app?.dressKey ?? "";
     if (key === this.playDressed) return;
     this.playDressed = key;
-    void play.take(ask.framing, this.wanted.loop, Math.max(this.reached, this.sounded()));
+    void play.take(ask.framing, this.wanted.loop, Math.max(this.reached, this.sounded()), true);
   }
 
   // Whether the frame a gesture put the playhead on may be put up: the
@@ -1295,6 +1306,9 @@ export class FrameQueue {
     // lies over it may be another clip's still, see over.
     if (this.shown && this.shown.rank === rank && this.sharp(this.shown.frame)) {
       if (dressed && !(await dressed)) return gaveUp();
+      const s = this.shown;
+      if (!(await this.dressedAsNow(s.frame, s.begins, ticket))) return;
+      if (this.shown !== s) return gaveUp();
       this.putFor = ticket;
       this.at = at;
       this.paint(true);
@@ -1318,11 +1332,25 @@ export class FrameQueue {
       if (frame) this.closeFrame(frame);
       return gaveUp();
     }
+    if (frame && !(await this.dressedAsNow(frame, begins, ticket))) {
+      this.closeFrame(frame);
+      return;
+    }
     if (frame) this.put(frame, rank, begins, -Infinity);
     else this.paint(true);
     this.at = at;
     this.report(!!frame);
     if (cue && frame) this.cue(at, ticket);
+  }
+
+  // Dresses a frame a still puts up as the frames are dressed now, where
+  // the clip changed since it was asked for, the captions of a clip
+  // chosen came or a crop moved, so it goes up once, dressed, and not
+  // bare and then dressed. Says whether the still is still wanted.
+  private async dressedAsNow(frame: Picture, begins: number, ticket: number): Promise<boolean> {
+    const app = this.app;
+    if (app && app.dressKey && frame.over?.dress?.key !== app.dressKey) await app.dress(frame, begins);
+    return ticket === this.ticket && !this.closed;
   }
 
   // The play from a paused playhead, prepared and waiting for the space
@@ -1747,7 +1775,9 @@ export class FrameQueue {
   private unshown(play: GoPlay): { at: number; ready: () => boolean } {
     const s = play.shots[0];
     if (!s) return { at: play.picturesEnded ? Infinity : this.reached, ready: () => false };
-    const sounded = () => play.soundEnded || (this.c0 !== null && this.m0 / this.sampleRate + (this.handedTo - this.c0) >= s.at);
+    // While a change of the clip is on its way to the Go side, the frame
+    // waiting may be one the change replaces, see changed.
+    const sounded = () => !this.taking && (play.soundEnded || (this.c0 !== null && this.m0 / this.sampleRate + (this.handedTo - this.c0) >= s.at));
     return { at: s.at, ready: sounded };
   }
 

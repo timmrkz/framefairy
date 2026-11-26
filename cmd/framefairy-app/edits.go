@@ -154,12 +154,18 @@ func (s *FrameFairy) turnsOf(path string, plans []engine.PlanSummary, chosen str
 	}
 	out = kept.(Turns)
 	// Their framings are kept again for the video preview, which may
-	// have forgotten them since they were worked out, so R asks the dress
-	// of the frame it turns by one, see /frames/dress.
+	// have forgotten them since they were worked out, with which part
+	// turns to which by the clip's own framing, so a frame of the clip is
+	// sent with its dress turned, see FrameFairy.turned.
+	parts := map[int]string{}
 	for _, part := range out.Parts {
 		if part.Name != "" {
 			s.previews.framings.put(part.Name, part.framed, nil)
+			parts[part.Part] = part.Name
 		}
+	}
+	if entry.Framing != "" {
+		s.previews.turns.put(entry.Framing, parts, nil)
 	}
 	return &out
 }

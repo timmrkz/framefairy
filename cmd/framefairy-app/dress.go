@@ -9,6 +9,7 @@ import (
 	"hash/maphash"
 	"io"
 	"net/url"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -87,9 +88,10 @@ func layerSize(d engine.FrameDress, width, height int) (int, int) {
 // the episode as filmed, and the captions of a track over a frame of the
 // clip, with the drafts of the clip set, the word being typed left out,
 // and, for the bounce after a word step, one part of the caption alone.
-// The video preview is width by height.
+// The captions are drawn width by height, the canvas's size.
 type dressAsk struct {
 	path    string
+	name    string
 	clip    framed
 	video   bool
 	drawing *engine.CaptionDrawing
@@ -109,7 +111,7 @@ type dressAsk struct {
 // dressed, see /frames/dress. dressKey is not one: it is what the window
 // names the ask by, said back with each frame.
 var dressWords = []string{"framing", "on", "track", "part", "typing", "text", "textOpacity", "box", "boxOpacity",
-	"highlight", "highlightOpacity", "textOn", "boxOn", "highlightOn", "y"}
+	"highlight", "highlightOpacity", "textOn", "boxOn", "highlightOn", "y", "lw", "lh"}
 
 // errDressUnknown answers a framing or a track the app did not send the
 // window, or sent for another video.
@@ -127,7 +129,7 @@ func (s *FrameFairy) readDress(path string, q url.Values, width, height int) (*d
 	if !ok || clip.episode != path || !s.store.Known(path) {
 		return nil, errDressUnknown
 	}
-	a := &dressAsk{path: path, clip: clip, video: q.Get("on") == "video", typing: engine.CaptionShowing{Caption: -1, Word: -1},
+	a := &dressAsk{path: path, name: name, clip: clip, video: q.Get("on") == "video", typing: engine.CaptionShowing{Caption: -1, Word: -1},
 		part: q.Get("part"), width: width, height: height, named: url.Values{"path": {path}}, key: q.Get("dressKey")}
 	if q.Has("track") {
 		a.track = q.Get("track")
@@ -146,7 +148,18 @@ func (s *FrameFairy) readDress(path string, q url.Values, width, height int) (*d
 			return nil, fmt.Errorf("typing is %q", q.Get("typing"))
 		}
 	}
-	if !framewire.LayerFits(width, height) {
+	// The captions are drawn at the canvas's size, lw by lh, where the
+	// window says it: frames are decoded no larger than the file, and a
+	// layer drawn at their size was stretched over the canvas.
+	if q.Has("lw") || q.Has("lh") {
+		w, errW := strconv.Atoi(q.Get("lw"))
+		h, errH := strconv.Atoi(q.Get("lh"))
+		if errW != nil || errH != nil {
+			return nil, fmt.Errorf("the canvas is %q by %q", q.Get("lw"), q.Get("lh"))
+		}
+		a.width, a.height = w, h
+	}
+	if !framewire.LayerFits(a.width, a.height) {
 		return nil, errors.New("a dress needs the width and the height of the video preview")
 	}
 	drafts, err := captionDrafts(q.Get)
@@ -162,8 +175,8 @@ func (s *FrameFairy) readDress(path string, q url.Values, width, height int) (*d
 			a.named.Set(k, q.Get(k))
 		}
 	}
-	a.named.Set("w", strconv.Itoa(width))
-	a.named.Set("h", strconv.Itoa(height))
+	a.named.Set("w", strconv.Itoa(a.width))
+	a.named.Set("h", strconv.Itoa(a.height))
 	return a, nil
 }
 
@@ -207,6 +220,75 @@ type sentDress struct {
 	Showing [3]int      `json:"showing"`
 	Scale   float64     `json:"scale,omitempty"`
 	Bounce  *[3]float64 `json:"bounce,omitempty"`
+	// Turned is the frame's dress once R turns the part that holds it,
+	// see turnedDress.
+	Turned *turnedDress `json:"turned,omitempty"`
+}
+
+// turnedDress is a frame's dress with its part turned a quarter further,
+// and the framing that turns it so, which the clip has once R is pressed.
+// The video preview turns the frame R is pressed on by it, in the frame
+// it is pressed in, until the frame's own dress under that framing comes,
+// which took two frames.
+type turnedDress struct {
+	Framing string `json:"framing"`
+	engine.FrameDress
+}
+
+// turned is the dress of a frame of the clip whose framing the ask
+// names, d, as R would turn it: the dress under the framing R turns the
+// part that holds the frame to. Nil for a frame of a cut, or of the video.
+func (s *FrameFairy) turned(a *dressAsk, d engine.FrameDress, at float64) *turnedDress {
+	if a.video || !d.In || d.Piece < 0 || d.Piece >= len(a.clip.segments) {
+		return nil
+	}
+	parts, ok := s.previews.turns.get(a.name)
+	if !ok {
+		parts = s.turnsFor(a.path, a.name, a.clip.source)
+	}
+	name := parts[a.clip.segments[d.Piece].Part]
+	if name == "" {
+		return nil
+	}
+	g, ok := s.previews.framings.get(name)
+	if !ok || g.episode != a.clip.episode {
+		return nil
+	}
+	return &turnedDress{Framing: name, FrameDress: g.dress(at, false)}
+}
+
+// clipRef is the clip of a plan a framing of the clip list is of.
+type clipRef struct{ plan, id string }
+
+// turnsFor works out the framings R turns each part of the clip whose
+// framing is named name to, and keeps them by it, for a clip whose frame
+// was dressed before a state said them: a clip whose card was read ahead
+// and then clicked, or the answer of an edit. Kept empty where there are
+// none to be had, so a play of a clip asks the plan once, not each frame.
+func (s *FrameFairy) turnsFor(path, name string, info engine.SourceInfo) map[int]string {
+	none := map[int]string{}
+	ref, ok := s.previews.clips.get(name)
+	if !ok {
+		return none
+	}
+	view, err := s.store.machine.Episode(path).ReadPlan(ref.plan)
+	i := -1
+	if err == nil {
+		i = slices.IndexFunc(view.Clips, func(c engine.ClipView) bool { return c.ID == ref.id })
+	}
+	var entry ClipEntry
+	if i >= 0 {
+		entry = s.entryOf(path, ref.plan, view.Clips[i], info, nil)
+	}
+	if entry.Framing != name {
+		s.previews.turns.put(name, none, nil)
+		return none
+	}
+	s.turnsOf(path, s.plansOf(path), entry.Key, []ClipEntry{entry}, info)
+	if parts, ok := s.previews.turns.get(name); ok {
+		return parts
+	}
+	return none
 }
 
 // dressed is a frame dressed: its dress, and the layer of captions over
@@ -224,7 +306,7 @@ type dressed struct {
 // so a panic in it fails the request or the stream, not the app.
 func (s *FrameFairy) dressFrame(ctx context.Context, a *dressAsk, at float64, have string) (dressed, error) {
 	d := a.clip.dress(at, a.video)
-	out := dressed{sent: sentDress{FrameDress: d, Key: a.key, Track: a.track, Showing: [3]int{-1, -1, -1}}}
+	out := dressed{sent: sentDress{FrameDress: d, Key: a.key, Track: a.track, Showing: [3]int{-1, -1, -1}, Turned: s.turned(a, d, at)}}
 	if a.drawing == nil || !d.Clip {
 		return out, nil
 	}
@@ -374,20 +456,27 @@ func (d *dresser) dress(gen, frame int, at float64) *dressed {
 	if d == nil {
 		return nil
 	}
+	// The ask is read under the lock and the layer drawn outside it, so a
+	// change of the clip a play takes in never waits for libass, see
+	// take. The frames of one answer are dressed one after another, so
+	// the tag sent last is theirs alone.
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	a := d.cards[frame]
 	if a == nil {
 		for g := gen; g >= 0 && a == nil; g-- {
 			a = d.asks[g]
 		}
 	}
+	last := d.last
+	d.mu.Unlock()
 	if a == nil {
 		return nil
 	}
 	ctx, cancel := d.s.previews.captionsWithin(d.ctx)
 	defer cancel()
-	out, err := d.s.dressFrame(ctx, a, at, d.last)
+	out, err := d.s.dressFrame(ctx, a, at, last)
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if err != nil && d.ctx.Err() == nil && err.Error() != d.told {
 		d.told = err.Error()
 		theLog.line(zerolog.WarnLevel, "captions").Str("video", a.path).Float64("at", at).Err(err).Msg("a frame went out without its captions")

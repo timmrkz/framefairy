@@ -150,7 +150,9 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 // in its body: between two words of a playing clip that was
 // every other frame, issue #896. Wherever it is answered so, the layer
 // drawn would have been the layer the video preview has, byte for byte. A
-// tag of another size, track or draft is never the layer of a frame.
+// tag of another size, track or draft is never the layer of a frame. The
+// layer is drawn at the canvas's size, and the dress comes alone when
+// asked so.
 //
 // On the real disk: the decoder is a program of its own and reads the
 // episode and the caption file from there.
@@ -231,6 +233,13 @@ func TestALayerTheVideoPreviewHasIsNotDrawnAgain(t *testing.T) {
 	q.Set("framing", "moved")
 	if rec := ask(q, tag); rec.Code != http.StatusNoContent || rec.Header().Get("X-Frame-Dress") == before {
 		t.Errorf("the crop moved answered %d with the dress %s, before it %s", rec.Code, rec.Header().Get("X-Frame-Dress"), before)
+	}
+	// The captions are drawn at the canvas's size where the window says
+	// it.
+	q.Set("lw", "900")
+	q.Set("lh", "500")
+	if size := dressIn(t, ask(q, "")).Size; size[1] != 500 {
+		t.Errorf("the captions over a canvas of 900x500 were drawn %v", size)
 	}
 }
 
@@ -846,7 +855,7 @@ func TestAFrameComesWithItsDress(t *testing.T) {
 	// for the frames it lasts.
 	rec := httptest.NewRecorder()
 	q := url.Values{"path": {mine}, "w": {fmt.Sprint(w)}, "h": {fmt.Sprint(h)}, "grid": {grid}, "rate": {"48000"}, "ch": {"2"},
-		"framing": {framing}, "track": {view.Track}, "at": {"10.0"}}
+		"program": {framing}, "framing": {framing}, "track": {view.Track}, "at": {"10.0"}}
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/play?"+q.Encode(), nil))
 	var play struct{ Pictures, Sound string }
 	if err := json.NewDecoder(rec.Body).Decode(&play); err != nil || play.Pictures == "" {
@@ -889,7 +898,7 @@ func TestAFrameComesWithItsDress(t *testing.T) {
 	f.segments[0].CropX = &left
 	svc.previews.framings.put("moved", f, nil)
 	take := httptest.NewRecorder()
-	handler.ServeHTTP(take, httptest.NewRequest("GET", "/frames/play/take?"+url.Values{"id": {play.Pictures}, "framing": {"moved"},
+	handler.ServeHTTP(take, httptest.NewRequest("GET", "/frames/play/take?"+url.Values{"id": {play.Pictures}, "program": {"moved"}, "framing": {"moved"},
 		"heard": {"0.3"}, "w": {fmt.Sprint(w)}, "h": {fmt.Sprint(h)}, "track": {view.Track}}.Encode(), nil))
 	if take.Code != http.StatusNoContent {
 		t.Fatalf("a crop moved while it plays answered %d %q", take.Code, take.Body.String())

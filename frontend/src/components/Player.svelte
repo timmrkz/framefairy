@@ -235,6 +235,9 @@
   // How many device pixels the stylesheet gave the canvas, read from it as
   // it changes, so a new queue is told at once.
   let pixels: [number, number] = [0, 0];
+  // The same, for the captions, which libass draws at the canvas's size
+  // whatever size the frames are decoded at, see askOf.
+  let layerPixels = $state<[number, number] | null>(null);
   // One frame of the episode. The playhead can only ever stand on one, so
   // it is the smallest difference between two moments that means anything.
   const oneFrame = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
@@ -419,6 +422,7 @@
       pixels = device
         ? [device.inlineSize, device.blockSize]
         : [Math.round(e.contentRect.width * ratio), Math.round(e.contentRect.height * ratio)];
+      if (layerPixels?.join() !== pixels.join()) layerPixels = [pixels[0], pixels[1]];
       queue?.resize(pixels[0], pixels[1]);
     };
     const watch = new ResizeObserver(seen);
@@ -493,11 +497,13 @@
   export function seek(t: number, about?: About, wordStep = false) {
     const at = Math.max(0, Math.min(t, source.duration));
     layers.sought(wordStep);
-    // The frame asked for comes dressed as the clip is now: the effect
-    // that tells the queue runs after the seek.
-    queue?.dressWith(captionAsk);
     time = at;
     placed = placeOf(pieces, clip?.key ?? "", at, 1 / oneFrame, about, source.videoStart ?? 0);
+    // The frame asked for comes dressed as the clip is now, at the place
+    // it is asked at: the effect that tells the queue runs after the
+    // seek, and dressed by the place before, in the clip or on the video,
+    // a clip's frame went up without its crop and then with it.
+    queue?.dressWith(captionAsk);
     if (!queue) return;
     if (!paused) playedClip = placed.place !== "video";
     queue.seek(at, programOf(placeFor(placed, clip?.key)));
@@ -1350,7 +1356,7 @@
   // frames the Go side cannot dress, of a video it never saw.
   function askOf(of: ClipEntry, view: CaptionsView | null | undefined): CaptionAsk | null {
     if (!of.framing) return null;
-    const ask: CaptionAsk = { path, clip: of.key, framing: of.framing, drafts: {} };
+    const ask: CaptionAsk = { path, clip: of.key, framing: of.framing, drafts: {}, ...(layerPixels ? { size: layerPixels } : {}) };
     if (!view?.track || !view.captions?.length || view.style.text === false) return ask;
     return { ...ask, track: view.track, drafts: { ...drafts } };
   }

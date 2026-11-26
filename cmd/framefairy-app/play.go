@@ -12,7 +12,9 @@ import (
 )
 
 // servePlay starts a play of the video preview, see engine.Play: of a
-// clip, by the name of its framing, see Framing.Name, or of the video,
+// clip, by the name of its framing, see Framing.Name, as program, apart
+// from the framing of the dress words its frames are dressed with, which
+// is the clip's on the video too, or of the video,
 // by its pieces, whether it loops, and the moment of the video the
 // playhead is at, with the size, the grid and the sound card's rate and
 // channels. It answers with two streams, read with /frames/read like any
@@ -29,12 +31,12 @@ import (
 // It answers with the moment it starts from and where its first frame
 // begins, -1 for none, too.
 //
-//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&(framing=<framing>|pieces=<start>:<end>,...)&at=<seconds>[&loop=1][&cue=1]
+//	/frames/play?path=<episode>&w=<width>&h=<height>&grid=<grid>&rate=<hz>&ch=<channels>&(program=<framing>|pieces=<start>:<end>,...)&at=<seconds>[&loop=1][&cue=1][&<dress words>]
 //	  {"pictures": "...", "sound": "...", "from": <seconds>, "end": <seconds>, "length": <seconds>, "moment": <seconds>, "first": <seconds>}
 //	/frames/play/go?id=<pictures>
 //	/frames/play/hold?id=<pictures>
 //	/frames/play/loop?id=<pictures>&at=<seconds>[&loop=1]  {"end": <seconds>}
-//	/frames/play/take?id=<pictures>&framing=<framing>&heard=<seconds>&w=<width>&h=<height>[&loop=1][&<dress words>]  {"gen": <n>, "at": <seconds>, "end": <seconds>, "lap": <seconds>, "video": <bool>}
+//	/frames/play/take?id=<pictures>&program=<framing>&heard=<seconds>&w=<width>&h=<height>[&loop=1][&<dress words>]  {"gen": <n>, "at": <seconds>, "end": <seconds>, "lap": <seconds>, "video": <bool>}
 func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request, d *dresser) {
 	path, hand, ok := handArgs(st, w, r, false)
 	if !ok {
@@ -48,7 +50,7 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	pieces, ok := playPieces(q.Get("pieces"))
-	if name := q.Get("framing"); name != "" {
+	if name := q.Get("program"); name != "" {
 		f, known := p.framings.get(name)
 		ok = known && f.episode == path && len(f.segments) > 0
 		pieces = f.pieces()
@@ -164,14 +166,16 @@ const takeAhead = 0.15
 // outside the clip, its frames dressed as the video's. A change that
 // plays the same pieces, a crop moved or the captions changed, is no
 // change of the play: its frames from now on are dressed as it asks, and
-// it answers with no content. A framing of another video is not taken.
+// it answers with no content. Asked with dress=1, only the dress
+// changed, so a play of other pieces by now is left as it is. A framing
+// of another video is not taken.
 // 409 where the play is paused or past its end, and the window's next
 // play plays the clip as it is now.
 func (s *FrameFairy) servePlayTake(w http.ResponseWriter, r *http.Request) {
 	p := &s.previews
 	q := r.URL.Query()
 	stream := p.get(q.Get("id"))
-	f, known := p.framings.get(q.Get("framing"))
+	f, known := p.framings.get(q.Get("program"))
 	heard, err := strconv.ParseFloat(q.Get("heard"), 64)
 	if stream == nil || stream.play == nil || stream.dresser == nil || !known || f.episode != stream.episode || len(f.segments) == 0 ||
 		err != nil || math.IsNaN(heard) || math.IsInf(heard, 0) {
@@ -186,8 +190,14 @@ func (s *FrameFairy) servePlayTake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	loop := q.Get("loop") == "1"
-	if stream.play.Plays(f.pieces()) {
+	if stream.play.Plays(f.pieces(), loop) {
 		stream.dresser.redress(ask)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	// Only the dress changed, and the play plays something else by now:
+	// the change of the clip that comes after it brings its own.
+	if q.Get("dress") == "1" {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

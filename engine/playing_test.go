@@ -552,11 +552,16 @@ func TestChangesTakenInFromSeveralGoroutinesAtOnceKeepTheirOrder(t *testing.T) {
 		*last = gen
 	}
 	pictures, sounds := 0, 0
+	// The changes start once the first picture and the first sound are
+	// out, so a busy machine cannot stop the play before it made either.
+	first, heard := make(chan struct{}), make(chan struct{})
 	streams.Go(func() {
 		last := 0
 		_ = p.Pictures(context.Background(), func(f PlayFrame) error {
 			order("pictures", f.Gen, &last)
-			pictures++
+			if pictures++; pictures == 1 {
+				close(first)
+			}
 			return nil
 		})
 	})
@@ -564,11 +569,15 @@ func TestChangesTakenInFromSeveralGoroutinesAtOnceKeepTheirOrder(t *testing.T) {
 		last := 0
 		_ = p.Sound(context.Background(), ones(make(chan float64, 4096)), 1000, 1, func(_ int64, gen int, _ []byte) error {
 			order("sound", gen, &last)
-			sounds++
+			if sounds++; sounds == 1 {
+				close(heard)
+			}
 			return nil
 		})
 	})
 	gens := make(chan int, 64)
+	<-first
+	<-heard
 	for g := range 4 {
 		takes.Go(func() {
 			for i := range 8 {

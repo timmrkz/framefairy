@@ -113,7 +113,9 @@ export class GoPlay {
       ch: String(ask.channels),
       at: String(ask.at),
     });
-    if (ask.framing) q.set("framing", ask.framing);
+    // The program, apart from the framing the frames are dressed by,
+    // which is the clip's on the video too.
+    if (ask.framing) q.set("program", ask.framing);
     else q.set("pieces", ask.pieces.map((p) => `${p.start}:${p.end}`).join(","));
     if (ask.loop) q.set("loop", "1");
     if (ask.cue) q.set("cue", "1");
@@ -224,15 +226,18 @@ export class GoPlay {
   // pieces are the same and only how the frames are dressed changed,
   // which the frames pulled from then on show. The frames come and
   // waiting of the clip as it was from there on go at once, and what is
-  // pulled after.
-  async take(framing: string, loop: boolean, heard: number): Promise<Taken | null> {
+  // pulled after. Only dressed, the play is left as it is where it plays
+  // other pieces by then.
+  async take(framing: string, loop: boolean, heard: number, dressed = false): Promise<Taken | null> {
     if (this.closed) return null;
     const q = new URLSearchParams({ id: this.pictures, heard: String(heard), w: String(this.size.width), h: String(this.size.height) });
     if (loop) q.set("loop", "1");
+    if (dressed) q.set("dress", "1");
     // The frames taken in are dressed as the frames are, by the framing
     // taken in.
     this.app.dressing(q);
     q.set("framing", framing);
+    q.set("program", framing);
     let got: Taken;
     try {
       const r = await fetch(`/frames/play/take?${q}`);
