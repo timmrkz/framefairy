@@ -341,8 +341,11 @@ func (s *FrameFairy) dressFrame(ctx context.Context, a *dressAsk, at float64, ha
 		out.sent.Scale = 1
 		return out, nil
 	}
+	// A frame whose layer is not drawn names none, or the frames after it
+	// would be sent with the tag alone, and come bare too.
 	dec, err := s.previews.decoder(st.machine, a.path)
 	if err != nil {
+		out.sent.Tag = ""
 		return out, err
 	}
 	// A video whose folder was deleted outside the app is let go as the
@@ -351,6 +354,7 @@ func (s *FrameFairy) dressFrame(ctx context.Context, a *dressAsk, at float64, ha
 	// back. The engine checks again as it writes, see
 	// engine.ErrNoWorkFolder.
 	if ok, _ := marked(st.files, a.path); !ok {
+		out.sent.Tag = ""
 		return out, engine.ErrNoWorkFolder
 	}
 	l, err := e.PreviewCaptions(ctx, dec, engine.WorkDir(a.path), drawing, a.drafts, source, rs, at, layerW, layerH)
@@ -432,9 +436,8 @@ func writeDress(w io.Writer, d *dressed) error {
 // asks, see servePlayTake, and those of a card as its clip asks, see
 // serveAhead. The zero value dresses nothing.
 type dresser struct {
-	s   *FrameFairy
-	ctx context.Context
-	mu  sync.Mutex
+	s  *FrameFairy
+	mu sync.Mutex
 	// asks are what the frames are dressed with, by how many changes the
 	// play had taken in when they were made, 0 for an answer's frames.
 	asks map[int]*dressAsk
@@ -445,14 +448,14 @@ type dresser struct {
 	told string
 }
 
-func newDresser(s *FrameFairy, ctx context.Context, ask *dressAsk, have string) *dresser {
-	return &dresser{s: s, ctx: ctx, asks: map[int]*dressAsk{0: ask}, last: have}
+func newDresser(s *FrameFairy, ask *dressAsk, have string) *dresser {
+	return &dresser{s: s, asks: map[int]*dressAsk{0: ask}, last: have}
 }
 
 // dress dresses a frame of the grid that starts at a moment, made after
 // gen changes of the clip, or nil where nothing dresses it. A layer that
 // fails leaves the frame with its dress alone, and the log says why.
-func (d *dresser) dress(gen, frame int, at float64) *dressed {
+func (d *dresser) dress(within context.Context, gen, frame int, at float64) *dressed {
 	if d == nil {
 		return nil
 	}
@@ -472,12 +475,12 @@ func (d *dresser) dress(gen, frame int, at float64) *dressed {
 	if a == nil {
 		return nil
 	}
-	ctx, cancel := d.s.previews.captionsWithin(d.ctx)
+	ctx, cancel := d.s.previews.captionsWithin(within)
 	defer cancel()
 	out, err := d.s.dressFrame(ctx, a, at, last)
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if err != nil && d.ctx.Err() == nil && err.Error() != d.told {
+	if err != nil && within.Err() == nil && err.Error() != d.told {
 		d.told = err.Error()
 		theLog.line(zerolog.WarnLevel, "captions").Str("video", a.path).Float64("at", at).Err(err).Msg("a frame went out without its captions")
 	}

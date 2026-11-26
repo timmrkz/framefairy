@@ -1467,7 +1467,9 @@
     if (light !== shownLight) shownLight = light;
     const ask = captionAsk;
     const size = canvasSize();
-    const layer = size ? layers.at(frame, size, own) : null;
+    // With no clip chosen nothing lies over a frame, a kept one dressed
+    // for a clip since removed included.
+    const layer = size && ask ? layers.at(frame, size, own) : null;
     const dress = layer?.dress ?? null;
     // A frame the edge being dragged left out, see heading.
     if (heading !== null && dress && !dress.clip && dressed?.clip) return drawnOver;

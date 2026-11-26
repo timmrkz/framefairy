@@ -139,6 +139,47 @@ describe("the pieces changed while playing", () => {
   });
 });
 
+// Changes of the clip made while one is on its way to the Go side, the
+// steps of a dragged edge. The Go side takes them in the order they come,
+// and two fetches on their way at once came the other way round, so the
+// play ended on the clip as it was a step before.
+describe("changes of the clip while one is on its way", () => {
+  test("go one at a time, the newest last, and the ones between are left out", async () => {
+    const { q } = playing(58.2);
+    q.seek(58.2, [clip, false, "a"]);
+    const sent: string[] = [];
+    const answers: (() => void)[] = [];
+    let told = () => {};
+    const asked = () => new Promise<void>((done) => (told = done));
+    const inside = q as unknown as { goPlay: unknown; c0: number | null; audio: { currentTime: number } };
+    inside.goPlay = {
+      take: (framing: string) => {
+        sent.push(framing);
+        told();
+        return new Promise<null>((done) => answers.push(() => done(null)));
+      },
+    };
+    inside.c0 = 0;
+    inside.audio = { currentTime: 0 };
+    const step = (end: number, framing: string) => q.setProgram([{ start: clip[0].start, end }], false, framing);
+    let next = asked();
+    step(59.4, "b");
+    step(59.2, "c");
+    await next;
+    expect(sent).toEqual(["c"]);
+    next = asked();
+    step(59.0, "d");
+    step(58.8, "e");
+    expect(sent).toEqual(["c"]);
+    answers[0]();
+    await next;
+    expect(sent).toEqual(["c", "e"]);
+    answers[1]();
+    await q.takenOver;
+    expect(sent).toEqual(["c", "e"]);
+  });
+});
+
 // Found by Tim testing #385: a video gone back to from the sidebar went
 // black for a frame before its picture came back. Its workspace was woken
 // with its own frame on the canvas, and the new queue cleared it, setting

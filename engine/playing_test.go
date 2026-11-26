@@ -605,3 +605,24 @@ func TestChangesTakenInFromSeveralGoroutinesAtOnceKeepTheirOrder(t *testing.T) {
 		t.Errorf("%d changes were taken in, over %d pictures and %d chunks of sound", len(seen), pictures, sounds)
 	}
 }
+
+// A change of the clip that plays the same pieces with the same loop is
+// no change of the play, its crop moved or its captions changed. The
+// loop switched on is one: answered as no change, a take that switched
+// it on left the play to end at the clip's end.
+func TestAPlayPlaysItsPiecesAndItsLoop(t *testing.T) {
+	t.Parallel()
+	s := newSchedule(freeDecoder{})
+	pieces := []PlayPiece{{1, 2}, {3, 4}}
+	p := s.Play(PlayAsk{Grid: lookGrid, W: 4, H: 2, Pieces: pieces, Moment: 1})
+	defer p.Stop()
+	if !p.Plays(pieces, false) {
+		t.Error("the play does not play its own pieces")
+	}
+	if p.Plays(pieces, true) {
+		t.Error("the play plays its pieces looped, though it does not loop")
+	}
+	if p.Plays(pieces[:1], false) {
+		t.Error("the play plays one piece, though it plays two")
+	}
+}

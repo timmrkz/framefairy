@@ -288,7 +288,7 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request, 
 	if seen.Exact && sched.HasNear(hand) {
 		w.Header().Set("X-Frames-Near", "1")
 	}
-	writeSeen(w, dec, []engine.Seen{seen}, d)
+	writeSeen(r.Context(), w, dec, []engine.Seen{seen}, d)
 }
 
 // give hands the pictures of frames a schedule sent back to it, once
@@ -302,7 +302,7 @@ func give(sched *engine.Schedule, seen []engine.Seen) {
 
 // writeSeen writes frames a schedule sent, each as writeFrames writes
 // one, dressed as d says.
-func writeSeen(w http.ResponseWriter, dec *engine.EpisodeFrames, seen []engine.Seen, d *dresser) {
+func writeSeen(ctx context.Context, w http.ResponseWriter, dec *engine.EpisodeFrames, seen []engine.Seen, d *dresser) {
 	if light := dec.Light(); light != framewire.SDR {
 		w.Header().Set("X-Frames-Light", string(light))
 	}
@@ -315,7 +315,7 @@ func writeSeen(w http.ResponseWriter, dec *engine.EpisodeFrames, seen []engine.S
 		if _, err := w.Write(f.Picture); err != nil {
 			return
 		}
-		if err := writeDress(w, d.dress(0, f.Frame, f.At)); err != nil {
+		if err := writeDress(w, d.dress(ctx, 0, f.Frame, f.At)); err != nil {
 			return
 		}
 	}
@@ -413,7 +413,7 @@ func (p *previews) serveNear(st *store, w http.ResponseWriter, r *http.Request, 
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
-	writeSeen(w, dec, near, d)
+	writeSeen(r.Context(), w, dec, near, d)
 }
 
 // serveAhead hands the schedule what to read while the hand rests, see
@@ -448,7 +448,7 @@ func (p *previews) serveAhead(st *store, w http.ResponseWriter, r *http.Request,
 		w.WriteHeader(http.StatusOK)
 	default:
 		w.Header().Set("X-Frames-Keep", intList(ahead.Keep()))
-		writeSeen(w, dec, seen, d)
+		writeSeen(r.Context(), w, dec, seen, d)
 	}
 }
 
@@ -468,7 +468,7 @@ func (s *FrameFairy) answerDresser(r *http.Request) *dresser {
 	if err != nil {
 		theLog.line(zerolog.DebugLevel, "files").Str("video", filepath.Base(path)).Err(err).Msg("frames sent bare")
 	}
-	d := newDresser(s, r.Context(), ask, q.Get("have"))
+	d := newDresser(s, ask, q.Get("have"))
 	cards := strings.Split(q.Get("cards"), ",")
 	framings := strings.Split(q.Get("cardFramings"), ",")
 	tracks := strings.Split(q.Get("cardTracks"), ",")

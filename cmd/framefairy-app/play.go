@@ -74,14 +74,13 @@ func (p *previews) servePlay(st *store, w http.ResponseWriter, r *http.Request, 
 	// again, and go back to it once written. Each is dressed as it is made,
 	// as the change of the clip it was made after asks, see dresser.
 	pictures, s := p.startStamped("play", dec.Light, sched.Give, func(ctx context.Context, got func(previewFrame) error) error {
-		d.ctx = ctx
 		return play.Pictures(ctx, func(f engine.PlayFrame) error {
 			edge := 0.0
 			if f.Edge {
 				edge = 1
 			}
 			return got(previewFrame{at: f.At, stamp: []float64{f.Moment, grid.At(f.Frame), edge, float64(f.Gen)}, data: f.Picture,
-				dressed: d.dress(f.Gen, f.Frame, grid.At(f.Frame))})
+				dressed: d.dress(ctx, f.Gen, f.Frame, grid.At(f.Frame))})
 		})
 	})
 	s.play, s.episode, s.dresser = play, path, d

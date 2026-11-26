@@ -614,14 +614,25 @@ export class FrameQueue {
       return;
     }
     this.playDressed = this.app?.dressKey ?? "";
+    // One change at a time: the Go side takes them in the order they
+    // come, and two fetches on their way at once may come the other way
+    // round, so a drag ended on the clip as it was a step before. A
+    // change that waited behind one and has a newer one behind it is
+    // left out, the newer says it all.
+    const turn = ++this.takes;
     this.taking++;
-    this.takenOver = this.takeIn(play, framing, loop).finally(() => {
-      this.taking--;
-      this.dressPlay();
-    });
+    this.takenOver = this.takenOver
+      .catch(() => {})
+      .then(() => (turn === this.takes && play === this.goPlay ? this.takeIn(play, framing, loop) : undefined))
+      .finally(() => {
+        this.taking--;
+        this.dressPlay();
+      });
   }
-  // Changes of the clip on their way to the Go side, see dressPlay.
+  // Changes of the clip on their way to the Go side, see dressPlay, and
+  // how many were asked for, the last one the one sent.
   private taking = 0;
+  private takes = 0;
 
   // What the Go side made of a change of the clip the play plays, see
   // changed and GoPlay.take: the frames and the sound of the clip as it
