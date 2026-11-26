@@ -122,6 +122,12 @@ func (s *FrameFairy) look(changed []string, steps *lookSteps) (follow bool) {
 		if writesPlan(ep, changed) || touchesShort(s.shortsOf(ep), changed) {
 			follow = true
 		}
+		// What is made of a video is kept outside its folder as it is
+		// written, so deleting the folder, in the app or in Finder, never
+		// takes it with it, see engine.Machine.Keep.
+		if writesPlan(ep, changed) || writesTranscript(ep, changed) {
+			_ = s.keep(ep)
+		}
 	}
 	took(&steps.videos)
 	return follow
@@ -185,7 +191,16 @@ func (s *FrameFairy) lookFirst() {
 	if follow {
 		s.followTimed(&steps)
 	}
+	// What was written while the app was closed, by the command line, is
+	// kept too, after the window has its answers. A video kept already
+	// costs a look at its folder.
+	keeping := time.Now()
+	for _, ep := range s.store.Episodes() {
+		_ = s.keep(ep)
+	}
+	kept := time.Since(keeping)
 	theLog.line(zerolog.InfoLevel, "files").Int("videos", len(s.store.Episodes())).
+		Int64("kept_ms", kept.Milliseconds()).
 		Int64("models_ms", steps.models.Milliseconds()).Int64("videos_ms", steps.videos.Milliseconds()).
 		Int64("jobs_ms", jobs.Milliseconds()).Int64("window_ms", window.Milliseconds()).
 		Int64("watch_ms", steps.watch.Milliseconds()).
@@ -261,6 +276,19 @@ func writesPlan(video string, changed []string) bool {
 	return false
 }
 
+// writesTranscript says whether one of the paths is the transcript of
+// video, its words or their loudness, which transcription writes as it
+// goes.
+func writesTranscript(video string, changed []string) bool {
+	files := engine.TranscriptFiles(engine.LogsDir(video))
+	for _, p := range changed {
+		if slices.Contains(files, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // reshapes says whether a change at one of the paths is to the video
 // itself or to a folder the watch keeps for it, see watchedOf: the file
 // gone or back, a folder made or deleted. Those change the sidebar's row
@@ -279,9 +307,10 @@ func reshapes(video string, changed []string) bool {
 
 // letGoIfRemoved takes a video whose folder was deleted outside the app,
 // with the video or without it, see deletedOutside, out of the library,
-// the way Remove with Delete does, and says whether it did: its folder
-// is everything the app has of it, so with the folder gone the video is
-// gone from the app too, and adding it again starts it from nothing.
+// the way Remove with Delete does, and says whether it did: with its
+// folder gone the video is gone from the app too, and adding it again
+// brings back only the transcript and the clip sets the engine kept of
+// it as they were written, see engine.Machine.Keep.
 //
 // Its work stops and the library no longer has it before anything else,
 // so nothing new starts on it. Whatever was still writing its folder is

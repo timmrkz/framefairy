@@ -124,17 +124,9 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	// A video added while the first look runs is weighed against the
 	// library it leaves, see lookFirst.
 	s.store.afterFirstLook()
-	// Which of them have no work folder yet, so a video taken out again
-	// takes the folder this add made with it, and only that one.
-	fresh := map[string]bool{}
-	for _, v := range videos {
-		if abs, err := filepath.Abs(v); err == nil {
-			if _, err := s.store.files.Stat(engine.WorkDir(abs)); err != nil {
-				fresh[abs] = true
-			}
-		}
-	}
-	added, err := s.store.AddEpisodes(videos)
+	// Which of them are new, with no work folder before this add and
+	// nothing put back into one, see store.addEpisodes.
+	added, fresh, err := s.store.addEpisodes(videos)
 	for _, v := range added {
 		s.jobs.openEpisode(v)
 		s.levels.openEpisode(v)
@@ -307,8 +299,10 @@ func (s *FrameFairy) undecodable(ctx context.Context, video string, late <-chan 
 var errFirstFrame = errors.New("a frame came")
 
 // RemoveEpisode takes an episode out of the library. With deleteWork, it
-// also deletes everything made for it, so adding it again starts from
-// nothing. The episode file itself always stays.
+// also deletes its work folder, rendered clips and all, after the engine
+// kept its transcript and clip sets, so adding it again brings back those
+// and nothing else, see engine.Machine.Keep. The episode file itself
+// always stays.
 func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 	// A video removed while its picture is being checked: the check is
 	// called off first, so nothing it starts outlives the video.
@@ -361,6 +355,12 @@ func (s *FrameFairy) removeEpisode(path string, deleteWork bool) error {
 	s.reconciling.Lock()
 	defer s.reconciling.Unlock()
 	if deleteWork {
+		// What was made of it is kept first, up to the last word, so it
+		// comes back when the video is added again. If it cannot be kept,
+		// nothing is deleted.
+		if err := s.keep(path); err != nil {
+			return fmt.Errorf("the transcript and clips of this video could not be kept, so nothing was deleted: %w", err)
+		}
 		if err := s.store.machine.DeleteWork(path); err != nil {
 			theLog.line(zerolog.WarnLevel, "library").Str("video", filepath.Base(path)).Err(err).
 				Msg("the work folder of a video being removed could not be deleted, so the video stays")
@@ -445,4 +445,16 @@ func startReaped(cmd *exec.Cmd) error {
 	}
 	go func() { _ = cmd.Wait() }()
 	return nil
+}
+
+// keep has the engine copy what changed of a video's transcript and clip
+// sets outside its work folder, see engine.Machine.Keep, and says in the
+// log when it could not.
+func (s *FrameFairy) keep(video string) error {
+	err := s.store.machine.Keep(video)
+	if err != nil {
+		theLog.line(zerolog.WarnLevel, "library").Str("video", filepath.Base(video)).Err(err).
+			Msg("the transcript and clips of a video could not be kept outside its folder")
+	}
+	return err
 }

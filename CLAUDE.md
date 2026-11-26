@@ -664,7 +664,10 @@ messages, pull request text, code comments and chat replies.
   line, in `engine/run.go`. Never
   duplicate engine logic in the app. Keep every command-line flag working.
 - **Plain files, no database.** Settings and the episode list in the
-  customer's config folder, everything about an episode in `<episode>.framefairy/`.
+  customer's config folder, everything about an episode in
+  `<episode>.framefairy/`, and a copy of its transcript and clip sets in
+  `~/.framefairy/kept/`, so they come back when the episode is added
+  again after its folder was deleted.
 - **Plan edits** go through `editPlan` in `engine/edit.go`, which keeps key
   order and unknown fields, writes atomically and validates with `LoadClips`.
 - **One word model.** What an episode says is `Transcript.Words` and what a

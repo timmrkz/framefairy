@@ -344,7 +344,9 @@ arrows and I and O leave the episode behind it alone. The box names the folder t
 in, `<episode>.framefairy` beside the video. Keeping it means adding the episode
 again picks up the transcript, the clip sets and the rendered clips where
 this left off, which is why it is the highlighted answer. Deleting it takes
-the whole folder, so nothing of the episode is left behind. Whatever is
+the whole folder, rendered clips and all. Only the transcript and the clip
+sets live on, because a copy of them is kept outside the folder, see
+**What comes back** below. Whatever is
 running on that episode is stopped either way, so a removed episode never
 goes on transcribing and holding up the episodes added after it. From the
 moment removing begins, nothing new starts on it until it is added again,
@@ -352,7 +354,8 @@ not even the transcription a stopped search would otherwise carry on.
 Once it is out of the list, nothing about how its work ended is said any
 more. Added again, a video says only what its folder still holds: kept,
 a search or a transcription that stopped says so again with Continue, the
-way it does after a restart, and deleted, it starts from nothing. The user
+way it does after a restart, and deleted, it has its transcript and clips
+back and nothing else. The user
 removed a video, added the same file again, and its menu offered Continue
 transcribing for work the new video never had.
 Deleting also waits for the work to stop, and if something will not stop,
@@ -369,7 +372,7 @@ The list of episodes is the app's own, `library.json` in its config folder,
 because a video can be anywhere on disk. Everything else about a video is in
 its work folder, so deleting that folder by hand, in Finder, is the same as
 **Remove** with the folder deleted: the video leaves the list, its work
-stops, and adding it again starts it from nothing. The app watches the
+stops, and adding it again brings back only its transcript and clips. The app watches the
 folders of every video in the list, so it hears of such a change at once,
 whoever made it. It looks at every video once as it starts, before the
 window can ask about any, and again whenever it comes back to the front,
@@ -394,6 +397,25 @@ deleted folder. A mark the disk cannot show for a moment, a network share
 or a drive waking from sleep, leaves the video and its folder as they are,
 and the next look decides. With no folder beside it there is nothing to
 keep or to throw away, so the box says so and offers one **Remove**.
+
+**What comes back.** The user removes videos while testing, or for any
+other reason, and wants a video added again to come back with the
+progress made on it. So a copy of what a person made of a video, its
+transcript with how far transcription got and its clip sets, with the
+words fixed in their captions and which clips were rendered, is kept
+outside its folder, in `~/.framefairy/kept/`, by a fingerprint of the
+video's content, `engine.EpisodeKey`. The copy is kept up to date as the
+files are written, by the watch on the disk, before Remove deletes a
+folder, as the app starts, and after a run of the command line, so it
+does not matter how the folder goes. Adding the same file again, under
+any name and in any folder, puts the copy back into a folder with no
+transcript and no clips of its own, as part of the add, before its
+transcription is asked for. The transcript is fitted to the file it
+comes back to, so a video transcribed to its end is not transcribed
+again, and one cut off carries on from where it got. The rendered clips themselves are not kept: a short
+deleted with the folder leaves its clip green and without **Show in
+folder**. See `engine/kept.go` and
+[the decision record](decisions/2026-11-25-a-removed-videos-work-comes-back.md).
 
 Anything that cannot be taken back asks in that same box, and nothing else
 does. Its buttons read left to right from the safest answer to the one that
@@ -3960,8 +3982,11 @@ speech model took, never what they were, see [LOGGING.md](LOGGING.md).
 - **Word corrections and removed words:** in each clip's plan entry,
   `corrections` and `removed_words`. They change what that clip's
   captions show, never the stored transcript or another clip.
-- **Training records:** in `<episode>.framefairy/training/`. The app writes them
-  and shows nothing about them. See [TRAINING.md](TRAINING.md).
+- **A copy of each video's transcript and clip sets:** in
+  `~/.framefairy/kept/`, by a fingerprint of the video's content, see
+  **What comes back** above.
+- **Training records:** in `~/.framefairy/training/`, one folder for the
+  records of all episodes together. The app writes them and shows nothing about them. See [TRAINING.md](TRAINING.md).
 - **The app's own log:** `~/Library/Logs/Frame Fairy/app.log` on macOS,
   where the Console app shows it, and `Frame Fairy/logs/app.log` in the
   user's cache folder elsewhere. It says enough that a fault is found by

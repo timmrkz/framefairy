@@ -79,6 +79,10 @@ type Machine struct {
 	// names, see inkkept.go. Empty, it is kept in memory only.
 	inkPath       string
 	previewTracks *trackCache
+	// kept is where a copy of each video's transcript and clip sets is
+	// kept outside its work folder, which UseSystem names, see kept.go.
+	// Empty, nothing is kept.
+	kept keptPlace
 	// measureTurns is how many frames of measuring are drawn at once on
 	// the machine, by every ask together, see measureBlocks.
 	measureOnce  sync.Once
@@ -144,6 +148,7 @@ func (m *Machine) UseSystem() {
 	m.useMedia(SystemMedia(runtime.GOOS))
 	m.useFaces()
 	m.inkPath = InkFile()
+	m.KeepIn(KeptDir())
 }
 
 // useFaces hands the machine the face detector the program carries, in
