@@ -5,6 +5,10 @@ Builds on
 and
 [2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md](2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md).
 
+In 30 words: the tool's key is a fingerprint of its source code, no
+password. Anyone may compute it, and it opens nothing. It only says
+which code a build is. Trust comes from main's signature alone.
+
 ## The problem
 
 The jobs that hold a key download main's signed build of

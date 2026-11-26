@@ -18,7 +18,7 @@
 # With no such asset, one that fails the check, or one built from other
 # code, right after a change to the tool, it builds the tool from the
 # checkout with setup-go and no cache, stamped with its key, which takes
-# about 12 s. With download false it only builds: the job that signs the
+# about 12 s, into a folder of its own. With download false it only builds: the job that signs the
 # tool as main runs no tool it downloaded.
 name: Release tool
 description: framefairy-release on the path, as main built and signed it, or built here with no cache
@@ -42,7 +42,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        DIR: ${{ runner.temp }}/release-tool
+        DIR: ${{ runner.temp }}/release-tool/download
       run: gh release download release-tool --repo "$GITHUB_REPOSITORY" --pattern framefairy-release --dir "$DIR" --clobber
     - id: verify
       if: steps.download.outcome == 'success'
@@ -50,7 +50,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        TOOL: ${{ runner.temp }}/release-tool/framefairy-release
+        TOOL: ${{ runner.temp }}/release-tool/download/framefairy-release
         SIGNER: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/release-tool.yml@refs/heads/main
       run: gh attestation verify "$TOOL" --repo "$GITHUB_REPOSITORY" --cert-identity "$SIGNER" --source-ref refs/heads/main --deny-self-hosted-runners
     - if: steps.verify.outcome == 'failure'
@@ -61,7 +61,7 @@ runs:
       continue-on-error: true
       shell: bash
       env:
-        TOOL: ${{ runner.temp }}/release-tool/framefairy-release
+        TOOL: ${{ runner.temp }}/release-tool/download/framefairy-release
       run: chmod +x "$TOOL" && "$TOOL" fits
     - if: steps.fits.outputs.fits != 'true'
       uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
@@ -74,5 +74,7 @@ runs:
         # self builds with no C either way. The same here lets its build
         # find every package in this one's cache.
         CGO_ENABLED: "0"
-        TOOL: ${{ runner.temp }}/release-tool/framefairy-release
+        # A folder of its own: a download that failed its check stays
+        # where it was put, and is never built over or put on the path.
+        TOOL: ${{ runner.temp }}/release-tool/built/framefairy-release
       run: go run -trimpath ./cmd/framefairy-release self -out "$TOOL"

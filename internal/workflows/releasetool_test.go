@@ -43,6 +43,7 @@ func TestNoWorkflowListsWhatTheReleaseToolIsBuiltFrom(t *testing.T) {
 	if len(wf.On.Push.Paths) > 0 || len(wf.On.Push.PathsIgnore) > 0 {
 		t.Errorf("release-tool.yml starts only for some paths, %v and not %v, and only the tool knows what it is built from", wf.On.Push.Paths, wf.On.Push.PathsIgnore)
 	}
+	built, downloaded := "", ""
 	for _, s := range localAction(t)(releaseToolAction) {
 		if regexp.MustCompile(`HEAD:|git\s+(rev-parse|ls-tree|ls-files)`).MatchString(s.Run) {
 			t.Errorf("%s works something out of the checkout's files itself: %q. The tool says what it is built from", releaseToolAction, s.Run)
@@ -50,6 +51,19 @@ func TestNoWorkflowListsWhatTheReleaseToolIsBuiltFrom(t *testing.T) {
 		if regexp.MustCompile(`\bgo\s+(run|build)\b`).MatchString(s.Run) && !strings.Contains(s.Run, "framefairy-release self ") {
 			t.Errorf("%s builds the tool with no key: %q. Build it with framefairy-release self", releaseToolAction, s.Run)
 		}
+		// A download that failed its check stays where it was put. go
+		// build will not write over a file that is no program, so a
+		// build into the download's folder lets any file uploaded in
+		// its place fail every job that uses the tool.
+		if strings.Contains(s.Run, "framefairy-release self ") {
+			built = path.Dir(fmt.Sprint(s.Env["TOOL"]))
+		}
+		if dir, ok := s.Env["DIR"]; ok {
+			downloaded = fmt.Sprint(dir)
+		}
+	}
+	if built == "" || downloaded == "" || built == downloaded {
+		t.Errorf("%s builds the tool into %q and downloads it into %q: they need folders of their own", releaseToolAction, built, downloaded)
 	}
 }
 
