@@ -19,29 +19,43 @@ const (
 
 // The tool works out the key of what it is built from itself, from its
 // imports, so nothing in a workflow may list what that is: a list goes
-// stale the day the tool imports one more package. release-tool.yml
-// starts on every push to main, and the action names no folder but the
-// one it builds the tool from, see
+// stale the day the tool imports one more package. builds.yml calls
+// release-tool.yml on main when its job which found no signed build that
+// fits, and the action names no folder but the one it builds the tool
+// from, see
 // docs/decisions/2026-11-25-the-release-tool-keys-itself.md.
 //
 // On the real disk: what is read is the repository's own workflow and action.
 func TestNoWorkflowListsWhatTheReleaseToolIsBuiltFrom(t *testing.T) {
 	t.Parallel()
 	var wf struct {
-		On struct {
-			Push struct {
-				Branches    []string `yaml:"branches"`
-				Paths       []string `yaml:"paths"`
-				PathsIgnore []string `yaml:"paths-ignore"`
-			} `yaml:"push"`
-		} `yaml:"on"`
+		On map[string]any `yaml:"on"`
 	}
 	readYAML(t, filepath.Join("..", "..", ".github", "workflows", "release-tool.yml"), &wf)
-	if !slices.Equal(wf.On.Push.Branches, []string{"main"}) {
-		t.Errorf("release-tool.yml builds on a push to %v, where only main's build may be kept", wf.On.Push.Branches)
+	for event := range wf.On {
+		if event != "workflow_call" && event != "workflow_dispatch" {
+			t.Errorf("release-tool.yml starts on %s. Only builds.yml calls it, when no signed build fits, since only the tool knows what it is built from", event)
+		}
 	}
-	if len(wf.On.Push.Paths) > 0 || len(wf.On.Push.PathsIgnore) > 0 {
-		t.Errorf("release-tool.yml starts only for some paths, %v and not %v, and only the tool knows what it is built from", wf.On.Push.Paths, wf.On.Push.PathsIgnore)
+	var builds struct {
+		Jobs map[string]struct {
+			If   string `yaml:"if"`
+			Uses string `yaml:"uses"`
+		} `yaml:"jobs"`
+	}
+	readYAML(t, filepath.Join("..", "..", ".github", "workflows", "builds.yml"), &builds)
+	called := 0
+	for name, job := range builds.Jobs {
+		if job.Uses != "./.github/workflows/release-tool.yml" {
+			continue
+		}
+		called++
+		if !strings.Contains(job.If, "github.ref == 'refs/heads/main'") || !strings.Contains(job.If, "needs.which.outputs.tool == 'true'") {
+			t.Errorf("builds.yml: the job %s builds and signs the release tool when %q. Only on main, and only when which found no signed build that fits", name, job.If)
+		}
+	}
+	if called != 1 {
+		t.Errorf("builds.yml calls release-tool.yml from %d jobs, want 1", called)
 	}
 	built, downloaded := "", ""
 	for _, s := range localAction(t)(releaseToolAction) {

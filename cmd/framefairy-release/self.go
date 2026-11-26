@@ -117,21 +117,29 @@ func fits(stamped, key string, keyErr error) (bool, string) {
 // fitsCommand answers fits=true or fits=false for the action, and puts
 // this program's folder on the job's path when it fits.
 func fitsCommand(out io.Writer) error {
-	key, err := ownKey("HEAD")
-	ok, why := fits(stamped, key, err)
+	key, keyErr := ownKey("HEAD")
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	return answerFits(out, stamped, key, keyErr, filepath.Dir(exe), os.Getenv("GITHUB_OUTPUT"), os.Getenv("GITHUB_PATH"))
+}
+
+// answerFits says in the job's outputs whether a build stamped with stamp
+// is the build of the checkout's key, and puts the build's folder on the
+// job's path only when it is. A build that does not fit never reaches a
+// later step.
+func answerFits(out io.Writer, stamp, key string, keyErr error, dir, outputs, path string) error {
+	ok, why := fits(stamp, key, keyErr)
 	fmt.Fprintln(out, why)
 	var p plan
 	p.set("fits", fmt.Sprint(ok))
 	if ok {
-		exe, err := os.Executable()
-		if err != nil {
-			return err
-		}
-		if err := onPath(filepath.Dir(exe)); err != nil {
+		if err := onPath(path, dir); err != nil {
 			return err
 		}
 	}
-	return p.write(out, os.Getenv("GITHUB_OUTPUT"))
+	return p.write(out, outputs)
 }
 
 // selfCommand builds this program from the checkout, stamped with the key
@@ -164,13 +172,12 @@ func selfCommand(args []string, out io.Writer) error {
 		return fmt.Errorf("go build %s: %w", info.Path, err)
 	}
 	fmt.Fprintf(out, "Built the release tool, key %q.\n", key)
-	return onPath(filepath.Dir(abs))
+	return onPath(os.Getenv("GITHUB_PATH"), filepath.Dir(abs))
 }
 
 // onPath adds a folder to the path of the job's later steps, through the
 // file GitHub names in GITHUB_PATH.
-func onPath(dir string) error {
-	file := os.Getenv("GITHUB_PATH")
+func onPath(file, dir string) error {
 	if file == "" {
 		return errors.New("GITHUB_PATH is not set, so there is no path to put the tool on")
 	}

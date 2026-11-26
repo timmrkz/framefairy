@@ -2,7 +2,12 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -90,9 +95,11 @@ func TestAToolThatCannotBeKeyedIsBuilt(t *testing.T) {
 	}
 }
 
-// Only a build stamped with the checkout's own key fits. One with no
-// stamp, built some other way, or main's build of other code, is built
-// again here.
+// Only a build of the checkout's code says it fits and goes on the job's
+// path. Any other answer leaves the path alone, so the job builds the tool.
+//
+// On the real disk: GitHub reads a job's outputs and its path from files
+// it names, and those files are what is checked.
 func TestOnlyABuildOfTheCheckoutsCodeFits(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -108,11 +115,57 @@ func TestOnlyABuildOfTheCheckoutsCodeFits(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			ok, why := fits(c.stamped, c.key, c.keyErr)
-			if ok != c.want {
-				t.Errorf("fits says %v (%s), want %v", ok, why, c.want)
+			t.Parallel()
+			tmp := t.TempDir()
+			outputs, path := filepath.Join(tmp, "outputs"), filepath.Join(tmp, "path")
+			if err := answerFits(io.Discard, c.stamped, c.key, c.keyErr, "/downloaded", outputs, path); err != nil {
+				t.Fatal(err)
+			}
+			said, err := os.ReadFile(outputs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := fmt.Sprintf("fits=%v\n", c.want); string(said) != want {
+				t.Errorf("the job's outputs say %q, want %q", said, want)
+			}
+			onPath, err := os.ReadFile(path)
+			switch {
+			case c.want && string(onPath) != "/downloaded\n":
+				t.Errorf("a build that fits is not on the path, which holds %q (%v)", onPath, err)
+			case !c.want && !errors.Is(err, fs.ErrNotExist):
+				t.Errorf("a build that does not fit is put on the path: %q", onPath)
 			}
 		})
+	}
+}
+
+// A build made by self, the way the action makes it, carries the key of
+// the checkout and says it fits.
+//
+// On the real disk: go builds the tool from this repository, and the
+// build reads this repository's own commit with git.
+func TestABuildOfTheCheckoutFitsIt(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	tool := filepath.Join(tmp, "built", "framefairy-release")
+	env := append(os.Environ(), "GITHUB_PATH="+filepath.Join(tmp, "path"), "GITHUB_OUTPUT="+filepath.Join(tmp, "outputs"), "CGO_ENABLED=0")
+	build := exec.Command("go", "run", "-trimpath", ".", "self", "-out", tool)
+	build.Env = env
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("self: %v\n%s", err, out)
+	}
+	ask := exec.Command(tool, "fits")
+	ask.Env = env
+	out, err := ask.CombinedOutput()
+	if err != nil {
+		t.Fatalf("fits: %v\n%s", err, out)
+	}
+	said, err := os.ReadFile(filepath.Join(tmp, "outputs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(said) != "fits=true\n" {
+		t.Errorf("a build of the checkout says %q, and printed:\n%s", said, out)
 	}
 }
 

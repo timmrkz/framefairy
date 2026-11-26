@@ -1,53 +1,29 @@
-# Builds framefairy-release on main whenever main's signed build no
-# longer fits main's code, signs it with a build attestation and keeps it
-# as the asset of the release release-tool that
-# .github/actions/release-tool downloads, so the jobs that hold a key run
-# main's own build of main's own code, built from no cache, without each
-# building it again. See
+# Builds framefairy-release from the checkout, signs it with a build
+# attestation and, on main, keeps it as the asset of the release
+# release-tool that .github/actions/release-tool downloads, so the jobs
+# that hold a key run main's own build of main's own code, built from no
+# cache, without each building it again. See
 # docs/decisions/2026-11-24-the-release-tool-built-once.md.
 #
-# It starts on every push to main, since only the tool knows what it is
-# built from, see docs/decisions/2026-11-25-the-release-tool-keys-itself.md.
-# The job check asks the signed build whether it fits, with a token that
-# only reads. Only when it does not, the job build, which holds main's
-# signing identity, builds the tool from the checkout and runs nothing it
-# downloaded. On main it keeps the build in the release. Started by hand
-# on a branch, it builds and signs and keeps the tool as an artifact of
-# the run, and uploads nothing: only main's build is the release's.
+# builds.yml calls it on a push to main when its job which found no
+# signed build that fits main's code, since only the tool knows what it
+# is built from, see
+# docs/decisions/2026-11-25-the-release-tool-keys-itself.md. So no job
+# of its own asks on every push. A called workflow signs as this file,
+# so the signature still names release-tool.yml. The job holds main's
+# signing identity and runs nothing it downloaded. Started by hand on a
+# branch, it builds and signs and keeps the tool as an artifact of the
+# run, and uploads nothing: only main's build is the release's.
 name: Release tool
 
 on:
-  push:
-    branches: [main]
+  workflow_call:
   workflow_dispatch:
 
 permissions: {}
 
-# One at a time and never stopped half way, so the newest build is the
-# one the release keeps.
-concurrency:
-  group: release-tool-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  check:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      attestations: read
-    outputs:
-      built: ${{ steps.tool.outputs.built }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - id: tool
-        uses: ./.github/actions/release-tool
-
   build:
-    needs: check
-    if: needs.check.outputs.built == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
