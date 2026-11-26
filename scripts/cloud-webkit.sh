@@ -4,7 +4,7 @@
 # Two browsers in docs/TESTING.md. The environment's own browsers hold
 # Chromium alone. It is the version of Playwright frontend/package.json
 # pins, with the system libraries it needs, the way CI's image gets it,
-# see scripts/ci-image/Dockerfile. Started by the SessionStart hook in
+# see ci-image/Dockerfile. Started by the SessionStart hook in
 # .claude/settings.json, and only in cloud sessions. The log is
 # /tmp/framefairy-webkit.log, and it is done when its last line says
 # "webkit ready".

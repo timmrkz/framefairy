@@ -16,7 +16,7 @@
 # checksum beside the Go module's version. scripts/upstream.sh watches it
 # instead, with ffmpeg and llama.cpp.
 #
-# The CI image, scripts/ci-image/Dockerfile, starts from images pinned to
+# The CI image, ci-image/Dockerfile, starts from images pinned to
 # a digest. Dependabot moves Ubuntu's digest when the tag gets a new build,
 # with the security fixes in it, in one pull request a week, which builds
 # the image anew. Ubuntu stays on 24.04, the system the runners run, whose
@@ -114,7 +114,7 @@ updates:
   - package-ecosystem: docker
     cooldown:
       default-days: 7
-    directory: /scripts/ci-image
+    directory: /ci-image
     schedule:
       interval: weekly
     # The image's Node is the one .node-version pins, which Dependabot
