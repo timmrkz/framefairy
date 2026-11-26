@@ -116,7 +116,7 @@ jobs:
   # keeps.
   tool:
     needs: which
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/project-thread-n64a15') && needs.which.outputs.tool == 'true'
+    if: github.ref == 'refs/heads/main' && needs.which.outputs.tool == 'true'
     permissions:
       contents: write
       id-token: write
