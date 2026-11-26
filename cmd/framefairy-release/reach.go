@@ -117,13 +117,7 @@ func ignored(dir string) bool {
 // appFrom works out what the app's programs are built from in s.
 func appFrom(s source, tests bool) (programs, error) {
 	b := programs{dirs: map[string]bool{}, mains: map[string]bool{}, tests: tests}
-	pkgs := map[string][]string{}
-	for name := range s.files {
-		dir := path.Dir(name)
-		if !ignored(dir) {
-			pkgs[dir] = append(pkgs[dir], name)
-		}
-	}
+	pkgs := packages(s)
 	for dir, files := range pkgs {
 		if _, ships := linked[path.Base(dir)]; !ships {
 			continue
@@ -142,6 +136,25 @@ func appFrom(s source, tests bool) (programs, error) {
 	if len(b.mains) == 0 {
 		return b, errors.New("no package main is named after a program the app ships")
 	}
+	return closure(s, b, pkgs)
+}
+
+// packages are the folders of s that go build builds, with their files.
+func packages(s source) map[string][]string {
+	pkgs := map[string][]string{}
+	for name := range s.files {
+		dir := path.Dir(name)
+		if !ignored(dir) {
+			pkgs[dir] = append(pkgs[dir], name)
+		}
+	}
+	return pkgs
+}
+
+// closure fills b.dirs with the folders of b.mains and of every package
+// of ours they import or have go generate run, and those in turn.
+func closure(s source, b programs, pkgs map[string][]string) (programs, error) {
+	tests := b.tests
 	queue := slices.Sorted(maps.Keys(b.mains))
 	for len(queue) > 0 {
 		dir := queue[0]

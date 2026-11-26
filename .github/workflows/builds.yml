@@ -4,7 +4,8 @@
 # docs/UPDATES.md.
 #
 # This workflow runs the branch's own code, so main's copy of it asks for
-# no secret and no token that can write. That is how this copy is
+# no secret and no token that can write, except in the job tool, which runs
+# only on main and only the tool's own build. That is how this copy is
 # written, not a wall: a push to a branch runs the workflow file of that
 # branch, and a branch's copy can ask for a token that writes. What holds
 # the update key away from a branch is the environment updates, limited
@@ -43,13 +44,15 @@
 # alike, from what the app's programs import, see
 # docs/decisions/2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md.
 #
-# Two jobs:
+# Three jobs:
 #
 # 0. which, on Linux, what a push is a build of, main, the open pull
 #    request of the branch pushed, or nothing, and whether it needs a
 #    build, so a Mac is only started for one that does. See buildPlan in
 #    cmd/framefairy-release/plan.go.
-# 1. build, on macOS, per channel. A second push to a pull request stops the
+# 1. tool, on main, only when which found no signed release tool that
+#    fits main's code: release-tool.yml builds, signs and keeps it.
+# 2. build, on macOS, per channel. A second push to a pull request stops the
 #    build of the first, whose result nobody wants any more. It leaves the
 #    zip as an artifact called build, and nothing else.
 #
@@ -87,13 +90,16 @@ jobs:
       sha: ${{ steps.which.outputs.sha }}
       version: ${{ steps.which.outputs.version }}
       commit: ${{ steps.which.outputs.commit }}
+      tool: ${{ steps.tool.outputs.built }}
     steps:
       - if: github.event_name == 'push'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # The build main made and signed, see .github/actions/release-tool.
-      - if: github.event_name == 'push'
+      # When none fits, on main, the job tool makes the next one.
+      - id: tool
+        if: github.event_name == 'push'
         uses: ./.github/actions/release-tool
       - id: which
         if: github.event_name == 'push'
@@ -103,6 +109,22 @@ jobs:
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
         run: framefairy-release build-plan -event push -branch "$BRANCH" -commit "$GITHUB_SHA"
+
+  # Signs as main, so it holds the one token here that can write, and
+  # runs nothing it downloaded, see release-tool.yml. One at a time and
+  # never stopped half way, so the newest build is the one the release
+  # keeps.
+  tool:
+    needs: which
+    if: github.ref == 'refs/heads/main' && needs.which.outputs.tool == 'true'
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    concurrency:
+      group: release-tool-${{ github.ref }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/release-tool.yml
 
   build:
     needs: which

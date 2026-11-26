@@ -740,18 +740,39 @@ scan made once is out of date the week after.
   before too, and Go trusts what it finds in its build cache without
   checking it again. Such a job runs `framefairy-release`, which
   `.github/actions/release-tool` brings: main's own build of it, made by
-  `release-tool.yml` whenever its code changes, signed with a build
-  attestation and kept in the release `release-tool` under a key of what
-  it was built from. The action checks the attestation before the tool
-  runs, that main's `release-tool.yml` signed it under that very name, and with no signed build of the key, right after a change to the
-  tool, it builds the tool itself with no cache. `internal/workflows`
-  fails on a job with an environment, a secret or a write permission
-  that restores a cache or builds the tool any other way, and on a key
-  that leaves out a package the tool imports. This keeps the key's own
+  `release-tool.yml` on main, signed with a build attestation and kept
+  as the asset `framefairy-release` of the release `release-tool`. The
+  build carries the key of what it was built from, which the tool works
+  out itself from its own imports, so no workflow lists its folders. The
+  action checks the attestation before the tool runs, that main's
+  `release-tool.yml` signed it on GitHub's own runner, and then asks it,
+  `framefairy-release fits`, whether the checkout is still what it was
+  built from. When it is not, right after a change to the tool or for an
+  older commit, it builds the tool itself with no cache,
+  `framefairy-release self`, which stamps the key in. The job of
+  `release-tool.yml` that signs as main never runs a downloaded build:
+  `builds.yml`'s job `which`, with a token that only reads, asks it on
+  every push, and only on a push to main where it had to build the tool
+  does `builds.yml` call `release-tool.yml`, whose
+  `framefairy-release keep` puts the new build in the release. An older
+  build main signed stays signed and could be put back by anyone who may
+  write to the release, so what guards a job is `fits`: any build main
+  signed runs only on the code it was built from, and every other answer
+  ends in a build of the checkout. Should one ever be found wrong,
+  renaming `release-tool.yml`, and the signer the action checks, retires
+  every build signed before.
+  `internal/workflows` fails on a job with an environment, a secret or a
+  write permission that restores a cache or builds the tool any other
+  way, on a downloaded tool run before its check or in a job that can
+  sign, on a release changed other than by `keep`, and on a workflow
+  that lists what the tool is built from. This
+  keeps the key's own
   tools clean. The build they sign is made in `builds.yml` from main's
   shared cache still, which saves minutes on every build to update to.
   See
-  [2026-11-24-the-release-tool-built-once.md](decisions/2026-11-24-the-release-tool-built-once.md).
+  [2026-11-24-the-release-tool-built-once.md](decisions/2026-11-24-the-release-tool-built-once.md)
+  and
+  [2026-11-25-the-release-tool-keys-itself.md](decisions/2026-11-25-the-release-tool-keys-itself.md).
 - **The tools we build ourselves**, and the pins Dependabot cannot move,
   which nothing else watches: `scripts/upstream.sh` compares ffmpeg, the
   four libraries it is built with, llama.cpp, the speech library, Node,
