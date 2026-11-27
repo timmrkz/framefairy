@@ -2127,7 +2127,8 @@ bubble scrolled by those eight pixels.
     - **A caption is drawn only where the clip is.** Its block lies over
       the parts the clip keeps and never over a cut, in as many pieces as
       it takes. Where a caption goes at a cut, its end is the end of the
-      piece before, `endInEpisode` in `frontend/src/lib/flow.ts`: a moment
+      piece before, `EpisodeEnd` in `engine/lines.go`, which places each
+      caption in the episode, `CaptionView.From` and `To`: a moment
       at a cut is both the end of the piece before and the start of the
       one after, and an end taken as the start of the next piece drew the
       caption across the whole cut. The user saw it moving the left edge of a
@@ -3116,9 +3117,10 @@ moved by hand, on the clip timeline.
   screen from the clip's first frame, before its first word.
 - **A word is lit from its start until the next word starts**, and the
   last word of a caption until the caption goes, in the video preview, on
-  the clip timeline and in the render alike: `litWord` in
-  `frontend/src/lib/flow.ts` for the two in the app and the highlight in
-  `engine/highlight.go` for the short. The video preview used to light a
+  the clip timeline and in the render alike: the clip timeline and the
+  video preview light the word libass draws lit on the frame on screen,
+  `showing` in the frame's dress, and the short burns in the highlight of
+  `engine/highlight.go`. The video preview used to light a
   word only until its own end, so the highlight went out while a word was
   still being said and between every two words, where the short and the
   clip timeline went on showing it. The edge

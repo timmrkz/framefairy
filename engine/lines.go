@@ -865,6 +865,36 @@ func EpisodeTime(clip Clip, at float64) float64 {
 	return clip.Segments[len(clip.Segments)-1].End
 }
 
+// EpisodeEnd is where the end of something on a clip's clock falls in the
+// episode: a caption that goes, a word that ends. A moment exactly at a
+// cut is two places in the episode, the end of the piece before and the
+// start of the piece after. A start belongs to the piece after, which is
+// EpisodeTime. An end belongs to the piece before, or a caption that went
+// where a cut begins was drawn across the whole cut to the far side of it:
+// the user moved the left edge of a cut into the end of a caption and the
+// caption grew over the cut. A millionth of a second either way, because
+// the two clocks add up the same pieces in another order.
+func EpisodeEnd(clip Clip, at float64) float64 {
+	offset := 0.0
+	for _, s := range clip.Segments {
+		if at <= offset+s.Duration()+1e-6 {
+			return s.Start + math.Min(math.Max(at-offset, 0), s.Duration())
+		}
+		offset += s.Duration()
+	}
+	if len(clip.Segments) == 0 {
+		return at
+	}
+	return clip.Segments[len(clip.Segments)-1].End
+}
+
+// wordAt is which word of the episode a word of a clip's captions is:
+// where it starts in the episode, to the millisecond. A word that starts
+// where a cut ends is the piece after's, so it is read a hair in.
+func wordAt(clip Clip, start float64) float64 {
+	return math.Round(EpisodeTime(clip, start+1e-6)*1000) / 1000
+}
+
 // ClipTime is the moment of a clip that shows a moment of the episode. A
 // moment the clip cuts out is the moment the clip comes back.
 func ClipTime(clip Clip, at float64) float64 {

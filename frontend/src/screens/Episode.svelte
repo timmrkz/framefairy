@@ -44,8 +44,6 @@
   import { EpisodeSession, type Chose } from "../lib/session.svelte";
   import {
     type Parts,
-    inEpisode,
-    endInEpisode,
     Newest,
     frameAt,
     frameMiddle,
@@ -2357,8 +2355,7 @@
   // already round it. A word lit on no frame is not walked to. By the
   // words' own times only until the frames are known.
   const lit = $derived.by(() => {
-    const pieces = current?.segments ?? [];
-    if (!pieces.length || !captions?.captions?.length) return [];
+    if (!current?.segments?.length || !captions?.captions?.length) return [];
     const frames = framedTrack ? (wordFrames?.frames ?? null) : null;
     const out: LitWord[] = [];
     for (const [i, cue] of captions.captions.entries()) {
@@ -2368,8 +2365,8 @@
           const f = frames?.[i]?.[k++];
           if (f && f.from < 0) continue;
           out.push({
-            start: f ? f.from : inEpisode(pieces, word.start),
-            end: f ? f.to : endInEpisode(pieces, word.end),
+            start: f ? f.from : (word.at ?? 0),
+            end: f ? f.to : (word.until ?? 0),
             text: word.text,
             framed: !!f,
             cue: i,
@@ -3628,6 +3625,7 @@
         }}
         captions={captions?.captions ?? []}
         captionTrack={captions?.track}
+        lighting={shownDress?.track && shownDress.showing ? { track: shownDress.track, caption: shownDress.showing[0], word: shownDress.showing[1] } : null}
         captionPieces={captions?.pieces}
         captionLook={shownCaptions
           ? {

@@ -1333,7 +1333,18 @@ func moveCaptionEdge(plan Plan, clip Clip, word float64, edge string,
 	}
 	out := captionEdge{plan: plan, clip: clip, at: math.NaN(), was: laid[i]}
 	if !reset {
+		// Where the hand has the edge, on a whole frame of the clip's
+		// clock, from its start, the frames the short is made of, where
+		// the video's rate is known.
 		to := ClipTime(framed, at)
+		if src := look.source(); src.FPSNum > 0 && src.FPSDen > 0 {
+			to = min(max(math.Round(to/src.frameLength())*src.frameLength(), 0), clipLength(framed))
+			if edge == "start" {
+				at = EpisodeTime(framed, to)
+			} else {
+				at = EpisodeEnd(framed, to)
+			}
+		}
 		if toWords {
 			to = captionStop(framed, t, laid[i], edge, to)
 			at = EpisodeTime(framed, to)

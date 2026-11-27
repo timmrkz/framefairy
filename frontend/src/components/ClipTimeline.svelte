@@ -50,15 +50,10 @@
     type GlideSpan,
   } from "../lib/api";
   import {
-    inClip,
-    inEpisode,
-    endInEpisode,
     frameAt,
     frameMiddle,
     frameBegins,
     cutsOf,
-    litWord,
-    wordInEpisode,
     type CaptionDraft,
   } from "../lib/flow";
   import { Presses } from "../lib/twice";
@@ -96,6 +91,7 @@
     playing = false,
     captions = [],
     captionTrack = "",
+    lighting = null,
     captionPieces,
     arriving = false,
     captionLook = null,
@@ -195,6 +191,9 @@
     // The track of those captions, see CaptionsView: a step of a drag sends
     // only the captions near what the hand changed, to go with these.
     captionTrack?: string;
+    // The word the frame on screen lights, as the engine drew it there: of
+    // which track, which caption and which word, counted across its lines.
+    lighting?: { track: string; caption: number; word: number } | null;
     // The clip is on its way, being made: its caption blocks come in one
     // after another as they arrive, so the clip is built in front of the
     // person rather than appearing whole.
@@ -1398,8 +1397,8 @@
   // they come back changed, so the block never jumps back to where it was
   // while the saved captions are on their way.
   let capHeld: CaptionCue[] | undefined;
-  // landed hears where the engine put an edge dragged with shift, on the
-  // clip's clock, which only the engine knows.
+  // landed hears where the engine puts the playhead for the dragged edge,
+  // on the episode's clock, which only the engine knows.
   let capNext: {
     word: number;
     edge: "start" | "end";
@@ -1434,7 +1433,7 @@
         capShaped = answer.captions ?? [];
         oncaptionshape?.({ cues: capShaped, track: answer.track });
         const c = capShaped[capDraft.index];
-        if (q.landed && c) q.landed(q.edge === "start" ? captionAppears(c) : Math.min(c.end, clipLength));
+        if (q.landed && c) q.landed(c.up[q.edge === "start" ? 0 : 1]);
       }
     } catch {
       // An edge the engine says no to shows the last answer it gave.
@@ -1443,23 +1442,6 @@
       capAsking = false;
       void capAsk();
     }
-  }
-
-  // Where the playhead goes for the start of a caption that begins on its
-  // first word, pressed or put there with shift: into the word, the way a
-  // click on the caption goes, see firstWordOf. A word starts between two
-  // frames, and the frame that holds its start begins before it, where the
-  // caption is not up yet. Tim saw nothing in the video preview to snap to
-  // on #294, and the caption before it on pressing the edge.
-  // Never before the first frame drawn with the caption up, the first
-  // that starts at or after the hundredth the caption file puts its start
-  // on. A first word too short for a frame of its own has its middle in
-  // the frame before, #280.
-  function captionAppears(c: CaptionCue): number {
-    const word = c.lines?.[0]?.words?.[0];
-    const into = word && Math.abs(word.start - c.start) < 1e-6 ? intoWord(word, frame) : c.start;
-    const f = frame > 0 ? frame : 1 / 30;
-    return Math.max(into, Math.ceil((c.start - 0.005) / f) * f);
   }
 
   // Letting go of the draft, and of any answer still on its way.
@@ -1496,14 +1478,12 @@
     shapedShown && shaped ? shaped.pieces : captionPieces?.length ? captionPieces : segments,
   );
 
-  const clipLength = $derived(cuePieces.reduce((sum, p) => sum + p.end - p.start, 0));
 
   const captionBlocks = $derived.by(() => {
     if (!clip || !shownCues?.length || !cuePieces.length) return [];
     const list = shapedShown ? shownCues : capDraft && capShaped?.length === shownCues.length ? capShaped : shownCues;
     return list.map((c, i) => {
-      const from = inEpisode(cuePieces, c.start);
-      const to = endInEpisode(cuePieces, Math.min(c.end, clipLength));
+      const { from, to } = c;
       // A caption on screen on both sides of a cut is drawn on both sides
       // and never over the cut, where nothing of the clip is shown. One
       // block across it read as the caption filling the part the cut took.
@@ -1513,31 +1493,37 @@
       // Where the caption is as saved, which is what lights it and pops it
       // while one of its edges is dragged, see wordHere.
       const saved = shownCues[i];
-      const rest =
-        capDraft && saved !== c
-          ? { from: inEpisode(cuePieces, saved.start), to: endInEpisode(cuePieces, Math.min(saved.end, clipLength)) }
-          : { from, to };
+      const rest = { from: saved.from, to: saved.to };
       return { i, c: saved, from, to, rest, parts: parts.length ? parts : [{ from, to }] };
     });
   });
 
-  // Which word of a block the playhead is on, by when it starts on the
-  // clip's clock, or -2 when the playhead is not on the block. The block
-  // is lit while it is on a word and pops when the word changes, the way
-  // the pill does in the video preview, so it pops as the playhead moves
-  // and never because an edge is dragged: while one is, it is read from
-  // the caption as saved. A word is known by when it starts rather than by
+  // Which word of a block the frame on screen lights, by when it starts in
+  // the episode, or -2 when the playhead is not on the block. The block is
+  // lit while it is on a word and pops when the word changes, with the
+  // pill in the video preview, from the same frame, so it pops as the
+  // playhead moves and never because an edge is dragged: while one is,
+  // the frame is drawn with the captions in the hand, which light no word
+  // of the block. A word is known by when it starts rather than by
   // where it is in the caption, so taking out a word before it is no new
   // word. The block popped each time a dragged left edge passed the
   // playhead, which a click on the block puts at its first word, and a
   // dragged right edge never came near it, so the two edges looked
   // different, found by Tim. It starts in the episode, not on the clip's
-  // clock, which a cut before it moves, see wordInEpisode.
+  // clock, which a cut before it moves, see Word.at.
+  // A frame dressed with other captions, those before a change while the
+  // layer of the new ones is on its way, lights what it lit before, so the
+  // block does not go dark and pop again for the same word.
+  let litAt = $state(-1);
+  $effect(() => {
+    if (!lighting || lighting.track !== captionTrack) return;
+    const c = captions?.[lighting.caption];
+    const word = c ? (c.lines ?? []).flatMap((l) => l.words)[lighting.word] : undefined;
+    litAt = word ? (word.at ?? 0) : -1;
+  });
   function wordHere(b: { c: CaptionCue; rest: { from: number; to: number } }): number {
     if (time < b.rest.from || time >= b.rest.to) return -2;
-    const k = wordNow(b.c);
-    const word = (b.c.lines ?? []).flatMap((l) => l.words)[k];
-    return word ? wordInEpisode(cuePieces, word.start) : -1;
+    return (b.c.lines ?? []).some((l) => l.words.some((w) => (w.at ?? 0) === litAt)) ? litAt : -1;
   }
 
   // A caption block clicked is picked, and delete removes it, see
@@ -1714,17 +1700,6 @@
     return -2;
   }
 
-  // The last word of a caption to have begun, counted through its lines,
-  // or -1 before its first. The block of the caption shown is drawn afresh
-  // whenever it changes, so it pops on every word the way the pill does in
-  // the video preview, where each word lights up in turn, and not again in
-  // the pause after a word. Walking the words with shift and the arrow
-  // keys pops both at once.
-  const spokenAt = $derived(clip && cuePieces.length ? inClip(cuePieces, time) : -1);
-  function wordNow(c: CaptionCue): number {
-    return litWord(c.lines ?? [], spokenAt);
-  }
-
   // Where a click on a caption puts the playhead: into its first word, the
   // same step the arrow keys take into a word. That is the first word the
   // picture lights, on the frames it lights it on, see lit. Read from the
@@ -1737,50 +1712,39 @@
   function firstWordOf(i: number, c: CaptionCue): number | null {
     const shown = shownCues === captions ? lit.find((w) => w.cue === i) : undefined;
     if (shown) return intoWord(shown, frame);
-    const word = c.lines?.[0]?.words?.[0];
-    if (!word || !cuePieces.length) return null;
-    return inEpisode(cuePieces, intoWord(word, frame));
+    return c.lines?.[0]?.words?.[0] ? c.up[0] : null;
   }
 
   $effect(() => {
     if (capDraft && !capMoving && !capSaving && captions !== capHeld) dropCaption();
   });
 
-  // An edge of a caption is dragged on the clip's clock, a whole frame at a
-  // time, and with shift on words, the way an edge of the clip is, read on
-  // every move. How far it may go, and which word it lands on, is the
-  // engine's to say. The playhead goes with it the way it goes with every
-  // edge, onto the frame the caption appears on or the last it is up on,
-  // see captionAppears, where the engine put it when that is on a word, and
-  // a double-click puts a moved edge back.
+  // An edge of a caption is dragged where the hand has it, and the engine
+  // puts it on a whole frame of the clip, and with shift on words, the way
+  // an edge of the clip is, asked on every move. How far it may go, and
+  // which word it lands on, is the engine's to say. The playhead goes with
+  // it the way it goes with every edge, onto the frame the engine says the
+  // caption appears on or the last it is up on, see CaptionCue.up, and a
+  // double-click puts a moved edge back.
   function captionEdgeGrip(i: number, edge: "start" | "end"): Grip | null {
     if (!clip || locked || capSaving || !oncaptiontime || !captions?.length) return null;
     const on = clip;
     const c = captions[i];
     if (!c) return null;
     const word = edge === "start" ? c.first : c.last;
-    // The moment on the episode's clock, the start of a piece for a start
-    // and the end of one for an end, where the two meet at a cut.
-    const onEpisode = (at: number) => (edge === "start" ? inEpisode : endInEpisode)(segments, at);
-    const playheadAt = (at: number) => edgeFrame(onEpisode(at), edge === "start");
-    const from = edge === "start" ? c.start : Math.min(c.end, clipLength);
+    const from = edge === "start" ? c.from : c.to;
     capHeld = captions;
     capFor++;
     return {
-      at: playing ? null : playheadAt(edge === "start" ? captionAppears(c) : from),
+      at: playing ? null : c.up[edge === "start" ? 0 : 1],
       about: "clip",
       twice: () => resetCaption(i, edge),
       drag(delta, shift) {
         capMoving = true;
         if (word === undefined) return;
-        const at = Math.min(
-          Math.max(Math.round(inClip(segments, onEpisode(from) + delta) / frame) * frame, 0),
-          clipLength,
-        );
+        const at = from + delta;
         capDraft = { index: i, edge, at, toWords: shift };
-        const follow = playing ? undefined : (to: number) => seekSoon(playheadAt(to), "clip");
-        askCaption(word, edge, onEpisode(at), shift, shift ? follow : undefined);
-        if (!shift) follow?.(at);
+        askCaption(word, edge, at, shift, playing ? undefined : (to: number) => seekSoon(to, "clip"));
       },
       async release(moved) {
         capMoving = false;
@@ -1790,7 +1754,7 @@
           return;
         }
         capSaving = true;
-        const ok = await oncaptiontime(on, word, edge, onEpisode(d.at), d.toWords);
+        const ok = await oncaptiontime(on, word, edge, d.at, d.toWords);
         capSaving = false;
         if (!ok) dropCaption();
       },

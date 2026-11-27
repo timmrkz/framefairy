@@ -247,6 +247,11 @@ export interface Word {
   whole?: string;
   part?: number;
   room?: number;
+  // In a caption, where the word starts and ends on the episode's clock.
+  // A word is known by at, never by start on the clip's clock, which every
+  // cut before it moves. Left out at nought.
+  at?: number;
+  until?: number;
 }
 
 // A word the captions light, as the workspace lays them out from the
@@ -417,6 +422,13 @@ export interface CaptionCue {
   start: number;
   end: number;
   lines: CaptionLine[];
+  // Where it appears and goes on the episode's clock, which the clip
+  // timeline draws it by.
+  from: number;
+  to: number;
+  // Where the playhead stands for its start and for its end, see
+  // CaptionView.Up in engine/episode.go.
+  up: [number, number];
   // When the word the caption begins on and the word it ends on start in
   // the episode. A caption moved by hand is kept against these.
   first?: number;

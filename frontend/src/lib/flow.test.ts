@@ -3,12 +3,7 @@ import {
   Newest,
   mergeJob,
   insideClip,
-  inEpisode,
-  endInEpisode,
-  inClip,
   cutsOf,
-  wordInEpisode,
-  litWord,
   frameAt,
   frameMiddle,
   frameBegins,
@@ -69,85 +64,12 @@ describe("only the newest answer counts", () => {
   });
 });
 
-describe("endInEpisode", () => {
-  const two = [
-    { start: 10, end: 14 },
-    { start: 16, end: 20 },
-  ];
-
-  // A caption that goes where the cut begins goes at 14, not at 16: drawn
-  // to 16 it lay over the whole cut.
-  test("an end at a cut is the end of the piece before", () => {
-    expect(endInEpisode(two, 4)).toBe(14);
-    expect(inEpisode(two, 4)).toBe(16);
-  });
-
-  test("anywhere else it is where inEpisode puts it", () => {
-    for (const at of [0, 1.5, 3.99, 4.01, 6, 8]) {
-      expect(endInEpisode(two, at)).toBeCloseTo(inEpisode(two, at), 9);
-    }
-  });
-
-  test("a hair past the cut on the other clock is still at the cut", () => {
-    expect(endInEpisode(two, 4 + 1e-9)).toBe(14);
-  });
-
-  test("stops at the end of the clip, and gives the time back with no pieces", () => {
-    expect(endInEpisode(two, 99)).toBe(20);
-    expect(endInEpisode([], 7)).toBe(7);
-  });
-});
-
-describe("inEpisode", () => {
-  // A clip in two pieces with a two second cut between them. The clip's
-  // own clock runs 0 to 8, the episode's 10 to 20.
-  const two = [
-    { start: 10, end: 14 },
-    { start: 16, end: 20 },
-  ];
-
-  test("walks the pieces, adding the cuts back", () => {
-    expect(inEpisode(two, 0)).toBe(10);
-    expect(inEpisode(two, 3)).toBe(13);
-    expect(inEpisode(two, 4)).toBe(16);
-    expect(inEpisode(two, 5)).toBe(17);
-  });
-
-  test("stops at the end of the clip", () => {
-    expect(inEpisode(two, 8)).toBe(20);
-    expect(inEpisode(two, 99)).toBe(20);
-  });
-
-  test("gives the time back with no pieces at all", () => {
-    expect(inEpisode([], 7)).toBe(7);
-  });
-});
-
-describe("inClip", () => {
-  const two = [
-    { start: 10, end: 14 },
-    { start: 16, end: 20 },
-  ];
-
-  test("is the way back from inEpisode", () => {
-    for (const at of [0, 1.5, 3, 4, 5, 7.25, 8]) {
-      expect(inClip(two, inEpisode(two, at))).toBeCloseTo(at, 9);
-    }
-  });
-
-  test("puts a moment the clip cuts out where the clip comes back", () => {
-    expect(inClip(two, 15)).toBe(4);
-    expect(inClip(two, 5)).toBe(0);
-    expect(inClip(two, 99)).toBe(8);
-  });
-});
-
 describe("cutsOf", () => {
   test("is the gap between two pieces, counted from the first", () => {
     const three = [
-      { start: 10, end: 14 },
-      { start: 16, end: 20 },
-      { start: 21, end: 25 },
+      { start: 10, end: 14, part: 0 },
+      { start: 16, end: 20, part: 1 },
+      { start: 21, end: 25, part: 2 },
     ];
     expect(cutsOf(three)).toEqual([
       { index: 0, from: 14, to: 16 },
@@ -155,18 +77,19 @@ describe("cutsOf", () => {
     ]);
   });
 
-  // A crop moved part way through a clip splits a piece in two that touch.
-  test("finds no cut between pieces that touch, and keeps the count of the rest", () => {
+  // A crop moved part way through a clip splits a piece in two that touch,
+  // and the engine says they are of one part.
+  test("finds no cut between pieces of one part, and keeps the count of the rest", () => {
     const touching = [
-      { start: 10, end: 12 },
-      { start: 12, end: 14 },
-      { start: 16, end: 20 },
+      { start: 10, end: 12, part: 0 },
+      { start: 12, end: 14, part: 0 },
+      { start: 16, end: 20, part: 1 },
     ];
     expect(cutsOf(touching)).toEqual([{ index: 1, from: 14, to: 16 }]);
   });
 
   test("finds none in a clip of one piece or none", () => {
-    expect(cutsOf([{ start: 1, end: 2 }])).toEqual([]);
+    expect(cutsOf([{ start: 1, end: 2, part: 0 }])).toEqual([]);
     expect(cutsOf([])).toEqual([]);
   });
 });
@@ -248,26 +171,6 @@ describe("a job's news", () => {
   });
 });
 
-describe("the word lit in a caption", () => {
-  const lines = [
-    { words: [{ start: 1.0 }, { start: 1.4 }] },
-    { words: [{ start: 2.0 }] },
-  ];
-  test("is the last word whose start has come, across the lines", () => {
-    expect(litWord(lines, 0.9)).toBe(-1);
-    expect(litWord(lines, 1.0)).toBe(0);
-    expect(litWord(lines, 1.39)).toBe(0);
-    expect(litWord(lines, 1.4)).toBe(1);
-    expect(litWord(lines, 2.5)).toBe(2);
-  });
-  // The render keeps a word lit until the next one starts, so a pause
-  // between two words, or a word held longer than it was timed, never
-  // leaves the caption without its highlight.
-  test("stays lit between words, the way the render draws it", () => {
-    expect(litWord(lines, 1.95)).toBe(1);
-  });
-});
-
 // Plan row 2.137: a picture that starts a quarter of a second after its
 // sound has its frames from 0.25 on, and frames counted from the start of
 // the file stood half a frame from them.
@@ -299,32 +202,6 @@ describe("frames are counted from where the picture starts", () => {
   test("the start of a frame is in that frame, not the one before", () => {
     expect(frameBegins(18, frame, 0.25)).toBeCloseTo(0.97, 9);
     for (const k of [0, 1, 18, 749, 4500]) expect(frameAt(frameBegins(k, 1001 / 30000, 0.25), 1001 / 30000, 0.25)).toBe(k);
-  });
-});
-
-describe("wordInEpisode", () => {
-  // A clip of 20 to 21 and 24 to 26, with a word said at 24.5, which is 1.5
-  // into the clip. The cut's edges moved put that word elsewhere on the
-  // clip's clock and never elsewhere in the episode, so it is one word to
-  // the caption block and to the pill, and neither pops for it.
-  test("a cut's edges moved leave a word after it the same word", () => {
-    const shapes: Piece[][] = [
-      [{ start: 20, end: 21 }, { start: 24, end: 26 }],
-      [{ start: 20, end: 20.64 }, { start: 24, end: 26 }],
-      [{ start: 20, end: 21 }, { start: 24.28, end: 26 }],
-      [{ start: 20, end: 20.333 }, { start: 23.917, end: 26 }],
-    ];
-    const onClip = shapes.map((p) => inClip(p, 24.5));
-    expect(new Set(onClip).size).toBe(shapes.length);
-    for (const [i, p] of shapes.entries()) expect(wordInEpisode(p, onClip[i])).toBe(24.5);
-  });
-
-  // A word a cut takes the start of stands where the cut ends, which on
-  // the clip's clock is also where the piece before it ends. It is the
-  // piece after's.
-  test("a word where a cut ends is the piece after's", () => {
-    const pieces: Piece[] = [{ start: 20.1, end: 20.7 }, { start: 24.3, end: 26 }];
-    expect(wordInEpisode(pieces, 0.6)).toBe(24.3);
   });
 });
 

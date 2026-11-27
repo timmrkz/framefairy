@@ -416,7 +416,24 @@ const cuesOf = (segments: { start: number; end: number }[], id = "") => {
       cue.endMoved = true;
     }
   });
-  return cues;
+  // Where each is in the episode, which the engine sends with it.
+  const onEpisode = (at: number) => {
+    let sum = 0;
+    for (const p of c.segments) {
+      if (at < sum + p.end - p.start) return p.start + Math.max(at - sum, 0);
+      sum += p.end - p.start;
+    }
+    return c.segments.length ? c.segments[c.segments.length - 1].end : at;
+  };
+  return cues.map((cue) => ({
+    ...cue,
+    from: onEpisode(cue.start),
+    to: onEpisode(cue.end),
+    up: [onEpisode(cue.start), onEpisode(cue.end)],
+    lines: cue.lines.map((line) => ({
+      words: line.words.map((w) => ({ ...w, at: onEpisode(w.start), until: onEpisode(w.end) })),
+    })),
+  }));
 };
 
 // The speech model install of the setup mode: it starts when it is asked

@@ -732,7 +732,7 @@ export async function engineState(page, at, clips = null) {
     // Each piece with its crop, the keyframes that steer it and its
     // rotation, which are steps of the history as the edges are, issue
     // #248.
-    const pieces = (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end, cropX: s.cropX ?? null, marks: s.marks ?? [], rotate: s.rotate ?? 0 }));
+    const pieces = (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end, part: s.part, cropX: s.cropX ?? null, marks: s.marks ?? [], rotate: s.rotate ?? 0 }));
     return { ...captions, segments: pieces };
   }, { at, read: clips });
 }

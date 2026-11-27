@@ -122,9 +122,10 @@ together with the word beside it. Where in a caption such a word may
 be is the engine's, `TestWordsTooShortForAFrameAreLitTogether`.
 They found that a click on the edge where a caption appears put the
 playhead in the middle of its first word, in the frame before the
-caption is up, when that word is too short for a frame. `captionAppears`
-in `ClipTimeline.svelte` now goes no earlier than the first frame drawn
-with the caption up. `TestEveryWordOfACaptionShownIsLitOnAFrame`
+caption is up, when that word is too short for a frame. Where the
+playhead stands for a caption's start, `CaptionView.Up`, from
+`captionUp` in `engine/episode.go`, now goes no earlier than the first
+frame drawn with the caption up. `TestEveryWordOfACaptionShownIsLitOnAFrame`
 in `engine/wordframes_test.go` makes 400 captions of its own at ten frame
 rates, with words of no length, words shorter than a frame, captions
 that start before their first word and clips that start off the frame

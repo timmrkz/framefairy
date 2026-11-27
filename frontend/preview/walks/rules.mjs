@@ -5,7 +5,7 @@
 // what Undo puts back, are the Go side's rules, tested in Go, see
 // cmd/framefairy-app/captionedits_test.go. See docs/TESTING.md.
 import { letHeld, engineState, settle, settledScreen } from "./bridge.mjs";
-import { cutsOf, inClip } from "../../src/lib/flow.ts";
+import { cutsOf } from "../../src/lib/flow.ts";
 
 // The engine's clip as one comparable value: its captions, how they look,
 // and its pieces with their crops, everything of it the history takes
@@ -62,13 +62,9 @@ const LATE_FRAMES = 60;
 // or null.
 export function overlaid(samples, state, frame) {
   const pieces = state?.segments ?? [];
-  // A moment of the episode on the clip's clock, by the app's own inClip.
-  const clipTime = (t) => inClip(pieces, t);
   const inPiece = (t) => pieces.some((p) => t >= p.start + frame && t < p.end - frame);
-  const captioned = (t) => {
-    const c = clipTime(t);
-    return (state?.captions ?? []).some((x) => c >= x.start + 0.1 && c < x.end - 0.1);
-  };
+  // Where the engine says each caption is in the episode.
+  const captioned = (t) => (state?.captions ?? []).some((x) => t >= x.from + 0.1 && t < x.to - 0.1);
   let missing = null;
   for (const o of samples) {
     const at = Number.isFinite(o.at) ? o.at.toFixed(3) : "nowhere";
@@ -271,10 +267,10 @@ export class Watch {
     // words, in the same order, at the same moments, nothing more.
     if (after && !editing(now) && now.length) {
       const caption = after.captions.find((c) =>
-        c.lines.some((l) => l.words.some((w) => Math.abs(w.start - now[0].at) < 1e-6)),
+        c.lines.some((l) => l.words.some((w) => Math.abs((w.at ?? 0) - now[0].at) < 1e-6)),
       );
       const want = caption
-        ? caption.lines.flatMap((l) => l.words.map((w) => `${w.text}@${w.start.toFixed(3)}`))
+        ? caption.lines.flatMap((l) => l.words.map((w) => `${w.text}@${(w.at ?? 0).toFixed(3)}`))
         : [];
       const have = now.map((w) => `${w.text}@${w.at.toFixed(3)}`);
       if (want.join(" ") !== have.join(" ")) {

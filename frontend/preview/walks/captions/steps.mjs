@@ -59,7 +59,7 @@ export const steps = {
       // A word is known by where it starts as well as by what it says:
       // two captions can share a word, and the word the click before
       // lit then passed for this caption's.
-      const ours = words.map((w) => [w.text, w.start]);
+      const ours = words.map((w) => [w.text, w.at ?? 0]);
       const ofOurs = (ours) => {
         const el = document.querySelector(".captions .word.now");
         const at = Number(el?.dataset.at);

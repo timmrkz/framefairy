@@ -82,81 +82,17 @@ export const outstanding = (j: Job | undefined) => live(j) || unfinished(j);
 
 // Where a moment of a clip falls in the episode.
 //
-// A clip runs on its own clock, with the cuts taken out, and that is the
-// clock the captions are written on. This is the way back from it. It is
-// what a word in the caption box needs in order to say which word of the
-// episode it is, because a correction belongs to the episode and not to
-// the clip: the same word corrected once is corrected in every clip that
-// holds it.
-export function inEpisode(pieces: Piece[], at: number): number {
-  let sum = 0;
-  for (const p of pieces) {
-    const span = p.end - p.start;
-    if (at < sum + span) return p.start + Math.max(at - sum, 0);
-    sum += span;
-  }
-  const last = pieces[pieces.length - 1];
-  return last ? last.end : at;
-}
-
-// Which word of the episode a word of a caption is: where it starts in the
-// episode, to the millisecond. A word is known by this and never by when it
-// starts on the clip's clock, because that clock is the clip with its cuts
-// taken out, and every cut before a word moves it. Known by the clip's
-// clock, the word under the playhead was a new word on every answer while
-// a cut before it was dragged, and the caption block on the clip timeline
-// and the pill in the video preview popped over and over with the playhead
-// standing still, found by Tim. A word that starts where a cut ends is the
-// piece after's, so it is read a hair in.
-export function wordInEpisode(pieces: Piece[], start: number): number {
-  return Math.round(inEpisode(pieces, start + 1e-6) * 1000) / 1000;
-}
-
-// Where the end of something on the clip's clock falls in the episode: a
-// caption that goes, a word that ends. A moment exactly at a cut is two
-// places in the episode, the end of the piece before and the start of the
-// piece after. A start belongs to the piece after, which is inEpisode. An
-// end belongs to the piece before, or a caption that went where a cut
-// begins was drawn across the whole cut to the far side of it: Tim moved
-// the left edge of a cut into the end of a caption and the caption grew
-// over the cut, while the right edge, moved into a caption's start, did
-// what it should.
-export function endInEpisode(pieces: Piece[], at: number): number {
-  let sum = 0;
-  for (const p of pieces) {
-    const span = p.end - p.start;
-    // A millionth of a second either way, because the two clocks add up
-    // the same pieces in another order.
-    if (at <= sum + span + 1e-6) return p.start + Math.min(Math.max(at - sum, 0), span);
-    sum += span;
-  }
-  const last = pieces[pieces.length - 1];
-  return last ? last.end : at;
-}
-
-// Where a moment of the episode falls in a clip, the other way from
-// inEpisode. A moment the clip cuts out is the moment it comes back, and
-// one before or after it is its start or its end.
-export function inClip(pieces: Piece[], at: number): number {
-  let sum = 0;
-  for (const p of pieces) {
-    if (at < p.start) return sum;
-    if (at <= p.end) return sum + at - p.start;
-    sum += p.end - p.start;
-  }
-  return sum;
-}
-
-
-// The cuts of a clip, the parts it leaves out: the gap between two pieces.
-// Two pieces that touch, which a crop moved part way through makes, have
-// no cut between them. The engine counts cuts from the first piece, and so
-// does this, because that is what a move names.
-export function cutsOf(pieces: Piece[]): { index: number; from: number; to: number }[] {
+// The cuts of a clip, the parts it leaves out: the gap between two pieces
+// of two parts, see PieceView.Part in engine/shape.go. Two pieces of one
+// part, which a crop moved part way through makes, meet with no cut
+// between them. The engine counts cuts from the first piece, and so does
+// this, because that is what a move names.
+export function cutsOf(pieces: (Piece & { part: number })[]): { index: number; from: number; to: number }[] {
   return pieces
     .slice(1)
-    .map((p, i) => ({ index: i, from: pieces[i].end, to: p.start }))
-    .filter((c) => c.to > c.from);
+    .map((p, i) => ({ index: i, from: pieces[i].end, to: p.start, apart: p.part !== pieces[i].part }))
+    .filter((c) => c.apart)
+    .map(({ index, from, to }) => ({ index, from, to }));
 }
 
 // Whether the playhead is inside a clip, and so whether the crop frame is
@@ -229,8 +165,8 @@ export function frameBegins(k: number, frame: number, start = 0): number {
   return start + k * frame;
 }
 
-// A caption edge being dragged, on the clip's clock, where the hand has it,
-// and whether shift puts it on words. Where it lands and what it does to
+// A caption edge being dragged, on the episode's clock, where the hand has
+// it, and whether shift puts it on words. Where it lands and what it does to
 // the words is the engine's to say, see ShapeCaptionTime in
 // engine/episode.go.
 export interface CaptionDraft {
@@ -238,23 +174,4 @@ export interface CaptionDraft {
   edge: "start" | "end";
   at: number;
   toWords: boolean;
-}
-
-// Which word of a caption is lit at a moment on the clip's clock, counted
-// across its lines, or -1 before its first word. A word is lit from its
-// start until the next word starts, and the last until the caption goes,
-// the way the render burns the highlight in (engine/highlight.go). It is
-// not lit only until its own end: the video preview did that, and a word
-// went dark while it was still being said and between every two words,
-// where the short and the clip timeline went on showing it.
-export function litWord(lines: { words: { start: number }[] }[], at: number): number {
-  let lit = -1;
-  let n = 0;
-  for (const line of lines) {
-    for (const word of line.words) {
-      if (at >= word.start) lit = n;
-      n++;
-    }
-  }
-  return lit;
 }
