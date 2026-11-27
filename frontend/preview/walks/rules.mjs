@@ -50,8 +50,12 @@ const LATE_FRAMES = 60;
 // while the episode played through a clip. On the clip, with the playhead
 // a frame or more inside one of its pieces, the crop frame stands over the
 // picture, and the caption box with it wherever the engine has a caption,
-// a tenth of a second or more inside it, on the frame on screen. The
-// caption box shows what the picture shows, and the picture trails the
+// a tenth of a second or more inside it, on the frame on screen. Before
+// the video preview has put up its first frame there is nothing for a
+// crop frame to stand over, and the app draws none: a walk whose first
+// step began while the first frame of a video just opened was still on
+// its way saw no crop frame for it. The caption box shows what the
+// picture shows, and the picture trails the
 // playhead while it plays, by up to a frame, see Showing in
 // lib/frames/captions.ts. A sample with no frame number, pictured, is held
 // to the playhead. A frame whose own captions are still on their way is
@@ -70,14 +74,17 @@ export function overlaid(samples, state, frame) {
     return (state?.captions ?? []).some((x) => c >= x.start + 0.1 && c < x.end - 0.1);
   };
   let missing = null;
+  // Whether a frame has been put up yet, see pictured in bridge.mjs.
+  let framed = false;
   for (const o of samples) {
+    framed ||= Number.isFinite(o.pictured) && o.pictured >= 0;
     const at = Number.isFinite(o.at) ? o.at.toFixed(3) : "nowhere";
     const how = o.playing ? "playing" : "paused";
     if (o.video) {
       const over = [o.crop && "the crop frame", o.shade && "the shade", o.captions && "the captions"].filter(Boolean);
       if (over.length) return `on the video at ${at}, ${how}, the video preview shows ${over.join(" and ")}`;
     } else if (inPiece(o.at)) {
-      if (!o.crop) return `on the clip at ${at}, ${how}, the video preview shows no crop frame`;
+      if (!o.crop && framed) return `on the clip at ${at}, ${how}, the video preview shows no crop frame`;
       const shownAt = Number.isFinite(o.pictured) && o.pictured >= 0 ? o.pictured * frame : o.at;
       const none = captioned(shownAt) && !o.captions;
       missing = none ? (missing ?? o) : null;
