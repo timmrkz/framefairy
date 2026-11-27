@@ -1,4 +1,4 @@
-# Go keeps the playhead, and the window draws one
+# Go says where the playhead is, and the window draws one
 
 The last step of [The video preview draws what Go sends](2026-11-25-the-video-preview-draws-what-go-sends.md),
 its step 3, together with what is left of the issue that record works
@@ -140,7 +140,12 @@ are.
 Dropped: a playhead in `VideoState`, which is sent at most four times a
 second and would lag every gesture, and a line moved by JavaScript on
 each refresh in each view, which is the first version of this pull
-request, one writer for each view.
+request, one writer for each view. Dropped too: a line the compositor
+moves on its own, a CSS animation from where the play starts to where
+it ends. It would glide without a script, but on the page's clock, not
+the sound card's, so it drifts from what is heard, and every pause, seek
+and cut would start it again. The sound card's clock read once a refresh
+is the clock the frames are drawn on, so the line and the picture agree.
 
 ## The decision
 
@@ -174,9 +179,9 @@ In one pull request, a commit each.
    `wordInEpisode`, `endInEpisode`, `inClip`, `cutsOf`'s own rule and
    `litWord` go.
 5. **Frames counted in Go.** Go sends, once a video, where each frame of
-   its grid holds from, `framewire.Grid.From` over `/frames/froms`, and
-   the frame queue, the clip timeline and the time field look a moment
-   up there. A thumbnail is put on the middle of its frame by the
+   its grid holds from and where it begins, `framewire.WriteTable` over
+   `/frames/table`, and the frame queue, the clip timeline and the time
+   field look a moment up there. A thumbnail is put on the middle of its frame by the
    engine, `SetThumbnail`. `frameMiddle`, `frameBegins`, `heldMicros`,
    `FRAME_HAIR`, `rankAt`, `rankOf` and `playMoves` go, and
    `frame.cases.json` moves to the engine's own testdata, read by Go
@@ -201,7 +206,28 @@ What changed from the plan as first written, and why:
   it has by their number, and finding a kept frame for a click is what
   makes a click show at once. Go sends where each frame holds from
   instead, eight bytes a frame, 0.8 MB for an hour at 30 frames a second,
-  read once a video, and the window looks a moment up by halving.
+  read once a video, and the window looks a moment up by halving. Where
+  each frame begins came beside it later, see below.
+- **The window of a search is the engine's answer.** The review of the
+  first version of this record found the app still fitting the window
+  it keeps, and the command line placing its own by another call. Now
+  `engine.Episode.Window` answers what a video's window is: the one a
+  front end kept, cut at the video's end and fitted to what a search can
+  read, or placed where none is kept. The app hands it the window it
+  keeps and stores the answer, the command line hands it none before
+  `--next`, and a test walks a video both ways through the same windows.
+  The window stays kept by the app, beside the clip in `chosen.json`,
+  because a hand's move of it is a step undo takes back, and that
+  history is the app's.
+- **The table carries where frames begin, and a card lands where Go
+  says.** The same review found the window still working out where a
+  frame begins from the grid, and where a click on a card of what was
+  said lands, a frame in. The table now holds both halves, where each
+  frame holds from and where it begins, 16 bytes a frame, read from the
+  video the app probed, never from a grid the window sends. A frame step
+  goes to where the frame beside begins, and each card comes with
+  `SentenceView.land`. The table is asked as the video preview opens,
+  beside the canvas and the sound card, so a video opens no later for it.
 - **No step 6.** How a choice of model stands is judged in Go already,
   `Standing`, since the pull request that moved the judging there.
   `finderStanding` and `speechStanding` only put Go's judgement into the
@@ -215,8 +241,8 @@ What it costs: the engine works out three more things it already had
 the means for, the clip's places, the edge playheads and where a step
 lands in each word, and sends them on data it sends anyway, the clip
 entry, the framing and the caption words. The window fetches one table
-per video, eight bytes a frame, about 0.8 MB for an hour at 30 frames a
-second, read once and kept for the last four videos. No key and no click
+per video, sixteen bytes a frame, about 1.7 MB for an hour at 30 frames
+a second, read once and kept for the last four videos. No key and no click
 waits for Go: everything a gesture needs is in the window before the
 hand moves.
 

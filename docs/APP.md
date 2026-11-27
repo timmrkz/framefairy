@@ -1338,8 +1338,8 @@ bubble scrolled by those eight pixels.
     caption word is read back through the clip's pieces to find the word of
     the episode it stands for, and the middle rather than the edge because
     both halves of a split word have to point at the one word they came
-    from. `inEpisode` and `saidWord` in `frontend/src/lib/flow.ts` are the
-    way back, with tests.
+    from. The engine places each word in the episode, `CaptionView`, so
+    the way back is a word it sends.
 - **Moving the captions:** drag the caption box up or down by its handle,
   a ring around the box that draws itself in the accent the moment the
   pointer comes near and is invisible the rest of the time. The whole of

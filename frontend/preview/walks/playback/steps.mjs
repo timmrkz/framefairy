@@ -1902,7 +1902,7 @@ export const steps = {
         await shownOnPlayhead(page);
         const came = await page.evaluate((fps) => {
           const at = Number(document.querySelector(".screen").dataset.playhead);
-          // The frame that holds the playhead, see frameAt in lib/flow.ts.
+          // The frame that holds the playhead, see framewire.Grid.Holding.
           return window.__filmed() === Math.floor((at + 0.001) * fps);
         }, src.fps);
         if (!came) {

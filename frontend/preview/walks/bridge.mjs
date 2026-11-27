@@ -957,8 +957,8 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
           // slots are laid on the picture's grid both ways from where it
           // starts, and before that the video preview names a slot of its
           // own while it draws the picture's first frame. So this is not
-          // frameAt in lib/flow.ts, which counts every moment before the
-          // picture as its frame 0. On the clip's end itself it is the
+          // the engine's table of frames, which counts every moment before
+          // the picture as its frame 0. On the clip's end itself it is the
           // clip's last frame, the one that holds the moment a frame
           // before the end, where a play of the clip stops, see settle in
           // lib/frames/queue.ts. A step that lands on the end shows it.

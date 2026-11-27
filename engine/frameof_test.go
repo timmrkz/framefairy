@@ -104,7 +104,7 @@ func TestEveryEdgeIsKeptOnTheStartOfItsFrame(t *testing.T) {
 			}
 			// A moment a hair before it, a pause a millisecond before the
 			// frame, is in it, the frame the video preview draws there,
-			// frameAt in lib/flow.ts. Unless the kept start lies before the
+			// looked up in the table of frames the engine sends. Unless the kept start lies before the
 			// frame, as it does for the table's Below of them: then it is
 			// in the frame before.
 			if k > 0 {

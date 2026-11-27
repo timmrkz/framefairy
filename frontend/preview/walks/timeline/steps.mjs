@@ -1992,8 +1992,8 @@ export const steps = {
     const fps = await rate(page);
     const during = (from, to) => played.filter(([t]) => t >= from && t < to);
     // The frame that holds the playhead, a frame that begins a
-    // millisecond or less after it included, see frameAt in
-    // lib/flow.ts, as the bars carry it, its number modulo 2 ** BITS.
+    // millisecond or less after it included, see framewire.Grid.Holding,
+    // as the bars carry it, its number modulo 2 ** BITS.
     const holds = (at) => Math.floor((at + 0.001) * fps) % 2 ** BITS;
     // How many frames had been read by a moment of the walk's.
     const readBy = (t) => played.filter(([at]) => at < t).length;
