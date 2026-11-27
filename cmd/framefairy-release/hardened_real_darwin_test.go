@@ -1,24 +1,33 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"testing"
 )
 
 // The code directory and the entitlements are read the way codesign
-// really writes them, not only the way these tests write them. CI's macos
-// job signs the app with harden and a certificate made for
-// the test, then names that bundle SIGNED_APP and the one make signed ad
-// hoc ADHOC_APP. Anywhere else there is no codesign, and this is skipped.
+// really writes them, not only the way these tests write them. The job
+// outside of mac-nightly.yml names the bundle make outside built, signed
+// ad hoc, ADHOC_APP. This signs a copy of it with harden and a certificate made
+// for the test, since the Developer ID is a secret only main's
+// publish.yml reads, and reads both. It proves the signing, and that the
+// release tool reads what codesign wrote, not that the app opens: under
+// the hardened runtime a certificate that is not Apple's has no team, and
+// macOS would load no library of its own. Anywhere else it is skipped.
 //
-// On the real disk: what this reads is the bundles codesign signed.
+// On the real disk: codesign signs files, and openssl writes the
+// certificate it signs with.
 func TestARealSignatureIsReadAsCodesignWroteIt(t *testing.T) {
-	signedApp, adhocApp := os.Getenv("SIGNED_APP"), os.Getenv("ADHOC_APP")
-	if signedApp == "" || adhocApp == "" {
-		t.Skip("needs bundles signed on a Mac, see the macos job in ci.yml")
+	adhocApp := os.Getenv("ADHOC_APP")
+	if adhocApp == "" {
+		t.Skip("needs a bundle make built on a Mac, see the job outside in mac-nightly.yml")
 	}
+	signedApp := testSigned(t, adhocApp)
 	read := func(t *testing.T, file string) (signing, []string) {
 		t.Helper()
 		data, err := os.ReadFile(file)
@@ -80,13 +89,14 @@ func TestARealSignatureIsReadAsCodesignWroteIt(t *testing.T) {
 
 // Apple's real certificates between a Developer ID and its root are taken,
 // or codesign could not build the chain on main's first real signing.
-// CI's macos job sets APPLE_CAS, since only a Mac ships Apple's root, and
-// this asks apple.com. Anywhere else it is skipped.
+// The job outside of mac-nightly.yml sets APPLE_CAS, since only a Mac
+// ships Apple's root, and this asks apple.com. Anywhere else it is
+// skipped.
 //
 // On the real network: apple.com, and the Mac's own roots.
 func TestApplesRealAuthorityIsTaken(t *testing.T) {
 	if os.Getenv("APPLE_CAS") == "" {
-		t.Skip("needs a Mac and apple.com, see the macos job in ci.yml")
+		t.Skip("needs a Mac and apple.com, see the job outside in mac-nightly.yml")
 	}
 	d := devID{macOS: macTools}
 	roots, err := d.appleRoots()
@@ -102,4 +112,45 @@ func TestApplesRealAuthorityIsTaken(t *testing.T) {
 			t.Errorf("%s: %v", url, err)
 		}
 	}
+}
+
+// testSigned copies the bundle and signs the copy the way publish.yml
+// does, with a certificate for code signing made here, which nothing
+// trusts and which lives as long as the test.
+//
+// On the real disk: codesign and openssl read and write files.
+func testSigned(t *testing.T, adhocApp string) string {
+	t.Helper()
+	dir := t.TempDir()
+	signedApp := filepath.Join(dir, appName)
+	if _, err := macTools.run("ditto", adhocApp, signedApp); err != nil {
+		t.Fatal(err)
+	}
+	const name = "Frame Fairy Test Signing"
+	conf := filepath.Join(dir, "test.cnf")
+	if err := os.WriteFile(conf, []byte("[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n"+
+		"[dn]\nCN="+name+"\n[ext]\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pass := make([]byte, 16)
+	if _, err := rand.Read(pass); err != nil {
+		t.Fatal(err)
+	}
+	password := hex.EncodeToString(pass)
+	key, crt, p12 := filepath.Join(dir, "test.key"), filepath.Join(dir, "test.crt"), filepath.Join(dir, "test.p12")
+	for _, args := range [][]string{
+		{"req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-config", conf, "-keyout", key, "-out", crt},
+		{"pkcs12", "-export", "-inkey", key, "-in", crt, "-out", p12, "-passout", "pass:" + password},
+	} {
+		if out, err := exec.Command("/usr/bin/openssl", args...).CombinedOutput(); err != nil {
+			t.Fatalf("openssl %s: %v\n%s", args[0], err, out)
+		}
+	}
+	d := devID{macOS: macTools, p12: p12, password: password, identity: name,
+		entitlements: filepath.Join("..", "..", "build", "entitlements.plist"),
+		requirement:  `certificate leaf[subject.CN] = "` + name + `"`}
+	if err := d.signApp(signedApp); err != nil {
+		t.Fatal(err)
+	}
+	return signedApp
 }

@@ -6,7 +6,8 @@
 # line is tested on Linux. What no file says is the Mac's is checked here:
 # the Mac's disk, which takes names in either case and has /var as a
 # link, the ffmpeg we build for the Mac, and what macOS does around the
-# app, a link that opens it, the keychain, quitting and starting again.
+# app, a link that opens it, the keychain, quitting and starting again,
+# and the app signed with the hardened runtime the way publish.yml signs it.
 #
 # Run workflow, on the Actions page or through the API, runs it on any
 # branch. A session starts it on its branch when its change touches what
@@ -86,6 +87,16 @@ jobs:
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
           security default-keychain -d user -s "$kc"
       - run: make outside WERROR=1
+      # What publish.yml does to every build before the user gets it,
+      # signed again with the hardened runtime and the microphone by
+      # framefairy-release harden, here with a certificate the test makes,
+      # and read back by the release tool. See hardened_real_darwin_test.go.
+      - name: The release tool reads what codesign wrote
+        env:
+          # The bundle make outside built and signed ad hoc.
+          ADHOC_APP: ${{ github.workspace }}/.build/outside/Frame Fairy.app
+          APPLE_CAS: "1"
+        run: go test -count=1 -run 'TestARealSignatureIsReadAsCodesignWroteIt|TestApplesRealAuthorityIsTaken' -v ./cmd/framefairy-release/
       # macOS writes a crash report once the process has died, which can be
       # after the step that saw the app go has failed, see whyGone in
       # internal/outside. So a failed run shows the app's reports again here.
