@@ -34,7 +34,7 @@ export function walkClock(play: Play): PlayClock {
     // the time that passed, as the system's does. A frame still on its way
     // holds the card, and the time it stands is not counted later.
     if (unshown === Infinity) return heard + card.follow();
-    if (unshown > heard && ready()) return Math.min(heard + card.run(unshown - heard), unshown);
+    if (unshown > heard && ready()) return Math.min(heard + card.run(card.toward(heard, unshown)), unshown);
     card.stand();
     return Math.min(heard, unshown);
   };
@@ -58,6 +58,16 @@ export class WalkCard extends EventTarget {
   private time = 0;
   // When the time last moved or stood, on the page's clock, for follow.
   private moved = 0;
+  // How many ticks the card takes from one frame to the next, 1 unless a
+  // walk asks for more with window.__soundParts, see install. The
+  // system's card moves on every refresh, a share of a frame at a time
+  // on a screen faster than the video, and what follows the sound on
+  // every refresh, the playhead's line on the clip timeline, is seen
+  // moving between two frames only that way.
+  parts = 1;
+  // The frame the card is on its way to, and how far it goes a tick.
+  private bound = NaN;
+  private stride = 0;
   private playing = new Set<WalkSource>();
   // Every gain of the card, told what it was at each time the card moved.
   readonly params = new Set<WalkParam>();
@@ -111,6 +121,18 @@ export class WalkCard extends EventTarget {
     for (const p of this.params) p.reached(this.time);
     for (const s of this.playing) s.reached(this.time);
     return seconds;
+  }
+
+  // How far the card goes on this tick toward the frame at unshown, from
+  // heard: the whole way, or a share of it when it takes parts ticks. The
+  // last share goes the rest of the way, so the card lands on the frame.
+  toward(heard: number, unshown: number): number {
+    if (unshown !== this.bound) {
+      this.bound = unshown;
+      this.stride = (unshown - heard) / Math.max(1, this.parts);
+    }
+    const rest = unshown - heard;
+    return rest - this.stride < 1e-9 ? rest : this.stride;
   }
 
   private play(from: number, to: number): Float32Array {
@@ -425,14 +447,20 @@ function letGo(play: Play): Promise<void> {
 // Hands every queue the page makes the walk's clock and sound card, unless
 // the walk asked for the system's with window.__playClock, see open in
 // walks/bridge.mjs. window.__holdSound(held) holds the sound card of the
-// queue on the video preview by the walk's hand, or lets it go. Called by
+// queue on the video preview by the walk's hand, or lets it go, and
+// window.__soundParts(parts) has it take so many ticks a frame. Called by
 // wails-bridge.ts before the app makes its first queue.
 export function install() {
-  const page = window as unknown as { __playClock?: string; __frameQueue?: Play; __holdSound?: (held: boolean) => Promise<void> };
+  const page = window as unknown as { __playClock?: string; __frameQueue?: Play; __holdSound?: (held: boolean) => Promise<void>; __soundParts?: (parts: number) => void };
   if (page.__playClock !== "sound") {
     FrameQueue.soundCard = (options) => new WalkCard(options) as unknown as AudioContext;
     FrameQueue.clock = walkClock;
   }
+  page.__soundParts = (parts) => {
+    const card = page.__frameQueue?.audio;
+    if (!(card instanceof WalkCard)) throw new Error("only the walk's sound card goes a share of a frame a tick");
+    card.parts = parts;
+  };
   page.__holdSound = (held) => {
     if (!page.__frameQueue) throw new Error("there is no video preview whose sound card the hand could hold");
     return holdSound(page.__frameQueue, "hand", held);

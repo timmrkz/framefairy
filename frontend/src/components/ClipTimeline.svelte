@@ -914,9 +914,12 @@
   // moves there on a pixel of the screen, --hair, rather than stepping to
   // the start of each frame of the video, which on a clip of half a minute
   // moved it a pixel or two 25 times a second, a stutter. Only a custom
-  // property of its own element is written, so nothing else in the app is
-  // worked out again on every frame. A hand on the playhead or on an edge
-  // places it, so the sound does not while one is down.
+  // property of its own element is written, from the moment in seconds, so
+  // nothing else in the app is worked out again on every frame. Where on
+  // the track that is, the stylesheet works out from the view, see .at,
+  // so a page turn or a pinch moves the line in the same frame as the
+  // waveform. A hand on the playhead or on an edge places it, so the
+  // sound does not while one is down.
   let headAt = $state<HTMLDivElement>();
   export function sound(at: number) {
     const el = headAt;
@@ -926,7 +929,7 @@
       el.style.removeProperty("--step");
       return;
     }
-    el.style.setProperty("--sound", String(x(at) / 100));
+    el.style.setProperty("--sound", `calc((${at} - var(--from)) / var(--span))`);
     el.style.setProperty("--step", "var(--hair)");
   }
 
@@ -2462,10 +2465,11 @@
     {/if}
     {#if head >= view.from && head <= view.to}
       <!-- On the track's inside, where the waveform and every mark are
-           placed, and on the start of the frame it is in, where a mark
-           lit by it stands. Plan row 2.234. On a whole pixel, rounded the
-           way a mark is, see .mark. -->
-      <div class="at" bind:this={headAt} style:--frame={x(onFrame(head)) / 100}>
+           placed. Paused, on the start of the frame it is in, where a
+           mark lit by it stands, plan row 2.234, on a whole pixel, rounded
+           the way a mark is, see .mark. Playing, where the sound is, see
+           sound. -->
+      <div class="at" bind:this={headAt} style:--frame={x(onFrame(head)) / 100} style:--from={view.from} style:--span={span}>
         <!-- The playhead of the range picker too, drawn by .playhead in
              app.css. -->
         <div class="playhead" class:scrubbing title="Drag to move the playhead"></div>
@@ -3001,12 +3005,15 @@
 
   /* The playhead. */
   /* Paused, on the start of the frame, on a whole pixel. Playing, where
-     the sound is, on a pixel of the screen, see sound. */
+     the sound is, from the view, on a pixel of the screen, see sound.
+     Moved by a transform, in the track's width, 100cqw, so a move on
+     every refresh lays nothing out again. */
   .at {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: round(1px + (100% - 2px) * var(--sound, var(--frame)), var(--step, 1px));
+    left: 0;
+    transform: translateX(round(1px + (100cqw - 2px) * var(--sound, var(--frame)), var(--step, 1px)));
     width: 0;
     z-index: 3;
   }

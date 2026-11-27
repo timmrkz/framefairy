@@ -537,50 +537,67 @@ export const steps = {
     else if (at.length < crossed - 2) walk.wrong = `the playhead changed only ${at.length} times while the play crossed ${crossed} frames`;
     await watch.step(what, s);
   },
-  // ["moves with the sound"]
-  //                    with the playhead paused, tells the video preview
-  //                    the play is at four moments a quarter of a frame of
-  //                    the video apart inside the frame it is on, the way the system's sound card
-  //                    moves on every refresh, and the playhead's line on
-  //                    the clip timeline goes along with each of them, not
-  //                    only to the start of the frame. Told the play
-  //                    stopped, the line is back where it stood. The
-  //                    walk's clock moves the sound a whole frame at a
-  //                    time, see preview/clock.ts, so the walk says the
-  //                    moments between two frames itself
+  // ["moves with the sound", seconds]
+  //                    with the walk's sound card going a quarter of a
+  //                    frame of the video a refresh, the way the system's
+  //                    goes on a screen faster than the video, see
+  //                    preview/clock.ts, plays the clip for so many seconds
+  //                    of the episode and reads the playhead's line on the
+  //                    clip timeline on every refresh: it moves on most of
+  //                    them, a share of a frame at a time, never back, and
+  //                    once paused it no longer goes with the sound and
+  //                    stands within a frame of where the play left it
   async "moves with the sound"(walk, arg, s, what) {
     const { page, watch } = walk;
-    const { fps, videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
+    const fps = await rate(page);
+    const t = await timeline(page);
+    const g = await handles(page);
+    await clickOnTrack(page, await xOf(page, t.start + 0.5), high(g.track));
+    await settle(page);
+    await shownOnPlayhead(page);
     const line = () => page.evaluate(() => document.querySelector(".clip-timeline .at").getBoundingClientRect().left);
-    // What the frame queue tells the video preview on a refresh of a
-    // play, see Shown in src/lib/frames/queue.ts.
-    const tell = (at, playing) =>
-      page.evaluate(
-        ([at, playing]) => {
-          const q = window.__frameQueue;
-          q.emit({ at, frame: q.shown?.begins ?? NaN, drew: false, playing, ended: false, drawnAt: 0, trouble: "", passing: false });
-        },
-        [at, playing],
-      );
-    const at = await page.locator(".screen").evaluate((el) => Number(el.dataset.playhead));
-    const stood = await line();
-    // Inside the frame the playhead is on, so the playhead itself stays.
-    const begins = videoStart + Math.floor((at - videoStart) * fps + 1e-6) / fps;
-    const moments = [0, 1, 2, 3].map((k) => begins + (k + 0.5) / 4 / fps);
-    const seen = [];
-    const wanted = [];
-    for (const m of moments) {
-      await tell(m, true);
-      seen.push(await line());
-      wanted.push(await xOf(page, m));
-    }
-    await tell(at, false);
-    const back = await line();
-    const off = seen.map((x, i) => x - seen[0] - (wanted[i] - wanted[0]));
-    const quarter = wanted[1] - wanted[0];
-    if (quarter < 1) walk.wrong = `a quarter of a frame is ${quarter.toFixed(2)} px on the clip timeline, too narrow to tell`;
-    else if (off.some((d) => Math.abs(d) > 1)) walk.wrong = `the line stood at ${seen.map((x) => (x - seen[0]).toFixed(2)).join(", ")} px for the sound at ${wanted.map((x) => (x - wanted[0]).toFixed(2)).join(", ")} px`;
-    else if (Math.abs(back - stood) > 0.01) walk.wrong = `the line stood ${(back - stood).toFixed(2)} px from where it was once the play stopped`;
+    await page.evaluate(() => {
+      window.__soundParts(4);
+      // Where the line stands on every refresh while it goes with the sound.
+      window.__lineAt = [];
+      const look = () => {
+        const el = document.querySelector(".clip-timeline .at");
+        if (el?.style.getPropertyValue("--sound")) window.__lineAt.push(el.getBoundingClientRect().left);
+        window.__lineLook = requestAnimationFrame(look);
+      };
+      window.__lineLook = requestAnimationFrame(look);
+    });
+    await page.keyboard.press("Space");
+    await playUntil(page, { most: arg });
+    await page.keyboard.press("Space");
+    await settle(page);
+    await shownOnPlayhead(page);
+    const lines = await page.evaluate(() => {
+      cancelAnimationFrame(window.__lineLook);
+      window.__soundParts(1);
+      return window.__lineAt;
+    });
+    // The steps from the first move to the last, the play's own.
+    const steps = lines.slice(1).map((x, i) => x - lines[i]);
+    const first = steps.findIndex((d) => d > 0);
+    const last = steps.findLastIndex((d) => d > 0);
+    const played = first < 0 ? [] : steps.slice(first, last + 1);
+    const moved = played.filter((d) => d > 0).length;
+    // The width of a frame of the video on the clip timeline, and where the
+    // line stands paused: no longer with the sound, on the start of the
+    // frame the play stopped on, within a frame of where it went.
+    const frameWide = (await xOf(page, t.start + 1)) - (await xOf(page, t.start + 1 - 1 / fps));
+    const stood = await page.evaluate(() => {
+      const el = document.querySelector(".clip-timeline .at");
+      return el.style.getPropertyValue("--sound") ? NaN : el.getBoundingClientRect().left;
+    });
+    const end = lines.at(-1);
+    if (frameWide < 4) walk.wrong = `a frame of the video is ${frameWide.toFixed(2)} px on the clip timeline, too narrow to see the line move inside it`;
+    else if (played.length < arg * fps * 3) walk.wrong = `the line moved over only ${played.length} refreshes in ${arg} s`;
+    else if (played.some((d) => d < 0)) walk.wrong = `the line went back while playing: ${played.map((d) => d.toFixed(2)).join(" ")}`;
+    else if (moved < played.length * 0.6) walk.wrong = `the line moved on ${moved} of ${played.length} refreshes, a frame of the video at a time`;
+    else if (played.some((d) => d > frameWide * 0.5 + 1)) walk.wrong = `the line jumped ${Math.max(...played).toFixed(2)} px on one refresh, a frame is ${frameWide.toFixed(2)} px`;
+    else if (!(Math.abs(stood - end) <= frameWide * 1.2 + 1)) walk.wrong = `paused, the line stood at ${stood} px, still with the sound or more than a frame from where the play's line ended, ${end} px`;
     await watch.step(what, s);
   },
   // ["keyed on the way"]

@@ -86,7 +86,7 @@ export default [
     // stepped a pixel or two a frame of the video. It moves on every
     // refresh with the sound, and the playhead itself still once a frame.
     name: "a play moves the playhead once a frame of the video, and its line on the clip timeline with the sound",
-    steps: [["once a frame", 3], ["moves with the sound"]],
+    steps: [["once a frame", 3], ["moves with the sound", 1]],
   },
   {
     // Plan row 2.235, found by Tim: the clip's edges took the playhead

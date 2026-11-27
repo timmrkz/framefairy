@@ -2817,8 +2817,11 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
   looks the same way, see Keyframes.
 - **The playhead and every mark stand on the start of their frame**, the
   way editors draw them, so a mark the playhead is on is centred on its
-  line however far the clip timeline is pinched in. The playhead moves a
-  frame at a time, as the video preview does. Plan row 2.234.
+  line however far the clip timeline is pinched in. Paused, the playhead
+  stands on the start of the frame the video preview shows. Playing, its
+  line moves with the sound on every refresh, so a mark lights as the line
+  reaches it and stays lit until the line is a frame past it, the way
+  editors draw a play. Plan row 2.234.
 - **With the playhead on a thumbnail**, the button or **T** removes it.
   What one click adds, one click takes away.
 - **A click on a mark** puts the playhead on it, so the video preview shows
