@@ -253,13 +253,12 @@ jobs:
           NAME: ${{ steps.which.outputs.name }}
           VERSION: ${{ steps.which.outputs.version }}
           COMMIT: ${{ steps.which.outputs.commit }}
-          TEAM: ${{ steps.harden.outputs.team }}
           URL: https://github.com/${{ github.repository }}/releases/download/dev/${{ steps.which.outputs.zip }}
-        # With the Developer ID, sign refuses a build that is not signed
-        # with it and the hardened runtime throughout, so it is never lost
-        # on the way without anyone seeing.
+        # Once build/team-id.txt names the team, sign reads it and refuses
+        # a build that is not signed with its Developer ID and the hardened
+        # runtime throughout, so it is never lost on the way unseen.
         run: >-
-          framefairy-release sign -team "$TEAM" -zip "$RUNNER_TEMP/build/app.zip" -parts "$RUNNER_TEMP/packed/parts.json"
+          framefairy-release sign -zip "$RUNNER_TEMP/build/app.zip" -parts "$RUNNER_TEMP/packed/parts.json"
           -channel "$CHANNEL" -name "$NAME"
           -version "$VERSION" -commit "$COMMIT" -url "$URL" -out "$RUNNER_TEMP/entry.json" -refusal "$RUNNER_TEMP/refused.txt"
 

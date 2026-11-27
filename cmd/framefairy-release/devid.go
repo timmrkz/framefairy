@@ -165,10 +165,7 @@ func hardenWith(tools macOS, args []string) (err error) {
 	if cert == "" {
 		return fmt.Errorf("%s names team %s, but FRAMEFAIRY_DEVELOPER_ID is not set. See docs/UPDATES.md, The Developer ID", *teamFile, team)
 	}
-	if err := d.signZip(*zipPath, cert); err != nil {
-		return err
-	}
-	return output("team", team)
+	return d.signZip(*zipPath, cert)
 }
 
 // teamRequirement is what codesign checks code signed with the Developer
@@ -191,24 +188,6 @@ func teamOf(file string) (string, error) {
 		return "", nil
 	}
 	return strings.TrimSpace(string(b)), err
-}
-
-// output hands a value to the workflow's next steps, or does nothing
-// outside a workflow.
-func output(key, value string) error {
-	file := os.Getenv("GITHUB_OUTPUT")
-	if file == "" {
-		return nil
-	}
-	f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(f, "%s=%s\n", key, value); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
 }
 
 // signZip unpacks the build, signs the app in it and packs it again in its
@@ -279,6 +258,11 @@ func (d devID) signApp(app string) (err error) {
 		_, _ = d.run("security", append([]string{"list-keychains", "-d", "user", "-s"}, before...)...)
 		_, _ = d.run("security", "delete-keychain", keychain)
 	}()
+	// The keychain's password and the certificate's go on security's
+	// command line, which takes them no other way, as GitHub's own guide
+	// to signing on its Macs does. Only processes of this job can read a
+	// command line on its runner, the runner is made for the job and gone
+	// after it, and the keychain's password is made here for the run.
 	steps := [][]string{
 		{"set-keychain-settings", "-lut", "1800", keychain},
 		{"unlock-keychain", "-p", password, keychain},

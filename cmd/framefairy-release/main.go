@@ -27,11 +27,11 @@
 //	framefairy-release harden -zip F [-team-file F] [-refusal F] | -app A -p12 F
 //	    sign the app again with the Developer ID and the hardened
 //	    runtime, on a Mac, before pack, see devid.go
-//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-team T] [-refusal F]
+//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-team-file F] [-refusal F]
 //	    sign a build that check passed with the private half, read from
 //	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list.
-//	    With -team, it refuses a build not signed by that team with the
-//	    hardened runtime, see hardened.go
+//	    Once build/team-id.txt names a team, it refuses a build not signed
+//	    by that team with the hardened runtime, see hardened.go
 //	framefairy-release publish -zip F -as NAME -entry F -channel C -commit X [-packed D]
 //	    upload the build and its entry, and what pack wrote beside it,
 //	    and mark a pull request's commit Ready to update to
@@ -236,14 +236,20 @@ func sign(args []string) error {
 	where := fs.String("url", "", "where the zip will be downloaded from")
 	out := fs.String("out", "", "where the entry goes")
 	parts := fs.String("parts", "", "the parts pack wrote, beside the stored zip and the zip packed, if it was packed")
-	team := fs.String("team", "", "refuse a build not signed by this team's Developer ID with the hardened runtime")
+	teamFile := fs.String("team-file", "build/team-id.txt", "the file that names the team whose Developer ID the build must be signed with")
 	_ = fs.Parse(args)
-	// The stored zip is the same app as the zip, see sameApp, so reading
-	// the zip reads both.
-	if *team != "" {
-		if err := checkHardened(*zipPath, *team); err != nil {
-			return refused(*refusal, err, os.Stderr)
+	// The team is read from main's checkout here, as harden reads it, and
+	// never handed on by a step, so a build that lost its signature on the
+	// way is refused whatever the steps between said. The stored zip is
+	// the same app as the zip, see sameApp, so reading the zip reads both.
+	team, err := teamOf(*teamFile)
+	if err == nil && team != "" {
+		if _, err = teamRequirement(team); err == nil {
+			err = checkHardened(*zipPath, team)
 		}
+	}
+	if err != nil {
+		return refused(*refusal, err, os.Stderr)
 	}
 	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out), os.Stderr)
 }

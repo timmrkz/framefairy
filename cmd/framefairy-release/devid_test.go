@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -254,17 +256,12 @@ func TestAnAppSignedWrongIsRefused(t *testing.T) {
 // and the run says so. Once it does, a build without the certificate
 // fails, never quietly.
 //
-// On the real disk: the team's file and the workflow's output are files.
+// On the real disk: the team's file is a file.
 func TestHardenGoesByTheTeamFile(t *testing.T) {
 	dir := t.TempDir()
-	out := filepath.Join(dir, "output")
-	t.Setenv("GITHUB_OUTPUT", out)
 	t.Setenv("FRAMEFAIRY_DEVELOPER_ID", "")
 	if err := harden([]string{"-zip", filepath.Join(dir, "app.zip"), "-team-file", filepath.Join(dir, "none.txt")}); err != nil {
 		t.Errorf("with no team it said %v", err)
-	}
-	if _, err := os.Stat(out); !os.IsNotExist(err) {
-		t.Error("with no team it named one to the next steps")
 	}
 	team := filepath.Join(dir, "team-id.txt")
 	if err := os.WriteFile(team, []byte("TEAM123456\n"), 0o644); err != nil {
@@ -429,7 +426,6 @@ func TestHardenChecksTheBuildAgainstTheTeamInTheFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	team := filepath.Join(dir, "team-id.txt")
-	t.Setenv("GITHUB_OUTPUT", filepath.Join(dir, "output"))
 	for _, c := range []struct{ team, want string }{
 		{"TEAM123456\n", ""},
 		{"team123456\n", `"team123456" is no team ID`},
@@ -496,5 +492,74 @@ func TestAProgramLeftUnsignedInTheAppIsRefused(t *testing.T) {
 	err := signer(&fakeMac{flags: flagRuntime, microphone: true}).signApp(app)
 	if err == nil || !strings.Contains(err.Error(), "helper is a program outside what harden signs") {
 		t.Errorf("signing it said %v", err)
+	}
+}
+
+// harden unpacks a branch's build on the Mac that holds the Developer ID
+// and the update key, and check refuses neither a name that leads out of
+// the folder nor a link. So unpack is the one guard: every entry that is
+// not a file or folder inside the .app is refused, and nothing lands
+// outside the folder it unpacks to.
+//
+// On the real disk: unpack writes what it unpacks, and what is checked is
+// that nothing landed beside its folder.
+func TestABuildIsUnpackedOnlyInsideItsApp(t *testing.T) {
+	cases := []struct {
+		name string
+		mode os.FileMode
+		want string
+	}{
+		{appName + "/../x", 0o644, "lies outside"},
+		{"/x", 0o644, "lies outside"},
+		{"x", 0o644, "lies outside"},
+		{appName + "/Contents/../../x", 0o644, "lies outside"},
+		{appName + `\..\x`, 0o644, "lies outside"},
+		{"Other.app/Contents/MacOS/x", 0o644, "lies outside"},
+		{appName + "/Contents/link", os.ModeSymlink | 0o777, "is no file"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var b bytes.Buffer
+			w := zip.NewWriter(&b)
+			good, err := w.Create(appName + "/Contents/Info.plist")
+			if err == nil {
+				_, err = good.Write([]byte("plist"))
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			h := &zip.FileHeader{Name: c.name, Method: zip.Store}
+			h.SetMode(c.mode)
+			bad, err := w.CreateHeader(h)
+			if err == nil {
+				_, err = bad.Write([]byte("../../escaped"))
+			}
+			if err == nil {
+				err = w.Close()
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			zipPath := filepath.Join(dir, "app.zip")
+			if err := os.WriteFile(zipPath, b.Bytes(), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err = unpack(zipPath, filepath.Join(dir, "out", "unpacked"))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("unpacking %q said %v, want %q", c.name, err, c.want)
+			}
+			for _, where := range []string{dir, filepath.Join(dir, "out")} {
+				entries, err := os.ReadDir(where)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, e := range entries {
+					if e.Name() != "app.zip" && e.Name() != "out" && e.Name() != "unpacked" {
+						t.Errorf("unpacking %q wrote %s beside its folder", c.name, filepath.Join(where, e.Name()))
+					}
+				}
+			}
+		})
 	}
 }

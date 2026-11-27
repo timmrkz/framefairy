@@ -1,9 +1,9 @@
 package main
 
-// A build the user updates to is signed with their Developer ID and the hardened
-// runtime, see devid.go and docs/UPDATES.md. Once
-// build/team-id.txt names his team, publish.yml tells sign -team, and sign
-// refuses a build that lost it on the way: a program signed ad hoc,
+// A build the user updates to is signed with their Developer ID and the
+// hardened runtime, see devid.go and docs/UPDATES.md. Once
+// build/team-id.txt names their team, sign reads it there and refuses a
+// build that lost it on the way: a program signed ad hoc,
 // without the hardened runtime, or by another team. Under the hardened
 // runtime macOS loads only libraries of the app's own team, so a library
 // of another would not even open.

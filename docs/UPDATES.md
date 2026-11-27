@@ -354,6 +354,7 @@ issued by anybody: they are made once, on the user's Mac, with one command.
 | --- | --- | --- | --- |
 | The release key | what customers download | a GitHub secret only the release workflow can read, behind an environment that waits for the user's approval, and a backup in the user's password manager | in the repository, built into every customer build |
 | The development key | the builds of `main` and of pull requests | `FRAMEFAIRY_UPDATE_KEY`, a secret of the GitHub environment `updates`, which only main can enter, and the password manager | in the repository, built into every development build |
+| The development Developer ID | the programs of every build of `main` and of pull requests, for macOS, see The Developer ID | `FRAMEFAIRY_DEVELOPER_ID` and its password, secrets of the environment `updates`, and the password manager | Apple's certificate, in every signed program |
 
 - **The private half never leaves those two places.** It is not in the
   repository, not in a chat, not on a cloud session's disk. The user makes the
@@ -393,6 +394,11 @@ issued by anybody: they are made once, on the user's Mac, with one command.
 - **A development build does not trust a release, and a customer build
   does not trust a development build.** Each carries one public half. A
   customer can never be handed a pull request's build, even by mistake.
+- **The Developer ID is a certificate of its own for development
+  builds.** A customer release will be signed with a separate Developer
+  ID certificate of the same team, behind the release environment, so a
+  development one that leaks is revoked without touching what customers
+  run.
 - **Losing the release key** means no update can reach the copies already
   sold. Losing the development key costs nothing but a new pair and one
   install by hand. That is why only the release key needs the approval
@@ -505,8 +511,9 @@ To set it up once:
    Authority**, enter the email address, choose **Saved to disk**, and
    upload that file. Download the certificate and double-click it. It
    shows in Keychain Access under **My Certificates**, with its private
-   key under it. Make one for this app alone, so it can be revoked
-   without the certificates of other apps. Apple allows five.
+   key under it. Make one for this app's development builds alone, so it
+   can be revoked without the certificates of other apps or of a
+   customer release. Apple allows five.
 2. In Keychain Access, right-click the certificate, **Export**, and save
    it as `developer-id.p12` on the Desktop with a new password. The file
    holds the private key too, which Apple cannot give out again, so it is
@@ -522,7 +529,8 @@ To set it up once:
    `build/team-id.txt`. It is not a secret: every app the team signs
    carries it.
 
-From then on `framefairy-release sign -team` refuses a build in which
+From then on `framefairy-release sign` reads the team from
+`build/team-id.txt` itself and refuses a build in which
 any program is signed ad hoc, without the hardened runtime, or by
 another team, or whose app is signed as anything but
 `com.framefairy.app`, or any other program or library as anything but
