@@ -306,7 +306,7 @@ copies what it finds nearby, so these are not the pattern for new code.
   choice of model stands, `Standing`, where a caption, a word and a cut
   are in the video, `CaptionView` and `PieceView.Part`, where the
   playhead stands for an edge, `SegmentView.Up`, and which frame holds
-  a moment, `/frames/froms`, looked up in `lib/frames/table.ts`.
+  a moment, `/frames/froms`, looked up in `frontend/src/lib/frames/table.ts`.
 
 ## Changing the architecture
 
