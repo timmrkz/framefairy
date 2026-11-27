@@ -291,9 +291,30 @@ func TestPathAClipMadeByHandIsEditedAndUndone(t *testing.T) {
 // that has what it brought in heard first, Tim on #745.
 func TestPathAClipDraggedLongerIsHeardWhereItNowReaches(t *testing.T) {
 	d := open(t)
+	// The video is added the way the Add button adds it, and its
+	// transcription is stopped by hand inside its first piece, so it
+	// transcribes nothing and is not carried on once the clip is made,
+	// see FrameFairy.searched. Carried on, it transcribed the video from
+	// its start beside the clip and reached the stretch the start is
+	// dragged to before the drag now and then, issue #1006.
+	in, let := d.speech.hold()
+	t.Cleanup(let)
 	ep := d.episode("longer", minutes5)
-	if _, err := d.svc.store.AddEpisodes([]string{ep}); err != nil {
-		t.Fatal(err)
+	if added, err := d.svc.addEpisodes([]string{ep}); err != nil || len(added) != 1 {
+		t.Fatalf("adding %s: %v", ep, err)
+	}
+	<-in
+	whole, ok := d.svc.jobs.find(ep, engine.JobTranscribe)
+	if !ok || whole.Hears() != engine.HearsWhole {
+		t.Fatalf("adding the video started no transcription of it: %+v", d.svc.Jobs())
+	}
+	d.svc.CancelJob(whole.ID)
+	let()
+	if stopped := d.waitFor(whole.ID); stopped.State != JobStopped {
+		t.Fatalf("Stop transcribing ended the transcription as %s", stopped.State)
+	}
+	if covered, _ := d.heard(ep); covered > 0 {
+		t.Fatalf("the transcription stopped inside its first piece transcribed %.1f s", covered)
 	}
 	ctx := context.Background()
 	// heard reads the state the way the window does once work ends, and
