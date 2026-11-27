@@ -5,6 +5,7 @@ import (
 	"io"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -304,5 +305,36 @@ func TestAVideoPlacesItsWindowPastWhatWasSearched(t *testing.T) {
 	}
 	if got, want := p.Base.WindowAfter(tight, PlanRequest{From: 1800, To: 2700}, 900, duration), (PlacedWindow{timed.Window{Start: 2700, End: 3300}, 600}); got != want {
 		t.Errorf("moved on to %+v in room for ten minutes, want %+v", got, want)
+	}
+}
+
+// Both front ends walk a video through the same windows: the app keeps
+// its window and moves it on after each search, the command line keeps
+// none and asks for the window anew before each search with --next, and
+// each search lands where the other's would, round the end of the video
+// back to its start.
+func TestTheAppAndTheCommandLineWalkAVideoThroughTheSameWindows(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	p := NewProject(NewEngine(runlog.New(io.Discard, false, false), NewMachine(fsys)), "/home/tim/ep.mp4", DefaultOptions())
+	const duration = 3600.0
+	roomy := RoomAndLines{Room: Room{Chars: 1e6}, Rate: SpokenChars}
+	ep := p.engine.Episode(p.Source)
+	kept, _ := ep.Window(p.Base, roomy, duration, nil, false, nil)
+	for search := range 5 {
+		asked, _ := ep.Window(p.Base, roomy, duration, nil, false, nil)
+		if asked.Window != kept.Window {
+			t.Fatalf("search %d: the command line asks for %+v, the app keeps %+v", search+1, asked.Window, kept.Window)
+		}
+		// The search finds its clips, and its plan is written, the way
+		// either front end writes it.
+		name := fmt.Sprintf("clips-%.0f-%.0f.json", kept.Start, kept.End)
+		plan := strings.Replace(aRealisticPlan(3), `"from":0,"to":1800`, fmt.Sprintf(`"from":%.0f,"to":%.0f`, kept.Start, kept.End), 1)
+		if err := afero.WriteFile(fsys, filepath.Join(p.LogsDir(), name), []byte(plan), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		kept = p.Base.WindowAfter(roomy, PlanRequest{From: kept.Start, To: kept.End}, kept.Length, duration)
+		if search == 3 && kept.Start != 0 {
+			t.Errorf("after the last quarter hour the app goes on at %v, not at the start", kept.Start)
+		}
 	}
 }

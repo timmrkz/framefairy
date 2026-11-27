@@ -294,8 +294,8 @@ that `failed`, with its reason. Adding a video transcribes it to its
 end, and places the video's window, the one Search searches:
 the first of the windows the video is cut into, see
 `engine.SuggestedWindow`, on a round step, and no longer than the model
-can read at once, see `engine.Episode.PlaceWindow`, kept by
-`videoWindow` in `cmd/framefairy-app/window.go`. Every search starts on
+can read at once, see `engine.Episode.Window`, kept by
+`windowFor` in `cmd/framefairy-app/window.go`. Every search starts on
 the video's window, and one that found its clips moves the window on
 before it says it is done, see `engine.Options.WindowAfter`. Cancel on a search that runs marks its
 record stopped as it ends. A new search takes the record of one that

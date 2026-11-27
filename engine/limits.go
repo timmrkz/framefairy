@@ -78,11 +78,11 @@ func (o Options) Limits(r RoomAndLines, duration, length float64, typed int) Win
 	return l
 }
 
-// FitWindow is the window from..to put back inside what it may be: no
+// fitWindow is the window from..to put back inside what it may be: no
 // longer than most and no shorter than least, on a video of duration
 // seconds. It keeps its start when it can, and gives up the end first,
 // because the start is where the window was put.
-func FitWindow(from, to, most, least, duration float64) (float64, float64) {
+func fitWindow(from, to, most, least, duration float64) (float64, float64) {
 	from = math.Min(math.Max(from, 0), duration)
 	to = math.Min(math.Max(to, from), duration)
 	to = math.Min(to, from+most)
