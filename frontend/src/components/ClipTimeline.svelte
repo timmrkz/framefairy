@@ -3005,15 +3005,12 @@
 
   /* The playhead. */
   /* Paused, on the start of the frame, on a whole pixel. Playing, where
-     the sound is, from the view, on a pixel of the screen, see sound.
-     Moved by a transform, in the track's width, 100cqw, so a move on
-     every refresh lays nothing out again. */
+     the sound is, from the view, on a pixel of the screen, see sound. */
   .at {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 0;
-    transform: translateX(round(1px + (100cqw - 2px) * var(--sound, var(--frame)), var(--step, 1px)));
+    left: round(1px + (100% - 2px) * var(--sound, var(--frame)), var(--step, 1px));
     width: 0;
     z-index: 3;
   }
