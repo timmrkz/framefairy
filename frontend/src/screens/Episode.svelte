@@ -245,7 +245,7 @@
   // video preview keeps, see lib/playhead.ts. On the video the clip is
   // drawn dimmed on the clip timeline and the range picker.
   let onClip = $state(false);
-  let offers = $state<PlayerOffers>({ crop: "", savingCrop: false, hint: "" });
+  let offers = $state<PlayerOffers>({ hint: "" });
 
   const duration = $derived(source?.duration ?? 0);
   // What the window and a search of it may be, which the Go side works
@@ -3804,19 +3804,6 @@
         {#if numbers.saving}<span class="muted">Saving</span>{/if}
         <span class="grow"></span>
         {#if offers.hint}<span class="muted num">{offers.hint}</span>{/if}
-        {#if offers.crop === "auto"}
-          <button
-            onclick={() => player?.resetCrop()}
-            disabled={offers.savingCrop}
-            title="Let the app place the crop again">Automatic crop</button
-          >
-        {:else if offers.crop === "back"}
-          <button
-            onclick={() => player?.cropBack()}
-            disabled={offers.savingCrop}
-            title="Back to where you had it">Put the crop back</button
-          >
-        {/if}
         {#if current}
           {#if current.short}
             <button onclick={() => api.reveal(current.short!)}>Show in folder</button>

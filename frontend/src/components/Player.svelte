@@ -2,12 +2,9 @@
   import type { CaptionLayers as Layers } from "../lib/frames/captions";
   import type { FrameQueue as Queue } from "../lib/frames/queue";
 
-  // What the row above the clip timeline has to offer for the video
-  // preview. The buttons sit in that row now, so what they are for has to
-  // travel out of here.
+  // What the row above the clip timeline has to say for the video
+  // preview, so it has to travel out of here.
   export type PlayerOffers = {
-    crop: "" | "auto" | "back";
-    savingCrop: boolean;
     // What the caption box says about itself while it is dragged.
     hint: string;
   };
@@ -43,6 +40,7 @@
   import { CaptionLayers, keyOf as dressKey, sameDress, type CaptionAsk, type FrameDress, type Layer, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
   import { shownColour, type Light } from "../lib/frames/light";
   import type { Picture } from "../lib/frames/picture";
+  import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
   import {
     nearestHeight,
@@ -80,7 +78,7 @@
     paused = $bindable(true),
     looping = $bindable(false),
     onClip = $bindable(false),
-    offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
+    offers = $bindable({ hint: "" } as PlayerOffers),
     opening = false,
     pictured = $bindable(false),
     frameStart = $bindable(NaN),
@@ -434,15 +432,14 @@
     return { destroy: () => watch.disconnect() };
   }
 
-  // The row above the clip timeline draws the buttons, so it is told what
-  // there is to offer.
+  // The row above the clip timeline says how high the captions are while
+  // they are dragged, so it is told.
   $effect(() => {
     offers = {
-      crop: !clip ? "" : crop?.moved ? "auto" : undoCrop?.key === clip.key && undoCrop.turn === turn ? "back" : "",
-      savingCrop,
       hint: dragCaptions !== null ? `Captions ${Math.round(captionY)} from the bottom` : "",
     };
   });
+
 
   const pieces = $derived(clip?.segments ?? []);
   const clipStart = $derived(pieces.length ? pieces[0].start : 0);
@@ -726,6 +723,14 @@
       moved: d.moved,
     };
   });
+
+  // What the corner of the crop frame offers: the automatic crop, once the
+  // crop was placed by hand, and the crop as it was, once that click was
+  // made, the way the captions are put back and then put as they were:
+  // back, the arrow turning anticlockwise, and forward again, clockwise.
+  const cropUndo = $derived(
+    !clip ? "" : crop?.moved ? "back" : undoCrop?.key === clip.key && undoCrop.turn === turn ? "forward" : "",
+  );
 
   // The video preview shows one moment at a time: a frame, and the crop
   // frame, its shade and the captions that belong to that frame, all of
@@ -1639,7 +1644,7 @@
     target.addEventListener("pointercancel", up);
   }
 
-  export async function resetCrop() {
+  async function resetCrop() {
     if (!clip || !onresetcrop) return;
     const at = cropMoment();
     const was = dressed?.piece ?? 0;
@@ -1657,7 +1662,7 @@
     }
   }
 
-  export async function cropBack() {
+  async function cropBack() {
     const back = undoCrop;
     if (!back || !oncrop) return;
     savingCrop = true;
@@ -1839,7 +1844,27 @@
             : "The crop as the short has it here. Put the playhead on a keyframe to place its crop, or press S or G to put one here"}
         data-movable={cropMovable}
         onpointerdown={dragCrop}
-      ></div>
+      >
+        <!-- The way back to the automatic crop, and from it to the crop as
+             it was, in the frame's top right corner while the pointer is
+             on the frame. It keeps clear of the video preview's own info
+             mark when the frame reaches the picture's right edge, see
+             .undo. A press on it is no drag of the crop and no click that
+             plays. -->
+        {#if cropUndo}
+          <button
+            class="undo"
+            style="--rest: {100 - crop.left - crop.width}"
+            disabled={savingCrop}
+            aria-label={cropUndo === "back" ? "Automatic crop" : "Put the crop back"}
+            title={cropUndo === "back" ? "Let the app place the crop again" : "Put the crop back where you had it"}
+            onpointerdown={(e) => e.stopPropagation()}
+            onclick={cropUndo === "back" ? resetCrop : cropBack}
+          >
+            <Icon name={cropUndo} />
+          </button>
+        {/if}
+      </div>
     {/if}
     {#if dragCaptions !== null}
       <div
@@ -2177,6 +2202,66 @@
      not moved, so it takes the hand the picture does. */
   .crop.fixed {
     cursor: default;
+  }
+
+  /* The way back to the automatic crop, a mark that undoes something the
+     size the captions' one is, in the top right corner inside the frame's
+     line. It waits until the pointer is on the frame, the way an info mark
+     waits for its area, and goes while the frame is dragged. On the
+     picture it wears the shade, so it reads on a white frame too.
+
+     The video preview's own info mark stands in the picture's top right
+     corner, 2 px in and 20 px wide, see .ask.corner in app.css. The frame
+     at the picture's right edge would put the two on top of each other,
+     so this one stands at least 26 px from the picture's right edge,
+     --rest being the share of the picture to the right of the frame. */
+  .undo {
+    position: absolute;
+    top: calc(var(--frame-line) + 4px);
+    right: round(max(calc(var(--frame-line) + 4px), calc(26px - var(--rest) * 1cqw)), 1px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-s);
+    background: var(--backdrop);
+    color: var(--text);
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    will-change: opacity;
+  }
+
+  .crop:hover .undo,
+  .undo:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Its work under way, it is still there, dimmed like any button that
+     waits, and takes no second click. */
+  .crop:hover .undo:disabled,
+  .undo:focus-visible:disabled {
+    opacity: var(--dimmed);
+  }
+
+  .crop.held .undo {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .undo:hover:not(:disabled) {
+    background: var(--ink-3);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .undo {
+      transition: none;
+    }
   }
 
   /* The shade over the picture beside the crop is the shadow of the

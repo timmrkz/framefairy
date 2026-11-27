@@ -977,10 +977,13 @@ export const steps = {
       walk.wrong = `the clip has ${was.length} keyframes, and this step needs two to put back`;
       return;
     }
-    await page.getByRole("button", { name: "Automatic crop", exact: true }).click();
+    walk.wrong = await pressCropCorner(page, "Automatic crop");
+    if (walk.wrong) return;
+    await pageUntil(page, () => !document.querySelector(".screen .crop .undo:disabled"));
     await settle(page);
     await hold(page, "SetCropMark");
-    await page.getByRole("button", { name: "Put the crop back", exact: true }).click();
+    walk.wrong = await pressCropCorner(page, "Put the crop back");
+    if (walk.wrong) return;
     await settle(page);
     await page.evaluate(() => document.activeElement?.blur());
     await page.keyboard.press(order.at(-1) === key ? "Shift+ArrowUp" : "Shift+ArrowDown");
@@ -2460,6 +2463,20 @@ export const steps = {
   async "playhead at"(walk, arg) {
     await playheadAt(walk.page, arg);
   },
+  // ["crop corner", label]
+  //                    with the pointer on the crop frame, presses the
+  //                    arrow in its top right corner that says label,
+  //                    Automatic crop or Put the crop back, and waits until
+  //                    it has done its work. The arrow shows only there,
+  //                    inside the frame and clear of the video preview's
+  //                    info mark, and nowhere else in the app says label
+  async "crop corner"(walk, arg) {
+    const { page } = walk;
+    walk.wrong = await pressCropCorner(page, arg);
+    if (walk.wrong) return;
+    await pageUntil(page, () => !document.querySelector(".screen .crop .undo:disabled"));
+    await settle(page);
+  },
   // ["crop before", share]
   //                    puts the playhead that share of the way into the
   //                    clip and keeps where the crop frame stands there in
@@ -3154,4 +3171,42 @@ async function playheadAt(page, share) {
 // picture.
 function cropShown(page) {
   return page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
+}
+
+// Puts the pointer on the crop frame in the video preview, sees the arrow
+// that says label come in the frame's top right corner, inside its line
+// and clear of the video preview's own info mark, and presses it. What is
+// wrong, or "" once it is pressed. The row above the clip timeline held
+// the two as buttons of words, far from the frame they change.
+async function pressCropCorner(page, label) {
+  const crop = page.locator(".screen .crop");
+  const box = await crop.boundingBox();
+  if (!box) return `the video preview shows no crop frame to press ${label} on`;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 4);
+  const arrow = crop.getByRole("button", { name: label, exact: true });
+  if (!(await arrow.count())) return `the crop frame's corner offers no ${label}`;
+  await pageUntil(page, () => getComputedStyle(document.querySelector(".screen .crop .undo")).opacity === "1");
+  const seen = await page.evaluate((label) => {
+    const r = (e) => e?.getBoundingClientRect();
+    const frame = r(document.querySelector(".screen .crop"));
+    const arrow = r(document.querySelector(".screen .crop .undo"));
+    const mark = r(document.querySelector(".screen > .ask.corner"));
+    const named = [...document.querySelectorAll("button")].filter(
+      (b) => b.getAttribute("aria-label") === label || b.textContent.trim() === label,
+    ).length;
+    return { frame: frame.toJSON(), arrow: arrow.toJSON(), mark: mark?.toJSON(), named };
+  }, label);
+  const { frame, arrow: a, mark, named } = seen;
+  if (named !== 1) return `${named} buttons say ${label}, not the one in the crop frame's corner`;
+  if (a.left < frame.left || a.right > frame.right || a.top < frame.top || a.bottom > frame.bottom) {
+    return `${label} stands outside the crop frame: ${JSON.stringify(a)} in ${JSON.stringify(frame)}`;
+  }
+  if (a.top - frame.top > 12 || frame.right - a.right > 40) {
+    return `${label} is not in the crop frame's top right corner: ${JSON.stringify(a)} in ${JSON.stringify(frame)}`;
+  }
+  if (mark && a.left < mark.right && mark.left < a.right && a.top < mark.bottom && mark.top < a.bottom) {
+    return `${label} lies over the video preview's info mark: ${JSON.stringify(a)} and ${JSON.stringify(mark)}`;
+  }
+  await arrow.click();
+  return "";
 }
