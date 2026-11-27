@@ -325,11 +325,10 @@ How it would work:
 
 What it can start with and what it cannot:
 
-- **It needs no Apple certificate.** Until batch 5.5 the builds are signed
-  the way `make app` signs them today, ad hoc. A file the app downloads
-  itself carries no quarantine mark, so macOS runs it without asking, the
-  same as a build made by `make`. This has to be confirmed on the user's Mac, and
-  it is the first thing the batch that builds this tries.
+- **It needs no notarisation.** A file the app downloads itself carries
+  no quarantine mark, so macOS runs it without asking Gatekeeper. Each
+  build is signed with the Developer ID all the same, see The Developer
+  ID below, so macOS knows it as the same app after every update.
 - **It takes a few minutes per push.** The build runs in CI after each
   commit, so an update is ready a few minutes after Claude pushes, not at
   once. The pull request says when it is ready: the status Ready to update
@@ -439,8 +438,9 @@ reviewed yet, and `sign` runs only once it passed:
   program the list does not know, fails.
 - **Info.plist** gives reasons for the four folders a video is opened
   from and the microphone, for Dictate, and for nothing else.
-- **Entitlements**, once the app is signed with the Developer ID: the
-  microphone and nothing else.
+- **Entitlements**: the microphone and nothing else. The build is signed
+  ad hoc without any, and `harden` adds the microphone after the check,
+  from main's `build/entitlements.plist`.
 
 A refused build says so on the commit that was built, as a failed
 Ready to update to with the first thing found, so the pull request shows
@@ -461,6 +461,120 @@ What it cannot catch is code that hides the name it looks up, built from
 pieces while it runs. Then macOS is the wall: none of these inputs works
 until the person allows it in System Settings. The check makes sure the
 app never asks.
+
+### The Developer ID
+
+Every build the user updates to is signed again with their Developer ID
+and Apple's hardened runtime, by `framefairy-release harden` in
+`publish.yml`, see `cmd/framefairy-release/devid.go`. The hardened
+runtime keeps other programs from putting their own code into the app:
+macOS ignores the `DYLD_` settings it is started with, refuses debuggers,
+and loads only libraries signed by Apple or by the same developer. The
+app is signed as entitled to the microphone and nothing else,
+`build/entitlements.plist`, because under the hardened runtime an app
+without it hears only silence on Dictate. macOS still asks the first
+time.
+
+A Developer ID also makes every build the same app to macOS. A build
+signed ad hoc looks like a new app after each update, so macOS asks
+again for Documents and for the keys the app keeps in the keychain. The
+first build signed with the Developer ID asks once more, then no update
+does.
+
+`codesign` and the keychain are only on a Mac, so the job that publishes
+runs on one. It takes a Mac only for a build that is published, after
+the build's own. The release tool is built there from main's code with
+no cache, since main's signed build of it is a program for Linux.
+
+Builds made on the Mac with `make` stay signed ad hoc, without the
+hardened runtime, like Xcode's Sign to Run Locally. Under it an app
+signed ad hoc may load no library but Apple's, and the speech libraries
+are not Apple's.
+
+Until `build/team-id.txt` names the team, builds go out signed ad hoc,
+as they are made, and the run says so. Once it does, a build is
+published only when it is signed with that team's Developer ID, and a
+missing secret fails the run on main and on the commit, never quietly.
+To set it up once:
+
+1. In [Certificates](https://developer.apple.com/account/resources/certificates/add),
+   choose **Developer ID Application**. Apple asks for a certificate
+   request: on the Mac, in **Keychain Access**, choose **Keychain Access,
+   Certificate Assistant, Request a Certificate From a Certificate
+   Authority**, enter the email address, choose **Saved to disk**, and
+   upload that file. Download the certificate and double-click it. It
+   shows in Keychain Access under **My Certificates**, with its private
+   key under it. Make one for this app alone, so it can be revoked
+   without the certificates of other apps. Apple allows five.
+2. In Keychain Access, right-click the certificate, **Export**, and save
+   it as `developer-id.p12` on the Desktop with a new password. The file
+   holds the private key too, which Apple cannot give out again, so it is
+   the backup. Put it and its password in the password manager.
+3. In Terminal, `base64 -i ~/Desktop/developer-id.p12 | pbcopy` puts the
+   certificate on the clipboard as text.
+4. On GitHub, in the environment `updates`, add two **environment
+   secrets**: `FRAMEFAIRY_DEVELOPER_ID` with the clipboard, and
+   `FRAMEFAIRY_DEVELOPER_ID_PASSWORD` with the password. Then delete
+   `developer-id.p12` from the Desktop.
+5. The team ID, ten letters and digits under **Membership details** in
+   the [account](https://developer.apple.com/account), goes in
+   `build/team-id.txt`. It is not a secret: every app the team signs
+   carries it.
+
+From then on `framefairy-release sign -team` refuses a build in which
+any program is signed ad hoc, without the hardened runtime, or by
+another team, or whose app is signed as anything but
+`com.framefairy.app`, or any other program or library as anything but
+its part of it.
+
+Every build of a pull request is signed with the Developer ID too, so
+the user can try it. Its zip comes from the pull request's branch and is
+unpacked on the Mac that holds the certificate, so `harden` trusts
+nothing in it:
+
+- It runs after `check`, unpacks the zip itself, and only files and
+  folders inside `Frame Fairy.app`. A link, or a name that leads out of
+  the .app, stops it before anything is written.
+- It runs only `security`, `codesign` and `ditto`, from `/usr/bin`,
+  never a program found through `PATH`.
+- It reads both secrets once and takes them out of its environment, so
+  no program it starts sees them. Every step that holds a key runs the
+  release tool built before them, so `go` and its compiler never see
+  either key. The key goes into a keychain made for the run, marked so it
+  cannot be exported again, and the keychain is deleted at the end, also
+  when signing fails.
+- It takes Apple's certificate between the Developer ID and Apple's root
+  only when it is signed by the Apple Root CA that macOS itself ships.
+- It signs the app as `com.framefairy.app`, whatever its `Info.plist`
+  says, and each program and library in it as a part of it, by its file
+  name, like `com.framefairy.app.llama-server`. macOS gives code of the
+  team the microphone and the keychain items of the app it is signed as,
+  so no build, and nothing in one, can be signed as another app of the
+  same team.
+- It refuses a build with a program anywhere but `Contents/MacOS` and
+  the libraries of `Contents/Frameworks`, which it signs itself.
+- Once signed, codesign checks every program and the app against
+  Apple's certificate of the team, not only the team the signature
+  names, which is a string.
+
+The job `outside` of `mac-nightly.yml` signs a bundle the same way, with
+a certificate the test makes, and has the release tool read what
+codesign wrote, see `hardened_real_darwin_test.go`.
+
+If a build signed this way does not open, the app cannot update away
+from it. `make install` in a checkout puts a build made on the Mac back
+in `/Applications`, and Updates works again from there. Removing
+`build/team-id.txt` on main sends builds out signed ad hoc again.
+
+The certificate runs out on the date Keychain Access shows. A new one is
+made with steps 1 to 4. Every signature carries Apple's time stamp, so a
+build signed before then stays good after.
+
+The builds are not notarised. Notarising is what lets a downloaded app
+open past Gatekeeper on any Mac. The app downloads its updates itself,
+and macOS asks Gatekeeper only of files a browser or mail marks as
+downloaded, so nothing here needs it. The first download for customers
+does, see [PACKAGING.md](PACKAGING.md).
 
 ### How the app knows the pull requests
 

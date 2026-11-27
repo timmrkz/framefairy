@@ -481,7 +481,9 @@ changes code only a Mac builds and every night on main. The account runs
 five Mac jobs at once for every branch together, so a push takes two at
 most, `macos` in `ci.yml` when the Mac's code changed and `build` in
 `builds.yml` when it changed what the app is built from, see
-[On a Mac](#on-a-mac). The
+[On a Mac](#on-a-mac). A build that is published then takes one more,
+`publish` in `publish.yml`, which signs it with the Developer ID, see
+[UPDATES.md](UPDATES.md#the-developer-id). The
 two fuzz targets about paths are fuzzed on a Mac at night, because a
 case-insensitive filesystem is a different thing to explore. The others
 read text and numbers, which Go reads the same on both. The known inputs
