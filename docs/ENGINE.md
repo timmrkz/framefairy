@@ -721,7 +721,8 @@ was found later:
   `End`, the frame after the video's last, the same frame the video
   preview's grid ends on. So the
   frame that holds an edge, which is what the video preview shows, is the
-  frame the render cuts on, held to `engine/testdata/frame.cases.json`.
+  frame the render cuts on, held to the table of edges and stretches in
+  `engine/frameof_test.go`.
   The window looks a moment up where `framewire.Grid.From` says each
   frame holds from, so it counts no frame by a rule of its own. The read starts half a frame before the first
   frame, where no rounding to the microsecond can move it past a frame,

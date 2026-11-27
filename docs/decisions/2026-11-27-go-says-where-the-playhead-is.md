@@ -184,8 +184,8 @@ In one pull request, a commit each.
    field look a moment up there. A thumbnail is put on the middle of its frame by the
    engine, `SetThumbnail`. `frameMiddle`, `frameBegins`, `heldMicros`,
    `FRAME_HAIR`, `rankAt`, `rankOf` and `playMoves` go, and
-   `frame.cases.json` moves to the engine's own testdata, read by Go
-   alone.
+   `frame.cases.json` goes. Its cases are a table in the engine's own
+   test, `engine/frameof_test.go`, since no second side reads them.
 
 What changed from the plan as first written, and why:
 

@@ -1,94 +1,99 @@
 package engine
 
 import (
-	"encoding/json"
 	"math"
-	"os"
 	"strconv"
-	"strings"
 	"testing"
 )
 
-// Where an edge is kept and which frame the render cuts it on, against
-// the table in testdata/frame.cases.json. See PieceOnFrames. The video
-// preview counts no frame of its own: it looks a moment up where the
-// engine says each frame holds from, see framewire.Grid.From.
-type frameCases struct {
-	// An edge at a moment, as a search or a hand puts it, the moment the
-	// plan keeps it at, on its frame's start to the millisecond, and that
-	// frame.
-	Edges []struct {
-		Rate  string  `json:"rate"`
-		Start float64 `json:"start"`
-		At    float64 `json:"at"`
-		Saved float64 `json:"saved"`
-		Frame int64   `json:"frame"`
-	} `json:"edges"`
-	// Every frame start of a stretch of frames, saved to the millisecond
-	// the way an edge is, Below of them a little before their frame.
-	Stretches []struct {
-		Rate   string  `json:"rate"`
-		Start  float64 `json:"start"`
-		Frames int64   `json:"frames"`
-		Below  int     `json:"below"`
-	} `json:"stretches"`
+// Where an edge is kept and which frame the render cuts it on. See
+// PieceOnFrames. The video preview counts no frame of its own: it looks a
+// moment up where the engine says each frame holds from, see
+// framewire.Grid.From.
+//
+// An edge at a moment at a rate of num/den frames a second, with the
+// picture starting at start, as a search or a hand puts it, the moment
+// the plan keeps it at, on its frame's start to the millisecond, and that
+// frame.
+var frameEdges = []struct {
+	num, den         int64
+	start, at, saved float64
+	frame            int64
+}{
+	{30000, 1001, 0, 1.001, 1.001, 30},
+	{30000, 1001, 0, 0.033, 0.033, 1},
+	{30000, 1001, 0, 0.133, 0.133, 4},
+	{30000, 1001, 0, 0.34, 0.334, 10},
+	{30000, 1001, 0, 0.355, 0.367, 11},
+	{30000, 1001, 0, 1001, 1001, 30000},
+	{30000, 1001, 0.25, 0.483, 0.484, 7},
+	{30000, 1001, 0.25, 0.25, 0.25, 0},
+	{30000, 1001, 0.00095, 0.051, 0.068, 2},
+	{24000, 1001, 0, 0.083, 0.083, 2},
+	{24000, 1001, 0, 0.1, 0.083, 2},
+	{24000, 1001, 0, 0.11, 0.125, 3},
+	{25, 1, 0, 0.04, 0.04, 1},
+	{25, 1, 0, 4.03, 4.04, 101},
+	{25, 1, 0, 7.019, 7, 175},
+	{25, 1, 0, 0.02, 0.04, 1},
+	{25, 1, 0, 20.02, 20.04, 501},
+	{25, 1, 0.25, 0.989, 0.97, 18},
+	{25, 1, 0.1, 0.08, 0.1, 0},
+	{25, 1, 0.25, 0.23, 0.25, 0},
+	{25, 1, 0.03, 0, 0.03, 0},
+	{30, 1, 0, 0.033, 0.033, 1},
+	{30, 1, 0, 0.049, 0.033, 1},
+	{30, 1, 0, 0.051, 0.067, 2},
+	{30, 1, 0, 0.05, 0.067, 2},
+	{50, 1, 0.1, 0.09, 0.1, 0},
+	{60, 1, 0, 0.033, 0.033, 2},
+	{60, 1, 0, 0.017, 0.017, 1},
+	{60, 1, 0, 0.025, 0.033, 2},
+	{5, 1, 0, 0.2, 0.2, 1},
+	{5, 1, 0, 0.29, 0.2, 1},
+	{5, 1, 0, 0.1, 0.2, 1},
+	{5, 1, 0, 0.3, 0.4, 2},
+	{5, 1, 0, 0.31, 0.4, 2},
 }
 
-// On the real disk: what is read is the repository's testdata.
-func readFrameCases(t *testing.T) frameCases {
-	t.Helper()
-	data, err := os.ReadFile("testdata/frame.cases.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var c frameCases
-	if err := json.Unmarshal(data, &c); err != nil {
-		t.Fatal(err)
-	}
-	if len(c.Edges) == 0 || len(c.Stretches) == 0 {
-		t.Fatal("no cases")
-	}
-	return c
-}
-
-// caseRate is a rate of the table as two whole numbers, 30000 and 1001
-// for "30000/1001".
-func caseRate(t *testing.T, rate string) (int64, int64) {
-	t.Helper()
-	n, d, ok := strings.Cut(rate, "/")
-	if !ok {
-		d = "1"
-	}
-	num, err1 := strconv.ParseInt(n, 10, 64)
-	den, err2 := strconv.ParseInt(d, 10, 64)
-	if err1 != nil || err2 != nil || num <= 0 || den <= 0 {
-		t.Fatalf("%q is no rate", rate)
-	}
-	return num, den
+// Every frame start of a stretch of frames, saved to the millisecond the
+// way an edge is, below of them a little before their frame.
+var frameStretches = []struct {
+	num, den int64
+	start    float64
+	frames   int64
+	below    int
+}{
+	{30000, 1001, 0, 3000, 1400},
+	{30000, 1001, 0.25, 3000, 1400},
+	{24000, 1001, 0, 3000, 1375},
+	{25, 1, 0, 3000, 0},
+	{30, 1, 0, 3000, 1000},
+	{60, 1, 0, 3000, 1000},
+	{5, 1, 0, 3000, 0},
 }
 
 func TestEveryEdgeIsKeptOnTheStartOfItsFrame(t *testing.T) {
-	c := readFrameCases(t)
-	for _, e := range c.Edges {
-		num, den := caseRate(t, e.Rate)
-		s := SourceInfo{FPSNum: int(num), FPSDen: int(den), VideoStart: e.Start}
-		if got, _ := s.PieceOnFrames(e.At, e.At+1); got != e.Saved {
-			t.Errorf("at %s fps from %.5f, an edge at %.3f is kept at %.3f, want %.3f", e.Rate, e.Start, e.At, got, e.Saved)
+	for _, e := range frameEdges {
+		num, den := e.num, e.den
+		s := SourceInfo{FPSNum: int(num), FPSDen: int(den), VideoStart: e.start}
+		if got, _ := s.PieceOnFrames(e.at, e.at+1); got != e.saved {
+			t.Errorf("at %s fps from %.5f, an edge at %.3f is kept at %.3f, want %.3f", fpsText(num, den), e.start, e.at, got, e.saved)
 		}
 		// Kept, it stays where it is, and the render cuts it on its frame.
-		if got, _ := s.PieceOnFrames(e.Saved, e.Saved+1); got != e.Saved {
-			t.Errorf("at %s fps from %.5f, an edge kept at %.3f moved to %.3f", e.Rate, e.Start, e.Saved, got)
+		if got, _ := s.PieceOnFrames(e.saved, e.saved+1); got != e.saved {
+			t.Errorf("at %s fps from %.5f, an edge kept at %.3f moved to %.3f", fpsText(num, den), e.start, e.saved, got)
 		}
-		if got, _ := s.pieceFrames(e.Saved, e.Saved+1); got != e.Frame {
-			t.Errorf("at %s fps from %.5f, an edge kept at %.3f is cut on frame %d, want %d", e.Rate, e.Start, e.Saved, got, e.Frame)
+		if got, _ := s.pieceFrames(e.saved, e.saved+1); got != e.frame {
+			t.Errorf("at %s fps from %.5f, an edge kept at %.3f is cut on frame %d, want %d", fpsText(num, den), e.start, e.saved, got, e.frame)
 		}
 	}
-	for _, st := range c.Stretches {
-		num, den := caseRate(t, st.Rate)
-		s := SourceInfo{FPSNum: int(num), FPSDen: int(den), VideoStart: st.Start}
-		startMs := int64(math.Round(st.Start * 1000))
+	for _, st := range frameStretches {
+		num, den := st.num, st.den
+		s := SourceInfo{FPSNum: int(num), FPSDen: int(den), VideoStart: st.start}
+		startMs := int64(math.Round(st.start * 1000))
 		below := 0
-		for k := range st.Frames {
+		for k := range st.frames {
 			// Frame k starts k·den/num seconds after the picture does, and
 			// kept to the millisecond, rounded half up, it is this.
 			ms := startMs + (2*k*den*1000+num)/(2*num)
@@ -97,10 +102,10 @@ func TestEveryEdgeIsKeptOnTheStartOfItsFrame(t *testing.T) {
 			}
 			at := float64(ms) / 1000
 			if got, _ := s.PieceOnFrames(at, at+1); got != at {
-				t.Errorf("at %s fps, frame %d kept at %.3f moved to %.3f", st.Rate, k, at, got)
+				t.Errorf("at %s fps, frame %d kept at %.3f moved to %.3f", fpsText(num, den), k, at, got)
 			}
 			if got, _ := s.pieceFrames(at, at+1); got != k {
-				t.Errorf("at %s fps, frame %d kept at %.3f is cut on frame %d", st.Rate, k, at, got)
+				t.Errorf("at %s fps, frame %d kept at %.3f is cut on frame %d", fpsText(num, den), k, at, got)
 			}
 			// A moment a hair before it, a pause a millisecond before the
 			// frame, is in it, the frame the video preview draws there,
@@ -113,20 +118,28 @@ func TestEveryEdgeIsKeptOnTheStartOfItsFrame(t *testing.T) {
 					want = k - 1
 				}
 				if got := s.frameHolding(float64(ms-1) / 1000); got != want {
-					t.Errorf("at %s fps, %.3f, a hair before frame %d kept at %.3f, is frame %d, want %d", st.Rate, float64(ms-1)/1000, k, at, got, want)
+					t.Errorf("at %s fps, %.3f, a hair before frame %d kept at %.3f, is frame %d, want %d", fpsText(num, den), float64(ms-1)/1000, k, at, got, want)
 				}
 			}
 			// The render cuts a piece starting there on that frame, to the
 			// microsecond.
 			clip := s.OnFrames(Clip{Segments: []Segment{{Start: at, End: at + 1}}})
-			if want := st.Start + float64(k)/(float64(num)/float64(den)); math.Abs(clip.Segments[0].Start-want) > 1e-9 {
+			if want := st.start + float64(k)/(float64(num)/float64(den)); math.Abs(clip.Segments[0].Start-want) > 1e-9 {
 				t.Errorf("at %s fps, a piece from %.3f starts at %.6f, not on frame %d at %.6f",
-					st.Rate, at, clip.Segments[0].Start, k, want)
+					fpsText(num, den), at, clip.Segments[0].Start, k, want)
 			}
 		}
-		if below != st.Below {
+		if below != st.below {
 			t.Errorf("at %s fps, %d of %d frames kept to the millisecond come before their start, the table says %d",
-				st.Rate, below, st.Frames, st.Below)
+				fpsText(num, den), below, st.frames, st.below)
 		}
 	}
+}
+
+// fpsText is a rate as people write it, 30000/1001 or 25.
+func fpsText(num, den int64) string {
+	if den == 1 {
+		return strconv.FormatInt(num, 10)
+	}
+	return strconv.FormatInt(num, 10) + "/" + strconv.FormatInt(den, 10)
 }
