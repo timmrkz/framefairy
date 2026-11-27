@@ -1,6 +1,9 @@
 package framewire
 
 import (
+	"bytes"
+	"encoding/binary"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -39,6 +42,35 @@ func TestAGridShowsEachMomentTheFrameThatHoldsIt(t *testing.T) {
 	}
 	if got := ntsc.Holding(100); got != 99 {
 		t.Errorf("the end of the file is held by %d", got)
+	}
+}
+
+// What a frame holds from is where Holding turns to it, so a moment
+// looked up in the froms is held by the frame Holding counts, for every
+// moment kept to the millisecond, at the rates video has and on grids
+// that start after the file does.
+func TestAMomentLookedUpInTheFromsIsTheFrameThatHoldsIt(t *testing.T) {
+	for _, g := range []Grid{
+		{Start: 0.5, Num: 30000, Den: 1001, Count: 1200},
+		{Start: 0, Num: 25, Den: 1, Count: 1000},
+		{Start: 0.0417, Num: 24000, Den: 1001, Count: 960},
+		{Start: 0.023, Num: 60, Den: 1, Count: 2400},
+	} {
+		var froms bytes.Buffer
+		if err := WriteFroms(&froms, g); err != nil {
+			t.Fatal(err)
+		}
+		from := make([]float64, g.Count)
+		if err := binary.Read(&froms, binary.LittleEndian, from); err != nil {
+			t.Fatal(err)
+		}
+		for ms := -50; ms <= 40_000; ms++ {
+			at := float64(ms) / 1000
+			looked := sort.Search(len(from), func(r int) bool { return from[r] > at }) - 1
+			if got := g.Holding(at); looked != got {
+				t.Fatalf("grid %+v: %v s looked up is frame %d, held by %d", g, at, looked, got)
+			}
+		}
 	}
 }
 

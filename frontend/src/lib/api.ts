@@ -321,6 +321,9 @@ export interface Segment {
   // play straight on from each other, with no cut between them, have the
   // same, see engine.PieceView.
   part: number;
+  // Where the playhead stands for the piece's opening edge and for its
+  // closing edge, as the engine puts it, see SourceInfo.EdgePlayheads.
+  up?: [number, number];
 }
 
 // A crop placed by hand on one frame: the moment the frame starts, the

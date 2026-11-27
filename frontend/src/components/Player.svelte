@@ -37,7 +37,7 @@
   import { onMount, untrack, type Snippet } from "svelte";
   import { said } from "../lib/said";
   import { type Piece } from "../lib/flow";
-  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playMoves, type About, type Place, type Playhead } from "../lib/playhead";
+  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Program, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
   import { CaptionLayers, keyOf as dressKey, sameDress, type CaptionAsk, type FrameDress, type Layer, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
@@ -369,7 +369,7 @@
 
   // What the queue says: where the playhead is and whether it plays. While
   // it plays the playhead is the sound being heard, moved once a frame of
-  // the video, see playMoves in lib/playhead.ts. A play of the clip that
+  // the video comes on screen. A play of the clip that
   // reaches its end leaves the playhead on the clip, at its end.
   function heard(s: Shown) {
     trouble = s.trouble;
@@ -377,6 +377,7 @@
     // of the workspace, see lib/sounding.ts. Not the time, which moves once
     // a frame of the video, so nothing else is worked out again then.
     if (!s.passing) sound?.set(s.playing ? inEpisode(s.at, source.duration) : NaN);
+    const newFrame = s.frame !== frameStart;
     frameStart = s.frame;
     if (s.passing) {
       if (s.drew) pictured = true;
@@ -400,8 +401,13 @@
       return;
     }
     if (s.playing) {
-      const at = inEpisode(s.at, source.duration);
-      if (playMoves(time, at, oneFrame, source.videoStart ?? 0)) time = at;
+      // Everything that follows the playhead is drawn by its frame, the
+      // mark on the clip timeline, the time field and the captions, so a
+      // move inside the frame on screen changes nothing there. Moved on
+      // every refresh, the whole workspace worked itself out again 120
+      // times a second on a screen of 120 Hz for a video of 25 frames a
+      // second, and the page missed refreshes doing it, issue #446.
+      if (newFrame) time = inEpisode(s.at, source.duration);
       return;
     }
     // Paused: where the queue stopped, or where it was sent, which is

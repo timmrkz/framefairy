@@ -156,6 +156,7 @@ func (s *FrameFairy) framingOf(path string, info engine.SourceInfo, segments []e
 	for i, seg := range segments {
 		f.Segments[i] = seg
 		f.Segments[i].Marks = info.MarksOnFrames(seg.Marks)
+		f.Segments[i].Up = info.EdgePlayheads(seg.Start, seg.End)
 		if info.Width == 0 {
 			f.CropLefts = append(f.CropLefts, keptCrop(seg.CropX))
 			continue

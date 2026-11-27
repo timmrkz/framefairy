@@ -8,8 +8,6 @@
 // whatever its container, and a file whose frames come at uneven times
 // shows the frames its short will have.
 
-import { heldMicros } from "../flow";
-
 // The frames of the short, as the engine names them, see
 // engine.SourceInfo.Grid: count of them, one every den/num seconds from
 // start, which is in seconds after the start of the file. origin is where
@@ -115,38 +113,4 @@ export function movieOf(s: Source): Movie {
 // Seconds from ticks.
 export function seconds(s: Samples, ticks: number): number {
   return ticks / s.timescale;
-}
-
-// The frame whose own start is nearest a moment: which frame the Go side
-// handed over, by the moment it says the frame starts at.
-export function rankOf(s: Samples, at: number): number {
-  const r = rankAt(s, at);
-  if (r + 1 >= s.count) return r;
-  const here = ticks(s, r) / s.timescale;
-  const next = ticks(s, r + 1) / s.timescale;
-  return Math.abs(next - at) < Math.abs(here - at) ? r + 1 : r;
-}
-
-// The rank of the frame that holds a moment: the last one shown at or
-// before it, or one that begins up to FRAME_HAIR after it, counted to the
-// microsecond the way frameAt in lib/flow.ts and Grid.Holding in
-// internal/framewire count it: the moment's microseconds after the first
-// sample's start, in whole samples. A tick of a grid at 25 frames a second
-// is a whole frame, so a moment rounded down to whole ticks before it was
-// compared lost up to a frame. Where the grid starts a few milliseconds
-// into the file, as it does for a picture that starts after its sound, the
-// frame shown was then the one before the playhead's for most of each
-// frame. The whole seconds and the rest are worked out apart, so no
-// product comes near 2^53 and the count is exact. Before the first frame
-// it is the first.
-export function rankAt(s: Samples, at: number): number {
-  if (s.count <= 0) return 0;
-  const us = heldMicros(at) - Math.round((s.start / s.timescale) * 1_000_000);
-  if (us <= 0) return 0;
-  const seconds = Math.floor(us / 1_000_000);
-  const whole = seconds * s.timescale;
-  const rest = us - seconds * 1_000_000;
-  const rank =
-    Math.floor(whole / s.step) + Math.floor(((whole % s.step) * 1_000_000 + rest * s.timescale) / (s.step * 1_000_000));
-  return Math.min(rank, s.count - 1);
 }

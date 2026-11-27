@@ -45,13 +45,12 @@
   import {
     type Parts,
     Newest,
-    frameAt,
-    frameMiddle,
     live as going,
     unfinished,
   } from "../lib/flow";
   import { faceLook, families, installFonts, nearestFace, styleNames } from "../lib/fonts";
   import { playheadClock, type About } from "../lib/playhead";
+  import { frameTable, type FrameTable } from "../lib/frames/table";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
   import { suggestedCount } from "../lib/count";
@@ -1493,10 +1492,24 @@
     }
   }
 
-  // One frame of the episode, which is what a thumbnail stands on.
-  const frameLen = $derived(source && source.fps > 0 ? 1 / source.fps : 1 / 30);
-  // Where the picture's frames begin, see frameAt in lib/flow.ts.
-  const frameStart = $derived(source?.videoStart ?? 0);
+  // Which frame of the video holds a moment, as the engine says, see
+  // FrameTable. Null until it is read, and a moment is drawn where it is
+  // meanwhile.
+  let frames = $state.raw<FrameTable | null>(null);
+  $effect(() => {
+    const grid = source?.grid;
+    if (!grid || !(grid.count > 0)) return;
+    let gone = false;
+    frameTable(path, grid).then(
+      (t) => {
+        if (!gone) frames = t;
+      },
+      () => {},
+    );
+    return () => {
+      gone = true;
+    };
+  });
   // Where the frame on the video preview begins, as its queue drew it, NaN
   // before the first. A mark, a thumbnail and the crop dragged belong to
   // the frame on screen, which is the playhead's own frame but at the end
@@ -1513,8 +1526,10 @@
   // where it was put.
   const thumbHere = $derived.by(() => {
     if (!current) return null;
-    const f = frameAt(shownMoment, frameLen, frameStart);
-    return current.thumbnails?.find((t) => frameAt(t, frameLen, frameStart) === f) ?? null;
+    const table = frames;
+    if (!table) return null;
+    const f = table.holding(shownMoment);
+    return current.thumbnails?.find((t) => table.holding(t) === f) ?? null;
   });
   // Whether the short shows the frame on the video preview, which is where
   // a thumbnail or a keyframe can be. Told by the frame, as the engine
@@ -1605,7 +1620,7 @@
     const left = player?.cropLeftNow();
     if (!inShort || left === null || left === undefined) return;
     // The start of the frame, the moment a mark is kept at.
-    const at = frameStart + frameAt(shownMoment, frameLen, frameStart) * frameLen;
+    const at = frames ? frames.startOf(shownMoment) : shownMoment;
     void setCropMark(current, -1, at, Math.round(left), glide);
   }
 
@@ -1616,9 +1631,8 @@
     if (thumbHere !== null) {
       void setThumbnail(current, thumbHere, -1);
     } else if (inShort) {
-      // The middle of the frame, so the picture and the playhead agree on
-      // which frame it is whichever way either rounds.
-      void setThumbnail(current, -1, frameMiddle(frameAt(shownMoment, frameLen, frameStart), frameLen, frameStart));
+      // The engine puts it on the frame, see SetThumbnail.
+      void setThumbnail(current, -1, shownMoment);
     }
   }
 
@@ -3595,8 +3609,7 @@
         shown={shownMoment}
         locked={renderingCurrent || (!current && !!making)}
         arriving={!current && !!making}
-        frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
-        frameStart={source.videoStart ?? 0}
+        {frames}
         {lit}
         bind:numbers
         bind:drawn
@@ -3801,7 +3814,7 @@
           class:long={duration >= 3600}
           aria-label="Playhead"
           title="Where the playhead is: hours, minutes, seconds and the millisecond its frame starts on"
-          >{playheadClock(time, frameLen, frameStart, duration >= 3600)}</output
+          >{playheadClock(frames ? frames.startOf(time) : time, duration >= 3600)}</output
         >
         {#if numbers.saving}<span class="muted">Saving</span>{/if}
         <span class="grow"></span>

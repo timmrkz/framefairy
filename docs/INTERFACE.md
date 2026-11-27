@@ -488,14 +488,16 @@ next plays the clip.
 one step right of a clip starting inside a frame landed on that frame's
 start, before the clip, and the clip dimmed with its own first frame on
 screen. So `placeOf` takes the frame rate and asks which frame the gesture
-landed in, the one `insideClip` draws the crop in. One rule says which
-frame is meant, `frameAt` in `lib/flow.ts` and `rankAt` in
-`lib/frames/movie.ts`: the frame holding the moment, where up to a
-millisecond before a frame's start counts as that frame, `FRAME_HAIR`, as
-the app keeps moments to the millisecond. The engine keeps every edge on
-the start of the frame the render cuts on, `PieceOnFrames` in
-`engine/render.go`, so for an edge this is the short's frame, and
-`lib/testdata/frame.cases.json` holds both sides to each other. A second
+landed in, the one `insideClip` draws the crop in. Only the engine says
+which frame is meant: the frame holding the moment, where up to a
+millisecond before a frame's start counts as that frame, as the app
+keeps moments to the millisecond. The window looks the moment up in where
+the engine says each frame holds from, `FrameTable` in
+`lib/frames/table.ts`, and counts nothing itself. A copy of the count in
+the window, held to Go by a shared case file, once named a frame the
+playhead was not on when the two rounded apart. The engine keeps every
+edge on the start of the frame the render cuts on, `PieceOnFrames` in
+`engine/render.go`, so for an edge this is the short's frame. A second
 rule for edges, the nearest frame, disagreed for about half the edges a
 search left between frames. A trim of the end on frames, leaving the
 playhead a frame before the end, is then at the end.

@@ -37,7 +37,8 @@ import type { Light } from "./light";
 import { screenOf, type Screen } from "./screen";
 import { describeEvenness, Even, type Source } from "./even";
 import { frames as framePool } from "./pool";
-import { rankAt, rankOf, ticks, type AudioTrack, type Movie, type VideoTrack } from "./movie";
+import { ticks, type AudioTrack, type Movie, type VideoTrack } from "./movie";
+import { frameTable, type FrameTable } from "./table";
 import { FADE, heard } from "./heard";
 import { GoPlay, type Chunk, type Piece, type Shot } from "./play";
 
@@ -326,6 +327,8 @@ export class FrameQueue {
   // in the episode, and where on the clock of the play under way it was
   // drawn, -Infinity for one a play did not draw.
   private shown: { frame: Picture; rank: number; begins: number; at: number } | null = null;
+  // Which frame of the video holds a moment, see FrameTable, once read.
+  private table: FrameTable | null = null;
   // The sound card's time at which the clock's sample m0 is played.
   private c0: number | null = null;
   private m0 = 0;
@@ -420,6 +423,9 @@ export class FrameQueue {
     this.video = movie.video ?? null;
     this.sound = movie.audio ?? null;
     if (!this.video) throw new Error("the video has no picture the video preview can show");
+    // Which frame holds a moment, which the engine says, see FrameTable.
+    this.table = await frameTable(this.path, this.video.grid!);
+    if (this.closed) throw new Error("closed");
     // Every file's picture comes from ffmpeg on the Go side, the episode's
     // decoder. The webview decodes nothing, see docs/VIDEO-PREVIEW.md.
     this.app = this.fromApp();
@@ -452,7 +458,7 @@ export class FrameQueue {
   // canvas and no larger than the file's own.
   private fromApp(): AppFrames {
     const v = this.video!;
-    const app = new AppFrames(this.path, v, () => this.previewSize(), (why) =>
+    const app = new AppFrames(this.path, v, this.table!, () => this.previewSize(), (why) =>
       this.fault(`The app could not decode the picture: ${why.replace(/\.$/, "")}.`),
     );
     app.trace = (line) => this.trace(line);
@@ -701,7 +707,7 @@ export class FrameQueue {
     if (!changed && this.state === "starting" && at === this.startFrom) return;
     this.at = at;
     if (this.gripped && this.drag && this.shown && this.video && this.drag.behind.length < 4096) {
-      const behind = Math.abs(this.shown.rank - rankAt(this.video.samples, at));
+      const behind = Math.abs(this.shown.rank - this.table!.holding(at));
       this.drag.behind.push(behind);
       if (behind && this.drag.waitFrom < 0) this.drag.waitFrom = performance.now();
     }
@@ -749,7 +755,7 @@ export class FrameQueue {
     if (held) this.drag = { behind: [], keys: this.stats.keys, letGo: -1, waits: [], waitFrom: -1, ways: this.ways() };
     else if (this.drag) {
       this.drag.letGo = performance.now();
-      if (this.shown && this.video && this.shown.rank === rankAt(this.video.samples, this.at)) this.dragged();
+      if (this.shown && this.video && this.shown.rank === this.table!.holding(this.at)) this.dragged();
     }
     if (!held && !this.closed && (this.state === "paused" || this.state === "cued")) this.settle(this.at);
   }
@@ -793,8 +799,7 @@ export class FrameQueue {
     this.ready.then(
       () => {
         if (gesture !== this.gestures || this.closed || !this.app || this.state === "playing" || this.state === "starting") return;
-        const s = this.video!.samples;
-        this.app.ahead(times.map((at) => rankAt(s, at)));
+        this.app.ahead(times.map((at) => this.table!.holding(at)));
       },
       () => {},
     );
@@ -807,9 +812,8 @@ export class FrameQueue {
     this.cardsGiven = this.ready.then(
       () => {
         if (this.closed || !this.app) return;
-        const s = this.video!.samples;
         this.app.cards(
-          starts.map((at) => rankAt(s, at)),
+          starts.map((at) => this.table!.holding(at)),
           asks,
         );
       },
@@ -1078,7 +1082,7 @@ export class FrameQueue {
     if (this.gripped && this.drag && this.video && this.shown?.rank !== rank) {
       const now = performance.now();
       if (this.drag.waitFrom >= 0 && this.drag.waits.length < 4096) this.drag.waits.push(now - this.drag.waitFrom);
-      this.drag.waitFrom = rank === rankAt(this.video.samples, this.at) ? -1 : now;
+      this.drag.waitFrom = rank === this.table!.holding(this.at) ? -1 : now;
     }
     this.shown = { frame, rank, begins, at };
     if (!passing) {
@@ -1271,12 +1275,11 @@ export class FrameQueue {
   // once the video is read: the frame that holds it, which a cue from the
   // clip's start puts up first, see settle. Null before.
   firstFrameAt(at: number): number | null {
-    return this.video && !this.closed ? this.shownAt(rankAt(this.video.samples, at)) : null;
+    return this.video && !this.closed ? this.shownAt(this.table!.holding(at)) : null;
   }
 
   private shownAt(rank: number): number {
-    const s = this.video!.samples;
-    return ticks(s, rank) / s.timescale;
+    return this.table!.begins(rank);
   }
 
 
@@ -1308,7 +1311,7 @@ export class FrameQueue {
     // The frame the still before waits for is wanted no more.
     for (const w of this.stillAsks) w.gone = true;
     this.stillAsks.clear();
-    const rank = rankAt(this.video!.samples, holds);
+    const rank = this.table!.holding(holds);
     const begins = this.shownAt(rank);
     // The captions of the clip are waited for as the frame is asked
     // for, so the two come in the time the slower takes.
@@ -1600,7 +1603,7 @@ export class FrameQueue {
       this.stats.unseen++;
       this.closeFrame(p.frame);
     }
-    this.put(s.frame, rankOf(this.video!.samples, s.begins), s.begins, s.at);
+    this.put(s.frame, this.table!.holding(s.begins), s.begins, s.at);
     this.due = s;
     this.drawnFor = s.moment;
   }

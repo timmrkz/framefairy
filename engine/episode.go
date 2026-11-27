@@ -618,6 +618,10 @@ type SegmentView struct {
 	Marks []CropMarkView `json:"marks"`
 	// Part is the part of the clip the piece is in, see PieceView.Part.
 	Part int `json:"part"`
+	// Up is where the playhead stands for the piece's opening edge and for
+	// its closing edge, see SourceInfo.EdgePlayheads. Only what knows the
+	// video's frames fills it in.
+	Up [2]float64 `json:"up"`
 }
 
 // WordView is one word. In a caption it also says which word of the
@@ -746,7 +750,7 @@ func SegmentViews(segments []Segment) []SegmentView {
 	out := make([]SegmentView, 0, len(segments))
 	for i, s := range segments {
 		out = append(out, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
-			CropMarkViews(s.Marks), parts[i].Part})
+			CropMarkViews(s.Marks), parts[i].Part, [2]float64{}})
 	}
 	return out
 }

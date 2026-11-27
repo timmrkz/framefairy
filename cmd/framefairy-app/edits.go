@@ -416,8 +416,10 @@ func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
+	// A video whose frames cannot be read keeps the moment as it is given.
+	info, _ := s.probe(ctx, path)
 	if err := s.edit(path, func() error {
-		return engine.SetThumbnail(s.store.files, plan, clipID, from, to)
+		return engine.SetThumbnail(s.store.files, plan, clipID, from, to, info)
 	}); err != nil {
 		return ClipEntry{}, err
 	}

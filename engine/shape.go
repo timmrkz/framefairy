@@ -741,15 +741,23 @@ func toward(was, hand, landed float64) float64 {
 // between frames until then, and the playhead stood up to half a frame
 // from the edge drawn.
 func (g Gesture) edgePlayhead(start, end float64, opens bool) float64 {
-	start, end = g.Frames.PieceOnFrames(start, end)
+	up := g.Frames.EdgePlayheads(start, end)
 	if opens {
-		return start
+		return up[0]
 	}
-	frame := g.frame()
-	if frame <= 0 {
-		frame = 1.0 / 30
+	return up[1]
+}
+
+// EdgePlayheads is where the playhead stands for each edge of a piece, put
+// on frames first, see edgePlayhead: on the frame it opens with, and on
+// its last frame, before the frame it closes on.
+func (s SourceInfo) EdgePlayheads(start, end float64) [2]float64 {
+	start, end = s.PieceOnFrames(start, end)
+	frame := 1.0 / 30
+	if s.FPSNum > 0 && s.FPSDen > 0 {
+		frame = 1 / s.FPS()
 	}
-	return math.Max(end-frame, start)
+	return [2]float64{start, math.Max(end-frame, start)}
 }
 
 // cutOnFrames is where a cut put on frames goes. It is centred where it

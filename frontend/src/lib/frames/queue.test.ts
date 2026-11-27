@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vite
 import { movieOf } from "./movie";
 import { GoPlay, type Taken } from "./play";
 import { FrameQueue, type Shown } from "./queue";
+import { FrameTable } from "./table";
 
 // The queue without a browser: a canvas that draws nothing, no sound card
 // and no decoders, so the queue never opens and every play stays starting. That is
@@ -420,8 +421,9 @@ describe("a frame waiting for its captions", () => {
       "/episode.mp4",
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
-    const inside = q as unknown as { video: unknown; captioned(): Promise<boolean> | null };
+    const inside = q as unknown as { video: unknown; table: FrameTable; captioned(): Promise<boolean> | null };
     inside.video = { width: 2, height: 2, samples: { count: 3, timescale: 25, start: 0, step: 1 } };
+    inside.table = new FrameTable({ origin: 0, start: 0, num: 25, den: 1, count: 3 }, Float64Array.of(-Infinity, 0.0385, 0.0785));
     let came = () => {};
     q.over = { at: () => null, ready: () => new Promise<void>((done) => (came = done)) };
     return { q, captioned: () => inside.captioned()!, came: () => came() };

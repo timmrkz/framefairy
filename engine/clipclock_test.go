@@ -97,3 +97,20 @@ func TestACaptionsPlayheadStandsOnTheFramesItIsUpOn(t *testing.T) {
 		}
 	}
 }
+
+func TestAPiecesEdgesPutThePlayheadOnItsFirstAndLastFrames(t *testing.T) {
+	s := SourceInfo{FPSNum: 25, FPSDen: 1}
+	// A piece from 10 to 14 opens on the frame at 10 and closes after the
+	// frame at 13.96, its last.
+	if got := s.EdgePlayheads(10, 14); math.Abs(got[0]-10) > 1e-9 || math.Abs(got[1]-13.96) > 1e-9 {
+		t.Errorf("the edges of 10 to 14 put the playhead at %v, want 10 and 13.96", got)
+	}
+	// Edges between frames go on frames first.
+	if got := s.EdgePlayheads(10.01, 14.03); math.Abs(got[0]-10) > 1e-9 || math.Abs(got[1]-14) > 1e-9 {
+		t.Errorf("the edges of 10.01 to 14.03 put the playhead at %v, want 10 and 14", got)
+	}
+	// With no rate known, a frame is a thirtieth of a second.
+	if got := (SourceInfo{}).EdgePlayheads(1, 2); got[0] != 1 || math.Abs(got[1]-(2-1.0/30)) > 1e-9 {
+		t.Errorf("with no rate the edges of 1 to 2 put the playhead at %v", got)
+	}
+}

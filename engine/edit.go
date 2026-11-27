@@ -1439,8 +1439,11 @@ func captionStop(clip Clip, t *Transcript, c LaidCaption, edge string, hand floa
 // thumbnail as it is and to where it goes, both in seconds of the episode.
 // A from below nought adds one at to, and a to below nought removes the one
 // at from. A moment has to be inside a piece the clip keeps, because a
-// moment that was cut is not in the short.
-func SetThumbnail(fsys afero.Fs, planPath, clipID string, from, to float64) error {
+// moment that was cut is not in the short. Where the rate of frames is
+// known, to goes on the middle of the frame that holds it, so the picture
+// and the playhead agree on which frame it is whichever way either
+// rounds.
+func SetThumbnail(fsys afero.Fs, planPath, clipID string, from, to float64, frames SourceInfo) error {
 	adding, removing := from < 0, to < 0
 	if adding && removing {
 		return renderErr("a thumbnail has to be somewhere")
@@ -1480,6 +1483,7 @@ func SetThumbnail(fsys afero.Fs, planPath, clipID string, from, to float64) erro
 					pieces = append(pieces, Segment{Start: start, End: end})
 				}
 			}
+			to = frames.frameMiddleHolding(to)
 			if !insidePieces(pieces, to) {
 				return renderErr("%s is not in the clip", HMS(to))
 			}

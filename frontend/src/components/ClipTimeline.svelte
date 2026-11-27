@@ -49,13 +49,8 @@
     type Framing,
     type GlideSpan,
   } from "../lib/api";
-  import {
-    frameAt,
-    frameMiddle,
-    frameBegins,
-    cutsOf,
-    type CaptionDraft,
-  } from "../lib/flow";
+  import { cutsOf, type CaptionDraft } from "../lib/flow";
+  import type { FrameTable } from "../lib/frames/table";
   import { Presses } from "../lib/twice";
   import { scrub as scrubPlayhead } from "../lib/scrub";
   import { spliced } from "../lib/splice";
@@ -78,8 +73,7 @@
     time,
     shown = NaN,
     locked = false,
-    frame = 1 / 30,
-    frameStart = 0,
+    frames = null,
     lit = [],
     onseek,
     onahead,
@@ -134,11 +128,9 @@
     // while the playhead stands past it. NaN goes by the playhead.
     shown?: number;
     locked?: boolean;
-    // One frame of the episode, which is what an arrow key is worth.
-    frame?: number;
-    // Where the picture's first frame begins in the file, which is where
-    // its frames are counted from, see frameAt in lib/flow.ts.
-    frameStart?: number;
+    // Which frame of the video holds a moment, as the engine says, see
+    // FrameTable. Null until it is read.
+    frames?: FrameTable | null;
     // The words the caption lights up, on the episode's clock. Shift and
     // an arrow key step through these, because these are the words anyone
     // can see. They are not the words of the transcript: a correction that
@@ -363,8 +355,10 @@
   // frame apart on the frame they share, and a mark lit by the playhead
   // stood beside it. Plan row 2.234.
   function onFrame(t: number): number {
-    return frame > 0 ? frameBegins(frameAt(t, frame, frameStart), frame, frameStart) : t;
+    return frames ? frames.startOf(t) : t;
   }
+  // One frame of the video, which is what an arrow key is worth.
+  const frame = $derived(frames?.length ?? 1 / 30);
 
   // Dragging the playhead, the same way as on the range picker, see
   // lib/scrub.ts.
@@ -751,15 +745,12 @@
     };
   }
 
-  // The frame at an edge, where the playhead stands for it: the frame it
-  // opens, or the last frame before it closes, the same as edgePlayhead
-  // in engine/shape.go answers for the edge once it moves. A millisecond
-  // early is on the frame, see frameAt.
-  function edgeFrame(t: number, opens: boolean): number {
-    const f = frame > 0 ? frame : 1 / 30;
-    const k = frameAt(t, f, frameStart);
-    return frameBegins(opens ? k : Math.max(k - 1, 0), f, frameStart);
-  }
+  // Where the playhead stands for each edge of a piece drawn, as the
+  // engine puts it, see SourceInfo.EdgePlayheads: the answer to the hand
+  // while an edge or a cut is held, or the clip as it is saved.
+  const drawnUps = $derived(
+    ((shapedShown && shaped?.framing ? shaped.framing.segments : segments) ?? []).map((p) => p.up ?? [p.start, p.end]),
+  );
 
   // An edge of the clip is dragged to trim it, and a double-click puts it
   // back where the clip was found.
@@ -770,7 +761,7 @@
       // Where the drag before it left it, saved or on its way.
       const was = opens ? start : end;
       return {
-        at: edgeFrame(was, opens),
+        at: opens ? (drawnUps[0]?.[0] ?? was) : (drawnUps[drawnUps.length - 1]?.[1] ?? was),
         make: (delta, shift) => ({ kind: "trim", edge, index: 0, from: was + delta, to: 0, toWords: shift }),
       };
     });
@@ -786,7 +777,7 @@
       if (!drawn) return null;
       const { from, to } = drawn;
       return {
-        at: edgeFrame(side === "from" ? from : to, side === "to"),
+        at: side === "from" ? (drawnUps[index]?.[1] ?? from) : (drawnUps[index + 1]?.[0] ?? to),
         make: (delta, shift) => {
           const t = (side === "from" ? from : to) + delta;
           return {
@@ -1854,31 +1845,27 @@
   // The frame on the video preview, which is how a mark knows it is the
   // one on screen. A state, never a distance. While an edge is held, the
   // frame the answer puts the playhead on, see head.
-  const playFrame = $derived(
-    frameAt(handHead ?? (Number.isFinite(shown) ? shown : time), frame, frameStart),
-  );
+  const playFrame = $derived(frames ? frames.holding(handHead ?? (Number.isFinite(shown) ? shown : time)) : -1);
 
   // The frame a moment falls in, inside a piece the clip keeps: a moment
   // that was cut out is not in the short, so a mark held over a cut stays
-  // at the edge of the piece nearest the hand. Where on the frame is where
-  // the engine keeps the mark, the middle for a thumbnail and the start
-  // for a keyframe, so a mark held is drawn where it stays once let go,
-  // and never past the clip's edge.
-  function markFrame(kind: MarkKind, t: number): number {
-    const mid = (u: number) => frameMiddle(frameAt(u, frame, frameStart), frame, frameStart);
-    let best = mid(t);
+  // on the frame of the piece nearest the hand, its first or its last, as
+  // the engine puts the playhead for its edges. A mark is drawn on the
+  // start of its frame, where it stays once let go, and never past the
+  // clip's edge. The engine keeps it on that frame, see SetThumbnail and
+  // SetCropMark.
+  function markFrame(t: number): number {
+    let best = t;
     let gap = Infinity;
     for (const p of segments) {
-      const least = mid(p.start + frame / 2);
-      const most = mid(p.end - frame / 2);
-      if (most < least) continue;
-      const at = Math.min(Math.max(mid(t), least), most);
+      const [least, most] = p.up ?? [p.start, p.end];
+      const at = Math.min(Math.max(t, least), most);
       if (Math.abs(at - t) < gap) {
         gap = Math.abs(at - t);
         best = at;
       }
     }
-    return kind === "crop" ? frameBegins(frameAt(best, frame, frameStart), frame, frameStart) : best;
+    return onFrame(best);
   }
 
   // A thumbnail or a keyframe: the playhead goes onto it, the mark is
@@ -1894,7 +1881,7 @@
       },
       drag(delta) {
         if (locked || !on || !markChange(kind)) return;
-        const to = markFrame(kind, at + delta);
+        const to = markFrame(at + delta);
         markDrag = { kind, from: at, to };
         seekSoon(to);
       },
@@ -1907,7 +1894,7 @@
         cancelAnimationFrame(queued);
         queued = 0;
         onseek(d.to);
-        if (frameAt(d.to, frame, frameStart) === frameAt(d.from, frame, frameStart)) {
+        if (onFrame(d.to) === onFrame(d.from)) {
           markDrag = null;
           return;
         }
@@ -2348,7 +2335,7 @@
         {#each thumbMarks as m, i (m.at)}
           <div
             class="mark thumb"
-            class:here={frameAt(m.shown, frame, frameStart) === playFrame}
+            class:here={!!frames && frames.holding(m.shown) === playFrame}
             class:active={markDrag?.kind === "thumbnail" && markDrag.from === m.at}
             style="left: round({x(onFrame(m.shown))}%, 1px)"
             role="slider"
@@ -2371,7 +2358,7 @@
         {#each cropDots as m, i (m.at)}
           <div
             class="mark cropdot"
-            class:here={frameAt(m.shown, frame, frameStart) === playFrame}
+            class:here={!!frames && frames.holding(m.shown) === playFrame}
             class:active={markDrag?.kind === "crop" && markDrag.from === m.at}
             class:alone={m.alone}
             style="left: round({x(onFrame(m.shown))}%, 1px)"

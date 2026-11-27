@@ -57,6 +57,10 @@ import (
 //	/frames/play/take?id=<pictures>&framing=<framing>&heard=<seconds>[&loop=1]
 //	                                 the clip changed while it plays, see
 //	                                 servePlayTake
+//	/frames/froms?path=<episode>&grid=<grid>
+//	                                 the moment each frame of the grid
+//	                                 holds from, which the window looks a
+//	                                 moment up in, see serveFroms
 //	/frames/read?id=<id>&n=<frames>  frames, see writeFrames
 //	/frames/close?id=<id>
 //	/frames/levels?path=<episode>  the loudness, see serveLoudness
@@ -197,6 +201,8 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 		writeFrames(w, r, stream, min(max(n, 1), 16))
 	case "/frames/dress":
 		s.serveDress(w, r)
+	case "/frames/froms":
+		serveFroms(st, w, r)
 	case "/frames/captions/words":
 		s.serveWordFrames(w, r)
 	case "/frames/levels":
@@ -289,6 +295,25 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request, 
 		w.Header().Set("X-Frames-Near", "1")
 	}
 	writeSeen(r.Context(), w, dec, []engine.Seen{seen}, d)
+}
+
+// serveFroms answers with the first moment each frame of the grid holds,
+// see framewire.Grid.From, so the window finds the frame that holds a
+// moment by looking it up and counts no frame by a rule of its own.
+func serveFroms(st *store, w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if !episodeFile(st, q.Get("path")) {
+		http.NotFound(w, r)
+		return
+	}
+	grid, ok := framewire.ReadGrid(q.Get("grid"))
+	if !ok {
+		http.Error(w, "frames need the grid they count on", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", strconv.Itoa(8*grid.Count))
+	_ = framewire.WriteFroms(w, grid)
 }
 
 // give hands the pictures of frames a schedule sent back to it, once

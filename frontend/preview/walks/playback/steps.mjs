@@ -229,8 +229,7 @@ export const steps = {
           if (!holds) return false;
           // The rank of the frame on screen, and whether it was one
           // handed over from the frames kept.
-          let rank = 0;
-          while (rank < frames.track.samples.count - 1 && frames.ptsOf(rank + 1) <= shown + 1e-6) rank++;
+          const rank = frames.frames.holding(shown);
           done({ at, fromKept: frames.stats.keptRanks.includes(rank) });
           return true;
         };

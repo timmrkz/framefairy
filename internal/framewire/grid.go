@@ -1,7 +1,9 @@
 package framewire
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"strings"
@@ -60,6 +62,39 @@ func (g Grid) At(r int) float64 {
 func (g Grid) Holding(t float64) int {
 	r := g.frames(g.micros(t) + hairMicros)
 	return int(min(max(r, 0), int64(g.Count-1)))
+}
+
+// From is the first moment frame r holds: the least t whose Holding is
+// r, as a real number of seconds half a microsecond below the whole
+// microsecond Holding counts it from, so a moment kept to the
+// millisecond is never on it. Frame 0 holds every moment before it. The
+// video preview looks a moment up in these, see WriteFroms, and counts
+// no frame of its own.
+func (g Grid) From(r int) float64 {
+	if r <= 0 {
+		return math.Inf(-1)
+	}
+	// The least whole microseconds after the start that frames, with the
+	// hair, counts as r: r·Den·10⁶/Num rounded up, less the hair.
+	b := int64(g.Den) * 1_000_000
+	us := (int64(r)*b+int64(g.Num)-1)/int64(g.Num) - hairMicros
+	return (float64(us+int64(math.Round(g.Start*1e6))) - 0.5) / 1e6
+}
+
+// WriteFroms writes From of every frame of the grid, in order, each a
+// little-endian float64.
+func WriteFroms(w io.Writer, g Grid) error {
+	buf := make([]byte, 0, 8*4096)
+	for r := range g.Count {
+		buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(g.From(r)))
+		if len(buf) == cap(buf) || r == g.Count-1 {
+			if _, err := w.Write(buf); err != nil {
+				return err
+			}
+			buf = buf[:0]
+		}
+	}
+	return nil
 }
 
 // FirstShown is the first frame a picture of the file that begins at

@@ -296,17 +296,17 @@ Code that breaks this map today. Each has an open issue, found by
 searching the issues for its path. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
-- Rules of the engine in `frontend/src/lib/flow.ts`, its frames held to
-  Go by a shared case file. So is `rankAt` in
-  `frontend/src/lib/frames/movie.ts`, the window's count of
-  `Grid.Holding`, held by the same case file, by which a look names its
-  frame: a look could name its moment and Go count the frame. These are
-  no longer among them, because Go sends each as data and the window
+- Rules of the engine in `frontend/src/lib/playhead.ts`: where the
+  playhead is, what the space bar plays and where an arrow key goes.
+  No longer among them, because Go sends each as data and the window
   only shows it: what lies over a frame of the video preview, its piece,
   turn, crop and keyframe, `engine.FrameDress`, sent with the frame and
   its captions, what of a video is heard, `VideoState.heard`,
-  how each part of the chosen clip turns, `VideoState.turns`, and how a
-  choice of model stands, `Standing`.
+  how each part of the chosen clip turns, `VideoState.turns`, how a
+  choice of model stands, `Standing`, where a caption, a word and a cut
+  are in the video, `CaptionView` and `PieceView.Part`, where the
+  playhead stands for an edge, `SegmentView.Up`, and which frame holds
+  a moment, `/frames/froms`, looked up in `lib/frames/table.ts`.
 
 ## Changing the architecture
 

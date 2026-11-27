@@ -595,6 +595,38 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 	}
 }
 
+// The window is told where each frame of a video's grid holds from, in
+// order, and looks a moment up there. A file outside the library, or a
+// grid that cannot be counted on, is refused.
+//
+// Not parallel: library sets the environment the store reads.
+func TestTheFromsRouteSaysWhereEachFrameHoldsFrom(t *testing.T) {
+	svc, mine, _ := library(t)
+	fixtures.Copy(t, "small-10s.mp4", mine)
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
+	g := framewire.Grid{Start: 0.04, Num: 25, Den: 1, Count: 250}
+	ask := func(path, grid string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/froms?"+url.Values{"path": {path}, "grid": {grid}}.Encode(), nil))
+		return rec
+	}
+	got := ask(mine, framewire.GridText(g))
+	if got.Code != http.StatusOK || got.Body.Len() != 8*g.Count {
+		t.Fatalf("the froms answered %d with %d bytes, want %d", got.Code, got.Body.Len(), 8*g.Count)
+	}
+	for r := range g.Count {
+		if at := math.Float64frombits(binary.LittleEndian.Uint64(got.Body.Bytes()[8*r:])); at != g.From(r) {
+			t.Fatalf("frame %d holds from %v, want %v", r, at, g.From(r))
+		}
+	}
+	if rec := ask("/elsewhere.mp4", framewire.GridText(g)); rec.Code != http.StatusNotFound {
+		t.Errorf("the froms of a file outside the library answered %d", rec.Code)
+	}
+	if rec := ask(mine, "0,0,25,1,0"); rec.Code != http.StatusBadRequest {
+		t.Errorf("the froms of a grid with no frames answered %d", rec.Code)
+	}
+}
+
 // A look and an ask to read ahead say where they stand among what their
 // window sent, see engine.Sent. A name too long or a count that is no
 // number stands nowhere, and the schedule takes the request as it comes.

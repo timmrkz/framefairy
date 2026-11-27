@@ -101,8 +101,8 @@ try {
             const q = window.__frameQueue;
             const at = Number(s?.dataset.playhead);
             const shown = Number(s?.dataset.shown);
-            // The frame that holds the playhead, by the app's own frameAt.
-            const holds = window.__frameAt(at, 1 / fps) / fps;
+            // The frame that holds the playhead, as the engine says.
+            const holds = window.__frameAt(at) / fps;
             const took = performance.now() - window.__keyAt;
             const layers = window.__captionLayers;
             const captioned = !layers || !layers.busy;
@@ -165,7 +165,7 @@ try {
         const el = document.querySelector(".screen");
         const at = Number(el.dataset.playhead);
         const shown = Number(el.dataset.shown);
-        window.__dragged.push(Math.abs(window.__frameAt(at, 1 / fps) - Math.round(shown * fps)));
+        window.__dragged.push(Math.abs(window.__frameAt(at) - Math.round(shown * fps)));
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);

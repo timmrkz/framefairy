@@ -592,6 +592,16 @@ func (s SourceInfo) frameHolding(at float64) int64 {
 	return floorDiv(max(us, 0)*num, den*1_000_000)
 }
 
+// frameMiddleHolding is the middle of the frame that holds a moment, to
+// the millisecond the plan keeps, or the moment itself where the rate is
+// not known.
+func (s SourceInfo) frameMiddleHolding(at float64) float64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return at
+	}
+	return num.RoundTo(s.frameBegins(s.frameHolding(at))+0.5*float64(s.FPSDen)/float64(s.FPSNum), 3)
+}
+
 // frameStartHolding is the start of the frame that holds a moment, to the
 // millisecond the plan keeps, or the moment itself where the rate is not
 // known.

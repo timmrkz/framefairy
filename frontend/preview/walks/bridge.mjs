@@ -1581,16 +1581,11 @@ export async function seekTo(page, at, fps) {
   await settle(page);
   await reader(page);
   await shownOnPlayhead(page);
-  const { videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
-  return page.evaluate(
-    ([fps, start]) => {
-      const at = Number(document.querySelector(".screen").dataset.playhead);
-      // The frame that holds the playhead, by the app's own frameAt in
-      // lib/flow.ts, counted from where the picture starts.
-      return window.__pictured() === window.__frameAt(at, 1 / fps, start);
-    },
-    [fps, videoStart],
-  );
+  return page.evaluate(() => {
+    const at = Number(document.querySelector(".screen").dataset.playhead);
+    // The frame that holds the playhead, as the engine says.
+    return window.__pictured() === window.__frameAt(at);
+  });
 }
 
 // The crop frame in the video preview, where the playhead is: where it
