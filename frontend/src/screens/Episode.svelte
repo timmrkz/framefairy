@@ -3109,7 +3109,7 @@
                    undo either way. -->
               {#if captionsMoved}
                 <button
-                  class="quiet glyph"
+                  class="quiet glyph undo-mark"
                   title="Put the captions back as they start out: {startLook?.font}, {startLook?.size}, {startLook?.y} from the bottom, in the colours they start in"
                   aria-label="Put the captions back"
                   onclick={putCaptionsBack}
@@ -3118,7 +3118,7 @@
                 </button>
               {:else if captionsWere}
                 <button
-                  class="quiet glyph"
+                  class="quiet glyph undo-mark"
                   title="Put the captions back as you had them: {captionsWere.font}, {captionsWere.size}, {captionsWere.y} from the bottom, with their colours"
                   aria-label="Put the captions back as you had them"
                   onclick={putCaptionsAsTheyWere}
@@ -4107,15 +4107,10 @@
     height: var(--control-h);
   }
 
-  /* A mark that undoes something sits at the end of the row the thing is
-     in, and is only there while there is something to undo. */
+  /* A mark that undoes something, .undo-mark in app.css, sits at the end
+     of the row the thing is in, and is only there while there is
+     something to undo. */
   .grouphead .glyph {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
     color: var(--muted);
   }
 

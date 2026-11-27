@@ -2464,18 +2464,24 @@ export const steps = {
     await playheadAt(walk.page, arg);
   },
   // ["crop corner", label]
-  //                    with the pointer on the crop frame, presses the
-  //                    arrow in its top right corner that says label,
-  //                    Automatic crop or Put the crop back, and waits until
-  //                    it has done its work. The arrow shows only there,
-  //                    inside the frame and clear of the video preview's
-  //                    info mark, and nowhere else in the app says label
+  //                    the arrow in the crop frame's top right corner is
+  //                    hidden with the pointer off the video preview and
+  //                    shows with it on the frame. Presses the one that
+  //                    says label, Automatic crop or Put the crop back,
+  //                    and waits until it has done its work. The arrow
+  //                    stands inside the frame, clear of the video
+  //                    preview's info mark, and nowhere else in the app
+  //                    says label. The arrow that takes it back shows at
+  //                    once, with the pointer where it pressed, wherever
+  //                    the frame went
   async "crop corner"(walk, arg) {
     const { page } = walk;
     walk.wrong = await pressCropCorner(page, arg);
     if (walk.wrong) return;
     await pageUntil(page, () => !document.querySelector(".screen .crop .undo:disabled"));
     await settle(page);
+    const next = await arrowFaded(page);
+    if (next !== "1") walk.wrong = `after ${arg}, with the pointer where it pressed, the arrow in the crop frame is at opacity ${next}`;
   },
   // ["crop before", share]
   //                    puts the playhead that share of the way into the
@@ -3182,10 +3188,16 @@ async function pressCropCorner(page, label) {
   const crop = page.locator(".screen .crop");
   const box = await crop.boundingBox();
   if (!box) return `the video preview shows no crop frame to press ${label} on`;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 4);
   const arrow = crop.getByRole("button", { name: label, exact: true });
   if (!(await arrow.count())) return `the crop frame's corner offers no ${label}`;
-  await pageUntil(page, () => getComputedStyle(document.querySelector(".screen .crop .undo")).opacity === "1");
+  // The pointer on the playhead's time, under the video preview and away
+  // from the sidebar, which opens when the pointer reaches it.
+  await page.locator("output.timecode").hover();
+  const hidden = await arrowFaded(page);
+  if (hidden !== "0") return `${label} shows in the crop frame with the pointer off the video preview, at opacity ${hidden}`;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 4);
+  const shown = await arrowFaded(page);
+  if (shown !== "1") return `${label} is at opacity ${shown} with the pointer on the crop frame`;
   const seen = await page.evaluate((label) => {
     const r = (e) => e?.getBoundingClientRect();
     const frame = r(document.querySelector(".screen .crop"));
@@ -3209,4 +3221,19 @@ async function pressCropCorner(page, label) {
   }
   await arrow.click();
   return "";
+}
+
+// The opacity of the arrow in the crop frame's corner once its fade has
+// ended, which its animation says, not a deadline, the way dropOn waits
+// for the frame a file is dropped in. A fade changes no element, so a
+// wait for the page to change would not see it end.
+async function arrowFaded(page) {
+  return page.evaluate(async () => {
+    const arrow = document.querySelector(".screen .crop .undo");
+    if (!arrow) return "nothing, there is no arrow";
+    // Reading the style starts the fade, so getAnimations() has it.
+    getComputedStyle(arrow).opacity;
+    await Promise.all(arrow.getAnimations().map((a) => a.finished.catch(() => {})));
+    return getComputedStyle(arrow).opacity;
+  });
 }

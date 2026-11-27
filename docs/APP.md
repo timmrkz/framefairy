@@ -1357,7 +1357,7 @@ bubble scrolled by those eight pixels.
   clip has one crop. A part turned with Rotate is the one exception and
   keeps a crop of its own. Once a crop was moved, the frame's top right
   corner shows **Automatic crop**, an anticlockwise arrow, while the
-  pointer is on the frame. It brings back the automatic placement,
+  pointer is on the video preview. It brings back the automatic placement,
   removing the keyframes with it, and then turns clockwise into **Put the
   crop back**, which takes that click back again, crop marks and all, the
   way the captions are put back. At the picture's right edge the arrow
@@ -2914,9 +2914,10 @@ who moves across the picture. Plan row 3.26, the design is in
   The user picked the ring from a sheet of eight, over a dimmed circle.
 - **Automatic crop**, the arrow in the crop frame's corner, removes every
   keyframe of the clip and brings back the crop the engine found, and
-  **Put the crop back** brings back the keyframes with the crop. Removing a keyframe gives its part the crop of
-  the part before it, the keyframe before or the clip's own. Rotating a
-  part keeps its keyframes. Each
+  **Put the crop back** brings back the keyframes with the crop.
+  Removing a keyframe gives its part the crop of the part before it,
+  the keyframe before or the clip's own. Rotating a part keeps its
+  keyframes. Each
   was placed on the picture turned one way, and steers the part only while
   it is turned that way: turned another way, it waits, and four turns
   bring it back. A crop placed on the frame of a keyframe that

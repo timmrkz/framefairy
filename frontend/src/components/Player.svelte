@@ -440,7 +440,6 @@
     };
   });
 
-
   const pieces = $derived(clip?.segments ?? []);
   const clipStart = $derived(pieces.length ? pieces[0].start : 0);
   const clipEnd = $derived(pieces.length ? pieces[pieces.length - 1].end : 0);
@@ -1853,7 +1852,7 @@
              plays. -->
         {#if cropUndo}
           <button
-            class="undo"
+            class="undo undo-mark"
             style="--rest: {100 - crop.left - crop.width}"
             disabled={savingCrop}
             aria-label={cropUndo === "back" ? "Automatic crop" : "Put the crop back"}
@@ -2204,11 +2203,13 @@
     cursor: default;
   }
 
-  /* The way back to the automatic crop, a mark that undoes something the
-     size the captions' one is, in the top right corner inside the frame's
-     line. It waits until the pointer is on the frame, the way an info mark
-     waits for its area, and goes while the frame is dragged. On the
-     picture it wears the shade, so it reads on a white frame too.
+  /* The way back to the automatic crop, a mark that undoes something,
+     .undo-mark in app.css, in the top right corner inside the frame's
+     line. It waits until the pointer is on the video preview, the way its
+     info mark does, and goes while the frame is dragged. Only on the frame
+     itself, the arrow that puts the crop back went from under the pointer
+     with the frame the reset moved. On the picture it wears the shade, so
+     it reads on a white frame too.
 
      The video preview's own info mark stands in the picture's top right
      corner, 2 px in and 20 px wide, see .ask.corner in app.css. The frame
@@ -2219,14 +2220,7 @@
     position: absolute;
     top: calc(var(--frame-line) + 4px);
     right: round(max(calc(var(--frame-line) + 4px), calc(26px - var(--rest) * 1cqw)), 1px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
     border: none;
-    border-radius: var(--radius-s);
     background: var(--backdrop);
     color: var(--text);
     cursor: pointer;
@@ -2236,7 +2230,7 @@
     will-change: opacity;
   }
 
-  .crop:hover .undo,
+  .screen:hover .undo,
   .undo:focus-visible {
     opacity: 1;
     pointer-events: auto;
@@ -2244,7 +2238,7 @@
 
   /* Its work under way, it is still there, dimmed like any button that
      waits, and takes no second click. */
-  .crop:hover .undo:disabled,
+  .screen:hover .undo:disabled,
   .undo:focus-visible:disabled {
     opacity: var(--dimmed);
   }
