@@ -184,7 +184,7 @@ func (s *FrameFairy) lookFirst() {
 	// The watch is claimed before the window is answered, so a call of
 	// the window that looks at the library hands its follow to this one
 	// and never waits for the watch itself, issue #1011. A first look
-	// that stops on its way still sets it.
+	// that stops on its way still sets it, once the window is answered.
 	var mine *followAsk
 	if follow {
 		ask := &followAsk{files: s.store.files, videos: s.store.Episodes(), shortsOf: s.shortsOf}
@@ -192,6 +192,7 @@ func (s *FrameFairy) lookFirst() {
 			mine = ask
 			defer func() {
 				if mine != nil {
+					answered()
 					s.watch.followFrom(mine)
 				}
 			}()
@@ -202,6 +203,9 @@ func (s *FrameFairy) lookFirst() {
 	jobs := time.Since(restoring)
 	answered()
 	window := time.Since(began)
+	if s.firstAnswered != nil {
+		s.firstAnswered()
+	}
 	// Once the window has its answers: it waits for none of this.
 	s.transcribeCutOff()
 	if mine != nil {

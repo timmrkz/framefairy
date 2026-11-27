@@ -411,12 +411,70 @@ func (w gatedWatcher) Add(name string) error {
 // let the watch open the files in the folders of the videos, and the
 // library, the job list and the video the app opens on waited for it,
 // issue #990. They wait for the look at the videos, and the watch is set
-// after they are answered.
+// after they are answered. The window's calls are made the moment the
+// first look has answered, before it sets the watch: there the library's
+// own look reached the watch first, set it itself and waited for it, one
+// run in 300, issue #1011.
 func TestTheWindowIsAnsweredWhileTheWatchIsBeingSet(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		svc, eps := memoryLibrary(t, "PXL_1.mp4", "start.mp4")
 		withJobs(svc)
 		defer svc.jobs.shutDown()
+		svc.store.looked = make(chan struct{})
+		gate := make(chan struct{})
+		svc.watch = watchingWith(svc.reconcile, "", [2]watcher{
+			gatedWatcher{newHeldWatcher(), gate}, gatedWatcher{newHeldWatcher(), gate},
+		})
+		defer svc.watch.stop()
+		known := make(chan bool, 1)
+		listed := make(chan int, 1)
+		jobs := make(chan []Job, 1)
+		// Whether the window waited, once all it asked is answered or
+		// waits for good.
+		waited := make(chan bool, 1)
+		svc.firstAnswered = func() {
+			go func() { known <- svc.store.Known(eps[0]) }()
+			go func() { listed <- len(svc.Library()) }()
+			go func() { jobs <- svc.Jobs() }()
+			synctest.Wait()
+			waited <- len(known) == 0 || len(listed) == 0 || len(jobs) == 0
+		}
+		over := make(chan struct{})
+		go func() {
+			svc.lookFirst()
+			close(over)
+		}()
+		if <-waited {
+			close(gate)
+			<-over
+			t.Fatal("the window waited for the watch on the folders of the videos")
+		}
+		if !<-known {
+			t.Errorf("%s is not known while the watch is being set", eps[0])
+		}
+		if n := <-listed; n != 2 {
+			t.Errorf("the library lists %d videos while the watch is being set, want 2", n)
+		}
+		<-jobs
+		close(gate)
+		<-over
+		for _, ep := range eps {
+			if !slices.Contains(svc.watch.watchList(), engine.WorkDir(ep)) {
+				t.Errorf("the work folder of %s is not watched once the first look is over", ep)
+			}
+		}
+	})
+}
+
+// A first look that stops after it claimed the watch answers the window
+// before it sets the watch, the way one that does not stop does: the
+// window waited for the watch when the look stopped while it read the
+// jobs back.
+func TestAFirstLookThatStopsAnswersBeforeTheWatch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		svc, eps := memoryLibrary(t, "start.mp4")
+		// With no queue, reading the jobs back stops the look, the way
+		// anything wrong in it would.
 		svc.store.looked = make(chan struct{})
 		gate := make(chan struct{})
 		svc.watch = watchingWith(svc.reconcile, "", [2]watcher{
@@ -430,30 +488,19 @@ func TestTheWindowIsAnsweredWhileTheWatchIsBeingSet(t *testing.T) {
 		}()
 		known := make(chan bool, 1)
 		go func() { known <- svc.store.Known(eps[0]) }()
-		listed := make(chan int, 1)
-		go func() { listed <- len(svc.Library()) }()
-		jobs := make(chan []Job, 1)
-		go func() { jobs <- svc.Jobs() }()
 		synctest.Wait()
-		if len(known) == 0 || len(listed) == 0 || len(jobs) == 0 {
+		if len(known) == 0 {
 			close(gate)
 			<-over
-			t.Fatal("the window waited for the watch on the folders of the videos")
+			t.Fatal("a first look that stopped held the window until the watch was set")
 		}
 		if !<-known {
-			t.Errorf("%s is not known while the watch is being set", eps[0])
+			t.Errorf("%s is not known after a first look that stopped", eps[0])
 		}
-		if n := <-listed; n != 2 {
-			t.Errorf("the library lists %d videos while the watch is being set, want 2", n)
-		}
-		<-jobs
-
 		close(gate)
 		<-over
-		for _, ep := range eps {
-			if !slices.Contains(svc.watch.watchList(), engine.WorkDir(ep)) {
-				t.Errorf("the work folder of %s is not watched once the first look is over", ep)
-			}
+		if !slices.Contains(svc.watch.watchList(), engine.WorkDir(eps[0])) {
+			t.Errorf("a first look that stopped did not set the watch")
 		}
 	})
 }

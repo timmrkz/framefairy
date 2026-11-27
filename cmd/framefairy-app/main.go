@@ -446,6 +446,11 @@ type FrameFairy struct {
 	// in, so the search it is about goes first by its own order and not
 	// by how quickly the speech stand-in got to the video.
 	whenChecked func(video string)
+	// firstAnswered, when set, is told once the first look at the
+	// library has answered the window, before it sets the watch, see
+	// lookFirst. A test makes a call of the window there, so it comes
+	// before the watch is set by its own order and not by chance.
+	firstAnswered func()
 	// checking holds each video just added whose picture is still being
 	// checked, see addEpisodes and stopCheck.
 	checkMu  sync.Mutex
