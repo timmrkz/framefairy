@@ -15,8 +15,8 @@
 // gesture knows what it is about, so it says, and nothing after it can
 // change that. See Playback in docs/INTERFACE.md.
 
-import { intoWord, wordStep, type Word } from "./api";
-import { frameAt, insideClip, type Piece } from "./flow";
+import { wordStep, type LitWord } from "./api";
+import type { Piece } from "./flow";
 
 // On the clip, on the clip at its end, or on the video. The end is a place
 // of its own because the space bar starts the clip over from there, and
@@ -35,8 +35,7 @@ export const onVideo: Playhead = { place: "video", clip: "" };
 export type About = "clip" | "video";
 
 // Where a gesture that puts the playhead at a moment leaves it, for the
-// clip chosen, by its key and its pieces, in an episode of fps frames a
-// second whose picture starts videoStart seconds into the file.
+// clip chosen, by its key, its pieces and its places, see ClipEntry.places.
 //
 // A gesture about the clip says so, about: picking it, a click on one of
 // its edges, a trim, a click on a caption. That decides an edge, which is
@@ -54,8 +53,9 @@ export type About = "clip" | "video";
 // clip's start to the frame that holds the moment a frame before its end,
 // cuts included, is on the clip, and any other frame is on the video.
 // Either way, that last frame is the clip's end, and so is the end itself.
-// The edges are on frames, see frameAt in lib/flow.ts, so these are the
-// frames the short starts and ends with.
+// Which frame holds a moment is the engine's to say, and it says where
+// those frames begin to hold, so these are the frames the short starts
+// and ends with.
 //
 // By frame and not by second, because what is on screen is a frame. The
 // video element on the Mac answered a seek with where its frame began,
@@ -66,23 +66,16 @@ export type About = "clip" | "video";
 // frame before the end, in the clip's last frame, which is where a play
 // of the clip stops.
 export function placeOf(
-  pieces: Piece[],
+  clip: { segments: Piece[]; places?: [number, number, number] } | null | undefined,
   key: string,
   at: number,
-  fps: number,
   about?: About,
-  videoStart = 0,
 ): Playhead {
-  if (!key || !pieces.length || about === "video") return onVideo;
-  const start = pieces[0].start;
-  const end = pieces[pieces.length - 1].end;
-  const rate = fps > 0 ? fps : 30;
-  const frame = frameAt(at, 1 / rate, videoStart);
-  const first = frameAt(start, 1 / rate, videoStart);
-  // The frame that holds the moment a frame before the end, see frameAt.
-  const last = Math.max(frameAt(end - 1 / rate, 1 / rate, videoStart), first);
-  if (about !== "clip" && at !== end && (frame < first || frame > last)) return onVideo;
-  return { place: at >= end || frame >= last ? "end" : "clip", clip: key };
+  if (!key || !clip?.places || !clip.segments.length || about === "video") return onVideo;
+  const [on, last, off] = clip.places;
+  const end = clip.segments[clip.segments.length - 1].end;
+  if (about !== "clip" && at !== end && (at < on || at >= off)) return onVideo;
+  return { place: at >= end || at >= last ? "end" : "clip", clip: key };
 }
 
 // The place for the clip chosen now.
@@ -171,7 +164,7 @@ export type ArrowKey = {
   clip: Piece | null;
   // The words the caption lights, the only words a step lands on: a word
   // a cut takes out is not in the short, so there is nothing to step to.
-  lit: Word[];
+  lit: LitWord[];
   looping: boolean;
 };
 
@@ -181,22 +174,24 @@ export function arrowStep(k: ArrowKey): { to: number; word: boolean } | "clip" {
   // says no rate still moves.
   const step = Math.max(k.frame, 1 / 240);
   if (!k.shift) return { to: k.time + sign * step, word: false };
-  // Inside the clip by a whole frame either side, because the playhead is
-  // not where it was put: picking a clip sends it to the clip's first
-  // second and the picture answers with the frame it is showing, which
-  // begins a little before that. Read exactly, the first press after
-  // picking a clip walked the transcript and jumped out of the clip.
-  if (k.through || !insideClip(k.clip ? [k.clip] : [], k.time, step)) return { to: k.time + sign * SKIP, word: false };
+  // On the video, or with no clip, Shift skips. On the clip it goes by
+  // its words, which the place says, not a moment: the place is where
+  // the gesture put the playhead, as the engine counts its frames.
+  if (k.through || !k.clip) return { to: k.time + sign * SKIP, word: false };
   // Until the captions come there is no word to go to, so a step is a
   // second.
   if (!k.lit.length) return { to: k.time + sign, word: false };
   // From a cut too, the next word is the next one the short says.
-  const to = wordStep(k.lit, k.time, k.back, step);
+  const to = wordStep(k.lit, k.time, k.back);
   if (to !== null) return { to, word: true };
   // Out of words. With loop on, the clip comes round the way a play of it
   // does: past its last word is its first word, and before its first its
   // last. Without, at its ends is the clip beside it, because the words
   // go on even where this clip does not.
-  if (k.looping) return { to: intoWord(k.back ? k.lit[k.lit.length - 1] : k.lit[0], step), word: true };
+  if (k.looping) {
+    const places = k.lit.filter((w) => w.land >= 0);
+    const word = k.back ? places[places.length - 1] : places[0];
+    if (word) return { to: word.land, word: true };
+  }
   return "clip";
 }

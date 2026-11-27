@@ -359,12 +359,22 @@ func (e *Engine) PreviewWordFrames(ctx context.Context, d *CaptionDrawing, draft
 	}
 	frames := e.WordFrames(ctx, d.Laid, rs.OutW, rs.OutH, style, source.Light())
 	lit := d.WordsLit(source)
+	var spans [][2]float64
 	for i := range frames {
 		for k := range frames[i] {
 			frames[i][k].From, frames[i][k].To = -1, -1
 			if i < len(lit) && k < len(lit[i]) {
 				frames[i][k].From, frames[i][k].To = lit[i][k][0], lit[i][k][1]
 			}
+			spans = append(spans, [2]float64{frames[i][k].From, frames[i][k].To})
+		}
+	}
+	land, since := LandOn(spans, source.frameLength(), true)
+	n := 0
+	for i := range frames {
+		for k := range frames[i] {
+			frames[i][k].Land, frames[i][k].Since = land[n], since[n]
+			n++
 		}
 	}
 	// The middle of the pill of words lit together: their pills at rest

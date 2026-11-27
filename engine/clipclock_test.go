@@ -114,3 +114,57 @@ func TestAPiecesEdgesPutThePlayheadOnItsFirstAndLastFrames(t *testing.T) {
 		t.Errorf("with no rate the edges of 1 to 2 put the playhead at %v", got)
 	}
 }
+
+func TestTheClipsPlacesAreWhereItsFirstAndLastFramesHold(t *testing.T) {
+	// A clip of two pieces with a cut between them at 25 frames a second.
+	s := SourceInfo{FPSNum: 25, FPSDen: 1, Duration: 2000}
+	got := s.Places([]SegmentView{{Start: 1677.6, End: 1690}, {Start: 1695, End: 1712}})
+	// On it from a millisecond before its first frame, at its end from a
+	// millisecond before its last, 1711.96, and off it from a millisecond
+	// before the frame after.
+	for i, want := range []float64{1677.599, 1711.959, 1711.999} {
+		if math.Abs(got[i]-want) > 1e-6 {
+			t.Errorf("place %d of the clip begins at %v, want %v", i, got[i], want)
+		}
+	}
+	// At 29.97 frames a second the engine keeps frame 11 as 0.367 and
+	// frame 41 as 1.368, a hair before each begins: the clip is still on
+	// those frames.
+	ntsc := SourceInfo{FPSNum: 30000, FPSDen: 1001, Duration: 10}
+	p := ntsc.Places([]SegmentView{{Start: 0.367, End: 1.368}})
+	for _, c := range []struct {
+		at    float64
+		place string
+	}{{0.366, "video"}, {0.367, "clip"}, {1.333, "clip"}, {1.335, "end"}, {1.369, "video"}} {
+		place := "clip"
+		switch {
+		case c.at < p[0] || c.at >= p[2]:
+			place = "video"
+		case c.at >= p[1]:
+			place = "end"
+		}
+		if place != c.place {
+			t.Errorf("at 29.97 frames a second %v is on the %s, want the %s, places %v", c.at, place, c.place, p)
+		}
+	}
+	// A clip that opens on the video's first frame is on it from before.
+	if got := s.Places([]SegmentView{{Start: 0, End: 2}}); got[0] != -1 {
+		t.Errorf("a clip from the video's start is on it from %v, want -1", got[0])
+	}
+}
+
+func TestAStepLandsAFrameIntoAWordAndOnceOnWordsLitTogether(t *testing.T) {
+	frame := 0.04
+	// Said: a frame in, and half way into a word shorter than two frames.
+	land, since := LandOn([][2]float64{{1, 1.5}, {2, 2.05}, {-1, -1}}, frame, false)
+	if land[0] != 1.04 || math.Abs(land[1]-2.025) > 1e-9 || land[2] != -1 || since[0] != 1 {
+		t.Errorf("words said land at %v from %v", land, since)
+	}
+	// Lit on frames: the middle of the first frame. Two words lit
+	// together on one frame are one place, and a third lit with them
+	// that goes on alone after them is a place from where they end.
+	land, since = LandOn([][2]float64{{4, 4.2}, {4, 4.2}, {4, 4.4}}, frame, true)
+	if land[0] != 4.02 || land[1] != -1 || math.Abs(land[2]-4.22) > 1e-9 || math.Abs(since[2]-4.2) > 1e-9 {
+		t.Errorf("words lit together land at %v from %v", land, since)
+	}
+}

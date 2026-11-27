@@ -40,7 +40,6 @@
   import {
     api,
     clock,
-    intoWord,
     type Gesture,
     type ClipEntry,
     type LitWord,
@@ -1701,8 +1700,8 @@
   // should have. While the captions are being reshaped by the hand, the
   // lit words are the old captions', and the word's own time is read.
   function firstWordOf(i: number, c: CaptionCue): number | null {
-    const shown = shownCues === captions ? lit.find((w) => w.cue === i) : undefined;
-    if (shown) return intoWord(shown, frame);
+    const shown = shownCues === captions ? lit.find((w) => w.cue === i && w.land >= 0) : undefined;
+    if (shown) return shown.land;
     return c.lines?.[0]?.words?.[0] ? c.up[0] : null;
   }
 

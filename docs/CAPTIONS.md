@@ -105,7 +105,7 @@ middle of the whole pill, as libass grows it. The engine says that middle
 with the first of the words, `WordFrame.Grow`, and `litMiddle` in
 `Player.svelte` only reads it. Shift and an arrow land once on the frame
 the words share, and once more where a word of them goes on lit alone,
-see `landings` in `frontend/src/lib/api.ts`. A word of no length, as a
+as the engine says with each word, `LandOn` in `engine/landing.go`. A word of no length, as a
 letter typed into a short word can be, is lit with the words on the
 frame it shares too. The walk "a word too short for a frame of its own is
 lit with the word on the frame it shares" types " Q Schulhofgeschichten"

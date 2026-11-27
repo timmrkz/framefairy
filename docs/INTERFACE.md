@@ -340,8 +340,8 @@ goes back and runs ahead of the picture, `TimeProgressEstimator` in
   [Playback](#playback-on-the-clip-or-on-the-video).
 - A caption's start, taken from the clip's clock to the video's and back,
   landed before the caption, and a click on it lit no word. A seek meant
-  to land in something lands a frame into it, `intoWord`, as the arrow keys
-  do.
+  to land in something lands a frame into it, where the engine says a
+  step lands on a word, `LandOn`, as the arrow keys do.
 - Arrowing through the clip list puts several frame requests in the air,
   and without a ticket the picture settles on the slowest: `Newest` in
   `frontend/src/lib/flow.ts`, with tests.
@@ -385,8 +385,9 @@ goes back and runs ahead of the picture, `TimeProgressEstimator` in
 
 The playhead is in a state, **on the clip** or **on the video**, set by the
 gesture that put it there and nothing else, not a clock, not the queue's
-position, not a rounding. The rules are `placeOf` and `playFrom` in
-`frontend/src/lib/playhead.ts`, with tests.
+position, not a rounding. `placeOf` and `playFrom` in
+`frontend/src/lib/playhead.ts` read the gesture, and where on the clip a
+moment is, the engine says, `SourceInfo.Places`.
 
 | the gesture | leaves the playhead |
 | --- | --- |
@@ -487,13 +488,15 @@ next plays the clip.
 **Where a gesture lands is a frame, not a second.** Compared in seconds,
 one step right of a clip starting inside a frame landed on that frame's
 start, before the clip, and the clip dimmed with its own first frame on
-screen. So `placeOf` takes the frame rate and asks which frame the gesture
-landed in, the one `insideClip` draws the crop in. Only the engine says
-which frame is meant: the frame holding the moment, where up to a
-millisecond before a frame's start counts as that frame, as the app
-keeps moments to the millisecond. The window looks the moment up in where
-the engine says each frame holds from, `FrameTable` in
-`lib/frames/table.ts`, and counts nothing itself. A copy of the count in
+screen. So the place is decided by the frame the gesture landed in, and
+only the engine says which frame is meant: the frame holding the moment,
+where up to a millisecond before a frame's start counts as that frame, as
+the app keeps moments to the millisecond. A clip comes with the moments
+the playhead is on it from, at its end from and off it again from,
+`places`, and the window compares the moment with them. Anything else
+that asks which frame holds a moment looks it up in where the engine says
+each frame holds from, `FrameTable` in `lib/frames/table.ts`, and counts
+nothing itself. A copy of the count in
 the window, held to Go by a shared case file, once named a frame the
 playhead was not on when the two rounded apart. The engine keeps every
 edge on the start of the frame the render cuts on, `PieceOnFrames` in

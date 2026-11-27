@@ -642,8 +642,13 @@ type WordView struct {
 	// answer while a cut before it was dragged, and the caption block on
 	// the clip timeline and the pill in the video preview popped over and
 	// over with the playhead standing still, found by the user.
-	At    float64  `json:"at,omitempty"`
-	Until float64  `json:"until,omitempty"`
+	At    float64 `json:"at,omitempty"`
+	Until float64 `json:"until,omitempty"`
+	// Land is where a step of the arrow keys lands on the word, and Since
+	// where it begins as a place to land on, -1 for a word that is no
+	// place of its own, see LandOn.
+	Land  float64  `json:"land"`
+	Since float64  `json:"since"`
 	Text  string   `json:"text"`
 	Said  *float64 `json:"said,omitempty"`
 	Whole string   `json:"whole,omitempty"`
@@ -1394,6 +1399,24 @@ func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, 
 			item.Lines = append(item.Lines, row)
 		}
 		view.Captions = append(view.Captions, item)
+	}
+	var spans [][2]float64
+	for _, c := range view.Captions {
+		for _, l := range c.Lines {
+			for _, w := range l.Words {
+				spans = append(spans, [2]float64{w.At, w.Until})
+			}
+		}
+	}
+	land, since := LandOn(spans, look.source().frameLength(), false)
+	n := 0
+	for _, c := range view.Captions {
+		for _, l := range c.Lines {
+			for k := range l.Words {
+				l.Words[k].Land, l.Words[k].Since = land[n], since[n]
+				n++
+			}
+		}
 	}
 	return view
 }

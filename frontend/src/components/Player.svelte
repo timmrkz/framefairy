@@ -243,7 +243,6 @@
   let layerPixels = $state<[number, number] | null>(null);
   // One frame of the episode. The playhead can only ever stand on one, so
   // it is the smallest difference between two moments that means anything.
-  const oneFrame = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
 
   // A queue while the workspace is awake. Going to sleep closes it with
   // everything it holds, its decoders and its sound card among them, and
@@ -497,7 +496,7 @@
     const at = Math.max(0, Math.min(t, source.duration));
     layers.sought(wordStep);
     time = at;
-    placed = placeOf(pieces, clip?.key ?? "", at, 1 / oneFrame, about, source.videoStart ?? 0);
+    placed = placeOf(clip, clip?.key ?? "", at, about);
     // The frame asked for comes dressed as the clip is now, at the place
     // it is asked at: the effect that tells the queue runs after the
     // seek, and dressed by the place before, in the clip or on the video,
@@ -558,7 +557,7 @@
     const key = clip?.key ?? making;
     if (!key || (kept && placed.clip !== key)) return;
     placed = clip
-      ? placeOf(pieces, key, time, 1 / oneFrame, "clip", source.videoStart ?? 0)
+      ? placeOf(clip, key, time, "clip")
       : { place: "clip", clip: key };
   }
 

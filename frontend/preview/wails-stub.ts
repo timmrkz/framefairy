@@ -160,6 +160,9 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     key: `clips.json/0${n}`,
     plan: "/eps/ep.framefairy/logs/clips.json",
     cropLefts: segments.map((p) => p.cropX),
+    // Where the playhead is on the clip, as the engine would say it for a
+    // video of 25 frames a second, a hair before each frame.
+    places: [first - 0.001, last - 0.041, last - 0.001] as [number, number, number],
   };
 };
 
@@ -431,7 +434,14 @@ const cuesOf = (segments: { start: number; end: number }[], id = "") => {
     to: onEpisode(cue.end),
     up: [onEpisode(cue.start), onEpisode(cue.end)],
     lines: cue.lines.map((line) => ({
-      words: line.words.map((w) => ({ ...w, at: onEpisode(w.start), until: onEpisode(w.end) })),
+      // Each lands a frame in, at 25 a second, as the engine would say.
+      words: line.words.map((w) => ({
+        ...w,
+        at: onEpisode(w.start),
+        until: onEpisode(w.end),
+        land: Math.min(onEpisode(w.start) + 0.04, (onEpisode(w.start) + onEpisode(w.end)) / 2),
+        since: onEpisode(w.start),
+      })),
     })),
   }));
 };

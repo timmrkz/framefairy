@@ -19,7 +19,6 @@
     api,
     clock,
     errorText,
-    intoWord,
     nearestHeight,
     type CaptionFont,
     type CaptionStart,
@@ -2146,6 +2145,7 @@
       cropLefts: f.cropLefts,
       framing: f.name,
       glides: f.glides,
+      places: f.places,
     };
   });
   const shownCaptions = $derived.by(() => {
@@ -2381,6 +2381,8 @@
           out.push({
             start: f ? f.from : (word.at ?? 0),
             end: f ? f.to : (word.until ?? 0),
+            land: f ? f.land : (word.land ?? -1),
+            since: f ? f.since : (word.since ?? -1),
             text: word.text,
             framed: !!f,
             cue: i,
@@ -2939,8 +2941,10 @@
     // Where the picture lights the words, once the engine has said.
     if (captions?.track && !answeredTrack) return;
     landOn = null;
-    const word = want.last ? lit[lit.length - 1] : lit[0];
-    const at = intoWord(word, source && source.fps > 0 ? 1 / source.fps : 1 / 30);
+    const places = lit.filter((w) => w.land >= 0);
+    const word = want.last ? places[places.length - 1] : places[0];
+    if (!word) return;
+    const at = word.land;
     seekTo(at, undefined, true);
     // The word landed on is the keyboard's word, as any word walked to is.
     untrack(() => player?.keyAt(at));
@@ -3542,7 +3546,9 @@
                   // A sentence of a clip makes that clip the one worked on,
                   // the way its mark does, found by Tim.
                   atWork();
-                  const to = intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30);
+                  // A frame into the sentence, the frame after the one
+                  // that holds its start.
+                  const to = frames ? frames.begins(frames.holding(at) + 1) : at;
                   const other = clip && clip !== selected ? clip : undefined;
                   if (walked) {
                     if (other) void select(other, false, false);
