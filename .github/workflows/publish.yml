@@ -37,9 +37,10 @@
 # 1. announce, the moment a build starts, writes the channel list again,
 #    so the Updates page says for the whole of the build that the build it
 #    offers is not the newest.
-# 2. publish, per channel, one after another and never stopped half way,
-#    checks that the commit is its channel's, packs the build in parts,
-#    checks it, signs the zip and the stored zip, uploads the zip with
+# 2. publish, on a Mac, per channel, one after another and never stopped
+#    half way, checks that the commit is its channel's, checks the build,
+#    signs it again with the Developer ID, packs it in parts, signs the
+#    zip and the stored zip with the update key, uploads the zip with
 #    the stored zip packed with zstd, its parts, the pieces the release
 #    lacks and its entry to the release dev, and marks a pull request's
 #    commit ready to update to. A build it does not
@@ -107,7 +108,9 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.path == '.github/workflows/builds.yml' &&
       github.event.workflow_run.head_repository.full_name == github.repository
-    runs-on: ubuntu-24.04
+    # On a Mac, for codesign and the keychain, see "Sign it with the
+    # Developer ID" below. Only a build that is published takes it.
+    runs-on: macos-latest
     timeout-minutes: 20
     environment: updates
     concurrency:
@@ -118,7 +121,8 @@ jobs:
       pull-requests: read
       actions: read
       statuses: write
-      # To check the release tool's signature.
+      # Every job that uses the release tool may read its signature,
+      # though this one builds the tool itself.
       attestations: read
     # The token is handed only to the steps that ask GitHub, so the step
     # that reads the build holds nothing that can write.
@@ -129,9 +133,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # main's own build of the tool, signed, from no cache anybody else
-      # wrote, see .github/actions/release-tool.
+      # Built here from main's code with no cache, see
+      # .github/actions/release-tool. main's signed build is a program for
+      # Linux, which this Mac cannot run.
       - uses: ./.github/actions/release-tool
+        with:
+          download: "false"
 
       # What the build is a build of, from GitHub's record of the run and
       # not from anything the build wrote, and only a commit its channel's
@@ -154,24 +161,41 @@ jobs:
           github-token: ${{ github.token }}
 
       # The build is a branch's code, read here before anybody reviewed
-      # it, so this step does not hold the key: nothing needs it until the
+      # it, so this step does not hold a key: nothing needs one until the
       # reading is done, and a zip made to trip the reader finds no key
-      # and no token to take. The step after it signs only a build this one passed.
+      # and no token to take. The steps after it run only when it passed.
+      - id: check
+        if: steps.which.outputs.run == 'true'
+        name: Check what it could reach
+        run: framefairy-release check -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
+
+      # Every build the user gets is signed again with their Developer ID
+      # and the hardened runtime, so no other program can put its code
+      # into the app, and macOS knows the app again after an update and
+      # does not ask for Documents or the keychain anew. Until
+      # build/team-id.txt names the team, harden says so and the build
+      # stays signed ad hoc, the way it is made. Once it does, a build
+      # without the Developer ID is never published. See
+      # cmd/framefairy-release/devid.go and docs/UPDATES.md, The Developer ID.
+      - id: harden
+        if: steps.check.outcome == 'success'
+        name: Sign it with the Developer ID
+        env:
+          FRAMEFAIRY_DEVELOPER_ID: ${{ secrets.FRAMEFAIRY_DEVELOPER_ID }}
+          FRAMEFAIRY_DEVELOPER_ID_PASSWORD: ${{ secrets.FRAMEFAIRY_DEVELOPER_ID_PASSWORD }}
+        run: framefairy-release harden -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
+
       # The zip the build left deflates every file. Packed again, each
       # file is stored as it is, and its parts and pieces let an app that
       # knows them download only the files it does not have, and the
       # stored zip packed with zstd is what it downloads when they fail.
       # Both zips are signed. The zip the build left is still published
-      # for the apps from before. See docs/UPDATES.md.
+      # for the apps from before. Packed after harden, so its parts are
+      # of the build the user gets. See docs/UPDATES.md.
       - id: pack
-        if: steps.which.outputs.run == 'true'
+        if: steps.harden.outcome == 'success'
         name: Pack it in parts
         run: framefairy-release pack -zip "$RUNNER_TEMP/build/app.zip" -out "$RUNNER_TEMP/packed"
-
-      - id: check
-        if: steps.pack.outcome == 'success'
-        name: Check what it could reach
-        run: framefairy-release check -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
 
       - id: sign
         if: steps.check.outcome == 'success'
@@ -182,9 +206,13 @@ jobs:
           NAME: ${{ steps.which.outputs.name }}
           VERSION: ${{ steps.which.outputs.version }}
           COMMIT: ${{ steps.which.outputs.commit }}
+          TEAM: ${{ steps.harden.outputs.team }}
           URL: https://github.com/${{ github.repository }}/releases/download/dev/${{ steps.which.outputs.zip }}
+        # With the Developer ID, sign refuses a build that is not signed
+        # with it and the hardened runtime throughout, so it is never lost
+        # on the way without anyone seeing.
         run: >-
-          framefairy-release sign -zip "$RUNNER_TEMP/build/app.zip" -parts "$RUNNER_TEMP/packed/parts.json"
+          framefairy-release sign -team "$TEAM" -zip "$RUNNER_TEMP/build/app.zip" -parts "$RUNNER_TEMP/packed/parts.json"
           -channel "$CHANNEL" -name "$NAME"
           -version "$VERSION" -commit "$COMMIT" -url "$URL" -out "$RUNNER_TEMP/entry.json" -refusal "$RUNNER_TEMP/refused.txt"
 
