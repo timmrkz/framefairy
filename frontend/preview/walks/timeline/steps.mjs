@@ -1878,7 +1878,10 @@ export const steps = {
       await page.keyboard.press("ArrowRight");
       await nextPaint(page, 2);
       const r = await read();
-      const step = Math.round((r.at - was.at) * fps);
+      // Counted in frames held, the way the field says them: a step goes
+      // to where the next frame begins, from anywhere in the one before.
+      const held = (at) => Math.floor((Math.max(at - videoStart, 0) + 0.001) * fps);
+      const step = held(r.at) - held(was.at);
       if (step !== 1) walk.wrong = `→ ${i} moved the playhead ${step} frames, from ${was.at.toFixed(4)} to ${r.at.toFixed(4)} s`;
       else if (r.text !== said(r.at)) walk.wrong = `after → ${i} the playhead is at ${r.at.toFixed(4)} s and the time field says ${r.text}, not ${said(r.at)}`;
       was = r;
