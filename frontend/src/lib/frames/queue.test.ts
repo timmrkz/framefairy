@@ -423,7 +423,7 @@ describe("a frame waiting for its captions", () => {
     );
     const inside = q as unknown as { video: unknown; table: FrameTable; captioned(): Promise<boolean> | null };
     inside.video = { width: 2, height: 2, samples: { count: 3, timescale: 25, start: 0, step: 1 } };
-    inside.table = new FrameTable({ origin: 0, start: 0, num: 25, den: 1, count: 3 }, Float64Array.of(-Infinity, 0.0385, 0.0785));
+    inside.table = new FrameTable(Float64Array.of(-Infinity, 0.0385, 0.0785), Float64Array.of(0, 0.04, 0.08));
     let came = () => {};
     q.over = { at: () => null, ready: () => new Promise<void>((done) => (came = done)) };
     return { q, captioned: () => inside.captioned()!, came: () => came() };

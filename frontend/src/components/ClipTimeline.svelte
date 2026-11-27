@@ -356,8 +356,12 @@
   function onFrame(t: number): number {
     return frames ? frames.startOf(t) : t;
   }
-  // One frame of the video, which is what an arrow key is worth.
-  const frame = $derived(frames?.length ?? 1 / 30);
+  // Whether two moments are on one frame, as the engine's table says, so
+  // an edge is put back where it was found only when it is not on its
+  // frame already.
+  function oneFrame(a: number, b: number): boolean {
+    return frames ? frames.holding(a) === frames.holding(b) : a === b;
+  }
 
   // Dragging the playhead, the same way as on the range picker, see
   // lib/scrub.ts.
@@ -823,7 +827,7 @@
     if (!clip) return;
     const at = edge === "start" ? clip.found[0] : clip.found[1];
     const now = edge === "start" ? first : last;
-    if (Math.abs(at - now) < frame / 2) return;
+    if (oneFrame(at, now)) return;
     await reshape({ kind: "trim", edge, index: 0, from: at, to: 0, toWords: false });
   }
 
@@ -1045,7 +1049,8 @@
     // Where the key goes is lib/playhead.ts, arrowStep.
     const to = arrowStep({
       time,
-      frame,
+      // Until the table of frames is read, a frame step stays.
+      stepped: frames ? frames.beside(time, back) : time,
       back,
       shift: event.shiftKey,
       through,
@@ -1080,7 +1085,7 @@
     if (playing || scrubbing || gripping || !onahead) return;
     const times: number[] = [];
     for (const back of [false, true]) {
-      const to = arrowStep({ time, frame, back, shift: true, through: dimmed, clip: wholeClip, lit, looping });
+      const to = arrowStep({ time, stepped: time, back, shift: true, through: dimmed, clip: wholeClip, lit, looping });
       if (to && to !== "clip" && to.word) times.push(Math.max(0, Math.min(to.to, duration)));
     }
     onahead(times);
@@ -2182,7 +2187,7 @@
           tabindex="-1"
           aria-label="Clip start"
           aria-valuenow={start}
-          title={Math.abs(clip.found[0] - first) >= frame / 2
+          title={!oneFrame(clip.found[0], first)
             ? "Where the clip starts, moved by hand. Drag to trim it, double-click to put it back where the clip was found."
             : "Where the clip starts. Drag to trim it."}
           data-grip="edge"
@@ -2196,7 +2201,7 @@
           tabindex="-1"
           aria-label="Clip end"
           aria-valuenow={end}
-          title={Math.abs(clip.found[1] - last) >= frame / 2
+          title={!oneFrame(clip.found[1], last)
             ? "Where the clip ends, moved by hand. Drag to trim it, double-click to put it back where the clip was found."
             : "Where the clip ends. Drag to trim it."}
           data-grip="edge"

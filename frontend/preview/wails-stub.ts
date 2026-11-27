@@ -891,10 +891,14 @@ function handHeard(h: FakeHand): [number, number] | null {
 function sentences() {
   const parts = heardParts();
   const said = allWords().filter((w) => parts.some(([a, b]) => w.start >= a && w.end <= b));
-  const out: { start: number; end: number; text: string }[] = [];
+  const out: { start: number; end: number; text: string; land: number }[] = [];
   let run: typeof said = [];
   const close = () => {
-    if (run.length) out.push({ start: run[0].start, end: run[run.length - 1].end, text: run.map((w) => w.text).join(" ") + "." });
+    // A thirtieth of a second in, as the engine lands a card where the
+    // video's frames are not known.
+    const start = run[0]?.start ?? 0;
+    const end = run[run.length - 1]?.end ?? 0;
+    if (run.length) out.push({ start, end, text: run.map((w) => w.text).join(" ") + ".", land: Math.min(start + 1 / 30, (start + end) / 2) });
     run = [];
   };
   for (const w of said) {

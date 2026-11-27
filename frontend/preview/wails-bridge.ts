@@ -66,7 +66,9 @@ const last: Record<string, unknown> = {};
 (window as any).__frameAt = (at: number) => {
   const frames = (window as any).__appFrames?.frames;
   if (!frames) return -1;
-  return frames.holding(at) + Math.round((frames.grid.start * frames.grid.num) / frames.grid.den);
+  // The walks' videos keep one rate, so the frame's start over a frame's
+  // length is its number from the file's first.
+  return Math.round(frames.startOf(at) / (frames.begins(1) - frames.begins(0)));
 };
 // A field's text written by the page changes no node, so a walk waiting
 // for it with a MutationObserver did not wake when the report's field

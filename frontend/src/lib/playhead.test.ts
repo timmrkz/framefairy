@@ -210,7 +210,7 @@ describe("an arrow key on the clip timeline", () => {
   ];
   const key = (o: Partial<ArrowKey>): ArrowKey => ({
     time: 12,
-    frame,
+    stepped: 12.04,
     back: false,
     shift: false,
     through: false,
@@ -220,10 +220,9 @@ describe("an arrow key on the clip timeline", () => {
     ...o,
   });
 
-  test("steps a frame each way without Shift, and a 240th of a second when the video says no rate", () => {
+  test("steps to the frame beside without Shift, where the engine's table says it begins", () => {
     expect(arrowStep(key({}))).toEqual({ to: 12.04, word: false });
-    expect(arrowStep(key({ back: true }))).toEqual({ to: 11.96, word: false });
-    expect(arrowStep(key({ frame: 0 }))).toEqual({ to: 12 + 1 / 240, word: false });
+    expect(arrowStep(key({ back: true, stepped: 11.96 }))).toEqual({ to: 11.96, word: false });
   });
 
   // #377: outside a clip Shift skips, transcribed or not.

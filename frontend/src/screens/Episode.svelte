@@ -1499,7 +1499,7 @@
     const grid = source?.grid;
     if (!grid || !(grid.count > 0)) return;
     let gone = false;
-    frameTable(path, grid).then(
+    frameTable(path).then(
       (t) => {
         if (!gone) frames = t;
       },
@@ -3538,7 +3538,7 @@
                 playhead={time}
                 playing={!paused}
                 failed={sentencesFailed}
-                onseek={(at, clip, walked) => {
+                onseek={(at, clip, walked, land) => {
                   if (walked && sayTyped.trim()) {
                     sayFrom ??= { at: time, clip: selected };
                     sayOn = [at, walked.end];
@@ -3546,9 +3546,9 @@
                   // A sentence of a clip makes that clip the one worked on,
                   // the way its mark does, found by Tim.
                   atWork();
-                  // A frame into the sentence, the frame after the one
-                  // that holds its start.
-                  const to = frames ? frames.begins(frames.holding(at) + 1) : at;
+                  // Where the engine lands a click on the card, a frame
+                  // in, and the start of what is not transcribed yet.
+                  const to = land ?? at;
                   const other = clip && clip !== selected ? clip : undefined;
                   if (walked) {
                     if (other) void select(other, false, false);

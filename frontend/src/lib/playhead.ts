@@ -154,7 +154,9 @@ export const SKIP = 5;
 // the episode.
 export type ArrowKey = {
   time: number;
-  frame: number;
+  // Where a step of a frame goes, the frame beside the one that holds the
+  // playhead, as the engine's table of frames says, see FrameTable.beside.
+  stepped: number;
   back: boolean;
   shift: boolean;
   // On the video, where the clip is not active: Shift skips, over the
@@ -170,10 +172,7 @@ export type ArrowKey = {
 
 export function arrowStep(k: ArrowKey): { to: number; word: boolean } | "clip" {
   const sign = k.back ? -1 : 1;
-  // A step is never shorter than a frame at 240 a second, so a video that
-  // says no rate still moves.
-  const step = Math.max(k.frame, 1 / 240);
-  if (!k.shift) return { to: k.time + sign * step, word: false };
+  if (!k.shift) return { to: k.stepped, word: false };
   // On the video, or with no clip, Shift skips. On the clip it goes by
   // its words, which the place says, not a moment: the place is where
   // the gesture put the playhead, as the engine counts its frames.

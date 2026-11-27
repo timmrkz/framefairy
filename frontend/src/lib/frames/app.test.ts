@@ -519,5 +519,5 @@ describe("the frames read while the hand rests", () => {
 // engine would send it: each holds from a little before it begins.
 function tableOf(n: number, rate: number): FrameTable {
   const from = Float64Array.from({ length: n }, (_, r) => (r === 0 ? -Infinity : r / rate - 0.0015));
-  return new FrameTable({ origin: 0, start: 0, num: rate, den: 1, count: n }, from);
+  return new FrameTable(from, Float64Array.from({ length: n }, (_, r) => r / rate));
 }

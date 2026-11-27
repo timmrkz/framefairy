@@ -57,10 +57,10 @@ import (
 //	/frames/play/take?id=<pictures>&framing=<framing>&heard=<seconds>[&loop=1]
 //	                                 the clip changed while it plays, see
 //	                                 servePlayTake
-//	/frames/froms?path=<episode>&grid=<grid>
-//	                                 the moment each frame of the grid
-//	                                 holds from, which the window looks a
-//	                                 moment up in, see serveFroms
+//	/frames/table?path=<episode>     the moment each frame of the video
+//	                                 holds from and the moment it begins,
+//	                                 which the window looks a moment up
+//	                                 in, see serveTable
 //	/frames/read?id=<id>&n=<frames>  frames, see writeFrames
 //	/frames/close?id=<id>
 //	/frames/levels?path=<episode>  the loudness, see serveLoudness
@@ -201,8 +201,8 @@ func (s *FrameFairy) serveFrames(w http.ResponseWriter, r *http.Request) {
 		writeFrames(w, r, stream, min(max(n, 1), 16))
 	case "/frames/dress":
 		s.serveDress(w, r)
-	case "/frames/froms":
-		serveFroms(st, w, r)
+	case "/frames/table":
+		s.serveTable(w, r)
 	case "/frames/captions/words":
 		s.serveWordFrames(w, r)
 	case "/frames/levels":
@@ -297,23 +297,26 @@ func (p *previews) serveLook(st *store, w http.ResponseWriter, r *http.Request, 
 	writeSeen(r.Context(), w, dec, []engine.Seen{seen}, d)
 }
 
-// serveFroms answers with the first moment each frame of the grid holds,
-// see framewire.Grid.From, so the window finds the frame that holds a
-// moment by looking it up and counts no frame by a rule of its own.
-func serveFroms(st *store, w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	if !episodeFile(st, q.Get("path")) {
+// serveTable answers with the video's table of frames, see
+// framewire.WriteTable: where each frame holds from and where it begins,
+// on the grid the engine counts the video's frames on, so the window
+// finds the frame that holds a moment, and the moment a frame stands
+// for, by looking it up, and counts no frame by a rule of its own.
+func (s *FrameFairy) serveTable(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if !episodeFile(s.store, path) {
 		http.NotFound(w, r)
 		return
 	}
-	grid, ok := framewire.ReadGrid(q.Get("grid"))
-	if !ok {
-		http.Error(w, "frames need the grid they count on", http.StatusBadRequest)
+	info, err := s.probe(r.Context(), path)
+	grid := info.Grid()
+	if err != nil || !grid.Valid() {
+		http.Error(w, "the frames of the video cannot be read", http.StatusUnprocessableEntity)
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", strconv.Itoa(8*grid.Count))
-	_ = framewire.WriteFroms(w, grid)
+	w.Header().Set("Content-Length", strconv.Itoa(16*grid.Count))
+	_ = framewire.WriteTable(w, grid)
 }
 
 // give hands the pictures of frames a schedule sent back to it, once

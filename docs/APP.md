@@ -576,8 +576,8 @@ clip enters the plan, from a search, by hand or from a gesture,
 `PieceOnFrames` in `engine/render.go`, and the render cuts on that frame.
 So on a clip edge the frame that holds the playhead is the frame the
 short has there. The window counts no frame of its own: it looks a moment
-up where the engine says each frame of the video holds from,
-`/frames/froms` and `lib/frames/table.ts`. A
+up where the engine says each frame of the video holds from and begins,
+`/frames/table` and `lib/frames/table.ts`. A
 piece plays and ends with the frame that holds the moment a frame before
 its end, the short's last. A clip picked shows the short's first frame,
 and the playhead on the clip's end shows its last.
@@ -1683,8 +1683,9 @@ bubble scrolled by those eight pixels.
       episode it starts over at the start. The last window may be cut
       short by the end of the episode, and the one after it, at the
       start, is as long as the window was made again.
-      **A video has one window**. The engine places it, see
-      `engine.Episode.PlaceWindow`, and the Go side keeps it, see
+      **A video has one window**. The engine places it and fits it, see
+      `engine.Episode.Window`, which the command line asks too, and the
+      Go side keeps it, see
       `cmd/framefairy-app/window.go`. It is kept beside the clip last
       worked on in `chosen.json`, so the workspace opens on it again,
       after a restart too. A video that has none gets the window where

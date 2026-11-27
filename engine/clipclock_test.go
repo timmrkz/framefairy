@@ -168,3 +168,13 @@ func TestAStepLandsAFrameIntoAWordAndOnceOnWordsLitTogether(t *testing.T) {
 		t.Errorf("words lit together land at %v from %v", land, since)
 	}
 }
+
+// A click on a card of what was said lands a frame into it, the way a
+// step lands on a word, and half into a card shorter than two frames.
+func TestAClickOnACardLandsAFrameIntoIt(t *testing.T) {
+	cards := []SentenceView{{Start: 10, End: 12}, {Start: 20, End: 20.05}}
+	SourceInfo{FPSNum: 25, FPSDen: 1}.LandCards(cards)
+	if cards[0].Land != 10.04 || cards[1].Land != 20.025 {
+		t.Errorf("the cards land at %v and %v, want 10.04 and 20.025", cards[0].Land, cards[1].Land)
+	}
+}

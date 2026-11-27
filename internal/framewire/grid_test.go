@@ -49,20 +49,28 @@ func TestAGridShowsEachMomentTheFrameThatHoldsIt(t *testing.T) {
 // looked up in the froms is held by the frame Holding counts, for every
 // moment kept to the millisecond, at the rates video has and on grids
 // that start after the file does.
-func TestAMomentLookedUpInTheFromsIsTheFrameThatHoldsIt(t *testing.T) {
+func TestAMomentLookedUpInTheTableIsTheFrameThatHoldsIt(t *testing.T) {
 	for _, g := range []Grid{
 		{Start: 0.5, Num: 30000, Den: 1001, Count: 1200},
 		{Start: 0, Num: 25, Den: 1, Count: 1000},
 		{Start: 0.0417, Num: 24000, Den: 1001, Count: 960},
 		{Start: 0.023, Num: 60, Den: 1, Count: 2400},
 	} {
-		var froms bytes.Buffer
-		if err := WriteFroms(&froms, g); err != nil {
+		var table bytes.Buffer
+		if err := WriteTable(&table, g); err != nil {
 			t.Fatal(err)
 		}
-		from := make([]float64, g.Count)
-		if err := binary.Read(&froms, binary.LittleEndian, from); err != nil {
+		from, begins := make([]float64, g.Count), make([]float64, g.Count)
+		if err := binary.Read(&table, binary.LittleEndian, from); err != nil {
 			t.Fatal(err)
+		}
+		if err := binary.Read(&table, binary.LittleEndian, begins); err != nil {
+			t.Fatal(err)
+		}
+		for r, at := range begins {
+			if at != g.At(r) || g.Holding(at) != r {
+				t.Fatalf("grid %+v: frame %d begins at %v, not at %v, or is not held there", g, r, at, g.At(r))
+			}
 		}
 		for ms := -50; ms <= 40_000; ms++ {
 			at := float64(ms) / 1000

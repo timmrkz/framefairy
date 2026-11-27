@@ -414,6 +414,8 @@ export interface Sentence {
   // The key of the clip that shows it, for a caption of a clip, which is
   // a card of its own.
   clip?: string;
+  // Where a click on it puts the playhead, a frame in, as the engine says.
+  land: number;
 }
 
 // A card that answers what is typed in the transcript search: where it

@@ -595,35 +595,38 @@ func TestTheLookRouteAnswersWithTheFrameUnderTheHand(t *testing.T) {
 	}
 }
 
-// The window is told where each frame of a video's grid holds from, in
-// order, and looks a moment up there. A file outside the library, or a
-// grid that cannot be counted on, is refused.
-//
-// Not parallel: library sets the environment the store reads.
-func TestTheFromsRouteSaysWhereEachFrameHoldsFrom(t *testing.T) {
+// The table of a video's frames says where each frame holds from and
+// where it begins, on the grid the engine counts the video on, so the
+// window looks both up and counts no frame. It is the video's own: no
+// grid is taken from the window, and a file outside the library has none.
+// On the real disk: ffprobe reads the video.
+func TestTheTableSaysWhereEachFrameOfTheVideoHoldsFromAndBegins(t *testing.T) {
 	svc, mine, _ := library(t)
 	fixtures.Copy(t, "small-10s.mp4", mine)
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
-	g := framewire.Grid{Start: 0.04, Num: 25, Den: 1, Count: 250}
-	ask := func(path, grid string) *httptest.ResponseRecorder {
+	info, err := svc.probe(context.Background(), mine)
+	if err != nil {
+		t.Skipf("the video cannot be probed here: %v", err)
+	}
+	g := info.Grid()
+	ask := func(query string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/froms?"+url.Values{"path": {path}, "grid": {grid}}.Encode(), nil))
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/table?"+query, nil))
 		return rec
 	}
-	got := ask(mine, framewire.GridText(g))
-	if got.Code != http.StatusOK || got.Body.Len() != 8*g.Count {
-		t.Fatalf("the froms answered %d with %d bytes, want %d", got.Code, got.Body.Len(), 8*g.Count)
+	got := ask(url.Values{"path": {mine}, "grid": {"0,0,25,1,9"}}.Encode())
+	if got.Code != http.StatusOK || got.Body.Len() != 16*g.Count || !g.Valid() {
+		t.Fatalf("the table answered %d with %d bytes, want %d", got.Code, got.Body.Len(), 16*g.Count)
 	}
 	for r := range g.Count {
-		if at := math.Float64frombits(binary.LittleEndian.Uint64(got.Body.Bytes()[8*r:])); at != g.From(r) {
-			t.Fatalf("frame %d holds from %v, want %v", r, at, g.From(r))
+		from := math.Float64frombits(binary.LittleEndian.Uint64(got.Body.Bytes()[8*r:]))
+		begins := math.Float64frombits(binary.LittleEndian.Uint64(got.Body.Bytes()[8*(g.Count+r):]))
+		if from != g.From(r) || begins != g.At(r) {
+			t.Fatalf("frame %d holds from %v and begins at %v, want %v and %v", r, from, begins, g.From(r), g.At(r))
 		}
 	}
-	if rec := ask("/elsewhere.mp4", framewire.GridText(g)); rec.Code != http.StatusNotFound {
-		t.Errorf("the froms of a file outside the library answered %d", rec.Code)
-	}
-	if rec := ask(mine, "0,0,25,1,0"); rec.Code != http.StatusBadRequest {
-		t.Errorf("the froms of a grid with no frames answered %d", rec.Code)
+	if rec := ask(url.Values{"path": {"/elsewhere.mp4"}}.Encode()); rec.Code != http.StatusNotFound {
+		t.Errorf("the table of a file outside the library answered %d", rec.Code)
 	}
 }
 

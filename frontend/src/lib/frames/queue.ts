@@ -409,6 +409,11 @@ export class FrameQueue {
 
   private async open() {
     const movie = this.given;
+    // Which frame holds a moment, which the engine says, see FrameTable,
+    // asked at once, so it comes while the canvas, the sound card and the
+    // layout are made rather than after them.
+    const table = movie.video ? frameTable(this.path) : null;
+    table?.catch(() => {});
     const screen = await screenOf(this.canvas);
     this.trace(`the canvas draws with ${screen.kind}, ${this.ms()}, and plays ${describe(movie)}`);
     if (this.closed) throw new Error("closed");
@@ -422,13 +427,7 @@ export class FrameQueue {
     this.movie = movie;
     this.video = movie.video ?? null;
     this.sound = movie.audio ?? null;
-    if (!this.video) throw new Error("the video has no picture the video preview can show");
-    // Which frame holds a moment, which the engine says, see FrameTable.
-    this.table = await frameTable(this.path, this.video.grid!);
-    if (this.closed) throw new Error("closed");
-    // Every file's picture comes from ffmpeg on the Go side, the episode's
-    // decoder. The webview decodes nothing, see docs/VIDEO-PREVIEW.md.
-    this.app = this.fromApp();
+    if (!this.video || !table) throw new Error("the video has no picture the video preview can show");
     // A sound card at the episode's own rate, so the sound is resampled
     // once, on its way out, rather than stretch by stretch. It starts held,
     // and the first play, a gesture, lets it go.
@@ -446,6 +445,11 @@ export class FrameQueue {
     // until the canvas has its size, see laidOut.
     await this.laidOut;
     if (this.closed) throw new Error("closed");
+    this.table = await table;
+    if (this.closed) throw new Error("closed");
+    // Every file's picture comes from ffmpeg on the Go side, the episode's
+    // decoder. The webview decodes nothing, see docs/VIDEO-PREVIEW.md.
+    this.app = this.fromApp();
     this.trace(`ready, ${this.ms()}`);
   }
 

@@ -68,7 +68,7 @@ func (g Grid) Holding(t float64) int {
 // r, as a real number of seconds half a microsecond below the whole
 // microsecond Holding counts it from, so a moment kept to the
 // millisecond is never on it. Frame 0 holds every moment before it. The
-// video preview looks a moment up in these, see WriteFroms, and counts
+// video preview looks a moment up in these, see WriteTable, and counts
 // no frame of its own.
 func (g Grid) From(r int) float64 {
 	if r <= 0 {
@@ -81,13 +81,20 @@ func (g Grid) From(r int) float64 {
 	return (float64(us+int64(math.Round(g.Start*1e6))) - 0.5) / 1e6
 }
 
-// WriteFroms writes From of every frame of the grid, in order, each a
-// little-endian float64.
-func WriteFroms(w io.Writer, g Grid) error {
+// WriteTable writes the grid's table of frames, each number a
+// little-endian float64: From of every frame in order, then At of every
+// frame in order, so the video preview looks a moment up in the first
+// half and finds where a frame begins in the second, and counts no frame
+// of its own.
+func WriteTable(w io.Writer, g Grid) error {
 	buf := make([]byte, 0, 8*4096)
-	for r := range g.Count {
-		buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(g.From(r)))
-		if len(buf) == cap(buf) || r == g.Count-1 {
+	for i := range 2 * g.Count {
+		v := g.From(i)
+		if i >= g.Count {
+			v = g.At(i - g.Count)
+		}
+		buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(v))
+		if len(buf) == cap(buf) || i == 2*g.Count-1 {
 			if _, err := w.Write(buf); err != nil {
 				return err
 			}
