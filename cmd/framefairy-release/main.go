@@ -24,9 +24,14 @@
 //	    write the build again as the zip it is published as, its files
 //	    stored, with its parts, a piece for every file and the zip packed
 //	    with zstd, see pack.go
-//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-refusal F]
+//	framefairy-release harden -zip F [-team-file F] [-refusal F] | -app A -p12 F
+//	    sign the app again with the Developer ID and the hardened
+//	    runtime, on a Mac, before pack, see devid.go
+//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-team T] [-refusal F]
 //	    sign a build that check passed with the private half, read from
-//	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list
+//	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list.
+//	    With -team, it refuses a build not signed by that team with the
+//	    hardened runtime, see hardened.go
 //	framefairy-release publish -zip F -as NAME -entry F -channel C -commit X [-packed D]
 //	    upload the build and its entry, and what pack wrote beside it,
 //	    and mark a pull request's commit Ready to update to
@@ -59,7 +64,7 @@
 //	    newest release, from how scripts/upstream.sh --behind ended and
 //	    what it wrote, see behind.go
 //
-// Every command but key, check, sign, walks, fits and self asks GitHub,
+// Every command but key, check, harden, sign, walks, fits and self asks GitHub,
 // with GH_TOKEN and GH_REPO, through the interface in github.go.
 package main
 
@@ -106,6 +111,8 @@ func main() {
 		err = packCommand(args)
 	case "check":
 		err = check(args)
+	case "harden":
+		err = harden(args)
 	case "sign":
 		err = sign(args)
 	case "publish":
@@ -229,7 +236,15 @@ func sign(args []string) error {
 	where := fs.String("url", "", "where the zip will be downloaded from")
 	out := fs.String("out", "", "where the entry goes")
 	parts := fs.String("parts", "", "the parts pack wrote, beside the stored zip and the zip packed, if it was packed")
+	team := fs.String("team", "", "refuse a build not signed by this team's Developer ID with the hardened runtime")
 	_ = fs.Parse(args)
+	// The stored zip is the same app as the zip, see sameApp, so reading
+	// the zip reads both.
+	if *team != "" {
+		if err := checkHardened(*zipPath, *team); err != nil {
+			return refused(*refusal, err, os.Stderr)
+		}
+	}
 	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out), os.Stderr)
 }
 
