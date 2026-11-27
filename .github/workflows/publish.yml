@@ -30,14 +30,16 @@
 # run of builds.yml is published, and only a commit that main's history
 # holds, or the history of the pull request's newest commit.
 #
-# Three jobs, each step one command of cmd/framefairy-release, which
+# Four jobs, each step one command of cmd/framefairy-release, which
 # makes every decision in Go, see
 # docs/decisions/2026-11-14-update-decisions-in-go.md:
 #
 # 1. announce, the moment a build starts, writes the channel list again,
 #    so the Updates page says for the whole of the build that the build it
 #    offers is not the newest.
-# 2. publish, on a Mac, per channel, one after another and never stopped
+# 2. plan, on Linux, asks whether there is anything to publish, so a run
+#    that publishes nothing takes no Mac.
+# 3. publish, on a Mac, per channel, one after another and never stopped
 #    half way, checks that the commit is its channel's, checks the build,
 #    signs it again with the Developer ID, packs it in parts, signs the
 #    zip and the stored zip with the update key, uploads the zip with
@@ -45,7 +47,7 @@
 #    lacks and its entry to the release dev, and marks a pull request's
 #    commit ready to update to. A build it does not
 #    publish says why on its commit.
-# 3. list, whenever a build ends, however it ended, writes the list again
+# 4. list, whenever a build ends, however it ended, writes the list again
 #    from every entry. It takes away the entry of any pull request that is
 #    not open any more, which is how a closed pull request leaves the
 #    list, and stops saying a build is coming once it ended without one.
@@ -101,8 +103,57 @@ jobs:
       - name: Cancel a publish stuck before the environment
         run: framefairy-release unstick
 
-  publish:
+  # Whether there is anything to publish, asked on Linux, so a run that
+  # publishes nothing, a commit built already, a branch with no open pull
+  # request, takes no Mac. publish asks again on the Mac, where its answer
+  # is the one that counts, since a pull request can close in between.
+  plan:
     if: >-
+      github.event.action == 'completed' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.path == '.github/workflows/builds.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      statuses: write
+      # To check the release tool's signature.
+      attestations: read
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    outputs:
+      run: ${{ steps.which.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tool
+      - id: which
+        name: Is there anything to publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.event.workflow_run.id }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: framefairy-release publish-plan -run "$RUN" -branch "$BRANCH" -commit "$SHA"
+      # A plan that fails publishes nothing, and says so on the commit,
+      # as a publish that fails does.
+      - name: Say on the commit why it is not published
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: framefairy-release not-published -commit "$SHA" -run "$RUN"
+
+  publish:
+    needs: plan
+    if: >-
+      needs.plan.outputs.run == 'true' &&
       github.event.action == 'completed' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
@@ -121,8 +172,7 @@ jobs:
       pull-requests: read
       actions: read
       statuses: write
-      # Every job that uses the release tool may read its signature,
-      # though this one builds the tool itself.
+      # To check the release tool's signature.
       attestations: read
     # The token is handed only to the steps that ask GitHub, so the step
     # that reads the build holds nothing that can write.
@@ -133,12 +183,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Built here from main's code with no cache, see
-      # .github/actions/release-tool. main's signed build is a program for
-      # Linux, which this Mac cannot run.
+      # main's own build of the tool for a Mac, signed, from no cache
+      # anybody else wrote, see .github/actions/release-tool.
       - uses: ./.github/actions/release-tool
-        with:
-          download: "false"
 
       # What the build is a build of, from GitHub's record of the run and
       # not from anything the build wrote, and only a commit its channel's
@@ -246,7 +293,7 @@ jobs:
   # come, and the list stops saying it is. A pull request that is closed
   # builds nothing and leaves the list this way too.
   list:
-    needs: publish
+    needs: [plan, publish]
     if: >-
       always() &&
       github.event.action == 'completed' &&

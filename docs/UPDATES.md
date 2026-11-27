@@ -482,9 +482,10 @@ first build signed with the Developer ID asks once more, then no update
 does.
 
 `codesign` and the keychain are only on a Mac, so the job that publishes
-runs on one. It takes a Mac only for a build that is published, after
-the build's own. The release tool is built there from main's code with
-no cache, since main's signed build of it is a program for Linux.
+runs on one. The job `plan` asks on Linux first whether there is
+anything to publish, so a run that publishes nothing takes no Mac. The
+Mac runs main's signed build of the release tool for a Mac, which
+`release-tool.yml` makes beside the one for Linux.
 
 Builds made on the Mac with `make` stay signed ad hoc, without the
 hardened runtime, like Xcode's Sign to Run Locally. Under it an app
