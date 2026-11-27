@@ -70,6 +70,7 @@
   import { keyOnPick } from "../lib/picked";
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
+  import Playhead from "./Playhead.svelte";
   import { afterRest } from "../lib/rest";
   import { columnLevels, HeldLoudness, LoudnessLooks, silent } from "../lib/loudness";
 
@@ -907,30 +908,6 @@
     if (at > view.from + shown * 0.1 && at < view.from + shown * 0.9) return;
     const from = Math.max(0, Math.min(at - shown * 0.25, whole - shown));
     load(from, from + shown);
-  }
-
-  // The playhead while it plays, told where the sound is on every frame of
-  // the screen, see onsound in Player.svelte, and NaN once it stops. It
-  // moves there on a pixel of the screen, --hair, rather than stepping to
-  // the start of each frame of the video, which on a clip of half a minute
-  // moved it a pixel or two 25 times a second, a stutter. Only a custom
-  // property of its own element is written, from the moment in seconds, so
-  // nothing else in the app is worked out again on every frame. Where on
-  // the track that is, the stylesheet works out from the view, see .at,
-  // so a page turn or a pinch moves the line in the same frame as the
-  // waveform. A hand on the playhead or on an edge places it, so the
-  // sound does not while one is down.
-  let headAt = $state<HTMLDivElement>();
-  export function sound(at: number) {
-    const el = headAt;
-    if (!el) return;
-    if (!Number.isFinite(at) || scrubbing || handHead !== undefined) {
-      el.style.removeProperty("--sound");
-      el.style.removeProperty("--step");
-      return;
-    }
-    el.style.setProperty("--sound", `calc((${at} - var(--from)) / var(--span))`);
-    el.style.setProperty("--step", "var(--hair)");
   }
 
   // Clicking a clip in the list puts the timeline back on it, even when it
@@ -2464,16 +2441,10 @@
       </div>
     {/if}
     {#if head >= view.from && head <= view.to}
-      <!-- On the track's inside, where the waveform and every mark are
-           placed. Paused, on the start of the frame it is in, where a
-           mark lit by it stands, plan row 2.234, on a whole pixel, rounded
-           the way a mark is, see .mark. Playing, where the sound is, see
-           sound. -->
-      <div class="at" bind:this={headAt} style:--frame={x(onFrame(head)) / 100} style:--from={view.from} style:--span={span}>
-        <!-- The playhead of the range picker too, drawn by .playhead in
-             app.css. -->
-        <div class="playhead" class:scrubbing title="Drag to move the playhead"></div>
-      </div>
+      <!-- On the track's inside, a pixel in from the border, where the
+           waveform and every mark are placed. At rest on the start of the
+           frame it is in, where a mark lit by it stands. -->
+      <Playhead at={onFrame(head)} from={view.from} {span} edge={1} z={3} {scrubbing} held={handHead !== undefined} />
     {/if}
   </div>
 </div>
@@ -3002,18 +2973,6 @@
     bottom: calc(var(--frame-line) / 2 - 8px);
   }
 
-
-  /* The playhead. */
-  /* Paused, on the start of the frame, on a whole pixel. Playing, where
-     the sound is, from the view, on a pixel of the screen, see sound. */
-  .at {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: round(1px + (100% - 2px) * var(--sound, var(--frame)), var(--step, 1px));
-    width: 0;
-    z-index: 3;
-  }
 
   .edge {
     position: absolute;

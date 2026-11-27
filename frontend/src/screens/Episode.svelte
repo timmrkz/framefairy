@@ -91,6 +91,7 @@
   import { toasts } from "../lib/toast.svelte";
   import { afterRest } from "../lib/rest";
   import { atOnce, onTick, type Headline } from "../lib/headline";
+  import { workspaceSounding } from "../lib/sounding";
 
   let {
     path,
@@ -116,6 +117,9 @@
   // one looks for it looks for in itself, and keys are only taken while it
   // is the one in front, see asleep.
   let root = $state<HTMLElement>();
+  // Where the sound is while this video plays, for its playheads, see
+  // lib/sounding.ts.
+  workspaceSounding();
 
   // Every step of the workspace opening, for the app's log, see
   // lib/said.ts: what it asked the Go side and what came back, and what
@@ -3376,7 +3380,6 @@
           {source}
           missing={!!status?.missing}
           onframe={(frame) => reflection?.take(frame)}
-          onsound={(at) => timeline?.sound(at)}
           clip={shownClip}
           heading={reshaped?.playhead ?? null}
           making={making?.key}

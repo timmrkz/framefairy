@@ -53,6 +53,7 @@
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
+  import { sounding } from "../lib/sounding";
 
   let {
     path,
@@ -88,7 +89,6 @@
     sleeping = false,
     missing = false,
     onframe,
-    onsound,
   }: {
     path: string;
     source: SourceView;
@@ -193,14 +193,9 @@
     // is only lent and read at once, for the reflection of the video
     // preview at the foot of the workspace, see Reflection.svelte.
     onframe?: (frame: Picture | null) => void;
-    // Told where the sound is on every frame of the screen while it
-    // plays, and NaN once it stops, so the playhead on the clip timeline
-    // moves with it rather than stepping a frame of the video at a time.
-    // Not the time, which moves once a frame of the video, so nothing
-    // else is worked out again on every frame of the screen.
-    onsound?: (at: number) => void;
   } = $props();
 
+  const sound = sounding();
   let screen: HTMLDivElement;
   // How tall the picture came out, which the captions are drawn against.
   // Reading it changes nothing, so it never sets the layout going again.
@@ -377,7 +372,10 @@
   // reaches its end leaves the playhead on the clip, at its end.
   function heard(s: Shown) {
     trouble = s.trouble;
-    if (!s.passing) onsound?.(s.playing ? inEpisode(s.at, source.duration) : NaN);
+    // Where the sound is, once a refresh of the screen, for every playhead
+    // of the workspace, see lib/sounding.ts. Not the time, which moves once
+    // a frame of the video, so nothing else is worked out again then.
+    if (!s.passing) sound?.set(s.playing ? inEpisode(s.at, source.duration) : NaN);
     frameStart = s.frame;
     if (s.passing) {
       if (s.drew) pictured = true;

@@ -1143,7 +1143,7 @@ export const steps = {
         return l.width > 0 && l.height > 0 && x >= t.left - 1 && x <= t.right + 1;
       };
       const timeline = document.querySelector(".clip-timeline");
-      if (!on(timeline?.querySelector(".at .playhead"), timeline?.querySelector(".track")))
+      if (!on(timeline?.querySelector(".playhead"), timeline?.querySelector(".track")))
         return "the clip timeline shows no playhead at the end of the episode";
       const picker = [...document.querySelectorAll(".playhead")].find((e) => !e.closest(".clip-timeline"));
       const track = [...document.querySelectorAll(".track")].find((e) => !e.closest(".clip-timeline"));

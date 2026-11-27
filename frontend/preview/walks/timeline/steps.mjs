@@ -542,11 +542,14 @@ export const steps = {
   //                    frame of the video a refresh, the way the system's
   //                    goes on a screen faster than the video, see
   //                    preview/clock.ts, plays the clip for so many seconds
-  //                    of the episode and reads the playhead's line on the
-  //                    clip timeline on every refresh: it moves on most of
-  //                    them, a share of a frame at a time, never back, and
-  //                    once paused it no longer goes with the sound and
-  //                    stands within a frame of where the play left it
+  //                    of the episode and reads every playhead's line on
+  //                    every refresh: each, the range picker's and the
+  //                    clip timeline's, stands within a pixel of where the
+  //                    sound is in its own view, the clip timeline's moves
+  //                    on most refreshes, a share of a frame at a time,
+  //                    never back, and once paused no line goes with the
+  //                    sound and the clip timeline's stands within a frame
+  //                    of where the play left it
   async "moves with the sound"(walk, arg, s, what) {
     const { page, watch } = walk;
     const fps = await rate(page);
@@ -555,14 +558,27 @@ export const steps = {
     await clickOnTrack(page, await xOf(page, t.start + 0.5), high(g.track));
     await settle(page);
     await shownOnPlayhead(page);
-    const line = () => page.evaluate(() => document.querySelector(".clip-timeline .at").getBoundingClientRect().left);
     await page.evaluate(() => {
       window.__soundParts(4);
-      // Where the line stands on every refresh while it goes with the sound.
+      // On every refresh while the sound moves them, where each line stands
+      // and where in its view the sound says it should, both in pixels.
       window.__lineAt = [];
       const look = () => {
-        const el = document.querySelector(".clip-timeline .at");
-        if (el?.style.getPropertyValue("--sound")) window.__lineAt.push(el.getBoundingClientRect().left);
+        const lines = [...document.querySelectorAll(".playhead")].map((el) => {
+          const sound = Number(el.style.getPropertyValue("--sound") || NaN);
+          const from = Number(el.style.getPropertyValue("--from"));
+          const span = Number(el.style.getPropertyValue("--span"));
+          const edge = parseFloat(el.style.getPropertyValue("--edge"));
+          const box = el.offsetParent;
+          const left = box.getBoundingClientRect().left + box.clientLeft;
+          return {
+            timeline: !!el.closest(".clip-timeline"),
+            sound,
+            x: el.getBoundingClientRect().left + el.offsetWidth / 2,
+            should: left + edge + (box.clientWidth - 2) * ((sound - from) / span),
+          };
+        });
+        if (lines.some((l) => Number.isFinite(l.sound))) window.__lineAt.push(lines);
         window.__lineLook = requestAnimationFrame(look);
       };
       window.__lineLook = requestAnimationFrame(look);
@@ -572,11 +588,14 @@ export const steps = {
     await page.keyboard.press("Space");
     await settle(page);
     await shownOnPlayhead(page);
-    const lines = await page.evaluate(() => {
+    const seen = await page.evaluate(() => {
       cancelAnimationFrame(window.__lineLook);
       window.__soundParts(1);
       return window.__lineAt;
     });
+    // Every playhead there is, each where the sound is in its own view.
+    const off = seen.flat().find((l) => !(Math.abs(l.x - l.should) <= 1));
+    const lines = seen.map((ls) => ls.find((l) => l.timeline)?.x);
     // The steps from the first move to the last, the play's own.
     const steps = lines.slice(1).map((x, i) => x - lines[i]);
     const first = steps.findIndex((d) => d > 0);
@@ -588,11 +607,15 @@ export const steps = {
     // frame the play stopped on, within a frame of where it went.
     const frameWide = (await xOf(page, t.start + 1)) - (await xOf(page, t.start + 1 - 1 / fps));
     const stood = await page.evaluate(() => {
-      const el = document.querySelector(".clip-timeline .at");
-      return el.style.getPropertyValue("--sound") ? NaN : el.getBoundingClientRect().left;
+      const els = [...document.querySelectorAll(".playhead")];
+      if (els.some((el) => el.style.getPropertyValue("--sound"))) return NaN;
+      const el = els.find((e) => e.closest(".clip-timeline"));
+      return el.getBoundingClientRect().left + el.offsetWidth / 2;
     });
     const end = lines.at(-1);
-    if (frameWide < 4) walk.wrong = `a frame of the video is ${frameWide.toFixed(2)} px on the clip timeline, too narrow to see the line move inside it`;
+    if (seen.some((ls) => ls.length < 2)) walk.wrong = `${Math.min(...seen.map((ls) => ls.length))} playheads while playing, one on the range picker and one on the clip timeline wanted`;
+    else if (off) walk.wrong = `the ${off.timeline ? "clip timeline's" : "range picker's"} line stood at ${off.x.toFixed(2)} px while the sound was at ${off.sound.toFixed(3)} s, ${off.should.toFixed(2)} px in its view`;
+    else if (frameWide < 4) walk.wrong = `a frame of the video is ${frameWide.toFixed(2)} px on the clip timeline, too narrow to see the line move inside it`;
     else if (played.length < arg * fps * 3) walk.wrong = `the line moved over only ${played.length} refreshes in ${arg} s`;
     else if (played.some((d) => d < 0)) walk.wrong = `the line went back while playing: ${played.map((d) => d.toFixed(2)).join(" ")}`;
     else if (moved < played.length * 0.6) walk.wrong = `the line moved on ${moved} of ${played.length} refreshes, a frame of the video at a time`;
