@@ -537,6 +537,52 @@ export const steps = {
     else if (at.length < crossed - 2) walk.wrong = `the playhead changed only ${at.length} times while the play crossed ${crossed} frames`;
     await watch.step(what, s);
   },
+  // ["moves with the sound"]
+  //                    with the playhead paused, tells the video preview
+  //                    the play is at four moments a quarter of a frame of
+  //                    the video apart inside the frame it is on, the way the system's sound card
+  //                    moves on every refresh, and the playhead's line on
+  //                    the clip timeline goes along with each of them, not
+  //                    only to the start of the frame. Told the play
+  //                    stopped, the line is back where it stood. The
+  //                    walk's clock moves the sound a whole frame at a
+  //                    time, see preview/clock.ts, so the walk says the
+  //                    moments between two frames itself
+  async "moves with the sound"(walk, arg, s, what) {
+    const { page, watch } = walk;
+    const { fps, videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
+    const line = () => page.evaluate(() => document.querySelector(".clip-timeline .at").getBoundingClientRect().left);
+    // What the frame queue tells the video preview on a refresh of a
+    // play, see Shown in src/lib/frames/queue.ts.
+    const tell = (at, playing) =>
+      page.evaluate(
+        ([at, playing]) => {
+          const q = window.__frameQueue;
+          q.emit({ at, frame: q.shown?.begins ?? NaN, drew: false, playing, ended: false, drawnAt: 0, trouble: "", passing: false });
+        },
+        [at, playing],
+      );
+    const at = await page.locator(".screen").evaluate((el) => Number(el.dataset.playhead));
+    const stood = await line();
+    // Inside the frame the playhead is on, so the playhead itself stays.
+    const begins = videoStart + Math.floor((at - videoStart) * fps + 1e-6) / fps;
+    const moments = [0, 1, 2, 3].map((k) => begins + (k + 0.5) / 4 / fps);
+    const seen = [];
+    const wanted = [];
+    for (const m of moments) {
+      await tell(m, true);
+      seen.push(await line());
+      wanted.push(await xOf(page, m));
+    }
+    await tell(at, false);
+    const back = await line();
+    const off = seen.map((x, i) => x - seen[0] - (wanted[i] - wanted[0]));
+    const quarter = wanted[1] - wanted[0];
+    if (quarter < 1) walk.wrong = `a quarter of a frame is ${quarter.toFixed(2)} px on the clip timeline, too narrow to tell`;
+    else if (off.some((d) => Math.abs(d) > 1)) walk.wrong = `the line stood at ${seen.map((x) => (x - seen[0]).toFixed(2)).join(", ")} px for the sound at ${wanted.map((x) => (x - wanted[0]).toFixed(2)).join(", ")} px`;
+    else if (Math.abs(back - stood) > 0.01) walk.wrong = `the line stood ${(back - stood).toFixed(2)} px from where it was once the play stopped`;
+    await watch.step(what, s);
+  },
   // ["keyed on the way"]
   //                    since "scrub far", every frame the frame queue put
   //                    up on the way to the frame under the hand lies

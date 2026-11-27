@@ -3376,6 +3376,7 @@
           {source}
           missing={!!status?.missing}
           onframe={(frame) => reflection?.take(frame)}
+          onsound={(at) => timeline?.sound(at)}
           clip={shownClip}
           heading={reshaped?.playhead ?? null}
           making={making?.key}

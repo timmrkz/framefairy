@@ -909,6 +909,27 @@
     load(from, from + shown);
   }
 
+  // The playhead while it plays, told where the sound is on every frame of
+  // the screen, see onsound in Player.svelte, and NaN once it stops. It
+  // moves there on a pixel of the screen, --hair, rather than stepping to
+  // the start of each frame of the video, which on a clip of half a minute
+  // moved it a pixel or two 25 times a second, a stutter. Only a custom
+  // property of its own element is written, so nothing else in the app is
+  // worked out again on every frame. A hand on the playhead or on an edge
+  // places it, so the sound does not while one is down.
+  let headAt = $state<HTMLDivElement>();
+  export function sound(at: number) {
+    const el = headAt;
+    if (!el) return;
+    if (!Number.isFinite(at) || scrubbing || handHead !== undefined) {
+      el.style.removeProperty("--sound");
+      el.style.removeProperty("--step");
+      return;
+    }
+    el.style.setProperty("--sound", String(x(at) / 100));
+    el.style.setProperty("--step", "var(--hair)");
+  }
+
   // Clicking a clip in the list puts the timeline back on it, even when it
   // is the clip that is already selected and the view was moved by hand.
   // Given a moment, the timeline goes there instead: putting the playhead
@@ -2444,7 +2465,7 @@
            placed, and on the start of the frame it is in, where a mark
            lit by it stands. Plan row 2.234. On a whole pixel, rounded the
            way a mark is, see .mark. -->
-      <div class="at" style="left: round(1px + (100% - 2px) * {x(onFrame(head)) / 100}, 1px)">
+      <div class="at" bind:this={headAt} style:--frame={x(onFrame(head)) / 100}>
         <!-- The playhead of the range picker too, drawn by .playhead in
              app.css. -->
         <div class="playhead" class:scrubbing title="Drag to move the playhead"></div>
@@ -2979,10 +3000,13 @@
 
 
   /* The playhead. */
+  /* Paused, on the start of the frame, on a whole pixel. Playing, where
+     the sound is, on a pixel of the screen, see sound. */
   .at {
     position: absolute;
     top: 0;
     bottom: 0;
+    left: round(1px + (100% - 2px) * var(--sound, var(--frame)), var(--step, 1px));
     width: 0;
     z-index: 3;
   }

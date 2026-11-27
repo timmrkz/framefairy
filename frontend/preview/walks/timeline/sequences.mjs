@@ -82,8 +82,11 @@ export default [
     // that follows the playhead was worked out again 120 times a second on
     // Tim's screen for a video of 25 frames a second, and a play missed
     // refreshes for it.
-    name: "a play moves the playhead once a frame of the video",
-    steps: [["once a frame", 3]],
+    // Found by the user: the playhead's line on the clip timeline then
+    // stepped a pixel or two a frame of the video. It moves on every
+    // refresh with the sound, and the playhead itself still once a frame.
+    name: "a play moves the playhead once a frame of the video, and its line on the clip timeline with the sound",
+    steps: [["once a frame", 3], ["moves with the sound"]],
   },
   {
     // Plan row 2.235, found by Tim: the clip's edges took the playhead
