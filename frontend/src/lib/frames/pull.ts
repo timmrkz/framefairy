@@ -2,7 +2,9 @@
 // frames.go: each frame is where it starts, 8 bytes, and for a play what
 // more the Go side says of it, 8 bytes each, see servePlay, then the frame in
 // colours, RGBA with 8 bits each and an opaque alpha, which ffmpeg made
-// from the file's tags. Each frame is read straight into a buffer of its
+// from the file's tags, then what it is dressed with, its dress as JSON
+// and the layer of captions over it, each after its length in 4 bytes,
+// see writeDress. Each frame is read straight into a buffer of its
 // own as the answer arrives and kept as it is, so a frame is copied once
 // on its way in, not twice. It runs in a Worker, see pull.worker.ts, so
 // it never holds up the page while a hand is on the clip timeline, and on
@@ -32,17 +34,30 @@ export type Pulled = {
   // The frames of the words an Ahead asked for that the app holds
   // already, which it keeps as used last, see AppFrames.aheadNow.
   keep: number[];
-  // Each frame's pixels, see Picture. They are bytes rather than a
-  // Picture so they can come from a Worker, see pictures.
-  frames: { at: number; data: ArrayBuffer; stamp: number[] }[];
+  // Each frame's pixels, see Picture, with its dress as the Go side wrote
+  // it and the layer of captions over it, empty where there is none. They
+  // are bytes rather than a Picture so they can come from a Worker, see
+  // pictures.
+  frames: { at: number; data: ArrayBuffer; stamp: number[]; dress: string; layer: ArrayBuffer | null }[];
   // The buffers handed to the pull that it had no frame for, to be kept
   // for the next, see pool.ts.
   spare: ArrayBuffer[];
 };
 
-// The frames of a pull as Pictures of width by height.
-export function pictures(got: Pulled, width: number, height: number): { at: number; frame: Picture; stamp: number[] }[] {
-  return got.frames.map(({ at, data, stamp }) => ({ at, stamp, frame: new Picture(data, width, height, Math.round(at * 1e6), got.light) }));
+// The frames of a pull as Pictures of width by height, each with its
+// dress and its layer as they came.
+export function pictures(
+  got: Pulled,
+  width: number,
+  height: number,
+): { at: number; frame: Picture; stamp: number[]; dress: string; layer: ArrayBuffer | null }[] {
+  return got.frames.map(({ at, data, stamp, dress, layer }) => ({
+    at,
+    stamp,
+    dress,
+    layer,
+    frame: new Picture(data, width, height, Math.round(at * 1e6), got.light),
+  }));
 }
 
 // The frames are colours ready to draw, see framewire.Picture. Nothing
@@ -73,42 +88,59 @@ export async function pull(url: string, width: number, height: number, spare: Ar
   const fits = spare.filter((b) => b.byteLength === size);
   out.spare = fits;
   if (!res.ok || !res.body) return out;
+  // What is being read: the head, the pixels, the length of the dress,
+  // the dress, the length of the layer, the layer.
+  let phase = 0;
+  let has = 0;
   const before = new Uint8Array(head);
-  let headHas = 0;
+  const length = new Uint8Array(4);
   let body: ArrayBuffer | null = null;
-  let bodyHas = 0;
+  let dress = new Uint8Array(0);
+  let layer = new Uint8Array(0);
+  const text = new TextDecoder();
+  // The part being read, and how long it is.
+  const part = (): Uint8Array =>
+    phase === 0 ? before : phase === 1 ? new Uint8Array(body!) : phase === 2 || phase === 4 ? length : phase === 3 ? dress : layer;
+  // Moves on once a part is read, past a dress or a layer of nothing.
+  const next = () => {
+    has = 0;
+    for (;;) {
+      if (phase === 0) body = fits.pop() ?? new ArrayBuffer(size);
+      else if (phase === 2) dress = new Uint8Array(new DataView(length.buffer).getUint32(0, true));
+      else if (phase === 4) layer = new Uint8Array(new DataView(length.buffer).getUint32(0, true));
+      else if (phase === 5) {
+        const v = new DataView(before.buffer);
+        const stamp: number[] = [];
+        for (let i = 8; i + 8 <= head; i += 8) stamp.push(v.getFloat64(i, true));
+        out.frames.push({
+          at: v.getFloat64(0, true),
+          data: body!,
+          stamp,
+          dress: text.decode(dress),
+          layer: layer.length ? (layer.buffer as ArrayBuffer) : null,
+        });
+        body = null;
+        phase = 0;
+        return;
+      }
+      phase++;
+      if (part().length) return;
+    }
+  };
   const reader = res.body.getReader();
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
     let at = 0;
     while (at < value.length) {
-      if (headHas < head) {
-        const n = Math.min(head - headHas, value.length - at);
-        before.set(value.subarray(at, at + n), headHas);
-        headHas += n;
-        at += n;
-        if (headHas === head) {
-          body = fits.pop() ?? new ArrayBuffer(size);
-          bodyHas = 0;
-        }
-        continue;
-      }
-      const n = Math.min(size - bodyHas, value.length - at);
-      new Uint8Array(body!, bodyHas, n).set(value.subarray(at, at + n));
-      bodyHas += n;
+      const into = part();
+      const n = Math.min(into.length - has, value.length - at);
+      into.set(value.subarray(at, at + n), has);
+      has += n;
       at += n;
-      if (bodyHas === size) {
-        const v = new DataView(before.buffer);
-        const stamp: number[] = [];
-        for (let i = 8; i + 8 <= head; i += 8) stamp.push(v.getFloat64(i, true));
-        out.frames.push({ at: v.getFloat64(0, true), data: body!, stamp });
-        headHas = 0;
-        body = null;
-      }
+      if (has === into.length) next();
     }
   }
-  // A frame cut short leaves its buffer for the next pull.
   if (body && size) out.spare.push(body);
   return out;
 }

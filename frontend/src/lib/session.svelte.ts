@@ -242,6 +242,14 @@ export class EpisodeSession {
     );
   }
 
+  // How the chosen clip's parts turn, as an edit answered: R pressed
+  // again before the next state came turns by these, see RotatedClip.
+  takeTurns(turns: Turns | null, rev: number) {
+    if (!turns || rev < this.turnsRev) return;
+    this.turnsRev = rev;
+    this.turns = same(this.turns, turns);
+  }
+
   // One clip as an edit left it, from the edit's answer. No state read
   // before the edit is kept after it.
   put(clip: ClipEntry) {

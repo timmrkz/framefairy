@@ -105,17 +105,17 @@ removed. Nothing is prepared before the first play.
    had taken back. No rule of the product makes that case not happen, an
    undo while the clip plays is an ordinary thing to do, so rule 7 lets
    the machinery in. Now every change of the clip while it plays, an edge
-   or a cut dragged, an undo or a redo, is a new play that takes over
-   from the one under way a moment ahead of the sound heard, `changed` in
-   `lib/frames/queue.ts`. The Go side works out the moment the play under
-   way stands at there and plays the new pieces from it, and its first
-   frames are the ones it decoded already, so nothing that plays moves,
-   stops or jumps. Where the new pieces do not hold that moment, the play
-   goes on as it was and the pieces are the next play's. An edge of the
-   clip dragged past
-   the playhead leaves the playhead outside the clip, on the video,
-   the user's rule, so the play goes on as a play of the video,
-   straight on to the episode's end, `playOn`. Paused, the playhead goes
+   or a cut dragged, an undo or a redo, is handed to the play under way
+   by the name of the clip's new framing, `changed` in
+   `lib/frames/queue.ts`. The Go side takes it in a moment ahead of the
+   sound heard, `servePlayTake`: it works out the moment the play stands
+   at there and plays the new pieces from it, on the same clock, and its
+   first frames are the ones it decoded already, so nothing that plays
+   moves, stops or jumps. The window drops what it holds of the clip as
+   it was from there on. An edge of the clip dragged past the playhead
+   leaves the playhead outside the clip, on the video, the user's rule,
+   so the Go side plays on as a play of the video, straight on to the
+   episode's end, and says so. Paused, the playhead goes
    with the edge dragged, a cut's edges too, see the clip timeline in
    [APP.md](APP.md).
 7. **A rule before machinery.** When a case would need new machinery in

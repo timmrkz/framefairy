@@ -32,7 +32,7 @@
 import { AppFrames, type Waiter } from "./app";
 import { afterRest } from "../rest";
 import type { Picture } from "./picture";
-import type { Over } from "./captions";
+import type { CaptionAsk, Layer, Over } from "./captions";
 import type { Light } from "./light";
 import { screenOf, type Screen } from "./screen";
 import { describeEvenness, Even, type Source } from "./even";
@@ -42,6 +42,9 @@ import { FADE, heard } from "./heard";
 import { GoPlay, type Chunk, type Piece, type Shot } from "./play";
 
 export type { Piece } from "./play";
+// What a play plays: the pieces of a clip, or null for the video, whether
+// they loop, and the name of the clip's framing, see FrameQueue.setProgram.
+export type Program = [pieces: Piece[] | null, loop: boolean, framing?: string | null];
 
 // Where the playhead is and what is on the canvas, told to whoever
 // listens each time either changes, which while playing is every
@@ -73,9 +76,9 @@ export type Shown = {
 // Where a play is on the program, see tick: from where the sound card says
 // it is, heard, and where the first frame of the play not on screen yet
 // starts, unshown, and whether that frame is ready, decoded and waiting
-// with what lies over it here and its sound handed over, see unshown. Ready is asked only by a clock
-// that wants it, so the app's, which goes by the sound card alone, costs
-// nothing for it.
+// with its sound handed over and no change of the clip on its way, see
+// unshown. Ready is asked only by a clock that wants it, so the app's,
+// which goes by the sound card alone, costs nothing for it.
 export type PlayClock = (heard: number, unshown: number, ready: () => boolean) => number;
 // What a clock may reach of the queue it runs: the sound card, and whether
 // a play goes on.
@@ -107,15 +110,9 @@ export type Stats = {
   // so a walk that sets late sound aside knows it was not L's, issue #466.
   soundThrown: number;
   soundTwice: number;
-  // The longest a frame a gesture put the playhead on waited for what lies
-  // over it, milliseconds, see dress.
-  dressWait: number;
-  // Frames a gesture put the playhead on that were put up without what
-  // lies over it, because it did not come in DRESS_WAIT, see dress.
-  bare: number;
-  // Frames a gesture put the playhead on that waited for what lies over
-  // it, counted as each starts to wait, so a walk knows the frame is
-  // being held for its captions, see dress.
+  // Frames a gesture put the playhead on that waited for the captions of
+  // their clip, counted as each starts to wait, so a walk knows the frame
+  // is being held for them, see captioned.
   waitedForDress: number;
   // Plays started, a seek while playing and a new program included. A
   // press of L starts none, see relooped.
@@ -142,13 +139,6 @@ const SOUND_AHEAD = 1;
 const SOUND_BEHIND = 3;
 // Sound pulled before a play starts, seconds.
 const SOUND_FIRST = 0.15;
-// How far ahead of the sound heard a play taking over from the one before
-// starts, seconds: its first frames are kept on the Go side, and its
-// sound has to come before that place is heard, see changed.
-const TAKE_OVER = 0.15;
-// How many times a take over is tried with its place moved on, see
-// takeOver, before the play starts again from the playhead.
-const TAKE_OVER_TRIES = 3;
 // How far ahead of the sound card's clock a play's first sound is put,
 // seconds. The sound card renders a buffer at a time, and a stretch put
 // where it has rendered already starts late and out of step with the
@@ -162,13 +152,6 @@ const START_LEAD = 0.025;
 // in milliseconds, the mark docs/VIDEO-PREVIEW.md sets, for the log of a
 // drag. Only said, never acted on.
 const DRAG_FRAME_MS = 50;
-// The longest a frame a gesture put the playhead on waits for what lies
-// over it, the captions, milliseconds, see dress. A layer comes in tens of
-// milliseconds, and one that did not come is asked for once more after a
-// quarter of a second, see AGAIN in captions.ts. Past this the frame is put
-// up without it: a picture that stands still because its captions are slow
-// is worse than captions that come a moment after it.
-const DRESS_WAIT = 600;
 
 // Starts the episode's decoder on the Go side, ffmpeg with the file open,
 // the moment a workspace starts to open, rather than once the workspace
@@ -241,8 +224,6 @@ export class FrameQueue {
     lateSoundAt: [],
     soundThrown: 0,
     soundTwice: 0,
-    dressWait: 0,
-    bare: 0,
     waitedForDress: 0,
     starts: 0,
     keys: 0,
@@ -308,10 +289,17 @@ export class FrameQueue {
   private began: { at: number; drawn: number; late: number; lateSound: number; when: number; even: Even } | null = null;
 
   // What play plays, as it was asked for: pieces, or null for the whole
-  // episode straight on, and whether it loops.
-  private wanted: { pieces: Piece[] | null; loop: boolean } = { pieces: null, loop: false };
+  // episode straight on, whether it loops, and the name of the clip's
+  // framing the Go side plays them by, see GoPlay.open. The key is the
+  // pieces and the loop: a framing that changed only the crop or a turn
+  // plays the same frames.
+  private wanted: { pieces: Piece[] | null; loop: boolean; framing: string | null } = { pieces: null, loop: false, framing: null };
   private wantedKey = "";
-  private asked: [Piece[] | null, boolean] | null = null;
+  private asked: Program | null = null;
+  // Told when the Go side left the playhead outside the clip while the
+  // clip played, an edge dragged past it, and the play went on as a play
+  // of the video, see changed.
+  leftClip: () => void = () => {};
 
   private state: State = "paused";
   // Where the playhead is, in the episode.
@@ -381,15 +369,14 @@ export class FrameQueue {
     waitFrom: number;
     ways: { kept: number; looks: number; near: number; overtaken: number };
   } | null = null;
-  // The first frame of a play that is waiting for what lies over it, and
-  // the one that has it, each by its ticket and where it begins, see
-  // dressed.
-  private dressing = "";
-  private dressedKey = "";
-  // The ticket whose frame is decoded or on its way and waits for what
-  // lies over it, see dress, and -1 when none waits. A frame passing is
-  // not put up meanwhile, see passing.
-  private dressFor = -1;
+  // The ticket whose frame waits for the captions of its clip, see
+  // captioned, and -1 when none waits. A frame passing is not put up
+  // meanwhile, see passing.
+  private captionsFor = -1;
+  // What the frames are dressed with, see dressWith, and what the play
+  // under way was last told of it.
+  private dressAsk: CaptionAsk | null = null;
+  private playDressed = "";
 
 
   // path is the episode's, and movie what the engine says of it, see
@@ -472,6 +459,7 @@ export class FrameQueue {
     app.onPassing = (rank, frame, seq) => this.passing(rank, frame, seq);
     app.paused = () => this.state !== "playing" && this.state !== "starting";
     app.shownRank = () => this.shown?.rank ?? -1;
+    app.dressWith(this.dressAsk);
     return app;
   }
 
@@ -526,7 +514,7 @@ export class FrameQueue {
   get program(): { end: number; length: number; loop: boolean } {
     const p = this.goPlay;
     if (!p) return { end: Infinity, length: 0, loop: this.wanted.loop };
-    return { end: p.end, length: p.length + p.shift, loop: p.end === Infinity };
+    return { end: p.end, length: p.length, loop: p.end === Infinity };
   }
 
   // The pieces play plays: the clip's, or the whole episode straight on.
@@ -534,30 +522,33 @@ export class FrameQueue {
     return this.wanted.pieces ?? [{ start: 0, end: this.movie?.duration ?? 0 }];
   }
 
-  // What play plays: the pieces of a clip, cuts jumped, or null for the
-  // whole episode straight on, and whether it loops. The same program
-  // again changes nothing. A new one while playing is taken into the play
-  // ahead of the playhead, see changed, and a cue made for the old one is
-  // made again.
-  setProgram(pieces: Piece[] | null, loop: boolean) {
-    if (this.relooped(pieces, loop)) return;
+  // What play plays: the pieces of a clip, cuts jumped, by the name of
+  // its framing, or null for the whole episode straight on, and whether it
+  // loops. The same program again changes nothing. A new one while
+  // playing is taken into the play by the Go side, see changed, and a cue
+  // made for the old one is made again.
+  setProgram(pieces: Piece[] | null, loop: boolean, framing: string | null = null) {
+    if (this.relooped(pieces, loop, framing)) return;
     if (this.state === "playing" || this.state === "starting") {
       const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
       if (JSON.stringify([copy, loop]) === this.wantedKey) {
         this.asked = null;
+        if (pieces) this.wanted.framing = framing;
+        this.dressPlay();
         return;
       }
       // The clip's pieces changed under a play of the clip are taken in,
       // see changed. A play of the video and a play of a clip do not turn
       // into each other here: a clip made with I or O while the video
-      // plays is the next play's, and the clip timeline says when the
-      // playhead was left outside the clip, see playOn. So is a program
-      // where the playhead is in none of the pieces now.
-      if (!pieces || !this.wanted?.pieces || this.changed(pieces, loop) === "outside") this.asked = [pieces, loop];
+      // plays is the next play's.
+      if (!pieces || !framing || !this.wanted?.pieces) this.asked = [pieces, loop, framing];
+      else this.changed(pieces, loop, framing);
       return;
     }
     this.asked = null;
-    if (!this.want(pieces, loop)) return;
+    const was = this.wantedKey;
+    this.want(pieces, loop, framing);
+    if (this.wantedKey === was) return;
     if (this.state === "cued" || this.goPlay) this.seek(this.at);
   }
 
@@ -577,13 +568,16 @@ export class FrameQueue {
   // a play taking over does, see changed. Started again for the loop, the
   // play threw away what was decoded, and the picture and the sound
   // stopped for a moment at every press, found by Tim.
-  private relooped(pieces: Piece[] | null, loop: boolean): boolean {
+  private relooped(pieces: Piece[] | null, loop: boolean, framing: string | null): boolean {
     if (this.state !== "playing" && this.state !== "starting") return false;
     const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
     if (JSON.stringify([copy, !loop]) !== this.wantedKey) return false;
     const play = this.goPlay;
-    if (play && loop) return this.changed(pieces, loop) !== "outside";
-    this.wanted = { pieces: copy, loop };
+    if (play && loop && pieces && framing) {
+      this.changed(pieces, loop, framing);
+      return true;
+    }
+    this.wanted = { pieces: copy, loop, framing };
     this.wantedKey = JSON.stringify([copy, loop]);
     // A play still on its way from the Go side is opened again with what
     // is wanted, see start.
@@ -597,81 +591,69 @@ export class FrameQueue {
   }
 
   // The clip changed under a running play, by a drag, an undo or a redo,
-  // or its loop switched on: a play of the new pieces takes over at once,
-  // a moment ahead of the sound heard, from the moment the play under way
+  // or its loop switched on: the Go side takes the new pieces into the
+  // play, a moment ahead of the sound heard, from the moment the play
   // stands at there, and the picture and the sound go on with no stop,
-  // Tim's rule on #277 and his report on it. Its first frames are the ones
-  // the play before decoded and the Go side kept. A clip edge or a cut
+  // Tim's rule on #277 and his report on it. The frames there are the
+  // ones the play decoded and the Go side kept. A clip edge or a cut
   // dragged while the clip played used to start the play again at every
   // step, and the picture, the sound and the playhead stuttered with the
-  // hand, so that is the one thing this never does.
-  //
-  // Says "outside" and changes nothing where the playhead is in none of
-  // the new pieces.
-  private changed(pieces: Piece[] | null, loop: boolean): "taken" | "outside" | "started" {
-    const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
-    const list = copy ?? [{ start: 0, end: this.movie?.duration ?? 0 }];
-    if (!list.some((p) => this.at >= p.start && this.at < p.end)) return "outside";
-    this.want(pieces, loop);
+  // hand, so that is the one thing this never does. Where the new pieces
+  // do not hold the moment, an edge dragged past the playhead, the Go
+  // side goes on as a play of the video, Tim's rule on #277: the playhead
+  // is no longer in the clip.
+  private changed(pieces: Piece[], loop: boolean, framing: string) {
+    this.want(pieces, loop, framing);
     const play = this.goPlay;
     // Still on its way from the Go side: it is opened again with what is
     // wanted, see start.
-    if (!play) return "taken";
+    if (!play) return;
     if (this.c0 === null) {
       // Not playing yet: the play starts again with what is wanted.
       this.start(this.startFrom, "again");
-      return "started";
+      return;
     }
-    this.takenOver = this.takeOver(play, Math.max(this.reached, this.sounded()) + TAKE_OVER, list, loop);
-    return "taken";
+    this.playDressed = this.app?.dressKey ?? "";
+    // One change at a time: the Go side takes them in the order they
+    // come, and two fetches on their way at once may come the other way
+    // round, so a drag ended on the clip as it was a step before. A
+    // change that waited behind one and has a newer one behind it is
+    // left out, the newer says it all.
+    const turn = ++this.takes;
+    this.taking++;
+    this.takenOver = this.takenOver
+      .catch(() => {})
+      .then(() => (turn === this.takes && play === this.goPlay ? this.takeIn(play, framing, loop) : undefined))
+      .finally(() => {
+        this.taking--;
+        this.dressPlay();
+      });
   }
+  // Changes of the clip on their way to the Go side, see dressPlay, and
+  // how many were asked for, the last one the one sent.
+  private taking = 0;
+  private takes = 0;
 
-  // A play of the pieces takes over from the one under way at a place on
-  // its clock, see changed. Where the Go side says the new pieces do not
-  // hold the moment that place stands for, the play goes on as it was,
-  // and the pieces are the next play's.
-  //
-  // The new play comes as a cue and takes the decoder only once it is the
-  // one drawn: taken at once, the Go side stopped the play under way
-  // while the window still pulled from it, and the window, told it was
-  // closed, started the play again, the stop this exists to prevent.
-  private async takeOver(was: GoPlay, at: number, pieces: Piece[], loop: boolean, tries = 1): Promise<void> {
-    if (!this.app) return;
-    const key = this.wantedKey;
-    const next = await GoPlay.open(
-      this.app,
-      { pieces, loop, at: this.at, rate: this.sampleRate, channels: this.channels, cue: true, after: { play: was, at } },
-      this.previewSize(),
-    );
-    if (typeof next === "string") {
-      this.fault(`The play could not take the change in: ${next.replace(/\.$/, "")}.`);
-      return;
+  // What the Go side made of a change of the clip the play plays, see
+  // changed and GoPlay.take: the frames and the sound of the clip as it
+  // was from the place it took over at make way for the new pieces'.
+  private async takeIn(play: GoPlay, framing: string, loop: boolean): Promise<void> {
+    const got = await play.take(framing, loop, Math.max(this.reached, this.sounded()));
+    if (!got || play !== this.goPlay || this.closed || this.c0 === null) return;
+    if (got.video) {
+      this.trace(`the playhead was left outside the clip at ${this.at.toFixed(3)} s, the play goes on as a play of the video`);
+      this.want(null, false, null);
+      this.leftClip();
     }
-    if (!next) {
-      if (was === this.goPlay && key === this.wantedKey) this.asked = [this.wanted.pieces, loop];
-      return;
-    }
-    if (was !== this.goPlay || this.closed || key !== this.wantedKey || this.c0 === null) {
-      next.close();
-      return;
-    }
-    // The sound went past the place while the Go side answered: the
-    // place is moved on, a few times, before the play starts again.
-    if (at <= this.sounded()) {
-      next.close();
-      this.trace(`the take over at ${at.toFixed(3)} s came after the sound had passed it, try ${tries}`);
-      if (tries < TAKE_OVER_TRIES) return this.takeOver(was, Math.max(this.reached, this.sounded()) + TAKE_OVER, pieces, loop, tries + 1);
+    // The sound went past the place while the Go side answered: the play
+    // starts again from the playhead.
+    if (got.at <= this.sounded()) {
+      this.trace(`the change taken in at ${got.at.toFixed(3)} s came after the sound had passed it`);
       this.start(this.at);
       return;
     }
-    this.trace(`the clip changed while it plays, a play of it takes over at ${next.moment.toFixed(3)} s, ${((at - this.sounded()) * 1000).toFixed(0)} ms ahead of the sound`);
-    // The frames and the sound of the play before from that place on make
-    // way for the new play's.
-    for (const s of was.shots.splice(0)) {
-      if (s.at < at) was.shots.push(s);
-      else this.closeFrame(s.frame);
-    }
-    const stop = this.c0 + (Math.round(at * this.sampleRate) - this.m0) / this.sampleRate;
+    this.trace(`the clip changed while it plays, taken in at ${got.at.toFixed(3)} s, ${((got.at - this.sounded()) * 1000).toFixed(0)} ms ahead of the sound`);
+    const stop = this.c0 + (Math.round(got.at * this.sampleRate) - this.m0) / this.sampleRate;
     for (const [src, end] of this.sources) {
       if (end <= stop) continue;
       try {
@@ -680,42 +662,19 @@ export class FrameQueue {
       this.sources.set(src, stop);
     }
     this.handedTo = Math.min(this.handedTo, stop);
-    this.soundTo = Math.min(this.soundTo, Math.round(at * this.sampleRate));
-    // What the play before has come up to that place is drawn first.
-    next.shots.unshift(...was.shots.splice(0));
-    // The new play takes the decoder before the old one lets it go, so
-    // nothing is read ahead in between.
-    next.go();
-    was.close();
-    this.goPlay = next;
-    if (!this.sound) next.soundEnded = true;
-    this.listenTo(next);
+    this.soundTo = Math.min(this.soundTo, Math.round(got.at * this.sampleRate));
     this.pump();
-  }
-
-  // The playhead was left outside the clip while the clip plays, by an
-  // edge of the clip dragged past it or an undo, so the play goes on as a
-  // play of the video, Tim's rule on #277: from the piece the playhead is
-  // in straight on to the episode's end, taken in the way any change of
-  // the clip is, see changed.
-  playOn() {
-    if (this.state !== "playing" && this.state !== "starting") return;
-    this.trace(`the playhead was left outside the clip at ${this.at.toFixed(3)} s, the play goes on as a play of the video`);
-    if (this.changed(null, false) !== "outside") return;
-    // The playhead in none of the pieces of the program it plays, past the
-    // episode's end, which a moment of the episode never is.
-    this.want(null, false);
-    this.start(this.at);
   }
 
   // Takes a program as the one play plays, and says whether it is another
   // than the one before. Nothing is started.
-  private want(pieces: Piece[] | null, loop: boolean): boolean {
+  private want(pieces: Piece[] | null, loop: boolean, framing: string | null = null): boolean {
     const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
     const key = JSON.stringify([copy, loop]);
+    this.wanted.framing = pieces ? framing : null;
     if (key === this.wantedKey) return false;
     this.wantedKey = key;
-    this.wanted = { pieces: copy, loop };
+    this.wanted = { pieces: copy, loop, framing: pieces ? framing : null };
     return true;
   }
 
@@ -729,7 +688,7 @@ export class FrameQueue {
   // the queue started again from where it was and said so, and that old
   // moment came back as the playhead the seek after it was sent to: the
   // click was lost.
-  seek(at: number, program?: [Piece[] | null, boolean]) {
+  seek(at: number, program?: Program) {
     if (this.closed) return;
     this.gestures++;
     this.app?.still();
@@ -844,12 +803,15 @@ export class FrameQueue {
   // The clips on the cards, by their starts, the likeliest to be clicked
   // first: the frame each opens on is read once nothing else is wanted and
   // held for a click on its card, see AppFrames.cards.
-  cards(starts: number[]) {
+  cards(starts: number[], asks: (CaptionAsk | null)[] = []) {
     this.cardsGiven = this.ready.then(
       () => {
         if (this.closed || !this.app) return;
         const s = this.video!.samples;
-        this.app.cards(starts.map((at) => rankAt(s, at)));
+        this.app.cards(
+          starts.map((at) => rankAt(s, at)),
+          asks,
+        );
       },
       () => {},
     );
@@ -1129,6 +1091,10 @@ export class FrameQueue {
     }
     this.paint(true);
     this.stats.drawn++;
+    // A frame asked for before the clip changed, a crop moved as it came,
+    // is dressed as the clip is now.
+    const key = frame.over?.dress?.key;
+    if (!passing && key !== undefined && this.app && key !== this.app.dressKey) void this.redress();
   }
 
 
@@ -1150,7 +1116,7 @@ export class FrameQueue {
   // came for, whose own frame still comes and replaces it, so it never
   // stays once the hand rests.
   //
-  // Nor while the frame of the newest gesture waits for what lies over it.
+  // Nor while the frame of the newest gesture waits for its captions.
   // A clip card clicked puts up the clip's first frame with its captions,
   // in one change, and a frame of an older place came in between: a clip
   // made with Mark In was sought to the mark and then to its first
@@ -1159,7 +1125,7 @@ export class FrameQueue {
   // the clip's captions, then the clip's own frame.
   private passing(rank: number, frame: Picture, seq: number) {
     if (this.closed || (this.state !== "paused" && this.state !== "cued") || this.putFor === this.ticket) return;
-    if (this.dressFor === this.ticket) return;
+    if (this.captionsFor === this.ticket) return;
     if (seq <= this.shownAsked) return;
     if (this.shown?.rank === rank) return;
     this.stats.open++;
@@ -1170,33 +1136,17 @@ export class FrameQueue {
     this.report(true, true);
   }
 
-  // What lies over the frames, the captions: asked for each frame as it
-  // is drawn, by the moment of the episode it starts at, and told of each
-  // frame on its way to the screen a few frames ahead, so what lies over it
-  // can be there when it is drawn, with the light of the frame, which
-  // decides how a colour laid over it is shown. See captions.ts.
+  // What lies over the frames: each frame comes with its own, its dress
+  // and the layer of captions the Go side drew for it, see
+  // AppFrames.dressWith, which at says how to lay over it, with the light
+  // of the frame, which decides how a colour laid over it is shown. See
+  // captions.ts. At says with fresh whether the frame is put up for the
+  // newest gesture, or is the frame on screen drawn again.
   //
   // A frame a gesture put the playhead on, paused, waits to be put up until
-  // what lies over it is here, ready, so the picture and its captions come
-  // in one frame, see dress. At says with fresh whether the frame is put up
-  // for the newest gesture, or is the frame on screen drawn again: until a
-  // clip just picked has its frame up, the frame on screen is the clip
-  // before's and is drawn with what lay over it then. Issue #383.
-  over: {
-    at(frame: number, light: Light, fresh: boolean): Over | null;
-    coming(frame: number): void;
-    ready?(frame: number): Promise<void> | null;
-  } | null = null;
-  // Starts the wait of a frame for what lies over it, see dress, and says
-  // how to call it off: late is told once DRESS_WAIT has passed on the
-  // browser's clock. A walk hands in a wait that it ends itself, so a
-  // frame whose captions it holds back waits for them on any machine,
-  // where the walk's own steps on a busy one used up the 600 ms, issue
-  // #468.
-  dressWait: (late: () => void) => () => void = (late) => {
-    const timer = setTimeout(late, DRESS_WAIT);
-    return () => clearTimeout(timer);
-  };
+  // the captions of its clip are known, which ready says, so the picture
+  // and its captions come in one frame, see captioned. Issue #383.
+  over: { at(frame: number, own: Layer | null, light: Light, fresh: boolean): Over | null; ready?(): Promise<void> | null } | null = null;
   // The clock this queue plays on, see PlayClock. The app's is the sound
   // card's, so a machine too slow to decode every frame in time shows
   // fewer of them, which is right for the app. What runs the queue hands
@@ -1224,7 +1174,7 @@ export class FrameQueue {
   // newest gesture, see over.
   private paint(fresh = false) {
     const s = this.shown;
-    this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(s.begins, s.frame.light, fresh) : null);
+    this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(s.begins, s.frame.over, s.frame.light, fresh) : null);
     this.painted?.(s?.frame ?? null);
   }
 
@@ -1238,55 +1188,83 @@ export class FrameQueue {
     if (!this.closed && this.shown) this.paint();
   }
 
-  // Whether what lies over the frame that begins at begins is here, asked
-  // for at once where it is not: a promise of whether the frame is still wanted once
-  // it is, or once DRESS_WAIT has passed, or null when there is nothing to
-  // wait for. Nothing waits while the hand drags the playhead, where each
-  // place is passed in a moment and the picture follows the hand.
-  private dress(begins: number): Promise<boolean> | null {
-    if (this.gripped || !this.over?.ready || !this.video) return null;
-    const came = this.over.ready(begins);
-    if (!came) return null;
-    const ticket = this.ticket;
-    const asked = performance.now();
-    this.stats.waitedForDress++;
-    this.dressFor = ticket;
-    let stop = () => {};
-    const late = new Promise<"late">((done) => (stop = this.dressWait(() => done("late"))));
-    return Promise.race([came.then(() => "came" as const), late]).then((how) => {
-      stop();
-      if (this.dressFor === ticket) this.dressFor = -1;
-      const wanted = ticket === this.ticket && !this.closed;
-      if (how === "late" && wanted) {
-        this.stats.bare++;
-        this.trace(`the captions of the frame at ${begins.toFixed(3)} s did not come in ${DRESS_WAIT} ms, the frame is put up without them`);
-      }
-      else if (wanted) this.stats.dressWait = Math.max(this.stats.dressWait, Math.round(performance.now() - asked));
-      return wanted;
-    });
+  // What the frames are dressed with from now on, see AppFrames.dressWith.
+  // The frame on screen is dressed again where it is the same clip, a
+  // crop moved, a word corrected or the captions dragged, and drawn again
+  // once its dress is here. Another clip's frame keeps its own until the
+  // clip's frame comes with the clip's, so the two never mix, issue #383.
+  // A play takes the new dress in, see dressPlay.
+  // It says when the frame on screen has its new dress, or null when it
+  // keeps the one it has.
+  dressWith(ask: CaptionAsk | null): Promise<void> | null {
+    const was = this.dressAsk;
+    this.dressAsk = ask;
+    const app = this.app;
+    if (!app) return null;
+    const key = app.dressKey;
+    app.dressWith(ask);
+    if (app.dressKey === key) return null;
+    this.dressPlay();
+    if (!ask || !was || was.clip !== ask.clip || was.on !== ask.on) return null;
+    return this.redress();
   }
 
-  // Whether the first frame of the cue or play under way, at begins, may be
-  // put up: what lies over it is here, or nothing has to be. Asked the
-  // first time, it asks for it and puts the frame up through maybeBegin
-  // once it comes.
-  private dressed(begins: number): boolean {
-    const key = `${this.ticket} ${begins}`;
-    if (this.dressedKey === key) return true;
-    if (this.dressing === key) return false;
-    const waits = this.dress(begins);
-    if (!waits) {
-      this.dressedKey = key;
-      return true;
+  // The frame on screen, paused, dressed as the frames are now and drawn
+  // again. One at a time: a change on the way, a drag of the captions,
+  // dresses it once more as it is when the one before is here.
+  private redress(): Promise<void> | null {
+    // A still on its way dresses its frame as it puts it up, see
+    // dressedAsNow, and the frame up meanwhile is of the place before.
+    if (!this.shown || this.state === "playing" || this.state === "starting" || this.putFor !== this.ticket) return null;
+    if (this.redressing) {
+      this.redressAgain = true;
+      return this.redressing;
     }
-    this.dressing = key;
-    void waits.then((wanted) => {
-      if (this.dressing === key) this.dressing = "";
-      if (!wanted) return;
-      this.dressedKey = key;
-      this.maybeBegin();
+    const run = async () => {
+      do {
+        this.redressAgain = false;
+        const s = this.shown;
+        if (!s || !this.app || this.closed) return;
+        const drawn = () => this.shown === s && !this.closed && this.paint();
+        await this.app.dress(s.frame, s.begins, drawn);
+        drawn();
+      } while (this.redressAgain);
+    };
+    this.redressing = run().finally(() => (this.redressing = null));
+    return this.redressing;
+  }
+  private redressing: Promise<void> | null = null;
+  private redressAgain = false;
+
+  // The play of a clip under way told how its frames are dressed now,
+  // once the clip it plays is the one they are dressed for: a crop moved
+  // or a word corrected changes the frames it sends from there on, and
+  // the pieces it plays stay, see GoPlay.take. While a change of the
+  // clip is on its way it waits for it, so the dress never reaches the
+  // Go side before the pieces it is for, see changed.
+  private dressPlay() {
+    const play = this.goPlay;
+    const ask = this.dressAsk;
+    if (!play || !ask || !this.wanted.framing || ask.framing !== this.wanted.framing || this.c0 === null || this.taking) return;
+    const key = this.app?.dressKey ?? "";
+    if (key === this.playDressed) return;
+    this.playDressed = key;
+    void play.take(ask.framing, this.wanted.loop, Math.max(this.reached, this.sounded()), true);
+  }
+
+  // Whether the frame a gesture put the playhead on may be put up: the
+  // captions of its clip are known, or a promise of whether it is still
+  // wanted once they are, see over.ready.
+  private captioned(): Promise<boolean> | null {
+    const came = this.over?.ready?.();
+    if (!came) return null;
+    const ticket = this.ticket;
+    this.stats.waitedForDress++;
+    this.captionsFor = ticket;
+    return came.then(() => {
+      if (this.captionsFor === ticket) this.captionsFor = -1;
+      return ticket === this.ticket && !this.closed;
     });
-    return false;
   }
 
   // The moment the frame starts that a clip starting at a moment opens on,
@@ -1332,13 +1310,16 @@ export class FrameQueue {
     this.stillAsks.clear();
     const rank = rankAt(this.video!.samples, holds);
     const begins = this.shownAt(rank);
-    // What lies over the frame is asked for as the frame is, so the two
-    // come in the time the slower takes, not one after the other.
-    const dressed = this.dress(begins);
+    // The captions of the clip are waited for as the frame is asked
+    // for, so the two come in the time the slower takes.
+    const dressed = this.captioned();
     // Already on screen, at the canvas's size: nothing to ask for. What
     // lies over it may be another clip's still, see over.
     if (this.shown && this.shown.rank === rank && this.sharp(this.shown.frame)) {
       if (dressed && !(await dressed)) return gaveUp();
+      const s = this.shown;
+      if (!(await this.dressedAsNow(s.frame, s.begins, ticket))) return;
+      if (this.shown !== s) return gaveUp();
       this.putFor = ticket;
       this.at = at;
       this.paint(true);
@@ -1351,23 +1332,36 @@ export class FrameQueue {
       this.stats.open++;
       this.stats.mostOpen = Math.max(this.stats.mostOpen, this.stats.open);
       this.stats.decoded++;
-      this.over?.coming(begins);
     }
     if (ticket !== this.ticket) {
       if (frame) this.closeFrame(frame);
       return;
     }
-    // The frame waits for what lies over it, and a seek made meanwhile
-    // takes its place.
+    // The frame waits for its captions, and a seek made meanwhile takes
+    // its place.
     if (dressed && !(await dressed)) {
       if (frame) this.closeFrame(frame);
       return gaveUp();
+    }
+    if (frame && !(await this.dressedAsNow(frame, begins, ticket))) {
+      this.closeFrame(frame);
+      return;
     }
     if (frame) this.put(frame, rank, begins, -Infinity);
     else this.paint(true);
     this.at = at;
     this.report(!!frame);
     if (cue && frame) this.cue(at, ticket);
+  }
+
+  // Dresses a frame a still puts up as the frames are dressed now, where
+  // the clip changed since it was asked for, the captions of a clip
+  // chosen came or a crop moved, so it goes up once, dressed, and not
+  // bare and then dressed. Says whether the still is still wanted.
+  private async dressedAsNow(frame: Picture, begins: number, ticket: number): Promise<boolean> {
+    const app = this.app;
+    if (app && app.dressKey && frame.over?.dress?.key !== app.dressKey) await app.dress(frame, begins);
+    return ticket === this.ticket && !this.closed;
   }
 
   // The play from a paused playhead, prepared and waiting for the space
@@ -1381,7 +1375,7 @@ export class FrameQueue {
     const key = this.wantedKey;
     const play = await GoPlay.open(
       this.app,
-      { pieces: this.pieces(), loop: this.wanted.loop, at, rate: this.sampleRate, channels: this.channels, cue: true },
+      { framing: this.wanted.framing, pieces: this.pieces(), loop: this.wanted.loop, at, rate: this.sampleRate, channels: this.channels, cue: true },
       this.previewSize(),
     );
     if (!play || typeof play === "string") return;
@@ -1461,7 +1455,7 @@ export class FrameQueue {
         const key = this.wantedKey;
         const play = await GoPlay.open(
           this.app,
-          { pieces: this.pieces(), loop: this.wanted.loop, at: from, rate: this.sampleRate, channels: this.channels, cue: false },
+          { framing: this.wanted.framing, pieces: this.pieces(), loop: this.wanted.loop, at: from, rate: this.sampleRate, channels: this.channels, cue: false },
           this.previewSize(),
         );
         if (ticket !== this.ticket || this.closed) {
@@ -1506,10 +1500,9 @@ export class FrameQueue {
     this.out.gain.cancelScheduledValues(this.audio.currentTime);
     this.out.gain.setValueAtTime(1, this.audio.currentTime);
     this.reached = play.from;
+    this.playDressed = this.app?.dressKey ?? "";
     this.m0 = Math.round(play.from * this.sampleRate);
     this.soundTo = this.m0;
-    // What lies over the first frame is asked for as it comes.
-    if (play.first >= 0 && this.state === "starting") this.dressed(play.first);
     this.pump();
   }
 
@@ -1521,7 +1514,6 @@ export class FrameQueue {
       this.stats.open += came;
       this.stats.mostOpen = Math.max(this.stats.mostOpen, this.stats.open);
       this.stats.decoded += came;
-      for (const s of play.shots.slice(-came)) this.over?.coming(s.begins);
       if (play.trouble && play.picturesEnded) this.fault(`The app could not decode the picture: ${play.trouble.replace(/\.$/, "")}.`);
       if (this.state === "starting" || this.state === "cued") this.maybeBegin();
       this.pump();
@@ -1566,8 +1558,8 @@ export class FrameQueue {
       this.due = first;
       this.drawnFor = first.moment;
       frameIn = true;
-    } else if (!frameIn && this.state === "starting" && this.dressed(first.begins)) {
-      // The first frame comes with what lies over it, see dress.
+    } else if (!frameIn && this.state === "starting") {
+      // The first frame comes with what lies over it.
       this.draw(play, 0);
       frameIn = true;
       this.report(true);
@@ -1785,21 +1777,19 @@ export class FrameQueue {
   }
 
   // Where the first frame of the play not on screen yet is drawn on the
-  // clock, see playClock, and whether it is ready: come and waiting with
-  // what lies over it here, so a clock that goes on to it at once shows it
-  // with its captions, the way the app does, which has the frame's time to
-  // fetch them, and with the sound up to its place on the sound card, so a
-  // clock that goes on as fast as the frames come never plays past the
-  // sound, which the app's sound card plays as it comes. A layer still on
-  // its way is asked for first. A frame still on its way from the Go side
+  // clock, see playClock, and whether it is ready: come, with the sound up
+  // to its place on the sound card, so a clock that goes on as fast as
+  // the frames come never plays past the sound, which the app's sound
+  // card plays as it comes. A frame still on its way from the Go side
   // holds the clock where it is, and once the Go side has sent the last,
   // the play goes by the sound card's time the way it does in the app.
   private unshown(play: GoPlay): { at: number; ready: () => boolean } {
     const s = play.shots[0];
     if (!s) return { at: play.picturesEnded ? Infinity : this.reached, ready: () => false };
-    const sounded = () => play.soundEnded || (this.c0 !== null && this.m0 / this.sampleRate + (this.handedTo - this.c0) >= s.at);
-    const ready = () => !(this.video && this.over?.ready?.(s.begins)) && sounded();
-    return { at: s.at, ready };
+    // While a change of the clip is on its way to the Go side, the frame
+    // waiting may be one the change replaces, see changed.
+    const sounded = () => !this.taking && (play.soundEnded || (this.c0 !== null && this.m0 / this.sampleRate + (this.handedTo - this.c0) >= s.at));
+    return { at: s.at, ready: sounded };
   }
 
   // When the page next has nothing to do after an animation frame: a

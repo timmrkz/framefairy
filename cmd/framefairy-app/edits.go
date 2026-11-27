@@ -63,13 +63,13 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 
 // RotatePart rotates the part of a clip between two cuts that a moment is
 // in a quarter turn to the left, and returns the clip as it is now.
-func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
+func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, at float64) (RotatedClip, error) {
 	if !s.store.PlanOf(path, plan) {
-		return ClipEntry{}, errNotInLibrary
+		return RotatedClip{}, errNotInLibrary
 	}
 	info, err := s.probe(ctx, path)
 	if err != nil {
-		return ClipEntry{}, err
+		return RotatedClip{}, err
 	}
 	began := time.Now()
 	err = s.edit(path, func() error { return engine.RotatePart(s.store.files, plan, clipID, at, info) })
@@ -87,9 +87,19 @@ func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, 
 	}
 	line.Msg("rotate a part")
 	if err != nil {
-		return ClipEntry{}, err
+		return RotatedClip{}, err
 	}
-	return entry, nil
+	return RotatedClip{Clip: entry, Turns: s.turnsOf(path, s.plansOf(path), entry.Key, []ClipEntry{entry}, info)}, nil
+}
+
+// RotatedClip is the clip a part was rotated in, with how each of its
+// parts turns now. R pressed again before the next state of the video
+// came, at most a quarter of a second later, turned the part by the
+// turns from before the first press, and the video preview showed the
+// second turn only once its answer came.
+type RotatedClip struct {
+	Clip  ClipEntry `json:"clip"`
+	Turns *Turns    `json:"turns"`
 }
 
 // Turns is the clip chosen as it will be once one of its parts is
@@ -123,7 +133,7 @@ var noTurns = Turns{Parts: []Turn{}, hash: "none"}
 // plan, the size of the video and of the short, and kept with the read,
 // see engine.PlanSummary.Remember: a state is read four times a second
 // while work runs, and each read worked them out again.
-func (s *FrameFairy) turnsOf(plans []engine.PlanSummary, chosen string, clips []ClipEntry, info engine.SourceInfo) *Turns {
+func (s *FrameFairy) turnsOf(path string, plans []engine.PlanSummary, chosen string, clips []ClipEntry, info engine.SourceInfo) *Turns {
 	out := noTurns
 	i := slices.IndexFunc(clips, func(c ClipEntry) bool { return c.Key == chosen })
 	if i < 0 {
@@ -137,17 +147,31 @@ func (s *FrameFairy) turnsOf(plans []engine.PlanSummary, chosen string, clips []
 	o := s.store.Settings().options()
 	key := fmt.Sprintf("turns %s %+v %dx%d", entry.ID, info, o.Width, o.Height)
 	kept, err := plans[k].Remember(key, func() (any, error) {
-		return s.turnsMade(plans[k], chosen, entry, info), nil
+		return s.turnsMade(path, plans[k], chosen, entry, info), nil
 	})
 	if err != nil {
 		return &out
 	}
 	out = kept.(Turns)
+	// Their framings are kept again for the video preview, which may
+	// have forgotten them since they were worked out, with which part
+	// turns to which by the clip's own framing, so a frame of the clip is
+	// sent with its dress turned, see FrameFairy.turned.
+	parts := map[int]string{}
+	for _, part := range out.Parts {
+		if part.Name != "" {
+			s.previews.framings.put(part.Name, part.framed, nil)
+			parts[part.Part] = part.Name
+		}
+	}
+	if entry.Framing != "" {
+		s.previews.turns.put(entry.Framing, parts, nil)
+	}
 	return &out
 }
 
 // turnsMade works out the Turns of the clip entry, chosen, of the plan.
-func (s *FrameFairy) turnsMade(plan engine.PlanSummary, chosen string, entry ClipEntry, info engine.SourceInfo) Turns {
+func (s *FrameFairy) turnsMade(path string, plan engine.PlanSummary, chosen string, entry ClipEntry, info engine.SourceInfo) Turns {
 	out := Turns{Clip: chosen, Parts: []Turn{}}
 	for j, seg := range entry.Segments {
 		if j > 0 && entry.Segments[j-1].Part == seg.Part {
@@ -157,8 +181,9 @@ func (s *FrameFairy) turnsMade(plan engine.PlanSummary, chosen string, entry Cli
 		if err != nil {
 			continue
 		}
-		out.Parts = append(out.Parts, Turn{Part: seg.Part, Rotations: engine.RotationViews(turned.Rotations),
-			Framing: s.framingOf(info, engine.SegmentViews(turned.Segments), engine.CropMarkViews(turned.CropMarks))})
+		rotations := engine.RotationViews(turned.Rotations)
+		out.Parts = append(out.Parts, Turn{Part: seg.Part, Rotations: rotations,
+			Framing: s.framingOf(path, info, engine.SegmentViews(turned.Segments), engine.CropMarkViews(turned.CropMarks), rotations)})
 	}
 	var h maphash.Hash
 	h.SetSeed(clipSeed)
@@ -583,7 +608,8 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture, track st
 		return nil, err
 	}
 	s.previews.tracks.keep(path, view.Captions)
-	framing := s.framingOf(g.Frames, engine.SegmentViews(view.Clip.Segments), engine.CropMarkViews(view.Clip.CropMarks))
+	framing := s.framingOf(path, g.Frames, engine.SegmentViews(view.Clip.Segments), engine.CropMarkViews(view.Clip.CropMarks),
+		engine.RotationViews(view.Clip.Rotations))
 	return &ShapedClip{ShapedView: view, Framing: framing}, nil
 }
 

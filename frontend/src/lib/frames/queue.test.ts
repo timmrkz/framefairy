@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { movieOf } from "./movie";
-import { GoPlay } from "./play";
+import { GoPlay, type Taken } from "./play";
 import { FrameQueue, type Shown } from "./queue";
 
 // The queue without a browser: a canvas that draws nothing, no sound card
@@ -108,18 +108,18 @@ describe("the pieces changed while playing", () => {
 
   test("are taken in without starting the play again", () => {
     const { q, said } = playing(58.2);
-    q.seek(58.2, [clip, false]);
+    q.seek(58.2, [clip, false, "a"]);
     said.length = 0;
-    q.setProgram([clip[0]], false);
-    q.setProgram([{ start: clip[0].start, end: clip[0].end - 0.5 }], true);
+    q.setProgram([clip[0]], false, "b");
+    q.setProgram([{ start: clip[0].start, end: clip[0].end - 0.5 }], true, "c");
     expect(said).toEqual([]);
     expect(wanted(q)).toBe(JSON.stringify([[{ start: clip[0].start, end: clip[0].end - 0.5 }], true]));
   });
 
   test("are what the next play plays", () => {
     const { q, said } = playing(58.2);
-    q.seek(58.2, [clip, false]);
-    q.setProgram([clip[0]], false);
+    q.seek(58.2, [clip, false, "a"]);
+    q.setProgram([clip[0]], false, "b");
     said.length = 0;
     q.seek(58.5);
     expect(said.map((s) => s.at)).toEqual([58.5]);
@@ -130,12 +130,53 @@ describe("the pieces changed while playing", () => {
   // The play plays the clip as it is again, to its old end.
   test("and put back by an undo, play as they were", () => {
     const { q, said } = playing(58.2);
-    q.seek(58.2, [clip, false]);
+    q.seek(58.2, [clip, false, "a"]);
     said.length = 0;
-    q.setProgram([clip[0]], false);
-    q.setProgram(clip, false);
+    q.setProgram([clip[0]], false, "b");
+    q.setProgram(clip, false, "a");
     expect(said).toEqual([]);
     expect(wanted(q)).toBe(JSON.stringify([clip, false]));
+  });
+});
+
+// Changes of the clip made while one is on its way to the Go side, the
+// steps of a dragged edge. The Go side takes them in the order they come,
+// and two fetches on their way at once came the other way round, so the
+// play ended on the clip as it was a step before.
+describe("changes of the clip while one is on its way", () => {
+  test("go one at a time, the newest last, and the ones between are left out", async () => {
+    const { q } = playing(58.2);
+    q.seek(58.2, [clip, false, "a"]);
+    const sent: string[] = [];
+    const answers: (() => void)[] = [];
+    let told = () => {};
+    const asked = () => new Promise<void>((done) => (told = done));
+    const inside = q as unknown as { goPlay: unknown; c0: number | null; audio: { currentTime: number } };
+    inside.goPlay = {
+      take: (framing: string) => {
+        sent.push(framing);
+        told();
+        return new Promise<null>((done) => answers.push(() => done(null)));
+      },
+    };
+    inside.c0 = 0;
+    inside.audio = { currentTime: 0 };
+    const step = (end: number, framing: string) => q.setProgram([{ start: clip[0].start, end }], false, framing);
+    let next = asked();
+    step(59.4, "b");
+    step(59.2, "c");
+    await next;
+    expect(sent).toEqual(["c"]);
+    next = asked();
+    step(59.0, "d");
+    step(58.8, "e");
+    expect(sent).toEqual(["c"]);
+    answers[0]();
+    await next;
+    expect(sent).toEqual(["c", "e"]);
+    answers[1]();
+    await q.takenOver;
+    expect(sent).toEqual(["c", "e"]);
   });
 });
 
@@ -370,61 +411,21 @@ describe("the picture standing still", () => {
 });
 
 describe("a frame waiting for its captions", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   // A paused queue with a video, whose frame a gesture put the playhead on
-  // waits for what lies over it, see dress. The captions come when the
-  // test says, or never, and the wait ends when the test says, or after
-  // the 600 ms of the browser's clock, which the test moves.
+  // waits until the captions of its clip are known, see captioned. They
+  // come when the test says.
   function waiting() {
     const q = new FrameQueue(
       canvas(),
       "/episode.mp4",
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
-    const inside = q as unknown as { video: unknown; dress(rank: number): Promise<boolean> | null };
+    const inside = q as unknown as { video: unknown; captioned(): Promise<boolean> | null };
     inside.video = { width: 2, height: 2, samples: { count: 3, timescale: 25, start: 0, step: 1 } };
     let came = () => {};
-    q.over = {
-      at: () => null,
-      coming() {},
-      ready: () => new Promise<void>((done) => (came = done)),
-    };
-    const said: string[] = [];
-    q.trace = (line) => said.push(line);
-    return { q, dress: () => inside.dress(1)!, came: () => came(), said };
+    q.over = { at: () => null, ready: () => new Promise<void>((done) => (came = done)) };
+    return { q, captioned: () => inside.captioned()!, came: () => came() };
   }
-
-  // A clip clicked whose captions never come still shows its picture: Tim
-  // saw a picture stand still while its captions were slow, issue #383,
-  // and a picture that stands still is worse than captions a moment late.
-  test("is put up without them once its wait runs out", async () => {
-    const { q, dress, said } = waiting();
-    let late = () => {};
-    q.dressWait = (l) => {
-      late = l;
-      return () => {};
-    };
-    const wanted = dress();
-    expect(q.stats.waitedForDress).toBe(1);
-    late();
-    expect(await wanted).toBe(true);
-    expect(q.stats.bare).toBe(1);
-    expect(said.some((l) => l.includes("did not come"))).toBe(true);
-  });
-
-  test("is put up with them when they come first, and its wait is called off", async () => {
-    const { q, dress, came } = waiting();
-    let calledOff = 0;
-    q.dressWait = () => () => calledOff++;
-    const wanted = dress();
-    came();
-    expect(await wanted).toBe(true);
-    expect(q.stats.bare).toBe(0);
-    expect(calledOff).toBe(1);
-  });
 
   // A clip made with Mark In was sought to the mark and then to its first
   // sentence, and its card was clicked while the frame of the sentence
@@ -433,14 +434,11 @@ describe("a frame waiting for its captions", () => {
   // preview changed twice for one click, the picture of another moment
   // under the clip's captions and then the clip's own frame.
   test("keeps a frame of an older place off the screen until it is up", async () => {
-    const { q, dress, came } = waiting();
-    q.dressWait = () => () => {};
-    const inside = q as unknown as {
-      shown: { rank: number } | null;
-      passing(rank: number, frame: unknown, seq: number, key?: boolean): void;
-    };
-    const picture = () => ({ width: 2, height: 2, close() {}, clone: () => picture() });
-    const wanted = dress();
+    const { q, captioned, came } = waiting();
+    const inside = q as unknown as { shown: { rank: number } | null; passing(rank: number, frame: unknown, seq: number, key?: boolean): void };
+    const picture = () => ({ width: 2, height: 2, over: null, close() {}, clone: () => picture() });
+    const wanted = captioned();
+    expect(q.stats.waitedForDress).toBe(1);
     inside.passing(2, picture(), 1);
     expect(inside.shown).toBe(null);
     came();
@@ -450,19 +448,76 @@ describe("a frame waiting for its captions", () => {
     inside.passing(2, picture(), 2);
     expect(inside.shown?.rank).toBe(2);
   });
+});
 
-  test("waits 600 ms of the browser's clock unless a wait is handed in", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const { q, dress } = waiting();
-    const wanted = dress();
-    let ended = false;
-    void wanted.then(() => (ended = true));
-    await vi.advanceTimersByTimeAsync(599);
-    expect(ended).toBe(false);
-    expect(q.stats.bare).toBe(0);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(ended).toBe(true);
-    expect(q.stats.bare).toBe(1);
+// The frame on screen keeps the dress it came with. A crop moved or a
+// word corrected dresses it again, and another clip's dress never lands
+// on it: the clip's own frame brings that, issue #383.
+describe("the frame on screen dressed again", () => {
+  function paused() {
+    const q = new FrameQueue(
+      canvas(),
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const dressed: number[] = [];
+    let key = "";
+    const app = {
+      dressWith: (a: { framing: string } | null) => (key = a?.framing ?? ""),
+      get dressKey() {
+        return key;
+      },
+      dress: async (_: unknown, begins: number) => void dressed.push(begins),
+    };
+    const shown = { frame: { over: null }, rank: 2, begins: 0.08, at: -Infinity };
+    // The frame on screen is the one the last still put up.
+    Object.assign(q, { app, shown, putFor: 0 });
+    const drawn: unknown[] = [];
+    q.painted = (frame) => drawn.push(frame);
+    return { q, dressed, drawn, shown };
+  }
+  const ask = (clip: string, framing: string) => ({ path: "/episode.mp4", clip, framing, drafts: {} });
+
+  test("dresses the frame on screen of the same clip again, and draws it once its dress is here", async () => {
+    const { q, dressed, drawn, shown } = paused();
+    expect(q.dressWith(ask("a", "f1"))).toBeNull();
+    const again = q.dressWith(ask("a", "f2"));
+    expect(dressed).toEqual([0.08]);
+    await again;
+    expect(drawn).toEqual([shown.frame]);
+    // The same dress again asks for nothing.
+    expect(q.dressWith(ask("a", "f2"))).toBeNull();
+  });
+
+  test("leaves the frame on screen as it is for another clip", () => {
+    const { q, dressed } = paused();
+    q.dressWith(ask("a", "f1"));
+    expect(q.dressWith(ask("b", "f3"))).toBeNull();
+    expect(dressed).toEqual([]);
+  });
+
+  test("leaves the frame on screen to a still on its way, which dresses its own as it puts it up", async () => {
+    const { q, dressed } = paused();
+    Object.assign(q, { ticket: 1 });
+    q.dressWith(ask("a", "f1"));
+    expect(q.dressWith(ask("a", "f2"))).toBeNull();
+    expect(dressed).toEqual([]);
+    const still = q as unknown as { dressedAsNow(f: unknown, begins: number, ticket: number): Promise<boolean> };
+    expect(await still.dressedAsNow({ over: { dress: { key: "f1" } } }, 0.4, 1)).toBe(true);
+    expect(await still.dressedAsNow({ over: { dress: { key: "f2" } } }, 0.48, 1)).toBe(true);
+    expect(dressed).toEqual([0.4]);
+    // A still a newer seek took the place of is wanted no more.
+    expect(await still.dressedAsNow({ over: { dress: { key: "f2" } } }, 0.4, 0)).toBe(false);
+  });
+
+  test("dresses again once, with what is wanted last, for changes that come while one is on its way", async () => {
+    const { q, dressed } = paused();
+    q.dressWith(ask("a", "f1"));
+    const first = q.dressWith(ask("a", "f2"));
+    q.dressWith(ask("a", "f3"));
+    q.dressWith(ask("a", "f4"));
+    await first;
+    expect(dressed).toEqual([0.08, 0.08]);
   });
 });
 
@@ -564,37 +619,6 @@ describe("sound handed to the sound card late", () => {
   });
 });
 
-describe("a frame that came for a play", () => {
-  // A play asks for what lies over each frame as it comes from the Go
-  // side, before its turn on screen, so its captions are on their way
-  // while the frames before it are shown, issue #288. The order is read,
-  // not the time it takes, so no machine is too busy for it, issue #338.
-  test("asks for what lies over it before it is shown", () => {
-    const q = new FrameQueue(
-      canvas(),
-      "/episode.mp4",
-      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
-    );
-    const inside = q as unknown as { goPlay: unknown; listenTo(play: unknown): void };
-    const asked: number[] = [];
-    const drawn: number[] = [];
-    q.over = {
-      at: (frame) => {
-        drawn.push(frame);
-        return null;
-      },
-      coming: (frame) => asked.push(frame),
-    };
-    const play = { shots: [] as unknown[], onShots: (came: number) => void came, more() {} };
-    inside.goPlay = play;
-    inside.listenTo(play);
-    play.shots.push({ at: 0.08, moment: 0.08, begins: 2 / 25, edge: false, frame: { close() {} } });
-    play.onShots(1);
-    expect(asked).toEqual([2 / 25]);
-    expect(drawn).toEqual([]);
-  });
-});
-
 describe("the clock a play runs on", () => {
   function queue() {
     return new FrameQueue(
@@ -631,19 +655,8 @@ describe("the clock a play runs on", () => {
   // come from the Go side and not drawn yet, each by where on the clock
   // it is drawn and where it begins in the video, and whether the Go side
   // has sent the last.
-  function standing(
-    shots: { at: number; begins: number }[],
-    picturesEnded = false,
-    over: FrameQueue["over"] = null,
-    sound: { handedTo: number; soundEnded: boolean } | null = null,
-  ) {
-    const inside = queue() as unknown as {
-      reached: number;
-      over: FrameQueue["over"];
-      video: unknown;
-      unshown(play: unknown): { at: number; ready: () => boolean };
-    };
-    inside.over = over;
+  function standing(shots: { at: number; begins: number }[], picturesEnded = false, sound: { handedTo: number; soundEnded: boolean } | null = null) {
+    const inside = queue() as unknown as { reached: number; video: unknown; unshown(play: unknown): { at: number; ready: () => boolean } };
     inside.video = { width: 2, height: 2, samples: { count: 3000, timescale: 25, start: 0, step: 1 } };
     inside.reached = 35.4;
     // A play with sound, started at 35 s of the clock on the sound card's
@@ -678,25 +691,6 @@ describe("the clock a play runs on", () => {
     expect(standing([], true).at).toBe(Infinity);
   });
 
-  // A clock that goes on to a frame as soon as it is ready, the walk's,
-  // drew a frame a refresh, faster than its captions came, and the frame
-  // stood without them. The captions of the frame are asked for as it is
-  // asked, by the moment it starts at in the video.
-  test("is told the frame is ready only once its captions are here", () => {
-    const asked: number[] = [];
-    let here = false;
-    const over = {
-      at: () => null,
-      coming() {},
-      ready: (frame: number) => (asked.push(frame), here ? null : new Promise<void>(() => {})),
-    };
-    const next = standing([{ at: 35.6, begins: 103 / 25 }], false, over);
-    expect(next.ready()).toBe(false);
-    here = true;
-    expect(next.ready()).toBe(true);
-    expect(asked).toEqual([103 / 25, 103 / 25]);
-  });
-
   // The walk's clock goes on as fast as the frames come, and the sound
   // comes as it is pulled, on a busy machine later than the frames. A
   // clock that went on to a frame before its sound was on the sound card
@@ -704,7 +698,7 @@ describe("the clock a play runs on", () => {
   // in 288 of 675 quanta. The play started at 35 s of the clock on the
   // sound card's 10 s, and the frame due is drawn at 35.6 s.
   test("is told the frame is ready only once its sound is on the sound card", () => {
-    const at = (handedTo: number, soundEnded = false) => standing([{ at: 35.6, begins: 103 / 25 }], false, null, { handedTo, soundEnded }).ready();
+    const at = (handedTo: number, soundEnded = false) => standing([{ at: 35.6, begins: 103 / 25 }], false, { handedTo, soundEnded }).ready();
     expect(at(10.5)).toBe(false);
     expect(at(10.6)).toBe(true);
     expect(at(-Infinity, true)).toBe(true);
@@ -750,79 +744,74 @@ describe("a play the Go side closed", () => {
   });
 });
 
-// A clip changed while it plays: the new play was taken at once on the
-// Go side, which stopped the play under way while the window still pulled
-// from it, and the window, told it was closed, started the play again.
-describe("a play taking over from the one under way", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  function underWay() {
+// A clip changed while it plays is taken into the play by the Go side,
+// which says where. The window opens no second play: what it holds of the
+// clip as it was from there on makes way, and the play goes on.
+describe("a change of the clip taken into the play under way", () => {
+  function underWay(answer: Taken | null) {
     const q = new FrameQueue(
       canvas(),
       "/episode.mp4",
       movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
     );
     type Inside = {
-      app: unknown;
       goPlay: unknown;
       state: string;
       c0: number | null;
       m0: number;
+      soundTo: number;
       audio: { currentTime: number; sampleRate: number };
       stats: { starts: number };
+      sources: Map<{ stop(at: number): void }, number>;
       pump(): void;
-      previewSize(): unknown;
-      takeOver(was: unknown, at: number, pieces: unknown, loop: boolean): Promise<void>;
+      start(at: number): void;
+      takeIn(play: unknown, framing: string, loop: boolean): Promise<void>;
     };
     const inside = q as unknown as Inside;
     const said: string[] = [];
-    const was = { shots: [], close: () => said.push("old closed") };
-    inside.app = {};
-    inside.goPlay = was;
+    const play = {
+      take: async (framing: string, loop: boolean, heard: number) => {
+        said.push(`take ${framing} ${loop} ${heard.toFixed(2)}`);
+        return answer;
+      },
+    };
+    inside.goPlay = play;
     inside.state = "playing";
     inside.c0 = 0;
     inside.m0 = 61 * 48000;
+    inside.soundTo = 62 * 48000;
     inside.audio = { currentTime: 0.1, sampleRate: 48000 };
     inside.pump = () => {};
-    inside.previewSize = () => ({ width: 2, height: 2 });
-    return { inside, was, said };
+    inside.start = (at) => said.push(`started again at ${at}`);
+    const stops: number[] = [];
+    inside.sources.set({ stop: (at) => stops.push(at) }, 0.5);
+    inside.sources.set({ stop: (at) => stops.push(at) }, 0.2);
+    return { q, inside, play, said, stops };
   }
 
-  function next(said: string[]) {
-    return { shots: [], moment: 61.25, go: () => said.push("new let go"), close: () => said.push("new closed") } as unknown as GoPlay;
-  }
-
-  test("comes as a cue, and takes the decoder only once it is the one drawn", async () => {
-    const { inside, was, said } = underWay();
-    const asks: { cue: boolean }[] = [];
-    vi.spyOn(GoPlay, "open").mockImplementation(async (_app, ask) => {
-      asks.push(ask);
-      said.push("asked");
-      return next(said);
-    });
-    await inside.takeOver(was, 61.25, [{ start: 60, end: 64 }], false);
-    expect(asks.map((a) => a.cue)).toEqual([true]);
-    expect(said).toEqual(["asked", "new let go", "old closed"]);
-    expect(inside.goPlay).not.toBe(was);
+  test("cuts the sound handed over where the Go side took it in, and starts nothing", async () => {
+    const { inside, play, said, stops } = underWay({ gen: 1, at: 61.25, end: 64, lap: 64, video: false });
+    await inside.takeIn(play, "b", false);
+    expect(said).toEqual(["take b false 61.10"]);
+    expect(stops).toEqual([0.25]);
+    expect(inside.soundTo).toBe(61.25 * 48000);
     expect(inside.stats.starts).toBe(0);
   });
 
-  test("whose place the sound passed while it was asked for, is asked for again further on", async () => {
-    const { inside, was, said } = underWay();
-    const places: number[] = [];
-    vi.spyOn(GoPlay, "open").mockImplementation(async (_app, ask) => {
-      places.push(ask.after?.at ?? NaN);
-      // The answer came after the sound had passed the first place.
-      if (places.length === 1) inside.audio.currentTime = 0.3;
-      return next(said);
-    });
-    await inside.takeOver(was, 61.25, [{ start: 60, end: 64 }], false);
-    expect(places.length).toBe(2);
-    expect(places[1]).toBeGreaterThan(61.3);
-    expect(said).toEqual(["new closed", "new let go", "old closed"]);
-    expect(inside.stats.starts).toBe(0);
+  test("whose place the sound passed while the Go side answered, starts the play again from the playhead", async () => {
+    const { inside, play, said } = underWay({ gen: 1, at: 61.05, end: 64, lap: 64, video: false });
+    await inside.takeIn(play, "b", false);
+    expect(said.length).toBe(2);
+    expect(said[1]).toMatch(/^started again at /);
+  });
+
+  test("where the playhead was left outside the clip, goes on as a play of the video and says so", async () => {
+    const { q, inside, play } = underWay({ gen: 1, at: 61.25, end: 120, lap: 120, video: true });
+    let left = 0;
+    q.leftClip = () => left++;
+    await inside.takeIn(play, "b", false);
+    expect(left).toBe(1);
+    expect((q as unknown as { wantedKey: string }).wantedKey).toBe(JSON.stringify([null, false]));
   });
 });
 

@@ -1521,7 +1521,7 @@ async function pickCards(page, n) {
   };
   const asked = (r) => {
     const u = r.url();
-    if (u.includes("/frames/captions?")) heard.push({ at: Date.now(), what: `layer at ${new URL(u).searchParams.get("at")} asked` });
+    if (u.includes("/frames/dress?")) heard.push({ at: Date.now(), what: `layer at ${new URL(u).searchParams.get("at")} asked` });
     const call = u.endsWith("/call") ? callOf(r) : null;
     if (call?.name?.endsWith("Captions")) heard.push({ at: Date.now(), what: "Captions asked" });
     if (call?.name?.endsWith("Said"))
@@ -1529,30 +1529,18 @@ async function pickCards(page, n) {
   };
   const answered = (r) => {
     const u = r.url();
-    if (u.includes("/frames/captions?"))
+    if (u.includes("/frames/dress?"))
       heard.push({ at: Date.now(), what: `layer at ${new URL(u).searchParams.get("at")} answered ${r.response() ? "" : "nothing"}` });
     if (u.endsWith("/call") && callOf(r)?.name?.endsWith("Captions")) heard.push({ at: Date.now(), what: "Captions answered" });
   };
   const failed = (r) => {
-    if (r.url().includes("/frames/captions?")) heard.push({ at: Date.now(), what: `layer failed, ${r.failure()?.errorText}` });
+    if (r.url().includes("/frames/dress?")) heard.push({ at: Date.now(), what: `layer failed, ${r.failure()?.errorText}` });
   };
   page.on("request", asked);
   page.on("requestfinished", answered);
   page.on("requestfailed", failed);
-  // A frame put up for a click waits for its captions as long as they
-  // take: the walk hands the video preview a wait that never runs out, see
-  // dressWait in lib/frames/queue.ts. On the browser's clock it runs out
-  // after 600 ms, and on a busy machine the walk's own steps between the
-  // frame starting to wait and the gate opening used most of it, and
-  // libass drawing a layer once took 590 ms, so the frame came without
-  // its captions and they came after it, issue #468. The click was then
-  // taken again on another new clip, up to three times. That the frame
-  // does not wait for good, but 600 ms of the browser's clock, is held by
-  // "a frame waiting for its captions" in queue.test.ts.
-  await page.evaluate(() => {
-    window.__dressWait = window.__frameQueue.dressWait;
-    window.__frameQueue.dressWait = () => () => {};
-  });
+  // A frame put up for a click waits for the captions of its clip as long
+  // as they take, see captioned in lib/frames/queue.ts.
   const late = [];
   const clicks = [];
   for (let i = 0; i < n; i++) {
@@ -1590,7 +1578,7 @@ async function pickCards(page, n) {
     const { waitedForDress } = await page.evaluate(() => window.__frameQueue.stats);
     const clicking = clickCard(page, key, null);
     if (held) {
-      // The frame of the clip waits for what lies over it, dress in
+      // The frame of the clip waits for its captions, captioned in
       // queue.ts, and then the gate opens. A clip that came without
       // waiting has changed the video preview by then, and fails below.
       // Open at once when that has happened already, else from the
@@ -1627,9 +1615,6 @@ async function pickCards(page, n) {
     else if (first.canvas === last.canvas && first.crop === last.crop) problems.push(`${card}: the video preview shows what it showed before`);
     else console.log(`        ${card}: one change, ${say(changes[0])}`);
   }
-  await page.evaluate(() => {
-    window.__frameQueue.dressWait = window.__dressWait;
-  });
   // The log is written a quarter of a second after it is said, said.ts,
   // so what is told of the last click may be short of its last lines.
   page.off("request", asked);

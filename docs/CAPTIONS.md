@@ -60,9 +60,9 @@ pop in the short is libass's, on the short's frames, `popScales` in
 frame. The bounce after a word step is the app's own animation of what
 libass drew. libass draws the word with its pill apart from the rest of
 the caption, both once and at rest: `CaptionDrawing.Lifted` marks every
-caption `LiftWord` or `LiftRest`, and `/frames/captions` gives either
-with `part=word` or `part=rest`, the word with the curve in
-`X-Caption-Bounce`, "<ms> <rise> <peak>", from `BounceCurve`. The screen
+caption `LiftWord` or `LiftRest`, and `/frames/dress` gives either
+with `part=word` or `part=rest`, the word with the curve in its dress,
+`bounce`, length in milliseconds, rise and peak, from `BounceCurve`. The screen
 lays the rest over the frame and the word over that, scaled round the
 middle of its box, on every frame of the screen, 60 or 120 a second, by
 the clock of that frame. That is how the Mac animates a layer, drawn once
@@ -98,8 +98,8 @@ alone on its frames before it. A word with no frame before the first
 word of its caption that has one is lit on that word's first frame, with
 it. `litRuns` in `engine/wordframes.go` says which words are lit
 together and when, and the caption file, `ShowingAt`, `WordsLit` and
-`PopScale` all read it. `X-Caption-Showing` says the first and the last
-of them, "<caption> <word> <last>", and the caption box lights every
+`PopScale` all read it. The dress of a frame says the first and the last
+of them, `showing`, caption, word and last, and the caption box lights every
 word from the one to the other, each frame growing in the pop round the
 middle of the whole pill, as libass grows it. The engine says that middle
 with the first of the words, `WordFrame.Grow`, and `litMiddle` in
@@ -164,12 +164,23 @@ the two disagreed by far more.
 
 ## The layer
 
-`/frames/captions` in `cmd/framefairy-app/captions.go` answers the video
-preview with the layer for one frame of the episode at the size the crop is
-shown, see `engine.Engine.PreviewCaptions` in `engine/captionlayer.go`. The
-caption view a clip's captions came with names them by its `track`, and
-the colours and the height being dragged on the way come along as drafts,
-checked the way the edit that saves them checks them. The caption file is
+Every frame the Go side sends the video preview comes with its dress,
+its crop, its turn and the keyframe on it, see `engine.FrameDress`, and
+with the layer of its captions, drawn at the size the crop is shown, see
+`engine.Engine.PreviewCaptions` in `engine/captionlayer.go`, after its
+pixels in the same answer, `writeDress` in `cmd/framefairy-app/dress.go`.
+So a frame is never drawn with the crop of one moment and the captions
+of another, and never waits for either. A look, the frames around it, the
+frames read ahead and a play's frames all come this way. The window asks
+for frames with what they are dressed with, the name of the clip's
+framing, `Framing.Name`, which the app keeps for every framing it sends,
+the caption view's `track`, and the colours and the height being dragged
+on the way as drafts, checked the way the edit that saves them checks
+them, see `dressWords`. The cards' frames come dressed as their own clips
+are. `/frames/dress` in `cmd/framefairy-app/captions.go` answers the
+dress of one frame, for a frame the window holds whose clip changed since
+it came, a crop moved or a word corrected, and for the parts of a word
+that bounces. The caption file is
 written once, under a name made from what it is drawn from, in
 `<episode>.framefairy/captions/preview/`, with its fonts beside it. Many
 frames ask for the same file at the same time while a clip plays, so it
@@ -183,17 +194,14 @@ made is not remembered, so the next ask tries again.
 
 Between two words a playing clip shows the same captions on frame after
 frame, and libass drew the same layer for each, about every other frame.
-So every layer comes with a tag in the header `X-Caption-Tag`, made from
-all it was asked with but the frame and from the moments of the short
-around the frame over which the caption file starts and ends nothing,
-`CaptionDrawing.Steady`, see `layerTag`. The video preview asks for the
-next frame with the tag of the layer that came last, in `X-Caption-Have`,
-and a frame with the same tag is answered 204 with nothing in it, not
-drawn and not sent. The video preview keeps the layer it has for that
-frame, the same pixels the screen holds already, see `CaptionLayers` in
-`lib/frames/captions.ts`. It is a header of our own rather than HTTP's
-`If-None-Match` and 304, because Wails takes `If-None-Match` off every
-request on Windows, where WebView2 hangs on a 304. See [the decision
+So every layer has a tag, made from all it was asked with but the frame
+and from the moments of the short around the frame over which the
+caption file starts and ends nothing, `CaptionDrawing.Steady`, see
+`layerTag`. Within one answer a layer is sent once for each tag, and the
+window asks with the tag of the layer that came to it last, `have`, so a
+frame drawn the same as it comes with its tag alone, not drawn and not
+sent. The window finds the layer by its tag, `layerOf` in
+`lib/frames/app.ts`. See [the decision
 record](decisions/2026-11-19-a-caption-layer-the-page-has-is-not-drawn-again.md).
 
 Until the clip's whole file is there, a frame draws from a file of only
@@ -257,53 +265,24 @@ samples the layer at its own pixels. Without it the 2D canvas does the
 same in `laidPart`, `frontend/src/lib/frames/captions.ts`. Both lay it at
 the canvas's own pixels, so the captions are as sharp as the screen.
 
-A frame on its way to the screen asks for its layer ahead, `coming` in
-`CaptionLayers`, so playing keeps up. A frame a gesture puts the playhead
-on, a click, a step, a clip picked, a play starting, waits for its own
-layer before it is put up, `ready` in `CaptionLayers` and `dress` in
-`queue.ts`, so the picture and its captions come in one frame.
-The layer is asked for the moment the frame is, ahead of the frames
-read ahead, so the two take the time the slower takes. A clip just picked
-waits for its captions from the Go side first, `captionsDue`, unless
-they were read before: the captions of every clip on the cards are asked
-for once the workspace is on screen, one at a time, `readAhead` in
-`Episode.svelte`, and the layers of their first frames drawn, `next` in
-`CaptionLayers`, one at a time and only while nothing else is on its
-way. Those layers are kept for as long as their cards are there, so a
-card clicked has its captions at once. Nothing
-waits under a dragging hand, and nothing waits longer than 600 ms,
-`DRESS_WAIT`: past that the frame goes up without its captions and the
-log says so. A frame shown before its layer has
-come keeps the last one up and is drawn again when its own arrives, so the
-captions never blink off. That holds over a new track of the same clip
-too, which comes with every saved edit and every step of a caption edge
-being dragged. A layer is laid by the size it was drawn at, `size` on the
-layer, so while the app is resized the last one is stretched into its
-place until the new size's own comes, and the captions do not jump toward
-the crop's corner. A layer that does not come is not kept: the
-frame keeps the last one up and asks once more a moment later. A change
-of clip drops the last layer, `clip` on `CaptionAsk`, so the old clip's
-captions never stand over the new one, and what a frame waits for is asked for with the ask it was
-drawn with, never the next one's.
+A frame a gesture puts the playhead on in a clip just picked waits only
+for the captions of that clip from the Go side, `captionsDue`, since the
+frame is asked for with them, unless they were read before: the captions
+of every clip on the cards are asked for once the workspace is on
+screen, one at a time, `readAhead` in `Episode.svelte`, and the first
+frame of each card is read ahead dressed as its clip is. A card clicked
+has its picture and its captions at once.
 
-At most three layers are on their way at once. An ask no longer wanted
-is called off, so its place goes to the one wanted now: every ask on its
-way when a draft, the track or the clip changes, the frames that were
-coming when the playhead is put elsewhere while playing, all but the
-frame on screen, and the two parts of a lifted word once it is put back.
-Before, they kept their places until they came, a colour dragged across
-the wheel waited for three caption files nobody would see, and every one
-of them was made on the Go side. A request called off is no line in the
-app's log.
-
-While a clip plays, a frame that asks ahead while three are on their
-way waits its turn and is asked for as soon as one comes, after the frame
-on screen if that is still waiting for its own. Before, it was dropped
-and asked for only once it was drawn, so on a busy machine a playing clip
-showed a frame with the captions of the frame before.
-Paused, nothing waits: the frames read ahead are the ones a step may
-come to, the step asks for its own, and a bounce after a word step needs
-the Go side to itself.
+The frame on screen keeps the dress it came with. A saved edit, a step
+of a caption edge being dragged or a colour dragged on the wheel changes
+what the frames are dressed with, and the frame on screen of the same
+clip is dressed again, one ask at a time, and drawn once its dress is
+here, `FrameQueue.dressWith`. Another clip's dress never lands on the
+frame on screen: the clip's own frame brings it, so the old clip's
+captions never stand over the new one, nor the new one's over the old
+frame. A frame kept from before the change is dressed again before it is
+shown. While a clip plays, the play is told, and the frames it sends
+from there on are dressed the new way, `GoPlay.take`.
 
 ## The caption box
 
@@ -311,7 +290,7 @@ The caption box over the picture stays: it is what the hand takes hold of
 to click a word, correct it and drag the captions up or down. It draws
 nothing while the captions are only shown. While a word is typed, libass
 draws the caption without that word, in its place, `typing` on
-`/frames/captions` and `CaptionDrawing.Typing`, and the caption box draws
+`/frames/dress` and `CaptionDrawing.Typing`, and the caption box draws
 only the letters being typed, on that word's box and in the caption's
 colour, since they are in no caption file yet. Nothing else of the
 caption moves. Before, the layer stepped aside and the browser drew the
@@ -427,8 +406,8 @@ one height, and it leaves as much room over its pills as under them,
 `TestTheBoxStandsEvenlyRoundItsPills`.
 
 The frame round the lit word grows with its pill. Every layer says how
-large libass draws the pill of its word on that frame, `X-Caption-Scale`
-from `CaptionDrawing.PopScale`, and the caption box scales the word's
+large libass draws the pill of its word on that frame, `scale` in its
+dress, from `CaptionDrawing.PopScale`, and the caption box scales the word's
 frame by it round the pill's middle, so the frame stays on the pill's
 edge through the pop, as it did when the browser drew both. Where no
 pill is drawn, with the highlight off or when the words could not be
@@ -449,9 +428,8 @@ The caption box shows the caption and the lit word of the layer on
 screen, not of the playhead. The playhead is the sound, and the frame on
 the canvas trails it while a clip plays, and libass reads its caption
 file to the hundredth of a second at the moment `CaptionMoment` names on
-the short's frames. So `/frames/captions` says with every layer which
-caption and which word of it libass drew, in the header
-`X-Caption-Showing`, from `ShowingAt` in `engine/wordframes.go`, which
+the short's frames. So `/frames/dress` says with every layer which
+caption and which word of it libass drew, `showing` in its dress, from `ShowingAt` in `engine/wordframes.go`, which
 reads the same times the caption file is written with, `litRuns`. The
 video preview hands the caption box what the layer it paints says. The user saw
 the frame round a word go on to the next caption a few frames before the

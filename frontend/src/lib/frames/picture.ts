@@ -7,6 +7,7 @@
 // WebCodecs' VideoFrame, because the WebGPU canvas takes bytes on every
 // system, see screen.ts, and VideoFrame holds nothing brighter than white.
 
+import type { Layer } from "./captions";
 import { toSDR, type Light } from "./light";
 import { frames, type Pool } from "./pool";
 
@@ -16,6 +17,9 @@ type Held = { bytes: Uint8Array; holders: number; pool: Pool | null };
 
 export class Picture {
   private held: Held | null;
+  // What lies over the frame, its dress and the layer of captions the Go
+  // side sent with it, see AppFrames.layerOf. Null for a frame sent bare.
+  over: Layer | null = null;
 
   constructor(
     data: ArrayBuffer | Uint8Array | Held,
@@ -51,7 +55,9 @@ export class Picture {
   // The same frame for another holder, under another time if need be.
   clone(timestamp = this.timestamp): Picture {
     if (!this.held) throw new Error("the frame is closed");
-    return new Picture(this.held, this.width, this.height, timestamp, this.light);
+    const copy = new Picture(this.held, this.width, this.height, timestamp, this.light);
+    copy.over = this.over;
+    return copy;
   }
 
   // Lets go of the pixels. The other holders of the same frame keep them,

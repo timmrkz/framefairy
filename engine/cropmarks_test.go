@@ -116,62 +116,6 @@ func TestASlowGlideMovesOnEveryFrameOfTheShort(t *testing.T) {
 	}
 }
 
-// The video preview takes the crop of each frame from the steps the engine
-// sends, so it shows on every frame the crop the render crops by: the
-// piece's start, and each switch inside it, on the frames heldX switches on.
-func TestTheVideoPreviewIsSentTheCropsTheRenderCropsBy(t *testing.T) {
-	t.Parallel()
-	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
-	view := SegmentView{Start: 0.4, End: 3.0, CropX: intPtr(50), Marks: []CropMarkView{
-		{At: 0.2, X: 10}, {At: 0.8, X: 0}, {At: 1.6, X: 328}, {At: 1.64, X: 100}, {At: 2.0, X: 100}, {At: 2.6, X: 500}, {At: 3.2, X: 30},
-	}}
-	// Before the piece the keyframe at 0.2 s holds, 500 is kept inside the
-	// picture, and the keyframes that change nothing, or come after the
-	// piece, are no steps.
-	want := []CropStep{{10, 10}, {20, 0}, {40, 328}, {41, 100}, {65, 328}}
-	if got := source.CropSteps(view, 152, 480); !reflect.DeepEqual(got, want) {
-		t.Errorf("the piece's crop steps are %v, not %v", got, want)
-	}
-	seg := Segment{Start: view.Start, End: view.End, CropX: view.CropX}
-	for _, m := range view.Marks {
-		seg.Marks = append(seg.Marks, CropMark{At: m.At, X: m.X, Glide: m.Glide})
-	}
-	run := source.runOf(seg, 152, 480)
-	for k := int64(10); k < 75; k++ {
-		if x, render := sentOn(want, k), run.at(k); x != render {
-			t.Errorf("on frame %d the video preview is sent %v, the render crops at %v", k, x, render)
-		}
-	}
-
-	// A glide is a step on every frame it moves, each where the render
-	// has it, to a hundredth of a pixel: written in full, a glide was 18
-	// digits on every frame of every state of the video, issue #893.
-	for _, i := range []int{4, 5} {
-		view.Marks[i].Glide = true
-		seg.Marks[i].Glide = true
-	}
-	steps := source.CropSteps(view, 152, 480)
-	run = source.runOf(seg, 152, 480)
-	for k := int64(10); k < 75; k++ {
-		if x, render := sentOn(steps, k), run.at(k); math.Abs(x-render) > 0.005 {
-			t.Errorf("gliding, on frame %d the video preview is sent %v, the render crops at %v", k, x, render)
-		}
-	}
-	for _, step := range steps {
-		if _, decimals, _ := strings.Cut(strconv.FormatFloat(step.X, 'f', -1, 64), "."); len(decimals) > 2 {
-			t.Errorf("gliding, on frame %d the video preview is sent %v, finer than a hundredth of a pixel", step.Frame, step.X)
-		}
-	}
-	if len(steps) < len(want)+8 {
-		t.Errorf("the glide over 15 frames is sent as the steps %v", steps)
-	}
-	// A piece whose crop is its own throughout is sent none, and the
-	// window shows its own crop.
-	if got := source.CropSteps(SegmentView{Start: 1, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1.5, X: 50}}}, 152, 480); got != nil {
-		t.Errorf("a piece that never switches is sent the steps %v", got)
-	}
-}
-
 // The clip timeline is sent where the crop glides, the way the render
 // glides it, so the line it draws says what the short does: from a
 // circle, hidden by a cut or not, into the next circle, cut to the piece,
@@ -209,18 +153,6 @@ func TestTheClipTimelineIsSentWhereTheCropGlides(t *testing.T) {
 	if got := source.Glides(SegmentView{Start: 1, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1.5, X: 100}}}, 152, 480); got != nil {
 		t.Errorf("a piece that only switches is sent the glides %v", got)
 	}
-}
-
-// sentOn is the left edge the video preview takes from steps on frame k,
-// the way lib/keyframes.ts looks it up.
-func sentOn(steps []CropStep, k int64) float64 {
-	x := steps[0].X
-	for _, step := range steps {
-		if step.Frame <= k {
-			x = step.X
-		}
-	}
-	return x
 }
 
 // renderedLefts runs the crop filters of a piece on a picture 480 wide
@@ -1126,17 +1058,17 @@ func TestAGlideBetweenTwoCirclesRunsAcrossACut(t *testing.T) {
 
 // BenchmarkTheWindowIsSentAGlide is what one clip that glides over the
 // whole of its 30 s at 30 fps costs each state of the video sent to the
-// window: its crop steps and its glides worked out, and written as JSON.
+// window: its glides worked out, and written as JSON. The crop of each
+// frame is no longer sent with it, see Dress.
 func BenchmarkTheWindowIsSentAGlide(b *testing.B) {
 	source := SourceInfo{Width: 1920, Height: 1080, FPSNum: 30, FPSDen: 1}
 	view := SegmentView{Start: 0, End: 30, CropX: intPtr(100), Marks: []CropMarkView{{At: 0, X: 100, Glide: true}, {At: 29.9, X: 1300, Glide: true}}}
 	var size int
 	for b.Loop() {
-		steps, glides := source.CropSteps(view, 608, 1920), source.Glides(view, 608, 1920)
+		glides := source.Glides(view, 608, 1920)
 		out, err := json.Marshal(struct {
-			Steps  []CropStep  `json:"cropSteps"`
 			Glides []GlideSpan `json:"glides"`
-		}{steps, glides})
+		}{glides})
 		if err != nil {
 			b.Fatal(err)
 		}

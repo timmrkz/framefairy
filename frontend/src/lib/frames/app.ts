@@ -17,13 +17,16 @@
 //   handed to the Go side, which reads it when its decoder has nothing to
 //   do for the hand and sends what it read, kept here too, see ahead. The
 //   cards' frames are kept for as long as their cards are there.
+// - Every frame comes dressed, with its crop, its turn and the layer of
+//   captions over it, as the ask it was asked with says, see dressWith.
+import { asked, dressedOf, keyOf, type CaptionAsk, type Layer } from "./captions";
 import { rankOf, ticks, type VideoTrack } from "./movie";
 import type { Picture } from "./picture";
 import { pictures, pull, type Pulled } from "./pull";
 import { frames as framePool } from "./pool";
 
 // A pull with its frames as Pictures.
-type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture; stamp: number[] }[] };
+type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture; stamp: number[]; dress: string; layer: ArrayBuffer | null }[] };
 
 // How much of the frames sent last is kept. The kept frames are counted, so
 // the room follows the size of the frames: 64 are about 150 MB at 1012 by
@@ -35,6 +38,10 @@ type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture; stam
 // screen on a Mac with little memory keeps no more than that.
 const KEPT_FRAMES = 64;
 const KEPT_BYTES = 192 << 20;
+// How many layers of captions are found by their tag, see layerOf. A
+// frame read ahead lights a word of its own, so each word beside has a
+// layer of its own, and each card.
+const TAGS = 32;
 // How many frames after a word's first the Go side reads ahead with it,
 // lookAhead in engine/schedule.go, and the one before it.
 
@@ -69,6 +76,13 @@ export class AppFrames {
   private dragPlaces = 0;
   // The number of the newest ask.
   asked = 0;
+  // What the frames are dressed with, see dressWith, the asks of the
+  // cards, and the layers of captions that came, by their tags, the one
+  // that came last first to go, so a frame sent with the tag of a layer
+  // the window has finds it, see layerOf.
+  private ask: CaptionAsk | null = null;
+  private cardAsks: (CaptionAsk | null)[] = [];
+  private tags = new Map<string, Layer>();
   // This window's name and how many looks and asks to read ahead it has
   // sent the Go side, which serves each on a goroutine of its own, so they
   // may come in another order: by these it knows which one was sent last,
@@ -229,9 +243,10 @@ export class AppFrames {
     q.set("win", this.name);
     q.set("n", String(++this.sent));
     if (w.moving) q.set("move", "1");
+    this.dressing(q);
     this.place = w.rank;
     this.placeMoving = !!w.moving;
-    const asked = this.puller.pull(`/frames/look?${q}`, width, height);
+    const asked = this.pull(`/frames/look?${q}`, width, height);
     this.asking.set(w.rank, asked);
     const got = await asked;
     if (this.asking.get(w.rank) === asked) this.asking.delete(w.rank);
@@ -287,14 +302,21 @@ export class AppFrames {
   // says, and kept here for as long as their cards are there. Each call
   // replaces the ones before. Tim asked for every clip on the cards to be
   // ready to show, issue #383.
-  cards(ranks: number[]) {
+  cards(ranks: number[], asks: (CaptionAsk | null)[] = []) {
+    this.cardAsks = asks.filter((_, i) => ranks[i] >= 0);
     this.cardOrder = ranks.filter((r) => r >= 0);
-    const on = new Set(this.cardOrder);
-    for (const [r, f] of this.cardKept)
-      if (!on.has(r)) {
-        this.cardKept.delete(r);
-        f.close();
-      }
+    // A card's frame whose card went, the clip of a card clicked, is kept
+    // as the frames around the hand are, dressed as it came. One whose
+    // clip is dressed otherwise since, its captions came or its crop
+    // moved, is read again, so a click puts it up as it came.
+    const keys = new Map(this.cardOrder.map((r, i) => [r, keyOf(this.cardAsks[i] ?? null)]));
+    for (const [r, f] of this.cardKept) {
+      const key = keys.get(r);
+      if (key === (f.over?.dress?.key ?? "")) continue;
+      this.cardKept.delete(r);
+      if (key === undefined) this.keep(r, f, false);
+      else f.close();
+    }
     this.aheadNow();
   }
 
@@ -343,6 +365,7 @@ export class AppFrames {
       cards: this.cardOrder.join(","),
     });
     if (held) q.set("held", "1");
+    for (const a of this.cardAsks) q.append("cardKeys", keyOf(a));
     const ask = q.toString();
     if (ask === this.aheadSent) return;
     this.aheadSent = ask;
@@ -351,7 +374,14 @@ export class AppFrames {
     q.set("has", this.keptHere(width, height).join(","));
     q.set("win", this.name);
     q.set("n", String(++this.sent));
-    const sent = this.puller.pull(`/frames/ahead?${q}`, width, height).then((got) => {
+    // The words beside are dressed as the frames are, each card as its
+    // clip is.
+    this.dressing(q);
+    if (this.cardOrder.length) {
+      q.set("cardFramings", this.cardAsks.map((a) => a?.framing ?? "").join(","));
+      q.set("cardTracks", this.cardAsks.map((a) => a?.track ?? "").join(","));
+    }
+    const sent = this.pull(`/frames/ahead?${q}`, width, height).then((got) => {
       // The words' frames held here already, which the Go side did not
       // send again, are made the ones used last before the frames that
       // came are kept: kept as they were, the frames that came made room
@@ -397,7 +427,11 @@ export class AppFrames {
   // need not send.
   private keptHere(width: number, height: number): number[] {
     const out: number[] = [];
-    for (const m of [this.kept, this.cardKept]) for (const [r, f] of m) if (f.width === width && f.height === height) out.push(r);
+    // A card's frame kept only as another frame is sent again, dressed as
+    // its card.
+    const cards = new Set(this.cardOrder);
+    for (const [r, f] of this.kept) if (f.width === width && f.height === height && !cards.has(r)) out.push(r);
+    for (const [r, f] of this.cardKept) if (f.width === width && f.height === height) out.push(r);
     return out;
   }
 
@@ -429,8 +463,8 @@ export class AppFrames {
     const { width, height } = this.size();
     const has = this.around(rank, width, height);
     const q = new URLSearchParams({ path: this.path, frame: String(rank), w: String(width), h: String(height), grid: this.gridText, has: has.join(",") });
-    void this.puller
-      .pull(`/frames/near?${q}`, width, height)
+    this.dressing(q);
+    void this.pull(`/frames/near?${q}`, width, height)
       .then((got) => {
         if (this.closed) {
           for (const { frame } of got.frames) frame.close();
@@ -498,6 +532,15 @@ export class AppFrames {
     // A kept frame of another size is not this frame: one decoded before
     // the canvas had its size, or before the app grew, stays as blurred as
     // it was.
+    // A card's frame first: it is dressed as its clip, which a click on
+    // the card chooses.
+    const card = this.cardKept.get(w.rank);
+    if (card && card.width === width && card.height === height) {
+      this.tookKept(w.rank);
+      w.done(card);
+      this.tell(w);
+      return;
+    }
     const have = this.kept.get(w.rank);
     if (have && have.width === width && have.height === height) {
       this.tookKept(w.rank);
@@ -506,19 +549,85 @@ export class AppFrames {
       this.tell(w);
       return;
     }
-    const card = this.cardKept.get(w.rank);
-    if (card && card.width === width && card.height === height) {
-      this.tookKept(w.rank);
-      w.done(card);
-      this.tell(w);
-      return;
-    }
     // Where the hand is: the Go side's to decide, see look.
     void this.look(w);
   }
 
-  keep(rank: number, frame: Picture) {
-    if (!this.closed) this.stats.fromGo++;
+  // What the frames are dressed with from now on: the clip's framing and
+  // captions, see CaptionAsk, or nothing for frames sent bare.
+  dressWith(ask: CaptionAsk | null) {
+    this.ask = ask;
+  }
+
+  // The key of what the frames are dressed with now, see keyOf.
+  get dressKey(): string {
+    return keyOf(this.ask);
+  }
+
+  // What a request for frames says of how they are dressed: the ask, and
+  // the tag of the layer that came last, which the Go side sends no
+  // pixels for again.
+  dressing(q: URLSearchParams) {
+    if (this.ask) for (const [k, v] of Object.entries(asked(this.ask))) q.set(k, v);
+    const last = [...this.tags.keys()].pop();
+    if (last) q.set("have", last);
+  }
+
+  // Dresses a frame that begins at a moment as the frames are dressed now,
+  // the frame on screen after a crop moved or a word corrected, see
+  // FrameQueue.dressWith. It keeps its dress where none came. A frame
+  // sent with its dress as R turns it, which the framing asked for now
+  // is, takes that dress at once, before libass has drawn its captions,
+  // and early is told, so a part rotated with R turns in the frame R is
+  // pressed in, and its captions follow a frame or two later.
+  async dress(f: Picture, begins: number, early?: () => void): Promise<void> {
+    if (!this.ask) return;
+    const turned = f.over?.dress?.turned;
+    if (f.over && turned?.framing === this.ask.framing) {
+      f.over = { ...f.over, dress: turned };
+      early?.();
+    }
+    const q = new URLSearchParams({ path: this.path, at: String(begins), w: String(f.width), h: String(f.height) });
+    this.dressing(q);
+    try {
+      const r = await fetch(`/frames/dress?${q}`);
+      const body = r.status === 200 ? await r.arrayBuffer() : null;
+      const layer = r.ok ? this.layerOf(r.headers.get("X-Frame-Dress") ?? "", body) : null;
+      if (layer) f.over = layer;
+      else this.trace(`the frame at ${begins.toFixed(3)} s could not be dressed again, it answered ${r.status}`);
+    } catch (e) {
+      this.trace(`the frame at ${begins.toFixed(3)} s could not be dressed again: ${String(e)}`);
+    }
+  }
+
+  // The layer over a frame from what came with it, see dressedOf, kept by
+  // its tag for the frames sent after it with the tag alone.
+  private layerOf(json: string, bytes: ArrayBuffer | null): Layer | null {
+    const layer = dressedOf(json, bytes?.byteLength ? bytes : null, (tag) => this.tags.get(tag) ?? null);
+    const tag = layer?.tag;
+    if (!layer || !tag) return layer;
+    this.tags.delete(tag);
+    this.tags.set(tag, layer);
+    for (const old of this.tags.keys()) {
+      if (this.tags.size <= TAGS) break;
+      this.tags.delete(old);
+    }
+    return layer;
+  }
+
+  // A pull of frames, each with what came with it laid over it, see
+  // layerOf.
+  async pull(url: string, width: number, height: number, head = 8, frames = 1): Promise<Got> {
+    const got = await this.puller.pull(url, width, height, head, frames);
+    for (const f of got.frames) f.frame.over = this.layerOf(f.dress, f.layer);
+    return got;
+  }
+
+  // Keeps a frame by its rank, the one used longest ago going first once
+  // the room is full. fromGo counts it as a frame the Go side sent, which
+  // a card's frame kept on was already.
+  keep(rank: number, frame: Picture, fromGo = true) {
+    if (!this.closed && fromGo) this.stats.fromGo++;
     const old = this.kept.get(rank);
     if (old === frame) return;
     if (old) {

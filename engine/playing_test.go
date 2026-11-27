@@ -5,7 +5,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"sync"
 	"testing"
+
+	"framefairy/internal/framewire"
 )
 
 // A play is a function of the pieces and of what the decoder hands over,
@@ -199,7 +202,7 @@ func TestAPlaysSoundIsEachPieceCutAtTheSampleAndFadedAtItsEdges(t *testing.T) {
 	p := s.Play(PlayAsk{Grid: lookGrid, W: 4, H: 2, Pieces: []PlayPiece{{1, 1.1}, {2, 2.1}}, Moment: 1})
 	started := make(chan float64, 4)
 	heard := map[int64]float32{}
-	err := p.Sound(context.Background(), ones(started), 1000, 2, func(out int64, chunk []byte) error {
+	err := p.Sound(context.Background(), ones(started), 1000, 2, func(out int64, _ int, chunk []byte) error {
 		for i := 0; i < len(chunk)/8; i++ {
 			left := math.Float32frombits(binary.LittleEndian.Uint32(chunk[i*8:]))
 			right := math.Float32frombits(binary.LittleEndian.Uint32(chunk[i*8+4:]))
@@ -357,5 +360,269 @@ func TestAPlaysFramesGoBackToTheDecoderOnceWritten(t *testing.T) {
 	}
 	if d.given(played[4].Picture) {
 		t.Error("frame 29 went back to the decoder while the schedule keeps it")
+	}
+}
+
+// A clip changed while it plays is taken into the play at a place ahead
+// of what is heard: the frames up to it are the old pieces', from it on
+// the new pieces' from the moment the play stands at there, on the same
+// clock, stamped with the change, and the frame the old play decoded at
+// the place is the new play's first.
+func TestAChangedClipIsTakenIntoThePlayAtItsPlace(t *testing.T) {
+	t.Parallel()
+	d := newHeldDecoder()
+	s := newSchedule(d)
+	p, frames, ended := playOf(s, []PlayPiece{{1, 2}}, 1)
+	old := d.next(t)
+	for f := 25; f < 28; f++ {
+		if err := old.give(t, f); err != nil {
+			t.Fatalf("frame %d: %v", f, err)
+		}
+	}
+	got, ok := p.Retake([]PlayPiece{{1, 1.4}, {1.8, 2}}, false, 0.2)
+	if !ok || got.Gen != 1 || math.Abs(got.At-0.2) > 1e-9 || math.Abs(got.End-0.6) > 1e-9 || math.Abs(got.Lap-0.6) > 1e-9 {
+		t.Fatalf("the change was taken in %+v, %v", got, ok)
+	}
+	for f := 28; f < 31; f++ {
+		_ = old.give(t, f)
+	}
+	streams := streamsFrom(t, d)
+	first, second := streams[31], streams[45]
+	if first == nil || second == nil {
+		t.Fatalf("the play of the changed clip reads %v", streams)
+	}
+	for f := 31; f < 35; f++ {
+		if err := first.give(t, f); f == 34 != errors.Is(err, errRunDone) {
+			t.Fatalf("frame %d of the changed clip: %v", f, err)
+		}
+	}
+	for f := 45; f < 50; f++ {
+		if err := second.give(t, f); f == 49 != errors.Is(err, errRunDone) {
+			t.Fatalf("frame %d of the changed clip: %v", f, err)
+		}
+	}
+	if err := <-ended; err != nil {
+		t.Fatalf("the play ended with %v", err)
+	}
+	close(frames)
+	type seen struct {
+		frame, gen int
+		at         float64
+	}
+	var want []seen
+	for i, f := range []int{25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 45, 46, 47, 48, 49} {
+		gen := 0
+		if f >= 30 {
+			gen = 1
+		}
+		want = append(want, seen{f, gen, float64(i) * 0.04})
+	}
+	i := 0
+	for f := range frames {
+		if i >= len(want) || f.Frame != want[i].frame || f.Gen != want[i].gen || math.Abs(f.At-want[i].at) > 1e-9 {
+			t.Fatalf("frame %d is %d of change %d at %.2f s, want %+v", i, f.Frame, f.Gen, f.At, want)
+		}
+		i++
+	}
+	if i != len(want) {
+		t.Fatalf("the play brought %d frames, not %d", i, len(want))
+	}
+	if cur, shift := p.Current(); cur == p || math.Abs(shift) > 1e-9 {
+		t.Errorf("the play that plays now is %p, moved by %v", cur, shift)
+	}
+}
+
+// The sound is cut at the place a change is taken in, at the sample, and
+// goes on with the new pieces' sound on the same clock.
+func TestTheSoundOfAChangedClipGoesOnFromItsPlace(t *testing.T) {
+	t.Parallel()
+	s := newSchedule(newHeldDecoder())
+	p := s.Play(PlayAsk{Grid: lookGrid, W: 4, H: 2, Pieces: []PlayPiece{{1, 2}}, Moment: 1})
+	defer p.Stop()
+	if _, ok := p.Retake([]PlayPiece{{1, 1.1}, {1.5, 1.6}}, false, 0.05); !ok {
+		t.Fatal("the change was not taken in")
+	}
+	started := make(chan float64, 4)
+	gens := map[int64]int{}
+	err := p.Sound(context.Background(), ones(started), 1000, 1, func(out int64, gen int, chunk []byte) error {
+		for i := range int64(len(chunk) / 4) {
+			if _, twice := gens[out+i]; twice {
+				t.Errorf("sample %d came twice", out+i)
+			}
+			gens[out+i] = gen
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, b, c := <-started, <-started, <-started; a != 1 || b != 1.05 || c != 1.5 {
+		t.Errorf("the sound was read from %v, %v and %v", a, b, c)
+	}
+	if len(gens) != 200 {
+		t.Fatalf("the play's sound is %d samples", len(gens))
+	}
+	for m := range int64(200) {
+		want := 0
+		if m >= 50 {
+			want = 1
+		}
+		if gen, ok := gens[m]; !ok || gen != want {
+			t.Fatalf("sample %d is of change %d, there %v", m, gen, ok)
+		}
+	}
+}
+
+// A second change before the first took over takes its place, at its
+// place, and a change the new pieces do not hold, or one given to a play
+// paused, is not taken in.
+func TestAChangeBeforeTheLastTookOverTakesItsPlace(t *testing.T) {
+	t.Parallel()
+	d := newHeldDecoder()
+	s := newSchedule(d)
+	p, frames, _ := playOf(s, []PlayPiece{{1, 2}}, 1)
+	defer p.Stop()
+	old := d.next(t)
+	_ = old.give(t, 25)
+	<-frames
+	if _, ok := p.Retake([]PlayPiece{{1.5, 2}}, false, 0.2); ok {
+		t.Error("a change that does not hold the moment was taken in")
+	}
+	if _, ok := p.Retake([]PlayPiece{{1, 1.6}}, false, 0.2); !ok {
+		t.Fatal("the first change was not taken in")
+	}
+	got, ok := p.Retake([]PlayPiece{{1, 1.3}, {1.7, 2}}, false, 0.3)
+	if !ok || got.Gen != 2 || math.Abs(got.At-0.2) > 1e-9 || math.Abs(got.End-0.6) > 1e-9 {
+		t.Fatalf("the second change was taken in %+v, %v", got, ok)
+	}
+	for f := 26; f < 31; f++ {
+		_ = old.give(t, f)
+	}
+	streams := streamsFrom(t, d)
+	if streams[31] == nil || streams[42] == nil {
+		t.Fatalf("the play of the second change reads %v", streams)
+	}
+	for range 4 {
+		<-frames
+	}
+	if f := <-frames; f.Frame != 30 || f.Gen != 2 {
+		t.Fatalf("the frame at the place is %d of change %d", f.Frame, f.Gen)
+	}
+	cur, _ := p.Current()
+	cur.Hold()
+	if _, ok := p.Retake([]PlayPiece{{1, 2}}, false, 0.4); ok {
+		t.Error("a change was taken into a play paused")
+	}
+}
+
+// freeDecoder makes every frame at once, from the one a stream asks for
+// on, until the stream is stopped, so a play runs as fast as it is read.
+type freeDecoder struct{}
+
+func (freeDecoder) Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int, _ bool,
+	_ func() float64, got func(at float64, frame []byte) error) error {
+	for f := grid.Holding(from); f < grid.Count; f++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := got(grid.At(f), make([]byte, width*height*4)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (freeDecoder) Give([]byte) {}
+
+// Changes taken into a play from several goroutines at once, while its
+// pictures and its sound are read and its loop is switched, each take a
+// change of their own, and the pictures and the sound each go from one
+// change to a later one, never back. Stop on the play first asked for
+// stops whichever play took over from it. The window hands in a change
+// from every drag step while the play runs on its own goroutines.
+func TestChangesTakenInFromSeveralGoroutinesAtOnceKeepTheirOrder(t *testing.T) {
+	t.Parallel()
+	s := newSchedule(freeDecoder{})
+	p := s.Play(PlayAsk{Grid: lookGrid, W: 4, H: 2, Pieces: []PlayPiece{{1, 3}}, Loop: true, Moment: 1})
+	var streams, takes sync.WaitGroup
+	order := func(what string, gen int, last *int) {
+		if gen < *last {
+			t.Errorf("the %s went back from change %d to %d", what, *last, gen)
+		}
+		*last = gen
+	}
+	pictures, sounds := 0, 0
+	// The changes start once the first picture and the first sound are
+	// out, so a busy machine cannot stop the play before it made either.
+	first, heard := make(chan struct{}), make(chan struct{})
+	streams.Go(func() {
+		last := 0
+		_ = p.Pictures(context.Background(), func(f PlayFrame) error {
+			order("pictures", f.Gen, &last)
+			if pictures++; pictures == 1 {
+				close(first)
+			}
+			return nil
+		})
+	})
+	streams.Go(func() {
+		last := 0
+		_ = p.Sound(context.Background(), ones(make(chan float64, 4096)), 1000, 1, func(_ int64, gen int, _ []byte) error {
+			order("sound", gen, &last)
+			if sounds++; sounds == 1 {
+				close(heard)
+			}
+			return nil
+		})
+	})
+	gens := make(chan int, 64)
+	<-first
+	<-heard
+	for g := range 4 {
+		takes.Go(func() {
+			for i := range 8 {
+				at := 0.1 + 0.05*float64(i)
+				if got, ok := p.Retake([]PlayPiece{{1 + 0.1*float64(g), 3}}, true, at); ok {
+					gens <- got.Gen
+				}
+				p.Loop(true, at)
+				p.Current()
+			}
+		})
+	}
+	takes.Wait()
+	p.Stop()
+	streams.Wait()
+	close(gens)
+	seen := map[int]bool{}
+	for g := range gens {
+		if seen[g] {
+			t.Errorf("two changes were taken in as change %d", g)
+		}
+		seen[g] = true
+	}
+	if len(seen) == 0 || pictures == 0 || sounds == 0 {
+		t.Errorf("%d changes were taken in, over %d pictures and %d chunks of sound", len(seen), pictures, sounds)
+	}
+}
+
+// A change of the clip that plays the same pieces with the same loop is
+// no change of the play, its crop moved or its captions changed. The
+// loop switched on is one: answered as no change, a take that switched
+// it on left the play to end at the clip's end.
+func TestAPlayPlaysItsPiecesAndItsLoop(t *testing.T) {
+	t.Parallel()
+	s := newSchedule(freeDecoder{})
+	pieces := []PlayPiece{{1, 2}, {3, 4}}
+	p := s.Play(PlayAsk{Grid: lookGrid, W: 4, H: 2, Pieces: pieces, Moment: 1})
+	defer p.Stop()
+	if !p.Plays(pieces, false) {
+		t.Error("the play does not play its own pieces")
+	}
+	if p.Plays(pieces, true) {
+		t.Error("the play plays its pieces looped, though it does not loop")
+	}
+	if p.Plays(pieces[:1], false) {
+		t.Error("the play plays one piece, though it plays two")
 	}
 }

@@ -164,6 +164,7 @@ What to do today, and what changes once the work named is built.
 | choose which frames the video preview's decoder makes while it stands still, and what it reads ahead | `engine.Schedule` in `engine/schedule.go`, one for each video, which the window tells where the hand is on every move through `/frames/look`, also where it keeps the frame itself, and hands what to read ahead through `/frames/ahead`. What the decoder does next is one rule, `plan`, asked after every frame, held to five targets by the simulated drags in `engine/drag_test.go`. While the window draws the frame of a hand at rest it holds, until the window says the frame is painted through `/frames/near`, see [the decision record](decisions/2026-11-19-go-schedules-the-video-previews-frames.md) and [how it keeps up with the hand](decisions/2026-11-20-the-video-preview-keeps-up-with-the-hand.md). The window draws what it is sent and keeps it to draw again | the window. It never chooses a stream, a key frame or an order |
 | answer a window that waits on something a hand moves over, frames or loudness | `looks` in `engine/looks.go`, which both `engine.Schedule` and `engine.LoudnessSchedule` hold: the newest look waits, an older one is answered as overtaken, and the answer goes out the moment the work brings what the window lacks. Each schedule keeps its own rule for what to make next, see [the decision record](decisions/2026-11-21-the-waveform-keeps-up-with-the-hand.md) | a schedule of its own kind, never a generic one with the rule handed in: frames and sound make what they make in different ways |
 | play the video preview: which frame is drawn where on the play's clock, the cuts and the sound cut and faded at the sample | `engine.Play` in `engine/playing.go` and the program in `engine/play.go`, by the render's own cut and fade, run by the video's `engine.Schedule`, which gives it the decoder while it runs. The window starts one through `/frames/play` and pulls its frames and sound through `/frames/read`, see [the decision record](decisions/2026-11-19-go-plays-the-video-preview.md) | the window. It draws and plays what it is sent where on the clock each is stamped, and works out no frame, cut or fade |
+| draw something over a frame of the video preview, its crop, its turn, the keyframe on it or its captions | a field of `engine.FrameDress` in `engine/dress.go`, worked out for the frame the way the render crops and turns it, and sent with the frame and its caption layer in the same answer, `writeDress` in `cmd/framefairy-app/dress.go`, dressed by the name of the clip's framing the request names, which the app keeps for each `Framing` it sends, see [the decision record](decisions/2026-11-25-the-video-preview-draws-what-go-sends.md). The window draws each frame with the dress that came with it | the window. It works out no piece, turn, crop or keyframe of a frame |
 | draw something of a video while a hand moves it, like the waveform on the clip timeline | the window keeps the whole of it, as Go sent it, and draws every frame from what it holds. It tells Go where the view is on every move, a look like the video preview's, and Go answers with what the view lacks, when it has it. When to send what is Go's to say. Never a read ahead, a rest timer or an order of answers in the window to hide a call made while the hand moves: that is a fetch policy, which is logic too. Go makes what drawing needs as data, like the levels for zooming out, see [2026-11-18-the-window-holds-the-loudness.md](decisions/2026-11-18-the-window-holds-the-loudness.md) |
 | copy a rule of the engine into TypeScript | don't, and no `.cases.json` makes it right. The interface asks Go, or reads the answer from the state. Where it must answer while a hand drags, Go sends what the drag needs as data, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | add a check to CI | a make target, which one job of `ci.yml` runs as it stands, `make <target>`. A new kind of file joins one of the filters of its job `changes`, and a file of `frontend/` a Go test reads joins `goread`, which `internal/workflows` holds. Whether Go reaches what the app is built from, for the walks and the build to update to, is worked out of the code by `framefairy-release`, from what the programs the app ships import and what their `go generate` runs, never from a list of folders, so a program the app's build runs is run through `go generate`, see [2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md](decisions/2026-11-25-the-release-tool-knows-what-the-app-is-built-from.md). Never a script that picks, runs or reports tests, see [2026-11-08-one-make-target-per-ci-job.md](decisions/2026-11-08-one-make-target-per-ci-job.md) and BUILD.md. A check that needs a Mac runs on a pull request only for code only a Mac builds, the files the filter `mac` names, and otherwise every night in `mac-nightly.yml`, see [2026-11-20-a-mac-only-for-mac-code.md](decisions/2026-11-20-a-mac-only-for-mac-code.md) |
@@ -295,17 +296,16 @@ searching the issues for its path. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
 - Rules of the engine in `frontend/src/lib/flow.ts`, its frames held to
-  Go by a shared case file, the frame lookups `rotationAt` and
-  `pieceHolding` in `frontend/src/lib/rotate.ts`, and `frameOf` in
-  `frontend/src/lib/keyframes.ts`. So is `rankAt` in
+  Go by a shared case file. So is `rankAt` in
   `frontend/src/lib/frames/movie.ts`, the window's count of
   `Grid.Holding`, held by the same case file, by which a look names its
   frame: a look could name its moment and Go count the frame. These are
   no longer among them, because Go sends each as data and the window
-  only looks it up: the crop a keyframe holds, `engine.CropSteps`, what
-  of a video is heard, `VideoState.heard`, how each part of the chosen
-  clip turns, `VideoState.turns`, and how a choice of model stands,
-  `Standing`.
+  only shows it: what lies over a frame of the video preview, its piece,
+  turn, crop and keyframe, `engine.FrameDress`, sent with the frame and
+  its captions, what of a video is heard, `VideoState.heard`,
+  how each part of the chosen clip turns, `VideoState.turns`, and how a
+  choice of model stands, `Standing`.
 
 ## Changing the architecture
 

@@ -805,11 +805,7 @@ sixtieth of a second after the other, `frames` on `CaptionLayers` in
 `lib/frames/captions.ts`, and the pills are read off the screen after
 each: its 220 ms are 15 frames on any machine, and the one nearest its
 peak is within 0.2 % of it. On the screen's own frames a busy machine
-drew two and missed the peak. A frame whose
-captions a walk holds back waits for them as long as they take, by a
-wait the walk hands the frame queue, `dressWait` in
-`lib/frames/queue.ts`, where on the browser's clock the walk's own steps
-used up the 600 ms it waits. And a crop read while it plays
+drew two and missed the peak. And a crop read while it plays
 goes on until the video preview has shown ten frames or come to the end
 of the piece, not for two seconds, in which a busy machine showed two.
 

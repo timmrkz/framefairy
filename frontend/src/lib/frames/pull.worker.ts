@@ -15,5 +15,5 @@ self.onmessage = async (e: MessageEvent<{ n: number; url: string; width: number;
     return;
   }
   const got = await pull(new URL(url, self.location.href).href, width, height, spare, head);
-  self.postMessage({ n, got }, { transfer: [...got.frames.map((f) => f.data), ...got.spare] });
+  self.postMessage({ n, got }, { transfer: [...got.frames.flatMap((f) => (f.layer ? [f.data, f.layer] : [f.data])), ...got.spare] });
 };

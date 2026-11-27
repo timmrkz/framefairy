@@ -1428,7 +1428,7 @@ export const steps = {
         // nothing is waiting on it, and the page would report it as an
         // error nobody handled.
         answer.catch(() => {});
-        if (String(input).startsWith("/frames/captions?")) await frames(n);
+        if (String(input).startsWith("/frames/dress?")) await frames(n);
         return answer;
       };
     }, arg);

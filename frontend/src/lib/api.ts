@@ -279,7 +279,7 @@ export interface Gesture {
 // crop runs then.
 export interface Shaped {
   // Each with its part, see Segment.part.
-  pieces: { start: number; end: number; part: number }[];
+  pieces: { start: number; end: number; part: number; rotate?: number }[];
   playhead: number;
   captions: CaptionsView;
   framing?: Framing;
@@ -289,12 +289,13 @@ export interface Shaped {
 // clip saved and for one under the hand alike, see Framing in
 // cmd/framefairy-app/views.go: its pieces with the keyframes that steer
 // each, the keyframes on screen, an edge's or a cut's carried one among
-// them, and the crop, see ClipEntry.
+// them, the crop, and the name the video preview asks the dress of its
+// frames by, see ClipEntry and FrameDress in lib/frames/captions.ts.
 export interface Framing {
+  name?: string;
   segments: Segment[];
   cropMarks: CropMark[];
   cropLefts: number[];
-  cropSteps?: (CropStep[] | null)[];
   glides?: GlideSpan[];
 }
 
@@ -305,10 +306,10 @@ export interface Segment {
   moved: boolean;
   // How far the piece is rotated, in degrees to the left: 0, 90, 180 or
   // 270, by the stretch of the clip's rotations it lies in. Its crop is on
-  // the picture rotated, see lib/rotate.ts.
+  // the picture rotated, see engine.FrameDress.
   rotate?: number;
   // The keyframes that steer the piece's crop, which switches on each or
-  // glides into it, and holds until the next, see ClipEntry.cropSteps.
+  // glides into it, and holds until the next, see engine.FrameDress.
   // Before the first, and with none, the crop stands at cropX.
   marks?: CropMark[];
   // The part of the clip the piece is in, counted from nought: pieces that
@@ -335,13 +336,6 @@ export interface CropMark {
   fromClip?: boolean;
   // A circle with no circle beside it, which does nothing yet.
   alone?: boolean;
-}
-
-// A piece's crop from a frame of the video on, until the next step, see
-// engine.CropStep.
-export interface CropStep {
-  frame: number;
-  x: number;
 }
 
 // A stretch the crop glides over, from the frame the glide starts on to
@@ -372,7 +366,7 @@ export interface ClipView {
   end: number;
   segments: Segment[];
   // The stretches of the video a person rotated, which a frame is turned
-  // by, see lib/rotate.ts.
+  // by, see engine.FrameDress.
   rotations?: Rotation[];
   rejected: boolean;
   // The clip was rendered, by what its plan noted at the time, so it stays
@@ -477,7 +471,7 @@ export interface CaptionsView {
   // The clip's pieces the captions were made for, whose clock they are on.
   // A clip that was changed has its new pieces before its new captions, and
   // the captions are put in the episode by these until those arrive.
-  pieces?: { start: number; end: number; part: number }[];
+  pieces?: { start: number; end: number; part: number; rotate?: number }[];
   // On a step of a drag, captions are only the ones laid out again near
   // what the hand changed, and this says how they go with the captions
   // the clip timeline holds, see spliced in lib/splice.ts.
@@ -569,10 +563,9 @@ export interface ClipEntry extends ClipView {
   // the entry changes as the words land, so its captions are asked for
   // again, issue #745.
   unheard?: [number, number][];
-  // For each piece with keyframes, how its crop switches over its frames,
-  // worked out by the engine, and null for a piece whose crop is its
-  // cropLefts throughout. See engine.CropSteps.
-  cropSteps?: (CropStep[] | null)[];
+  // The name the video preview asks the dress of the clip's frames by,
+  // see Framing.name.
+  framing?: string;
   // Where the crop glides, each glide from a circle into the next cut to a piece, worked
   // out by the engine, see engine.Glides.
   glides?: GlideSpan[];
@@ -632,6 +625,13 @@ export interface Turns {
   // The key of the clip chosen, or nothing.
   clip: string;
   parts: Turn[];
+}
+
+// The clip a part was rotated in, with how each of its parts turns now,
+// see RotatedClip in edits.go.
+export interface RotatedClip {
+  clip: ClipEntry;
+  turns: Turns | null;
 }
 
 // The clip chosen with the part part rotated a quarter further.
@@ -1248,7 +1248,7 @@ export const api = {
   resetCrop: (path: string, plan: string, clip: string, at: number) =>
     call<ClipEntry>("ResetCrop", path, plan, clip, at),
   rotatePart: (path: string, plan: string, clip: string, at: number) =>
-    call<ClipEntry>("RotatePart", path, plan, clip, at),
+    call<RotatedClip>("RotatePart", path, plan, clip, at),
   setCaptionStyle: (path: string, plan: string, font: string, size: number) =>
     call<void>("SetCaptionStyle", path, plan, font, size),
   // The colour of the caption text and of the box behind it, as #rrggbb,

@@ -57,6 +57,9 @@ type PieceView struct {
 	// from each other with no cut between them, from nought: pieces of one
 	// part have the same, see partsOf.
 	Part int `json:"part"`
+	// Rotate is how far the piece is rotated, in degrees to the left, see
+	// Segment.Rotate, which the clip timeline draws the rotate icon by.
+	Rotate int `json:"rotate,omitempty"`
 }
 
 // partsOf is the part of each piece, a piece at a time from the first, by
@@ -81,7 +84,7 @@ func pieceViews(segs []Segment) []PieceView {
 	parts := partsOf(len(segs), func(i int) float64 { return segs[i].Start }, func(i int) float64 { return segs[i].End })
 	views := make([]PieceView, 0, len(segs))
 	for i, s := range segs {
-		views = append(views, PieceView{Start: s.Start, End: s.End, Part: parts[i]})
+		views = append(views, PieceView{Start: s.Start, End: s.End, Part: parts[i], Rotate: s.Rotate})
 	}
 	return views
 }

@@ -620,7 +620,7 @@ func TestThePartsAClipViewSaysAreThePartsRTurns(t *testing.T) {
 		}
 	}
 	// What a gesture shows while the hand moves says the same.
-	if got := fmt.Sprint(pieceViews([]Segment{{Start: 1, End: 2}, {Start: 2.0004, End: 3}, {Start: 4, End: 5}})); got != "[{1 2 0} {2.0004 3 0} {4 5 1}]" {
+	if got := fmt.Sprint(pieceViews([]Segment{{Start: 1, End: 2}, {Start: 2.0004, End: 3}, {Start: 4, End: 5}})); got != "[{1 2 0 0} {2.0004 3 0 0} {4 5 1 0}]" {
 		t.Errorf("the pieces shaped are %s", got)
 	}
 }
