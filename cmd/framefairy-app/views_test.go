@@ -208,7 +208,7 @@ func TestTheKeyframesAndTheCropFollowAnEdgeTheHandDrags(t *testing.T) {
 	// the hand is dressed as the saved clip's is.
 	framing := func(e ClipEntry) Framing {
 		return Framing{Name: e.Framing, Segments: e.Segments, CropMarks: e.CropMarks, CropLefts: e.CropLefts,
-			Glides: e.Glides}
+			Glides: e.Glides, Places: e.Places}
 	}
 	last := framing(before)
 	for _, g := range []engine.Gesture{
