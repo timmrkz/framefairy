@@ -443,6 +443,11 @@ type WordFrame struct {
 	// on no frame, or where the frames are not known.
 	From float64 `json:"from"`
 	To   float64 `json:"to"`
+	// Land is where a step of the arrow keys lands on the word, and Since
+	// where it begins as a place to land on, -1 for a word that is no
+	// place of its own, see LandOn.
+	Land  float64 `json:"land"`
+	Since float64 `json:"since"`
 }
 
 // GrowFrom is a point of the short, as shares of its width and height

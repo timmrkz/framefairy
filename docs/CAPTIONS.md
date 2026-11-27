@@ -105,7 +105,7 @@ middle of the whole pill, as libass grows it. The engine says that middle
 with the first of the words, `WordFrame.Grow`, and `litMiddle` in
 `Player.svelte` only reads it. Shift and an arrow land once on the frame
 the words share, and once more where a word of them goes on lit alone,
-see `landings` in `frontend/src/lib/api.ts`. A word of no length, as a
+as the engine says with each word, `LandOn` in `engine/landing.go`. A word of no length, as a
 letter typed into a short word can be, is lit with the words on the
 frame it shares too. The walk "a word too short for a frame of its own is
 lit with the word on the frame it shares" types " Q Schulhofgeschichten"
@@ -122,9 +122,10 @@ together with the word beside it. Where in a caption such a word may
 be is the engine's, `TestWordsTooShortForAFrameAreLitTogether`.
 They found that a click on the edge where a caption appears put the
 playhead in the middle of its first word, in the frame before the
-caption is up, when that word is too short for a frame. `captionAppears`
-in `ClipTimeline.svelte` now goes no earlier than the first frame drawn
-with the caption up. `TestEveryWordOfACaptionShownIsLitOnAFrame`
+caption is up, when that word is too short for a frame. Where the
+playhead stands for a caption's start, `CaptionView.Up`, from
+`captionUp` in `engine/episode.go`, now goes no earlier than the first
+frame drawn with the caption up. `TestEveryWordOfACaptionShownIsLitOnAFrame`
 in `engine/wordframes_test.go` makes 400 captions of its own at ten frame
 rates, with words of no length, words shorter than a frame, captions
 that start before their first word and clips that start off the frame

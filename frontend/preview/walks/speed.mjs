@@ -5,8 +5,8 @@
 //
 //     BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/speed.mjs
 //
-// It adds a video of 1920 by 1080 at 25 frames a second, picks the clip its
-// search finds and presses the keys a person walks a clip with: Shift and
+// It adds a video of 1920 by 1080 at 25 frames a second, searches it, picks
+// the clip the search finds and presses the keys a person walks a clip with: Shift and
 // an arrow from word to word, and an arrow a frame at a time. For each
 // press it times, in the page, how long from the key going down until the
 // video preview shows the frame that holds the playhead, and until that
@@ -55,6 +55,8 @@ const { browser, page, errors } = await open(url, { viewport: { width: vw, heigh
 try {
   await control(url, `/pick?seconds=60&size=${size}${codec}${rated}`);
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+  // A video added is transcribed and waits for Search to find its clips.
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   // The page is opened afresh for every round, so no round finds the frames
   // the one before kept, and each times what a first walk of a clip costs.
   // The Go side stays as it is, the way the app stays open.
@@ -101,8 +103,8 @@ try {
             const q = window.__frameQueue;
             const at = Number(s?.dataset.playhead);
             const shown = Number(s?.dataset.shown);
-            // The frame that holds the playhead, by the app's own frameAt.
-            const holds = window.__frameAt(at, 1 / fps) / fps;
+            // The frame that holds the playhead, as the engine says.
+            const holds = window.__frameAt(at) / fps;
             const took = performance.now() - window.__keyAt;
             const layers = window.__captionLayers;
             const captioned = !layers || !layers.busy;
@@ -165,7 +167,7 @@ try {
         const el = document.querySelector(".screen");
         const at = Number(el.dataset.playhead);
         const shown = Number(el.dataset.shown);
-        window.__dragged.push(Math.abs(window.__frameAt(at, 1 / fps) - Math.round(shown * fps)));
+        window.__dragged.push(Math.abs(window.__frameAt(at) - Math.round(shown * fps)));
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);

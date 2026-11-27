@@ -75,7 +75,7 @@
     onhoverhole?: (index: number) => void;
     // A sentence clicked, with the clip it is named for, if any, or a card
     // walked to with Shift and an arrow, with where it ends.
-    onseek: (at: number, clip: string | null, walked?: { end: number }) => void;
+    onseek: (at: number, clip: string | null, walked?: { end: number }, land?: number) => void;
   } = $props();
 
   let list: HTMLOListElement;
@@ -301,7 +301,7 @@
     walking = step;
     aimed = row.key;
     if ("hole" in row) onseek(row.hole[0], null, { end: row.hole[1] });
-    else onseek(row.sentence.start, row.clip?.key ?? null, { end: row.sentence.end });
+    else onseek(row.sentence.start, row.clip?.key ?? null, { end: row.sentence.end }, row.sentence.land);
     // Two cards can begin at the same moment, two clips over the same
     // words, and a step from one to the other leaves the playhead where it
     // is, so nothing follows it. The card walked to is then marked here,
@@ -508,7 +508,7 @@
           // The playhead put on a card is where the list already is.
           followed = row.key;
           aimed = row.key;
-          onseek(row.sentence.start, row.clip?.key ?? null);
+          onseek(row.sentence.start, row.clip?.key ?? null, undefined, row.sentence.land);
         }}>
           <span class="meta muted num">
             {clock(row.sentence.start)}

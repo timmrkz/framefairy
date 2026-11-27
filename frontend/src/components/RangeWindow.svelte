@@ -23,6 +23,7 @@
   import { hoverClip } from "../lib/hover";
   import Busy from "./Busy.svelte";
   import Info from "./Info.svelte";
+  import Playhead from "./Playhead.svelte";
   import { scrub as scrubPlayhead } from "../lib/scrub";
   import { dragStep, fitsAt, pickerSteps, rulerStep, timeWidth } from "../lib/ruler";
 
@@ -572,16 +573,8 @@
   </div>
 {/if}
 {#if playhead >= 0}
-  <!-- The playhead of the clip timeline too, drawn by .playhead in
-       app.css. -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="playhead"
-    class:scrubbing
-    style="left: {on(playhead, inner)}"
-    onpointerdown={scrub}
-    title="Drag to move the playhead"
-  ></div>
+  <!-- Over the window and the clips. -->
+  <Playhead at={share(playhead) * duration} span={Math.max(duration, 0.001)} z={6} {scrubbing} onpointerdown={scrub} />
 {/if}
 </div>
 
@@ -1012,11 +1005,5 @@
   .over {
     position: relative;
     container-type: inline-size;
-  }
-
-  /* Drawn by .playhead in app.css, the same as on the clip timeline. Over
-     the window and the clips. */
-  .playhead {
-    z-index: 6;
   }
 </style>

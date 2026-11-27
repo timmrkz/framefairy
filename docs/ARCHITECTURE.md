@@ -113,6 +113,7 @@ waiting for the day the two disagree.
 | how a job stands beyond its step: that it is stopping, how a search ended, how long removed work has left | the job the queue holds, `Stopping`, `Ended` and `Away` in `cmd/framefairy-app/jobs.go`, and the timer of each removal in the queue, see `removal.go` | the app's Go side |
 | the clips the window was last sent, for each video, and the turns of its chosen clip | Go's `videoNews` keeps each clip's hash, `telling.sent` in `cmd/framefairy-app/videostate.go`, and the hash of the turns, `telling.turns`, and the window the clips, `SentClips` in `frontend/src/lib/sent.ts`, held to each other by the hashes, see [the decision record](decisions/2026-11-13-a-state-sends-only-the-clips-that-changed.md) | Go's side as it sends a state, the window's as it makes it whole. `SendWhole` starts both over |
 | a video's loudness, which the clip timeline draws | the levels files in the `logs` folder of its work folder, `engine.ReadLevels`, laid over the transcript's, kept between runs. While it is measured, `engine.LoudnessSchedule` in `engine/loudnesslook.go` holds it in memory as the bytes `engine.Loudness` makes. The window keeps a copy whole to draw every view from, `HeldLoudness` in `frontend/src/lib/loudness.ts`, see [the decision record](decisions/2026-11-18-the-window-holds-the-loudness.md) and [how it keeps up with the hand](decisions/2026-11-21-the-waveform-keeps-up-with-the-hand.md) | the engine's measuring. The window reads it whole from `/frames/levels` when a video opens and when the stamp `EpisodeStatus.Loudness` in the video's state changes, and in between is answered with the readings of its view it lacks, `LoudnessLooks`, through `/frames/levels/look` |
+| where the sound is while a video plays, which every playhead stands on | `--sound` on each `Playhead.svelte` of the video's workspace, in seconds, so nothing else in the app is worked out again on each refresh | the video preview alone, once a refresh, through the workspace's `Sounding` in `frontend/src/lib/sounding.ts` |
 | what is on screen | the interface's stores, and a video's status, clips, coverage, jobs, clip chosen and window in its `EpisodeSession`, `frontend/src/lib/session.svelte.ts`, which keeps the newest `VideoState`, and a hand's pick or move of the window until Go answers it, or ten seconds have passed without an answer | from what Go sends, and nothing else. What a hand pressed is kept by the job store until Go answers, see `startJob` |
 
 ## The programs that run
@@ -139,7 +140,7 @@ What to do today, and what changes once the work named is built.
 | I need to | It goes |
 | --- | --- |
 | decide where an edge, a word or a window lands | the engine: `engine/shape.go` for a gesture, `engine.Episode` and `engine.Options` for a window. The interface asks and draws the answer |
-| do something in the workspace when a video's work moves on | nothing in the interface: Go decides what follows and sends it in the video's state, the clip it chose and the window it fitted, in `cmd/framefairy-app/choose.go` and `window.go`, the part of that clip not heard yet and the stretch around it, which it starts hearing by itself in `hearChosen` in `export.go`, the whole video once it is added and its rest once the work on its clips has ended, in `transcribeRest` there, how a search ended, that work is stopping and how long removed work has left, and tells a failure once. The interface draws the newest state, and never waits for work to end to read the video again or keeps a value from before to compare, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
+| do something in the workspace when a video's work moves on | nothing in the interface: Go decides what follows and sends it in the video's state, the clip it chose in `cmd/framefairy-app/choose.go` and the window `engine.Episode.Window` placed or fitted, kept in `window.go`, the part of that clip not heard yet and the stretch around it, which it starts hearing by itself in `hearChosen` in `export.go`, the whole video once it is added and its rest once the work on its clips has ended, in `transcribeRest` there, how a search ended, that work is stopping and how long removed work has left, and tells a failure once. The interface draws the newest state, and never waits for work to end to read the video again or keeps a value from before to compare, see [2026-11-01-every-rule-of-the-workspace-in-go.md](decisions/2026-11-01-every-rule-of-the-workspace-in-go.md) |
 | show a press of a video's work before Go has answered it | `startJob` or `stopJob` of the job store, `frontend/src/lib/state.svelte.ts`, which keeps the press until Go answers with the job or says the work is stopping. Never a flag of the control's own |
 | give a person time to take something back that Go then does | the job keeps the time, `JobAway` in `cmd/framefairy-app/removal.go`, on the machine's clock, `engine.Clock`, which the bridge hands the walks, and the video's state says how long it is, `VideoState.PutBack`, so the row of work just removed runs down as long before Go answers. The interface draws it, says only that a hand holds it, and keeps no time of its own for it |
 | show the interface a new fact about a video | a field of `VideoState` in `cmd/framefairy-app/videostate.go`, or of what it holds, the status and the clip views, which the session keeps. Never a new event of its own or a poll |
@@ -295,17 +296,21 @@ Code that breaks this map today. Each has an open issue, found by
 searching the issues for its path. A session
 copies what it finds nearby, so these are not the pattern for new code.
 
-- Rules of the engine in `frontend/src/lib/flow.ts`, its frames held to
-  Go by a shared case file. So is `rankAt` in
-  `frontend/src/lib/frames/movie.ts`, the window's count of
-  `Grid.Holding`, held by the same case file, by which a look names its
-  frame: a look could name its moment and Go count the frame. These are
-  no longer among them, because Go sends each as data and the window
-  only shows it: what lies over a frame of the video preview, its piece,
-  turn, crop and keyframe, `engine.FrameDress`, sent with the frame and
-  its captions, what of a video is heard, `VideoState.heard`,
-  how each part of the chosen clip turns, `VideoState.turns`, and how a
-  choice of model stands, `Standing`.
+Nothing breaks it today. No longer among them, because Go sends each as
+data and the window only shows it: what lies over a frame of the video
+preview, its piece, turn, crop and keyframe, `engine.FrameDress`, sent
+with the frame and its captions, what of a video is heard,
+`VideoState.heard`, how each part of the chosen clip turns,
+`VideoState.turns`, how a choice of model stands, `Standing`, where a
+caption, a word and a cut are in the video, `CaptionView` and
+`PieceView.Part`, where the playhead stands for an edge,
+`SegmentView.Up`, which frame holds a moment and where it begins,
+`/frames/table`, looked up in `frontend/src/lib/frames/table.ts`, where
+the playhead is on a clip, `Framing.places`, where an arrow key lands in
+a word, `WordView.land`, and what a video's window is,
+`engine.Episode.Window`, which both front ends ask. What
+`frontend/src/lib/playhead.ts` keeps is the hand's: which gesture put
+the playhead where, and what the space bar plays from there.
 
 ## Changing the architecture
 

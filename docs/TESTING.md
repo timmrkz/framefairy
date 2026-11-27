@@ -1649,7 +1649,7 @@ rules every walk checks after every step are in `walks/rules.mjs`.
 Test data lives in a folder named `testdata`, Go's own name for it,
 beside the tests that read it, and nowhere else. Videos and sounds are
 in `internal/fixtures/testdata/`. The cases both Go and the interface
-tests read, like `frame.cases.json` and `loudness.cases.json`, are in
+tests read, like `loudness.cases.json`, are in
 `frontend/src/lib/testdata/`, which ci.yml's filter `goread` names, so a
 change to one starts the tests of both sides.
 

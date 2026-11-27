@@ -247,11 +247,23 @@ export interface Word {
   whole?: string;
   part?: number;
   room?: number;
+  // In a caption, where the word starts and ends on the episode's clock.
+  // A word is known by at, never by start on the clip's clock, which every
+  // cut before it moves. Left out at nought.
+  at?: number;
+  until?: number;
+  // Where a step of the arrow keys lands on the word, and where it begins
+  // as a place to land on, -1 for a word that is no place of its own, see
+  // LandOn in engine/landing.go.
+  land?: number;
+  since?: number;
 }
 
 // A word the captions light, as the workspace lays them out from the
 // captions and the frames they are lit on. Go never sends one.
 export interface LitWord extends Word {
+  land: number;
+  since: number;
   // A word lit on frames of the short, see WordFrame: start is where the
   // first of them starts and end where the last ends, in the episode.
   framed?: boolean;
@@ -297,6 +309,8 @@ export interface Framing {
   cropMarks: CropMark[];
   cropLefts: number[];
   glides?: GlideSpan[];
+  // Where the playhead is on the clip, see ClipEntry.places.
+  places?: [number, number, number];
 }
 
 export interface Segment {
@@ -316,6 +330,9 @@ export interface Segment {
   // play straight on from each other, with no cut between them, have the
   // same, see engine.PieceView.
   part: number;
+  // Where the playhead stands for the piece's opening edge and for its
+  // closing edge, as the engine puts it, see SourceInfo.EdgePlayheads.
+  up?: [number, number];
 }
 
 // A crop placed by hand on one frame: the moment the frame starts, the
@@ -397,6 +414,8 @@ export interface Sentence {
   // The key of the clip that shows it, for a caption of a clip, which is
   // a card of its own.
   clip?: string;
+  // Where a click on it puts the playhead, a frame in, as the engine says.
+  land: number;
 }
 
 // A card that answers what is typed in the transcript search: where it
@@ -417,6 +436,13 @@ export interface CaptionCue {
   start: number;
   end: number;
   lines: CaptionLine[];
+  // Where it appears and goes on the episode's clock, which the clip
+  // timeline draws it by.
+  from: number;
+  to: number;
+  // Where the playhead stands for its start and for its end, see
+  // CaptionView.Up in engine/episode.go.
+  up: [number, number];
   // When the word the caption begins on and the word it ends on start in
   // the episode. A caption moved by hand is kept against these.
   first?: number;
@@ -569,6 +595,10 @@ export interface ClipEntry extends ClipView {
   // Where the crop glides, each glide from a circle into the next cut to a piece, worked
   // out by the engine, see engine.Glides.
   glides?: GlideSpan[];
+  // Where the playhead is on the clip, as the engine says: on it from the
+  // first moment, at its end from the second, and off it again from the
+  // third, see SourceInfo.Places.
+  places?: [number, number, number];
   // On the answer to an edit, when the edit was written, on the clock a
   // video's state is read by, see VideoState.
   rev?: number;
@@ -1647,62 +1677,27 @@ export function nearestHeight(heights: number[], y: number): number {
 // different word from the one the playhead is in, however the clock
 // rounds.
 //
-// **It lands a frame into the word, never on its edge.** A word boundary
-// is exactly where the question "is this word being spoken" has no steady
-// answer: the caption runs on the clip's clock and the playhead on the
-// episode's, they are worked out by different arithmetic, and the frame
-// the picture settles on is a third answer again. A frame in is inside the
-// word by far less than the gap to the next one, so the picture shows the
-// same frame and the right word is lit. A word shorter than two frames is
-// entered by half of itself.
-//
-// A word lit on frames of the short, framed, is known by the frames
-// themselves, so there is no edge to keep away from: it is entered in the
-// middle of its first frame. That frame shows it at rest, before its pop,
-// and the video preview plays the whole pop over it, see
-// engine.popScales. A frame in, the paused frame caught the pop
-// on its way up and the pill stayed grown after it.
+// **Where it lands on a word is the engine's to say,** a frame in, never
+// on its edge, and which words lit together are one place, see LandOn in
+// engine/landing.go. Each word comes with it, land, and with where it
+// begins as a place, since.
 //
 // Null means there is nowhere to go: no words heard here yet, or the
 // playhead is already before the first or past the last of them.
-// Where the playhead goes to stand on a word: a frame in, never on the
-// edge, or the middle of its first frame when it is framed. A word shorter
-// than two frames is entered by half of itself.
-export function intoWord(word: { start: number; end: number; framed?: boolean }, frame: number): number {
-  return Math.min(word.start + (word.framed ? frame / 2 : frame), (word.start + word.end) / 2);
-}
-
-export function wordStep(all: Word[], at: number, back: boolean, frame: number): number | null {
-  const words = landings(all);
+export function wordStep(all: LitWord[], at: number, back: boolean): number | null {
+  const words = all.filter((w) => w.land >= 0);
   if (!words.length) return null;
   // The last word that has begun, and whether the playhead is still in it.
   let here = -1;
   for (let i = 0; i < words.length; i++) {
-    if (at >= words[i].start) here = i;
+    if (at >= words[i].since) here = i;
     else break;
   }
   const inside = here >= 0 && at < words[here].end;
   // Back out of a word is the word before it. Back out of the silence
   // after a word is that word, because it is the one just spoken.
   const target = back ? (inside ? here - 1 : here) : here + 1;
-  const word = words[target];
-  return word ? intoWord(word, frame) : null;
-}
-
-// The places a word step lands on, one for each change of what is lit.
-// Words lit together on one frame begin on it together, see
-// engine.litRuns, #280: the first of them is the place, and a word that
-// goes on lit alone after it is a place from where the others end. Two
-// words begun on one frame were two places on one frame, and a step back
-// from the second landed on the frame it stood on.
-export function landings(words: Word[]): Word[] {
-  const out: Word[] = [];
-  for (const w of words) {
-    const before = out[out.length - 1];
-    if (!before || w.start !== before.start) out.push(w);
-    else if (w.end > before.end) out.push({ ...w, start: before.end });
-  }
-  return out;
+  return words[target]?.land ?? null;
 }
 
 // Which build of the app is running, which channel it follows and how far a

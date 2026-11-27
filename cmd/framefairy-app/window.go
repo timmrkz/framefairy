@@ -23,45 +23,6 @@ import (
 // two lay two seconds apart, so a search cancelled on one was set aside by
 // the other, Tim's report of 24 October on #458.
 
-// videoWindow is the window of a video, placed first where there is none
-// or what is kept no longer fits the video. One that is kept is given
-// back as it is while the video cannot be read, and ok is false only
-// when there is none and nothing can be placed. The window is placed
-// before the kept one is changed, and kept only if nothing put one there
-// that fits meanwhile, so the first search of a video just added and its
-// workspace opening never place it twice.
-func (s *FrameFairy) videoWindow(ctx context.Context, path string) (KeptWindow, bool) {
-	info, err := s.probe(ctx, path)
-	picked := s.chosenIn(path)
-	kept := picked.get(s.store.files, path).Window
-	if err != nil || info.Duration <= 0 {
-		if kept == nil {
-			return KeptWindow{}, false
-		}
-		return *kept, true
-	}
-	fits := func(w *KeptWindow) bool { return w != nil && w.To <= info.Duration+0.5 }
-	if fits(kept) {
-		w := *kept
-		w.To = math.Min(w.To, info.Duration)
-		return w, w.To > w.From
-	}
-	w := s.placedWindow(path, info.Duration)
-	if _, err := picked.change(s.store.files, path, func(c *chosen) bool {
-		if fits(c.Window) {
-			w = *c.Window
-			return false
-		}
-		c.Window = &w
-		return true
-	}); err != nil {
-		theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
-			Msg("the window the app placed could not be kept")
-	}
-	w.To = math.Min(w.To, info.Duration)
-	return w, w.To > w.From
-}
-
 // WindowView is the video's window as the workspace draws it, sent in
 // its state, with what it and the search asked of it may be, so the
 // range picker holds a drag to its limits in the frame the hand moves
@@ -86,88 +47,98 @@ type WindowView struct {
 }
 
 // windowFor is the window of the video whose state st is, on a video of
-// duration seconds, fitted to what a search can do with it whenever that
-// changed, the room or the clips asked for. Not while a search runs on
-// it, because then it is the window being searched, nor while a search
-// stands stopped on it, because it is the window Continue carries on. A
-// window fitted is kept, so the window drawn is the video's window. nil
-// while the video cannot be read.
+// duration seconds, as the engine says it is, see engine.Episode.Window:
+// the window kept, fitted to what a search can do with it whenever that
+// changed, the room or the clips asked for, or placed where none is kept.
+// Not fitted while a search runs on it, because then it is the window
+// being searched, nor while a search stands stopped on it, because it is
+// the window Continue carries on. A window placed or fitted is kept, so
+// the window drawn is the video's window. nil while the video cannot be
+// read.
 func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, duration float64) *WindowView {
 	if duration <= 0 {
 		return nil
 	}
-	w, ok := s.videoWindow(ctx, path)
-	if !ok {
+	if info, err := s.probe(ctx, path); err != nil || info.Duration <= 0 {
 		return nil
 	}
 	o := s.store.Settings().options()
-	r := s.store.machine.Episode(path).Room(o)
-	limits := func(w KeptWindow) engine.WindowLimits {
-		return o.Limits(r, duration, w.To-w.From, s.store.Settings().targetFor(w.To-w.From))
-	}
+	ep := s.store.machine.Episode(path)
+	r := ep.Room(o)
+	typed := func(length float64) int { return s.store.Settings().targetFor(length) }
+	held := searchHolds(st.Jobs)
 	passes := engine.SearchPasses(st.Status.Plans, duration)
-	view := func(w KeptWindow, l engine.WindowLimits) *WindowView {
+	view := func(w engine.PlacedWindow, l engine.WindowLimits) *WindowView {
 		heard := st.Heard.Heard
-		return &WindowView{KeptWindow: w, WindowLimits: l, Shortest: o.Min, Longest: o.Max,
-			Searched: engine.Searched(passes, timed.Window{Start: w.From, End: w.To}),
-			Heard:    engine.HeardOf(heard, w.From, w.To), HeardAll: engine.HeardOver(heard, w.From, w.To)}
+		return &WindowView{KeptWindow: keptOf(w), WindowLimits: l, Shortest: o.Min, Longest: o.Max,
+			Searched: engine.Searched(passes, w.Window),
+			Heard:    engine.HeardOf(heard, w.Start, w.End), HeardAll: engine.HeardOver(heard, w.Start, w.End)}
 	}
-	l := limits(w)
-	if searchHolds(st.Jobs) {
-		return view(w, l)
-	}
-	// Only the window it was fitted from is changed. One written
-	// meanwhile, by a hand or by another read that fitted it first, is
-	// the window kept, and it is fitted in its turn, so the state carries
-	// the window kept, fitted, never the one read before it. A hand that
-	// moved it is the one that changes it, so this ends the moment no
-	// other call writes the window between the read and the write.
-	var from, to float64
-	var fitted KeptWindow
+	// Only the window it was worked out from is changed. One written
+	// meanwhile, by a hand or by another read that kept one first, is the
+	// window kept, and it is worked out in its turn, so the state carries
+	// the window kept, never the one read before it. A hand that moved it
+	// is the one that changes it, so this ends the moment no other call
+	// writes the window between the read and the write.
+	picked := s.chosenIn(path)
+	kept := picked.get(s.store.files, path).Window
 	for {
-		from, to = engine.FitWindow(w.From, w.To, l.Most, l.Least, duration)
-		fitted = KeptWindow{From: from, To: to, Length: math.Max(w.Length, to-from)}
-		if sameWindow(fitted, w) {
-			return view(w, l)
-		}
-		kept, now := false, w
-		if _, err := s.chosenIn(path).change(s.store.files, path, func(c *chosen) bool {
-			if c.Window == nil {
-				return false
-			}
-			// Cut at the video's end the way the window read was, so a
+		w, l := ep.Window(o, r, duration, placedOf(kept), held, typed)
+		var was *KeptWindow
+		if kept != nil {
+			// Cut at the video's end the way the engine reads it, so a
 			// kept window that runs a little past the end is still the
 			// one read.
-			inFile := *c.Window
-			inFile.To = math.Min(inFile.To, duration)
-			if !sameWindow(inFile, w) {
-				now = inFile
+			k := *kept
+			k.To = math.Min(k.To, duration)
+			if sameWindow(keptOf(w), k) {
+				return view(w, l)
+			}
+			was = &k
+		}
+		wrote, now := false, kept
+		if _, err := picked.change(s.store.files, path, func(c *chosen) bool {
+			if (c.Window == nil) != (kept == nil) || (kept != nil && *c.Window != *kept) {
+				now = c.Window
 				return false
 			}
-			c.Window, kept = &fitted, true
+			k := keptOf(w)
+			c.Window, wrote = &k, true
 			return true
 		}); err != nil {
 			theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
-				Msg("the window fitted to what a search can read could not be kept")
+				Msg("the window the engine placed or fitted could not be kept")
 			return view(w, l)
 		}
-		if kept {
-			break
-		}
-		if sameWindow(now, w) {
-			// Gone from the file meanwhile: nothing is kept to fit.
+		if wrote {
+			if s.noteWindow(path, was, w, l) {
+				// The target typed follows the window fitted, so it asks
+				// for the clips typed for it.
+				l = o.Limits(r, duration, w.End-w.Start, typed(w.End-w.Start))
+			}
 			return view(w, l)
 		}
-		w = now
-		l = limits(w)
+		kept = now
 	}
-	// A target typed for the window is the target of the window fitted,
-	// most often to the clips it asked for, when it was typed on this
-	// video. A window of another video as long only asks for it.
-	if l.Typed > 0 {
+}
+
+// noteWindow logs a window the engine placed or fitted and kept, and
+// lets a target typed for the window follow it: a target typed for the
+// window is the target of the window fitted, most often to the clips it
+// asked for, when it was typed on this video. A window of another video
+// as long only asks for it. It says whether the target followed.
+func (s *FrameFairy) noteWindow(path string, was *KeptWindow, w engine.PlacedWindow, l engine.WindowLimits) bool {
+	if was == nil {
+		theLog.line(zerolog.InfoLevel, "window").Str("video", filepath.Base(path)).
+			Float64("from", w.Start).Float64("to", w.End).Msg("the window was placed")
+		return false
+	}
+	followed := false
+	if s.store.Settings().targetFor(was.To-was.From) > 0 {
 		if err := s.store.UpdateSettings(func(set *Settings) {
-			if set.targetFor(w.To-w.From) > 0 && set.TargetVideo == path {
-				set.TargetWindow = to - from
+			if set.targetFor(was.To-was.From) > 0 && set.TargetVideo == path {
+				set.TargetWindow = w.End - w.Start
+				followed = true
 			}
 		}); err != nil {
 			theLog.line(zerolog.WarnLevel, "window").Str("video", filepath.Base(path)).Err(err).
@@ -175,9 +146,9 @@ func (s *FrameFairy) windowFor(ctx context.Context, path string, st VideoState, 
 		}
 	}
 	theLog.line(zerolog.InfoLevel, "window").Str("video", filepath.Base(path)).
-		Float64("from", from).Float64("to", to).Float64("most", l.Most).Float64("least", l.Least).
+		Float64("from", w.Start).Float64("to", w.End).Float64("most", l.Most).Float64("least", l.Least).
 		Msg("the window was fitted to what a search can read")
-	return view(fitted, limits(fitted))
+	return followed
 }
 
 // searchHolds says whether a search of the video holds its window: one
@@ -203,21 +174,18 @@ func wholeJob(jobs []Job) *Job {
 	return nil
 }
 
-// placedWindow is where the app puts a video's window, with the settings
-// as they are now, see engine.Episode.PlaceWindow. Every state carries the
-// window and what it may be, so the room comes from the episode, which
-// weighs the lines once for each read of the transcript, see
-// engine.Episode.Room: weighed for every state, four hours of them took
-// most of 55 ms.
-func (s *FrameFairy) placedWindow(path string, duration float64) KeptWindow {
-	o := s.store.Settings().options()
-	ep := s.store.machine.Episode(path)
-	return keptOf(ep.PlaceWindow(o, ep.Room(o), duration))
-}
-
 // keptOf is a window the engine placed as the app keeps it.
 func keptOf(w engine.PlacedWindow) KeptWindow {
 	return KeptWindow{From: w.Start, To: w.End, Length: w.Length}
+}
+
+// placedOf is the window the app keeps as the engine reads it, nil for
+// none.
+func placedOf(k *KeptWindow) *engine.PlacedWindow {
+	if k == nil {
+		return nil
+	}
+	return &engine.PlacedWindow{Window: timed.Window{Start: k.From, End: k.To}, Length: k.Length}
 }
 
 // searchesWindow makes the window of a search the video's window, as it
@@ -252,8 +220,8 @@ func (s *FrameFairy) searchesWindow(path string, req engine.PlanRequest) {
 // done, so the workspace reads the window moved on when it hears that.
 // It is worked out before the kept window is changed, and moves it on
 // only if it is still the one it was worked out from: a window written
-// meanwhile has the last word, a hand's drag or the interface's own fit
-// of it to the room, which step 4 of #606 moves into Go.
+// meanwhile has the last word, a hand's drag or the engine's fit of it
+// to the room, see windowFor.
 func (s *FrameFairy) windowOn(path string, req engine.PlanRequest) {
 	info, err := s.probe(context.Background(), path)
 	if err != nil || info.Duration <= 0 {
@@ -293,8 +261,10 @@ func (s *FrameFairy) PlaceWindow(ctx context.Context, path string) (VideoState, 
 	if err != nil || info.Duration <= 0 {
 		return VideoState{}, errors.New("the video cannot be read")
 	}
-	w := s.placedWindow(path, info.Duration)
-	return s.ChooseWindow(ctx, path, w.From, w.To, w.Length, true)
+	o := s.store.Settings().options()
+	ep := s.store.machine.Episode(path)
+	w, _ := ep.Window(o, ep.Room(o), info.Duration, nil, false, nil)
+	return s.ChooseWindow(ctx, path, w.Start, w.End, w.Length, true)
 }
 
 // sameWindow says whether two windows are the same part of the video. A

@@ -36,6 +36,21 @@ describe("the walk's clock", () => {
     expect(card.currentTime).toBeCloseTo(3, 9);
   });
 
+  // Asked to, the card goes a share of a frame a tick, the way the
+  // system's card moves on every refresh of a screen faster than the
+  // video, and still lands on each frame.
+  test("goes a share of a frame a tick when asked, and lands on the frame", async () => {
+    const { card, clock } = await played();
+    card.parts = 4;
+    const seen: number[] = [];
+    for (let k = 0; k < 8; k++) {
+      const frame = Math.floor(card.currentTime / 0.2 + 1e-9) + 1;
+      seen.push(clock(card.currentTime, frame * 0.2, ready));
+    }
+    expect(seen.map((t) => Math.round(t * 1000))).toEqual([50, 100, 150, 200, 250, 300, 350, 400]);
+    expect(card.currentTime).toBeCloseTo(0.4, 9);
+  });
+
   // Issue #534: on the system's card a busy machine showed 2 frames of 9.
   test("stands on a frame still being decoded, and the sound card with it", async () => {
     const { card, clock } = await played();

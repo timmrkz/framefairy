@@ -51,7 +51,7 @@ function overlaysFollow(overlays, state) {
 // Paused, the picture stays where it was paused: the playhead stays, and
 // the frame on screen is the one that holds it, or where a play stopped on
 // the clip's end, the frame that holds the moment a frame before it, the
-// last the short shows, see frameAt in lib/flow.ts. Read before and after
+// last the short shows, see framewire.Grid.Holding. Read before and after
 // the app has settled, so whatever the pause set going has ended. A moment
 // a hair before a frame's start is in that frame, counted as the engine
 // counts it, in whole microseconds: a pause a millisecond before a frame

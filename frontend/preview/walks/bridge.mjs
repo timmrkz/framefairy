@@ -732,7 +732,7 @@ export async function engineState(page, at, clips = null) {
     // Each piece with its crop, the keyframes that steer it and its
     // rotation, which are steps of the history as the edges are, issue
     // #248.
-    const pieces = (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end, cropX: s.cropX ?? null, marks: s.marks ?? [], rotate: s.rotate ?? 0 }));
+    const pieces = (entry?.segments ?? []).map((s) => ({ start: s.start, end: s.end, part: s.part, cropX: s.cropX ?? null, marks: s.marks ?? [], rotate: s.rotate ?? 0 }));
     return { ...captions, segments: pieces };
   }, { at, read: clips });
 }
@@ -957,8 +957,8 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
           // slots are laid on the picture's grid both ways from where it
           // starts, and before that the video preview names a slot of its
           // own while it draws the picture's first frame. So this is not
-          // frameAt in lib/flow.ts, which counts every moment before the
-          // picture as its frame 0. On the clip's end itself it is the
+          // the engine's table of frames, which counts every moment before
+          // the picture as its frame 0. On the clip's end itself it is the
           // clip's last frame, the one that holds the moment a frame
           // before the end, where a play of the clip stops, see settle in
           // lib/frames/queue.ts. A step that lands on the end shows it.
@@ -1581,16 +1581,11 @@ export async function seekTo(page, at, fps) {
   await settle(page);
   await reader(page);
   await shownOnPlayhead(page);
-  const { videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
-  return page.evaluate(
-    ([fps, start]) => {
-      const at = Number(document.querySelector(".screen").dataset.playhead);
-      // The frame that holds the playhead, by the app's own frameAt in
-      // lib/flow.ts, counted from where the picture starts.
-      return window.__pictured() === window.__frameAt(at, 1 / fps, start);
-    },
-    [fps, videoStart],
-  );
+  return page.evaluate(() => {
+    const at = Number(document.querySelector(".screen").dataset.playhead);
+    // The frame that holds the playhead, as the engine says.
+    return window.__pictured() === window.__frameAt(at);
+  });
 }
 
 // The crop frame in the video preview, where the playhead is: where it

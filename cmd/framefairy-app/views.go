@@ -31,6 +31,8 @@ type ClipEntry struct {
 	// Glides is where the crop glides, over every piece, for the clip
 	// timeline to draw, see engine.Glides.
 	Glides []engine.GlideSpan `json:"glides"`
+	// Places is where the playhead is on the clip, see Framing.Places.
+	Places [3]float64 `json:"places"`
 	// Rev is, on the answer to an edit, the number the edit took from the
 	// clock of the jobs once it was written, see VideoState.Rev. The
 	// window takes no state of the video read before it. A clip in a
@@ -119,6 +121,7 @@ func (s *FrameFairy) entryOf(path, plan string, c engine.ClipView, info engine.S
 	}
 	entry.Segments, entry.CropMarks = f.Segments, f.CropMarks
 	entry.CropLefts, entry.Glides = f.CropLefts, f.Glides
+	entry.Places = f.Places
 	return entry
 }
 
@@ -142,6 +145,9 @@ type Framing struct {
 	// Glides is where the crop glides, over every piece, for the clip
 	// timeline to draw, see engine.Glides.
 	Glides []engine.GlideSpan `json:"glides"`
+	// Places is where the playhead is on the clip, see
+	// engine.SourceInfo.Places.
+	Places [3]float64 `json:"places"`
 	// framed is what the framing's frames are dressed from.
 	framed framed
 }
@@ -156,6 +162,7 @@ func (s *FrameFairy) framingOf(path string, info engine.SourceInfo, segments []e
 	for i, seg := range segments {
 		f.Segments[i] = seg
 		f.Segments[i].Marks = info.MarksOnFrames(seg.Marks)
+		f.Segments[i].Up = info.EdgePlayheads(seg.Start, seg.End)
 		if info.Width == 0 {
 			f.CropLefts = append(f.CropLefts, keptCrop(seg.CropX))
 			continue
@@ -165,6 +172,7 @@ func (s *FrameFairy) framingOf(path string, info engine.SourceInfo, segments []e
 		f.CropLefts = append(f.CropLefts, engine.ClampCropX(seg.CropX, cw, upright.Width))
 		f.Glides = append(f.Glides, info.Glides(seg, cw, upright.Width)...)
 	}
+	f.Places = info.Places(f.Segments)
 	if info.Width > 0 {
 		o := s.store.Settings().options()
 		f.framed = framed{episode: path, source: info, segments: segments, marks: f.CropMarks,

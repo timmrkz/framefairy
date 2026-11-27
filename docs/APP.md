@@ -575,7 +575,9 @@ of a clip is on the start of a frame: the engine puts it there as the
 clip enters the plan, from a search, by hand or from a gesture,
 `PieceOnFrames` in `engine/render.go`, and the render cuts on that frame.
 So on a clip edge the frame that holds the playhead is the frame the
-short has there, and both sides are held to `lib/testdata/frame.cases.json`. A
+short has there. The window counts no frame of its own: it looks a moment
+up where the engine says each frame of the video holds from and begins,
+`/frames/table` and `lib/frames/table.ts`. A
 piece plays and ends with the frame that holds the moment a frame before
 its end, the short's last. A clip picked shows the short's first frame,
 and the playhead on the clip's end shows its last.
@@ -590,8 +592,15 @@ once a frame of the video, not on every refresh of the screen, because
 everything that follows it is drawn by its frame: the mark on the clip
 timeline, the time field and the captions. Moved on every refresh, the
 whole workspace worked itself out again 120 times a second on a screen
-of 120 Hz for a video of 25 frames a second. It never goes
-back while playing. A press while it plays, on the clip timeline or the range picker, holds the
+of 120 Hz for a video of 25 frames a second. The playhead's line is the
+one thing that moves on every refresh, on the range picker and on the
+clip timeline alike, because both are one component, `Playhead.svelte`.
+The video preview writes where the sound is, `--sound` in seconds, on
+every playhead of its workspace, see `lib/sounding.ts`, and each line
+stands there in its own view, on a pixel of the screen. So it no longer
+steps a pixel or two a frame of the video, nothing else is worked out
+again, and a third view that shows the playhead glides by using the
+component. It never goes back while playing. A press while it plays, on the clip timeline or the range picker, holds the
 play under the hand, like a nail, for as long as the button is down: the
 playhead goes to the press and stays there, follows the hand once it
 moves, and the play goes on from where the hand lets go, the clip's or
@@ -1329,8 +1338,8 @@ bubble scrolled by those eight pixels.
     caption word is read back through the clip's pieces to find the word of
     the episode it stands for, and the middle rather than the edge because
     both halves of a split word have to point at the one word they came
-    from. `inEpisode` and `saidWord` in `frontend/src/lib/flow.ts` are the
-    way back, with tests.
+    from. The engine places each word in the episode, `CaptionView`, so
+    the way back is a word it sends.
 - **Moving the captions:** drag the caption box up or down by its handle,
   a ring around the box that draws itself in the accent the moment the
   pointer comes near and is invisible the rest of the time. The whole of
@@ -1674,8 +1683,9 @@ bubble scrolled by those eight pixels.
       episode it starts over at the start. The last window may be cut
       short by the end of the episode, and the one after it, at the
       start, is as long as the window was made again.
-      **A video has one window**. The engine places it, see
-      `engine.Episode.PlaceWindow`, and the Go side keeps it, see
+      **A video has one window**. The engine places it and fits it, see
+      `engine.Episode.Window`, which the command line asks too, and the
+      Go side keeps it, see
       `cmd/framefairy-app/window.go`. It is kept beside the clip last
       worked on in `chosen.json`, so the workspace opens on it again,
       after a restart too. A video that has none gets the window where
@@ -2120,7 +2130,8 @@ bubble scrolled by those eight pixels.
     - **A caption is drawn only where the clip is.** Its block lies over
       the parts the clip keeps and never over a cut, in as many pieces as
       it takes. Where a caption goes at a cut, its end is the end of the
-      piece before, `endInEpisode` in `frontend/src/lib/flow.ts`: a moment
+      piece before, `EpisodeEnd` in `engine/lines.go`, which places each
+      caption in the episode, `CaptionView.From` and `To`: a moment
       at a cut is both the end of the piece before and the start of the
       one after, and an end taken as the start of the next piece drew the
       caption across the whole cut. The user saw it moving the left edge of a
@@ -2813,8 +2824,12 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
   looks the same way, see Keyframes.
 - **The playhead and every mark stand on the start of their frame**, the
   way editors draw them, so a mark the playhead is on is centred on its
-  line however far the clip timeline is pinched in. The playhead moves a
-  frame at a time, as the video preview does. Plan row 2.234.
+  line however far the clip timeline is pinched in. Paused, the playhead
+  stands on the start of the frame the video preview shows. Playing, its
+  line on the clip timeline and on the range picker moves with the sound
+  on every refresh, so a mark lights as the line
+  reaches it and stays lit until the line is a frame past it, the way
+  editors draw a play. Plan row 2.234.
 - **With the playhead on a thumbnail**, the button or **T** removes it.
   What one click adds, one click takes away.
 - **A click on a mark** puts the playhead on it, so the video preview shows
@@ -3105,9 +3120,10 @@ moved by hand, on the clip timeline.
   screen from the clip's first frame, before its first word.
 - **A word is lit from its start until the next word starts**, and the
   last word of a caption until the caption goes, in the video preview, on
-  the clip timeline and in the render alike: `litWord` in
-  `frontend/src/lib/flow.ts` for the two in the app and the highlight in
-  `engine/highlight.go` for the short. The video preview used to light a
+  the clip timeline and in the render alike: the clip timeline and the
+  video preview light the word libass draws lit on the frame on screen,
+  `showing` in the frame's dress, and the short burns in the highlight of
+  `engine/highlight.go`. The video preview used to light a
   word only until its own end, so the highlight went out while a word was
   still being said and between every two words, where the short and the
   clip timeline went on showing it. The edge

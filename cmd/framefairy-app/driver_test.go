@@ -349,8 +349,8 @@ func (d *desk) searchAsShown(path string) {
 		d.t.Errorf("the length of %s: %v", filepath.Base(path), err)
 		return
 	}
-	w, ok := d.svc.videoWindow(ctx, path)
-	if !ok {
+	w := keptWindow(d.svc, path)
+	if w == nil {
 		d.t.Errorf("%s has no window", filepath.Base(path))
 		return
 	}

@@ -256,3 +256,50 @@ func (o Options) WindowAfter(r RoomAndLines, req PlanRequest, length, duration f
 	}
 	return moveWindowOn(ended, length, duration, o.Min, r.Longest(duration))
 }
+
+// Window is the episode's window, as either front end keeps it: kept,
+// the window a front end kept, when it still fits the video, cut at its
+// end and fitted to what a search can read of it and to the clips typed
+// for it, see fitWindow, or placed afresh, see PlaceWindow, when none is
+// kept or the one kept runs past the video's end. held keeps a window
+// that fits as it is, because a search stands on it. typed is how many
+// clips are typed for a window that long, nil for none. It answers with
+// the window and what it may be. The app hands it the window it keeps,
+// the command line none, so a window nobody kept is placed by one rule
+// in both.
+func (ep *Episode) Window(o Options, r RoomAndLines, duration float64, kept *PlacedWindow, held bool, typed func(length float64) int) (PlacedWindow, WindowLimits) {
+	count := func(w PlacedWindow) int {
+		if typed == nil {
+			return 0
+		}
+		return typed(w.End - w.Start)
+	}
+	w, ok := keptWindow(kept, duration)
+	if !ok {
+		w = ep.PlaceWindow(o, r, duration)
+		return w, o.Limits(r, duration, w.End-w.Start, count(w))
+	}
+	l := o.Limits(r, duration, w.End-w.Start, count(w))
+	if held {
+		return w, l
+	}
+	from, to := fitWindow(w.Start, w.End, l.Most, l.Least, duration)
+	if math.Abs(from-w.Start) < 0.001 && math.Abs(to-w.End) < 0.001 {
+		return w, l
+	}
+	w = PlacedWindow{Window: timed.Window{Start: from, End: to}, Length: math.Max(w.Length, to-from)}
+	return w, o.Limits(r, duration, to-from, count(w))
+}
+
+// keptWindow is a window a front end kept as it stands on a video of
+// duration seconds: cut at the video's end, and false when there is none,
+// or it runs past the end by more than the half second a probe may be off
+// by, or nothing of it is left.
+func keptWindow(kept *PlacedWindow, duration float64) (PlacedWindow, bool) {
+	if kept == nil || kept.End > duration+0.5 {
+		return PlacedWindow{}, false
+	}
+	w := *kept
+	w.End = math.Min(w.End, duration)
+	return w, w.End > w.Start
+}

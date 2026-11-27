@@ -101,9 +101,9 @@ func TestAThumbnailIsTheFrameThatWasMarked(t *testing.T) {
 		}
 		return [3]int{int(px[0]), int(px[1]), int(px[2])}
 	}
-	// The middle of frames 0, 7 and 24, the last, as the video preview
-	// marks a moment, see frameMiddle in lib/flow.ts. 10 is where the
-	// clip starts in the episode.
+	// The middle of frames 0, 7 and 24, the last, where the engine puts
+	// a thumbnail, see SetThumbnail. 10 is where the clip starts in the
+	// episode.
 	clip := Clip{ID: "01", Slug: "eins", Segments: []Segment{{Start: 10, End: 11}},
 		Thumbnails: []float64{10.02, 10.30, 10.98}}
 	if err := NewEngine(nil, NewMachine(disk)).WriteThumbnails(context.Background(), clip, short); err != nil {
