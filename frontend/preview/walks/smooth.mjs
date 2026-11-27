@@ -5,8 +5,8 @@
 //
 //     BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/smooth.mjs
 //
-// It adds a video of 1920 by 1080 at 25 frames a second, plays the clip its
-// search finds to the end ROUNDS times, 3 unless set, and prints what the
+// It adds a video of 1920 by 1080 at 25 frames a second, searches it, plays
+// the clip the search finds to the end ROUNDS times, 3 unless set, and prints what the
 // line each play ends with in the app's log says, see lib/frames/even.ts:
 // how many refreshes were missed, and where the time of an animation frame
 // went, typical, most and on the animation frames before a missed refresh.
@@ -31,6 +31,8 @@ try {
   }
   await control(url, "/pick?seconds=60&size=1080");
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+  // A video added is transcribed and waits for Search to find its clips.
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   // The clip list has a clip of the video added: the page changing is
   // the signal, nothing waits on the clock.
   await page.evaluate(
