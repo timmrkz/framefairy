@@ -181,6 +181,22 @@ func (s *FrameFairy) lookFirst() {
 		defer s.reconciling.Unlock()
 		return s.look(nil, &steps)
 	}()
+	// The watch is claimed before the window is answered, so a call of
+	// the window that looks at the library hands its follow to this one
+	// and never waits for the watch itself, issue #1011. A first look
+	// that stops on its way still sets it.
+	var mine *followAsk
+	if follow {
+		ask := &followAsk{files: s.store.files, videos: s.store.Episodes(), shortsOf: s.shortsOf}
+		if s.watch.claim(ask) {
+			mine = ask
+			defer func() {
+				if mine != nil {
+					s.watch.followFrom(mine)
+				}
+			}()
+		}
+	}
 	restoring := time.Now()
 	s.restoreJobs(s.store.Episodes())
 	jobs := time.Since(restoring)
@@ -188,8 +204,12 @@ func (s *FrameFairy) lookFirst() {
 	window := time.Since(began)
 	// Once the window has its answers: it waits for none of this.
 	s.transcribeCutOff()
-	if follow {
-		s.followTimed(&steps)
+	if mine != nil {
+		following := time.Now()
+		ask := mine
+		mine = nil
+		s.watch.followFrom(ask)
+		steps.watch = time.Since(following)
 	}
 	// What was written while the app was closed, by the command line, is
 	// kept too, after the window has its answers. A video kept already

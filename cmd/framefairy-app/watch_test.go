@@ -228,6 +228,56 @@ func TestAFollowAskedWhileAnotherIsUnderWayIsFollowedByIt(t *testing.T) {
 	})
 }
 
+// A follow asked after the watch was claimed, and before the one that
+// claimed it began, is handed to it and returns at once: on the first
+// start the library's look reached the watch before the first look did,
+// set it itself and waited for it, issue #1011. The order is made here
+// on purpose: the claim, then the library's follow, then the first
+// look's.
+func TestAFollowAskedOfAClaimedWatchIsHandedToTheClaim(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		files := afero.NewMemMapFs()
+		first := filepath.Join("/home", "tim", "Movies", "first.mp4")
+		added := filepath.Join("/home", "tim", "Shows", "added.mp4")
+		for _, v := range []string{first, added} {
+			if err := files.MkdirAll(filepath.Join(engine.WorkDir(v), "logs"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		shorts := func(string) []string { return nil }
+		gate := make(chan struct{})
+		ws := watchingWith(func([]string) {}, "", [2]watcher{
+			gatedWatcher{newHeldWatcher(), gate}, gatedWatcher{newHeldWatcher(), gate},
+		})
+		defer ws.stop()
+		mine := &followAsk{files: files, videos: []string{first}, shortsOf: shorts}
+		if !ws.claim(mine) {
+			t.Fatal("a watch nobody follows could not be claimed")
+		}
+		asked := make(chan struct{})
+		go func() {
+			ws.follow(files, []string{first, added}, shorts)
+			close(asked)
+		}()
+		synctest.Wait()
+		select {
+		case <-asked:
+		default:
+			close(gate)
+			ws.followFrom(mine)
+			t.Fatal("a follow asked of a claimed watch set the watch itself and waited for it")
+		}
+
+		close(gate)
+		ws.followFrom(mine)
+		for _, v := range []string{first, added} {
+			if !slices.Contains(ws.watchList(), engine.WorkDir(v)) {
+				t.Errorf("the work folder of %s is not watched once the claim followed", v)
+			}
+		}
+	})
+}
+
 // A follow that has to know the watch is set waits for the one under way
 // to take its ask: a models folder just made is read only once it is
 // watched, so a model written into it in between is heard, issue #722,

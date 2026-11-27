@@ -171,9 +171,9 @@ func watchedOf(video string, shorts []string) []string {
 // opens every file in a folder it watches, and the first start of a new
 // build paid about 6 ms a file for it, 1.7 s on the median: the window's
 // calls waited behind the watch, issue #990. The first look at the
-// library sets the watch once the window is answered, see lookFirst, and
-// the library's own look, which follows too, answers without waiting
-// for it.
+// library claims the watch before the window is answered and sets it
+// after, see lookFirst, so the library's own look, which follows too,
+// hands its ask on and answers without waiting for it.
 func (ws *watching) follow(files afero.Fs, videos []string, shortsOf func(video string) []string) {
 	if ws == nil {
 		return
@@ -196,17 +196,42 @@ func (ws *watching) followWaiting(files afero.Fs, videos []string, shortsOf func
 // take follows ask now, or hands it to the follow under way, which
 // takes the newest ask next.
 func (ws *watching) take(ask *followAsk) {
+	if ws.claim(ask) {
+		ws.followFrom(ask)
+	}
+}
+
+// claim makes the caller the one that follows, and says so, or hands
+// ask to the follow under way, which takes the newest ask next, and says
+// it did. A caller that claimed follows with followFrom, and until it
+// does, every follow asked meanwhile is handed to it and returns at
+// once. The first look at the library claims the watch before the
+// window is answered, so a call of the window that looks at the library
+// never sets the watch itself while the first look is still on its way
+// to it, see lookFirst.
+func (ws *watching) claim(ask *followAsk) bool {
+	if ws == nil {
+		return false
+	}
 	ws.queue.Lock()
+	defer ws.queue.Unlock()
 	if ws.following {
 		if ws.next != nil {
 			ask.waiting = append(ask.waiting, ws.next.waiting...)
 		}
 		ws.next = ask
-		ws.queue.Unlock()
-		return
+		return false
 	}
 	ws.following = true
-	ws.queue.Unlock()
+	return true
+}
+
+// followFrom follows ask, which claim gave the caller, and then every
+// ask handed on meanwhile, the newest one only.
+func (ws *watching) followFrom(ask *followAsk) {
+	if ws == nil {
+		return
+	}
 	defer func() {
 		// An ask still in hand is one a panic ended: the next follow
 		// runs instead of handing its ask to nobody, and nobody waits
