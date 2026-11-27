@@ -156,49 +156,69 @@ In one pull request, a commit each.
    number would be inherited by every element in it, and the browser
    would work all their styles out again on every refresh. Playing, a
    line lands on a pixel of the screen, at rest on a whole one.
-2. **Go keeps the playhead.** `engine.Playhead` is the moment shown, the
-   start of its frame, the place, video, clip or end, the clip it is on,
-   the moment on the clip's clock and the word lit. The engine says it,
-   `PlaceOf`, `PlayFrom` and `PlayedToEnd`, from the clip's framing, and
-   the app keeps one for each video. A look says what its gesture was
-   about, and its answer and every frame of a play carry the playhead in
-   the dress. The window shows the place it is given. `placeOf`,
-   `placeFor`, `playFrom`, `playedToEnd` and `inClipTime` go.
-3. **Go answers the keyboard.** The space bar asks for a play, and Go
-   plays the clip or the video from the playhead it keeps. An arrow is a
-   look with the step it asks for, a frame, a word or a skip, and Go
-   answers with the frame there, or says the step left the clip.
-   `arrowStep`, `wordStep`, `intoWord`, `landings` and `insideClip` go,
-   and so does the window asking for the frames of the words either
-   side: Go reads them ahead from its own playhead.
+2. **Go says where on a clip a moment is.** A clip comes with the
+   moments the playhead is on it from, at its end from and off it again
+   from, `SourceInfo.Places`, worked out on the frames the engine counts,
+   on the clip as saved and on the clip under the hand. `placeOf`
+   compares the moment with them and with what the gesture was about.
+   `frameAt` and `insideClip` go.
+3. **Go says where a step lands.** Each word of the captions, and each
+   word lit on frames of the short, comes with where a step of the arrow
+   keys lands on it and where it begins as a place to land on, `LandOn`.
+   `intoWord` and `landings` go. Each piece comes with where the
+   playhead stands for its edges, `SegmentView.Up`, the rule a drag of
+   the edge already answers with, `edgePlayhead`, so a press on an edge
+   stands where its drag will.
 4. **The clip's clock in Go.** A clip's captions come with each block and
    each word placed in the episode, and its cuts named. `inEpisode`,
-   `wordInEpisode`, `endInEpisode`, `inClip`, `cutsOf` and `litWord` go.
-5. **Frames counted in Go.** The playhead carries its frame's start, and
-   a thumbnail or a keyframe is lit by the frame Go says it is on. A
-   thumbnail and a keyframe are put on their frames by the engine. A
-   look names its moment, and Go counts the frame. `frameAt`,
-   `frameMiddle`, `frameBegins`, `heldMicros`, `FRAME_HAIR`, `rankAt`
-   and `frame.cases.json` go.
-6. **The line under a model list in Go.** `Standing` carries the line
-   and its tone, and `finding.ts` keeps only what lists the models.
+   `wordInEpisode`, `endInEpisode`, `inClip`, `cutsOf`'s own rule and
+   `litWord` go.
+5. **Frames counted in Go.** Go sends, once a video, where each frame of
+   its grid holds from, `framewire.Grid.From` over `/frames/froms`, and
+   the frame queue, the clip timeline and the time field look a moment
+   up there. A thumbnail is put on the middle of its frame by the
+   engine, `SetThumbnail`. `frameMiddle`, `frameBegins`, `heldMicros`,
+   `FRAME_HAIR`, `rankAt`, `rankOf` and `playMoves` go, and
+   `frame.cases.json` moves to the engine's own testdata, read by Go
+   alone.
 
-```
-window      draws a moment in a view, the hand, the sound card's clock
-   |        Playhead.svelte reads --sound, written by the video preview alone
-routes      /frames/look (about, step), /frames/play, /frames/read
-   |
-app         keeps each video's playhead beside its play and its framings
-   |
-engine      Playhead: place, play from, step, clip clock, lit word, frame
-```
+What changed from the plan as first written, and why:
+
+- **No playhead kept in Go.** The place is decided by what the gesture
+  was about, which only the window knows, the moment it happens. Kept in
+  Go, it would come back on the answer to a look, which travels apart
+  from the binding that saves a trim, and the space bar pressed in
+  between would read the place before. What the place needs from the
+  engine is which frames are the clip's, and that is now data the clip
+  carries, so the window decides by the gesture and counts nothing.
+- **The keys are not answered by Go.** A step needs the frame and the
+  word it lands on, both of which are now data, and a round trip for each
+  press of a held key would make the keys wait on the app. What is left
+  of `arrowStep` and `wordStep` is which way the key goes, by the word the
+  playhead is in.
+- **A table, not a rule, for frames.** A look could have named its
+  moment and Go counted the frame, but the frame queue keeps the frames
+  it has by their number, and finding a kept frame for a click is what
+  makes a click show at once. Go sends where each frame holds from
+  instead, eight bytes a frame, 0.8 MB for an hour at 30 frames a second,
+  read once a video, and the window looks a moment up by halving.
+- **No step 6.** How a choice of model stands is judged in Go already,
+  `Standing`, since the pull request that moved the judging there.
+  `finderStanding` and `speechStanding` only put Go's judgement into the
+  words of the line, which is the interface's work, like every label.
+  Moving the words to Go would move the interface's wording into the
+  engine, not a rule out of the window.
 
 ## What follows
 
-What it costs: the engine gains the place, the step and the clip's
-clock, which it partly has already for the render and the captions, and
-the dress gains the playhead. A key waits for Go's answer, which a step
-already did, since its frame comes from Go.
+What it costs: the engine works out three more things it already had
+the means for, the clip's places, the edge playheads and where a step
+lands in each word, and sends them on data it sends anyway, the clip
+entry, the framing and the caption words. The window fetches one table
+per video, eight bytes a frame, about 0.8 MB for an hour at 30 frames a
+second, read once and kept for the last four videos. No key and no click
+waits for Go: everything a gesture needs is in the window before the
+hand moves.
 
 What it buys: one line to fix for the playhead, wherever it is drawn,
 and no rule of the engine left in the window, so the issue this record
