@@ -764,7 +764,8 @@ describe("a change of the clip taken into the play under way", () => {
       soundTo: number;
       audio: { currentTime: number; sampleRate: number };
       stats: { starts: number };
-      sources: Map<{ stop(at: number): void }, number>;
+      sources: Map<{ stop(at: number): void }, { stop: number; gen: number }>;
+      handedGen: number;
       pump(): void;
       start(at: number): void;
       takeIn(play: unknown, framing: string, loop: boolean): Promise<void>;
@@ -786,8 +787,8 @@ describe("a change of the clip taken into the play under way", () => {
     inside.pump = () => {};
     inside.start = (at) => said.push(`started again at ${at}`);
     const stops: number[] = [];
-    inside.sources.set({ stop: (at) => stops.push(at) }, 0.5);
-    inside.sources.set({ stop: (at) => stops.push(at) }, 0.2);
+    inside.sources.set({ stop: (at) => stops.push(at) }, { stop: 0.5, gen: 0 });
+    inside.sources.set({ stop: (at) => stops.push(at) }, { stop: 0.2, gen: 0 });
     return { q, inside, play, said, stops };
   }
 
@@ -798,6 +799,24 @@ describe("a change of the clip taken into the play under way", () => {
     expect(stops).toEqual([0.25]);
     expect(inside.soundTo).toBe(61.25 * 48000);
     expect(inside.stats.starts).toBe(0);
+  });
+
+  // L pressed while the clip played: the Go side took the change in and
+  // sent its sound from the place, and a pull of the sound on its way
+  // brought it before the answer to the change came. That sound stays and
+  // is not pulled again, and only the sound of the clip as it was stops.
+  // It was stopped too, the Go side does not send it twice, and the sound
+  // card played nothing for 256 ms and then clicked, the loop walk on CI.
+  test("keeps the sound of the change that came before its answer, and pulls it not again", async () => {
+    const { inside, play, stops } = underWay({ gen: 1, at: 61.25, end: 64, lap: 64, video: false });
+    const kept: number[] = [];
+    inside.sources.set({ stop: (at) => kept.push(at) }, { stop: 0.6, gen: 1 });
+    inside.handedGen = 1;
+    inside.soundTo = 61.6 * 48000;
+    await inside.takeIn(play, "b", false);
+    expect(stops).toEqual([0.25]);
+    expect(kept).toEqual([]);
+    expect(inside.soundTo).toBe(61.6 * 48000);
   });
 
   test("whose place the sound passed while the Go side answered, starts the play again from the playhead", async () => {

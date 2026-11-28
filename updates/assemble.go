@@ -12,10 +12,15 @@ import (
 
 // Pieced is how one build was put together from its parts.
 type Pieced struct {
-	// Kept is how many files came from the running app, Fetched how many
-	// were downloaded as pieces, and Bytes what those pieces weighed.
-	Kept, Fetched int
-	Bytes         int64
+	// Kept is how many files came from the running app, Patched how many
+	// were made from the running app's file and a downloaded patch, and
+	// Fetched how many were downloaded as pieces. Bytes is what the
+	// patches and pieces weighed.
+	Kept, Patched, Fetched int
+	Bytes                  int64
+	// PatchErr is why a patch could not make its file, which was then
+	// downloaded as its piece.
+	PatchErr error
 	// Packed is what the zip packed with zstd weighed, when that was
 	// downloaded instead: because the pieces the app lacked weighed more,
 	// or because the build could not be put together, and then Err says
@@ -41,19 +46,21 @@ func (s *Source) tell(p Pieced) {
 }
 
 // assemble writes the build its parts describe to dst: the bytes the parts
-// write out, each file the running app has with the same bytes, and a
-// downloaded piece for every other. It says how far it has come in the
-// bytes of the pieces it downloads, and says what it took from where.
-// Whatever goes wrong is an error, and the build is then downloaded whole,
-// see fetchOf.
+// write out, each file the running app has with the same bytes, a file
+// made from the running app's own and a downloaded patch where the parts
+// have a patch from it, and a downloaded piece for every other. It says
+// how far it has come in the bytes it downloads, and says what it took
+// from where. Whatever goes wrong is an error, and the build is then
+// downloaded whole, see fetchOf, except a patch that cannot make its
+// file, which costs that file's piece.
 //
-// It reads bytes nobody has checked yet, the parts and the pieces, so a
-// panic in it is the error of this build and not the end of the app,
-// which would otherwise end at every launch on the same piece and never
-// install the update that fixes it.
+// It reads bytes nobody has checked yet, the parts, the patches and the
+// pieces, so a panic in it is the error of this build and not the end of
+// the app, which would otherwise end at every launch on the same piece and
+// never install the update that fixes it.
 //
 // With cheaper, the size of the zip packed with zstd, it writes nothing
-// when the pieces it would download weigh more.
+// when what it would download weighs more.
 func (s *Source) assemble(ctx context.Context, where, sum string, size, cheaper int64, dst sink, progress func(got, of int64)) (done Pieced, err error) {
 	defer func() {
 		if caught := recover(); caught != nil {
@@ -73,12 +80,26 @@ func (s *Source) assemble(ctx context.Context, where, sum string, size, cheaper 
 	// file is read again as it is written, and checked again, rather than
 	// held: the app is a few hundred megabytes.
 	have := make([]bool, len(p.Parts))
+	patches := make([]*Patch, len(p.Parts))
 	var of int64
 	for i, part := range p.Parts {
 		if part.Bytes != nil {
 			continue
 		}
-		if have[i] = s.own(part) != nil; !have[i] {
+		mine := s.ownFile(part)
+		// Each file of the app is hashed once, and the sum says both
+		// whether it is the file and which patch starts from it.
+		var sum string
+		if mine != nil {
+			sum = sumOf(mine)
+		}
+		switch pt, ok := part.patchFrom(sum); {
+		case mine != nil && int64(len(mine)) == part.Size && sum == part.SHA256:
+			have[i] = true
+		case mine != nil && ok:
+			patches[i] = &pt
+			of += pt.Size
+		default:
 			of += part.Packed
 		}
 	}
@@ -100,10 +121,26 @@ func (s *Source) assemble(ctx context.Context, where, sum string, size, cheaper 
 				progress(got, of)
 			}
 		}
+		if b == nil && patches[i] != nil {
+			pt := *patches[i]
+			b, err = s.patched(ctx, where, part, pt, func(n int64) { progress(got+n, of) })
+			if err == nil {
+				got += pt.Size
+				done.Patched++
+				done.Bytes += pt.Size
+			} else {
+				// The patch costs its piece, never the update.
+				done.PatchErr = errors.Join(done.PatchErr, err)
+				of += part.Packed - pt.Size
+				progress(got, of)
+			}
+		}
 		switch {
 		case part.Bytes != nil:
-		case b != nil:
-			done.Kept++
+		case b != nil && (have[i] || patches[i] != nil):
+			if have[i] {
+				done.Kept++
+			}
 		default:
 			b, err = s.piece(ctx, where, part, func(n int64) { progress(got+n, of) })
 			if err != nil {
@@ -119,6 +156,50 @@ func (s *Source) assemble(ctx context.Context, where, sum string, size, cheaper 
 	}
 	progress(got, of)
 	return done, nil
+}
+
+// ownFile is what the running app holds where a part names a file, when
+// it holds a file of a size a build can have there, or nil.
+func (s *Source) ownFile(part Part) []byte {
+	rest, ok := InApp(part.Name)
+	if s.App == nil || !ok {
+		return nil
+	}
+	info, err := fs.Stat(s.App, rest)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > MaxBuild {
+		return nil
+	}
+	b, err := fs.ReadFile(s.App, rest)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// patched makes the file a part names from the running app's own and the
+// patch from it, downloaded from beside the parts. The app's file is read
+// again and checked against the patch's start, since it may have changed
+// since it was looked at, and what the patch makes is checked against the
+// part.
+func (s *Source) patched(ctx context.Context, parts string, part Part, pt Patch, progress func(int64)) ([]byte, error) {
+	old := s.ownFile(part)
+	if old == nil || sumOf(old) != pt.From {
+		return nil, fmt.Errorf("the app's %s changed before its patch was applied", part.Name)
+	}
+	where := parts[:len(parts)-len(path.Base(parts))] + PatchName(pt.From, part.SHA256)
+	var patch bytes.Buffer
+	patch.Grow(int(pt.Size))
+	if err := s.stream(ctx, where, pt.Size, bufferSink{&patch}, progress); err != nil {
+		return nil, fmt.Errorf("the patch of %s: %w", part.Name, err)
+	}
+	out, err := ApplyPatch(old, patch.Bytes(), part.Size)
+	if err != nil {
+		return nil, fmt.Errorf("the patch of %s: %w", part.Name, err)
+	}
+	if !equal(out, part) {
+		return nil, fmt.Errorf("the patch of %s makes another file", part.Name)
+	}
+	return out, nil
 }
 
 // own is the running app's file a part names, when it holds the same
@@ -148,7 +229,7 @@ func (s *Source) piece(ctx context.Context, parts string, part Part, progress fu
 	if err := s.stream(ctx, where, part.Packed, bufferSink{&packed}, progress); err != nil {
 		return nil, fmt.Errorf("the piece of %s: %w", part.Name, err)
 	}
-	return unpackPiece(packed.Bytes(), part)
+	return UnpackPiece(packed.Bytes(), part)
 }
 
 type bufferSink struct{ b *bytes.Buffer }

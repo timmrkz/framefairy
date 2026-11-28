@@ -30,7 +30,7 @@
 //	framefairy-release harden -zip F [-team-file F] [-kept D] [-refusal F] | -app A -p12 F
 //	    sign the app again with the Developer ID and the hardened
 //	    runtime, on a Mac, before pack, see devid.go
-//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-team-file F] [-refusal F]
+//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-made T] [-team-file F] [-refusal F]
 //	    sign a build that check passed with the private half, read from
 //	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list.
 //	    Once build/team-id.txt names a team, it refuses a build not signed
@@ -242,7 +242,16 @@ func sign(args []string) error {
 	out := fs.String("out", "", "where the entry goes")
 	parts := fs.String("parts", "", "the parts pack wrote, beside the stored zip and the zip packed, if it was packed")
 	teamFile := fs.String("team-file", "build/team-id.txt", "the file that names the team whose Developer ID the build must be signed with")
+	madeAt := fs.String("made", "", "when the run that built it was created, RFC 3339, signed as the build's order")
 	_ = fs.Parse(args)
+	var made time.Time
+	if *madeAt != "" {
+		t, err := time.Parse(time.RFC3339, *madeAt)
+		if err != nil {
+			return refused(*refusal, fmt.Errorf("-made: %w", err), os.Stderr)
+		}
+		made = t.UTC()
+	}
 	// The team is read from main's checkout here, as harden reads it, and
 	// never handed on by a step, so a build that lost its signature on the
 	// way is refused whatever the steps between said. The stored zip is
@@ -256,7 +265,7 @@ func sign(args []string) error {
 	if err != nil {
 		return refused(*refusal, err, os.Stderr)
 	}
-	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out), os.Stderr)
+	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out, made), os.Stderr)
 }
 
 // unpacksTo says whether a zip packed with zstd unpacks to the zip with
@@ -281,7 +290,9 @@ func unpacksTo(packed, digest []byte) error {
 // stored zip beside them too, once they are read as its parts and the zip
 // packed beside them unpacks to it, and the entry names it. An app that
 // knows parts installs that zip, and an app from before installs the zip.
-func signBuild(zipPath, channel, name, version, commit, where, parts, out string) error {
+// With a made time it signs that too, as the build's order, see
+// updates.Order.
+func signBuild(zipPath, channel, name, version, commit, where, parts, out string, made time.Time) error {
 	private, public, err := keys()
 	if err != nil {
 		return err
@@ -316,6 +327,13 @@ func signBuild(zipPath, channel, name, version, commit, where, parts, out string
 		b.Stored = &st
 	}
 	b.Claim = updates.SignClaim(private, b)
+	if !made.IsZero() {
+		b.Made = made
+		b.Order = updates.SignOrder(private, b)
+		if err := updates.VerifyOrder(public, b); err != nil {
+			return err
+		}
+	}
 	if err := b.Check(); err != nil {
 		return err
 	}

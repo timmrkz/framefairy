@@ -1079,3 +1079,44 @@ func TestAScheduledRunThatFailsTellsOfItself(t *testing.T) {
 		t.Errorf("found %d workflows on a schedule, fewer than the four there are", scheduled)
 	}
 }
+
+// A publish stuck before the environment is cancelled whatever the step
+// before did. unstick comes after channels in both jobs that write the
+// list, and a step runs only when every step before it passed unless its
+// if says otherwise. So a list that failed to write once left a stuck
+// publish waiting until the next build ended.
+//
+// On the real disk: what is read is the repository's own workflow.
+func TestAStuckPublishIsCancelledWhateverTheListDid(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "publish.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				If  string `yaml:"if"`
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for name, job := range wf.Jobs {
+		for _, s := range job.Steps {
+			if !strings.Contains(s.Run, "framefairy-release unstick") {
+				continue
+			}
+			found++
+			if strings.TrimSpace(s.If) != "${{ !cancelled() }}" {
+				t.Errorf("unstick in the job %s runs only when every step before it passed, its if is %q", name, s.If)
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("publish.yml runs no framefairy-release unstick")
+	}
+}

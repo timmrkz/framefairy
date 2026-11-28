@@ -25,3 +25,12 @@ func gone(pid int, within time.Duration) bool {
 func detach(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
+
+// stop ends a process, asking first and then not.
+func stop(pid int) {
+	_ = syscall.Kill(pid, syscall.SIGTERM)
+	if !gone(pid, 10*time.Second) {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+		gone(pid, 5*time.Second)
+	}
+}

@@ -112,6 +112,16 @@ export function standing(
       };
     case "failed":
       return { mark: "err", head: "The check did not get through", more: `${u.problem} ${when(u.checked, now)}`.trim() };
+    // The channel's newest build went in and did not start, so the build
+    // before it was put back. The app does not take it again by itself.
+    // Check takes it all the same, and the next build of the channel goes
+    // in as usual.
+    case "unstarted":
+      return {
+        mark: "err",
+        head: "The newest build did not start",
+        more: `${next}. The build before it is still the one running. Click Check to try it again, or the next build goes in as usual. ${when(u.checked, now)}`.trim(),
+      };
     // The newest build is here, and a newer commit is on its way. Work
     // running somewhere else, so the pulse.
     case "current":

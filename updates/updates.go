@@ -104,6 +104,15 @@ type Build struct {
 	// not install.
 	Claim     string    `json:"claim,omitempty"`
 	Published time.Time `json:"published"`
+	// Made is when the run that built it was created, which a run made
+	// again keeps, and Order is Ed25519 over the claim of the build as it
+	// is installed and that time together, see OrderMessage. So a build
+	// is known to be newer or older than another of its channel, and an
+	// older one, an entry put back on the release, is never taken in
+	// place of a newer one, see Order. Both empty in an entry from before
+	// they were signed.
+	Made  time.Time `json:"made,omitzero"`
+	Order string    `json:"order,omitempty"`
 	// Stored is the same build as a zip that stores its files as they
 	// are, signed and claimed on its own. An app that knows it installs
 	// that zip, put together from its parts and the files it has, or
@@ -353,6 +362,37 @@ func VerifyClaim(public ed25519.PublicKey, b Build) error {
 	sig, err := base64.StdEncoding.DecodeString(b.Claim)
 	if err != nil || !ed25519.Verify(public, ClaimMessage(b), sig) {
 		return fmt.Errorf("the build of %s is not signed as what the channel list says it is, "+
+			"so it is not installed", b.Channel)
+	}
+	return nil
+}
+
+// OrderMessage is what an order signs: the claim of the build as it is
+// installed, the stored zip when there is one, and when its run was made,
+// under a first line of its own, so the time cannot be moved to another
+// build and no other signature passes for it.
+func OrderMessage(b Build) []byte {
+	installed, _ := b.AsStored()
+	return fmt.Appendf(nil, "framefairy build order 1\n%smade %s\n",
+		ClaimMessage(installed), b.Made.UTC().Format(time.RFC3339))
+}
+
+// SignOrder signs when a build was made, with what it is.
+func SignOrder(key ed25519.PrivateKey, b Build) string {
+	return base64.StdEncoding.EncodeToString(ed25519.Sign(key, OrderMessage(b)))
+}
+
+// errNoOrder is an entry from before orders were signed.
+var errNoOrder = errors.New("was published without the signature that says when it was made")
+
+// VerifyOrder checks that an entry is signed as made when it says.
+func VerifyOrder(public ed25519.PublicKey, b Build) error {
+	if b.Order == "" || b.Made.IsZero() {
+		return errNoOrder
+	}
+	sig, err := base64.StdEncoding.DecodeString(b.Order)
+	if err != nil || !ed25519.Verify(public, OrderMessage(b), sig) {
+		return fmt.Errorf("the build of %s is not signed as made when the channel list says, "+
 			"so it is not installed", b.Channel)
 	}
 	return nil

@@ -13,20 +13,22 @@ import (
 	"time"
 )
 
-// A build that is ready when the app quits is put in place on the way out,
-// the way Chrome does it: the next time the app is opened it is the new
-// build, and nothing opens by itself in between. Relaunch does the same at
-// once and opens the app again, through Wails' updater, whose own step
-// always relaunches. So quitting starts a step of our own instead: the
-// same program, started again with the environment below, which waits for
-// the app to be gone, moves the new app into its place and ends.
+// A build that is ready is put in place by a step of our own, on quit
+// and on Relaunch: the same program, started again with the environment
+// below, which waits for the app to be gone, checks the new build loads,
+// keeps the build before, moves the new app into its place, and on
+// Relaunch opens it and waits for it to say it started. On quit it opens
+// nothing, the way Chrome does it: the next time the app is opened it is
+// the new build. Wails' own helper kept nothing, see trial.go.
 //
 // All it is told is in its environment, never in its arguments, so a flag
 // given to the app is never mistaken for it.
 const (
-	envInstallTarget = "FRAMEFAIRY_INSTALL_TARGET" // the app to replace, a .app
-	envInstallFrom   = "FRAMEFAIRY_INSTALL_FROM"   // the new app, unpacked by the updater
-	envInstallPID    = "FRAMEFAIRY_INSTALL_PID"    // the app that quit, waited for
+	envInstallTarget  = "FRAMEFAIRY_INSTALL_TARGET"  // the app to replace, a .app
+	envInstallFrom    = "FRAMEFAIRY_INSTALL_FROM"    // the new app, unpacked by the updater
+	envInstallPID     = "FRAMEFAIRY_INSTALL_PID"     // the app that quit, waited for
+	envInstallVersion = "FRAMEFAIRY_INSTALL_VERSION" // the new build's version, for its trial
+	envInstallOpen    = "FRAMEFAIRY_INSTALL_OPEN"    // 1 on Relaunch: open it and wait for it
 )
 
 // installGrace is how long the step waits for the app to be gone. An app
@@ -41,9 +43,23 @@ func installIfAsked() {
 	if target == "" {
 		return
 	}
-	from := os.Getenv(envInstallFrom)
 	pid, _ := strconv.Atoi(os.Getenv(envInstallPID))
-	for _, k := range []string{envInstallTarget, envInstallFrom, envInstallPID} {
+	exe, _ := os.Executable()
+	s := installStep{
+		target:  target,
+		from:    os.Getenv(envInstallFrom),
+		version: os.Getenv(envInstallVersion),
+		open:    os.Getenv(envInstallOpen) == "1",
+		pid:     pid,
+		folder:  appFolder(),
+		program: filepath.Base(exe),
+		gone:    gone,
+		loads:   loads,
+		launch:  launchApp,
+		started: saysStarted,
+		stop:    stop,
+	}
+	for _, k := range []string{envInstallTarget, envInstallFrom, envInstallPID, envInstallVersion, envInstallOpen} {
 		_ = os.Unsetenv(k)
 	}
 	// A log only for a step that went wrong: one that went right has
@@ -52,59 +68,132 @@ func installIfAsked() {
 	if f, err := os.Create(logPath); err == nil {
 		log.SetOutput(f)
 	}
-	if err := installWhenGone(target, from, pid, gone); err != nil {
-		log.Printf("install on quit: %v", err) //nolint:forbidigo // this step runs before the app's log is open, into a file of its own
+	if err := s.run(); err != nil {
+		log.Printf("install: %v", err) //nolint:forbidigo // this step runs before the app's log is open, into a file of its own
 		os.Exit(1)
 	}
 	_ = os.Remove(logPath)
 	os.Exit(0)
 }
 
-// installWhenGone waits for the app to be gone and then puts the new one
-// in its place. Only an app bundle is replaced, only with one the updater
+// installStep is the step, with what it reaches beyond the files handed
+// to it, so a test hands in its own.
+type installStep struct {
+	target, from, version string
+	// open is set on Relaunch, which opens the new build and waits for it.
+	open bool
+	pid  int
+	// folder is the app's folder, where the build before is kept.
+	folder string
+	// program is the name of the app's program in Contents/MacOS.
+	program string
+	gone    func(pid int, within time.Duration) bool
+	loads   func(program string) error
+	launch  func(app string) error
+	started func(folder string, within time.Duration) bool
+	stop    func(pid int)
+}
+
+// run waits for the app to be gone and then puts the new one in its
+// place. Only an app bundle is replaced, only with one the updater
 // unpacked, so the environment cannot point it anywhere else.
-func installWhenGone(target, from string, pid int, wait func(pid int, within time.Duration) bool) error {
-	if !strings.HasSuffix(target, ".app") || !filepath.IsAbs(target) {
-		return fmt.Errorf("%q is not an app to replace", target)
+func (s installStep) run() error {
+	if !strings.HasSuffix(s.target, ".app") || !filepath.IsAbs(s.target) {
+		return fmt.Errorf("%q is not an app to replace", s.target)
 	}
-	if filepath.Ext(from) != ".app" || !strings.HasPrefix(filepath.Base(filepath.Dir(from)), "wails-update-") {
-		return fmt.Errorf("%q is not a build the updater unpacked", from)
+	if filepath.Ext(s.from) != ".app" || !strings.HasPrefix(filepath.Base(filepath.Dir(s.from)), "wails-update-") {
+		return fmt.Errorf("%q is not a build the updater unpacked", s.from)
 	}
-	if pid <= 0 || !wait(pid, installGrace) {
+	if !filepath.IsAbs(s.folder) || s.version == "" {
+		return errors.New("the step was not told where the app's files are or which build it puts in")
+	}
+	if s.pid <= 0 || !s.gone(s.pid, installGrace) {
 		return errors.New("the app did not quit, so it was left as it is")
 	}
-	if err := replaceBundle(target, from); err != nil {
+	// The build before is opened again whenever the new one does not go
+	// in, so Relaunch never ends in no app at all.
+	reopen := func() {
+		if s.open {
+			_ = s.launch(s.target)
+		}
+	}
+	if _, err := os.Stat(s.from); err != nil {
+		reopen()
+		return fmt.Errorf("the new build is not there: %w", err)
+	}
+	if err := s.loads(filepath.Join(s.from, "Contents", "MacOS", s.program)); err != nil {
+		_ = writeFailed(s.folder, s.version)
+		_ = os.RemoveAll(filepath.Dir(s.from))
+		reopen()
+		return fmt.Errorf("the new build does not start, so the app was left as it is: %w", err)
+	}
+	before := filepath.Join(s.folder, beforeDir)
+	if err := os.RemoveAll(before); err != nil {
+		reopen()
+		return fmt.Errorf("an earlier build before could not be removed, so the app was left as it is: %w", err)
+	}
+	if err := os.MkdirAll(before, 0o700); err != nil {
+		reopen()
+		return fmt.Errorf("there is no room to keep the build before, so the app was left as it is: %w", err)
+	}
+	if err := replaceBundle(s.target, s.from, filepath.Join(before, filepath.Base(s.target))); err != nil {
+		_ = os.RemoveAll(before)
+		reopen()
 		return err
 	}
 	// The folder the updater unpacked into is empty now.
-	_ = os.RemoveAll(filepath.Dir(from))
-	return nil
+	_ = os.RemoveAll(filepath.Dir(s.from))
+	if err := writeTrial(s.folder, trial{Version: s.version, App: s.target}); err != nil {
+		// Without a trial nothing could put the build before back, so it
+		// is not kept either.
+		_ = os.RemoveAll(before)
+		reopen()
+		return fmt.Errorf("the new build went in, but nothing could put the build before back: %w", err)
+	}
+	if !s.open {
+		return nil
+	}
+	if err := s.launch(s.target); err == nil && s.started(s.folder, startedWithin) {
+		return nil
+	}
+	if err := undo(s.folder, s.stop, s.launch); err != nil {
+		return err
+	}
+	// It said it started as it was ended, so it stayed and was opened
+	// again.
+	if failedBuild(s.folder) != s.version {
+		return nil
+	}
+	return fmt.Errorf("%s did not say it started within %v, so the build before was put back", s.version, startedWithin)
 }
 
-// replaceBundle puts the app at from where target is. The old app is kept
-// beside it until the new one is whole, and put back when it is not.
-func replaceBundle(target, from string) error {
-	if _, err := os.Stat(from); err != nil {
-		return fmt.Errorf("the new build is not there: %w", err)
-	}
-	old := target + ".old"
-	_ = os.RemoveAll(old)
-	if err := os.Rename(target, old); err != nil {
+// replaceBundle puts the app at from where target is, and the app that
+// was there at aside. The app is put back when the new one does not go
+// in whole.
+func replaceBundle(target, from, aside string) error {
+	if err := move(target, aside); err != nil {
 		return fmt.Errorf("the app could not be moved aside: %w", err)
 	}
-	err := os.Rename(from, target)
-	if err != nil {
-		// Another volume, where a folder cannot be renamed across.
-		err = copyTree(from, target)
-	}
-	if err != nil {
-		_ = os.RemoveAll(target)
-		if back := os.Rename(old, target); back != nil {
-			return fmt.Errorf("the new build did not go in (%v), and the app could not be put back: %w", err, back)
+	if err := move(from, target); err != nil {
+		if back := move(aside, target); back != nil {
+			return fmt.Errorf("the new build did not go in (%w), and the app is %s: %w", err, aside, back)
 		}
 		return fmt.Errorf("the new build did not go in, the app is as it was: %w", err)
 	}
-	return os.RemoveAll(old)
+	return nil
+}
+
+// move renames a folder, or copies it and removes it where it cannot be
+// renamed, across volumes.
+func move(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	if err := copyTree(src, dst); err != nil {
+		_ = os.RemoveAll(dst)
+		return err
+	}
+	return os.RemoveAll(src)
 }
 
 // copyTree copies a folder with its links and modes, which an app bundle
@@ -151,17 +240,24 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	return out.Close()
 }
 
-// startInstall starts the step, on its own, so it outlives the app.
-func startInstall(target, from string) error {
+// startInstall starts the step, on its own, so it outlives the app. open
+// is set on Relaunch.
+func startInstall(target, from, version string, open bool) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
+	}
+	opens := "0"
+	if open {
+		opens = "1"
 	}
 	cmd := exec.Command(exe)
 	cmd.Env = append(os.Environ(),
 		envInstallTarget+"="+target,
 		envInstallFrom+"="+from,
 		envInstallPID+"="+strconv.Itoa(os.Getpid()),
+		envInstallVersion+"="+version,
+		envInstallOpen+"="+opens,
 	)
 	detach(cmd)
 	if err := cmd.Start(); err != nil {
