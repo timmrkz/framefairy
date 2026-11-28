@@ -84,6 +84,9 @@ export type FrameDress = {
   scale?: number;
   bounce?: [number, number, number];
   turned?: FrameDress & { framing: string };
+  // Whether Put the crop back would move the crop on this frame, for an
+  // ask that names the framing to put back.
+  back?: boolean;
 };
 
 // Whether two dresses draw the same crop, turn and keyframe.
@@ -434,6 +437,10 @@ export type CaptionAsk = {
   drafts: Record<string, string>;
   typing?: string;
   size?: [number, number];
+  // The framing the clip had before the automatic crop was brought back,
+  // so each frame's dress says whether Put the crop back would move its
+  // crop, see FrameDress.back.
+  back?: string;
 };
 
 // What an ask asks the Go side for, a frame and a size aside, with the key
@@ -444,6 +451,7 @@ export function asked(ask: CaptionAsk): Record<string, string> {
     ...(ask.on ? { on: ask.on } : {}),
     ...(ask.track ? { track: ask.track, ...(ask.typing ? { typing: ask.typing } : {}), ...ask.drafts } : {}),
     ...(ask.size ? { lw: String(ask.size[0]), lh: String(ask.size[1]) } : {}),
+    ...(ask.back ? { back: ask.back } : {}),
     dressKey: keyOf(ask),
   };
 }
@@ -457,6 +465,7 @@ export function keyOf(ask: CaptionAsk | null): string {
     ...(ask.on ? { on: ask.on } : {}),
     ...(ask.track ? { track: ask.track, ...(ask.typing ? { typing: ask.typing } : {}), ...ask.drafts } : {}),
     ...(ask.size ? { lw: String(ask.size[0]), lh: String(ask.size[1]) } : {}),
+    ...(ask.back ? { back: ask.back } : {}),
   }).toString();
 }
 

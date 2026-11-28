@@ -31,6 +31,36 @@ func TestADressedFrameHasTheCropTheRenderCropsBy(t *testing.T) {
 	}
 }
 
+// The automatic crop is offered only on a frame it would change. A piece
+// whose own crop the app placed and a switch keyframe halfway stands where
+// the automatic crop puts it until the keyframe, and only from there on is
+// it moved. The user saw the arrow do nothing on the first half of such a
+// clip. A crop placed by hand is moved on every frame of the piece.
+func TestOnlyAFrameTheAutomaticCropWouldChangeIsMoved(t *testing.T) {
+	t.Parallel()
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	auto := SegmentView{Start: 0, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1, X: 300}}}
+	byHand := auto
+	byHand.Moved = true
+	for _, c := range []struct {
+		view  SegmentView
+		at    float64
+		moved bool
+	}{
+		{auto, 0.2, false},
+		{auto, 0.96, false},
+		{auto, 1, true},
+		{auto, 1.6, true},
+		{byHand, 0.2, true},
+		{byHand, 1.6, true},
+	} {
+		d := source.Dress([]SegmentView{c.view}, nil, c.view.Marks, c.at, 1080, 1920)
+		if d.Moved != c.moved {
+			t.Errorf("the frame at %.2f s of a piece placed by hand %v, its crop at %v, is moved %v, want %v", c.at, c.view.Moved, d.Left, d.Moved, c.moved)
+		}
+	}
+}
+
 // A frame of a cut, or from outside the clip, shows the crop of the piece
 // nearest to it, as that piece's own frame next to it has it, and says no
 // piece holds it. A cut inside the clip is still the clip's, for its

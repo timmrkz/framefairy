@@ -90,3 +90,65 @@ func TestTheDressRouteAnswersTheDressOfAFrameOfAClip(t *testing.T) {
 		}
 	}
 }
+
+// After the automatic crop was brought back, each frame says whether Put
+// the crop back would move its crop, judged against the framing the
+// window names as the one to put back: not on the half of a clip before
+// its switch keyframe, where the reset changed nothing, and on the half
+// after it. A framing the app no longer keeps cannot say, so Put the crop
+// back is offered there, and an ask that names none offers it nowhere.
+// The user saw an arrow that did nothing on the first half of such a
+// clip.
+func TestADressSaysWherePuttingTheCropBackMovesIt(t *testing.T) {
+	t.Parallel()
+	svc, mine := memoryLibrary(t, "ep.mp4")
+	video := mine[0]
+	source := engine.SourceInfo{Duration: 60, Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	svc.probeVideo = func(context.Context, string) (engine.SourceInfo, error) { return source, nil }
+	plan := filepath.Join(engine.LogsDir(video), "clips.json")
+	if err := afero.WriteFile(svc.store.files, plan, []byte(`{"source": "ep.mp4", "clips": [
+	  {"id": "01", "slug": "eins", "segments": [{"start": 10.0, "end": 14.0, "crop_x": 40}], "words": [[10.1, 10.5, "eins"]],
+	   "crop_marks": [{"at": 12.0, "x": 300}]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	clips, err := svc.Clips(context.Background(), video)
+	if err != nil || len(clips) != 1 || clips[0].Framing == "" {
+		t.Fatalf("the clips %+v: %v", clips, err)
+	}
+	was := clips[0].Framing
+	reset, err := svc.ResetCrop(context.Background(), video, plan, "01", 13.0)
+	if err != nil || reset.Framing == "" || reset.Framing == was {
+		t.Fatalf("the clip after the reset %+v: %v", reset, err)
+	}
+	handler := mediaMiddleware(svc)(http.NotFoundHandler())
+	back := func(at, named string) bool {
+		t.Helper()
+		q := url.Values{"path": {video}, "framing": {reset.Framing}, "at": {at}, "w": {"874"}, "h": {"492"}}
+		if named != "" {
+			q.Set("back", named)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/dress?"+q.Encode(), nil))
+		var d sentDress
+		if rec.Code != http.StatusOK {
+			t.Fatalf("the dress at %s s answered %d", at, rec.Code)
+		}
+		if err := json.Unmarshal([]byte(rec.Header().Get("X-Frame-Dress")), &d); err != nil {
+			t.Fatalf("the dress %q: %v", rec.Header().Get("X-Frame-Dress"), err)
+		}
+		return d.Back
+	}
+	for _, c := range []struct {
+		at, named string
+		want      bool
+	}{
+		{"11.0", was, false},
+		{"13.0", was, true},
+		{"11.0", "nothing", true},
+		{"13.0", "", false},
+	} {
+		if got := back(c.at, c.named); got != c.want {
+			t.Errorf("the frame at %s s, against the framing %q, says Put the crop back moves it %v, want %v", c.at, c.named, got, c.want)
+		}
+	}
+}

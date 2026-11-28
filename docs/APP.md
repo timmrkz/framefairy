@@ -1357,11 +1357,14 @@ bubble scrolled by those eight pixels.
   clip has one crop. A part turned with Rotate is the one exception and
   keeps a crop of its own. Once a crop was moved, the frame's top right
   corner shows **Automatic crop**, an anticlockwise arrow, while the
-  pointer is on the video preview. It brings back the automatic placement,
+  pointer is on the frame. It brings back the automatic placement,
   removing the keyframes with it, and then turns clockwise into **Put the
   crop back**, which takes that click back again, crop marks and all, the
-  way the captions are put back. At the picture's right edge the arrow
-  stands clear of the video preview's info mark. A click on the frame
+  way the captions are put back. Each arrow shows only on a frame whose
+  crop it would move, which the engine says in the frame's dress: before
+  a clip's first keyframe the crop is the automatic one, and the arrow
+  would do nothing there. At the picture's right edge the arrow stands
+  clear of the video preview's info mark. A click on the frame
   without dragging plays or pauses.
 - **Clip list:** beside the player, exactly as tall as the video preview with
   the range picker under it, every clip found, in time order, with its start

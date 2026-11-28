@@ -219,6 +219,10 @@
     at: number;
     left: number | null;
     marks: CropMark[];
+    // The clip's framing before the reset, which the frames are dressed
+    // against, so the arrow that puts it back shows only where it would
+    // move the crop.
+    framing: string;
   } | null>(null);
 
   // The episode, played from its own file onto the canvas by the frame
@@ -727,8 +731,17 @@
   // crop was placed by hand, and the crop as it was, once that click was
   // made, the way the captions are put back and then put as they were:
   // back, the arrow turning anticlockwise, and forward again, clockwise.
+  // Each only on a frame whose crop it would move, which the Go side says
+  // in the frame's dress: an arrow that changes nothing on screen reads
+  // as a button that does not work.
   const cropUndo = $derived(
-    !clip ? "" : crop?.moved ? "back" : undoCrop?.key === clip.key && undoCrop.turn === turn ? "forward" : "",
+    !clip
+      ? ""
+      : crop?.moved
+        ? "back"
+        : undoCrop?.key === clip.key && undoCrop.turn === turn && dressed?.back
+          ? "forward"
+          : "",
   );
 
   // The video preview shows one moment at a time: a frame, and the crop
@@ -1348,6 +1361,7 @@
     const ask = clip && askOf(clip, captions);
     if (!ask) return null;
     if (place === "video") return { ...ask, on: "video", track: undefined, drafts: {} };
+    if (undoCrop?.key === clip.key && undoCrop.framing) ask.back = undoCrop.framing;
     if (!ask.track || !captions?.captions) return ask;
     if (fixing && (!laidWords || typed < 0)) return { ...ask, track: undefined, drafts: {} };
     if (dragCaptions !== null) ask.drafts.y = String(dragCaptions);
@@ -1648,14 +1662,18 @@
     const at = cropMoment();
     const was = dressed?.piece ?? 0;
     const turned = turn;
-    const had = clip.cropLefts[was] ?? null;
+    // A crop the app placed is put back by the keyframes alone: placed
+    // again by hand, at the same place, it would count as moved, and the
+    // automatic crop would then be offered where it changes nothing.
+    const had = clip.segments[was]?.moved ? (clip.cropLefts[was] ?? null) : null;
     const marked = clip.cropMarks ?? [];
+    const framing = clip.framing ?? "";
     savingCrop = true;
     try {
       await onresetcrop(clip.key, at);
       const still = clip?.cropMarks ?? [];
       const marks = marked.filter((m) => !still.some((k) => k.at === m.at));
-      if (had !== null || marks.length) undoCrop = { key: clip!.key, turn: turned, at, left: had, marks };
+      if (had !== null || marks.length) undoCrop = { key: clip!.key, turn: turned, at, left: had, marks, framing };
     } finally {
       savingCrop = false;
     }
@@ -2205,11 +2223,10 @@
 
   /* The way back to the automatic crop, a mark that undoes something,
      .undo-mark in app.css, in the top right corner inside the frame's
-     line. It waits until the pointer is on the video preview, the way its
-     info mark does, and goes while the frame is dragged. Only on the frame
-     itself, the arrow that puts the crop back went from under the pointer
-     with the frame the reset moved. On the picture it wears the shade, so
-     it reads on a white frame too.
+     line. It waits until the pointer is on the frame itself, the way an
+     info mark waits for its area, and goes while the frame is dragged. The
+     user wanted it on the frame and not on the rest of the video preview.
+     On the picture it wears the shade, so it reads on a white frame too.
 
      The video preview's own info mark stands in the picture's top right
      corner, 2 px in and 20 px wide, see .ask.corner in app.css. The frame
@@ -2230,7 +2247,7 @@
     will-change: opacity;
   }
 
-  .screen:hover .undo,
+  .crop:hover .undo,
   .undo:focus-visible {
     opacity: 1;
     pointer-events: auto;
@@ -2238,7 +2255,7 @@
 
   /* Its work under way, it is still there, dimmed like any button that
      waits, and takes no second click. */
-  .screen:hover .undo:disabled,
+  .crop:hover .undo:disabled,
   .undo:focus-visible:disabled {
     opacity: var(--dimmed);
   }

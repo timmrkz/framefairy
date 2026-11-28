@@ -977,6 +977,9 @@ export const steps = {
       walk.wrong = `the clip has ${was.length} keyframes, and this step needs two to put back`;
       return;
     }
+    // The arrows show only where they move the crop, which the keyframes
+    // do late in the clip, and a clip chosen stands on its start.
+    await playheadAt(page, 0.8);
     walk.wrong = await pressCropCorner(page, "Automatic crop");
     if (walk.wrong) return;
     await pageUntil(page, () => !document.querySelector(".screen .crop .undo:disabled"));
@@ -2465,23 +2468,40 @@ export const steps = {
   },
   // ["crop corner", label]
   //                    the arrow in the crop frame's top right corner is
-  //                    hidden with the pointer off the video preview and
-  //                    shows with it on the frame. Presses the one that
-  //                    says label, Automatic crop or Put the crop back,
-  //                    and waits until it has done its work. The arrow
-  //                    stands inside the frame, clear of the video
-  //                    preview's info mark, and nowhere else in the app
-  //                    says label. The arrow that takes it back shows at
-  //                    once, with the pointer where it pressed, wherever
-  //                    the frame went
+  //                    hidden with the pointer on the video preview beside
+  //                    the frame and shows with it on the frame. Presses
+  //                    the one that says label, Automatic crop or Put the
+  //                    crop back, and waits until it has done its work.
+  //                    The arrow stands inside the frame, clear of the
+  //                    video preview's info mark, and nowhere else in the
+  //                    app says label
   async "crop corner"(walk, arg) {
     const { page } = walk;
     walk.wrong = await pressCropCorner(page, arg);
     if (walk.wrong) return;
     await pageUntil(page, () => !document.querySelector(".screen .crop .undo:disabled"));
     await settle(page);
-    const next = await arrowFaded(page);
-    if (next !== "1") walk.wrong = `after ${arg}, with the pointer where it pressed, the arrow in the crop frame is at opacity ${next}`;
+  },
+  // ["crop arrow", [share, label]]
+  //                    with the playhead that share of the way into the
+  //                    clip and the pointer on the crop frame, its corner
+  //                    shows the arrow that says label, or "none": an
+  //                    arrow only on a frame whose crop it would move
+  async "crop arrow"(walk, [share, label]) {
+    const { page } = walk;
+    await playheadAt(page, share);
+    const box = await page.locator(".screen .crop").boundingBox();
+    if (!box) {
+      walk.wrong = `${share} of the way into the clip the video preview shows no crop frame`;
+      return;
+    }
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 4);
+    const shown = await page.evaluate(() => {
+      const arrow = document.querySelector(".screen .crop .undo");
+      return arrow ? arrow.getAttribute("aria-label") : "none";
+    });
+    if (shown !== label) walk.wrong = `${share} of the way into the clip the crop frame's corner offers ${shown}, not ${label}`;
+    else if (label !== "none" && (await arrowFaded(page)) !== "1") walk.wrong = `${label} does not show with the pointer on the crop frame`;
   },
   // ["crop before", share]
   //                    puts the playhead that share of the way into the
@@ -3179,9 +3199,10 @@ function cropShown(page) {
   return page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
 }
 
-// Puts the pointer on the crop frame in the video preview, sees the arrow
-// that says label come in the frame's top right corner, inside its line
-// and clear of the video preview's own info mark, and presses it. What is
+// Puts the pointer on the video preview beside the crop frame and sees no
+// arrow, then on the crop frame, sees the arrow that says label come in
+// the frame's top right corner, inside its line and clear of the video
+// preview's own info mark, and presses it. What is
 // wrong, or "" once it is pressed. The row above the clip timeline held
 // the two as buttons of words, far from the frame they change.
 async function pressCropCorner(page, label) {
@@ -3190,11 +3211,15 @@ async function pressCropCorner(page, label) {
   if (!box) return `the video preview shows no crop frame to press ${label} on`;
   const arrow = crop.getByRole("button", { name: label, exact: true });
   if (!(await arrow.count())) return `the crop frame's corner offers no ${label}`;
-  // The pointer on the playhead's time, under the video preview and away
-  // from the sidebar, which opens when the pointer reaches it.
-  await page.locator("output.timecode").hover();
+  // The pointer on the picture beside the frame, on its wider side: the
+  // arrow waits for the frame itself, not for the video preview.
+  const picture = await page.locator(".screen").boundingBox();
+  const left = box.x - picture.x;
+  const right = picture.x + picture.width - box.x - box.width;
+  const x = left > right ? picture.x + left / 2 : box.x + box.width + right / 2;
+  await page.mouse.move(x, box.y + box.height / 2);
   const hidden = await arrowFaded(page);
-  if (hidden !== "0") return `${label} shows in the crop frame with the pointer off the video preview, at opacity ${hidden}`;
+  if (hidden !== "0") return `${label} shows in the crop frame with the pointer beside it on the video preview, at opacity ${hidden}`;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 4);
   const shown = await arrowFaded(page);
   if (shown !== "1") return `${label} is at opacity ${shown} with the pointer on the crop frame`;

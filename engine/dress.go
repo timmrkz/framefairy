@@ -30,8 +30,11 @@ type FrameDress struct {
 	// Left is the left edge of the crop on the frame, on the picture
 	// turned, held from a keyframe or gliding, or the piece's own.
 	Left float64 `json:"left"`
-	// Moved is whether the piece's crop was placed by hand or keyframes
-	// steer it.
+	// Moved is whether the crop on this frame is other than the automatic
+	// crop: the piece's crop was placed by hand, or a keyframe moved it
+	// from where the piece's crop stands. A frame before a piece's first
+	// keyframe, or on a glide's first circle, stands where the automatic
+	// crop puts it, so the automatic crop would change nothing there.
 	Moved bool `json:"moved"`
 	// Mark is the keyframe on the frame, or nil, and Movable whether a
 	// drag may place the crop here: on a keyframe that does not open a
@@ -79,6 +82,16 @@ func (s SourceInfo) Dress(segments []SegmentView, rotations []Rotation, marks []
 	return d
 }
 
+// DressAlone is the dress of the frame that starts at a moment, as Dress has
+// it, without the stretch of frames dressed alike around it: for asking
+// where a framing puts the crop on one frame, which a stretch would ask
+// up to dressReach frames either side for.
+func (s SourceInfo) DressAlone(segments []SegmentView, rotations []Rotation, marks []CropMarkView, at float64, outW, outH int) FrameDress {
+	d := s.dressOf(segments, rotations, marks, at, outW, outH, map[[3]int]cropRun{})
+	d.From, d.To = at, at
+	return d
+}
+
 // sameDress says two frames are dressed alike, their stretches aside.
 func sameDress(a, b FrameDress) bool {
 	if (a.Mark == nil) != (b.Mark == nil) || a.Mark != nil && *a.Mark != *b.Mark {
@@ -122,9 +135,9 @@ func (s SourceInfo) dressOf(segments []SegmentView, rotations []Rotation, marks 
 	}
 	seg := segments[d.Piece]
 	d.CropWidth, _ = CropWindow(upright, outW, outH)
-	d.Moved = seg.Moved || len(seg.Marks) > 0
 	k := s.frameHolding(at)
 	d.Left = float64(ClampCropX(seg.CropX, d.CropWidth, upright.Width))
+	own := d.Left
 	if len(seg.Marks) > 0 && s.FPSNum > 0 && s.FPSDen > 0 {
 		// A frame of a cut beside the piece shows the crop of the
 		// piece's frame nearest to it, its first or its last.
@@ -137,6 +150,7 @@ func (s SourceInfo) dressOf(segments []SegmentView, rotations []Rotation, marks 
 		}
 		d.Left = stepEdge(run.at(min(max(k, first), end-1)))
 	}
+	d.Moved = seg.Moved || d.Left != own
 	for i := range marks {
 		if s.markFrame(marks[i].At) == k {
 			m := marks[i]

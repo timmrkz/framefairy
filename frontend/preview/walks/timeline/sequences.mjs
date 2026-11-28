@@ -365,7 +365,9 @@ export default [
     // walk shows once that the video preview follows them, still,
     // playing and past a cut. A glide is no more steps to the window.
     // A keyframe before a cut once stopped holding its crop after it,
-    // found by Tim, plan row 2.238.
+    // found by Tim, plan row 2.238. The arrows in the crop frame's
+    // corner show only where they move the crop: not before the
+    // keyframe, where the crop is the automatic one, found by the user.
     name: "one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it",
     steps: [
       ["added", 30, "25"],
@@ -380,6 +382,16 @@ export default [
       ["crop kept", 0.25],
       ["crop kept", 0.75],
       ["keyframes", 1],
+      ["crop arrow", [0.25, "none"]],
+      ["crop arrow", [0.75, "Automatic crop"]],
+      ["crop corner", "Automatic crop"],
+      ["keyframes", 0],
+      ["crop arrow", [0.25, "none"]],
+      ["crop arrow", [0.75, "Put the crop back"]],
+      ["crop corner", "Put the crop back"],
+      ["keyframes", 1],
+      ["crop kept", 0.75],
+      ["crop arrow", [0.25, "none"]],
       ["crop holds"],
       ["crop holds while playing"],
       ["cut at", 0.75],
@@ -463,6 +475,7 @@ export default [
       ["keyframes", 1],
       ["glides", 0],
       ["glide at", 0.5],
+      ["drag crop", 400],
       ["crop back then next clip"],
     ],
   },
