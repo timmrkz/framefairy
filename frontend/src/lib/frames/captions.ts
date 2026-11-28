@@ -89,7 +89,8 @@ export type FrameDress = {
   back?: boolean;
 };
 
-// Whether two dresses draw the same crop, turn and keyframe.
+// Whether two dresses draw the same crop, turn and keyframe, and offer the
+// same in the crop frame's corner.
 export function sameDress(a: FrameDress | null | undefined, b: FrameDress | null | undefined): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -103,6 +104,7 @@ export function sameDress(a: FrameDress | null | undefined, b: FrameDress | null
     a.cropWidth === b.cropWidth &&
     a.left === b.left &&
     a.moved === b.moved &&
+    !!a.back === !!b.back &&
     a.movable === b.movable &&
     JSON.stringify(a.mark) === JSON.stringify(b.mark)
   );
