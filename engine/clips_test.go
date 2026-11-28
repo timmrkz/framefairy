@@ -222,9 +222,13 @@ func FuzzLoadClips(f *testing.F) {
 				t.Fatalf("two clips called %q", clip.Basename())
 			}
 			seen[clip.Basename()] = true
-			if short := shortOf(plan, clip); short != "" &&
-				!ownName(clip, filepath.Base(fileio.ResolvePath(short))) {
-				t.Fatalf("%s is taken for the short of %s", short, clip.Basename())
+			// A short is the clip's only under a safe name its short can
+			// have, whatever name the plan says the render gave it.
+			if short := shortOf(plan, clip); short != "" {
+				rec, _ := recordOf(plan, clip)
+				if !safeName.MatchString(rec.called) || !ownName(rec.called, filepath.Base(fileio.ResolvePath(short))) {
+					t.Fatalf("%s is taken for the short of %s, called %q", short, clip.Basename(), rec.called)
+				}
 			}
 			for _, seg := range clip.Segments {
 				if !num.IsFinite(seg.Start) || !num.IsFinite(seg.End) || seg.Start < 0 || seg.End <= seg.Start {

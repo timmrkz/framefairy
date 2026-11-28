@@ -309,19 +309,19 @@ func (b *planBuilder) shapedFitted(entry PlanEntry) (PlanEntry, string) {
 }
 
 // named gives a clip the model named nothing, as middle's are, a title and
-// a slug from its first words.
+// a slug from its first words, see clipTitle.
 func (b *planBuilder) named(entry PlanEntry) PlanEntry {
 	if entry.Title != "" {
 		return entry
 	}
 	var words []string
 	for _, r := range entry.Keep {
-		for n := r[0]; n <= r[1] && len(words) < 20; n++ {
+		for n := r[0]; n <= r[1] && len(words) < titleWords; n++ {
 			words = append(words, strings.Fields(b.lines[n-1].Text())...)
 		}
 	}
-	entry.Title = firstWords(strings.Join(words, " "), 60)
-	entry.Slug = strings.ToLower(SanitiseName(entry.Title, "clip"))
+	entry.Title = clipTitle(words)
+	entry.Slug = clipSlug(entry.Title)
 	return entry
 }
 

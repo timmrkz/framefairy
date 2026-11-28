@@ -73,8 +73,13 @@ export default [
     // every codec, HEVC with open GOPs too, is
     // TestTheEpisodesDecoderHandsOverTheKeyFrameFirst. The window never
     // sees the codec, so this walks the walks' own video.
-    name: "a playhead dragged far shows only frames on the way and the frame under the hand once it rests, and a click shows no key frame",
-    steps: [["scrub far"], ["keyed on the way"], ["click far"]],
+    //
+    // Issue #1007, found by the user: a press on a clip's mark on the
+    // range picker did not take hold of the playhead, only above or below
+    // the mark. A drag from a mark moves it now, and a click on the mark
+    // still chooses its clip.
+    name: "a playhead dragged far shows only frames on the way and the frame under the hand once it rests, a click shows no key frame, and a drag from a clip's mark on the range picker moves it too",
+    steps: [["scrub far"], ["keyed on the way"], ["click far"], ["across a mark"]],
   },
   {
     // Issue #446. While a clip plays the playhead moves when the sound is in
@@ -622,8 +627,14 @@ export default [
     // stuttered where a fast one did not. To the left, every step back
     // was a stream of its own, a seek, and the picture stood for each.
     // That the Go side reads them in runs is engine/schedule_test.go.
-    name: "a slow drag of the playhead to the left shows every frame it steps back to",
-    steps: [["slow drag left", 40]],
+    //
+    // Issue #978, found by Tim on 21 November: the playhead dragged on
+    // the clip timeline went on past its edges into frames nobody could
+    // see, and one dragged on the range picker moved the clip timeline
+    // only near its edge, a page at a time. It stops at the edges now, and
+    // the range picker keeps it in the middle of the clip timeline.
+    name: "a slow drag of the playhead to the left shows every frame it steps back to, a drag stops at the clip timeline's edges, and one on the range picker keeps it in its middle",
+    steps: [["slow drag left", 40], ["past the edge", "right"], ["past the edge", "left"], ["picker centres"]],
   },
   {
     // Issue #377, found by Tim on 19 October: outside a clip, Shift and

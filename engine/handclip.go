@@ -11,11 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/spf13/afero"
 
-	"framefairy/engine/runes"
 	"framefairy/engine/runlog"
 	"framefairy/engine/timed"
 )
@@ -346,35 +344,16 @@ func handEntry(lines []Line, req ClipRequest, shortest, longest float64,
 			last++
 		}
 	}
-	title := handTitle(lines[first-1 : last])
-	return PlanEntry{Slug: strings.ToLower(SanitiseName(title, "clip")), Title: title,
-		Keep: [][2]int{{first, last}}}, nil
-}
-
-// handTitle is the first words said in a clip, which is what a person
-// would call it until they call it something else.
-func handTitle(lines []Line) string {
+	// Called by its first words, the way a clip a search finds is, see
+	// clipTitle.
 	var words []string
-	more := false
-	for _, l := range lines {
+	for _, l := range lines[first-1 : last] {
 		for _, w := range l.Cues {
-			text := strings.TrimFunc(w.Text, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
-			if text == "" {
-				continue
+			if len(words) < titleWords {
+				words = append(words, strings.Fields(w.Text)...)
 			}
-			if len(words) == 6 {
-				more = true
-				break
-			}
-			words = append(words, text)
 		}
 	}
-	title := strings.Join(words, " ")
-	if title == "" {
-		return "Clip"
-	}
-	if more {
-		title += " …"
-	}
-	return runes.Scrub(title, 200)
+	title := clipTitle(words)
+	return PlanEntry{Slug: clipSlug(title), Title: title, Keep: [][2]int{{first, last}}}, nil
 }

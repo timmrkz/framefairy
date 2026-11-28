@@ -1285,6 +1285,14 @@
     timeline?.fit(t);
   }
 
+  // The playhead put or dragged on the range picker stands in the middle
+  // of the clip timeline, which goes along with it over the whole video.
+  // It moved the view only near its edge, a page at a time, issue #978.
+  function seekFromPicker(t: number) {
+    player?.seek(t);
+    timeline?.toPlayhead(t);
+  }
+
   // The chosen card, brought far enough into the list to be read. Walking
   // the list with the arrows otherwise chooses cards that are not on
   // screen, and the veil over each end means a card only just inside the
@@ -3006,7 +3014,7 @@
     onhover={hoverClip}
     onmark={select}
     playhead={time}
-    onseek={seekTo}
+    onseek={seekFromPicker}
     onhold={holdPlayhead}
     dimmed={!onClip}
     locked={busy}

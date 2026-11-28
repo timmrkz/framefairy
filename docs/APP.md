@@ -2181,6 +2181,12 @@ bubble scrolled by those eight pixels.
     - The times sit at the top of both tracks, in the same quiet grey, a
       step above the lines around them and below the waveform inside them.
     - Drag the playhead anywhere on the track and the video preview follows.
+      A press on a clip's mark takes hold of it too, once the hand moves,
+      and a click on the mark chooses its clip. On the clip timeline the
+      playhead stops at the edges of the view, which stays where it is
+      under the hand. Dragged on the range picker, the playhead stands in
+      the middle of the clip timeline, which goes along with it over the
+      whole video.
     - Time labels along the top say where in the episode the timeline is,
       which is what a swipe needs in order to mean anything. They are at the
       top and in the same colour as the ones on the range picker: two tracks

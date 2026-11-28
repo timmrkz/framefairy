@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -107,7 +108,7 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 		}
 	}
 	// Noted the way a render notes its short once it is written.
-	if err := recordShort(disk, plan, "01", filepath.Join(out, "done.mp4")); err != nil {
+	if err := recordShort(disk, plan, Clip{ID: "01", Slug: "done"}, filepath.Join(out, "done.mp4")); err != nil {
 		t.Fatal(err)
 	}
 	ep := NewMachine(disk).Episode(source)
@@ -160,6 +161,15 @@ func episodeWithPlan(t *testing.T, name string) (source, plan string) {
 // On the real disk: a short is a file on the disk, see IsShort.
 func placeShort(t *testing.T, plan, dir, id string) string {
 	t.Helper()
+	return placeShortSaying(t, plan, dir, id, nil)
+}
+
+// placeShortSaying is placeShort of a clip that shows the words of said,
+// which it is named by, the way Run names it, see Transcript.Named.
+//
+// On the real disk: a short is a file on the disk, see IsShort.
+func placeShortSaying(t *testing.T, plan, dir, id string, said *Transcript) string {
+	t.Helper()
 	loaded, clips, err := LoadClips(disk, plan)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +178,9 @@ func placeShort(t *testing.T, plan, dir, id string) string {
 	if i < 0 {
 		t.Fatalf("the plan has no clip %s", id)
 	}
-	stem := shortStem(dir, loaded, clips[i])
+	named := clips[i]
+	named.Title, named.Slug = said.Named(clips[i])
+	stem := shortStem(dir, loaded, named)
 	short := filepath.Join(dir, stem+".mp4")
 	written := []string{short}
 	for n := range clips[i].Thumbnails {
@@ -182,7 +194,7 @@ func placeShort(t *testing.T, plan, dir, id string) string {
 			t.Fatal(err)
 		}
 	}
-	if err := recordShort(disk, plan, id, short); err != nil {
+	if err := recordShort(disk, plan, named, short); err != nil {
 		t.Fatal(err)
 	}
 	return short
@@ -503,6 +515,19 @@ func TestARenderPutsItsShortWhereItsNameSays(t *testing.T) {
 	videos, err := filepath.Glob(filepath.Join(base.Out, "*.mp4"))
 	if err != nil || len(videos) != 3 {
 		t.Errorf("the folder holds %q, not the other episode's short, this one and the preview", videos)
+	}
+
+	// Once the video is transcribed, the short is named by the words the
+	// clip shows, rendered without captions too. It kept the name in the
+	// plan, which the clip's words no longer match.
+	var heard int32
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	if err := p.Transcribe(ctx); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	render(false)
+	if got := filepath.Base(shortOfClip(t, plan, "01").Short); !strings.HasPrefix(got, "wort-wort") {
+		t.Errorf("rendered without captions, the short is named %q, not by the words the clip shows", got)
 	}
 }
 

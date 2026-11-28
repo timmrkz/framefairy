@@ -64,6 +64,16 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 	return s.clipsOf(path, s.plansOf(path), info, s.heard(path)), nil
 }
 
+// said is the transcript of a video, or nil before there is one, for a
+// clip to be called by the words it shows, see engine.Transcript.Named.
+func (s *FrameFairy) said(path string) *engine.Transcript {
+	t, err := s.transcript(path)
+	if err != nil {
+		return nil
+	}
+	return t
+}
+
 // heard is every part of a video its transcript has heard, see
 // engine.Episode.Heard.
 func (s *FrameFairy) heard(path string) [][2]float64 {
@@ -76,8 +86,9 @@ func (s *FrameFairy) heard(path string) [][2]float64 {
 // heard says, see entryOf.
 func (s *FrameFairy) clipsOf(path string, plans []engine.PlanSummary, info engine.SourceInfo, heard [][2]float64) []ClipEntry {
 	out := []ClipEntry{}
+	said := s.said(path)
 	for _, summary := range plans {
-		for _, c := range summary.View().Clips {
+		for _, c := range summary.NamedView(said).Clips {
 			out = append(out, s.entryOf(path, summary.Path, c, info, heard))
 		}
 	}
@@ -397,11 +408,11 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	view, err := s.store.machine.Episode(path).ReadPlan(plan)
+	summary, err := s.store.machine.Episode(path).Plan(plan)
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	for _, c := range view.Clips {
+	for _, c := range summary.NamedView(s.said(path)).Clips {
 		if c.ID == clipID {
 			entry := s.entryOf(path, plan, c, info, s.heard(path))
 			entry.Rev = rev
