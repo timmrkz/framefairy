@@ -124,7 +124,7 @@ func (s *Source) assemble(ctx context.Context, where, sum string, size, cheaper 
 // own is the running app's file a part names, when it holds the same
 // bytes, or nil.
 func (s *Source) own(part Part) []byte {
-	rest, ok := inApp(part.Name)
+	rest, ok := InApp(part.Name)
 	if s.App == nil || !ok {
 		return nil
 	}

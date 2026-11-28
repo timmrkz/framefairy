@@ -71,7 +71,7 @@ func pieceOf(t *testing.T, p updates.Parts, name string) string {
 }
 
 const (
-	appProgram = "Frame Fairy.app/Contents/MacOS/framefairy-app"
+	appFile    = "Frame Fairy.app/Contents/MacOS/framefairy-app"
 	ffmpegFile = "Frame Fairy.app/Contents/MacOS/ffmpeg"
 )
 
@@ -83,8 +83,8 @@ const (
 func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
 	t.Parallel()
 	ffmpeg := []byte(strings.Repeat("libavcodec ", 1000))
-	first := packed(t, map[string][]byte{appProgram: []byte("build 1"), ffmpegFile: ffmpeg})
-	second := packed(t, map[string][]byte{appProgram: []byte("build 2"), ffmpegFile: ffmpeg})
+	first := packed(t, map[string][]byte{appFile: []byte("build 1"), ffmpegFile: ffmpeg})
+	second := packed(t, map[string][]byte{appFile: []byte("build 2"), ffmpegFile: ffmpeg})
 	entry := filepath.Join(t.TempDir(), "entry.json")
 	if err := os.WriteFile(entry, []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	p1 := partsIn(t, first)
-	pieces := []string{pieceOf(t, p1, appProgram), pieceOf(t, p1, ffmpegFile)}
+	pieces := []string{pieceOf(t, p1, appFile), pieceOf(t, p1, ffmpegFile)}
 	slices.Sort(pieces)
 	var up []string
 	for _, d := range gh.did {
@@ -112,7 +112,7 @@ func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	p2 := partsIn(t, second)
-	want = []string{"upload " + pieceOf(t, p2, appProgram), "upload app-main-2.zip", "upload app-main-2.zip.zst", "upload app-main-2.parts.json", "upload channel-main.json"}
+	want = []string{"upload " + pieceOf(t, p2, appFile), "upload app-main-2.zip", "upload app-main-2.zip.zst", "upload app-main-2.parts.json", "upload channel-main.json"}
 	if !slices.Equal(gh.did, want) {
 		t.Errorf("the second build uploaded\n  %s\nwant\n  %s", strings.Join(gh.did, "\n  "), strings.Join(want, "\n  "))
 	}
@@ -129,8 +129,8 @@ func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
 func TestPiecesNoBuildNamesGo(t *testing.T) {
 	t.Parallel()
 	ffmpeg := []byte(strings.Repeat("libavcodec ", 1000))
-	listed := packed(t, map[string][]byte{appProgram: []byte("listed"), ffmpegFile: ffmpeg})
-	gone := packed(t, map[string][]byte{appProgram: []byte("gone"), ffmpegFile: ffmpeg})
+	listed := packed(t, map[string][]byte{appFile: []byte("listed"), ffmpegFile: ffmpeg})
+	gone := packed(t, map[string][]byte{appFile: []byte("gone"), ffmpegFile: ffmpeg})
 	p, g := partsIn(t, listed), partsIn(t, gone)
 	gh := &fakeGitHub{}
 	old := now.Add(-2 * time.Hour)
@@ -141,9 +141,9 @@ func TestPiecesNoBuildNamesGo(t *testing.T) {
 	gh.put("app-pr-9-1.zip", []byte("zip"), old)
 	gh.put("app-pr-9-1.zip.zst", []byte("zst"), old)
 	gh.put("app-pr-9-1.parts.json", []byte("{}"), old)
-	gh.put(pieceOf(t, p, appProgram), []byte("piece"), old)
+	gh.put(pieceOf(t, p, appFile), []byte("piece"), old)
 	gh.put(pieceOf(t, p, ffmpegFile), []byte("piece"), old)
-	gh.put(pieceOf(t, g, appProgram), []byte("piece"), old)
+	gh.put(pieceOf(t, g, appFile), []byte("piece"), old)
 	fresh := updates.PieceName(strings.Repeat("f", 64))
 	gh.put(fresh, []byte("piece"), now.Add(-10*time.Minute))
 	l := updates.List{Channels: []updates.Build{{Channel: "main", URL: "https://example.com/dev/app-main-1.zip"}}}
@@ -151,12 +151,12 @@ func TestPiecesNoBuildNamesGo(t *testing.T) {
 	if err := removeUnreachable(gh, l, now, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"app-pr-9-1.zip", "app-pr-9-1.zip.zst", "app-pr-9-1.parts.json", pieceOf(t, g, appProgram)} {
+	for _, name := range []string{"app-pr-9-1.zip", "app-pr-9-1.zip.zst", "app-pr-9-1.parts.json", pieceOf(t, g, appFile)} {
 		if _, ok := gh.release[name]; ok {
 			t.Errorf("%s, which no listed build reaches, is still there", name)
 		}
 	}
-	for _, name := range []string{"app-main-1.zip", "app-main-1.zip.zst", "app-main-1.parts.json", pieceOf(t, p, appProgram), pieceOf(t, p, ffmpegFile), fresh} {
+	for _, name := range []string{"app-main-1.zip", "app-main-1.zip.zst", "app-main-1.parts.json", pieceOf(t, p, appFile), pieceOf(t, p, ffmpegFile), fresh} {
 		if _, ok := gh.release[name]; !ok {
 			t.Errorf("%s was taken away", name)
 		}

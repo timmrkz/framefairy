@@ -3,8 +3,9 @@
 # write. See docs/decisions/2026-11-24-the-release-tool-built-once.md and
 # docs/decisions/2026-11-25-the-release-tool-keys-itself.md.
 #
-# The tool is built by release-tool.yml on main, signed there with a build
-# attestation, and kept as the asset framefairy-release of the release
+# The tool is built by release-tool.yml on main, for Linux and for a Mac,
+# signed there with a build attestation, and kept as the assets
+# framefairy-release and framefairy-release-darwin-arm64 of the release
 # release-tool. It carries the key of what it was built from, which it
 # works out itself from its imports, see cmd/framefairy-release/self.go,
 # so nothing here names its folders. This action downloads it, checks
@@ -43,7 +44,10 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         DIR: ${{ runner.temp }}/release-tool/download
-      run: gh release download release-tool --repo "$GITHUB_REPOSITORY" --pattern framefairy-release --dir "$DIR" --clobber
+        # The build for the system the job runs on, saved under the one
+        # name the steps after it run.
+        ASSET: ${{ runner.os == 'macOS' && 'framefairy-release-darwin-arm64' || 'framefairy-release' }}
+      run: mkdir -p "$DIR" && gh release download release-tool --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --output "$DIR/framefairy-release" --clobber
     - id: verify
       if: steps.download.outcome == 'success'
       continue-on-error: true

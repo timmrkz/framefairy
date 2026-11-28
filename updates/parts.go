@@ -119,15 +119,15 @@ func (part Part) check() error {
 	if part.Size <= 0 || part.Size > MaxBuild || part.Packed <= 0 || part.Packed > packedBound(part.Size) {
 		return errors.New("its sizes are not sizes")
 	}
-	if _, ok := inApp(part.Name); !ok {
+	if _, ok := InApp(part.Name); !ok {
 		return fmt.Errorf("%q is no file of an app", part.Name)
 	}
 	return nil
 }
 
-// inApp is where a file of the zip is inside the app, the name without
+// InApp is where a file of the zip is inside the app, the name without
 // the app's own folder, or false when the name is not one.
-func inApp(name string) (string, bool) {
+func InApp(name string) (string, bool) {
 	top, rest, ok := strings.Cut(name, "/")
 	if !ok || !strings.HasSuffix(top, ".app") || rest == "" || len(name) > 1024 ||
 		path.Clean(rest) != rest || !strings.HasPrefix(rest, "Contents/") ||
@@ -203,7 +203,7 @@ func Split(r io.ReaderAt, size int64) (Parts, error) {
 		if f.Method != zip.Store {
 			return Parts{}, fmt.Errorf("%s is not stored as it is", f.Name)
 		}
-		if _, ok := inApp(f.Name); !ok {
+		if _, ok := InApp(f.Name); !ok {
 			return Parts{}, fmt.Errorf("%q is no file of an app", f.Name)
 		}
 		off, err := f.DataOffset()
