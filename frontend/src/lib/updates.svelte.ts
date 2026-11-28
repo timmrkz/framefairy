@@ -120,7 +120,7 @@ export function standing(
       return {
         mark: "err",
         head: "The newest build did not start",
-        more: `${next}. The build before it was put back. Click Check to try it again, or the next build goes in as usual. ${when(u.checked, now)}`.trim(),
+        more: `${next}. The build before it is still the one running. Click Check to try it again, or the next build goes in as usual. ${when(u.checked, now)}`.trim(),
       };
     // The newest build is here, and a newer commit is on its way. Work
     // running somewhere else, so the pulse.

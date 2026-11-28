@@ -297,6 +297,40 @@ func TestABuildHasThePatchesFromTheBuildsFirstThatItHasRoomFor(t *testing.T) {
 	}
 }
 
+// A build whose time for patches has passed makes no more of them and is
+// published all the same, with its pieces whole, so a build that changes
+// every program keeps the job that packs it under five minutes.
+//
+// On the real disk: the release tool reads the zip, and writes the packed build, as files.
+func TestABuildMakesNoPatchOnceItsTimeForThemHasPassed(t *testing.T) {
+	release(t)
+	served, _ := builtBefore(t, 2)
+	srv := releaseServing(t, served)
+	files := theApp("main")
+	files[appFile] = programOf(changed)
+	dir := t.TempDir()
+	in := filepath.Join(dir, "build.zip")
+	if err := os.WriteFile(in, zipped(t, files), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "packed")
+	var log bytes.Buffer
+	b := basesFrom(srv, []string{"app-pr-1.parts.json", "app-pr-2.parts.json"}, &log)
+	b.until = time.Unix(1, 0)
+	if err := pack(in, out, packer, b, &log); err != nil {
+		t.Fatal(err)
+	}
+	if got := patchesFrom(t, out); len(got) != 0 {
+		t.Errorf("the parts name patches from %.12v, want none", got)
+	}
+	if patches, _ := filepath.Glob(filepath.Join(out, "patch-*")); len(patches) != 0 {
+		t.Errorf("%d patches were written, want none", len(patches))
+	}
+	if !strings.Contains(log.String(), "::warning::2 of 2 patches were not begun") {
+		t.Errorf("the run is not warned that the patches were not begun:\n%s", log.String())
+	}
+}
+
 // publish-plan reads the channel list and the release's files, gives a
 // build room for fewer patches once the release is nearly full, and
 // names the channel's own build first, though it is the oldest: the app
@@ -362,8 +396,10 @@ func TestAReleaseThatCannotBeReadGivesNoPatches(t *testing.T) {
 	}
 }
 
-// The builds patched against are the listed ones and the newest three
-// that left the list, never a file that is no parts of a build.
+// The builds patched against are the listed ones and, of the builds the
+// list does not name, the newest of three channels, never an older
+// commit of a channel in place of another channel's build, and never a
+// file that is no parts of a build.
 func TestTheBasesAreTheListedBuildsAndTheNewestThatLeft(t *testing.T) {
 	t.Parallel()
 	var all []asset
@@ -372,6 +408,12 @@ func TestTheBasesAreTheListedBuildsAndTheNewestThatLeft(t *testing.T) {
 	}
 	add("app-main-9.parts.json", 1)
 	add("app-pr-5-3.parts.json", 2)
+	// The build before pr-5's newest, and two of pr-6, whose older one
+	// is newer than the builds left of the other channels but is never
+	// taken in place of one of them.
+	add("app-pr-5-2.parts.json", 3)
+	add("app-pr-6-2.parts.json", 4)
+	add("app-pr-6-1.parts.json", 5)
 	for i := range 5 {
 		add(fmt.Sprintf("app-pr-%d-1.parts.json", i+1), 10+i)
 	}
@@ -384,7 +426,7 @@ func TestTheBasesAreTheListedBuildsAndTheNewestThatLeft(t *testing.T) {
 		{Channel: "pr-7", URL: updates.EntriesURL + "app-pr-7-2.zip"},
 	}}
 	got := basesOf(l, all, "pr-5", "main")
-	want := []string{"app-pr-5-3.parts.json", "app-main-9.parts.json", "app-pr-1-1.parts.json", "app-pr-2-1.parts.json", "app-pr-3-1.parts.json"}
+	want := []string{"app-pr-5-3.parts.json", "app-main-9.parts.json", "app-pr-5-2.parts.json", "app-pr-6-2.parts.json", "app-pr-1-1.parts.json"}
 	if !slices.Equal(got, want) {
 		t.Errorf("the bases are\n  %s\nwant\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
 	}
@@ -393,4 +435,22 @@ func TestTheBasesAreTheListedBuildsAndTheNewestThatLeft(t *testing.T) {
 func sum(b []byte) string {
 	d, _, _ := updates.Digest(bytes.NewReader(b))
 	return hex.EncodeToString(d)
+}
+
+func TestTheChannelOfAPartsFile(t *testing.T) {
+	t.Parallel()
+	for name, want := range map[string]string{
+		"app-main-0.3.0-main.aaaaaaa.parts.json":  "main",
+		"app-pr-17-0.3.0-pr17.bbbbbbb.parts.json": "pr-17",
+		"app-pr-9-1.parts.json":                   "pr-9",
+		"app-pr-1.parts.json":                     "pr-1",
+		"app-pr-x.parts.json":                     "",
+		"app-main-1.zip":                          "",
+		"piece-aaa.zst":                           "",
+		"app-other-1.parts.json":                  "",
+	} {
+		if got := channelOfParts(name); got != want {
+			t.Errorf("%s is of %q, want %q", name, got, want)
+		}
+	}
 }

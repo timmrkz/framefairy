@@ -50,16 +50,19 @@ on one core.
 ## Five simulations
 
 1. **Who may know about whom.** The design as it is, files by SHA-256,
-   the running app's files kept and the rest downloaded as pieces. Only
-   the release tool would change, to strip more. Nothing crosses a new
-   boundary. It downloads 7.43 MB for a change of a few hundred lines,
-   which is what the user called the thing Speaker Trail does better.
+   the running app's files kept and the rest downloaded as pieces, with
+   the one compression it has, zstd, handed the file the app already
+   holds as its dictionary. No new dependency and no new reader of
+   bytes from outside. Cost: the app program from main a49d323 to main
+   eb33cdf, one run each, packed to 1.33 MB in 0.8 s this way, and a
+   bsdiff patch to 0.42 MB in 9.0 s, so about three times what a patch
+   downloads.
 2. **What changes together.** What changes between two builds is a few
    bytes of a file, not a file. So besides its pieces, a build publishes
    a patch of each of its files against the same file of the builds an
    app is likely to run: every build the channel list holds and the
-   newest few that left it, because the app of a pull request just merged
-   runs a build the list no longer names. The parts name each patch by
+   newest of each channel that left it, because the app of a pull
+   request just merged runs a build the list no longer names. The parts name each patch by
    the SHA-256 of the file it starts from. The app downloads the patch
    when it has that file and the piece when not. Names that cross: a
    `Patches` field on `updates.Part`, `PatchName`, `ApplyPatch`. Cost: the
@@ -86,13 +89,16 @@ on one core.
 
 - **Files by their SHA-256**, in 1, 2, 3 and 5, so the same bytes are
   never downloaded twice.
+- **The running app's file is what the new one is made from**, in 1 and
+  2. A patch weighs a third of zstd with a dictionary, and the publish,
+  not the app, pays the 9 s.
 - **The signature over the whole zip, checked by Wails**, in 1, 2 and 5.
   Only 3 moves it, at the cost of a second updater.
 - **The app stays whole**, in all but 4.
 - **The running app is the base**, in 2 and 3. 2 needs no store.
 
-Dropped: the store of 3, the split of 4, and the chunks of 5, which
-measure larger than a patch.
+Dropped: the dictionary of 1 and the chunks of 5, which measure larger
+than a patch, the store of 3 and the split of 4.
 
 ## The decision
 
@@ -101,8 +107,9 @@ Simulation 2, on top of the parts there are:
 ```
 publish-plan, in the     bases: the parts of the builds to patch against,
 steps that hold a token  the channel's listed build first, then main's,
-that reads               the other listed builds, and the newest three
-                         that left the list, and how many patches the
+that reads               the other listed builds, and the newest build
+                         of up to three channels that left the list,
+                         and how many patches the
                          release has room for
 publish.yml, publish     pack -bases: reads those parts and their pieces
 (Mac, no token in pack)  from the release's public addresses, makes each
@@ -139,14 +146,17 @@ it download the pieces.
 
 - A usual update of a pull request downloads a few hundred kilobytes in
   place of 7 to 20 MB.
-- An app that runs a build that is neither listed nor among the newest
-  three that left the list takes the pieces, as today.
+- An app that runs a build that is neither listed nor the newest of
+  its channel among the three that left the list takes the pieces, as
+  today.
 - The first build published after this merges has no parts with patches
   to point at, but its patches are made from the pieces the release
   already holds, so it has them.
 - Every publish downloads the pieces of its bases and runs bsdiff for
-  each changed file and each base, side by side on the Mac's cores. The
-  publish is slower by that, see the pull request.
+  each changed file and each base, side by side on the Mac's cores, for
+  90 s at most. A patch not begun by then is not made, so a build that
+  changes every program keeps its job under five minutes. The publish is
+  slower by that, see the pull request.
 - It was wrong if updates still download whole pieces of the app
   program: the app's log says what each update kept, patched and
   fetched.

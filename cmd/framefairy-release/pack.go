@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"framefairy/updates"
 )
@@ -47,6 +48,7 @@ func packCommand(args []string) error {
 	from := fs.String("from", updates.EntriesURL, "the folder of the release the bases are read from")
 	_ = fs.Parse(args)
 	b := readBases(strings.Split(*names, ","), *from, &http.Client{}, *room, os.Stdout)
+	b.until = time.Now().Add(patchTime)
 	return pack(*zipPath, *out, updates.NewPacker(), b, os.Stdout)
 }
 

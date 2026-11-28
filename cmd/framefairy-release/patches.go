@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gabstv/go-bsdiff/pkg/bsdiff"
@@ -71,14 +72,26 @@ const patchTakes = 5 * time.Minute
 // to build anyway, see kept.go.
 const maxPatched = 64 << 20
 
+// patchTime is how long a build spends on its patches at most. Each is a
+// bsdiff of a whole file, about 9 s for the app's program on one core, so
+// a build that changes every program could take minutes, and the job that
+// packs it must stay under five. A patch not begun by then is not made,
+// and the app downloads that piece whole.
+const patchTime = 90 * time.Second
+
 // basesOf names the parts files of the builds a new build is patched
-// against: every build the list names, and the newest leftBases that left
-// it, among the files the release holds, each once. The listed builds of
-// the channels first come first, in that order, and the rest the newest
-// first. A new build has patches from the first ones when it may not have
-// all: an app that runs the channel's build before is the one most likely
-// to update, then one that runs main, then one that runs a build made
-// lately.
+// against: every build the list names, and of the builds it does not
+// name, the newest of each channel, the newest leftBases of those, among
+// the files the release holds, each once. Those are the builds an app
+// most likely runs: the build before the newest of a channel, which an
+// app that follows it runs until it updates, and the last build of a pull
+// request just merged, whose app goes on to main. An older commit of the
+// same channel is a build no app is likely to run any more, so it never
+// pushes one of those out. The listed builds of the channels first come
+// first, in that order, and the rest the newest first. A new build has
+// patches from the first ones when it may not have all: an app that runs
+// the channel's build before is the one most likely to update, then one
+// that runs main, then one that runs a build made lately.
 func basesOf(l updates.List, all []asset, first ...string) []string {
 	holds := map[string]time.Time{}
 	for _, a := range all {
@@ -95,13 +108,17 @@ func basesOf(l updates.List, all []asset, first ...string) []string {
 	}
 	listed := len(out)
 	newest := slices.SortedFunc(slices.Values(all), func(a, b asset) int { return b.created.Compare(a.created) })
+	taken := map[string]bool{}
 	for _, a := range newest {
 		if len(out)-listed == leftBases {
 			break
 		}
-		if strings.HasPrefix(a.name, "app-") && strings.HasSuffix(a.name, ".parts.json") {
-			add(a.name)
+		channel := channelOfParts(a.name)
+		if channel == "" || taken[channel] || slices.Contains(out, a.name) {
+			continue
 		}
+		taken[channel] = true
+		add(a.name)
 	}
 	slices.SortStableFunc(out, func(a, b string) int { return holds[b].Compare(holds[a]) })
 	var front []string
@@ -114,6 +131,28 @@ func basesOf(l updates.List, all []asset, first ...string) []string {
 		}
 	}
 	return append(front, slices.DeleteFunc(out, func(name string) bool { return slices.Contains(front, name) })...)
+}
+
+// channelOfParts is the channel of a build's parts file, as publish-plan
+// names it, app-, the channel, a dash and the version, or empty for a
+// file that is no parts file of a build.
+func channelOfParts(name string) string {
+	rest, ok := strings.CutPrefix(name, "app-")
+	if !ok || !strings.HasSuffix(rest, ".parts.json") {
+		return ""
+	}
+	if strings.HasPrefix(rest, "main-") || strings.HasPrefix(rest, "main.") {
+		return "main"
+	}
+	number, ok := strings.CutPrefix(rest, "pr-")
+	if !ok {
+		return ""
+	}
+	end := strings.IndexFunc(number, func(r rune) bool { return r < '0' || r > '9' })
+	if end <= 0 {
+		return ""
+	}
+	return "pr-" + number[:end]
 }
 
 // patchRoom is how many patches a new build may have when the release
@@ -169,6 +208,8 @@ type bases struct {
 	from   string
 	client *http.Client
 	most   int
+	// until is when no more patches are begun, none when it is zero.
+	until time.Time
 }
 
 // readBases reads the parts files named, from the release's folder from,
@@ -261,9 +302,14 @@ func addPatches(p *updates.Parts, stored io.ReaderAt, b bases, out string, log i
 	}
 	work := make(chan *job)
 	var wg sync.WaitGroup
+	var late atomic.Int64
 	for range runtime.NumCPU() {
 		wg.Go(func() {
 			for j := range work {
+				if !b.until.IsZero() && !time.Now().Before(b.until) {
+					late.Add(1)
+					continue
+				}
 				part := p.Parts[j.part]
 				patch, err := b.patch(stored, j.at, part, j.old)
 				if err == nil && int64(len(patch)) >= part.Packed {
@@ -288,6 +334,9 @@ func addPatches(p *updates.Parts, stored io.ReaderAt, b bases, out string, log i
 	}
 	close(work)
 	wg.Wait()
+	if n := late.Load(); n > 0 {
+		fmt.Fprintf(log, "::warning::%d of %d patches were not begun, because the time for patches had passed\n", n, len(jobs))
+	}
 	for _, j := range jobs {
 		if j.ok {
 			p.Parts[j.part].Patches = append(p.Parts[j.part].Patches, j.patch)

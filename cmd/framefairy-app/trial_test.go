@@ -299,28 +299,36 @@ func TestRelaunchGoesThroughTheStep(t *testing.T) {
 
 // A build that went in and did not start is not downloaded again by the
 // app's own look, and the page says so with the build before running. A
-// pick of its channel on the Updates page takes it all the same, since
-// the person may know why it did not start is gone.
+// pick of its channel, or Check, on the Updates page takes it all the
+// same, since the person may know why it did not start is gone.
 //
 // On the real disk: an update is a program that is unpacked on the disk.
 func TestABuildThatDidNotStartIsTakenOnlyByHand(t *testing.T) {
 	t.Parallel()
-	cs := newChannelServer(t)
-	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
-	c, _ := newTestUpdating(t, cs, false)
-	cleanStaged(t, c)
-	c.failed = func() string { return "0.3.0-main.5" }
-	c.mu.Lock()
-	c.state.Picked = "main"
-	c.mu.Unlock()
-	c.check()
-	s := waitFor(t, c, "unstarted", func(s UpdateState) bool { return s.Phase == "unstarted" })
-	if s.Next != "0.3.0-main.5" {
-		t.Errorf("%+v", s)
+	for name, hand := range map[string]func(c *updating){
+		"pick":  func(c *updating) { _ = c.Follow("main") },
+		"check": func(c *updating) { c.checkNow() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cs := newChannelServer(t)
+			cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+			c, _ := newTestUpdating(t, cs, false)
+			cleanStaged(t, c)
+			c.failed = func() string { return "0.3.0-main.5" }
+			c.mu.Lock()
+			c.state.Picked = "main"
+			c.mu.Unlock()
+			c.check()
+			s := waitFor(t, c, "unstarted", func(s UpdateState) bool { return s.Phase == "unstarted" })
+			if s.Next != "0.3.0-main.5" {
+				t.Errorf("%+v", s)
+			}
+			if c.staged() != "" {
+				t.Errorf("downloaded %s", c.staged())
+			}
+			hand(c)
+			waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
+		})
 	}
-	if c.staged() != "" {
-		t.Errorf("downloaded %s", c.staged())
-	}
-	_ = c.Follow("main")
-	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
 }

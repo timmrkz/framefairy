@@ -87,8 +87,14 @@ func (s *Source) assemble(ctx context.Context, where, sum string, size, cheaper 
 			continue
 		}
 		mine := s.ownFile(part)
-		switch pt, ok := part.patchFrom(sumOf(mine)); {
-		case mine != nil && equal(mine, part):
+		// Each file of the app is hashed once, and the sum says both
+		// whether it is the file and which patch starts from it.
+		var sum string
+		if mine != nil {
+			sum = sumOf(mine)
+		}
+		switch pt, ok := part.patchFrom(sum); {
+		case mine != nil && int64(len(mine)) == part.Size && sum == part.SHA256:
 			have[i] = true
 		case mine != nil && ok:
 			patches[i] = &pt

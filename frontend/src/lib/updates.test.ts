@@ -120,7 +120,7 @@ describe("the line under the build", () => {
     ["ready while a search runs", { phase: "ready", next: "0.3.0-pr400.abcdef0" }, { working: "the search" }, "A newer build is ready", "0.3.0-pr400.abcdef0. Relaunch once the search is done, or it goes in when you quit."],
     ["ready with a newer commit building", { phase: "ready", next: "0.3.0-pr400.abcdef0", building: "0123456789" }, {}, "A newer build is ready", "0.3.0-pr400.abcdef0. Relaunch to finish updating, or it goes in when you quit. 0123456 is being built."],
     ["failed", { phase: "failed", problem: "No network.", checked: justNow }, {}, "The check did not get through", "No network. Checked just now."],
-    ["did not start", { phase: "unstarted", next: "0.3.0-pr400.abcdef0", checked: justNow }, {}, "The newest build did not start", "0.3.0-pr400.abcdef0. The build before it was put back. Click Check to try it again, or the next build goes in as usual. Checked just now."],
+    ["did not start", { phase: "unstarted", next: "0.3.0-pr400.abcdef0", checked: justNow }, {}, "The newest build did not start", "0.3.0-pr400.abcdef0. The build before it is still the one running. Click Check to try it again, or the next build goes in as usual. Checked just now."],
     ["a newer commit building", { building: "0123456789", checked: justNow }, {}, "A newer commit is being built", "0123456. This is the build before it, the newest of PR #400 so far. Checked just now."],
     ["up to date in conflict", { channels: inConflict }, {}, "Up to date", "This is the newest build of PR #400. It conflicts with main, so CI has not tested it."],
     ["up to date", { follows: "main", channel: "main" }, {}, "Up to date", "This is the newest build of Branch main."],

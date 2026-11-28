@@ -54,21 +54,28 @@ itself either. The way back is a new download of the app by hand.
    for its first minute and puts the build before back when it ends.
    Cost: a second process with nothing to watch most of the time, and
    on quit there is no new build running to watch.
-5. **What a test has to build.** A test of 2 needs only folders, a fake
-   program that loads or does not, and a launch that says it started or
-   does not, all handed in. A test of 3 or 4 needs processes.
+5. **What a test has to build.** The fewest moving parts a test could
+   prove: no trial and no undo by itself. The step keeps the build before
+   in the app's folder, and the Updates page offers Go back to it, the
+   way a test needs only a folder and a click. Cost: an app that does not
+   start shows no Updates page, so the one case this is for has no way
+   back but a download by hand. A test of 2 needs no more than this one:
+   folders, a fake program that loads or does not, and a launch that says
+   it started or does not, all handed in. A test of 3 or 4 needs
+   processes.
 
 ## What converges
 
-- **The build before is the way back**, in 2, 3 and 4. Only 3 keeps more
-  than one.
+- **The build before is the way back**, in 2, 3, 4 and 5. Only 3 keeps
+  more than one, and only 2, 3 and 4 take it without the app's window.
 - **The new build says it started**, in 2, 3 and 4, and in 2 it says so
   through a file the step reads.
 - **A load before the swap** catches what 1 catches and more, on the
   user's own machine, before anything moves.
 
 Dropped: the release-side check of 1, which adds nothing the load does
-not see, the store of 3 and the watchdog of 4.
+not see, the store of 3, the watchdog of 4, and the button of 5, which
+cannot be reached when it is needed.
 
 ## The decision
 
