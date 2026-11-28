@@ -453,7 +453,8 @@ export default [
     // it moves nothing: the glide starts from the crop before it, Tim on
     // #778.
     // Automatic crop on a circle moves its crop and keeps both circles and
-    // their glide, and Put the crop back moves the crop back. Where the
+    // their glide, seen by the glide line, since both can then stand at
+    // the app's crop, and Put the crop back moves the crop back. Where the
     // crop glides is the engine's, see the walk of S above.
     name: "two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Automatic crop on a circle keeps them",
     steps: [
@@ -473,7 +474,6 @@ export default [
       ["glide under the hand", 0.5],
       ["crop before", 0.8],
       ["crop corner", "Automatic crop"],
-      ["keyframes", 2],
       ["glides", 1],
       ["crop corner", "Put the crop back"],
       ["keyframes", 2],
