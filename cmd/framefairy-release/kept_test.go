@@ -246,6 +246,13 @@ func TestHardenKeepsTheSignedBytesOfALibraryThatDidNotChange(t *testing.T) {
 			t.Errorf("%s was signed afresh, though its code did not change", rel)
 		}
 	}
+	// The app runs the llama-server it carries, the one kept, so it is
+	// sealed with that one's SHA-256, not the one just signed and put
+	// back, see resum.
+	llama := sha256.Sum256(read(after, "Contents/MacOS/llama-server"))
+	if !bytes.Contains(m.sealed, []byte("llama-server="+hex.EncodeToString(llama[:]))) {
+		t.Error("the app was sealed without the SHA-256 of the llama-server it was kept with")
+	}
 	if bytes.Equal(read(after, "Contents/Frameworks/libsherpa-onnx-cxx-api.dylib"), renewed.bytes()) {
 		t.Error("a library signed with a renewed certificate was kept")
 	}

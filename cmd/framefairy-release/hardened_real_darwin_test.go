@@ -199,6 +199,21 @@ func TestARealLibrarySignedAgainIsKept(t *testing.T) {
 			t.Errorf("%s was signed afresh, though its code did not change", rel)
 		}
 	}
+	// And the app carries the SHA-256 of each tool it was kept with, so
+	// it runs them, see resum.
+	sums, err := toolSums(second)
+	if err != nil || len(sums) == 0 {
+		t.Fatalf("%s carries no tools: %v", second, err)
+	}
+	own, err := os.ReadFile(filepath.Join(second, "Contents", "MacOS", appProgram))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, sum := range sums {
+		if !bytes.Contains(own, []byte(name+"="+sum)) {
+			t.Errorf("the app signed around kept tools carries no SHA-256 of %s as kept, so it would not run it", name)
+		}
+	}
 }
 
 // testSigned copies the bundle and signs the copy the way publish.yml
