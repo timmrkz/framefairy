@@ -873,16 +873,33 @@ search says Stopped with Continue in the new build.
 
 **Quitting with a build ready puts it in place**, the way Chrome does:
 the next start is the new build, and nothing opens by itself in between.
-Relaunch does the same at once, through Wails' updater, whose own step
-always opens the app again. So quitting starts a step of our own,
-`install.go`: the same program, started again with three variables in its
-environment, which waits up to a minute for the app to be gone, moves the
-app aside, moves the new build into its place, and only then removes the
-old one. When the new build does not go in whole, the old app is put
-back. It only ever replaces a `.app`, only with a build the updater
-unpacked, and never an app that is still running. When it goes wrong, why
-is in `$TMPDIR/framefairy-install-<pid>.log`. When it goes right, it
-leaves no log.
+Relaunch does the same at once and opens it. Both go through a step of
+our own, `install.go`: the same program, started again with five
+variables in its environment, which waits up to a minute for the app to
+be gone, starts the new build's program once, told only to load and end,
+moves the app aside into `update-before` in the app's folder, and moves
+the new build into its place. When the new build does not go in whole,
+the old app is put back. It only ever replaces a `.app`, only with a
+build the updater unpacked, and never an app that is still running. When
+it goes wrong, why is in `$TMPDIR/framefairy-install-<pid>.log`. When it
+goes right, it leaves no log.
+
+**A build that does not start is undone.** Under the hardened runtime
+macOS ends a program whose library it refuses before any of our code
+runs, so the step loads the new program first, and a build that does
+not load never goes in. One that goes in is on trial, in
+`update-before/trial.json`, until its window has asked where updates
+stand, and then the build before goes. On Relaunch the step opens the
+new build and waits a minute for that. When it does not come, the step
+ends the new build, puts the build before back and opens it. Put in place
+on quit, nobody waits, so each start counts itself, and the third start
+after two that did not say they started puts the build before back.
+The settings and the library stay as the new build left them. The build
+is written down in `update-failed.json`, the app does not take it again
+by itself, and the Updates page says The newest build did not start.
+Check takes it all the same, and the next build of the channel goes in
+as usual. See
+[the decision record](decisions/2026-11-28-a-build-that-does-not-start-is-undone.md).
 
 **Wails unpacks a build beside the app**, in a `wails-update-` folder in
 `/Applications` when the app is there, so moving it into place is a
@@ -924,7 +941,7 @@ minutes. Once a channel is picked, another channel is what follows it.
 | --- | --- | --- |
 | The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A build with parts is put together from the running app's own files, the patches of a file it holds an older copy of, `patch.go`, and the pieces it lacks, `assemble.go`, and downloaded as the stored zip packed with zstd when that fails or weighs less, `whole.go`. A build without parts is downloaded whole. `parts.go` holds what the parts are and how a build is packed in them. A channel that has gone is followed by nothing, never by main by itself. Every build downloads into the app's caches first and goes on to the end whoever still waits for it, so a channel picked again has its build at once or on its way, and whatever the list stops naming is removed each time it is read, unless it is still arriving |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
-| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, a newer build in place of one that is ready once it is whole, the picked channel in `updates.json` beside the settings, the newest build taken of each channel in `update-order.json`, when the last check ended, the restart into a new build, which waits for work in hand |
+| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, a newer build in place of one that is ready once it is whole, the picked channel in `updates.json` beside the settings, the newest build taken of each channel in `update-order.json`, the build that last did not start in `update-failed.json`, which a check by itself does not take, when the last check ended, the restart into a new build, which waits for work in hand |
 | The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot whenever the page marks something, in the colour the page wears it in: work on a newer build, looking, downloading or a newer commit being built, pulses in the accent, a newer build ready stands still in the accent, a pull request followed that closed or that conflicts with main stands still in the colour of a warning, the dot of work on it pulsing in that colour too, and a check that did not get through stands still in red. Up to date, a build made on the Mac and a build that does not update itself wear none. Both read the one state and the one mark, in `frontend/src/lib/updates.svelte.ts`, so the row never says less than the page or something else. Its title then says what the page says. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or PR #N, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check while a channel is followed, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. A check or a download that did not get through says why in words a person uses, from `updateProblem`, no connection to GitHub, GitHub busy, nothing found, a build that could not be verified or a disk that took nothing, in one short sentence, and asks to check the internet connection only when the error was the network's, a certificate the Mac does not trust among them, which is what a hotel's Wi-Fi or a company's proxy shows it. What the system said is under it apart, in a field at the height of a control on one line that scrolls sideways, with a button at its end that copies it for a report, and Try again stands on the same row as the field. Looking is shown for at least 1.4 seconds, on the page and on the row alike, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | every decision the two workflows make, one command a step. `key` makes the pair, `build-plan` says what a push is a build of and whether it needs one, `publish-plan` what a finished build is published as and refuses a commit its channel's history does not hold, `pack` writes the build again with each file stored as it is, its parts, its pieces, its patches against the builds `publish-plan` named and the zip packed with zstd, `check` refuses a build that could reach past the app, before the key is there, `sign` signs a build `check` passed, and the stored zip `pack` wrote beside it, and refuses a key that is not the app's, `publish` uploads the pieces and patches the release lacks, the zip, the stored zip packed, its parts, then its entry, then marks the commit, `not-published` marks a commit whose publishing failed and says why, `channels` writes the channel list and leaves out a newest commit whose build ended without one, and `unstick` cancels a publish stuck before its environment. What they ask GitHub is in `github.go`, behind an interface the tests replace. A decision about a build goes here, never into a script, see [the decision record](decisions/2026-11-14-update-decisions-in-go.md) |
 | The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so main's copy asks for no secret and no token that can write, which a branch's copy could, so what holds is the `updates` environment and the history check in `publish.yml`. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `needsBuild` in `cmd/framefairy-release` |

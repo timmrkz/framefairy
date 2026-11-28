@@ -68,8 +68,22 @@ top of the repository, which builds the interface first, then start <code>bin/fr
 </main></body></html>`
 
 func main() {
-	// Started again to put a new build in place once the app has quit.
+	// Started by the build before, to see that the system loads this
+	// program and every library it links, before it goes in, see
+	// trial.go. Getting here is all it asks.
+	if os.Getenv(envLoadCheck) == "1" {
+		os.Exit(0)
+	}
+	// Started again to put a new build in place once the app has quit,
+	// on quit and on Relaunch, see install.go.
 	installIfAsked()
+	theLog.started()
+	// A build on trial counts its start, and one that did not say it
+	// started twice puts the build before back and ends here, before it
+	// reads the app's files, see trial.go.
+	if undoIfUnstarted() {
+		os.Exit(0)
+	}
 	st := appStore()
 	// The fonts installed on the Mac are offered for captions beside ours,
 	// see appStore. Their folders are read once now, so the Font list
@@ -77,7 +91,6 @@ func main() {
 	go st.machine.Fonts.Refresh()
 
 	var app *application.App
-	theLog.started()
 	svc := &FrameFairy{store: st, keeping: newKeeping()}
 	// The model is kept loaded while the app is open, and kept again
 	// when the settings change it or a search ends, see keep.go. It is
@@ -147,9 +160,10 @@ func main() {
 	})
 	svc.app = app
 	svc.leave = leave
-	// Only once Wails is up: started for a Relaunch, this program puts the
-	// build in place inside application.New and never gets here, so it
-	// never removes the build it is about to install.
+	// Only once Wails is up, as it always was: Relaunch went through
+	// Wails' helper, which put the build in place inside application.New.
+	// It now goes through installIfAsked like a quit, see trial.go, which
+	// never gets here either.
 	go func() {
 		now := time.Now()
 		tidyUpdates(os.TempDir(), now)
@@ -476,6 +490,7 @@ func (s *FrameFairy) clock() time.Time {
 // Asking also reads the channel list, at most once a minute, so the
 // settings can offer the channels before the app has looked by itself.
 func (s *FrameFairy) Updates() UpdateState {
+	s.updates.saidStarted()
 	go s.updates.refreshList()
 	return s.updates.State()
 }

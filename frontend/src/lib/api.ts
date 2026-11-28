@@ -1727,7 +1727,7 @@ export interface UpdateState {
   // The newest commit of the channel followed when its build has not come
   // yet, empty when the build is the newest.
   building: string;
-  phase: "" | "checking" | "current" | "gone" | "downloading" | "ready" | "failed";
+  phase: "" | "checking" | "current" | "gone" | "downloading" | "ready" | "failed" | "unstarted";
   next: string;
   nextName: string;
   nextCommit: string;

@@ -10,3 +10,5 @@ import (
 func gone(int, time.Duration) bool { return false }
 
 func detach(*exec.Cmd) {}
+
+func stop(int) {}
