@@ -65,14 +65,15 @@ func (c *cropBacks) set(b *cropBack) {
 
 // corner is what the crop frame's corner offers on the frame dressed d at
 // a moment: the crop brought to where the app places it where it stands
-// anywhere else and a drag could place it, otherwise putting it back
-// where the reset moved it from, while the clip is as the reset left it
-// and putting back would move the crop on this frame, otherwise nothing.
+// anywhere else and a drag there or on the keyframe that holds it could
+// place it, otherwise putting it back where the reset moved it from,
+// while the clip is as the reset left it and putting back would move the
+// crop on this frame, otherwise nothing.
 func (s *FrameFairy) corner(a *dressAsk, d engine.FrameDress, at float64) string {
 	if a.video || !d.In {
 		return ""
 	}
-	if d.Moved && d.Movable {
+	if d.Moved && (d.Movable || d.Held) {
 		return cornerAuto
 	}
 	b, ok := s.historyOf(a.path).crops.get()
@@ -92,11 +93,12 @@ func (s *FrameFairy) corner(a *dressAsk, d engine.FrameDress, at float64) string
 var errNoCropBack = errors.New("the crop has changed since, so it cannot be put back")
 
 // ResetCrop brings the crop on the frame at a moment of a clip to where
-// the app places it, the way a drag there would, and keeps the way back.
-// It puts and removes no keyframe. Where the corner offers no reset, the
-// crop already standing there or a drag placing nothing, it changes
-// nothing, so a second click before the frame's new dress has come is no
-// second reset. It returns the clip as it is now.
+// the app places it, the way a drag there would, or on the keyframe that
+// holds the crop there, and keeps the way back. It puts and removes no
+// keyframe. Where the corner offers no reset, the crop already standing
+// there or a drag placing nothing, it changes nothing, so a second click
+// before the frame's new dress has come is no second reset. It returns
+// the clip as it is now.
 func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
@@ -110,6 +112,14 @@ func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, a
 		return now, nil
 	}
 	d := before.dress(at, false)
+	if !d.Movable && d.Held {
+		// The keyframe that holds the crop here takes it, and it shows
+		// the crop this frame shows.
+		at = d.Keyframe
+		if k := before.dress(at, false); k.Left == d.Left && k.Auto == d.Auto && k.Turn == d.Turn {
+			d = k
+		}
+	}
 	if !d.In || !d.Moved || !d.Movable {
 		return now, nil
 	}

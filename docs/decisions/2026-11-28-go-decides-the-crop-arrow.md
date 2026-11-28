@@ -64,7 +64,9 @@ dress, `Corner`, `"auto"`, `"back"` or nothing, and two calls,
 `ResetCrop` reads the clip's framing, works out the dress at `at`, does
 nothing where the corner offers no reset there, and otherwise places the
 crop where the app does, with `engine.SetCrop` on the moment that holds
-the crop, and keeps the way back. `PutCropBack` places the crop kept.
+the crop, the frame itself or the switch keyframe before it, which the
+engine names in the dress, `Held` and `Keyframe`, and keeps the way
+back. `PutCropBack` places the crop kept.
 The way back is kept by the app's Go side, in memory, beside the video's
 undo steps: the clip, the moment, the crop before, the framing before
 and the name of the framing after. It holds while the clip's framing is

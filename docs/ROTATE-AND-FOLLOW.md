@@ -181,8 +181,8 @@ their own:
   Three in a row have two lines, and a diamond has none. The user asked for the
   join and picked this look, number 4 of a sheet of nine drawn for them.
 - **Automatic crop** moves the crop on the frame shown, on a keyframe
-  that keyframe's, to the placement the engine found, and keeps every
-  keyframe.
+  or after one that keyframe's, to the placement the engine found, and
+  keeps every keyframe.
 
 ### 6. What the engine can do by itself, later
 

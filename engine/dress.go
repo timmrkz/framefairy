@@ -44,6 +44,12 @@ type FrameDress struct {
 	// glide, or anywhere in a piece no keyframe steers, see SetCrop.
 	Mark    *CropMarkView `json:"mark"`
 	Movable bool          `json:"movable"`
+	// Held is whether the crop on the frame is held from a keyframe
+	// before it, or on it, that does not open a glide, and Keyframe that
+	// keyframe's moment, where a drag would place the crop this frame
+	// shows. The window is sent neither, see Auto.
+	Held     bool    `json:"-"`
+	Keyframe float64 `json:"-"`
 	// From and To are the moments the stretch of frames around this one
 	// that are dressed alike starts and ends at, at most dressReach frames
 	// either side, so the video preview dresses a frame of it whose own
@@ -151,7 +157,11 @@ func (s SourceInfo) dressOf(segments []SegmentView, rotations []Rotation, marks 
 			run = s.runOf(segmentOf(seg), d.CropWidth, upright.Width)
 			runs[key] = run
 		}
-		d.Left = stepEdge(run.at(min(max(k, first), end-1)))
+		on := min(max(k, first), end-1)
+		d.Left = stepEdge(run.at(on))
+		if h := run.holder(on); h >= 0 && !run.marks[h].opens {
+			d.Held, d.Keyframe = true, run.marks[h].at
+		}
 	}
 	d.Moved = d.Left != d.Auto
 	for i := range marks {

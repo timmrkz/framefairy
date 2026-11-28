@@ -1365,11 +1365,12 @@ bubble scrolled by those eight pixels.
   then. The new place applies to the whole clip, every piece of it, since a
   clip has one crop. A part turned with Rotate is the one exception and
   keeps a crop of its own. Where the crop on the frame shown stands
-  anywhere but where the app places it, and a drag could move it there,
-  the frame's top right corner shows **Automatic crop**, an anticlockwise
-  arrow, while the pointer is on the frame. Its click moves the crop
-  frame to the app's place, exactly as a drag there would, so on a
-  keyframe it moves that keyframe's crop, and it never puts or removes a
+  anywhere but where the app places it, and a drag there, or on the
+  switch keyframe that holds the crop there, could move it, the frame's
+  top right corner shows **Automatic crop**, an anticlockwise arrow,
+  while the pointer is on the frame. Its click moves the crop frame to
+  the app's place, exactly as a drag would, so on a keyframe or after one
+  it moves that keyframe's crop, and it never puts or removes a
   keyframe. Then it turns clockwise into **Put the crop back**, which
   moves the crop frame back to where it stood, and nothing more, the way
   the captions are put back. Each arrow shows only on a frame whose crop
@@ -2940,7 +2941,8 @@ who moves across the picture. Plan row 3.26, the design is in
   The user picked the ring from a sheet of eight, over a dimmed circle.
 - **Automatic crop**, the arrow in the crop frame's corner, moves the
   crop on the frame shown to where the engine places it, on a keyframe
-  that keyframe's crop, and keeps every keyframe, see Moving the crop.
+  or after one that keyframe's crop, and keeps every keyframe, see
+  Moving the crop.
   Removing a keyframe gives its part the crop of the part before it,
   the keyframe before or the clip's own. Rotating a part keeps its
   keyframes. Each

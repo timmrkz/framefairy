@@ -86,18 +86,18 @@ func (c cropArrow) keyframes(when string, x int) {
 }
 
 // The corner of the crop frame offers the automatic crop only where the
-// crop stands away from where the app places it and a drag could move
-// it, on the keyframe, and never before it, where the crop is the app's,
-// or after it, where a drag moves nothing. A click moves the keyframe's
-// crop and keeps the keyframe, and the corner then offers to put it
-// back on every frame where that would move the crop, until it is put
-// back. The user saw the arrow before the keyframe, and its click removed
-// the keyframe.
+// crop stands away from where the app places it: on the keyframe and
+// after it, where the keyframe holds the crop, and never before it, where
+// the crop is the app's. A click moves the keyframe's crop and keeps the
+// keyframe, and the corner then offers to put it back on every frame
+// where that would move the crop, until it is put back. The user saw the
+// arrow before the keyframe, and its click removed the keyframe, and
+// wanted it over the whole later half, where the crop is moved.
 func TestTheCropArrowIsDecidedByGo(t *testing.T) {
 	t.Parallel()
 	c := newCropArrow(t)
 	ctx := context.Background()
-	c.corners("as found", [3]string{"", cornerAuto, ""})
+	c.corners("as found", [3]string{"", cornerAuto, cornerAuto})
 
 	if _, err := c.svc.ResetCrop(ctx, c.video, c.plan, "01", 12.0); err != nil {
 		t.Fatal(err)
@@ -109,7 +109,18 @@ func TestTheCropArrowIsDecidedByGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.keyframes("after Put the crop back", 300)
-	c.corners("after Put the crop back", [3]string{"", cornerAuto, ""})
+	c.corners("after Put the crop back", [3]string{"", cornerAuto, cornerAuto})
+
+	// After the keyframe the click moves the keyframe's crop too.
+	if _, err := c.svc.ResetCrop(ctx, c.video, c.plan, "01", 13.0); err != nil {
+		t.Fatal(err)
+	}
+	c.keyframes("after Automatic crop after the keyframe", 40)
+	c.corners("after Automatic crop after the keyframe", [3]string{"", cornerBack, cornerBack})
+	if _, err := c.svc.PutCropBack(ctx, c.video, c.plan, "01"); err != nil {
+		t.Fatal(err)
+	}
+	c.keyframes("after Put the crop back after the keyframe", 300)
 	if _, err := c.svc.PutCropBack(ctx, c.video, c.plan, "01"); err == nil {
 		t.Error("the crop was put back a second time")
 	}
@@ -118,18 +129,18 @@ func TestTheCropArrowIsDecidedByGo(t *testing.T) {
 // A second click on Automatic crop, sent before the frame's new dress
 // came, finds the crop where the app places it and changes nothing, so
 // the way back is still the crop the hand had. A click where the corner
-// offers nothing changes nothing either.
+// offers nothing, before the keyframe, changes nothing either.
 func TestASecondAutomaticCropKeepsTheWayBack(t *testing.T) {
 	t.Parallel()
 	c := newCropArrow(t)
 	ctx := context.Background()
-	if _, err := c.svc.ResetCrop(ctx, c.video, c.plan, "01", 13.0); err != nil {
+	if _, err := c.svc.ResetCrop(ctx, c.video, c.plan, "01", 11.0); err != nil {
 		t.Fatal(err)
 	}
-	c.keyframes("after Automatic crop off the keyframe", 300)
-	c.corners("after Automatic crop off the keyframe", [3]string{"", cornerAuto, ""})
-	for range 2 {
-		if _, err := c.svc.ResetCrop(ctx, c.video, c.plan, "01", 12.0); err != nil {
+	c.keyframes("after Automatic crop before the keyframe", 300)
+	c.corners("after Automatic crop before the keyframe", [3]string{"", cornerAuto, cornerAuto})
+	for _, at := range []float64{13.0, 12.0} {
+		if _, err := c.svc.ResetCrop(ctx, c.video, c.plan, "01", at); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -154,7 +165,7 @@ func TestTheWayBackEndsWithAnyOtherChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.keyframes("after Automatic crop taken back", 300)
-	c.corners("after Automatic crop taken back", [3]string{"", cornerAuto, ""})
+	c.corners("after Automatic crop taken back", [3]string{"", cornerAuto, cornerAuto})
 	if _, err := c.svc.Redo(c.video); err != nil {
 		t.Fatal(err)
 	}
