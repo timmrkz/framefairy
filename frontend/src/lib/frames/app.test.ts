@@ -4,6 +4,7 @@ import { dressedOf, keyOf } from "./captions";
 import type { VideoTrack } from "./movie";
 import { Picture } from "./picture";
 import { frames as framePool } from "./pool";
+import { FrameTable } from "./table";
 
 describe("AppFrames", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -194,11 +195,11 @@ describe("AppFrames", () => {
       () => null,
     );
     app.dressWith(ask);
-    await app.dress(kept, app.ptsOf(40));
+    await app.dress(kept, app.frames.begins(40));
     expect(kept.over?.dress?.left).toBe(1);
     expect(kept.over?.dress?.key).toBe(app.dressKey);
     expect(dressed[0].searchParams.get("framing")).toBe("f2");
-    expect(dressed[0].searchParams.get("at")).toBe(String(app.ptsOf(40)));
+    expect(dressed[0].searchParams.get("at")).toBe(String(app.frames.begins(40)));
     app.close();
   });
 
@@ -237,7 +238,7 @@ function frames(size: () => { width: number; height: number }, rate = 25) {
   const samples = { count: n, timescale: rate, start: 0, step: 1 };
   const track: VideoTrack = { kind: "video", width: 4, height: 2, samples, frame: 1 / rate };
   // The frame on screen is drawn at once.
-  const app = new AppFrames("/v.mp4", track, size, () => {}, (then) => then());
+  const app = new AppFrames("/v.mp4", track, tableOf(n, rate), size, () => {}, (then) => then());
   // Pulls go to the fetch the test stubs, and bring no frames.
   (app as unknown as { puller: unknown }).puller = {
     pull: (url: string) =>
@@ -477,7 +478,7 @@ describe("the frames read while the hand rests", () => {
     vi.stubGlobal("fetch", () => Promise.resolve(new Response(null, { status: 204 })));
     const took = vi.spyOn(framePool, "takeUpTo");
     const samples = { count: 200, timescale: 25, start: 0, step: 1 };
-    const app = new AppFrames("/v.mp4", { kind: "video", width: 4, height: 2, samples, frame: 1 / 25 }, () => ({ width: 4, height: 2 }), () => {});
+    const app = new AppFrames("/v.mp4", { kind: "video", width: 4, height: 2, samples, frame: 1 / 25 }, tableOf(200, 25), () => ({ width: 4, height: 2 }), () => {});
     await app.puller.pull("/frames/look?n=100", 4, 2);
     expect(took).toHaveBeenCalledWith(4 * 2 * 4, 1);
     took.mockRestore();
@@ -513,3 +514,10 @@ describe("the frames read while the hand rests", () => {
     app.close();
   });
 });
+
+// A table of n frames at rate a second from the start of the file, as the
+// engine would send it: each holds from a little before it begins.
+function tableOf(n: number, rate: number): FrameTable {
+  const from = Float64Array.from({ length: n }, (_, r) => (r === 0 ? -Infinity : r / rate - 0.0015));
+  return new FrameTable(from, Float64Array.from({ length: n }, (_, r) => r / rate));
+}

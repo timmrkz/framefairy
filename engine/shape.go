@@ -741,15 +741,48 @@ func toward(was, hand, landed float64) float64 {
 // between frames until then, and the playhead stood up to half a frame
 // from the edge drawn.
 func (g Gesture) edgePlayhead(start, end float64, opens bool) float64 {
-	start, end = g.Frames.PieceOnFrames(start, end)
+	up := g.Frames.EdgePlayheads(start, end)
 	if opens {
-		return start
+		return up[0]
 	}
-	frame := g.frame()
-	if frame <= 0 {
-		frame = 1.0 / 30
+	return up[1]
+}
+
+// Places is where the playhead is on a clip of these pieces, for the
+// window to look a moment up in: on the clip from the first moment, at
+// its end from the second, and off it again from the third. Those are
+// where the frame the clip opens with begins to hold, where its last
+// frame does, the frame a play of it stops on, and where the frame after
+// that does, see framewire.Grid.From. With no frames known, where the
+// playhead stands for its edges, and its end.
+func (s SourceInfo) Places(pieces []SegmentView) [3]float64 {
+	if len(pieces) == 0 {
+		return [3]float64{}
 	}
-	return math.Max(end-frame, start)
+	last := pieces[len(pieces)-1]
+	opens := s.EdgePlayheads(pieces[0].Start, pieces[0].End)[0]
+	closes := s.EdgePlayheads(last.Start, last.End)[1]
+	g := s.Grid()
+	if !g.Valid() {
+		return [3]float64{opens, closes, last.End}
+	}
+	// From the first frame of the video, which holds every moment before
+	// it, as early as anything the window has.
+	from := func(r int) float64 { return math.Max(g.From(r), -1) }
+	first, end := g.Holding(opens), g.Holding(closes)
+	return [3]float64{from(first), from(end), from(end + 1)}
+}
+
+// EdgePlayheads is where the playhead stands for each edge of a piece, put
+// on frames first, see edgePlayhead: on the frame it opens with, and on
+// its last frame, before the frame it closes on.
+func (s SourceInfo) EdgePlayheads(start, end float64) [2]float64 {
+	start, end = s.PieceOnFrames(start, end)
+	frame := 1.0 / 30
+	if s.FPSNum > 0 && s.FPSDen > 0 {
+		frame = 1 / s.FPS()
+	}
+	return [2]float64{start, math.Max(end-frame, start)}
 }
 
 // cutOnFrames is where a cut put on frames goes. It is centred where it

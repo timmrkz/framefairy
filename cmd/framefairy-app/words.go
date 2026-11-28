@@ -128,7 +128,11 @@ func (s *FrameFairy) Sentences(path string) (cards []engine.SentenceView, err er
 		}
 		clips = append(clips, of...)
 	}
-	return engine.SaidCards(t, clips), nil
+	cards = engine.SaidCards(t, clips)
+	// A video that cannot be read lands a card a thirtieth of a second in.
+	info, _ := s.probe(context.Background(), path)
+	info.LandCards(cards)
+	return cards, nil
 }
 
 // SearchSaid answers what is typed in the search in the clip column: the

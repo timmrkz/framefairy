@@ -202,7 +202,8 @@ when there are several.
 `--next` searches the window the app would place on the episode now, by
 the same rule: where the fewest searches have been, earliest first, as
 long as the episode's windows are and no longer than the model reads at
-once, see `Episode.PlaceWindow` in [ENGINE.md](ENGINE.md). A window searched before is searched
+once, see `Episode.Window` in [ENGINE.md](ENGINE.md), which the app asks
+for a window it keeps none of too. A window searched before is searched
 again as a pass of its own, `clips-0-1800-2.json`, and the model is told
 which moments are clips already. So running it again and again walks the
 episode the way Search in the app does. It takes no `--from` or `--to`.

@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { CaptionCue } from "./api";
 import { spliced } from "./splice";
 
-const cue = (start: number, text: string): CaptionCue => ({
+// A caption on the clip's clock, and where it is in the episode, which a
+// change before it on the clip's clock does not move.
+const cue = (start: number, text: string, at = start): CaptionCue => ({
   start,
   end: start + 1,
   lines: [{ words: [{ start, end: start + 1, text }] }],
+  from: at,
+  to: at + 1,
+  up: [at, at + 1],
 });
 
 describe("spliced", () => {
@@ -19,7 +24,7 @@ describe("spliced", () => {
     expect(spliced(held, [cue(1.5, "x")], { head: 1, tail: 3, shift: 0.5 })).toEqual([
       cue(0, "a"),
       cue(1.5, "x"),
-      cue(3.5, "d"),
+      cue(3.5, "d", 3),
     ]);
   });
 

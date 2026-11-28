@@ -6,7 +6,6 @@
 import { callOut } from "./settled";
 import { install } from "./clock";
 import { caretBox } from "../src/lib/caret";
-import { frameAt } from "../src/lib/flow";
 // The app's own hearing of a video's state, which imports this runtime in
 // turn, so it is first asked for once the app listens, see listen.
 import { onVideoState } from "../src/lib/api";
@@ -60,9 +59,17 @@ const last: Record<string, unknown> = {};
 // Where the report's field draws its cursor, measured the one way the
 // page measures it, for the walks, see walks/report/steps.mjs.
 (window as any).__caretBox = caretBox;
-// Which frame holds a moment, the app's own rule, for the walks that wait
-// on the page to show it, see shownOnPlayhead in walks/bridge.mjs.
-(window as any).__frameAt = frameAt;
+// Which frame of the file holds a moment, as the engine says, for the walks
+// that wait on the page to show it, see shownOnPlayhead in walks/bridge.mjs:
+// looked up in the frame table of the video preview in front, and counted
+// from the file's first frame, the number painted on the walks' videos.
+(window as any).__frameAt = (at: number) => {
+  const frames = (window as any).__appFrames?.frames;
+  if (!frames) return -1;
+  // The walks' videos keep one rate, so the frame's start over a frame's
+  // length is its number from the file's first.
+  return Math.round(frames.startOf(at) / (frames.begins(1) - frames.begins(0)));
+};
 // A field's text written by the page changes no node, so a walk waiting
 // for it with a MutationObserver did not wake when the report's field
 // took in dictated words, and hung once nothing else on the page changed

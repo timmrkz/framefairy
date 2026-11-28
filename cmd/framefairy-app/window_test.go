@@ -26,7 +26,10 @@ func TestThePlacedWindowFitsTheRoomTheRangePickerReads(t *testing.T) {
 	if reach >= engine.SuggestedWindow(duration) {
 		t.Fatalf("one search reads %v s, no less than a window, so this proves nothing", reach)
 	}
-	got := svc.placedWindow(source, duration)
+	o := svc.store.Settings().options()
+	ep := svc.store.machine.Episode(source)
+	placed, _ := ep.Window(o, ep.Room(o), duration, nil, false, nil)
+	got := keptOf(placed)
 	if got.To-got.From > reach || got.Length > reach {
 		t.Errorf("the window %+v is longer than the reach of %v s", got, reach)
 	}

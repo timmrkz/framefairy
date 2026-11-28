@@ -1,16 +1,14 @@
 import { describe, expect, test } from "vitest";
-import { landings, wordStep, type LitWord, type Word } from "./api";
-
-const said = (list: [number, number, string][]): Word[] =>
-  list.map(([start, end, text]) => ({ start, end, text }));
+import { wordStep, type LitWord } from "./api";
 
 describe("wordStep", () => {
   // Three words with a pause after the second, which is where a second at
   // a time used to land on nothing at all.
-  const said = [
-    { start: 10.0, end: 10.4, text: "Und" },
-    { start: 10.5, end: 10.9, text: "da" },
-    { start: 13.2, end: 13.8, text: "war" },
+  // Each lands a frame in, as the engine says, see LandOn.
+  const said: LitWord[] = [
+    { start: 10.0, end: 10.4, text: "Und", land: 10.04, since: 10 },
+    { start: 10.5, end: 10.9, text: "da", land: 10.54, since: 10.5 },
+    { start: 13.2, end: 13.8, text: "war", land: 13.24, since: 13.2 },
   ];
   // A frame at twenty-five a second, which is what a real episode gives.
   const frame = 0.04;
@@ -30,35 +28,25 @@ describe("wordStep", () => {
     at === null ? null : Math.ceil(at / frame - 1e-9) * frame;
 
   test("lights the next word up, every press", () => {
-    expect(lit(wordStep(said, 9, false, frame))).toBe("Und");
-    expect(lit(wordStep(said, 10.2, false, frame))).toBe("da");
-    expect(lit(wordStep(said, 10.7, false, frame))).toBe("war");
+    expect(lit(wordStep(said, 9, false))).toBe("Und");
+    expect(lit(wordStep(said, 10.2, false))).toBe("da");
+    expect(lit(wordStep(said, 10.7, false))).toBe("war");
   });
 
   test("goes back a word, not to the start of the one it is in", () => {
-    expect(lit(wordStep(said, 10.7, true, frame))).toBe("Und");
-    expect(lit(wordStep(said, 13.5, true, frame))).toBe("da");
-    expect(wordStep(said, 10.2, true, frame)).toBe(null);
+    expect(lit(wordStep(said, 10.7, true))).toBe("Und");
+    expect(lit(wordStep(said, 13.5, true))).toBe("da");
+    expect(wordStep(said, 10.2, true)).toBe(null);
   });
 
   test("goes back to the word just spoken when it is in the silence after it", () => {
-    expect(lit(wordStep(said, 12, true, frame))).toBe("da");
-    expect(lit(wordStep(said, 10.45, true, frame))).toBe("Und");
-  });
-
-  // A word lit on frames of the short is entered in the middle of its first
-  // frame, which shows it at rest before its pop. A frame in, Tim saw the
-  // pill stay grown after the pop played over the paused frame.
-  test("enters a framed word in the middle of its first frame", () => {
-    const framed = said.map((w) => ({ ...w, framed: true }));
-    expect(wordStep(framed, 9, false, frame)).toBeCloseTo(10.02, 9);
-    expect(wordStep(framed, 10.2, false, frame)).toBeCloseTo(10.52, 9);
-    expect(wordStep(framed, 13.5, true, frame)).toBeCloseTo(10.52, 9);
+    expect(lit(wordStep(said, 12, true))).toBe("da");
+    expect(lit(wordStep(said, 10.45, true))).toBe("Und");
   });
 
   test("never lands on a word's edge", () => {
     for (const at of [9, 10.2, 10.7, 12]) {
-      const to = wordStep(said, at, false, frame);
+      const to = wordStep(said, at, false);
       expect(to).not.toBe(null);
       expect(said.some((w) => to === w.start || to === w.end)).toBe(false);
     }
@@ -76,17 +64,17 @@ describe("wordStep", () => {
   // clock had drifted past the word it was on, so back found that same
   // word and sent the playhead where it already stood.
   test("gets out of a word the clock has drifted inside of", () => {
-    const his = [
-      { start: 876.88, end: 877.12, text: "So," },
-      { start: 877.28, end: 877.36, text: "ich" },
-      { start: 877.44, end: 877.68, text: "hätte" },
-      { start: 877.68, end: 877.84, text: "also." },
+    const his: LitWord[] = [
+      { start: 876.88, end: 877.12, text: "So,", land: 876.92, since: 876.88 },
+      { start: 877.28, end: 877.36, text: "ich", land: 877.32, since: 877.28 },
+      { start: 877.44, end: 877.68, text: "hätte", land: 877.48, since: 877.44 },
+      { start: 877.68, end: 877.84, text: "also.", land: 877.72, since: 877.68 },
     ];
     const where = (at: number) => his.find((w) => at >= w.start && at < w.end)?.text ?? "(none)";
     let at = 877.72;
     const back: string[] = [];
     for (let i = 0; i < 4; i++) {
-      const to = wordStep(his, at, true, frame);
+      const to = wordStep(his, at, true);
       if (to === null) break;
       const next = Math.ceil(to / frame - 1e-9) * frame;
       expect(next).not.toBe(at);
@@ -97,11 +85,11 @@ describe("wordStep", () => {
   });
 
   test("gets out of a word however the picture rounds the clock", () => {
-    let at: number | null = shown(wordStep(said, 9, false, frame));
+    let at: number | null = shown(wordStep(said, 9, false));
     expect(lit(at)).toBe("Und");
     const walk: string[] = [];
     for (let i = 0; i < 4; i++) {
-      const to = shown(wordStep(said, at as number, false, frame));
+      const to = shown(wordStep(said, at as number, false));
       if (to === null) break;
       walk.push(lit(to));
       at = to;
@@ -109,7 +97,7 @@ describe("wordStep", () => {
     expect(walk).toEqual(["da", "war"]);
     const back: string[] = [];
     for (let i = 0; i < 4; i++) {
-      const to = shown(wordStep(said, at as number, true, frame));
+      const to = shown(wordStep(said, at as number, true));
       if (to === null) break;
       back.push(lit(to));
       at = to;
@@ -121,7 +109,7 @@ describe("wordStep", () => {
     let at: number | null = 9;
     const forward: string[] = [];
     for (let i = 0; i < 5 && at !== null; i++) {
-      const to = wordStep(said, at, false, frame);
+      const to = wordStep(said, at, false);
       if (to === null) break;
       forward.push(lit(to));
       at = to;
@@ -132,60 +120,45 @@ describe("wordStep", () => {
   test("crosses a pause in one press rather than landing in it", () => {
     // A second at a time took three presses to get from da to war and
     // spent two of them in silence, with nothing lit in the picture.
-    expect(lit(wordStep(said, 10.7, false, frame))).toBe("war");
-  });
-
-  test("steps into a word shorter than two frames by half of itself", () => {
-    const brief = [{ start: 5, end: 5.004, text: "a" }];
-    expect(wordStep(brief, 4, false, frame)).toBe(5.002);
+    expect(lit(wordStep(said, 10.7, false))).toBe("war");
   });
 
   test("says there is nowhere to go", () => {
-    expect(wordStep([], 10, false, frame)).toBe(null);
-    expect(wordStep([], 10, true, frame)).toBe(null);
-    expect(wordStep(said, 20, false, frame)).toBe(null);
-    expect(wordStep(said, 0, true, frame)).toBe(null);
+    expect(wordStep([], 10, false)).toBe(null);
+    expect(wordStep([], 10, true)).toBe(null);
+    expect(wordStep(said, 20, false)).toBe(null);
+    expect(wordStep(said, 0, true)).toBe(null);
   });
 });
 
-// Words lit together on one frame begin there together, #280. The steps
-// land on each change of what is lit, once: a step back from the frame
-// they share goes on to the word before, never to the same frame again.
+// Words lit together on one frame begin there together, #280. The engine
+// says they are one place, see LandOn, and the steps land on each place
+// once: a step back from the frame they share goes on to the word before,
+// never to the same frame again.
 describe("words lit together", () => {
-  const frame = 0.04;
   // "Und", then "ja" and "ja" lit together on the frame at 0.52 s, then
   // "na" lit with "gut" on the frame at 1.24 s and "gut" alone from 1.28.
   const said: LitWord[] = [
-    { start: 0, end: 0.52, text: "Und", framed: true },
-    { start: 0.52, end: 0.56, text: "ja", framed: true },
-    { start: 0.52, end: 0.56, text: "ja", framed: true },
-    { start: 0.56, end: 0.6, text: "genau", framed: true },
-    { start: 1.24, end: 1.28, text: "na", framed: true },
-    { start: 1.24, end: 2, text: "gut", framed: true },
+    { start: 0, end: 0.52, text: "Und", framed: true, land: 0.02, since: 0 },
+    { start: 0.52, end: 0.56, text: "ja", framed: true, land: 0.54, since: 0.52 },
+    { start: 0.52, end: 0.56, text: "ja", framed: true, land: -1, since: -1 },
+    { start: 0.56, end: 0.6, text: "genau", framed: true, land: 0.58, since: 0.56 },
+    { start: 1.24, end: 1.28, text: "na", framed: true, land: 1.26, since: 1.24 },
+    { start: 1.24, end: 2, text: "gut", framed: true, land: 1.3, since: 1.28 },
   ];
-
-  test("are one place to land on, and a word lit alone after them another", () => {
-    expect(landings(said).map((w) => [w.start, w.end, w.text])).toEqual([
-      [0, 0.52, "Und"],
-      [0.52, 0.56, "ja"],
-      [0.56, 0.6, "genau"],
-      [1.24, 1.28, "na"],
-      [1.28, 2, "gut"],
-    ]);
-  });
 
   test("step back from the end to the start and forward again, a new frame each press", () => {
     const back: number[] = [];
     let at: number | null = 1.5;
     for (let i = 0; i < 10 && at !== null; i++) {
-      at = wordStep(said, at, true, frame);
+      at = wordStep(said, at, true);
       if (at !== null) back.push(Math.round(at * 100) / 100);
     }
     expect(back).toEqual([1.26, 0.58, 0.54, 0.02]);
     const forward: number[] = [];
     at = 0.02;
     for (let i = 0; i < 10 && at !== null; i++) {
-      at = wordStep(said, at, false, frame);
+      at = wordStep(said, at, false);
       if (at !== null) forward.push(Math.round(at * 100) / 100);
     }
     expect(forward).toEqual([0.54, 0.58, 1.26, 1.3]);

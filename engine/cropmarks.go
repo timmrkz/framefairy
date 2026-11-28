@@ -581,8 +581,9 @@ func (s SourceInfo) markFrame(at float64) int64 {
 
 // frameHolding is the frame of the video that holds a moment, the one the
 // video preview shows with the playhead there: the last to start at or
-// before it, give or take frameHair, see frameAt in lib/flow.ts. The
-// millisecond where the rate is not known.
+// before it, give or take frameHair, see framewire.Grid.Holding, whose
+// table the window looks a moment up in. The millisecond where the rate
+// is not known.
 func (s SourceInfo) frameHolding(at float64) int64 {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
 		return int64(math.Round(at * 1000))
@@ -590,6 +591,16 @@ func (s SourceInfo) frameHolding(at float64) int64 {
 	num, den := int64(s.FPSNum), int64(s.FPSDen)
 	us := int64(math.Round((at+frameHair)*1_000_000)) - int64(math.Round(s.VideoStart*1_000_000))
 	return floorDiv(max(us, 0)*num, den*1_000_000)
+}
+
+// frameMiddleHolding is the middle of the frame that holds a moment, to
+// the millisecond the plan keeps, or the moment itself where the rate is
+// not known.
+func (s SourceInfo) frameMiddleHolding(at float64) float64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return at
+	}
+	return num.RoundTo(s.frameBegins(s.frameHolding(at))+0.5*float64(s.FPSDen)/float64(s.FPSNum), 3)
 }
 
 // frameStartHolding is the start of the frame that holds a moment, to the

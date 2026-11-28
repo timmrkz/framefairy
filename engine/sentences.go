@@ -25,6 +25,9 @@ type SentenceView struct {
 	// Clip is the key of the clip that shows the card, see ClipSaid, and
 	// empty for what no clip keeps.
 	Clip string `json:"clip,omitempty"`
+	// Land is where a click on the card puts the playhead: a frame into
+	// it, so its first word is lit, see LandOn and SourceInfo.LandCards.
+	Land float64 `json:"land"`
 }
 
 // cardSeconds is how long a card of what was said grows before it ends
@@ -326,4 +329,22 @@ func episodeEnd(clip Clip, at float64) float64 {
 		offset += s.Duration()
 	}
 	return EpisodeTime(clip, at)
+}
+
+// LandCards sets where a click on each card lands on this video, the way
+// a step of the arrow keys lands on a word, a frame in, see LandOn.
+func (s SourceInfo) LandCards(cards []SentenceView) {
+	spans := make([][2]float64, len(cards))
+	for i, c := range cards {
+		spans[i] = [2]float64{c.Start, c.End}
+	}
+	// Each card on its own: two cards that start together, a caption of
+	// one clip and of another, are each a place to land on.
+	for i := range cards {
+		land, _ := LandOn(spans[i:i+1], s.frameLength(), false)
+		cards[i].Land = land[0]
+		if cards[i].Land < 0 {
+			cards[i].Land = cards[i].Start
+		}
+	}
 }

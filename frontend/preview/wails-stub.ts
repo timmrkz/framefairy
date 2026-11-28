@@ -160,6 +160,9 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     key: `clips.json/0${n}`,
     plan: "/eps/ep.framefairy/logs/clips.json",
     cropLefts: segments.map((p) => p.cropX),
+    // Where the playhead is on the clip, as the engine would say it for a
+    // video of 25 frames a second, a hair before each frame.
+    places: [first - 0.001, last - 0.041, last - 0.001] as [number, number, number],
   };
 };
 
@@ -416,7 +419,31 @@ const cuesOf = (segments: { start: number; end: number }[], id = "") => {
       cue.endMoved = true;
     }
   });
-  return cues;
+  // Where each is in the episode, which the engine sends with it.
+  const onEpisode = (at: number) => {
+    let sum = 0;
+    for (const p of c.segments) {
+      if (at < sum + p.end - p.start) return p.start + Math.max(at - sum, 0);
+      sum += p.end - p.start;
+    }
+    return c.segments.length ? c.segments[c.segments.length - 1].end : at;
+  };
+  return cues.map((cue) => ({
+    ...cue,
+    from: onEpisode(cue.start),
+    to: onEpisode(cue.end),
+    up: [onEpisode(cue.start), onEpisode(cue.end)],
+    lines: cue.lines.map((line) => ({
+      // Each lands a frame in, at 25 a second, as the engine would say.
+      words: line.words.map((w) => ({
+        ...w,
+        at: onEpisode(w.start),
+        until: onEpisode(w.end),
+        land: Math.min(onEpisode(w.start) + 0.04, (onEpisode(w.start) + onEpisode(w.end)) / 2),
+        since: onEpisode(w.start),
+      })),
+    })),
+  }));
 };
 
 // The speech model install of the setup mode: it starts when it is asked
@@ -864,10 +891,14 @@ function handHeard(h: FakeHand): [number, number] | null {
 function sentences() {
   const parts = heardParts();
   const said = allWords().filter((w) => parts.some(([a, b]) => w.start >= a && w.end <= b));
-  const out: { start: number; end: number; text: string }[] = [];
+  const out: { start: number; end: number; text: string; land: number }[] = [];
   let run: typeof said = [];
   const close = () => {
-    if (run.length) out.push({ start: run[0].start, end: run[run.length - 1].end, text: run.map((w) => w.text).join(" ") + "." });
+    // A thirtieth of a second in, as the engine lands a card where the
+    // video's frames are not known.
+    const start = run[0]?.start ?? 0;
+    const end = run[run.length - 1]?.end ?? 0;
+    if (run.length) out.push({ start, end, text: run.map((w) => w.text).join(" ") + ".", land: Math.min(start + 1 / 30, (start + end) / 2) });
     run = [];
   };
   for (const w of said) {

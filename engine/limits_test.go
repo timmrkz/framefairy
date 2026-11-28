@@ -76,7 +76,7 @@ func TestAWindowIsFittedFromItsStart(t *testing.T) {
 		{10, 300, 400, 60, 400, 10, 300},
 	}
 	for _, c := range cases {
-		from, to := FitWindow(c.from, c.to, c.most, c.least, c.duration)
+		from, to := fitWindow(c.from, c.to, c.most, c.least, c.duration)
 		if from != c.wantFrom || to != c.wantTo {
 			t.Errorf("%v to %v fitted to %v and %v is %v to %v, not %v to %v", c.from, c.to, c.most, c.least, from, to, c.wantFrom, c.wantTo)
 		}

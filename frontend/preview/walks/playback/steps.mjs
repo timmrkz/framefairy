@@ -229,8 +229,7 @@ export const steps = {
           if (!holds) return false;
           // The rank of the frame on screen, and whether it was one
           // handed over from the frames kept.
-          let rank = 0;
-          while (rank < frames.track.samples.count - 1 && frames.ptsOf(rank + 1) <= shown + 1e-6) rank++;
+          const rank = frames.frames.holding(shown);
           done({ at, fromKept: frames.stats.keptRanks.includes(rank) });
           return true;
         };
@@ -1143,7 +1142,7 @@ export const steps = {
         return l.width > 0 && l.height > 0 && x >= t.left - 1 && x <= t.right + 1;
       };
       const timeline = document.querySelector(".clip-timeline");
-      if (!on(timeline?.querySelector(".at .playhead"), timeline?.querySelector(".track")))
+      if (!on(timeline?.querySelector(".playhead"), timeline?.querySelector(".track")))
         return "the clip timeline shows no playhead at the end of the episode";
       const picker = [...document.querySelectorAll(".playhead")].find((e) => !e.closest(".clip-timeline"));
       const track = [...document.querySelectorAll(".track")].find((e) => !e.closest(".clip-timeline"));
@@ -1903,7 +1902,7 @@ export const steps = {
         await shownOnPlayhead(page);
         const came = await page.evaluate((fps) => {
           const at = Number(document.querySelector(".screen").dataset.playhead);
-          // The frame that holds the playhead, see frameAt in lib/flow.ts.
+          // The frame that holds the playhead, see framewire.Grid.Holding.
           return window.__filmed() === Math.floor((at + 0.001) * fps);
         }, src.fps);
         if (!came) {

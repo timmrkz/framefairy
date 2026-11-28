@@ -20,7 +20,8 @@
 // - Every frame comes dressed, with its crop, its turn and the layer of
 //   captions over it, as the ask it was asked with says, see dressWith.
 import { asked, dressedOf, keyOf, type CaptionAsk, type Layer } from "./captions";
-import { rankOf, ticks, type VideoTrack } from "./movie";
+import type { VideoTrack } from "./movie";
+import type { FrameTable } from "./table";
 import type { Picture } from "./picture";
 import { pictures, pull, type Pulled } from "./pull";
 import { frames as framePool } from "./pool";
@@ -158,6 +159,8 @@ export class AppFrames {
   constructor(
     readonly path: string,
     readonly track: VideoTrack,
+    // Which frame holds a moment, see FrameTable.
+    readonly frames: FrameTable,
     private size: () => { width: number; height: number },
     private onTrouble: (why: string) => void,
     // Calls back once the frame on screen is drawn, see afterPaint.
@@ -169,11 +172,6 @@ export class AppFrames {
   }
 
   private closed = false;
-
-  ptsOf(rank: number): number {
-    const s = this.track.samples;
-    return ticks(s, Math.max(0, Math.min(rank, s.count - 1))) / s.timescale;
-  }
 
   // The hand takes hold of the playhead, or lets go of it, see
   // FrameQueue.grip. Nothing is read ahead while it holds it, see ahead.
@@ -265,7 +263,7 @@ export class AppFrames {
       w.done(got.error ? this.nearest(w.rank) : null);
       return;
     }
-    const rank = rankOf(this.track.samples, sent.at);
+    const rank = this.frames.holding(sent.at);
     this.keep(rank, sent.frame);
     if (got.exact) {
       if (got.kept) this.tookKept(rank);
@@ -390,7 +388,7 @@ export class AppFrames {
       for (const r of got.keep) this.used(r);
       const cards = new Set(this.cardOrder);
       for (const { at, frame } of got.frames) {
-        const rank = rankOf(this.track.samples, at);
+        const rank = this.frames.holding(at);
         if (this.closed || frame.width !== this.size().width || frame.height !== this.size().height) frame.close();
         else if (cards.has(rank)) this.keepCard(rank, frame);
         else this.keep(rank, frame);
@@ -470,7 +468,7 @@ export class AppFrames {
           for (const { frame } of got.frames) frame.close();
           return;
         }
-        for (const { at, frame } of got.frames) this.keep(rankOf(this.track.samples, at), frame);
+        for (const { at, frame } of got.frames) this.keep(this.frames.holding(at), frame);
       })
       .finally(() => {
         this.nearAsk = false;

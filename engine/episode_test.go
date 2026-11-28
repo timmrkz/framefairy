@@ -450,7 +450,7 @@ func TestARenderPutsItsShortWhereItsNameSays(t *testing.T) {
   {"id": "01", "slug": "wort", "segments": [{"start": 0.5, "end": 1.5}]}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetThumbnail(disk, plan, "01", -1, 1); err != nil {
+	if err := SetThumbnail(disk, plan, "01", -1, 1, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(base.Out, "wort.mp4"), []byte("another episode's short"), 0o644); err != nil {

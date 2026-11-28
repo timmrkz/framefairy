@@ -113,7 +113,7 @@ type Options struct {
 	CarryOn bool
 	// Next searches the window the app would place on the episode now,
 	// where the fewest searches have been, as the next pass over it, see
-	// Episode.PlaceWindow. --from and --to name a window by hand instead.
+	// Episode.Window. --from and --to name a window by hand instead.
 	Next bool
 	// Taken are the parts of the episode clips were proposed for already.
 	// The model is told to leave them, see PlanOptions.Taken.
@@ -384,7 +384,7 @@ func askedWith(opts Options) PlanOptions {
 // nextSearch is the window --next asks for and the options its search
 // runs with: the window the app would place on the episode now, from what
 // was searched of it and what one search can read of what is heard, see
-// Episode.PlaceWindow, and the next pass over it, told what the passes
+// Episode.Window, and the next pass over it, told what the passes
 // before it proposed, the way a search in the app is.
 func (e *Engine) nextSearch(ctx context.Context, opts Options) (*timed.Window, Options, error) {
 	source, err := e.Probe(ctx, opts.Source)
@@ -397,7 +397,8 @@ func (e *Engine) nextSearch(ctx context.Context, opts Options) (*timed.Window, O
 	p := NewProject(e, opts.Source, opts)
 	// Asked of the video's Episode, the way the app asks it.
 	ep := e.Episode(opts.Source)
-	placed := ep.PlaceWindow(p.Base, ep.Room(p.Base), source.Duration)
+	// The command line keeps no window, so it asks for the one nobody kept.
+	placed, _ := ep.Window(p.Base, ep.Room(p.Base), source.Duration, nil, false, nil)
 	req := PlanRequest{From: placed.Start, To: placed.End}
 	if req.Pass, err = p.nextPass(ctx, req); err != nil {
 		return nil, opts, err

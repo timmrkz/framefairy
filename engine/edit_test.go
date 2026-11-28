@@ -532,7 +532,7 @@ func FuzzPlanEdits(f *testing.F) {
 				} else if script[i+1]%3 == 0 {
 					to = -1
 				}
-				_ = SetThumbnail(fsys, path, clip, from, to)
+				_ = SetThumbnail(fsys, path, clip, from, to, SourceInfo{})
 			case 6:
 				// A cut takes a part out of the middle, so this is the
 				// one edit that makes pieces rather than only moving them.
@@ -881,8 +881,8 @@ func TestThumbnailsAreAddedMovedAndRemoved(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(SetThumbnail(fsys, path, "01", -1, 12.5))
-	must(SetThumbnail(fsys, path, "01", -1, 10.25))
+	must(SetThumbnail(fsys, path, "01", -1, 12.5, SourceInfo{}))
+	must(SetThumbnail(fsys, path, "01", -1, 10.25, SourceInfo{}))
 	if got := thumbs(); len(got) != 2 || got[0] != 10.25 || got[1] != 12.5 {
 		t.Fatalf("the thumbnails are %v", got)
 	}
@@ -890,24 +890,24 @@ func TestThumbnailsAreAddedMovedAndRemoved(t *testing.T) {
 	// pieces, before the clip and after it. Nor twice in one place.
 	before, _ := afero.ReadFile(fsys, path)
 	for _, at := range []float64{11.5, 9, 13.5} {
-		if err := SetThumbnail(fsys, path, "01", -1, at); err == nil {
+		if err := SetThumbnail(fsys, path, "01", -1, at, SourceInfo{}); err == nil {
 			t.Errorf("a thumbnail was put at %v, which is not in the clip", at)
 		}
 	}
-	if err := SetThumbnail(fsys, path, "01", -1, 12.5); err == nil {
+	if err := SetThumbnail(fsys, path, "01", -1, 12.5, SourceInfo{}); err == nil {
 		t.Error("a second thumbnail was put on the same moment")
 	}
-	if err := SetThumbnail(fsys, path, "01", 10.7, -1); err == nil {
+	if err := SetThumbnail(fsys, path, "01", 10.7, -1, SourceInfo{}); err == nil {
 		t.Error("a thumbnail that is not there was removed")
 	}
-	if err := SetThumbnail(fsys, path, "01", math.NaN(), 12); err == nil {
+	if err := SetThumbnail(fsys, path, "01", math.NaN(), 12, SourceInfo{}); err == nil {
 		t.Error("a thumbnail was moved from nowhere")
 	}
 	after, _ := afero.ReadFile(fsys, path)
 	if string(before) != string(after) {
 		t.Fatal("a refused thumbnail changed the plan")
 	}
-	must(SetThumbnail(fsys, path, "01", 12.5, 10.75))
+	must(SetThumbnail(fsys, path, "01", 12.5, 10.75, SourceInfo{}))
 	if got := thumbs(); len(got) != 2 || got[0] != 10.25 || got[1] != 10.75 {
 		t.Fatalf("after the move the thumbnails are %v", got)
 	}
@@ -921,13 +921,20 @@ func TestThumbnailsAreAddedMovedAndRemoved(t *testing.T) {
 	if got := thumbs(); len(got) != 2 {
 		t.Fatalf("after the trim back the thumbnails are %v", got)
 	}
-	must(SetThumbnail(fsys, path, "01", 10.25, -1))
-	must(SetThumbnail(fsys, path, "01", 10.75, -1))
+	must(SetThumbnail(fsys, path, "01", 10.25, -1, SourceInfo{}))
+	must(SetThumbnail(fsys, path, "01", 10.75, -1, SourceInfo{}))
 	if got := thumbs(); len(got) != 0 {
 		t.Fatalf("after removing both the thumbnails are %v", got)
 	}
 	if strings.Contains(string(mustRead(t, fsys, path)), "thumbnails") {
 		t.Error("an empty list was left in the plan")
+	}
+	// Where the rate is known, a thumbnail goes on the middle of the frame
+	// that holds the moment it was put at, a millisecond early included.
+	must(SetThumbnail(fsys, path, "01", -1, 10.279, SourceInfo{FPSNum: 25, FPSDen: 1}))
+	must(SetThumbnail(fsys, path, "01", -1, 12.399, SourceInfo{FPSNum: 25, FPSDen: 1}))
+	if got := thumbs(); len(got) != 2 || got[0] != 10.3 || got[1] != 12.42 {
+		t.Fatalf("thumbnails put on frames of 0.04 s are at %v, want 10.3 and 12.42", got)
 	}
 }
 

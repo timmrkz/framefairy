@@ -604,8 +604,9 @@ the frame queue's. While it played, the playhead moved on every
 animation frame, and everything in the workspace that depends on it was
 worked out again and laid out each time, 120 times a second on the user's
 screen for a video of 25 frames a second. Everything that follows the
-playhead is drawn by its frame, so the playhead now moves only when the
-sound heard is in another frame, `playMoves` in `lib/playhead.ts`.
+playhead is drawn by its frame, so the playhead now moves only when
+another frame of the video comes on screen, see `heard` in
+`components/Player.svelte`.
 A trace of plays in the cloud, headless Chromium at 60 Hz, with
 `smooth.mjs`'s video of a minute at 1080p, two runs of three plays each,
 101.3 s of play a run, the work of a second of play averaged over the

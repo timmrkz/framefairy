@@ -316,15 +316,29 @@ func chosenClip(s *FrameFairy, path string) string {
 	return s.chosenIn(path).get(s.store.files, path).Clip
 }
 
-// keptWindow is the window of a video the workspace draws, placed where
-// none is kept, or nil while the video cannot be read.
+// keptWindow is the window of a video the workspace is sent, placed
+// where none is kept, see windowFor, the one kept while the video cannot
+// be read, or nil when there is none.
 func keptWindow(s *FrameFairy, path string) *KeptWindow {
 	if !s.store.Known(path) {
 		return nil
 	}
-	w, ok := s.videoWindow(context.Background(), path)
-	if !ok {
+	ctx := context.Background()
+	info, err := s.probe(ctx, path)
+	if err != nil || info.Duration <= 0 {
+		if w := s.chosenIn(path).get(s.store.files, path).Window; w != nil {
+			kept := *w
+			return &kept
+		}
 		return nil
 	}
-	return &w
+	var jobs []Job
+	if s.jobs != nil {
+		jobs, _ = s.jobs.ofVideo(path)
+	}
+	v := s.windowFor(ctx, path, VideoState{Jobs: jobs}, info.Duration)
+	if v == nil {
+		return nil
+	}
+	return &v.KeptWindow
 }

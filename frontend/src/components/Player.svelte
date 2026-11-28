@@ -33,8 +33,8 @@
   // video and nothing else.
   import { onMount, untrack, type Snippet } from "svelte";
   import { said } from "../lib/said";
-  import { wordInEpisode, type Piece } from "../lib/flow";
-  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playMoves, type About, type Place, type Playhead } from "../lib/playhead";
+  import { type Piece } from "../lib/flow";
+  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Program, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
   import { CaptionLayers, keyOf as dressKey, sameDress, type CaptionAsk, type FrameDress, type Layer, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
@@ -47,9 +47,11 @@
     type CaptionsView,
     type ClipEntry,
     type SourceView,
+    type Word,
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
+  import { sounding } from "../lib/sounding";
 
   let {
     path,
@@ -189,6 +191,7 @@
     onframe?: (frame: Picture | null) => void;
   } = $props();
 
+  const sound = sounding();
   let screen: HTMLDivElement;
   // How tall the picture came out, which the captions are drawn against.
   // Reading it changes nothing, so it never sets the layout going again.
@@ -239,7 +242,6 @@
   let layerPixels = $state<[number, number] | null>(null);
   // One frame of the episode. The playhead can only ever stand on one, so
   // it is the smallest difference between two moments that means anything.
-  const oneFrame = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
 
   // A queue while the workspace is awake. Going to sleep closes it with
   // everything it holds, its decoders and its sound card among them, and
@@ -365,10 +367,15 @@
 
   // What the queue says: where the playhead is and whether it plays. While
   // it plays the playhead is the sound being heard, moved once a frame of
-  // the video, see playMoves in lib/playhead.ts. A play of the clip that
+  // the video comes on screen. A play of the clip that
   // reaches its end leaves the playhead on the clip, at its end.
   function heard(s: Shown) {
     trouble = s.trouble;
+    // Where the sound is, once a refresh of the screen, for every playhead
+    // of the workspace, see lib/sounding.ts. Not the time, which moves once
+    // a frame of the video, so nothing else is worked out again then.
+    if (!s.passing) sound?.set(s.playing ? inEpisode(s.at, source.duration) : NaN);
+    const newFrame = s.frame !== frameStart;
     frameStart = s.frame;
     if (s.passing) {
       if (s.drew) pictured = true;
@@ -392,8 +399,13 @@
       return;
     }
     if (s.playing) {
-      const at = inEpisode(s.at, source.duration);
-      if (playMoves(time, at, oneFrame, source.videoStart ?? 0)) time = at;
+      // Everything that follows the playhead is drawn by its frame, the
+      // mark on the clip timeline, the time field and the captions, so a
+      // move inside the frame on screen changes nothing there. Moved on
+      // every refresh, the whole workspace worked itself out again 120
+      // times a second on a screen of 120 Hz for a video of 25 frames a
+      // second, and the page missed refreshes doing it, issue #446.
+      if (newFrame) time = inEpisode(s.at, source.duration);
       return;
     }
     // Paused: where the queue stopped, or where it was sent, which is
@@ -445,20 +457,6 @@
   const clipStart = $derived(pieces.length ? pieces[0].start : 0);
   const clipEnd = $derived(pieces.length ? pieces[pieces.length - 1].end : 0);
 
-  // The captions run on the clip's clock, which has the cuts taken out: the
-  // clock of the pieces they were made for. A clip that was changed has its
-  // new pieces a moment before its new captions, and the captions read on
-  // the new pieces' clock showed and lit another word for that moment.
-  const captionPieces = $derived(captions?.pieces?.length ? captions.pieces : pieces);
-  function inClipTime(t: number): number {
-    let sum = 0;
-    for (const p of captionPieces) {
-      if (t < p.start) return sum;
-      if (t < p.end) return sum + (t - p.start);
-      sum += p.end - p.start;
-    }
-    return sum;
-  }
 
   // Where the playhead is, on the clip or on the video, as the last gesture
   // that put it somewhere left it, see lib/playhead.ts. Only a gesture sets
@@ -495,7 +493,7 @@
     const at = Math.max(0, Math.min(t, source.duration));
     layers.sought(wordStep);
     time = at;
-    placed = placeOf(pieces, clip?.key ?? "", at, 1 / oneFrame, about, source.videoStart ?? 0);
+    placed = placeOf(clip, clip?.key ?? "", at, about);
     // The frame asked for comes dressed as the clip is now, at the place
     // it is asked at: the effect that tells the queue runs after the
     // seek, and dressed by the place before, in the clip or on the video,
@@ -556,7 +554,7 @@
     const key = clip?.key ?? making;
     if (!key || (kept && placed.clip !== key)) return;
     placed = clip
-      ? placeOf(pieces, key, time, 1 / oneFrame, "clip", source.videoStart ?? 0)
+      ? placeOf(clip, key, time, "clip")
       : { place: "clip", clip: key };
   }
 
@@ -817,11 +815,9 @@
     // The playhead can stand in the next caption while the frame still
     // shows the one before, and the caption box showed the next for a
     // moment and then went back, under the hand that was about to click.
-    const at = inClipTime(!fixing && dressed?.clip ? frameStart : shown);
-    return captions.captions.find((c) => at >= c.start && at < c.end) ?? null;
+    const at = !fixing && dressed?.clip ? frameStart : shown;
+    return captions.captions.find((c) => at >= c.from && at < c.to) ?? null;
   });
-
-  const spoken = $derived(inClipTime(shown));
 
   // The words lit, lit to litLast, counted across the caption's lines: the
   // ones the layer on screen lights, and none until a layer of these
@@ -856,8 +852,8 @@
   // frame went to the next word a frame or more before the pill did, which
   // Tim saw on #201.
   // A word is the keyboard's while the picture lights it: from and to, on
-  // the episode's clock, see WordFrame, or by its own time on the clip's
-  // clock where those are not known.
+  // the episode's clock, see WordFrame, or by its own time where those are
+  // not known, see Word.at.
   let keyed = $state<{ start: number; end: number; from?: number; to?: number } | null>(null);
   // When Shift and an arrow were pressed. The next move of the playhead is
   // the walk landing, and its word becomes the keyboard's word.
@@ -878,7 +874,7 @@
       const out =
         keyed.from !== undefined && keyed.to !== undefined
           ? at < keyed.from - give || at >= keyed.to
-          : inClipTime(at) < keyed.start - give || inClipTime(at) >= keyed.end + give;
+          : at < keyed.start - give || at >= keyed.end + give;
       if (out) keyed = null;
     });
   });
@@ -897,12 +893,12 @@
         const words = (cue.lines ?? []).flatMap((line) => line.words);
         for (const [k, word] of words.entries()) {
           const f = frames[i]?.[k];
-          if (f && f.from >= 0 && at >= f.from - give && at < f.to) return { start: word.start, end: word.end, from: f.from, to: f.to };
+          if (f && f.from >= 0 && at >= f.from - give && at < f.to) return { start: word.at ?? 0, end: word.until ?? 0, from: f.from, to: f.to };
         }
       }
     }
-    const word = wordAt(inClipTime(at));
-    return word ? { start: word.start, end: word.end } : null;
+    const word = wordAt(at);
+    return word ? { start: word.at ?? 0, end: word.until ?? 0 } : null;
   }
 
   // A word is corrected at the moment it was opened at, and a correction
@@ -1028,10 +1024,10 @@
 
   // The word of the caption box at a moment of the clip's clock, among the
   // words that can be corrected.
-  function wordAt(at: number): { start: number; end: number } | null {
+  function wordAt(at: number): Word | null {
     for (const line of rows) {
       for (const { word, said } of line) {
-        if (said && at >= word.start - give && at < word.end) return word;
+        if (said && at >= (word.at ?? 0) - give && at < (word.until ?? 0)) return word;
       }
     }
     return null;
@@ -1310,7 +1306,7 @@
     if (keyed) pick = words.find((node) => Number(node.dataset.at) === keyed!.start) ?? null;
     if (!pick) {
       for (const node of words) {
-        if (Number(node.dataset.at) <= spoken + 1e-6) pick = node;
+        if (Number(node.dataset.at) <= shown + 1e-6) pick = node;
       }
     }
     pick ??= words[0] ?? null;
@@ -1739,7 +1735,7 @@
     if (!keyed || fixing) return false;
     if (keysElsewhere()) return false;
     const at = keyed.start;
-    const found = rows.flat().find(({ word, said }) => !!said && word.start === at);
+    const found = rows.flat().find(({ word, said }) => !!said && (word.at ?? 0) === at);
     if (!found?.said || gone.has(goneKey(found.said))) return false;
     event.preventDefault();
     removeWord(found.said);
@@ -1937,7 +1933,7 @@
                    where it did, and a key that was the moment alone would
                    then be the same key twice, which is not a caption that
                    looks wrong but an app that stops. The moment is where
-                   the word starts in the episode, see wordInEpisode: on
+                   the word starts in the episode, see Word.at: on
                    the clip's clock a cut before it moved it, and the pill
                    popped on every answer while the cut was dragged. -->
               <!-- Each word says which moment it stands for. Nothing on
@@ -1947,16 +1943,16 @@
                    playhead landing a thousandth of a millisecond before a
                    word start, and so lighting nothing, was found with
                    these and could not have been found without them. -->
-              {#each line as { word, said }, i (`${i}:${wordInEpisode(captionPieces, word.start)}`)}{#if !doubled(word, said) && !(said && gone.has(goneKey(said)))}{#if i > 0}{" "}{/if}<span
+              {#each line as { word, said }, i (`${i}:${word.at ?? 0}`)}{#if !doubled(word, said) && !(said && gone.has(goneKey(said)))}{#if i > 0}{" "}{/if}<span
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
-                    class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start && !!showing && isLit(firstOfRow[row] + i)}
+                    class:keyed={!!keyed && !fixing && !!said && keyed.start === (word.at ?? 0) && !!showing && isLit(firstOfRow[row] + i)}
                     class:now={captions.style.highlight && isLit(firstOfRow[row] + i)}
                     contenteditable={said ? "plaintext-only" : null}
                     spellcheck="false"
-                    data-at={word.start}
-                    data-to={word.end}
+                    data-at={word.at ?? 0}
+                    data-to={word.until ?? 0}
                     role={said ? "textbox" : null}
                     aria-label={said ? "Correct this word" : null}
                     title={said

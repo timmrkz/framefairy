@@ -618,6 +618,10 @@ type SegmentView struct {
 	Marks []CropMarkView `json:"marks"`
 	// Part is the part of the clip the piece is in, see PieceView.Part.
 	Part int `json:"part"`
+	// Up is where the playhead stands for the piece's opening edge and for
+	// its closing edge, see SourceInfo.EdgePlayheads. Only what knows the
+	// video's frames fills it in.
+	Up [2]float64 `json:"up"`
 	// Auto is where the app placed the crop, see Segment.Auto. The window
 	// is not sent it: each frame's dress says where the app places its
 	// crop, see FrameDress.Auto.
@@ -633,8 +637,22 @@ type SegmentView struct {
 // many characters may be typed for it in the caption box, the rest of the
 // whole word taken off, so a correction is never one the engine refuses.
 type WordView struct {
-	Start float64  `json:"start"`
-	End   float64  `json:"end"`
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+	// At and Until are where a word of a caption starts and ends on the
+	// episode's clock. A word is known by At, to the millisecond, and
+	// never by Start on the clip's clock, which every cut before it moves:
+	// known by that, the word under the playhead was a new word on every
+	// answer while a cut before it was dragged, and the caption block on
+	// the clip timeline and the pill in the video preview popped over and
+	// over with the playhead standing still, found by the user.
+	At    float64 `json:"at,omitempty"`
+	Until float64 `json:"until,omitempty"`
+	// Land is where a step of the arrow keys lands on the word, and Since
+	// where it begins as a place to land on, -1 for a word that is no
+	// place of its own, see LandOn.
+	Land  float64  `json:"land"`
+	Since float64  `json:"since"`
 	Text  string   `json:"text"`
 	Said  *float64 `json:"said,omitempty"`
 	Whole string   `json:"whole,omitempty"`
@@ -741,7 +759,7 @@ func SegmentViews(segments []Segment) []SegmentView {
 	out := make([]SegmentView, 0, len(segments))
 	for i, s := range segments {
 		out = append(out, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
-			CropMarkViews(s.Marks), parts[i].Part, s.Auto})
+			CropMarkViews(s.Marks), parts[i].Part, [2]float64{}, s.Auto})
 	}
 	return out
 }
@@ -946,6 +964,17 @@ type CaptionView struct {
 	Start float64           `json:"start"`
 	End   float64           `json:"end"`
 	Lines []CaptionLineView `json:"lines"`
+	// From and To are where the caption appears and goes on the episode's
+	// clock, which the clip timeline draws it by, see EpisodeTime and
+	// EpisodeEnd.
+	From float64 `json:"from"`
+	To   float64 `json:"to"`
+	// Up is where the playhead stands for its start and for its end: the
+	// first frame of the episode drawn with it up, a frame into its first
+	// word where it begins on one, so the word is lit, and the last frame
+	// drawn with it up. Pressing an edge of the caption, or an edge
+	// dragged, puts the playhead there, see captionUp.
+	Up [2]float64 `json:"up"`
 	// First and Last are when the word the caption begins on and the word
 	// it ends on start in the episode, a word removed among them, which is
 	// what a caption moved by hand is kept against, see Caption.Opens.
@@ -1215,6 +1244,15 @@ func (l *Look) fonts() *Fonts {
 	return l.Fonts
 }
 
+// source is the video the captions of l are timed on, nothing known of
+// it when l is nil.
+func (l *Look) source() SourceInfo {
+	if l == nil {
+		return SourceInfo{}
+	}
+	return l.Source
+}
+
 // drawing is what the captions of clip of plan are drawn from in l, made
 // from was where a gesture changed the clip, see clipDrawingFrom.
 func (l *Look) drawing(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript) *CaptionDrawing {
@@ -1335,7 +1373,9 @@ func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, 
 	}
 	said := Said(clip, words)
 	for _, c := range laid {
-		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
+		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{},
+			From: EpisodeTime(clip, c.Start), To: EpisodeEnd(clip, math.Min(c.End, clipLength(clip))),
+			Up: look.source().captionUp(clip, c)}
 		if len(c.Words) > 0 {
 			item.First, item.Last = c.Opens, c.Closes
 			item.StartMoved, item.EndMoved = c.startMoved, c.endMoved
@@ -1343,7 +1383,8 @@ func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, 
 		for _, line := range c.Lines {
 			row := CaptionLineView{Words: []WordView{}}
 			for _, w := range line {
-				word := WordView{Start: w.Start, End: w.End, Text: runes.Scrub(w.Text, 200)}
+				word := WordView{Start: w.Start, End: w.End, Text: runes.Scrub(w.Text, 200),
+					At: wordAt(clip, w.Start), Until: EpisodeEnd(clip, w.End)}
 				// The word of the episode it stands for, the one a correction
 				// in the caption box is kept against, and all of it.
 				if at, ok := SaidWord(clip, said, (w.Start+w.End)/2); ok {
@@ -1363,7 +1404,70 @@ func captionsViewFrom(was *CaptionDrawing, plan Plan, clip Clip, t *Transcript, 
 		}
 		view.Captions = append(view.Captions, item)
 	}
+	var spans [][2]float64
+	for _, c := range view.Captions {
+		for _, l := range c.Lines {
+			for _, w := range l.Words {
+				spans = append(spans, [2]float64{w.At, w.Until})
+			}
+		}
+	}
+	land, since := LandOn(spans, look.source().frameLength(), false)
+	n := 0
+	for _, c := range view.Captions {
+		for _, l := range c.Lines {
+			for k := range l.Words {
+				l.Words[k].Land, l.Words[k].Since = land[n], since[n]
+				n++
+			}
+		}
+	}
 	return view
+}
+
+// captionUp is where the playhead stands for the start and the end of a
+// caption of a clip, see CaptionView.Up. A word starts between two frames,
+// and the frame that holds its start begins before it, where the caption
+// is not up yet: the user saw nothing in the video preview to snap to, and
+// the caption before it on pressing the edge. So a caption that begins on
+// its first word is stood a frame into it, or half way into a word too
+// short for that. Never before the first frame of the short that starts
+// at or after the hundredth the caption file puts its start on.
+func (s SourceInfo) captionUp(clip Clip, c LaidCaption) [2]float64 {
+	frame := s.frameLength()
+	into := c.Start
+	if len(c.Lines) > 0 && len(c.Lines[0]) > 0 {
+		if w := c.Lines[0][0]; math.Abs(w.Start-c.Start) < 1e-6 {
+			into = math.Min(w.Start+frame, (w.Start+w.End)/2)
+		}
+	}
+	// On the episode's frames, which the short's are, so a caption the
+	// clip took over from before a change of its pieces stands where it
+	// stood, see Splice.
+	first := s.frameStartHolding(EpisodeTime(clip, into))
+	if appears := EpisodeTime(clip, c.Start) - 0.005; s.FPSNum > 0 && s.FPSDen > 0 && s.keptAt(s.frameHolding(appears)) < appears {
+		first = math.Max(first, s.keptAt(s.frameHolding(appears)+1))
+	}
+	end := EpisodeEnd(clip, math.Min(c.End, clipLength(clip)))
+	return [2]float64{first, s.frameBefore(end)}
+}
+
+// frameLength is how long a frame of the video lasts, in seconds, or a
+// frame at 30 a second where the rate is not known.
+func (s SourceInfo) frameLength() float64 {
+	if s.FPSNum > 0 && s.FPSDen > 0 {
+		return float64(s.FPSDen) / float64(s.FPSNum)
+	}
+	return 1 / 30.0
+}
+
+// frameBefore is the start of the last frame before the one that holds a
+// moment, where the playhead stands for something that ends there.
+func (s SourceInfo) frameBefore(at float64) float64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return num.RoundTo(at, 3)
+	}
+	return s.keptAt(max(s.frameHolding(at)-1, 0))
 }
 
 func twoDigits(n int) string {

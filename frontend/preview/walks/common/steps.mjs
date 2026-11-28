@@ -639,7 +639,7 @@ export function clickCard(page, key, start) {
           const since = frames.stats.keptRanks.slice(-(frames.stats.kept - kept) || frames.stats.keptRanks.length);
           done({
             first,
-            kept: first !== null && frames.stats.kept > kept && since.some((r) => Math.abs(frames.ptsOf(r) - first) < 1e-6),
+            kept: first !== null && frames.stats.kept > kept && since.some((r) => Math.abs(frames.frames.begins(r) - first) < 1e-6),
             looks,
           });
         };

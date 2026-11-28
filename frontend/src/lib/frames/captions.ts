@@ -395,6 +395,10 @@ export type WordFrame = {
   base: number;
   from: number;
   to: number;
+  // Where a step of the arrow keys lands on the word, and where it begins
+  // as a place to land on, see LandOn in engine/landing.go.
+  land: number;
+  since: number;
   grow?: { x: number; y: number };
 };
 
