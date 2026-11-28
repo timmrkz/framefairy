@@ -876,14 +876,18 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 
 	// The captions are made from the words the episode says, the same words
 	// the app shows, see ClipCaptions. Without a transcript there are none.
-	heard := &Transcript{}
+	// A short is named by those words with captions or without, see
+	// Transcript.Named.
+	said, heard := &Transcript{}, &Transcript{}
+	t, err := SavedTranscript(r.e.Files, opts.Source, logsDir, opts.ASRModel, opts.SilenceDB)
+	if err == nil && t != nil {
+		said = t
+	}
 	if !opts.NoCaptions {
-		t, err := SavedTranscript(r.e.Files, opts.Source, logsDir, opts.ASRModel, opts.SilenceDB)
 		if err != nil {
 			log.Warn("there is no transcript to make captions from, so the clips get none")
-		} else {
-			heard = t
 		}
+		heard = said
 	}
 
 	own := filepath.Dir(fileio.ResolvePath(r.planPath)) == fileio.ResolvePath(logsDir)
@@ -902,7 +906,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 		// short is named by the words the clip shows now, see
 		// Transcript.Named.
 		named := clip
-		named.Title, named.Slug = heard.Named(clip)
+		named.Title, named.Slug = said.Named(clip)
 		stem := clip.Basename()
 		if !opts.Preview {
 			stem = shortStem(outDir, plan, named)

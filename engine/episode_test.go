@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -514,6 +515,19 @@ func TestARenderPutsItsShortWhereItsNameSays(t *testing.T) {
 	videos, err := filepath.Glob(filepath.Join(base.Out, "*.mp4"))
 	if err != nil || len(videos) != 3 {
 		t.Errorf("the folder holds %q, not the other episode's short, this one and the preview", videos)
+	}
+
+	// Once the video is transcribed, the short is named by the words the
+	// clip shows, rendered without captions too. It kept the name in the
+	// plan, which the clip's words no longer match.
+	var heard int32
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	if err := p.Transcribe(ctx); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	render(false)
+	if got := filepath.Base(shortOfClip(t, plan, "01").Short); !strings.HasPrefix(got, "wort-wort") {
+		t.Errorf("rendered without captions, the short is named %q, not by the words the clip shows", got)
 	}
 }
 

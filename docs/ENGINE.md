@@ -1926,7 +1926,14 @@ the clip's own files in the work folder. The note of a short keeps the
 name it was given as `slug`, `recordShort`, so it is still the clip's
 short after the words change. A short of the old words stays where it
 is, because it may be posted already, and the next render writes one of
-the new words beside it.
+the new words beside it. The rule holds for every clip, so a clip a model
+gave a title of its own, or a clip made by hand of more than six words,
+is called by its first words too, and a short rendered before the rule
+came, whose note has no `slug`, is written again under the new name on
+its next render. A render without captions names its short the same way,
+from the transcript, and only a video with no transcript keeps the names
+of its clip set. A build from before the rule does not find a short
+named this way, and writes its own beside it.
 
 Two episodes of the same file name, from two folders, still share that
 folder. There a name taken by a file the clip did not write gets a

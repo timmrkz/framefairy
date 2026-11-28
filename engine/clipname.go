@@ -139,9 +139,11 @@ func (t *Transcript) correctionsOfFirst(c Clip) map[string]string {
 	if len(said) == 0 {
 		return nil
 	}
-	// The heard word is where the recogniser heard it, which moving it
-	// onto the sound shifts by a little, so a second is left either way.
-	last := said[min(len(said), titleWords)-1].End + 1
+	// The words the clip removed are among these and not in its title, so
+	// as many more are looked through. The heard word is where the
+	// recogniser heard it, which moving it onto the sound shifts by a
+	// little, so a second is left either way.
+	last := said[min(len(said), titleWords+len(c.RemovedWords))-1].End + 1
 	var out map[string]string
 	for key, text := range c.Corrections {
 		if i, ok := t.heardIndex(key); ok && i < len(t.HeardWords) && t.HeardWords[i].Start <= last {

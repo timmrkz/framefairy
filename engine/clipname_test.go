@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"framefairy/engine/fileio"
@@ -58,6 +59,24 @@ func TestAClipIsCalledByTheWordsItShowsNow(t *testing.T) {
 		if title, slug := c.said.Named(c.clip); title != c.title || slug != c.slug {
 			t.Errorf("%s, the clip is called %q, %q, not %q, %q", c.name, title, slug, c.title, c.slug)
 		}
+	}
+}
+
+// A clip whose first forty words are removed is called by the words after
+// them, with their corrections. Only the corrections of the first twenty
+// words said were looked at, removed or not, so a correction of the first
+// word left was lost, and the card showed it as heard.
+func TestAClipWhoseFirstWordsAreRemovedIsCalledByItsCorrectedWords(t *testing.T) {
+	t.Parallel()
+	said := fromStored(longHeard(90), nil, 0, 0, nil)
+	clip := Clip{ID: "01", Slug: "wort0", Title: "wort0", Segments: []Segment{{Start: 0, End: 29}},
+		RemovedWords: RemovedWords{}, Corrections: map[string]string{wordKey(said.HeardWords[2*titleWords].Start): "Erstes"}}
+	const removed = 2 * titleWords
+	for _, w := range said.HeardWords[:removed] {
+		clip.RemovedWords[wordKey(w.Start)] = true
+	}
+	if title, _ := said.Named(clip); !strings.HasPrefix(title, "Erstes wort41 ") {
+		t.Errorf("the clip is called %q, want it to start with its corrected first word", title)
 	}
 }
 

@@ -88,6 +88,9 @@ type PlanSummary struct {
 	// kept is what was worked out of this read and kept with it, see
 	// Remember.
 	kept *keptAnswers
+	// titled is what the clips are called by the words they show, kept
+	// with the read, see titles.
+	titled *keptTitles
 }
 
 // Remember is what work makes of this read of the plan, kept with the
@@ -392,7 +395,7 @@ func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
 	}
 	s := PlanSummary{Path: m, Name: filepath.Base(m), Clips: len(clips),
 		Modified: info.ModTime(), plan: plan, clips: clips, data: data,
-		said: &keptSaid{}, kept: &keptAnswers{},
+		said: &keptSaid{}, kept: &keptAnswers{}, titled: &keptTitles{},
 		ordered:  sync.OnceValues(func() ([]*object, error) { return readOrderedClips(data) }),
 		saidFrom: sync.OnceValue(func() string { return saidFrom(clips) })}
 	made := plan.PlannedWith()
@@ -723,8 +726,9 @@ func (s PlanSummary) NamedView(t *Transcript) *PlanView {
 		}
 	}
 	work := filepath.Dir(filepath.Dir(path))
-	for _, c := range clips {
-		title, _ := t.Named(c)
+	titles := s.titles(t)
+	for i, c := range clips {
+		title := titles[i]
 		v := ClipView{ID: c.ID, Slug: c.Slug, Basename: c.Basename(), Title: title,
 			Duration: num.RoundTo(c.Duration(), 3), Start: c.Segments[0].Start,
 			End: c.Segments[len(c.Segments)-1].End, Rejected: c.Rejected,
@@ -755,6 +759,51 @@ func (s PlanSummary) NamedView(t *Transcript) *PlanView {
 		view.Clips = append(view.Clips, v)
 	}
 	return view
+}
+
+// titles is what each clip of the plan is called by the words it shows in
+// t, see Transcript.Named, kept with the read of the plan for the
+// transcript it was worked out from. The clip list is made on every read of
+// a video's state, four times a second while work runs, and naming every
+// clip again doubled the time it takes.
+func (s PlanSummary) titles(t *Transcript) []string {
+	if s.titled != nil {
+		if kept, ok := s.titled.get(t); ok {
+			return kept
+		}
+	}
+	titles := make([]string, len(s.clips))
+	for i, c := range s.clips {
+		titles[i], _ = t.Named(c)
+	}
+	if s.titled != nil {
+		s.titled.set(t, titles)
+	}
+	return titles
+}
+
+// keptTitles is what the clips of one read of a plan are called in the
+// transcript t. The transcript is held weakly, the way keptSaid holds it.
+type keptTitles struct {
+	mu     sync.Mutex
+	t      weak.Pointer[Transcript]
+	titles []string
+}
+
+// get is the titles kept for t, shared and only read.
+func (k *keptTitles) get(t *Transcript) ([]string, bool) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.titles == nil || k.t != weak.Make(t) {
+		return nil, false
+	}
+	return k.titles, true
+}
+
+func (k *keptTitles) set(t *Transcript, titles []string) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.t, k.titles = weak.Make(t), titles
 }
 
 // SegmentViews are a clip's pieces as the window is sent them, each with
