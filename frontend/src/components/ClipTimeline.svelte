@@ -906,7 +906,8 @@
   // Clicking a clip in the list puts the timeline back on it, even when it
   // is the clip that is already selected and the view was moved by hand.
   // Given a moment, the timeline goes there instead: putting the playhead
-  // somewhere on the range picker is asking to look there, clip or no clip.
+  // somewhere, a card clicked say, is asking to look there, clip or no
+  // clip. The range picker centres it instead, see toPlayhead.
   export function fit(at?: number) {
     if (at === undefined) {
       fitView();
@@ -922,7 +923,8 @@
   }
 
   // The crosshair in the row below goes to the playhead. Always, clip or no
-  // clip.
+  // clip. So does the playhead put or dragged on the range picker, which
+  // the clip timeline follows in its middle over the whole video.
   //
   // Going back to the clip is what clicking the clip in the list does, and
   // it does it even for the clip already chosen, so the crosshair does not
@@ -1253,7 +1255,8 @@
       lookedAway = false;
       return;
     }
-    if (!loaded || workedOn) return;
+    // The hand holds the playhead inside the view, see scrubHere.
+    if (!loaded || workedOn || scrubbing) return;
     const t = time;
     const shown = view.to - view.from;
     const inSight = t >= view.from && t < view.to - shown * PAGE_EDGE;
@@ -1979,6 +1982,26 @@
     return null;
   }
 
+  // The playhead dragged here stops at the edges of the view, and the
+  // view stays where it is under the hand. It went on into frames nobody
+  // could see, issue #978. With no clip the view follows the playhead by
+  // itself, so a drag holds it, the way a swipe does, and a playhead let
+  // go at its edge is not chased, until a play, a key or a seek on the
+  // range picker moves the view.
+  function scrubHere(event: PointerEvent, tap?: () => void) {
+    scrubPlayhead(
+      event,
+      (clientX) => Math.min(Math.max(timeAt(clientX), view.from, 0), view.to, duration),
+      onseek,
+      (on) => {
+        scrubbing = on;
+        if (on && !clip) held = true;
+        onhold?.(on);
+      },
+      tap,
+    );
+  }
+
   function press(event: PointerEvent) {
     if (event.button !== 0) return;
     owner++;
@@ -1991,16 +2014,7 @@
     // nothing out of the clip it just chose.
     const mark = (event.target as Element | null)?.closest?.<HTMLElement>(".clipmark")?.dataset.key;
     if (mark !== undefined && !grip) {
-      scrubPlayhead(
-        event,
-        timeAt,
-        onseek,
-        (held) => {
-          scrubbing = held;
-          onhold?.(held);
-        },
-        () => onmark?.(mark),
-      );
+      scrubHere(event, () => onmark?.(mark));
       return;
     }
     if (twice(event)) {
@@ -2011,10 +2025,7 @@
     }
     // The track and the playhead: the playhead goes under the hand.
     if (!grip) {
-      scrubPlayhead(event, timeAt, onseek, (held) => {
-        scrubbing = held;
-        onhold?.(held);
-      });
+      scrubHere(event);
       return;
     }
     event.preventDefault();

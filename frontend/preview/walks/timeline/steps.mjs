@@ -2921,6 +2921,122 @@ export const steps = {
     await page.evaluate(() => (window.__scrubbing = false));
     await watch.step("scrub", s);
   },
+  // ["past the edge", side]
+  //                    presses the clip timeline in its middle and drags
+  //                    the playhead to the side, "left" or "right", in six
+  //                    steps to 80 px past the track's edge. After every
+  //                    step the view has not moved and the playhead is
+  //                    inside it, and once the hand is past the edge the
+  //                    playhead stands on that edge of the view, and stays
+  //                    there once it is let go. Issue #978
+  async "past the edge"(walk, side, s) {
+    const { page, watch } = walk;
+    await settle(page);
+    const fps = await rate(page);
+    const g = await handles(page);
+    const y = high(g.track);
+    // The view as the clip's frame shows it: where it stands, and the
+    // moments at the inside of the track's two ends, where the clip
+    // timeline puts them, see timeAt in ClipTimeline.svelte.
+    const view = async () => {
+      const t = await timeline(page);
+      const f = await page.evaluate(() => {
+        const b = document.querySelector(".clip-timeline .span.frame").getBoundingClientRect();
+        return { x: b.left, w: b.width };
+      });
+      const at = (x) => t.start + ((x - f.x) / f.w) * (t.end - t.start);
+      return { x: f.x, from: at(g.track.x + 1), to: at(g.track.x + g.track.w - 1), px: (t.end - t.start) / f.w };
+    };
+    const was = await view();
+    const x0 = g.track.x + g.track.w / 2;
+    const x1 = side === "left" ? g.track.x - 80 : g.track.x + g.track.w + 80;
+    // A pixel of the track and a frame, either way.
+    const off = (v) => v.px + 1 / fps;
+    await pressOnTrack(page, x0, y);
+    for (let i = 1; i <= 6; i++) {
+      const x = x0 + ((x1 - x0) * i) / 6;
+      await page.mouse.move(x, y);
+      await nextPaint(page);
+      const at = await playhead(page);
+      const now = await view();
+      if (Math.abs(now.x - was.x) > 0.5) {
+        walk.wrong = `the clip timeline moved ${(now.x - was.x).toFixed(1)} px under a hand dragging the playhead ${side}`;
+        break;
+      }
+      if (at < was.from - off(was) || at > was.to + off(was)) {
+        walk.wrong = `dragged ${side} to ${x.toFixed(0)} px, the playhead went to ${at.toFixed(3)} s, outside the view from ${was.from.toFixed(3)} to ${was.to.toFixed(3)} s`;
+        break;
+      }
+      const edge = side === "left" ? was.from : was.to;
+      const past = side === "left" ? x < g.track.x : x > g.track.x + g.track.w;
+      if (past && Math.abs(at - edge) > off(was)) {
+        walk.wrong = `with the hand ${side} of the clip timeline, the playhead stood at ${at.toFixed(3)} s, not on the view's edge at ${edge.toFixed(3)} s`;
+        break;
+      }
+    }
+    const held = await playhead(page);
+    await page.mouse.up();
+    await settle(page);
+    if (walk.wrong) return;
+    const after = await view();
+    const at = await playhead(page);
+    if (Math.abs(after.x - was.x) > 0.5) walk.wrong = `the clip timeline moved ${(after.x - was.x).toFixed(1)} px once the playhead was let go at its ${side} edge`;
+    else if (Math.abs(at - held) > 1 / fps) walk.wrong = `let go at ${held.toFixed(3)} s, the playhead went to ${at.toFixed(3)} s`;
+    await watch.step("drag", s);
+  },
+  // ["picker centres"] presses the range picker two fifths along and drags
+  //                    the playhead to three fifths in eight steps. After
+  //                    every step where the video has room on both sides,
+  //                    the playhead stands in the middle of the clip
+  //                    timeline, and the view kept its zoom. Issue #978
+  async "picker centres"(walk, arg, s) {
+    const { page, watch } = walk;
+    await settle(page);
+    const { duration, fps } = await ask(page, "Source", await episodeOn(page));
+    const read = () =>
+      page.evaluate(() => {
+        const box = document.querySelector(".clip-timeline");
+        const track = box.querySelector(".track").getBoundingClientRect();
+        const line = box.querySelector(".playhead").getBoundingClientRect();
+        const frame = box.querySelector(".span.frame").getBoundingClientRect();
+        const picker = document.querySelector('[aria-label="The range picker"]').getBoundingClientRect();
+        // Halfway down the range picker, clear of the window's bars, over
+        // a clip's mark if one is there, which the hand takes hold of the
+        // playhead through as it moves.
+        return { mid: track.left + track.width / 2, inner: track.width - 2, at: line.left + line.width / 2, frame: frame.width, picker: { x: picker.left, y: picker.top + picker.height / 2, w: picker.width } };
+      });
+    const before = await read();
+    const t = await timeline(page);
+    // How many seconds the view shows, from its zoom, which the drag
+    // keeps.
+    const span = ((t.end - t.start) / before.frame) * before.inner;
+    const { x, y, w } = before.picker;
+    await page.mouse.move(x + w * 0.4, y);
+    await page.mouse.down();
+    let centred = 0;
+    for (let i = 1; i <= 8; i++) {
+      await page.mouse.move(x + w * (0.4 + (0.2 * i) / 8), y);
+      await nextPaint(page);
+      const at = await playhead(page);
+      const now = await read();
+      if (Math.abs(now.frame - before.frame) > 0.5) {
+        walk.wrong = `a drag on the range picker zoomed the clip timeline, its clip's frame went from ${before.frame.toFixed(1)} to ${now.frame.toFixed(1)} px wide`;
+        break;
+      }
+      // At either end of the video the view stands on the end.
+      if (at < span / 2 + 1 / fps || at > duration - span / 2 - 1 / fps) continue;
+      centred++;
+      if (Math.abs(now.at - now.mid) > 1.5) {
+        walk.wrong = `dragged on the range picker to ${at.toFixed(3)} s, the playhead stood ${(now.at - now.mid).toFixed(1)} px from the middle of the clip timeline`;
+        break;
+      }
+    }
+    await page.mouse.up();
+    await settle(page);
+    if (walk.wrong) return;
+    if (centred < 3) walk.wrong = `the video, ${duration.toFixed(1)} s, left room on both sides of a view of ${span.toFixed(1)} s at only ${centred} steps of the drag`;
+    await watch.step("drag", s);
+  },
   // ["slow drag left", n]
   //                    presses the clip timeline near the clip's end and
   //                    drags the playhead to the left a frame at a time,
