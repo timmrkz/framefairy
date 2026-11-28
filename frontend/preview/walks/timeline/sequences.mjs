@@ -73,8 +73,13 @@ export default [
     // every codec, HEVC with open GOPs too, is
     // TestTheEpisodesDecoderHandsOverTheKeyFrameFirst. The window never
     // sees the codec, so this walks the walks' own video.
-    name: "a playhead dragged far shows only frames on the way and the frame under the hand once it rests, and a click shows no key frame",
-    steps: [["scrub far"], ["keyed on the way"], ["click far"]],
+    //
+    // Issue #1007, found by the user: a press on a clip's mark on the
+    // range picker did not take hold of the playhead, only above or below
+    // the mark. A drag from a mark moves it now, and a click on the mark
+    // still chooses its clip.
+    name: "a playhead dragged far shows only frames on the way and the frame under the hand once it rests, a click shows no key frame, and a drag from a clip's mark on the range picker moves it too",
+    steps: [["scrub far"], ["keyed on the way"], ["click far"], ["across a mark"]],
   },
   {
     // Issue #446. While a clip plays the playhead moves when the sound is in

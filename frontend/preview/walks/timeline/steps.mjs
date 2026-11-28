@@ -1983,6 +1983,77 @@ export const steps = {
       walk.wrong = `the clip made was dimmed at ${dim.at.toFixed(3)}, ${dim.playing ? "playing" : "paused"}, ${when}`;
     }
   },
+  // ["across a mark"]  presses the middle of a clip's mark on the range
+  //                    picker, one not chosen where there is one, and
+  //                    drags to the right in four steps of 20 px: after
+  //                    every step the playhead is under the hand and the
+  //                    clip chosen before is still chosen. Then a click on
+  //                    the same mark, let go where it was pressed, chooses
+  //                    its clip and puts the playhead on its start
+  async "across a mark"(walk, arg, s) {
+    const { page, watch } = walk;
+    await settle(page);
+    const path = await episodeOn(page);
+    const { duration, fps } = await ask(page, "Source", path);
+    const look = () =>
+      page.evaluate(() => {
+        const picker = document.querySelector('[aria-label="The range picker"]');
+        const marks = [...picker.querySelectorAll(".clipmark")];
+        const mark = marks.find((m) => !m.classList.contains("selected")) ?? marks[0];
+        const box = mark?.getBoundingClientRect();
+        const track = picker.getBoundingClientRect();
+        return {
+          key: mark?.dataset.key ?? null,
+          x: box ? box.left + box.width / 2 : 0,
+          y: box ? box.top + box.height / 2 : 0,
+          left: track.left,
+          width: track.width,
+          chosen: picker.querySelector(".clipmark.selected")?.dataset.key ?? null,
+        };
+      });
+    const was = await look();
+    if (!was.key) {
+      walk.wrong = "the range picker shows no clip's mark";
+      return;
+    }
+    // A pixel of the track and a frame either way, where the hand is.
+    const near = (x) => (Math.min(Math.max(x - was.left, 0), was.width) / was.width) * duration;
+    const off = duration / was.width + 1 / fps;
+    await page.mouse.move(was.x, was.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 4; i++) {
+      const x = Math.min(was.x + 20 * i, was.left + was.width - 2);
+      await page.mouse.move(x, was.y);
+      await nextPaint(page);
+      const at = await playhead(page);
+      const now = await look();
+      if (Math.abs(at - near(x)) > off) {
+        walk.wrong = `dragged ${20 * i} px from the middle of a clip's mark, the playhead stood at ${at.toFixed(3)} s, not under the hand at ${near(x).toFixed(3)} s`;
+        break;
+      }
+      if (now.chosen !== was.chosen) {
+        walk.wrong = `a drag from a clip's mark chose clip ${now.chosen}, where ${was.chosen} was chosen`;
+        break;
+      }
+    }
+    await page.mouse.up();
+    await settle(page);
+    if (walk.wrong) return;
+    if ((await look()).chosen !== was.chosen) {
+      walk.wrong = "letting go of a drag from a clip's mark chose its clip";
+      return;
+    }
+    await watch.step("drag", s);
+    // Pressed and let go where it was pressed, it chooses the clip.
+    await page.mouse.click(was.x, was.y);
+    await settle(page);
+    const start = (await ask(page, "Clips", path)).find((c) => c.key === was.key)?.start;
+    const at = await playhead(page);
+    const chose = (await look()).chosen;
+    if (chose !== was.key) walk.wrong = `a click on the mark of clip ${was.key} chose ${chose}`;
+    else if (start === undefined || Math.abs(at - start) > 1 / fps) walk.wrong = `a click on a clip's mark put the playhead at ${at.toFixed(3)} s, not on its start at ${start?.toFixed(3)} s`;
+    await watch.step("click", s);
+  },
   // ["nailed"]         since "press while playing", the playhead stood
   //                    still under the hand while it held still, on the
   //                    press and again where the hand moved to, the frame

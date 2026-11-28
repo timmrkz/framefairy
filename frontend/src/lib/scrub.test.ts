@@ -18,7 +18,7 @@ afterEach(() => {
   [g.requestAnimationFrame, g.cancelAnimationFrame] = had;
 });
 
-function press(x: number) {
+function press(x: number, about = false) {
   const on: Record<string, Fn> = {};
   const target = {
     setPointerCapture() {},
@@ -36,6 +36,7 @@ function press(x: number) {
       told.push(`seek ${t}`);
     },
     (held) => told.push(held ? "hold" : "let go"),
+    about ? () => told.push("tap") : undefined,
   );
   const frame = () => frames.splice(0).forEach((f) => f());
   return { on, sent, told, frame };
@@ -77,5 +78,34 @@ describe("scrub", () => {
     on.pointermove({ clientX: 530 });
     on.pointerup({ clientX: 530 });
     expect(told).toEqual(["hold", "seek 50", "seek 53", "let go"]);
+  });
+
+  // A press on a clip's mark: let go where it was pressed, it chooses the
+  // clip and leaves the playhead alone. Moved, it is the playhead's, from
+  // where the hand is.
+  test("a press on a mark let go where it was pressed is a tap, not a seek", () => {
+    const { on, told, frame } = press(500, true);
+    frame();
+    on.pointermove({ clientX: 502 });
+    frame();
+    on.pointerup({ type: "pointerup", clientX: 502 } as never);
+    frame();
+    expect(told).toEqual(["tap"]);
+  });
+
+  test("a press on a mark that moves takes hold of the playhead", () => {
+    const { on, told, frame } = press(500, true);
+    frame();
+    on.pointermove({ clientX: 503 });
+    frame();
+    on.pointermove({ clientX: 540 });
+    on.pointerup({ type: "pointerup", clientX: 540 } as never);
+    expect(told).toEqual(["hold", "seek 50.3", "seek 54", "let go"]);
+  });
+
+  test("a press on a mark the system calls off chooses nothing", () => {
+    const { on, told } = press(500, true);
+    on.pointercancel({ type: "pointercancel", clientX: 500 } as never);
+    expect(told).toEqual([]);
   });
 });

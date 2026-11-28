@@ -1985,6 +1985,24 @@
     cancelAnimationFrame(queued);
     queued = 0;
     const grip = gripAt(event.clientX, event.clientY);
+    // Another clip's mark: a press let go where it was pressed chooses the
+    // clip, and a drag from it moves the playhead, the same as on the
+    // range picker. A second press on it chooses it again, and cuts
+    // nothing out of the clip it just chose.
+    const mark = (event.target as Element | null)?.closest?.<HTMLElement>(".clipmark")?.dataset.key;
+    if (mark !== undefined && !grip) {
+      scrubPlayhead(
+        event,
+        timeAt,
+        onseek,
+        (held) => {
+          scrubbing = held;
+          onhold?.(held);
+        },
+        () => onmark?.(mark),
+      );
+      return;
+    }
     if (twice(event)) {
       event.preventDefault();
       if (grip?.twice) grip.twice();
@@ -2102,7 +2120,8 @@
       <span class="num time" style="left: {x(t)}%">{clock(t)}</span>
     {/each}
     <!-- The other clips, the same marks the range picker draws, so the
-         timeline zoomed out shows where they all are. A click chooses one. -->
+         timeline zoomed out shows where they all are. A click chooses one,
+         and a drag from one moves the playhead. -->
     {#each shownMarks as m (m.id)}
       <button
         class="clipmark"
@@ -2112,9 +2131,13 @@
         style="left: {x(m.start)}%; width: {x(m.end) - x(m.start)}%"
         aria-label="Clip at {clock(m.at)}"
         title="Choose the clip at {clock(m.at)}"
+        data-key={m.key}
         {@attach hoverClip(m.key, onhover)}
-        onpointerdown={(e) => e.stopPropagation()}
-        onclick={() => onmark?.(m.key)}
+        onclick={(e) => {
+          // A pointer's press is the track's, see press. A key's is the
+          // button's, and so is a click sent by a program.
+          if (e.detail === 0) onmark?.(m.key);
+        }}
       ></button>
     {/each}
     <!-- Everything drawn for the chosen clip, its frame, its pieces, its
