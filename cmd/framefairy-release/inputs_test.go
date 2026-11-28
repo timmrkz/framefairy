@@ -29,8 +29,11 @@ type program struct {
 	entitled string
 	// signed puts a code directory with flags and team in the signature.
 	signed bool
-	flags  uint32
-	team   string
+	// cms, when set, is the CMS a developer's signature carries, in its
+	// slot after the others.
+	cms   []byte
+	flags uint32
+	team  string
 	// ident is what it is signed as, com.framefairy.app when unsaid.
 	ident string
 }
@@ -60,7 +63,7 @@ func (p program) bytes() []byte {
 	// After the header and the commands: the symbols, the names, the
 	// text, the signature. The commands for them are 24, 80 and 16 bytes.
 	cmdsize := cmds.Len() + 24 + 80
-	if p.entitled != "" || p.signed {
+	if p.entitled != "" || p.signed || p.cms != nil {
 		cmdsize += 16
 	}
 	symoff := 32 + cmdsize
@@ -82,7 +85,7 @@ func (p program) bytes() []byte {
 	add(0x2, 24, uint32(symoff), uint32(len(p.imports)), uint32(stroff), uint32(names.Len()))
 	add(0xb, 80, 0, 0, 0, 0, 0, uint32(len(p.imports)), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 	var sig []byte
-	if p.entitled != "" || p.signed {
+	if p.entitled != "" || p.signed || p.cms != nil {
 		be := binary.BigEndian
 		type slot struct {
 			kind uint32
@@ -117,6 +120,12 @@ func (p program) bytes() []byte {
 			blob = be.AppendUint32(blob, uint32(8+len(p.entitled)))
 			blob = append(blob, p.entitled...)
 			slots = append(slots, slot{5, blob})
+		}
+		if p.cms != nil {
+			blob := be.AppendUint32(nil, cmsMagic)
+			blob = be.AppendUint32(blob, uint32(8+len(p.cms)))
+			blob = append(blob, p.cms...)
+			slots = append(slots, slot{cmsSlot, blob})
 		}
 		// A blob of blobs: its header, an index of kind and offset per
 		// slot, then the slots.

@@ -493,6 +493,18 @@ anything to publish, so a run that publishes nothing takes no Mac. The
 Mac runs main's signed build of the release tool for a Mac, which
 `release-tool.yml` makes beside the one for Linux.
 
+codesign puts Apple's time stamp into every signature, so a library
+signed again is a new file even when its code did not change, and an
+update would download ffmpeg, llama-server and the speech libraries
+every time. So `framefairy-release signed-before` first downloads the
+libraries and programs of main's build and of the channel's, as they
+were signed then, and `harden` keeps such a copy in place of the one it
+just signed when the two are the same signed code: the same bytes up to
+the signature, the same signature but its time, and the same
+certificates. A library signed before a certificate was renewed is
+never kept. The kept copy is checked against the team like every other,
+and the app is sealed around it. See `cmd/framefairy-release/kept.go`.
+
 Builds made on the Mac with `make` stay signed ad hoc, without the
 hardened runtime, like Xcode's Sign to Run Locally. Under it an app
 signed ad hoc may load no library but Apple's, and the speech libraries

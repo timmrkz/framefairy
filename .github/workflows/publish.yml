@@ -216,6 +216,22 @@ jobs:
         name: Check what it could reach
         run: framefairy-release check -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
 
+      # The libraries of main's build and of the channel's, as they were
+      # signed then. harden keeps such a copy in place of a library it
+      # signed afresh when the two are the same signed code, so a library
+      # whose code did not change is the same file in every build, and an
+      # update does not download it again. From the release's public
+      # addresses, in a step with no secret and no token, since what the
+      # release holds is untrusted, and harden checks a kept copy like any
+      # other. What cannot be had costs only the keeping. See kept.go.
+      - id: before
+        if: steps.check.outcome == 'success'
+        name: Earlier copies of the libraries
+        continue-on-error: true
+        env:
+          CHANNEL: ${{ steps.which.outputs.channel }}
+        run: framefairy-release signed-before -channel "$CHANNEL" -out "$RUNNER_TEMP/kept"
+
       # Every build the user gets is signed again with their Developer ID
       # and the hardened runtime, so no other program can put its code
       # into the app, and macOS knows the app again after an update and
@@ -230,7 +246,7 @@ jobs:
         env:
           FRAMEFAIRY_DEVELOPER_ID: ${{ secrets.FRAMEFAIRY_DEVELOPER_ID }}
           FRAMEFAIRY_DEVELOPER_ID_PASSWORD: ${{ secrets.FRAMEFAIRY_DEVELOPER_ID_PASSWORD }}
-        run: framefairy-release harden -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
+        run: framefairy-release harden -zip "$RUNNER_TEMP/build/app.zip" -kept "$RUNNER_TEMP/kept" -refusal "$RUNNER_TEMP/refused.txt"
 
       # The zip the build left deflates every file. Packed again, each
       # file is stored as it is, and its parts and pieces let an app that

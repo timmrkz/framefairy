@@ -124,7 +124,7 @@ func (s *Source) assemble(ctx context.Context, where, sum string, size, cheaper 
 // own is the running app's file a part names, when it holds the same
 // bytes, or nil.
 func (s *Source) own(part Part) []byte {
-	rest, ok := inApp(part.Name)
+	rest, ok := InApp(part.Name)
 	if s.App == nil || !ok {
 		return nil
 	}
@@ -148,7 +148,7 @@ func (s *Source) piece(ctx context.Context, parts string, part Part, progress fu
 	if err := s.stream(ctx, where, part.Packed, bufferSink{&packed}, progress); err != nil {
 		return nil, fmt.Errorf("the piece of %s: %w", part.Name, err)
 	}
-	return unpackPiece(packed.Bytes(), part)
+	return UnpackPiece(packed.Bytes(), part)
 }
 
 type bufferSink struct{ b *bytes.Buffer }

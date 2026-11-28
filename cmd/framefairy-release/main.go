@@ -24,7 +24,10 @@
 //	    write the build again as the zip it is published as, its files
 //	    stored, with its parts, a piece for every file and the zip packed
 //	    with zstd, see pack.go
-//	framefairy-release harden -zip F [-team-file F] [-refusal F] | -app A -p12 F
+//	framefairy-release signed-before -channel C -out D
+//	    download the libraries of main's build and the channel's as
+//	    they were signed, for harden -kept, see kept.go
+//	framefairy-release harden -zip F [-team-file F] [-kept D] [-refusal F] | -app A -p12 F
 //	    sign the app again with the Developer ID and the hardened
 //	    runtime, on a Mac, before pack, see devid.go
 //	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-team-file F] [-refusal F]
@@ -64,7 +67,7 @@
 //	    newest release, from how scripts/upstream.sh --behind ended and
 //	    what it wrote, see behind.go
 //
-// Every command but key, check, harden, sign, walks, fits and self asks GitHub,
+// Every command but key, check, signed-before, harden, sign, walks, fits and self asks GitHub,
 // with GH_TOKEN and GH_REPO, through the interface in github.go.
 package main
 
@@ -111,6 +114,8 @@ func main() {
 		err = packCommand(args)
 	case "check":
 		err = check(args)
+	case "signed-before":
+		err = signedBeforeCommand(args)
 	case "harden":
 		err = harden(args)
 	case "sign":

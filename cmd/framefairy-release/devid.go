@@ -107,11 +107,14 @@ type devID struct {
 	// the app against once they are signed: the user's team in Apple's own
 	// certificate, see teamRequirement.
 	requirement string
+	// kept is the folder signed-before wrote earlier copies of the
+	// libraries to, or empty, see keepSigned.
+	kept string
 }
 
 // harden is the command.
 //
-//	harden -zip F -team-file F
+//	harden -zip F -team-file F [-kept D]
 //	    in publish.yml: sign the app in a build's zip with the Developer ID
 //	    from FRAMEFAIRY_DEVELOPER_ID, base64, and its password from
 //	    FRAMEFAIRY_DEVELOPER_ID_PASSWORD, and write the team to
@@ -136,13 +139,14 @@ func hardenWith(tools macOS, args []string) (err error) {
 	entitlements := fs.String("entitlements", "build/entitlements.plist", "what the app is signed as entitled to")
 	timestamp := fs.Bool("timestamp", true, "with Apple's time stamp")
 	requirement := fs.String("requirement", "", "what codesign checks the signed code against, for -app")
+	kept := fs.String("kept", "", "the folder signed-before wrote earlier copies of the libraries to")
 	_ = fs.Parse(args)
 	defer func() { err = refused(*refusal, err, os.Stderr) }()
 	// The secrets are read once and leave the environment at once, so no
 	// program harden starts inherits them.
 	cert := os.Getenv("FRAMEFAIRY_DEVELOPER_ID")
 	d := devID{macOS: tools, p12: *p12, password: os.Getenv("FRAMEFAIRY_DEVELOPER_ID_PASSWORD"),
-		identity: *identity, entitlements: *entitlements, timestamp: *timestamp, requirement: *requirement}
+		identity: *identity, entitlements: *entitlements, timestamp: *timestamp, requirement: *requirement, kept: *kept}
 	for _, k := range []string{"FRAMEFAIRY_DEVELOPER_ID", "FRAMEFAIRY_DEVELOPER_ID_PASSWORD"} {
 		if err := os.Unsetenv(k); err != nil {
 			return err
@@ -318,6 +322,12 @@ func (d devID) signApp(app string) (err error) {
 		if err := sign("--identifier", codeIdentifier(code), code); err != nil {
 			return err
 		}
+	}
+	// A library whose code did not change keeps the bytes it was signed
+	// with before, before the app is sealed around it, see kept.go. It is
+	// checked below like every other.
+	if err := keepSigned(filepath.Dir(app), d.kept, inner, os.Stdout); err != nil {
+		return err
 	}
 	// Signing the bundle signs its program, with the entitlements, and
 	// seals everything else in it.
