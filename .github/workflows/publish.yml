@@ -100,7 +100,10 @@ jobs:
       - uses: ./.github/actions/release-tool
       - name: Write the channel list from every entry
         run: framefairy-release channels
+      # Whatever the list did: a list that failed to write is no reason
+      # to leave a publish waiting for good.
       - name: Cancel a publish stuck before the environment
+        if: ${{ !cancelled() }}
         run: framefairy-release unstick
 
   # Whether there is anything to publish, asked on Linux, so a run that
@@ -341,5 +344,8 @@ jobs:
       - uses: ./.github/actions/release-tool
       - name: Write the channel list from every entry
         run: framefairy-release channels
+      # Whatever the list did: a list that failed to write is no reason
+      # to leave a publish waiting for good.
       - name: Cancel a publish stuck before the environment
+        if: ${{ !cancelled() }}
         run: framefairy-release unstick
