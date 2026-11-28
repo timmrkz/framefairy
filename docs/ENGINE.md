@@ -1916,6 +1916,18 @@ A short is named after its clip's words alone, `ShortName` in `clips.go`,
 without the clip's id, which stays in the clip set, the log and the
 caption files. A clip with no words is called `clip`.
 
+A clip is called by the words it shows now, `Transcript.Named` in
+`clipname.go`: its first words, with its own corrections and without
+the words it removed, as many as fit in 60 letters. That one rule gives
+the title on its card and the name of its short and its pictures, so a
+typo corrected or a start moved renames the clip. A clip set keeps the
+`title` and the `slug` the clip was found with, and the slug still names
+the clip's own files in the work folder. The note of a short keeps the
+name it was given as `slug`, `recordShort`, so it is still the clip's
+short after the words change. A short of the old words stays where it
+is, because it may be posted already, and the next render writes one of
+the new words beside it.
+
 Two episodes of the same file name, from two folders, still share that
 folder. There a name taken by a file the clip did not write gets a
 number, the way Finder gives one, `<slug> 2.mp4`, `shortStem` in

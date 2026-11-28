@@ -429,7 +429,7 @@ func TestWhatThePlayheadProposes(t *testing.T) {
 	if _, err := handEntry(lines, ClipRequest{At: 60}, 10, 30, seconds); err == nil {
 		t.Error("I past the last word proposed a clip")
 	}
-	if entry, _ := handEntry(lines, ClipRequest{At: 16}, 12, 30, seconds); entry.Title != "Und dann kam er zurück" {
+	if entry, _ := handEntry(lines, ClipRequest{At: 16}, 12, 30, seconds); entry.Title != "Und dann kam er zurück." {
 		t.Errorf("titled %q", entry.Title)
 	}
 }

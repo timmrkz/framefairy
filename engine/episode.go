@@ -692,6 +692,14 @@ func ReadPlan(fsys afero.Fs, path string) (*PlanView, error) {
 // it: 156 ms on an episode of four hours with 24 plans, for every edit,
 // where reading each plan once takes 2.5.
 func (s PlanSummary) View() *PlanView {
+	return s.NamedView(nil)
+}
+
+// NamedView is View with each clip called by the words it shows now, from
+// the transcript t, see Transcript.Named. The clip list is made this way,
+// so a card's title follows its clip's words. With no transcript a clip
+// is called what its plan says.
+func (s PlanSummary) NamedView(t *Transcript) *PlanView {
 	plan, clips := s.plan, s.clips
 	path := s.Path
 	view := &PlanView{Summary: s}
@@ -716,7 +724,8 @@ func (s PlanSummary) View() *PlanView {
 	}
 	work := filepath.Dir(filepath.Dir(path))
 	for _, c := range clips {
-		v := ClipView{ID: c.ID, Slug: c.Slug, Basename: c.Basename(), Title: c.Title,
+		title, _ := t.Named(c)
+		v := ClipView{ID: c.ID, Slug: c.Slug, Basename: c.Basename(), Title: title,
 			Duration: num.RoundTo(c.Duration(), 3), Start: c.Segments[0].Start,
 			End: c.Segments[len(c.Segments)-1].End, Rejected: c.Rejected,
 			CaptionYMoved: c.CaptionY != nil, Thumbnails: c.Thumbnails}
@@ -827,7 +836,9 @@ func renderedOf(plan Plan, c Clip) bool {
 
 // shortRecord is what a plan says of a clip's short, see recordShort.
 type shortRecord struct {
-	folder, name   string
+	folder, name string
+	// called is the clip's name the short was named by.
+	called         string
 	size, modified int64
 }
 
@@ -838,16 +849,22 @@ func (r shortRecord) still(info os.FileInfo) bool {
 
 // recordOf reads what the plan says of a clip's short, if it says
 // anything that can be used. A plan is untrusted: the folder must be a
-// whole path and the name the clip's own, see ownName.
+// whole path and the name one the clip's short can have, see ownName, by
+// the name the render gave the clip, see recordShort, or for a record
+// that does not say, the name its plan gives it.
 func recordOf(plan Plan, c Clip) (shortRecord, bool) {
 	shorts, _ := plan.Raw[keyShorts].(map[string]any)
 	rec, _ := shorts[c.ID].(map[string]any)
 	folder, _ := rec[keyFolder].(string)
 	name, _ := rec[keyName].(string)
+	called, _ := rec[keySlug].(string)
+	if called == "" || called != clipSlug(called) {
+		called = c.ShortName()
+	}
 	size, sized := wholeNumber(rec[keySize])
 	modified, stamped := wholeNumber(rec[keyModified])
-	if filepath.IsAbs(folder) && ownName(c, name) && sized && stamped {
-		return shortRecord{folder: folder, name: name, size: size, modified: modified}, true
+	if filepath.IsAbs(folder) && ownName(called, name) && sized && stamped {
+		return shortRecord{folder: folder, name: name, called: called, size: size, modified: modified}, true
 	}
 	return shortRecord{}, false
 }
@@ -862,17 +879,18 @@ func wholeNumber(v any) (int64, bool) {
 	return i, err == nil
 }
 
-// ownName says whether a file name is one a clip's short can have: the
-// clip's words, or those with a number as shortStem gives it, slug 2.mp4.
-func ownName(c Clip, name string) bool {
+// ownName says whether a file name is one the short of a clip called
+// called can have: its name, or that with a number as shortStem gives it,
+// slug 2.mp4.
+func ownName(called, name string) bool {
 	stem, ok := strings.CutSuffix(name, ".mp4")
 	if !ok {
 		return false
 	}
-	if stem == c.ShortName() {
+	if stem == called {
 		return true
 	}
-	n, ok := strings.CutPrefix(stem, c.ShortName()+" ")
+	n, ok := strings.CutPrefix(stem, called+" ")
 	return ok && n != "" && n[0] != '0' && len(n) <= 4 && strings.Trim(n, "0123456789") == ""
 }
 
@@ -907,7 +925,8 @@ func (ep *Episode) IsShort(path string) bool {
 // name is taken by a short or by the first picture of one, so no short
 // takes the pictures of another either.
 func shortStem(dir string, plan Plan, c Clip) string {
-	if rec, ok := recordOf(plan, c); ok && fileio.ResolvePath(rec.folder) == fileio.ResolvePath(dir) {
+	// A short of the clip's old words is left to them, see recordShort.
+	if rec, ok := recordOf(plan, c); ok && rec.called == c.ShortName() && fileio.ResolvePath(rec.folder) == fileio.ResolvePath(dir) {
 		if info, err := os.Stat(filepath.Join(rec.folder, rec.name)); err == nil && rec.still(info) {
 			return strings.TrimSuffix(rec.name, ".mp4")
 		}
@@ -926,13 +945,20 @@ func shortStem(dir string, plan Plan, c Clip) string {
 // recordShort writes in a plan where a clip's short was rendered, see
 // shortOf: the folder and the name its path really leads to, and the
 // size and the modification time it was written with.
-func recordShort(fsys afero.Fs, planPath, clipID, short string) error {
+//
+// The clip c is called what the short was named by, see Transcript.Named,
+// and the record keeps that name, so the short is still the clip's own
+// once the clip's words change, see recordOf, until the next render names
+// it anew. The clip itself is left as it is: noting a short is no edit,
+// and an edit before it is still undone after it.
+func recordShort(fsys afero.Fs, planPath string, c Clip, short string) error {
 	// The short is what ffmpeg wrote, so it is on the disk, see files.go.
 	real := fileio.ResolvePath(short)
 	info, err := os.Stat(real)
 	if err != nil {
 		return err
 	}
+	clipID := c.ID
 	return editPlan(fsys, planPath, func(top *object, _ []*object) error {
 		shorts, ok := top.values[keyShorts].(*object)
 		if !ok {
@@ -941,6 +967,7 @@ func recordShort(fsys afero.Fs, planPath, clipID, short string) error {
 		rec := newObject()
 		rec.set(keyFolder, filepath.Dir(real))
 		rec.set(keyName, filepath.Base(real))
+		rec.set(keySlug, c.ShortName())
 		rec.set(keySize, info.Size())
 		rec.set(keyModified, info.ModTime().UnixNano())
 		shorts.set(clipID, rec)

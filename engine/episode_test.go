@@ -107,7 +107,7 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 		}
 	}
 	// Noted the way a render notes its short once it is written.
-	if err := recordShort(disk, plan, "01", filepath.Join(out, "done.mp4")); err != nil {
+	if err := recordShort(disk, plan, Clip{ID: "01", Slug: "done"}, filepath.Join(out, "done.mp4")); err != nil {
 		t.Fatal(err)
 	}
 	ep := NewMachine(disk).Episode(source)
@@ -160,6 +160,13 @@ func episodeWithPlan(t *testing.T, name string) (source, plan string) {
 // On the real disk: a short is a file on the disk, see IsShort.
 func placeShort(t *testing.T, plan, dir, id string) string {
 	t.Helper()
+	return placeShortSaying(t, plan, dir, id, nil)
+}
+
+// placeShortSaying is placeShort of a clip that shows the words of said,
+// which it is named by, the way Run names it, see Transcript.Named.
+func placeShortSaying(t *testing.T, plan, dir, id string, said *Transcript) string {
+	t.Helper()
 	loaded, clips, err := LoadClips(disk, plan)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +175,9 @@ func placeShort(t *testing.T, plan, dir, id string) string {
 	if i < 0 {
 		t.Fatalf("the plan has no clip %s", id)
 	}
-	stem := shortStem(dir, loaded, clips[i])
+	named := clips[i]
+	named.Title, named.Slug = said.Named(clips[i])
+	stem := shortStem(dir, loaded, named)
 	short := filepath.Join(dir, stem+".mp4")
 	written := []string{short}
 	for n := range clips[i].Thumbnails {
@@ -182,7 +191,7 @@ func placeShort(t *testing.T, plan, dir, id string) string {
 			t.Fatal(err)
 		}
 	}
-	if err := recordShort(disk, plan, id, short); err != nil {
+	if err := recordShort(disk, plan, named, short); err != nil {
 		t.Fatal(err)
 	}
 	return short
