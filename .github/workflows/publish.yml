@@ -276,13 +276,17 @@ jobs:
           VERSION: ${{ steps.which.outputs.version }}
           COMMIT: ${{ steps.which.outputs.commit }}
           URL: https://github.com/${{ github.repository }}/releases/download/dev/${{ steps.which.outputs.zip }}
+          # When the run that built it was created, which a run made again
+          # keeps, signed as the build's order, so the app never takes a
+          # build of a channel made before one it took. See updates.Order.
+          MADE: ${{ github.event.workflow_run.created_at }}
         # Once build/team-id.txt names the team, sign reads it and refuses
         # a build that is not signed with its Developer ID and the hardened
         # runtime throughout, so it is never lost on the way unseen.
         run: >-
           framefairy-release sign -zip "$RUNNER_TEMP/build/app.zip" -parts "$RUNNER_TEMP/packed/parts.json"
           -channel "$CHANNEL" -name "$NAME"
-          -version "$VERSION" -commit "$COMMIT" -url "$URL" -out "$RUNNER_TEMP/entry.json" -refusal "$RUNNER_TEMP/refused.txt"
+          -version "$VERSION" -commit "$COMMIT" -url "$URL" -made "$MADE" -out "$RUNNER_TEMP/entry.json" -refusal "$RUNNER_TEMP/refused.txt"
 
       # The zip first and its entry after, and a pull request's commit
       # marked ready the moment its entry is up, #839. See publish.go.

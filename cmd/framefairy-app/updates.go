@@ -250,6 +250,17 @@ func newUpdating(u *updater.Updater, quit func(), st *store, idle func() (func()
 	if dir, err := os.UserCacheDir(); err == nil {
 		src.Cache = filepath.Join(dir, "FrameFairy", "builds")
 	}
+	// When the newest build taken of each channel was made, so an older
+	// one is never taken in its place, see updates.Order. A file of its
+	// own beside updates.json, which a pick writes whole.
+	src.Order = &updates.Order{
+		Load: func() map[string]time.Time {
+			var made map[string]time.Time
+			st.load("update-order.json", &made)
+			return made
+		},
+		Save: func(made map[string]time.Time) error { return st.save("update-order.json", made) },
+	}
 	c.setUp(u, updateKeyText, src, exe, runtime.GOOS)
 	return c
 }

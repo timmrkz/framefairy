@@ -228,7 +228,7 @@ func TestABuildIsSignedAsTheZipAndAsTheStoredZip(t *testing.T) {
 	// Parts of another build are no parts of this one.
 	other := packed(t, theApp("pr-7"))
 	err = signBuild(built(dir), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
-		"https://example.com/dev/app-main-1.zip", filepath.Join(other, partsFile), out)
+		"https://example.com/dev/app-main-1.zip", filepath.Join(other, partsFile), out, time.Time{})
 	if err == nil {
 		t.Error("a build was signed with the parts of another")
 	}
@@ -242,9 +242,40 @@ func TestABuildIsSignedAsTheZipAndAsTheStoredZip(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = signBuild(built(dir), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
-		"https://example.com/dev/app-main-1.zip", filepath.Join(dir, partsFile), out)
+		"https://example.com/dev/app-main-1.zip", filepath.Join(dir, partsFile), out, time.Time{})
 	if err == nil {
 		t.Error("a build was signed with the packed zip of another")
+	}
+}
+
+// A build signed with the time its run was made carries that time as its
+// order, signed over the stored zip the app installs, so the app can
+// refuse a build of its channel made before one it took. A time that is
+// not one is refused before anything is written.
+//
+// On the real disk: the release tool reads the packed build and writes the entry as files.
+func TestABuildIsSignedWithWhenItWasMade(t *testing.T) {
+	private := release(t)
+	public := private.Public().(ed25519.PublicKey)
+	dir := packed(t, theApp("main"))
+	out := filepath.Join(t.TempDir(), "entry.json")
+	args := func(made string) []string {
+		return []string{"-zip", built(dir), "-parts", filepath.Join(dir, partsFile),
+			"-channel", "main", "-name", "main", "-version", "0.1.0-main.abc1234", "-commit", "abc1234def56",
+			"-url", "https://example.com/dev/app-main-1.zip", "-made", made, "-out", out}
+	}
+	if err := sign(args("2026-11-28T13:04:05Z")); err != nil {
+		t.Fatal(err)
+	}
+	b := readBuild(t, out)
+	if want := time.Date(2026, 11, 28, 13, 4, 5, 0, time.UTC); !b.Made.Equal(want) {
+		t.Errorf("the entry says it was made %v, not %v", b.Made, want)
+	}
+	if err := updates.VerifyOrder(public, b); err != nil {
+		t.Errorf("the app refuses the order: %v", err)
+	}
+	if err := sign(args("yesterday")); err == nil {
+		t.Error("a build was signed with a made time that is no time")
 	}
 }
 
@@ -259,7 +290,7 @@ func TestTheListLeavesOutABadStoredZip(t *testing.T) {
 	dir := packed(t, theApp("main"))
 	out := filepath.Join(t.TempDir(), "entry.json")
 	if err := signBuild(built(dir), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
-		"https://example.com/dev/app-main-1.zip", filepath.Join(dir, partsFile), out); err != nil {
+		"https://example.com/dev/app-main-1.zip", filepath.Join(dir, partsFile), out, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	good := readBuild(t, out)
