@@ -1364,11 +1364,26 @@ bubble scrolled by those eight pixels.
   off. The frame is there while the playhead is in the clip, and only
   then. The new place applies to the whole clip, every piece of it, since a
   clip has one crop. A part turned with Rotate is the one exception and
-  keeps a crop of its own. **Automatic crop** appears once a crop was
-  moved and brings back the automatic placement, removing the keyframes
-  with it, and **Put the crop back** takes that click back again, crop
-  marks and all. A click on the frame without dragging plays
-  or pauses.
+  keeps a crop of its own. Where the crop on the frame shown stands
+  anywhere but where the app places it, and a drag there, or on the
+  switch keyframe that holds the crop there, could move it, the frame's
+  top right corner shows **Automatic crop**, an anticlockwise arrow,
+  while the pointer is on the frame. Its click moves the crop frame to
+  the app's place, exactly as a drag would, so on a keyframe or after one
+  it moves that keyframe's crop, and it never puts or removes a
+  keyframe. Then it turns clockwise into **Put the crop back**, which
+  moves the crop frame back to where it stood, and nothing more, the way
+  the captions are put back. Each arrow shows only on a frame whose crop
+  it would move: before a clip's switch keyframe the crop can stand where
+  the app placed it, and the arrow would do nothing there. The Go side
+  decides all of it and says it in the frame's dress, `corner`, and a
+  click is `ResetCrop` or `PutCropBack`, which keep the way back beside
+  the video's undo steps while the clip is as the click left it, see
+  [the decision record](decisions/2026-11-28-go-decides-the-crop-arrow.md).
+  The window only draws the arrow it is sent. Each arrow says
+  its name in a tooltip, and the frame itself has none. At the picture's
+  right edge the arrow stands clear of the video preview's info mark. A
+  click on the frame without dragging plays or pauses.
 - **Clip list:** beside the player, exactly as tall as the video preview with
   the range picker under it, every clip found, in time order, with its start
   and length. A green dot marks a rendered clip. Click one to select it,
@@ -1857,8 +1872,7 @@ bubble scrolled by those eight pixels.
   the card says them alone: where the clip starts, how long it comes out
   and in how many pieces, `1:05:30, 28 s, 1 piece`, following the hand
   while an edge or a cut is dragged. On the
-  right what a reset threw away,
-  **Render** and, once rendered, **Show in folder**. Rendered means the
+  right **Render** and, once rendered, **Show in folder**. Rendered means the
   clip was rendered, as its clip set noted when the short was written, so
   the green dot, the green mark and Render again stay after the short is
   uploaded and removed from its folder. Show in folder shows
@@ -2931,11 +2945,13 @@ who moves across the picture. Plan row 3.26, the design is in
   ring of the same size and colour, which fills in once a second circle
   is put, and its title says it needs a second glide keyframe to glide.
   The user picked the ring from a sheet of eight, over a dimmed circle.
-- **Automatic crop** removes every keyframe of the clip and brings back
-  the crop the engine found, and **Put the crop back** brings back the
-  keyframes with the crop. Removing a keyframe gives its part the crop of
-  the part before it, the keyframe before or the clip's own. Rotating a
-  part keeps its keyframes. Each
+- **Automatic crop**, the arrow in the crop frame's corner, moves the
+  crop on the frame shown to where the engine places it, on a keyframe
+  or after one that keyframe's crop, and keeps every keyframe, see
+  Moving the crop.
+  Removing a keyframe gives its part the crop of the part before it,
+  the keyframe before or the clip's own. Rotating a part keeps its
+  keyframes. Each
   was placed on the picture turned one way, and steers the part only while
   it is turned that way: turned another way, it waits, and four turns
   bring it back. A crop placed on the frame of a keyframe that

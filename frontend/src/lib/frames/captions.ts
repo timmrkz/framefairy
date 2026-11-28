@@ -73,7 +73,6 @@ export type FrameDress = {
   height: number;
   cropWidth: number;
   left: number;
-  moved: boolean;
   mark: CropMark | null;
   movable: boolean;
   key?: string;
@@ -84,9 +83,13 @@ export type FrameDress = {
   scale?: number;
   bounce?: [number, number, number];
   turned?: FrameDress & { framing: string };
+  // What the crop frame's corner offers on this frame, which the Go side
+  // decides: the crop brought to where the app places it, or put back.
+  corner?: "auto" | "back";
 };
 
-// Whether two dresses draw the same crop, turn and keyframe.
+// Whether two dresses draw the same crop, turn and keyframe, and offer the
+// same in the crop frame's corner.
 export function sameDress(a: FrameDress | null | undefined, b: FrameDress | null | undefined): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -99,7 +102,7 @@ export function sameDress(a: FrameDress | null | undefined, b: FrameDress | null
     a.height === b.height &&
     a.cropWidth === b.cropWidth &&
     a.left === b.left &&
-    a.moved === b.moved &&
+    a.corner === b.corner &&
     a.movable === b.movable &&
     JSON.stringify(a.mark) === JSON.stringify(b.mark)
   );

@@ -80,6 +80,21 @@ func TestARealSignatureIsReadAsCodesignWroteIt(t *testing.T) {
 	if s.ident != bundleID {
 		t.Errorf("the app signed by harden reads as signed as %q, not %s", s.ident, bundleID)
 	}
+	// And it runs its tools: what it carries is the SHA-256 of each tool
+	// as signed, not as make built it, see resum.
+	sums, err := toolSums(signedApp)
+	if err != nil || len(sums) == 0 {
+		t.Fatalf("%s carries no tools: %v", signedApp, err)
+	}
+	own, err := os.ReadFile(programs(t, signedApp)[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, sum := range sums {
+		if !bytes.Contains(own, []byte(name+"="+sum)) {
+			t.Errorf("the app signed by harden carries no SHA-256 of %s as signed, so it would not run it", name)
+		}
+	}
 	for _, file := range programs(t, adhocApp) {
 		s, _ := read(t, file)
 		if !s.signed || s.flags&flagAdhoc == 0 || s.flags&flagRuntime != 0 || s.team != "" {
@@ -182,6 +197,21 @@ func TestARealLibrarySignedAgainIsKept(t *testing.T) {
 		}
 		if !bytes.Equal(before, after) {
 			t.Errorf("%s was signed afresh, though its code did not change", rel)
+		}
+	}
+	// And the app carries the SHA-256 of each tool it was kept with, so
+	// it runs them, see resum.
+	sums, err := toolSums(second)
+	if err != nil || len(sums) == 0 {
+		t.Fatalf("%s carries no tools: %v", second, err)
+	}
+	own, err := os.ReadFile(filepath.Join(second, "Contents", "MacOS", appProgram))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, sum := range sums {
+		if !bytes.Contains(own, []byte(name+"="+sum)) {
+			t.Errorf("the app signed around kept tools carries no SHA-256 of %s as kept, so it would not run it", name)
 		}
 	}
 }

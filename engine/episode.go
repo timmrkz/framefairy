@@ -625,6 +625,10 @@ type SegmentView struct {
 	// its closing edge, see SourceInfo.EdgePlayheads. Only what knows the
 	// video's frames fills it in.
 	Up [2]float64 `json:"up"`
+	// Auto is where the app placed the crop, see Segment.Auto. The window
+	// is not sent it: each frame's dress says where the app places its
+	// crop, see FrameDress.Auto.
+	Auto *int `json:"-"`
 }
 
 // WordView is one word. In a caption it also says which word of the
@@ -813,7 +817,7 @@ func SegmentViews(segments []Segment) []SegmentView {
 	out := make([]SegmentView, 0, len(segments))
 	for i, s := range segments {
 		out = append(out, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
-			CropMarkViews(s.Marks), parts[i].Part, [2]float64{}})
+			CropMarkViews(s.Marks), parts[i].Part, [2]float64{}, s.Auto})
 	}
 	return out
 }

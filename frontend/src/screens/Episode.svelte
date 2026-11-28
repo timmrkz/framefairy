@@ -245,7 +245,7 @@
   // video preview keeps, see lib/playhead.ts. On the video the clip is
   // drawn dimmed on the clip timeline and the range picker.
   let onClip = $state(false);
-  let offers = $state<PlayerOffers>({ crop: "", savingCrop: false, hint: "" });
+  let offers = $state<PlayerOffers>({ hint: "" });
 
   const duration = $derived(source?.duration ?? 0);
   // What the window and a search of it may be, which the Go side works
@@ -1905,6 +1905,16 @@
     return clip ? save(clip) : Promise.resolve();
   }
 
+  // A click on the arrow in the crop frame's corner, which the Go side
+  // carries out and answers with the clip as it is now.
+  async function cropCorner(call: () => Promise<ClipEntry>) {
+    try {
+      putClip(await call());
+    } catch (err) {
+      oops(errorText(err));
+    }
+  }
+
   async function setCrop(clip: ClipEntry, at: number, left: number) {
     try {
       const updated = await api.setCrop(path, clip.plan, clip.id, at, left);
@@ -2649,15 +2659,6 @@
     }
   }
 
-  async function resetCrop(clip: ClipEntry, at: number) {
-    try {
-      const updated = await api.resetCrop(path, clip.plan, clip.id, at);
-      putClip(updated);
-    } catch (err) {
-      oops(errorText(err));
-    }
-  }
-
   // A number of the search typed: how many clips, the shortest or the
   // longest. The numbers live in the workspace, next to the episode they
   // are about, and are kept the moment they change, like everything else
@@ -3136,7 +3137,7 @@
                    undo either way. -->
               {#if captionsMoved}
                 <button
-                  class="quiet glyph"
+                  class="quiet glyph undo-mark"
                   title="Put the captions back as they start out: {startLook?.font}, {startLook?.size}, {startLook?.y} from the bottom, in the colours they start in"
                   aria-label="Put the captions back"
                   onclick={putCaptionsBack}
@@ -3145,7 +3146,7 @@
                 </button>
               {:else if captionsWere}
                 <button
-                  class="quiet glyph"
+                  class="quiet glyph undo-mark"
                   title="Put the captions back as you had them: {captionsWere.font}, {captionsWere.size}, {captionsWere.y} from the bottom, with their colours"
                   aria-label="Put the captions back as you had them"
                   onclick={putCaptionsAsTheyWere}
@@ -3418,8 +3419,8 @@
           drafts={captionDrafts}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           oncrop={(key, at, left) => onTheClip(key, (c) => setCrop(c, at, left))}
-          onresetcrop={(key, at) => onTheClip(key, (c) => resetCrop(c, at))}
-          oncropmark={(key, from, to, x, glide) => onTheClip(key, (c) => setCropMark(c, from, to, x, glide))}
+          onresetcrop={(key, at) => onTheClip(key, (c) => cropCorner(() => api.resetCrop(path, c.plan, c.id, at)))}
+          onputcropback={(key) => onTheClip(key, (c) => cropCorner(() => api.putCropBack(path, c.plan, c.id)))}
           oncaptiony={(y) => setCaptionsHeight(y)}
           onword={(key, start, text) => onTheClip(key, (c) => setWord(c, start, text))}
           onremoveword={(key, start, part) => onTheClip(key, (c) => removeWord(c, start, part))}
@@ -3833,19 +3834,6 @@
         {#if numbers.saving}<span class="muted">Saving</span>{/if}
         <span class="grow"></span>
         {#if offers.hint}<span class="muted num">{offers.hint}</span>{/if}
-        {#if offers.crop === "auto"}
-          <button
-            onclick={() => player?.resetCrop()}
-            disabled={offers.savingCrop}
-            title="Let the app place the crop again">Automatic crop</button
-          >
-        {:else if offers.crop === "back"}
-          <button
-            onclick={() => player?.cropBack()}
-            disabled={offers.savingCrop}
-            title="Back to where you had it">Put the crop back</button
-          >
-        {/if}
         {#if current}
           {#if current.short}
             <button onclick={() => api.reveal(current.short!)}>Show in folder</button>
@@ -4149,15 +4137,10 @@
     height: var(--control-h);
   }
 
-  /* A mark that undoes something sits at the end of the row the thing is
-     in, and is only there while there is something to undo. */
+  /* A mark that undoes something, .undo-mark in app.css, sits at the end
+     of the row the thing is in, and is only there while there is
+     something to undo. */
   .grouphead .glyph {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
     color: var(--muted);
   }
 

@@ -401,6 +401,18 @@ button.bin {
   flex: none;
 }
 
+/* A mark that undoes something, and then does it again: the captions put
+   back in their column and the crop put back in its frame. One size for
+   both, the icon in the middle of a square of 24. */
+button.undo-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
 button.quiet {
   background: transparent;
   border-color: transparent;

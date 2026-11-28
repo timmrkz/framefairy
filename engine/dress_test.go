@@ -31,6 +31,72 @@ func TestADressedFrameHasTheCropTheRenderCropsBy(t *testing.T) {
 	}
 }
 
+// The crop frame is moved only on a frame whose crop stands elsewhere
+// than where the app places it. A piece with a switch keyframe halfway
+// stands where the app put it until the keyframe, even once a person
+// placed it there by hand, and only from the keyframe on is it moved. The
+// user saw the arrow that brings the crop back offered where it changed
+// nothing, on the first half of such a clip.
+func TestOnlyAFrameWhoseCropIsNotWhereTheAppPutItIsMoved(t *testing.T) {
+	t.Parallel()
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	auto := SegmentView{Start: 0, End: 2, CropX: intPtr(50), Auto: intPtr(50), Marks: []CropMarkView{{At: 1, X: 300}}}
+	again := auto
+	again.Moved = true
+	byHand := auto
+	byHand.Moved, byHand.CropX = true, intPtr(120)
+	onAuto := auto
+	onAuto.Marks = []CropMarkView{{At: 1, X: 50}}
+	for _, c := range []struct {
+		name  string
+		view  SegmentView
+		at    float64
+		moved bool
+	}{
+		{"before the keyframe", auto, 0.2, false},
+		{"on the frame before the keyframe", auto, 0.96, false},
+		{"on the keyframe", auto, 1, true},
+		{"after the keyframe", auto, 1.6, true},
+		{"placed by hand where the app put it", again, 0.2, false},
+		{"placed by hand elsewhere", byHand, 0.2, true},
+		{"after a keyframe where the app put it", onAuto, 1.6, false},
+	} {
+		d := source.Dress([]SegmentView{c.view}, nil, c.view.Marks, c.at, 1080, 1920)
+		if d.Moved != c.moved || d.Auto != 50 {
+			t.Errorf("%s, at %.2f s, the crop at %v and the app's at %v is moved %v, want %v at 50", c.name, c.at, d.Left, d.Auto, d.Moved, c.moved)
+		}
+	}
+}
+
+// A frame says which keyframe holds its crop, where a drag on that
+// keyframe would place the crop it shows: a switch keyframe from its own
+// frame to the next keyframe, and a circle that ends a glide after it.
+// Before the first keyframe the piece's own crop holds the frame, and
+// while the crop glides nothing does.
+func TestAFrameSaysWhichKeyframeHoldsItsCrop(t *testing.T) {
+	t.Parallel()
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	marks := []CropMarkView{{At: 1, X: 300}, {At: 2, X: 100, Glide: true, Opens: true}, {At: 3, X: 200, Glide: true}}
+	piece := SegmentView{Start: 0, End: 4, CropX: intPtr(50), Auto: intPtr(50), Marks: marks}
+	for _, c := range []struct {
+		at       float64
+		held     bool
+		keyframe float64
+	}{
+		{0.5, false, 0},
+		{1, true, 1},
+		{1.6, true, 1},
+		{2.5, false, 0},
+		{3, true, 3},
+		{3.6, true, 3},
+	} {
+		d := source.Dress([]SegmentView{piece}, nil, marks, c.at, 1080, 1920)
+		if d.Held != c.held || d.Keyframe != c.keyframe {
+			t.Errorf("at %.1f s the crop is held %v by the keyframe at %v, want %v at %v", c.at, d.Held, d.Keyframe, c.held, c.keyframe)
+		}
+	}
+}
+
 // A frame of a cut, or from outside the clip, shows the crop of the piece
 // nearest to it, as that piece's own frame next to it has it, and says no
 // piece holds it. A cut inside the clip is still the clip's, for its

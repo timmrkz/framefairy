@@ -25,6 +25,10 @@ type Segment struct {
 	// Moved means a person placed the crop by hand. The automatic placement
 	// is kept in the plan as crop_x_auto.
 	Moved bool
+	// Auto is where the app placed the crop, on the picture as filmed, the
+	// default a person can bring the crop frame back to. Nil means
+	// centred, and so it is for a piece turned, whose crop the app centres.
+	Auto *int
 	// Rotate is how far the piece is rotated, in degrees to the left: 0,
 	// 90, 180 or 270, by the stretch of the clip's rotations it lies in.
 	// The crop is placed on the picture rotated.
@@ -509,20 +513,9 @@ func readClip(entry map[string]any, index int) (Clip, bool, error) {
 		if !ok {
 			return Clip{}, false, renderErr("clip %d: segment is not an object", index)
 		}
-		var cropX *int
-		if value, present := seg[keyCropX]; present && value != nil {
-			text, isText := value.(string)
-			lowered := strings.ToLower(text)
-			if !(isText && (lowered == "center" || lowered == "centre" || lowered == "auto")) {
-				n, ok := num.AsInt(value)
-				if !ok {
-					return Clip{}, false, fmt.Errorf("invalid crop_x: %s", quoteValue(value))
-				}
-				if !(-1_000_000 < n && n < 1_000_000) {
-					return Clip{}, false, renderErr("crop_x out of range: %d", n)
-				}
-				cropX = &n
-			}
+		cropX, err := readCropX(seg, keyCropX)
+		if err != nil {
+			return Clip{}, false, err
 		}
 		startAny, okS := seg[keyStart]
 		endAny, okE := seg[keyEnd]
@@ -558,7 +551,13 @@ func readClip(entry map[string]any, index int) (Clip, bool, error) {
 		// picture as it stands rotated, kept apart from the crop it
 		// has unrotated, see keyCropXTurned.
 		_, moved := seg[keyCropXAuto]
-		uprights = append(uprights, framed{cropX, moved})
+		auto := cropX
+		if moved {
+			if auto, err = readCropX(seg, keyCropXAuto); err != nil {
+				return Clip{}, false, err
+			}
+		}
+		uprights = append(uprights, framed{cropX, moved, auto})
 		rotate := RotationAt(spans, start)
 		if rotate != 0 {
 			cropX, moved = nil, false
@@ -642,6 +641,29 @@ func insidePieces(segments []Segment, at float64) bool {
 type framed struct {
 	cropX *int
 	moved bool
+	auto  *int
+}
+
+// readCropX reads a crop's left edge from a piece of a plan, which is
+// untrusted: a number of pixels in range, or nil for none or centred.
+func readCropX(seg map[string]any, key string) (*int, error) {
+	value, present := seg[key]
+	if !present || value == nil {
+		return nil, nil
+	}
+	if text, isText := value.(string); isText {
+		if lowered := strings.ToLower(text); lowered == "center" || lowered == "centre" || lowered == "auto" {
+			return nil, nil
+		}
+	}
+	n, ok := num.AsInt(value)
+	if !ok {
+		return nil, fmt.Errorf("invalid %s: %s", key, quoteValue(value))
+	}
+	if !(-1_000_000 < n && n < 1_000_000) {
+		return nil, renderErr("%s out of range: %d", key, n)
+	}
+	return &n, nil
 }
 
 // oneCrop gives every piece of a clip the clip's crop. A clip has one crop
@@ -661,7 +683,7 @@ func oneCrop(segments []Segment, uprights []framed) {
 	first := map[int]int{}
 	for i, s := range segments {
 		if s.Rotate == 0 {
-			segments[i].CropX, segments[i].Moved = clip.cropX, clip.moved
+			segments[i].CropX, segments[i].Moved, segments[i].Auto = clip.cropX, clip.moved, clip.auto
 			continue
 		}
 		if f, ok := first[s.Rotate]; !ok || (s.Moved && !segments[f].Moved) {

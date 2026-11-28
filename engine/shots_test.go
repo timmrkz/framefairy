@@ -97,7 +97,8 @@ func TestACutPutBackOverAnOldSwitchLeavesOnePiece(t *testing.T) {
 }
 
 // A crop placed by hand on an old clip is the crop of the whole clip, and
-// Automatic crop brings back the one its first piece was found with.
+// the automatic crop it keeps, the one the crop frame is brought back to,
+// is the one its first piece was found with.
 func TestACropOnAnOldClipIsTheCropOfTheWholeClip(t *testing.T) {
 	fsys, path := writePlanAt(t, shotsPlan)
 	if err := SetCrop(fsys, path, "01", 15, 700, SourceInfo{}); err != nil {
@@ -106,12 +107,11 @@ func TestACropOnAnOldClipIsTheCropOfTheWholeClip(t *testing.T) {
 	shotsAre(t, fsys, path, "after a crop placed on the second camera", []Segment{
 		{Start: 9.6, End: 12.8, CropX: intPtr(700), Moved: true},
 		{Start: 12.8, End: 16, CropX: intPtr(700), Moved: true}})
-	if err := ResetCrop(fsys, path, "01", 15); err != nil {
-		t.Fatal(err)
+	for i, s := range clipByID(t, fsys, path, "01").Segments {
+		if s.Auto == nil || *s.Auto != 300 {
+			t.Errorf("piece %d keeps the automatic crop %v, not 300", i, s.Auto)
+		}
 	}
-	shotsAre(t, fsys, path, "after Automatic crop", []Segment{
-		{Start: 9.6, End: 12.8, CropX: intPtr(300)},
-		{Start: 12.8, End: 16, CropX: intPtr(300)}})
 	data, err := afero.ReadFile(fsys, path)
 	if err != nil {
 		t.Fatal(err)

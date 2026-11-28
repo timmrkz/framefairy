@@ -6,8 +6,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"math/big"
@@ -49,6 +51,9 @@ type fakeMac struct {
 	// signing, as Apple's codesign does. stamps counts the signings.
 	certs  [][]byte
 	stamps int
+	// sealed is the app's own program as it was when the bundle was
+	// signed, which this codesign writes over.
+	sealed []byte
 }
 
 // On the real disk: harden hands codesign and ditto the paths of files,
@@ -90,6 +95,7 @@ func (m *fakeMac) tools() macOS {
 						p.entitled = plistHead + "<key>com.apple.security.device.audio-input</key><true/>\n</dict>\n</plist>\n"
 					}
 					target = filepath.Join(target, "Contents", "MacOS", appProgram)
+					m.sealed, _ = os.ReadFile(target)
 					// codesign signs the bundle as its Info.plist says,
 					// unless it is told what as.
 					p.ident = "com.other.app"
@@ -124,16 +130,29 @@ func (m *fakeMac) signed() [][]string {
 	return out
 }
 
-// bundle lays out the app as make builds it: the program, llama-server
-// and the speech libraries, signed ad hoc.
+// bundle lays out the app as make builds it: the program, with the
+// SHA-256 of llama-server built in, llama-server and the speech
+// libraries, signed ad hoc.
 //
 // On the real disk: harden signs a bundle in a folder, because codesign
 // signs files, and reads them back from there.
 func bundle(t *testing.T) string {
 	t.Helper()
+	return bundleOf(t, sha256hex(asMade(speech).bytes()))
+}
+
+// bundleOf is a bundle whose program was built with sum as the SHA-256
+// of llama-server.
+//
+// On the real disk: harden signs a bundle in a folder, because codesign
+// signs files, and reads them back from there.
+func bundleOf(t *testing.T, sum string) string {
+	t.Helper()
+	own := asMade(adhoc)
+	own.text += "ffmpeg=,llama-server=" + sum
 	app := filepath.Join(t.TempDir(), appName)
 	files := map[string]program{
-		"Contents/MacOS/" + appProgram:                     asMade(adhoc),
+		"Contents/MacOS/" + appProgram:                     own,
 		"Contents/MacOS/llama-server":                      asMade(speech),
 		"Contents/Frameworks/libonnxruntime.dylib":         asMade(speech),
 		"Contents/Frameworks/libsherpa-onnx-c-api.dylib":   asMade(speech),
@@ -149,6 +168,59 @@ func bundle(t *testing.T) string {
 		}
 	}
 	return app
+}
+
+// sha256hex is the SHA-256 of data the way make builds it into a
+// program.
+func sha256hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// The app runs a tool only when it carries the tool's SHA-256, and the
+// signing changes every tool. So the app is sealed carrying the sum of
+// llama-server as signed, and no longer the one make built in, or every
+// signed build refuses its tools.
+//
+// On the real disk: codesign's stand-in writes the files it signs.
+func TestTheAppIsSealedWithTheSumsOfItsSignedTools(t *testing.T) {
+	m := &fakeMac{flags: flagRuntime, microphone: true}
+	app := bundle(t)
+	built := sha256hex(asMade(speech).bytes())
+	if err := signer(m).signApp(app); err != nil {
+		t.Fatal(err)
+	}
+	signed, err := os.ReadFile(filepath.Join(app, "Contents", "MacOS", "llama-server"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if now := sha256hex(signed); now == built {
+		t.Fatal("the stand-in signed llama-server and left it as it was")
+	}
+	if !bytes.Contains(m.sealed, []byte("llama-server="+sha256hex(signed))) {
+		t.Error("the app was sealed without the SHA-256 of llama-server as signed")
+	}
+	if bytes.Contains(m.sealed, []byte(built)) {
+		t.Error("the app was sealed still carrying the SHA-256 of llama-server as make built it")
+	}
+	if !bytes.Contains(m.sealed, []byte("ffmpeg=,")) {
+		t.Error("the sums around llama-server's moved")
+	}
+}
+
+// An app that was not built with the SHA-256 of a tool it carries would
+// refuse that tool, so it is not signed at all.
+//
+// On the real disk: codesign's stand-in writes the files it signs.
+func TestAnAppWithoutTheSumOfItsToolIsNotSigned(t *testing.T) {
+	m := &fakeMac{flags: flagRuntime, microphone: true}
+	err := signer(m).signApp(bundleOf(t, sha256hex([]byte("another llama-server"))))
+	if err == nil || !strings.Contains(err.Error(), "SHA-256 of llama-server") {
+		t.Errorf("signing it said %v", err)
+	}
+	if m.sealed != nil {
+		t.Error("the app was signed all the same")
+	}
 }
 
 func signer(m *fakeMac) devID {

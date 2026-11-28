@@ -316,6 +316,12 @@ func (d devID) signApp(app string) (err error) {
 		_, err := d.run("codesign", append([]string{"--force", "--options", "runtime", stamp, "--keychain", keychain, "-s", d.identity}, extra...)...)
 		return err
 	}
+	// The sums the app was built with are of the tools as they are now,
+	// before signing changes them, see resum.
+	built, err := toolSums(app)
+	if err != nil {
+		return err
+	}
 	// Each part of the app is signed as a part of it, never as what its
 	// name or an Info.plist built into it says, see codeIdentifier.
 	for _, code := range inner {
@@ -327,6 +333,11 @@ func (d devID) signApp(app string) (err error) {
 	// with before, before the app is sealed around it, see kept.go. It is
 	// checked below like every other.
 	if err := keepSigned(filepath.Dir(app), d.kept, inner, os.Stdout); err != nil {
+		return err
+	}
+	// The app runs only the tools it carries the sums of, and they are
+	// signed now, so it carries the sums of the signed ones.
+	if err := resum(app, built); err != nil {
 		return err
 	}
 	// Signing the bundle signs its program, with the entitlements, and

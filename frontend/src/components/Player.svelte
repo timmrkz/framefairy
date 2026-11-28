@@ -2,12 +2,9 @@
   import type { CaptionLayers as Layers } from "../lib/frames/captions";
   import type { FrameQueue as Queue } from "../lib/frames/queue";
 
-  // What the row above the clip timeline has to offer for the video
-  // preview. The buttons sit in that row now, so what they are for has to
-  // travel out of here.
+  // What the row above the clip timeline has to say for the video
+  // preview, so it has to travel out of here.
   export type PlayerOffers = {
-    crop: "" | "auto" | "back";
-    savingCrop: boolean;
     // What the caption box says about itself while it is dragged.
     hint: string;
   };
@@ -43,12 +40,12 @@
   import { CaptionLayers, keyOf as dressKey, sameDress, type CaptionAsk, type FrameDress, type Layer, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
   import { shownColour, type Light } from "../lib/frames/light";
   import type { Picture } from "../lib/frames/picture";
+  import Icon from "./Icon.svelte";
   import Info from "./Info.svelte";
   import {
     nearestHeight,
     type CaptionsView,
     type ClipEntry,
-    type CropMark,
     type SourceView,
     type Word,
   } from "../lib/api";
@@ -73,7 +70,7 @@
     oncaptionmoved,
     oncrop,
     onresetcrop,
-    oncropmark,
+    onputcropback,
     oncaptiony,
     onword,
     onremoveword,
@@ -82,7 +79,7 @@
     paused = $bindable(true),
     looping = $bindable(false),
     onClip = $bindable(false),
-    offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
+    offers = $bindable({ hint: "" } as PlayerOffers),
     opening = false,
     pictured = $bindable(false),
     frameStart = $bindable(NaN),
@@ -137,10 +134,10 @@
     // clip chosen when it went out put a crop or a word on the next clip
     // when another was chosen in between, see #880.
     oncrop?: (key: string, at: number, left: number) => Promise<void>;
+    // The two arrows in the crop frame's corner, which the Go side offers
+    // in each frame's dress and carries out, see ResetCrop and PutCropBack.
     onresetcrop?: (key: string, at: number) => Promise<void>;
-    // Puts a keyframe back at a moment with its crop, the way the clip
-    // timeline puts one, for the marks a reset took away.
-    oncropmark?: (key: string, from: number, to: number, x: number, glide?: boolean) => Promise<void>;
+    onputcropback?: (key: string) => Promise<void>;
     // Puts the captions at a distance from the bottom of a 1080x1920
     // frame. There is one place for every clip of every episode, so this
     // saves a setting rather than editing the clip.
@@ -212,19 +209,6 @@
   let savingCrop = $state(false);
   let dragCaptions = $state<number | null>(null);
   let savingCaptions = $state(false);
-
-  // Going back to the automatic crop is one click, so taking that back has
-  // to be one click too. What a reset threw away, the crop and the crop
-  // marks of the clip, is kept until the clip changes or it is placed by
-  // hand again. A part rotated on its own has a crop of its own, so the
-  // undo is for the pieces turned the way the reset one was, see #396.
-  let undoCrop = $state<{
-    key: string;
-    turn: number;
-    at: number;
-    left: number | null;
-    marks: CropMark[];
-  } | null>(null);
 
   // The episode, played from its own file onto the canvas by the frame
   // queue, see lib/frames/. Every frame drawn, playing or paused, comes
@@ -446,12 +430,10 @@
     return { destroy: () => watch.disconnect() };
   }
 
-  // The row above the clip timeline draws the buttons, so it is told what
-  // there is to offer.
+  // The row above the clip timeline says how high the captions are while
+  // they are dragged, so it is told.
   $effect(() => {
     offers = {
-      crop: !clip ? "" : crop?.moved ? "auto" : undoCrop?.key === clip.key && undoCrop.turn === turn ? "back" : "",
-      savingCrop,
       hint: dragCaptions !== null ? `Captions ${Math.round(captionY)} from the bottom` : "",
     };
   });
@@ -689,14 +671,12 @@
     return () => clearTimeout(settled);
   });
 
-  // The keyframe on the frame on the canvas, whose diamond or circle is
-  // lit then, and whether a drag places the crop there: on a keyframe, so
-  // what is moved is seen, or in a piece no keyframe steers. Anywhere
-  // else the crop frame shows the crop as the short has it, held or
-  // gliding, and takes only a click, Tim on #750. The engine says both,
+  // Whether a drag places the crop on the frame on the canvas: on a
+  // keyframe, so what is moved is seen, or in a piece no keyframe steers.
+  // Anywhere else the crop frame shows the crop as the short has it, held
+  // or gliding, and takes only a click, Tim on #750. The engine says so,
   // see engine.FrameDress, and refuses a drag where it would not take one,
   // see engine.SetCrop.
-  const markHere = $derived(clip ? (dressed?.mark ?? null) : null);
   const cropMovable = $derived(!!clip && !!dressed?.movable);
 
   // The crop's left edge as the video preview shows it now, which a crop
@@ -721,9 +701,14 @@
       // animation frame each time a start dragged later passed the frame
       // on screen, before the playhead followed, issue #755.
       inside: place !== "video" && d.in,
-      moved: d.moved,
     };
   });
+
+  // What the corner of the crop frame offers on the frame on screen, as
+  // the Go side says in its dress: the crop brought to where the app
+  // places it, the arrow turning anticlockwise, or put back, clockwise,
+  // the way the captions are put back. Drawn by the icon of that name.
+  const cornerIcon = $derived(!clip ? "" : dressed?.corner === "auto" ? "back" : dressed?.corner === "back" ? "forward" : "");
 
   // The video preview shows one moment at a time: a frame, and the crop
   // frame, its shade and the captions that belong to that frame, all of
@@ -1619,7 +1604,6 @@
       const framing = clip?.framing ?? null;
       try {
         await oncrop(on, cropMoment(), dragLeft);
-        undoCrop = null;
         // Kept until the frame on screen has the dress of the crop taken.
         if (framing !== null && clip?.key === on) cropTaken = framing;
         else dragLeft = null;
@@ -1635,32 +1619,15 @@
     target.addEventListener("pointercancel", up);
   }
 
-  export async function resetCrop() {
-    if (!clip || !onresetcrop) return;
-    const at = cropMoment();
-    const was = dressed?.piece ?? 0;
-    const turned = turn;
-    const had = clip.cropLefts[was] ?? null;
-    const marked = clip.cropMarks ?? [];
+  // A click on the arrow in the crop frame's corner, forwarded with the
+  // clip and the frame on screen. The Go side decides what it does.
+  async function pressCorner() {
+    if (!clip || savingCrop) return;
+    const key = clip.key;
     savingCrop = true;
     try {
-      await onresetcrop(clip.key, at);
-      const still = clip?.cropMarks ?? [];
-      const marks = marked.filter((m) => !still.some((k) => k.at === m.at));
-      if (had !== null || marks.length) undoCrop = { key: clip!.key, turn: turned, at, left: had, marks };
-    } finally {
-      savingCrop = false;
-    }
-  }
-
-  export async function cropBack() {
-    const back = undoCrop;
-    if (!back || !oncrop) return;
-    savingCrop = true;
-    try {
-      if (back.left !== null) await oncrop(back.key, back.at, back.left);
-      for (const m of back.marks) await oncropmark?.(back.key, -1, m.at, m.x, !!m.glide);
-      undoCrop = null;
+      if (dressed?.corner === "auto") await onresetcrop?.(key, cropMoment());
+      else if (dressed?.corner === "back") await onputcropback?.(key);
     } finally {
       savingCrop = false;
     }
@@ -1826,16 +1793,29 @@
         class:held={dragLeft !== null}
         class:fixed={!cropMovable}
         style="left: {crop.left}%; width: {crop.width}%"
-        title={cropMovable
-          ? "Drag sideways to place the crop"
-          : markHere?.opens
-            ? markHere.fromClip
-              ? "The glide starts here from the clip's own crop"
-              : "The glide starts here from the crop of the keyframe before it. Move that crop there"
-            : "The crop as the short has it here. Put the playhead on a keyframe to place its crop, or press S or G to put one here"}
         data-movable={cropMovable}
         onpointerdown={dragCrop}
-      ></div>
+      >
+        <!-- The way back to the automatic crop, and from it to the crop as
+             it was, in the frame's top right corner while the pointer is
+             on the frame. It keeps clear of the video preview's own info
+             mark when the frame reaches the picture's right edge, see
+             .undo. A press on it is no drag of the crop and no click that
+             plays. -->
+        {#if cornerIcon}
+          <button
+            class="undo undo-mark"
+            style="--rest: {100 - crop.left - crop.width}"
+            disabled={savingCrop}
+            aria-label={cornerIcon === "back" ? "Automatic crop" : "Put the crop back"}
+            title={cornerIcon === "back" ? "Automatic crop" : "Put the crop back"}
+            onpointerdown={(e) => e.stopPropagation()}
+            onclick={pressCorner}
+          >
+            <Icon name={cornerIcon} />
+          </button>
+        {/if}
+      </div>
     {/if}
     {#if dragCaptions !== null}
       <div
@@ -2173,6 +2153,60 @@
      not moved, so it takes the hand the picture does. */
   .crop.fixed {
     cursor: default;
+  }
+
+  /* The way back to the automatic crop, a mark that undoes something,
+     .undo-mark in app.css, in the top right corner inside the frame's
+     line. It waits until the pointer is on the frame itself, the way an
+     info mark waits for its area, and goes while the frame is dragged. The
+     user wanted it on the frame and not on the rest of the video preview.
+     On the picture it wears the shade, so it reads on a white frame too.
+
+     The video preview's own info mark stands in the picture's top right
+     corner, 2 px in and 20 px wide, see .ask.corner in app.css. The frame
+     at the picture's right edge would put the two on top of each other,
+     so this one stands at least 26 px from the picture's right edge,
+     --rest being the share of the picture to the right of the frame. */
+  .undo {
+    position: absolute;
+    top: calc(var(--frame-line) + 4px);
+    right: round(max(calc(var(--frame-line) + 4px), calc(26px - var(--rest) * 1cqw)), 1px);
+    border: none;
+    background: var(--backdrop);
+    color: var(--text);
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    will-change: opacity;
+  }
+
+  .crop:hover .undo,
+  .undo:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Its work under way, it is still there, dimmed like any button that
+     waits, and takes no second click. */
+  .crop:hover .undo:disabled,
+  .undo:focus-visible:disabled {
+    opacity: var(--dimmed);
+  }
+
+  .crop.held .undo {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .undo:hover:not(:disabled) {
+    background: var(--ink-3);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .undo {
+      transition: none;
+    }
   }
 
   /* The shade over the picture beside the crop is the shadow of the

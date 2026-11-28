@@ -1275,8 +1275,10 @@ export const api = {
     call<ClipEntry>("RemoveClip", path, plan, clip, removed),
   setCrop: (path: string, plan: string, clip: string, at: number, left: number) =>
     call<ClipEntry>("SetCrop", path, plan, clip, at, left),
+  // The two arrows in the crop frame's corner, see cmd/framefairy-app/cropback.go.
   resetCrop: (path: string, plan: string, clip: string, at: number) =>
     call<ClipEntry>("ResetCrop", path, plan, clip, at),
+  putCropBack: (path: string, plan: string, clip: string) => call<ClipEntry>("PutCropBack", path, plan, clip),
   rotatePart: (path: string, plan: string, clip: string, at: number) =>
     call<RotatedClip>("RotatePart", path, plan, clip, at),
   setCaptionStyle: (path: string, plan: string, font: string, size: number) =>

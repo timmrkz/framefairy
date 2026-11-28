@@ -46,7 +46,10 @@ import (
 // sums is what make builds in: name=sha256 for each tool it put beside
 // the programs, separated by commas. Empty in a program built any other way,
 // which then runs no tool from beside itself. It is only the name make
-// writes to, and read once, when a program makes its Finder.
+// writes to, and read once, when a program makes its Finder. A build
+// signed with the Developer ID carries the sums of its tools as signed,
+// which the release tool writes over make's, see
+// cmd/framefairy-release/sums.go.
 var sums string
 
 // Finder finds and checks the tools a program runs, see Find. A program

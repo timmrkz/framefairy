@@ -183,7 +183,7 @@ func (s *FrameFairy) turnsMade(path string, plan engine.PlanSummary, chosen stri
 		}
 		rotations := engine.RotationViews(turned.Rotations)
 		out.Parts = append(out.Parts, Turn{Part: seg.Part, Rotations: rotations,
-			Framing: s.framingOf(path, info, engine.SegmentViews(turned.Segments), engine.CropMarkViews(turned.CropMarks), rotations)})
+			Framing: s.framingOf(path, clipRef{plan: entry.Plan, id: entry.ID}, info, engine.SegmentViews(turned.Segments), engine.CropMarkViews(turned.CropMarks), rotations)})
 	}
 	var h maphash.Hash
 	h.SetSeed(clipSeed)
@@ -540,18 +540,6 @@ func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, e
 	return view, err
 }
 
-// ResetCrop brings back the automatic crop of a clip, for the pieces turned
-// the way the one at a moment is, and returns the clip as it is now.
-func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
-	if !s.store.PlanOf(path, plan) {
-		return ClipEntry{}, errNotInLibrary
-	}
-	if err := s.edit(path, func() error { return engine.ResetCrop(s.store.files, plan, clipID, at) }); err != nil {
-		return ClipEntry{}, err
-	}
-	return s.answer(ctx, path, plan, clipID)
-}
-
 // RemoveClip takes a clip out of the list, or puts it back. The clip stays
 // in the plan either way, so putting it back loses nothing of what was done
 // to it. A render of the whole plan leaves a removed clip out.
@@ -610,7 +598,7 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture, track st
 		return nil, err
 	}
 	s.previews.tracks.keep(path, view.Captions)
-	framing := s.framingOf(path, g.Frames, engine.SegmentViews(view.Clip.Segments), engine.CropMarkViews(view.Clip.CropMarks),
+	framing := s.framingOf(path, clipRef{plan: plan, id: clipID}, g.Frames, engine.SegmentViews(view.Clip.Segments), engine.CropMarkViews(view.Clip.CropMarks),
 		engine.RotationViews(view.Clip.Rotations))
 	return &ShapedClip{ShapedView: view, Framing: framing}, nil
 }

@@ -23,9 +23,12 @@ import (
 // framed is what the frames of a clip are dressed from, as the window
 // was sent it in a Framing: the episode, its picture, the clip's pieces
 // with the keyframes that steer each, the keyframes on their frames, its
-// rotations and the size of the short, see engine.SourceInfo.Dress.
+// rotations and the size of the short, see engine.SourceInfo.Dress. clip
+// is the clip it frames, so two clips framed alike have two names, and a
+// name names one clip.
 type framed struct {
 	episode   string
+	clip      clipRef
 	source    engine.SourceInfo
 	segments  []engine.SegmentView
 	marks     []engine.CropMarkView
@@ -43,14 +46,20 @@ func (f framed) pieces() []engine.PlayPiece {
 	return out
 }
 
-// name is what tells this framing from any other: all it dresses a frame
-// from, so a clip that changed anything over its frames has a new name,
-// and one that changed nothing keeps it.
+// name is what tells this framing from any other: the clip and all it
+// dresses a frame from, where the app places the crop of each piece
+// among it, which the window is not sent, so a clip that changed
+// anything over its frames has a new name, and one that changed nothing
+// keeps it.
 func (f framed) name(rotations []engine.RotationView) string {
 	var h maphash.Hash
 	h.SetSeed(clipSeed)
-	fmt.Fprintf(&h, "%s\x00%+v\x00%dx%d\x00", f.episode, f.source, f.width, f.height)
-	_ = json.NewEncoder(&h).Encode([]any{f.segments, f.marks, rotations})
+	fmt.Fprintf(&h, "%s\x00%s\x00%s\x00%+v\x00%dx%d\x00", f.episode, f.clip.plan, f.clip.id, f.source, f.width, f.height)
+	autos := make([]*int, len(f.segments))
+	for i, seg := range f.segments {
+		autos[i] = seg.Auto
+	}
+	_ = json.NewEncoder(&h).Encode([]any{f.segments, autos, f.marks, rotations})
 	return strconv.FormatUint(h.Sum64(), 36)
 }
 
@@ -223,6 +232,10 @@ type sentDress struct {
 	// Turned is the frame's dress once R turns the part that holds it,
 	// see turnedDress.
 	Turned *turnedDress `json:"turned,omitempty"`
+	// Corner is what the crop frame's corner offers on the frame, the
+	// crop brought to where the app places it or put back, or nothing,
+	// see corner in cropback.go.
+	Corner string `json:"corner,omitempty"`
 }
 
 // turnedDress is a frame's dress with its part turned a quarter further,
@@ -306,7 +319,7 @@ type dressed struct {
 // so a panic in it fails the request or the stream, not the app.
 func (s *FrameFairy) dressFrame(ctx context.Context, a *dressAsk, at float64, have string) (dressed, error) {
 	d := a.clip.dress(at, a.video)
-	out := dressed{sent: sentDress{FrameDress: d, Key: a.key, Track: a.track, Showing: [3]int{-1, -1, -1}, Turned: s.turned(a, d, at)}}
+	out := dressed{sent: sentDress{FrameDress: d, Key: a.key, Track: a.track, Showing: [3]int{-1, -1, -1}, Turned: s.turned(a, d, at), Corner: s.corner(a, d, at)}}
 	if a.drawing == nil || !d.Clip {
 		return out, nil
 	}

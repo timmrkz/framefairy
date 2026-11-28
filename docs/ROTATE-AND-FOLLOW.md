@@ -180,8 +180,9 @@ their own:
   the second circle, so the two read as one glide over the clip's wash.
   Three in a row have two lines, and a diamond has none. The user asked for the
   join and picked this look, number 4 of a sheet of nine drawn for them.
-- **Automatic crop** removes every keyframe of the clip and brings back the
-  placement the engine found.
+- **Automatic crop** moves the crop on the frame shown, on a keyframe
+  or after one that keyframe's, to the placement the engine found, and
+  keeps every keyframe.
 
 ### 6. What the engine can do by itself, later
 

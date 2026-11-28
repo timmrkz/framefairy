@@ -962,7 +962,8 @@ func applyCut(pieces []*object, from, to float64) []*object {
 // pixels, at a moment of it. A clip has one crop for the picture as
 // filmed, which every piece keeps, turned or not, and one for each way a
 // part of it is turned, which the pieces turned alike share. The
-// automatic placement is kept, so ResetCrop can bring it back. Framing is
+// automatic placement is kept, the default the crop frame is brought back
+// to, see FrameDress.Auto. Framing is
 // not a judgement of the clip, so nothing is recorded for training.
 //
 // With keyframes, see CropMark, a crop placed on a keyframe's frame is
@@ -1538,55 +1539,6 @@ func ClearCaptionY(fsys afero.Fs, planPath string) (int, error) {
 		return 0, err
 	}
 	return changed, nil
-}
-
-// ResetCrop brings back the automatic crop of a clip for the way the piece
-// at a moment is turned, and removes every keyframe of that turn. As
-// filmed, that is the crop of every piece, turned or not, and on a picture
-// turned, the crop of the pieces turned alike. A clip framed before #396
-// can have pieces with different automatic crops, one for each camera,
-// and they all take the one of the piece framingOf names.
-func ResetCrop(fsys afero.Fs, planPath, clipID string, at float64) error {
-	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
-		c, err := findClip(clips, clipID)
-		if err != nil {
-			return err
-		}
-		pieces := segmentObjects(c)
-		target := segmentAt(pieces, at)
-		if target < 0 {
-			return renderErr("clip %s has no pieces", clipID)
-		}
-		spans := rotationsOf(c)
-		turn := rotationOf(pieces[target], spans)
-		marks := cropMarksOf(c)
-		if ofTurn := marksTurned(marks, turn); len(ofTurn) > 0 {
-			var kept []CropMark
-			for i, m := range marks {
-				if !ofTurn[i] {
-					kept = append(kept, m)
-				}
-			}
-			setCropMarks(c, kept)
-		}
-		upright, _ := framingOf(pieces, spans)
-		auto := autoCrop(upright)
-		for _, seg := range pieces {
-			if turn != 0 {
-				if rotationOf(seg, spans) == turn {
-					seg.remove(keyCropXTurned)
-				}
-				continue
-			}
-			if auto == nil {
-				seg.remove(keyCropX)
-			} else {
-				seg.set(keyCropX, auto)
-			}
-			seg.remove(keyCropXAuto)
-		}
-		return nil
-	})
 }
 
 // IsPlanFile reports whether a path is named the way plan files are named,

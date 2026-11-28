@@ -108,7 +108,7 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 		func() error { return SetRejected(fsys, nil, path, "02", true) },
 		func() error { return TrimClip(fsys, path, "01", 10, 12.4, tr, 0.1, ToWords) },
 		func() error { return SetCrop(fsys, path, "01", 10.5, 200, SourceInfo{}) },
-		func() error { return ResetCrop(fsys, path, "01", 10.5) },
+		func() error { return SetCrop(fsys, path, "01", 10.5, 120, SourceInfo{}) },
 	}
 	for i, step := range steps {
 		if err := step(); err != nil {
@@ -554,7 +554,7 @@ func FuzzPlanEdits(f *testing.F) {
 			case 2:
 				_ = SetCrop(fsys, path, clip, at(script[i+1]), int(script[i+2])*4, SourceInfo{})
 			case 3:
-				_ = ResetCrop(fsys, path, clip, at(script[i+1]))
+				_ = SetCropMark(fsys, path, clip, -1, at(script[i+1]), int(script[i+2])*4, script[i+2]%2 == 0, at25)
 			case 4:
 				if script[i+2]%4 == 3 {
 					_ = RotatePart(fsys, path, clip, at(script[i+1]), at25)

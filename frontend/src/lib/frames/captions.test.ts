@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bounceScale, CaptionLayers, dressedOf, inkBox, laidPart, readBounce, readLayer, turned, unturned, type Layer, type Over } from "./captions";
+import { bounceScale, CaptionLayers, dressedOf, inkBox, laidPart, readBounce, readLayer, sameDress, turned, unturned, type Layer, type Over } from "./captions";
 
 // A pixel of 10 bits a colour, red lowest, as the Go side sends every frame.
 const word = (r: number, g: number, b: number) => (r | (g << 10) | (b << 20)) >>> 0;
@@ -174,7 +174,6 @@ const dress = {
   height: 270,
   cropWidth: 152,
   left: 100,
-  moved: false,
   mark: null,
   movable: true,
   key: "k",
@@ -211,6 +210,17 @@ describe("the dress that comes with a frame", () => {
     expect([l.w, l.h, l.scale, l.showing]).toEqual([0, 0, 1, undefined]);
     expect(l.dress?.cropWidth).toBe(152);
     for (const bad of ["", "{", "null", "3", JSON.stringify({ ...dress, left: "x" })]) expect(dressedOf(bad, null, () => null)).toBeNull();
+  });
+
+  // After the automatic crop was brought back, a frame dressed again
+  // differs from the one before only in whether Put the crop back would
+  // move its crop. Taken for the same dress, the frame kept the one
+  // without it, and the arrow never came.
+  it("is another dress where only the crop frame's corner differs", () => {
+    const d = dressedOf(JSON.stringify(dress), null, () => null)!.dress!;
+    expect(sameDress(d, { ...d })).toBe(true);
+    expect(sameDress(d, { ...d, corner: "auto" })).toBe(false);
+    expect(sameDress({ ...d, corner: "auto" }, { ...d, corner: "back" })).toBe(false);
   });
 
   it("shows nothing it cannot read", () => {

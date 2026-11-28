@@ -373,12 +373,18 @@ export default [
     // walk shows once that the video preview follows them, still,
     // playing and past a cut. A glide is no more steps to the window.
     // A keyframe before a cut once stopped holding its crop after it,
-    // found by Tim, plan row 2.238.
+    // found by Tim, plan row 2.238. Go decides which arrow the crop
+    // frame's corner shows on each frame, see cropback_test.go, so the
+    // walk only shows that the window draws none where Go names none,
+    // draws the one it names, and that its click after the keyframe moves
+    // the keyframe's crop and keeps the keyframe. The user saw the arrow
+    // before the keyframe, and its click removed the keyframe.
     name: "one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it",
     steps: [
       ["added", 30, "25"],
       ["hold", "SetCropMark"],
       ["crop before", 0.25],
+      ["crop before", 0.5],
       ["keyframe at", 0.5],
       ["drag crop", 300],
       ["crop kept", 0.25],
@@ -388,6 +394,14 @@ export default [
       ["crop kept", 0.25],
       ["crop kept", 0.75],
       ["keyframes", 1],
+      ["crop arrow", [0.25, "none"]],
+      ["crop arrow", [0.75, "Automatic crop"]],
+      ["crop corner", "Automatic crop"],
+      ["keyframes", 1],
+      ["crop kept", 0.5],
+      ["crop corner", "Put the crop back"],
+      ["keyframes", 1],
+      ["crop kept", 0.75],
       ["crop holds"],
       ["crop holds while playing"],
       ["cut at", 0.75],
@@ -437,14 +451,11 @@ export default [
     // The first circle has no crop of its own, so a drag of the crop on
     // it moves nothing: the glide starts from the crop before it, Tim on
     // #778.
-    // Found on #192: Automatic crop took the keyframes of the angle away
-    // with the crop, and Put the crop back brought back the crop alone,
-    // so what the keyframes did was lost to one click. Each comes back
-    // with its crop and its kind. Where the crop glides is the engine's,
-    // see the walk of S above. They come back on the clip they were taken
-    // from when another clip is chosen while they are on their way, found
-    // by the review of #880.
-    name: "two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Put the crop back after Automatic crop brings them back, to their own clip",
+    // Automatic crop on a circle moves its crop and keeps both circles and
+    // their glide, seen by the glide line, since both can then stand at
+    // the app's crop, and Put the crop back moves the crop back. Where the
+    // crop glides is the engine's, see the walk of S above.
+    name: "two circles put with G are joined by a glide line that, with the first circle, follows the clip's start while it is dragged, S and G change their kind, and Automatic crop on a circle keeps them",
     steps: [
       ["added", 30, "25"],
       ["glide at", 0.2],
@@ -461,17 +472,15 @@ export default [
       ["glides", 1],
       ["glide under the hand", 0.5],
       ["crop before", 0.8],
-      ["button", "Automatic crop"],
-      ["keyframes", 0],
-      ["button", "Put the crop back"],
+      ["crop corner", "Automatic crop"],
+      ["glides", 1],
+      ["crop corner", "Put the crop back"],
       ["keyframes", 2],
       ["glides", 1],
       ["crop kept", 0.8],
       ["keyframe key", ["g", "none"]],
       ["keyframes", 1],
       ["glides", 0],
-      ["glide at", 0.5],
-      ["crop back then next clip"],
     ],
   },
   {

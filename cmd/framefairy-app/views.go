@@ -125,7 +125,7 @@ func (s *FrameFairy) entryOf(path, plan string, c engine.ClipView, info engine.S
 			entry.Unheard = append(entry.Unheard, [2]float64{gap.Start, gap.End})
 		}
 	}
-	f := s.framingOf(path, info, c.Segments, c.CropMarks, c.Rotations)
+	f := s.framingOf(path, clipRef{plan: plan, id: c.ID}, info, c.Segments, c.CropMarks, c.Rotations)
 	entry.Framing = f.Name
 	if f.Name != "" {
 		s.previews.clips.put(f.Name, clipRef{plan: plan, id: c.ID}, nil)
@@ -167,7 +167,7 @@ type Framing struct {
 // pieces, the keyframes it shows, each keyframe sent on the frame it
 // stands on, see engine.MarksOnFrames, and its rotations, and keeps it by
 // its name for the video preview to dress its frames by.
-func (s *FrameFairy) framingOf(path string, info engine.SourceInfo, segments []engine.SegmentView, marks []engine.CropMarkView, rotations []engine.RotationView) Framing {
+func (s *FrameFairy) framingOf(path string, clip clipRef, info engine.SourceInfo, segments []engine.SegmentView, marks []engine.CropMarkView, rotations []engine.RotationView) Framing {
 	f := Framing{Segments: make([]engine.SegmentView, len(segments)), CropMarks: info.MarksOnFrames(marks),
 		CropLefts: make([]int, 0, len(segments)), Glides: []engine.GlideSpan{}}
 	for i, seg := range segments {
@@ -186,7 +186,7 @@ func (s *FrameFairy) framingOf(path string, info engine.SourceInfo, segments []e
 	f.Places = info.Places(f.Segments)
 	if info.Width > 0 {
 		o := s.store.Settings().options()
-		f.framed = framed{episode: path, source: info, segments: segments, marks: f.CropMarks,
+		f.framed = framed{episode: path, clip: clip, source: info, segments: segments, marks: f.CropMarks,
 			rotations: engine.Rotations(rotations), width: o.Width, height: o.Height}
 		f.Name = f.framed.name(rotations)
 		s.previews.framings.put(f.Name, f.framed, nil)

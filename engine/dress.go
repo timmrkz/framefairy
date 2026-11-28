@@ -30,14 +30,26 @@ type FrameDress struct {
 	// Left is the left edge of the crop on the frame, on the picture
 	// turned, held from a keyframe or gliding, or the piece's own.
 	Left float64 `json:"left"`
-	// Moved is whether the piece's crop was placed by hand or keyframes
-	// steer it.
-	Moved bool `json:"moved"`
+	// Auto is where the app places the crop on this frame, on the picture
+	// turned, and Moved whether the crop stands anywhere else, so moving
+	// the crop frame to Auto would change what the frame shows. A crop
+	// placed by hand where the app placed it, or a keyframe on that
+	// place, is not moved.
+	// The window is sent neither: the app's Go side says what the crop
+	// frame's corner offers.
+	Auto  float64 `json:"-"`
+	Moved bool    `json:"-"`
 	// Mark is the keyframe on the frame, or nil, and Movable whether a
 	// drag may place the crop here: on a keyframe that does not open a
 	// glide, or anywhere in a piece no keyframe steers, see SetCrop.
 	Mark    *CropMarkView `json:"mark"`
 	Movable bool          `json:"movable"`
+	// Held is whether the crop on the frame is held from a keyframe
+	// before it, or on it, that does not open a glide, and Keyframe that
+	// keyframe's moment, where a drag would place the crop this frame
+	// shows. The window is sent neither, see Auto.
+	Held     bool    `json:"-"`
+	Keyframe float64 `json:"-"`
 	// From and To are the moments the stretch of frames around this one
 	// that are dressed alike starts and ends at, at most dressReach frames
 	// either side, so the video preview dresses a frame of it whose own
@@ -76,6 +88,16 @@ func (s SourceInfo) Dress(segments []SegmentView, rotations []Rotation, marks []
 		hi++
 	}
 	d.From, d.To = s.keptAt(lo), s.keptAt(hi+1)
+	return d
+}
+
+// DressAlone is the dress of the frame that starts at a moment, as Dress has
+// it, without the stretch of frames dressed alike around it: for asking
+// where a framing puts the crop on one frame, which a stretch would ask
+// up to dressReach frames either side for.
+func (s SourceInfo) DressAlone(segments []SegmentView, rotations []Rotation, marks []CropMarkView, at float64, outW, outH int) FrameDress {
+	d := s.dressOf(segments, rotations, marks, at, outW, outH, map[[3]int]cropRun{})
+	d.From, d.To = at, at
 	return d
 }
 
@@ -122,9 +144,9 @@ func (s SourceInfo) dressOf(segments []SegmentView, rotations []Rotation, marks 
 	}
 	seg := segments[d.Piece]
 	d.CropWidth, _ = CropWindow(upright, outW, outH)
-	d.Moved = seg.Moved || len(seg.Marks) > 0
 	k := s.frameHolding(at)
 	d.Left = float64(ClampCropX(seg.CropX, d.CropWidth, upright.Width))
+	d.Auto = float64(ClampCropX(seg.Auto, d.CropWidth, upright.Width))
 	if len(seg.Marks) > 0 && s.FPSNum > 0 && s.FPSDen > 0 {
 		// A frame of a cut beside the piece shows the crop of the
 		// piece's frame nearest to it, its first or its last.
@@ -135,8 +157,13 @@ func (s SourceInfo) dressOf(segments []SegmentView, rotations []Rotation, marks 
 			run = s.runOf(segmentOf(seg), d.CropWidth, upright.Width)
 			runs[key] = run
 		}
-		d.Left = stepEdge(run.at(min(max(k, first), end-1)))
+		on := min(max(k, first), end-1)
+		d.Left = stepEdge(run.at(on))
+		if h := run.holder(on); h >= 0 && !run.marks[h].opens {
+			d.Held, d.Keyframe = true, run.marks[h].at
+		}
 	}
+	d.Moved = d.Left != d.Auto
 	for i := range marks {
 		if s.markFrame(marks[i].At) == k {
 			m := marks[i]

@@ -622,6 +622,10 @@ type frameMark struct {
 	// fromClip is a circle whose glide starts from the piece's own crop,
 	// see CropMark.FromClip.
 	fromClip bool
+	// at is the keyframe's moment, and opens whether it starts a glide,
+	// see CropMark.Opens.
+	at    float64
+	opens bool
 }
 
 // onFrames is a piece's keyframes on their frames, each left edge kept
@@ -634,7 +638,7 @@ func (s SourceInfo) onFrames(marks []CropMark, cropW, width int) []frameMark {
 			continue
 		}
 		x := m.X
-		f := frameMark{k: s.markFrame(m.At), x: ClampCropX(&x, cropW, width), glide: m.Glide, fromClip: m.FromClip}
+		f := frameMark{k: s.markFrame(m.At), x: ClampCropX(&x, cropW, width), glide: m.Glide, fromClip: m.FromClip, at: m.At, opens: m.Opens}
 		if m.Last {
 			f.k--
 		}
@@ -692,6 +696,16 @@ func (r cropRun) gliding(i int) bool {
 	}
 	a, b := r.marks[i-1], r.marks[i]
 	return b.glide && b.k > a.k && b.x != a.x
+}
+
+// holder is the keyframe whose crop frame k holds, the last on or before
+// it, or -1 where the piece's own crop holds it or the crop glides there.
+func (r cropRun) holder(k int64) int {
+	i := sort.Search(len(r.marks), func(i int) bool { return r.marks[i].k > k })
+	if i == 0 || i < len(r.marks) && r.gliding(i) {
+		return -1
+	}
+	return i - 1
 }
 
 // at is the left edge of the crop on frame k. From a keyframe's frame on
@@ -1017,19 +1031,6 @@ func pieceHolding(pieces []*object, at float64) int {
 		}
 	}
 	return -1
-}
-
-// marksTurned is which of a clip's keyframes belong to one turn of the
-// picture, by their index, so a crop placed or put back for that turn
-// takes them along too.
-func marksTurned(marks []CropMark, turn int) map[int]bool {
-	out := map[int]bool{}
-	for i, m := range marks {
-		if m.Turn == turn {
-			out[i] = true
-		}
-	}
-	return out
 }
 
 // SetCropMark adds, moves or removes a keyframe of a clip, the way

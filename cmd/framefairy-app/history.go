@@ -59,6 +59,9 @@ type history struct {
 	redo []step
 	// picked is the clip chosen and the window, with a lock of its own.
 	picked picked
+	// crops is the way back from the crop brought to where the app
+	// places it, with a lock of its own, see cropback.go.
+	crops cropBacks
 }
 
 func (s *FrameFairy) historyOf(path string) *history {
