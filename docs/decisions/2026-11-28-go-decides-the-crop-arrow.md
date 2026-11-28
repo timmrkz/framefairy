@@ -177,3 +177,21 @@ window's `undoCrop`, its `back=` ask and the rules of `cropUndo`.
 It would show itself wrong if the corner and the click ever disagreed
 again, or if the same kind of way back, for the caption box, could not
 be kept the same way.
+
+## After the review
+
+The independent review of the code found the arrow and its click still
+worked out by two rules in Go, which disagreed past a cut and on a
+keyframe placed for another turn. Both now ask one function, `resetOf`
+in `cmd/framefairy-app/cropback.go`, where the click places the crop: the
+frame itself, the switch keyframe that holds it, or, past a cut, the
+keyframe the hand put before it. It names no keyframe placed on the
+picture turned another way, since placing the crop there would take that
+keyframe over. The clip is read and the way back kept inside the edit,
+so no other edit lands between them, and a second click on Put the crop
+back changes nothing. A framing's name now holds the clip it frames and
+where the app places each piece's crop, so the way back of one clip is
+not taken for another framed alike.
+
+Candidates 4 and 5 turned out to be ways of looking at candidate 1, not
+designs of their own. The real alternatives to it are 2 and 3.

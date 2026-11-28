@@ -183,7 +183,7 @@ func (s *FrameFairy) turnsMade(path string, plan engine.PlanSummary, chosen stri
 		}
 		rotations := engine.RotationViews(turned.Rotations)
 		out.Parts = append(out.Parts, Turn{Part: seg.Part, Rotations: rotations,
-			Framing: s.framingOf(path, info, engine.SegmentViews(turned.Segments), engine.CropMarkViews(turned.CropMarks), rotations)})
+			Framing: s.framingOf(path, clipRef{plan: entry.Plan, id: entry.ID}, info, engine.SegmentViews(turned.Segments), engine.CropMarkViews(turned.CropMarks), rotations)})
 	}
 	var h maphash.Hash
 	h.SetSeed(clipSeed)
@@ -598,7 +598,7 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture, track st
 		return nil, err
 	}
 	s.previews.tracks.keep(path, view.Captions)
-	framing := s.framingOf(path, g.Frames, engine.SegmentViews(view.Clip.Segments), engine.CropMarkViews(view.Clip.CropMarks),
+	framing := s.framingOf(path, clipRef{plan: plan, id: clipID}, g.Frames, engine.SegmentViews(view.Clip.Segments), engine.CropMarkViews(view.Clip.CropMarks),
 		engine.RotationViews(view.Clip.Rotations))
 	return &ShapedClip{ShapedView: view, Framing: framing}, nil
 }

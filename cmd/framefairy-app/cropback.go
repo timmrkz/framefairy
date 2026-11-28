@@ -39,6 +39,9 @@ type cropBack struct {
 	left       int
 	before     framed
 	after      string
+	// done says the crop was put back, and after is then the framing
+	// that left, so a second click on Put the crop back changes nothing.
+	done bool
 }
 
 // cropBacks is the way back of one video, with a lock of its own, since
@@ -64,20 +67,19 @@ func (c *cropBacks) set(b *cropBack) {
 }
 
 // corner is what the crop frame's corner offers on the frame dressed d at
-// a moment: the crop brought to where the app places it where it stands
-// anywhere else and a drag there or on the keyframe that holds it could
-// place it, otherwise putting it back where the reset moved it from,
-// while the clip is as the reset left it and putting back would move the
-// crop on this frame, otherwise nothing.
+// a moment: the crop brought to where the app places it, where a click
+// would place it, see resetOf, otherwise putting it back where the reset
+// moved it from, while the clip is as the reset left it and putting back
+// would move the crop on this frame, otherwise nothing.
 func (s *FrameFairy) corner(a *dressAsk, d engine.FrameDress, at float64) string {
 	if a.video || !d.In {
 		return ""
 	}
-	if d.Moved && (d.Movable || d.Held) {
+	if _, _, ok := resetOf(a.clip, d, at); ok {
 		return cornerAuto
 	}
 	b, ok := s.historyOf(a.path).crops.get()
-	if !ok || b.after != a.name {
+	if !ok || b.done || b.after != a.name {
 		return ""
 	}
 	f := b.before
@@ -88,98 +90,150 @@ func (s *FrameFairy) corner(a *dressAsk, d engine.FrameDress, at float64) string
 	return ""
 }
 
-// errNoCropBack answers Put the crop back where there is nothing to put
-// back, or the clip changed since the crop was brought back.
-var errNoCropBack = errors.New("the crop has changed since, so it cannot be put back")
+// resetOf is where Automatic crop places the crop that the frame dressed d
+// at a moment of the framing f shows, and the dress of the frame it is
+// placed on: where it stands anywhere but where the app places it, on the
+// frame itself where a drag there would place it, or on the switch
+// keyframe that holds it, where a drag would place what this frame shows.
+// A keyframe placed on the picture turned another way waits, and a drag
+// on its frame would take it over, so no click places the crop there.
+func resetOf(f framed, d engine.FrameDress, at float64) (float64, engine.FrameDress, bool) {
+	if !d.In || !d.Moved {
+		return 0, d, false
+	}
+	if d.Movable && !keyframeWaits(d) {
+		return at, d, true
+	}
+	if !d.Held {
+		return 0, d, false
+	}
+	on := d.Keyframe
+	k := f.source.DressAlone(f.segments, f.rotations, f.marks, on, f.width, f.height)
+	if !k.In {
+		// A keyframe carried past a cut stands in the cut, and carries
+		// the crop of the last keyframe of its turn before it, the one
+		// the hand put.
+		for i := len(f.marks) - 1; i >= 0; i-- {
+			if m := f.marks[i]; m.At < on && m.Turn == d.Turn {
+				on = m.At
+				k = f.source.DressAlone(f.segments, f.rotations, f.marks, on, f.width, f.height)
+				break
+			}
+		}
+	}
+	if !k.In || !k.Movable || keyframeWaits(k) || k.Left != d.Left || k.Auto != d.Auto || k.Turn != d.Turn {
+		return 0, d, false
+	}
+	return on, k, true
+}
+
+// keyframeWaits says the keyframe on a frame was placed on the picture turned
+// another way than the frame is.
+func keyframeWaits(d engine.FrameDress) bool {
+	return d.Mark != nil && d.Mark.Turn != d.Turn
+}
+
+var (
+	// errNoCropBack answers Put the crop back where there is nothing to
+	// put back, or the clip changed since the crop was brought back.
+	errNoCropBack = errors.New("the crop has changed since, so it cannot be put back")
+	// errFramingGone answers a click whose clip's framing was let go of
+	// between being worked out and being read, with 512 others worked
+	// out meanwhile.
+	errFramingGone = errors.New("the clip changed while the crop was being placed, try again")
+)
 
 // ResetCrop brings the crop on the frame at a moment of a clip to where
-// the app places it, the way a drag there would, or on the keyframe that
-// holds the crop there, and keeps the way back. It puts and removes no
-// keyframe. Where the corner offers no reset, the crop already standing
-// there or a drag placing nothing, it changes nothing, so a second click
-// before the frame's new dress has come is no second reset. It returns
-// the clip as it is now.
+// the app places it, the way a drag there or on the keyframe that holds it
+// would, and keeps the way back. It puts and removes no keyframe. Where
+// the corner offers no reset, the crop already standing there or a drag
+// placing nothing, it changes nothing, so a second click before the
+// frame's new dress has come is no second reset. The clip is read and the
+// way back kept inside the edit, so no other edit lands between them, and
+// no frame of the framing it leaves is dressed without it. It returns the
+// clip as it is now.
 func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
-	now, err := s.clipEntry(ctx, path, plan, clipID)
+	info, err := s.probe(ctx, path)
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	before, ok := s.previews.framings.get(now.Framing)
-	if !ok {
-		return now, nil
-	}
-	d := before.dress(at, false)
-	if !d.Movable && d.Held {
-		// The keyframe that holds the crop here takes it, and it shows
-		// the crop this frame shows.
-		at = d.Keyframe
-		if k := before.dress(at, false); k.Left == d.Left && k.Auto == d.Auto && k.Turn == d.Turn {
-			d = k
+	crops := &s.historyOf(path).crops
+	err = s.edit(path, func() error {
+		now, err := s.clipEntry(ctx, path, plan, clipID)
+		if err != nil {
+			return err
 		}
-	}
-	if !d.In || !d.Moved || !d.Movable {
-		return now, nil
-	}
-	back := cropBack{plan: plan, clip: clipID, at: at, left: int(math.Round(d.Left)), before: before}
-	if err := s.placeCrop(ctx, path, plan, clipID, at, int(math.Round(d.Auto)), &back); err != nil {
+		before, ok := s.previews.framings.get(now.Framing)
+		if !ok {
+			return errFramingGone
+		}
+		on, d, ok := resetOf(before, before.dress(at, false), at)
+		if !ok {
+			return nil
+		}
+		if err := engine.SetCrop(s.store.files, plan, clipID, on, int(math.Round(d.Auto)), info); err != nil {
+			return err
+		}
+		back := &cropBack{plan: plan, clip: clipID, at: on, left: int(math.Round(d.Left)), before: before}
+		crops.set(s.leaves(ctx, path, back))
+		return nil
+	})
+	if err != nil {
 		return ClipEntry{}, err
 	}
 	return s.answer(ctx, path, plan, clipID)
 }
 
 // PutCropBack puts the crop back where ResetCrop moved it from, while the
-// clip is as the reset left it, and returns the clip as it is now.
+// clip is as the reset left it, and returns the clip as it is now. A
+// second click before the frame's new dress has come finds it put back
+// and changes nothing.
 func (s *FrameFairy) PutCropBack(ctx context.Context, path, plan, clipID string) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
-	crops := &s.historyOf(path).crops
-	b, ok := crops.get()
-	if !ok || b.plan != plan || b.clip != clipID {
-		return ClipEntry{}, errNoCropBack
-	}
-	now, err := s.clipEntry(ctx, path, plan, clipID)
+	info, err := s.probe(ctx, path)
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if now.Framing != b.after {
-		return ClipEntry{}, errNoCropBack
-	}
-	if err := s.placeCrop(ctx, path, plan, clipID, b.at, b.left, nil); err != nil {
+	crops := &s.historyOf(path).crops
+	err = s.edit(path, func() error {
+		b, ok := crops.get()
+		if !ok || b.plan != plan || b.clip != clipID {
+			return errNoCropBack
+		}
+		now, err := s.clipEntry(ctx, path, plan, clipID)
+		if err != nil {
+			return err
+		}
+		if now.Framing != b.after {
+			return errNoCropBack
+		}
+		if b.done {
+			return nil
+		}
+		if err := engine.SetCrop(s.store.files, plan, clipID, b.at, b.left, info); err != nil {
+			return err
+		}
+		crops.set(s.leaves(ctx, path, &cropBack{plan: plan, clip: clipID, done: true}))
+		return nil
+	})
+	if err != nil {
 		return ClipEntry{}, err
 	}
 	return s.answer(ctx, path, plan, clipID)
 }
 
-// placeCrop places the crop of a clip at a moment, as one edit, and keeps
-// the way back given, or none, with the name of the framing the edit
-// leaves. It is kept inside the edit, before the window is told of the
-// clip's new framing, so no frame of that framing is dressed without it.
-// The crop is one a frame's dress gave, so it lies inside the picture.
-func (s *FrameFairy) placeCrop(ctx context.Context, path, plan, clipID string, at float64, left int, back *cropBack) error {
-	info, err := s.probe(ctx, path)
+// leaves is the way back b with the name of the framing the edit leaves
+// its clip with, or none where the clip cannot be read.
+func (s *FrameFairy) leaves(ctx context.Context, path string, b *cropBack) *cropBack {
+	after, err := s.clipEntry(ctx, path, b.plan, b.clip)
 	if err != nil {
-		return err
-	}
-	crops := &s.historyOf(path).crops
-	return s.edit(path, func() error {
-		if err := engine.SetCrop(s.store.files, plan, clipID, at, left, info); err != nil {
-			return err
-		}
-		if back == nil {
-			crops.set(nil)
-			return nil
-		}
-		after, err := s.clipEntry(ctx, path, plan, clipID)
-		if err != nil {
-			crops.set(nil)
-			return nil
-		}
-		back.after = after.Framing
-		crops.set(back)
 		return nil
-	})
+	}
+	b.after = after.Framing
+	return b
 }
