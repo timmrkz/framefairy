@@ -228,6 +228,9 @@ jobs:
         if: steps.check.outcome == 'success'
         name: Earlier copies of the libraries
         continue-on-error: true
+        # Each file is read with the app's own waits, so a release that
+        # stalls ends this step, never the publish.
+        timeout-minutes: 5
         env:
           CHANNEL: ${{ steps.which.outputs.channel }}
         run: framefairy-release signed-before -channel "$CHANNEL" -out "$RUNNER_TEMP/kept"

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"os"
@@ -114,18 +115,103 @@ func TestApplesRealAuthorityIsTaken(t *testing.T) {
 	}
 }
 
+// A library signed again by real codesign, with Apple's time stamp, is
+// the same signed code as when it was signed before, so harden keeps the
+// earlier bytes and an update does not download it again. What codesign
+// changes between two signings is only its CMS, and it reserves room for
+// the signature of the same size both times. The job outside of
+// mac-nightly.yml names the bundle, as for the test above.
+//
+// On the real disk: codesign signs files, and harden reads the earlier
+// copies from a folder, as signed-before writes them.
+func TestARealLibrarySignedAgainIsKept(t *testing.T) {
+	adhocApp := os.Getenv("ADHOC_APP")
+	if adhocApp == "" {
+		t.Skip("needs a bundle make built on a Mac, see the job outside in mac-nightly.yml")
+	}
+	d := testSigner(t)
+	d.timestamp = true
+	copyOf := func() string {
+		app := filepath.Join(t.TempDir(), appName)
+		if _, err := macTools.run("ditto", adhocApp, app); err != nil {
+			t.Fatal(err)
+		}
+		return app
+	}
+	first := copyOf()
+	if err := d.signApp(first); err != nil {
+		t.Fatal(err)
+	}
+	inner, err := innerCode(first)
+	if err != nil || len(inner) == 0 {
+		t.Fatalf("%s holds nothing to sign before the app: %v", first, err)
+	}
+	// The first build's libraries, the way signed-before writes them.
+	kept := t.TempDir()
+	for _, code := range inner {
+		rel, err := filepath.Rel(filepath.Dir(first), code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(kept, rel), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(kept, rel, "0-first"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	second := copyOf()
+	d.kept = kept
+	// signApp verifies the bundle, strict and deep, after the keeping.
+	if err := d.signApp(second); err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range inner {
+		rel, _ := filepath.Rel(filepath.Dir(first), code)
+		before, err := os.ReadFile(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after, err := os.ReadFile(filepath.Join(filepath.Dir(second), rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Errorf("%s was signed afresh, though its code did not change", rel)
+		}
+	}
+}
+
 // testSigned copies the bundle and signs the copy the way publish.yml
 // does, with a certificate for code signing made here, which nothing
 // trusts and which lives as long as the test.
 //
-// On the real disk: codesign and openssl read and write files.
+// On the real disk: codesign copies and signs files.
 func testSigned(t *testing.T, adhocApp string) string {
 	t.Helper()
-	dir := t.TempDir()
-	signedApp := filepath.Join(dir, appName)
+	signedApp := filepath.Join(t.TempDir(), appName)
 	if _, err := macTools.run("ditto", adhocApp, signedApp); err != nil {
 		t.Fatal(err)
 	}
+	d := testSigner(t)
+	if err := d.signApp(signedApp); err != nil {
+		t.Fatal(err)
+	}
+	return signedApp
+}
+
+// testSigner signs the way publish.yml does, with a certificate for code
+// signing made here, which nothing trusts and which lives as long as the
+// test, without Apple's time stamp.
+//
+// On the real disk: openssl writes the certificate it signs with.
+func testSigner(t *testing.T) devID {
+	t.Helper()
+	dir := t.TempDir()
 	const name = "Frame Fairy Test Signing"
 	conf := filepath.Join(dir, "test.cnf")
 	if err := os.WriteFile(conf, []byte("[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n"+
@@ -146,11 +232,7 @@ func testSigned(t *testing.T, adhocApp string) string {
 			t.Fatalf("openssl %s: %v\n%s", args[0], err, out)
 		}
 	}
-	d := devID{macOS: macTools, p12: p12, password: password, identity: name,
+	return devID{macOS: macTools, p12: p12, password: password, identity: name,
 		entitlements: filepath.Join("..", "..", "build", "entitlements.plist"),
 		requirement:  `certificate leaf[subject.CN] = "` + name + `"`}
-	if err := d.signApp(signedApp); err != nil {
-		t.Fatal(err)
-	}
-	return signedApp
 }

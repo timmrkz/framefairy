@@ -148,7 +148,7 @@ func (s *Source) piece(ctx context.Context, parts string, part Part, progress fu
 	if err := s.stream(ctx, where, part.Packed, bufferSink{&packed}, progress); err != nil {
 		return nil, fmt.Errorf("the piece of %s: %w", part.Name, err)
 	}
-	return UnpackPiece(packed.Bytes(), part)
+	return unpackPiece(packed.Bytes(), part)
 }
 
 type bufferSink struct{ b *bytes.Buffer }

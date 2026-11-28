@@ -498,12 +498,15 @@ signed again is a new file even when its code did not change, and an
 update would download ffmpeg, llama-server and the speech libraries
 every time. So `framefairy-release signed-before` first downloads the
 libraries and programs of main's build and of the channel's, as they
-were signed then, and `harden` keeps such a copy in place of the one it
-just signed when the two are the same signed code: the same bytes up to
-the signature, the same signature but its time, and the same
-certificates. A library signed before a certificate was renewed is
-never kept. The kept copy is checked against the team like every other,
-and the app is sealed around it. See `cmd/framefairy-release/kept.go`.
+were signed then, read the way the app reads a build. `harden` keeps
+such a copy in place of the one it just signed when the two are the same
+signed code: the same bytes up to the signature, nothing after it, the
+same blobs in the signature but the CMS one, which holds the time, and
+the same certificates in the CMS. The rest of the CMS is not compared,
+since `codesign --verify` checks it. A library signed before a
+certificate was renewed is never kept. The kept copy is checked against
+the team like every other, and the app is sealed around it. See
+`cmd/framefairy-release/kept.go`.
 
 Builds made on the Mac with `make` stay signed ad hoc, without the
 hardened runtime, like Xcode's Sign to Run Locally. Under it an app

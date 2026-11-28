@@ -6,10 +6,11 @@ package main
 // though its code is the same. An update downloads every file the app
 // does not have by its SHA-256, so without this every update would
 // download ffmpeg, the frames decoder, llama-server and the speech
-// libraries again, about 33 MB in place of about 7.
+// libraries again, about 52 MB in place of about 7.
 //
 // So signed-before, in a step that holds no secret and no token,
-// downloads the same libraries of main's build and of the channel's, and
+// downloads the same libraries of main's build and of the channel's, read
+// the way the app reads a build, see updates/published.go, and
 // harden, once it has signed each library afresh, keeps an earlier copy
 // in its place when the two are the same signed code: every byte before
 // the signature, and every blob of the signature but the CMS one, are the
@@ -25,14 +26,15 @@ package main
 
 import (
 	"bytes"
+	"cmp"
+	"context"
+	"debug/macho"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -58,9 +60,11 @@ const (
 //
 //	signed-before -channel C -out D
 //
-// It writes each copy to D, under its name in the build's zip and then
-// its SHA-256. What cannot be had is said and left out, never an error:
-// a library without an earlier copy is signed as it is.
+// It writes each copy to D, under its name in the build's zip, then its
+// place, main's first, and its SHA-256. What cannot be had is said and
+// left out, never an error: a library without an earlier copy is signed
+// as it is. Every file is read with the app's own limits and waits, so a
+// release that stalls costs the keeping and never the publish.
 func signedBeforeCommand(args []string) error {
 	fs := flag.NewFlagSet("signed-before", flag.ExitOnError)
 	channel := fs.String("channel", "", "the channel the build is of")
@@ -70,67 +74,14 @@ func signedBeforeCommand(args []string) error {
 	if *out == "" {
 		return errors.New("signed-before needs -out")
 	}
-	r := releaseFiles{from: *from, client: &http.Client{}}
-	return signedBefore(r, []string{"main", *channel}, *out, os.Stdout)
-}
-
-// releaseFiles reads files of the release dev the way the app does, from
-// their public addresses, with no token.
-type releaseFiles struct {
-	from   string
-	client *http.Client
-}
-
-// get is the file of this name, refused when it is larger than limit.
-func (r releaseFiles) get(name string, limit int64) ([]byte, error) {
-	resp, err := r.client.Get(r.from + url.PathEscape(name))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s answered %s", name, resp.Status)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("%s is larger than %d bytes", name, limit)
-	}
-	return data, nil
-}
-
-// parts are the parts of a channel's build as the release holds them,
-// read against the size and checksum its entry names.
-func (r releaseFiles) parts(channel string) (updates.Parts, error) {
-	data, err := r.get("channel-"+channel+".json", updates.MaxList)
-	if err != nil {
-		return updates.Parts{}, err
-	}
-	var b updates.Build
-	if err := json.Unmarshal(data, &b); err != nil {
-		return updates.Parts{}, fmt.Errorf("its entry is not JSON: %w", err)
-	}
-	u, err := url.Parse(b.URL)
-	if err != nil {
-		return updates.Parts{}, err
-	}
-	zip := path.Base(u.Path)
-	if !strings.HasPrefix(zip, "app-") || !strings.HasSuffix(zip, ".zip") {
-		return updates.Parts{}, fmt.Errorf("its entry names %q, no build", zip)
-	}
-	data, err = r.get(updates.PartsName(zip), updates.MaxList)
-	if err != nil {
-		return updates.Parts{}, err
-	}
-	return updates.ParseParts(data, b.Size, b.SHA256)
+	src := &updates.Source{Entries: *from, Client: &http.Client{}}
+	return signedBefore(context.Background(), src, []string{"main", *channel}, *out, os.Stdout)
 }
 
 // signedBefore writes up to keptPerFile earlier copies of every library
 // and program beside the app's own that the builds of channels hold, in
 // their order, to out.
-func signedBefore(r releaseFiles, channels []string, out string, log io.Writer) error {
+func signedBefore(ctx context.Context, src *updates.Source, channels []string, out string, log io.Writer) error {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err
 	}
@@ -140,7 +91,7 @@ func signedBefore(r releaseFiles, channels []string, out string, log io.Writer) 
 		if channel == "" {
 			continue
 		}
-		p, err := r.parts(channel)
+		b, p, err := src.PublishedParts(ctx, channel)
 		if err != nil {
 			fmt.Fprintf(log, "no earlier copies from %s: %v\n", channel, err)
 			continue
@@ -150,11 +101,7 @@ func signedBefore(r releaseFiles, channels []string, out string, log io.Writer) 
 				continue
 			}
 			seen[part.SHA256] = true
-			packed, err := r.get(updates.PieceName(part.SHA256), part.Packed)
-			var data []byte
-			if err == nil {
-				data, err = updates.UnpackPiece(packed, part)
-			}
+			data, err := src.Piece(ctx, b, part)
 			if err != nil {
 				fmt.Fprintf(log, "no earlier copy of %s from %.12s: %v\n", part.Name, part.SHA256, err)
 				continue
@@ -163,7 +110,9 @@ func signedBefore(r releaseFiles, channels []string, out string, log io.Writer) 
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(dir, part.SHA256), data, 0o644); err != nil {
+			// Named by its place first, so harden tries main's first.
+			name := fmt.Sprintf("%d-%s", taken[part.Name], part.SHA256)
+			if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 				return err
 			}
 			taken[part.Name]++
@@ -258,6 +207,12 @@ func sameSignedCode(fresh, earlier []byte) error {
 	if len(a) != len(b) {
 		return errors.New("they have other architectures")
 	}
+	// Nothing rides along that no signature covers: the files are as long,
+	// and a fat file's header and the padding between its slices are the
+	// same.
+	if len(fresh) != len(earlier) || !bytes.Equal(gapsOf(fresh), gapsOf(earlier)) {
+		return errors.New("they differ outside their code")
+	}
 	for i := range a {
 		if err := sameSignedArch(a[i], b[i]); err != nil {
 			return err
@@ -277,6 +232,11 @@ func sameSignedArch(a, b arch) error {
 	}
 	if offA != offB || !bytes.Equal(a.data[:offA], b.data[:offB]) {
 		return errors.New("their code differs")
+	}
+	// codesign ends each program with its signature, so nothing comes
+	// after it that the signature does not cover.
+	if len(a.data) != len(b.data) || !signatureLast(a) || !signatureLast(b) {
+		return errors.New("something follows the signature")
 	}
 	if len(slotsA) != len(slotsB) {
 		return errors.New("their signatures hold other blobs")
@@ -309,6 +269,45 @@ func sameSignedArch(a, b arch) error {
 		return errors.New("they are signed with other certificates")
 	}
 	return nil
+}
+
+// signatureLast says whether a's code signature, as its load command
+// places it, ends where a ends.
+func signatureLast(a arch) bool {
+	const codeSignature = 0x1d
+	for _, l := range a.f.Loads {
+		raw := l.Raw()
+		if len(raw) >= 16 && a.f.ByteOrder.Uint32(raw) == codeSignature {
+			return uint64(a.f.ByteOrder.Uint32(raw[8:]))+uint64(a.f.ByteOrder.Uint32(raw[12:])) == uint64(len(a.data))
+		}
+	}
+	return false
+}
+
+// gapsOf are the bytes of a fat file outside its slices, its header and
+// the padding between them, or nil for a thin one. archesOf has already
+// held every slice inside the file.
+func gapsOf(data []byte) []byte {
+	fat, err := macho.NewFatFile(bytes.NewReader(data))
+	if err != nil {
+		return nil
+	}
+	defer fat.Close()
+	arches := slices.SortedFunc(slices.Values(fat.Arches), func(x, y macho.FatArch) int {
+		return cmp.Compare(x.Offset, y.Offset)
+	})
+	out := []byte{}
+	at := uint64(0)
+	for _, a := range arches {
+		if start := uint64(a.Offset); start > at {
+			out = append(out, data[at:start]...)
+		}
+		at = max(at, uint64(a.Offset)+uint64(a.Size))
+	}
+	if at < uint64(len(data)) {
+		out = append(out, data[at:]...)
+	}
+	return out
 }
 
 // slotBlob is one blob of a code signature and the slot it is in.

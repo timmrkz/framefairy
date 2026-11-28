@@ -263,9 +263,9 @@ func packedBound(size int64) int64 {
 // most memory one takes beside the file itself.
 const pieceWindow = 64 << 20
 
-// UnpackPiece is the file a piece holds, when it is the file the part
+// unpackPiece is the file a piece holds, when it is the file the part
 // names.
-func UnpackPiece(packed []byte, part Part) ([]byte, error) {
+func unpackPiece(packed []byte, part Part) ([]byte, error) {
 	dec, err := zstd.NewReader(nil, zstd.WithDecoderMaxWindow(pieceWindow),
 		zstd.WithDecoderMaxMemory(uint64(part.Size)+pieceWindow), zstd.WithDecoderConcurrency(1))
 	if err != nil {

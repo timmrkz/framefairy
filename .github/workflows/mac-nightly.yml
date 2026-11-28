@@ -90,13 +90,14 @@ jobs:
       # What publish.yml does to every build before the user gets it,
       # signed again with the hardened runtime and the microphone by
       # framefairy-release harden, here with a certificate the test makes,
-      # and read back by the release tool. See hardened_real_darwin_test.go.
+      # and read back by the release tool, and a library signed twice kept
+      # as it was signed the first time. See hardened_real_darwin_test.go.
       - name: The release tool reads what codesign wrote
         env:
           # The bundle make outside built and signed ad hoc.
           ADHOC_APP: ${{ github.workspace }}/.build/outside/Frame Fairy.app
           APPLE_CAS: "1"
-        run: go test -count=1 -run 'TestARealSignatureIsReadAsCodesignWroteIt|TestApplesRealAuthorityIsTaken' -v ./cmd/framefairy-release/
+        run: go test -count=1 -run 'TestARealSignatureIsReadAsCodesignWroteIt|TestARealLibrarySignedAgainIsKept|TestApplesRealAuthorityIsTaken' -v ./cmd/framefairy-release/
       # macOS writes a crash report once the process has died, which can be
       # after the step that saw the app go has failed, see whyGone in
       # internal/outside. So a failed run shows the app's reports again here.

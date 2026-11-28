@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -112,10 +114,7 @@ func TestTheCertificatesAreReadFromTheCMS(t *testing.T) {
 // certificates changed, or no developer's signature, and it is not.
 func TestALibrarySignedAgainIsTheSameSignedCode(t *testing.T) {
 	signedAt := func(p program, stamp int, certs [][]byte, open bool) []byte {
-		p.signed, p.flags, p.team = true, flagRuntime, "TEAM123456"
-		p.ident = "com.framefairy.app.libonnxruntime"
-		p.cms = testCMS(certs, stamp, open)
-		return p.bytes()
+		return signedLib(p, stamp, certs, open).bytes()
 	}
 	fresh := signedAt(speech, 2, testCerts, true)
 	if err := sameSignedCode(fresh, signedAt(speech, 1, testCerts, true)); err != nil {
@@ -155,12 +154,42 @@ func TestALibrarySignedAgainIsTheSameSignedCode(t *testing.T) {
 		"signed ad hoc":                         adhoc.bytes(),
 		"no program":                            []byte("a licence"),
 		"another architecture":                  signedAt(program{cpu: 0x01000007, links: speech.links}, 1, testCerts, false),
+		"an extra architecture":                 fat(signedLib(speech, 1, testCerts, true), signedLib(intel, 1, testCerts, true)),
+		"bytes after the signature":             append(signedAt(speech, 1, testCerts, true), "unsigned"...),
 	}
 	for name, earlier := range cases {
 		if err := sameSignedCode(fresh, earlier); err == nil {
 			t.Errorf("%s: taken as the same signed code", name)
 		}
 	}
+	// A fat library: signed again it is the same, with an architecture
+	// fewer it is not, and the other way round neither, without a panic,
+	// and with anything in the padding between its slices it is not.
+	freshFat := fat(signedLib(speech, 2, testCerts, true), signedLib(intel, 2, testCerts, true))
+	earlierFat := fat(signedLib(speech, 1, testCerts, true), signedLib(intel, 1, testCerts, true))
+	if err := sameSignedCode(freshFat, earlierFat); err != nil {
+		t.Errorf("a fat library signed again: %v", err)
+	}
+	if err := sameSignedCode(freshFat, signedAt(speech, 1, testCerts, true)); err == nil {
+		t.Error("a thin copy of a fat library: taken as the same signed code")
+	}
+	padded := slices.Clone(earlierFat)
+	padded[1000] = 1
+	if err := sameSignedCode(freshFat, padded); err == nil {
+		t.Error("a fat library with something in its padding: taken as the same signed code")
+	}
+}
+
+// intel is the speech library for an Intel Mac, for a fat library.
+var intel = program{cpu: 0x01000007, links: speech.links}
+
+// signedLib is a library signed with the Developer ID by certs, at the
+// time stamp, its CMS written with open lengths or not.
+func signedLib(p program, stamp int, certs [][]byte, open bool) program {
+	p.signed, p.flags, p.team = true, flagRuntime, "TEAM123456"
+	p.ident = "com.framefairy.app.libonnxruntime"
+	p.cms = testCMS(certs, stamp, open)
+	return p
 }
 
 // harden keeps the earlier copy of a library that is the same signed
@@ -238,17 +267,28 @@ func TestHardenKeepsTheSignedBytesOfALibraryThatDidNotChange(t *testing.T) {
 }
 
 // signed-before downloads main's copy of each library first, then the
-// channel's, never the app's own program, and leaves out a piece that is
-// not the file its parts say. A channel with no build costs nothing but
-// its copies.
+// channel's, at most keptPerFile and each file once, never the app's own
+// program, and leaves out a piece that is not the file its parts say. It
+// reads an entry the way publish writes it: the parts are those of the
+// zip that stores its files, not of the zip at its address. A channel
+// with no build costs nothing but its copies.
 //
 // On the real disk: signed-before writes the copies for harden to read.
-func TestSignedBeforeDownloadsTheLibrariesOfMainFirst(t *testing.T) {
+func TestSignedBeforeDownloadsTheLibrariesOfEachBuildOnce(t *testing.T) {
 	enc, err := zstd.NewWriter(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	served := map[string][]byte{}
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, ok := served[strings.TrimPrefix(r.URL.Path, "/dev/")]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(data)
+	}))
+	defer srv.Close()
 	part := func(name string, data []byte) updates.Part {
 		sum := sha256.Sum256(data)
 		packed := enc.EncodeAll(data, nil)
@@ -256,8 +296,11 @@ func TestSignedBeforeDownloadsTheLibrariesOfMainFirst(t *testing.T) {
 		served[updates.PieceName(p.SHA256)] = packed
 		return p
 	}
-	// build serves a channel's entry and its parts, the way publish
-	// uploads them.
+	signature := base64.StdEncoding.EncodeToString(make([]byte, 64))
+	// build serves a channel's entry and its parts, the way sign and
+	// publish write them: the zip at the address deflates its files, and
+	// the parts make the stored zip beside it, whose size and checksum
+	// are in Stored.
 	build := func(channel string, parts ...updates.Part) {
 		p := updates.Parts{Parts: append([]updates.Part{{Bytes: []byte("PK")}}, parts...)}
 		for _, part := range p.Parts {
@@ -270,36 +313,33 @@ func TestSignedBeforeDownloadsTheLibrariesOfMainFirst(t *testing.T) {
 			t.Fatal(err)
 		}
 		served[updates.PartsName(zip)] = data
-		entry, err := json.Marshal(updates.Build{Channel: channel, URL: "https://example.com/dev/" + zip, Size: p.Size, SHA256: p.SHA256})
+		entry, err := json.Marshal(updates.Build{Channel: channel, Name: channel, Version: "0.3.0", Commit: "c7fb725",
+			URL: srv.URL + "/dev/" + zip, Size: p.Size / 2, SHA256: strings.Repeat("cd", 32), Signature: signature,
+			Stored: &updates.Stored{Size: p.Size, SHA256: p.SHA256, Signature: signature, Claim: signature, PackedSize: p.Size / 2}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		served["channel-"+channel+".json"] = entry
 	}
 	lib := appName + "/Contents/Frameworks/libonnxruntime.dylib"
+	other := appName + "/Contents/Frameworks/libsherpa-onnx-c-api.dylib"
 	llama := appName + "/Contents/MacOS/llama-server"
 	own := appName + "/Contents/MacOS/" + appProgram
+	same := part(other, []byte("a library no build changed"))
 	build("main",
 		part(lib, []byte("main's library")),
+		same,
 		part(own, []byte("main's program")),
 		part(appName+"/Contents/Info.plist", []byte("<plist/>")))
 	bad := part(llama, []byte("what the parts say"))
 	served[updates.PieceName(bad.SHA256)] = enc.EncodeAll([]byte("another file"), nil)
-	build("pr-7", part(lib, []byte("the pull request's library")), bad)
+	build("pr-7", part(lib, []byte("the pull request's library")), same, bad)
+	build("pr-9", part(lib, []byte("a third library")))
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		data, ok := served[strings.TrimPrefix(r.URL.Path, "/dev/")]
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		_, _ = w.Write(data)
-	}))
-	defer srv.Close()
 	out := t.TempDir()
 	var log bytes.Buffer
-	r := releaseFiles{from: srv.URL + "/dev/", client: srv.Client()}
-	if err := signedBefore(r, []string{"main", "pr-7", "pr-8"}, out, &log); err != nil {
+	src := &updates.Source{Entries: srv.URL + "/dev/", Client: srv.Client()}
+	if err := signedBefore(t.Context(), src, []string{"main", "pr-7", "pr-8", "pr-9"}, out, &log); err != nil {
 		t.Fatal(err)
 	}
 	got := func(name string) []string {
@@ -314,9 +354,12 @@ func TestSignedBeforeDownloadsTheLibrariesOfMainFirst(t *testing.T) {
 		}
 		return data
 	}
-	libs := strings.Join(got(lib), "|")
-	if len(got(lib)) != keptPerFile || !strings.Contains(libs, "main's library") || !strings.Contains(libs, "the pull request's library") {
-		t.Errorf("the library's copies are %q, want main's and the pull request's", libs)
+	// In the order harden tries them: main's first.
+	if libs := got(lib); !slices.Equal(libs, []string{"main's library", "the pull request's library"}) {
+		t.Errorf("the library's copies are %q, want main's and then the pull request's, and no third", libs)
+	}
+	if copies := got(other); len(copies) != 1 {
+		t.Errorf("a library two builds share was downloaded %d times", len(copies))
 	}
 	if n := len(got(own)); n != 0 {
 		t.Errorf("the app's own program was downloaded %d times, though it changes every build", n)
@@ -355,5 +398,20 @@ func FuzzCMSCertificates(f *testing.F) {
 	f.Add([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0x30, 0x80, 0x30, 0x80})
 	f.Fuzz(func(t *testing.T, blob []byte) {
 		_, _ = cmsCertificates(blob)
+	})
+}
+
+// An earlier copy from the release is untrusted, and its signature is read
+// by hand, so whatever it holds is compared without a panic, and only a
+// copy that is the same signed code is taken.
+func FuzzSameSignedCode(f *testing.F) {
+	fresh := signedLib(speech, 2, testCerts, true).bytes()
+	f.Add(signedLib(speech, 1, testCerts, true).bytes())
+	f.Add(signedLib(speech, 1, otherCerts, true).bytes())
+	f.Add(fat(signedLib(speech, 1, testCerts, true), signedLib(intel, 1, testCerts, true)))
+	f.Fuzz(func(t *testing.T, earlier []byte) {
+		if sameSignedCode(fresh, earlier) == nil && len(earlier) != len(fresh) {
+			t.Errorf("a copy of %d bytes taken for one of %d", len(earlier), len(fresh))
+		}
 	})
 }
