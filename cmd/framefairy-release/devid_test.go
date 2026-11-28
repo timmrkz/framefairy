@@ -143,6 +143,9 @@ func bundle(t *testing.T) string {
 
 // bundleOf is a bundle whose program was built with sum as the SHA-256
 // of llama-server.
+//
+// On the real disk: harden signs a bundle in a folder, because codesign
+// signs files, and reads them back from there.
 func bundleOf(t *testing.T, sum string) string {
 	t.Helper()
 	own := asMade(adhoc)
