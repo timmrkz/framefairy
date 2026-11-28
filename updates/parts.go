@@ -50,6 +50,8 @@ type Part struct {
 	SHA256 string `json:"sha256,omitempty"`
 	// Packed is the size of its piece, the file packed with zstd.
 	Packed int64 `json:"packed,omitempty"`
+	// Patches make the file from other builds' files, see patch.go.
+	Patches []Patch `json:"patches,omitempty"`
 }
 
 // MaxParts is the most parts a build may have, room for thousands of
@@ -108,7 +110,7 @@ func ParseParts(data []byte, size int64, sum string) (Parts, error) {
 
 func (part Part) check() error {
 	if part.Bytes != nil {
-		if len(part.Bytes) == 0 || part.Name != "" || part.Size != 0 || part.SHA256 != "" || part.Packed != 0 {
+		if len(part.Bytes) == 0 || part.Name != "" || part.Size != 0 || part.SHA256 != "" || part.Packed != 0 || part.Patches != nil {
 			return errors.New("it is bytes and a file at once")
 		}
 		return nil
@@ -122,7 +124,7 @@ func (part Part) check() error {
 	if _, ok := InApp(part.Name); !ok {
 		return fmt.Errorf("%q is no file of an app", part.Name)
 	}
-	return nil
+	return part.checkPatches()
 }
 
 // InApp is where a file of the zip is inside the app, the name without
@@ -263,9 +265,9 @@ func packedBound(size int64) int64 {
 // most memory one takes beside the file itself.
 const pieceWindow = 64 << 20
 
-// unpackPiece is the file a piece holds, when it is the file the part
+// UnpackPiece is the file a piece holds, when it is the file the part
 // names.
-func unpackPiece(packed []byte, part Part) ([]byte, error) {
+func UnpackPiece(packed []byte, part Part) ([]byte, error) {
 	dec, err := zstd.NewReader(nil, zstd.WithDecoderMaxWindow(pieceWindow),
 		zstd.WithDecoderMaxMemory(uint64(part.Size)+pieceWindow), zstd.WithDecoderConcurrency(1))
 	if err != nil {

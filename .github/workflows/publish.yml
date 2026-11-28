@@ -43,8 +43,8 @@
 #    half way, checks that the commit is its channel's, checks the build,
 #    signs it again with the Developer ID, packs it in parts, signs the
 #    zip and the stored zip with the update key, uploads the zip with
-#    the stored zip packed with zstd, its parts, the pieces the release
-#    lacks and its entry to the release dev, and marks a pull request's
+#    the stored zip packed with zstd, its parts, the pieces and patches
+#    the release lacks and its entry to the release dev, and marks a pull request's
 #    commit ready to update to. A build it does not
 #    publish says why on its commit.
 # 4. list, whenever a build ends, however it ended, writes the list again
@@ -261,10 +261,19 @@ jobs:
       # Both zips are signed. The zip the build left is still published
       # for the apps from before. Packed after harden, so its parts are
       # of the build the user gets. See docs/UPDATES.md.
+      #
+      # Each file that changed also gets a patch against the same file of
+      # the builds an app is likely to run, which publish-plan named with
+      # its token. pack reads them from the release's public addresses,
+      # in this step with no token, as an app does. What cannot be had
+      # costs only its patches. See patches.go.
       - id: pack
         if: steps.harden.outcome == 'success'
         name: Pack it in parts
-        run: framefairy-release pack -zip "$RUNNER_TEMP/build/app.zip" -out "$RUNNER_TEMP/packed"
+        env:
+          BASES: ${{ steps.which.outputs.bases }}
+          ROOM: ${{ steps.which.outputs.room }}
+        run: framefairy-release pack -zip "$RUNNER_TEMP/build/app.zip" -out "$RUNNER_TEMP/packed" -bases "$BASES" -room "$ROOM"
 
       - id: sign
         if: steps.check.outcome == 'success'

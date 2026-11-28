@@ -29,8 +29,8 @@ import (
 // entry is up, whenever the list follows.
 //
 // A build pack wrote, in the folder packed, also uploads what an app that
-// knows parts downloads: first every piece the release does not hold yet,
-// then the zip, then the stored zip packed with zstd, then the parts, then
+// knows parts downloads: first every piece and patch the release does not
+// hold yet, then the zip, then the stored zip packed with zstd, then the parts, then
 // the entry, so nothing an entry names is missing when the app reads it.
 // The stored zip itself is never uploaded, see pack.go. A piece is named by the SHA-256 of the
 // file it holds, so one that is there already is the same file and stays.
@@ -76,8 +76,10 @@ func publish(gh gitHub, zipPath, zipName, packed, entryPath, channel, commit str
 	return gh.setReady(commit, "success", "On the Updates page as "+channel, "")
 }
 
-// uploadPieces uploads every piece of the build pack wrote to packed that
-// the release does not hold yet, and hands back its parts.
+// uploadPieces uploads every piece and patch of the build pack wrote to
+// packed that the release does not hold yet, and hands back its parts. A
+// patch is named by the two files it goes between, so one that is there
+// already is the same patch.
 func uploadPieces(gh gitHub, packed string) ([]byte, error) {
 	data, err := os.ReadFile(filepath.Join(packed, partsFile))
 	if err != nil {
@@ -95,16 +97,25 @@ func uploadPieces(gh gitHub, packed string) ([]byte, error) {
 	for _, a := range all {
 		there[a.name] = true
 	}
+	var names []string
 	for _, part := range p.Parts {
-		name := updates.PieceName(part.SHA256)
-		if part.Bytes != nil || there[name] {
+		if part.Bytes != nil {
 			continue
 		}
-		piece, err := os.ReadFile(filepath.Join(packed, name))
+		names = append(names, updates.PieceName(part.SHA256))
+		for _, patch := range part.Patches {
+			names = append(names, updates.PatchName(patch.From, part.SHA256))
+		}
+	}
+	for _, name := range names {
+		if there[name] {
+			continue
+		}
+		file, err := os.ReadFile(filepath.Join(packed, name))
 		if err != nil {
 			return nil, err
 		}
-		if err := gh.upload(name, piece); err != nil {
+		if err := gh.upload(name, file); err != nil {
 			return nil, err
 		}
 		there[name] = true

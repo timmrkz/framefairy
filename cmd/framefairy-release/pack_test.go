@@ -34,7 +34,7 @@ func packed(t *testing.T, files map[string][]byte) string {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "packed")
-	if err := pack(in, out, packer, io.Discard); err != nil {
+	if err := pack(in, out, packer, bases{}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	return out
@@ -121,29 +121,49 @@ func TestAPublishUploadsOnlyThePiecesTheReleaseLacks(t *testing.T) {
 	}
 }
 
-// What no entry reaches goes after an hour: the zip, packed zip and parts of a build
-// that is no longer listed, and every piece no listed build's parts name.
-// A piece still named, or uploaded within the hour, stays.
+// What no entry reaches goes after an hour: the zip and packed zip of a
+// build that is no longer listed, the parts of one that is no base any
+// more, every piece no kept parts name and every patch no listed build
+// names. The newest builds that left the list are bases, so their parts
+// and pieces stay for the next build to be patched against. A piece
+// still named, or uploaded within the hour, stays.
 //
 // On the real disk: the release tool reads the packed build from files.
 func TestPiecesNoBuildNamesGo(t *testing.T) {
 	t.Parallel()
 	ffmpeg := []byte(strings.Repeat("libavcodec ", 1000))
 	listed := packed(t, map[string][]byte{appFile: []byte("listed"), ffmpegFile: ffmpeg})
-	gone := packed(t, map[string][]byte{appFile: []byte("gone"), ffmpegFile: ffmpeg})
-	p, g := partsIn(t, listed), partsIn(t, gone)
+	left := packed(t, map[string][]byte{appFile: []byte("left"), ffmpegFile: ffmpeg})
+	p, g := partsIn(t, listed), partsIn(t, left)
+	app := slices.IndexFunc(p.Parts, func(part updates.Part) bool { return part.Name == appFile })
+	from := g.Parts[slices.IndexFunc(g.Parts, func(part updates.Part) bool { return part.Name == appFile })].SHA256
+	p.Parts[app].Patches = []updates.Patch{{From: from, Size: 5}}
+	partsData, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leftData, _ := os.ReadFile(filepath.Join(left, partsFile))
 	gh := &fakeGitHub{}
 	old := now.Add(-2 * time.Hour)
-	partsData, _ := os.ReadFile(filepath.Join(listed, partsFile))
 	gh.put("app-main-1.zip", []byte("zip"), old)
 	gh.put("app-main-1.parts.json", partsData, old)
 	gh.put("app-main-1.zip.zst", []byte("zst"), old)
 	gh.put("app-pr-9-1.zip", []byte("zip"), old)
 	gh.put("app-pr-9-1.zip.zst", []byte("zst"), old)
-	gh.put("app-pr-9-1.parts.json", []byte("{}"), old)
+	gh.put("app-pr-9-1.parts.json", leftData, old)
+	// Three more that left the list, the oldest of them one too many.
+	for i, n := range []string{"8", "7", "6"} {
+		gh.put("app-pr-"+n+"-1.parts.json", []byte("{}"), old.Add(-time.Duration(i+1)*time.Hour))
+	}
 	gh.put(pieceOf(t, p, appFile), []byte("piece"), old)
 	gh.put(pieceOf(t, p, ffmpegFile), []byte("piece"), old)
 	gh.put(pieceOf(t, g, appFile), []byte("piece"), old)
+	named := updates.PatchName(from, p.Parts[app].SHA256)
+	gh.put(named, []byte("patch"), old)
+	unnamed := updates.PatchName(strings.Repeat("e", 64), p.Parts[app].SHA256)
+	gh.put(unnamed, []byte("patch"), old)
+	stray := updates.PieceName(strings.Repeat("d", 64))
+	gh.put(stray, []byte("piece"), old)
 	fresh := updates.PieceName(strings.Repeat("f", 64))
 	gh.put(fresh, []byte("piece"), now.Add(-10*time.Minute))
 	l := updates.List{Channels: []updates.Build{{Channel: "main", URL: "https://example.com/dev/app-main-1.zip"}}}
@@ -151,12 +171,13 @@ func TestPiecesNoBuildNamesGo(t *testing.T) {
 	if err := removeUnreachable(gh, l, now, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"app-pr-9-1.zip", "app-pr-9-1.zip.zst", "app-pr-9-1.parts.json", pieceOf(t, g, appFile)} {
+	for _, name := range []string{"app-pr-9-1.zip", "app-pr-9-1.zip.zst", "app-pr-6-1.parts.json", stray, unnamed} {
 		if _, ok := gh.release[name]; ok {
-			t.Errorf("%s, which no listed build reaches, is still there", name)
+			t.Errorf("%s, which no listed build or base reaches, is still there", name)
 		}
 	}
-	for _, name := range []string{"app-main-1.zip", "app-main-1.zip.zst", "app-main-1.parts.json", pieceOf(t, p, appFile), pieceOf(t, p, ffmpegFile), fresh} {
+	for _, name := range []string{"app-main-1.zip", "app-main-1.zip.zst", "app-main-1.parts.json", pieceOf(t, p, appFile), pieceOf(t, p, ffmpegFile),
+		"app-pr-9-1.parts.json", "app-pr-8-1.parts.json", "app-pr-7-1.parts.json", pieceOf(t, g, appFile), named, fresh} {
 		if _, ok := gh.release[name]; !ok {
 			t.Errorf("%s was taken away", name)
 		}

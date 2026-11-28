@@ -6,10 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 
 	"framefairy/updates"
@@ -40,14 +42,18 @@ func packCommand(args []string) error {
 	fs := flag.NewFlagSet("pack", flag.ExitOnError)
 	zipPath := fs.String("zip", "", "the zip the build left")
 	out := fs.String("out", "", "the folder the packed build goes in")
+	names := fs.String("bases", "", "the parts files of the builds to patch against, by name, the first first, see planBases")
+	room := fs.Int("room", 0, "how many patches the build may have at most")
+	from := fs.String("from", updates.EntriesURL, "the folder of the release the bases are read from")
 	_ = fs.Parse(args)
-	return pack(*zipPath, *out, updates.NewPacker(), os.Stdout)
+	b := readBases(strings.Split(*names, ","), *from, &http.Client{}, *room, os.Stdout)
+	return pack(*zipPath, *out, updates.NewPacker(), b, os.Stdout)
 }
 
 // pack writes the build in zipPath to out as the stored zip, its parts,
-// its pieces and the stored zip packed, with packer, and says what an
-// update of it weighs.
-func pack(zipPath, out string, packer updates.Packer, log io.Writer) error {
+// its pieces, its patches against the bases and the stored zip packed,
+// with packer, and says what an update of it weighs.
+func pack(zipPath, out string, packer updates.Packer, b bases, log io.Writer) error {
 	src, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return err
@@ -141,6 +147,10 @@ func pack(zipPath, out string, packer updates.Packer, log io.Writer) error {
 		}
 	}
 	fmt.Fprintf(log, "the stored zip is %d bytes, %d packed, and an app with none of its files downloads %d in pieces\n", size, wholeSize, pieces)
+	if len(b.parts) > 0 {
+		addPatches(&p, stored, b, out, log)
+		logPatches(p, b, log)
+	}
 	return writeJSON(filepath.Join(out, partsFile), p)
 }
 
