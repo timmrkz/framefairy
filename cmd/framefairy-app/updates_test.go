@@ -944,7 +944,7 @@ func TestANewerBuildReplacesTheOneReady(t *testing.T) {
 	cleanStaged(t, c)
 	var mu sync.Mutex
 	var from string
-	c.install = func(_, staged string) error {
+	c.install = func(_, staged, _ string, _ bool) error {
 		mu.Lock()
 		from = staged
 		mu.Unlock()
@@ -1055,7 +1055,7 @@ func TestABuildBeingPutInPlaceStays(t *testing.T) {
 	c, _ := newTestUpdating(t, cs, false)
 	c.app = inApplications
 	cleanStaged(t, c)
-	c.install = func(string, string) error { return nil }
+	c.install = func(string, string, string, bool) error { return nil }
 	_ = c.Follow("main")
 	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
 	first := c.staged()
@@ -1092,7 +1092,7 @@ func TestAChannelGoneIsSaidInOnePlace(t *testing.T) {
 	// not installed on the way out while the page says it is closed.
 	c.app = inApplications
 	var started int
-	c.install = func(string, string) error { started++; return nil }
+	c.install = func(string, string, string, bool) error { started++; return nil }
 	_ = c.Follow("pr-20")
 	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})

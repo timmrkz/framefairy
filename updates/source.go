@@ -43,6 +43,9 @@ type Source struct {
 	// is signed as the build it says it is. Nil checks no claim, which is
 	// only for the tests of what does not depend on it.
 	Key ed25519.PublicKey
+	// Order keeps when the newest build of each channel taken was made,
+	// and refuses one made before it, see order.go. Nil refuses nothing.
+	Order *Order
 	// Cache is the folder the builds already downloaded are kept in, so
 	// a channel picked again has its build at once. Empty keeps nothing.
 	// See cache.go.
@@ -311,6 +314,12 @@ func (s *Source) Check(ctx context.Context, req updater.CheckRequest) (*updater.
 	if s.Key != nil {
 		if err := VerifyClaim(s.Key, installed); err != nil {
 			return nil, err
+		}
+		// Never a build of a channel made before one already taken.
+		if s.Order != nil {
+			if err := s.Order.Take(s.Key, b); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return Release(b)

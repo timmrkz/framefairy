@@ -857,9 +857,12 @@ request.
   update to, without warnings, when it changes what the app is built
   from, and a second, the Go tests on a Mac, only when it changes code
   only a Mac builds, a `_darwin` file, `go.mod` or
-  `go.sum`. What a Mac does differently is in a file named for it,
-  `*_darwin.go` or `*_darwin_test.go`, never behind `runtime.GOOS` in a
-  file every system builds, and `internal/maccode` fails a pull request
+  `go.sum`. A build that is published takes one more after its own, the
+  job that signs it with the Developer ID, because codesign is only on a
+  Mac, see The Developer ID in docs/UPDATES.md. What a Mac does
+  differently is in a file named for it, `*_darwin.go` or
+  `*_darwin_test.go`, never behind `runtime.GOOS` in a file every system
+  builds, and `internal/maccode` fails a pull request
   that breaks that, because the filter that starts the Mac's tests looks
   for those names. The one use it allows is `runtime.GOOS` handed on as
   a value, to a function that takes the system as a parameter, like

@@ -149,9 +149,17 @@ func answerFits(out io.Writer, stamp, key string, keyErr error, dir, outputs, pa
 func selfCommand(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("self", flag.ExitOnError)
 	to := fs.String("out", "", "where to write the build")
+	platform := fs.String("for", "", "another system to build for, like darwin/arm64, which then stays off the job's path")
 	_ = fs.Parse(args)
 	if *to == "" {
 		return errors.New("self needs -out")
+	}
+	var goos, goarch string
+	if *platform != "" {
+		var ok bool
+		if goos, goarch, ok = strings.Cut(*platform, "/"); !ok || goos == "" || goarch == "" {
+			return fmt.Errorf("-for %q is no system and architecture, like darwin/arm64", *platform)
+		}
 	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok || info.Path == "" {
@@ -167,11 +175,18 @@ func selfCommand(args []string, out io.Writer) error {
 	}
 	build := exec.Command("go", "build", "-trimpath", "-ldflags=-X main.stamped="+key, "-o", abs, info.Path)
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if goos != "" {
+		build.Env = append(build.Env, "GOOS="+goos, "GOARCH="+goarch)
+	}
 	build.Stdout, build.Stderr = out, os.Stderr
 	if err := build.Run(); err != nil {
 		return fmt.Errorf("go build %s: %w", info.Path, err)
 	}
 	fmt.Fprintf(out, "Built the release tool, key %q.\n", key)
+	if goos != "" {
+		// A program for another system runs in no later step of this job.
+		return nil
+	}
 	return onPath(os.Getenv("GITHUB_PATH"), filepath.Dir(abs))
 }
 

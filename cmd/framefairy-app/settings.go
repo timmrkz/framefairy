@@ -176,11 +176,7 @@ type store struct {
 }
 
 func openStore() *store {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		dir = os.TempDir()
-	}
-	return openStoreIn(afero.NewOsFs(), filepath.Join(dir, "FrameFairy"))
+	return openStoreIn(afero.NewOsFs(), appFolder())
 }
 
 // appStore is the store the app runs on, the one openStore opens, on a

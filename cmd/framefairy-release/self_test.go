@@ -1,6 +1,7 @@
 package main
 
 import (
+	"debug/macho"
 	"errors"
 	"fmt"
 	"io"
@@ -166,6 +167,35 @@ func TestABuildOfTheCheckoutFitsIt(t *testing.T) {
 	}
 	if string(said) != "fits=true\n" {
 		t.Errorf("a build of the checkout says %q, and printed:\n%s", said, out)
+	}
+}
+
+// self builds the tool for a Mac too, for the job that signs with the
+// Developer ID, and leaves that build off this job's path, where it could
+// not run.
+//
+// On the real disk: go builds the tool from this repository, and the
+// build reads this repository's own commit with git.
+func TestABuildForAMacIsAMacProgramOffThePath(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	tool := filepath.Join(tmp, "darwin", "framefairy-release")
+	paths := filepath.Join(tmp, "path")
+	build := exec.Command("go", "run", "-trimpath", ".", "self", "-for", "darwin/arm64", "-out", tool)
+	build.Env = append(os.Environ(), "GITHUB_PATH="+paths, "CGO_ENABLED=0")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("self: %v\n%s", err, out)
+	}
+	f, err := macho.Open(tool)
+	if err != nil {
+		t.Fatalf("the build for a Mac is no Mac program: %v", err)
+	}
+	defer f.Close()
+	if f.Cpu != macho.CpuArm64 {
+		t.Errorf("the build for a Mac is for %v, want arm64", f.Cpu)
+	}
+	if _, err := os.Stat(paths); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("self put a build for another system on the job's path: %v", err)
 	}
 }
 

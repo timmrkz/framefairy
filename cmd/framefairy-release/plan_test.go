@@ -190,7 +190,7 @@ func TestWhatABuildIsPublishedAs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if want := map[string]string{"run": "true", "channel": "main", "name": "main", "version": "0.3.0-main.aaaaaaa",
-		"commit": "aaaaaaaaaaaa", "zip": "app-main-0.3.0-main.aaaaaaa.zip"}; !equalMaps(outputs(got), want) {
+		"commit": "aaaaaaaaaaaa", "zip": "app-main-0.3.0-main.aaaaaaa.zip", "bases": "", "room": "0"}; !equalMaps(outputs(got), want) {
 		t.Errorf("main's build planned as %v, want %v", outputs(got), want)
 	}
 	got, err = publishPlan(gh, "1", "b", p)
@@ -198,7 +198,7 @@ func TestWhatABuildIsPublishedAs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if want := map[string]string{"run": "true", "channel": "pr-7", "name": "#7 Fix it", "version": "0.3.0-pr7.bbbbbbb",
-		"commit": "bbbbbbbbbbbb", "zip": "app-pr-7-0.3.0-pr7.bbbbbbb.zip"}; !equalMaps(outputs(got), want) {
+		"commit": "bbbbbbbbbbbb", "zip": "app-pr-7-0.3.0-pr7.bbbbbbb.zip", "bases": "", "room": "0"}; !equalMaps(outputs(got), want) {
 		t.Errorf("a pull request's build planned as %v, want %v", outputs(got), want)
 	}
 	// Nothing to publish.

@@ -88,7 +88,9 @@ type UpdateState struct {
 	// has not come yet, so the page does not offer the build there is as
 	// the newest. Empty when the build is the newest.
 	Building string `json:"building"`
-	// Phase is "", checking, current, gone, downloading, ready or failed.
+	// Phase is "", checking, current, gone, downloading, ready, failed or
+	// unstarted, the channel's newest build went in before and did not
+	// say it started, see trial.go.
 	Phase      string `json:"phase"`
 	Next       string `json:"next"`
 	NextName   string `json:"nextName"`
@@ -157,6 +159,10 @@ type updating struct {
 	// are only ever read and written together, see check.
 	checking bool
 	again    bool
+	// byHand is set by a pick or by Check, so the check it starts takes
+	// even a build that did not start before. A check the app makes by
+	// itself does not, see trial.go.
+	byHand bool
 	// changed tells whoever waits on the state of every change to it, of
 	// a check asked for while one runs, and of a check that has ended, see
 	// wake. Only the tests wait on it.
@@ -194,10 +200,18 @@ type updating struct {
 	load func() string
 	save func(string) error
 	// install starts the step that puts a ready build in place once the
-	// app has quit, see install.go. relaunching is set once Relaunch has
-	// begun, which puts the build in place by itself.
-	install     func(target, from string) error
+	// app has quit, see install.go, and on Relaunch also opens it. quit
+	// quits the app, after Relaunch started the step. relaunching is set
+	// once Relaunch has begun.
+	install     func(target, from, version string, open bool) error
+	quit        func()
 	relaunching bool
+	// failed is the build that last did not start, which is not taken by
+	// itself again, and started says this build started, once. Both are
+	// about the app's folder, see trial.go.
+	failed      func() string
+	started     func()
+	startedOnce sync.Once
 	// app is the .app the build is put in place of, runningApp when it
 	// is empty. A test names one of its own.
 	app func() string
@@ -241,6 +255,13 @@ func newUpdating(u *updater.Updater, quit func(), st *store, idle func() (func()
 		},
 		save:    func(ch string) error { return st.save("updates.json", updatesFile{Follow: ch}) },
 		install: startInstall,
+		quit:    quit,
+		failed:  func() string { return failedBuild(appFolder()) },
+		started: func() {
+			if err := endTrial(appFolder(), runningVersion()); err != nil {
+				theLog.line(zerolog.ErrorLevel, "updates").Err(err).Msg("the build before could not be let go of")
+			}
+		},
 	}
 	exe, _ := os.Executable()
 	src := &updates.Source{URL: updates.ListURL, Copies: updates.ListCopies, Entries: updates.EntriesURL, Client: &http.Client{}}
@@ -249,6 +270,17 @@ func newUpdating(u *updater.Updater, quit func(), st *store, idle func() (func()
 	// file that can always be fetched again.
 	if dir, err := os.UserCacheDir(); err == nil {
 		src.Cache = filepath.Join(dir, "FrameFairy", "builds")
+	}
+	// When the newest build taken of each channel was made, so an older
+	// one is never taken in its place, see updates.Order. A file of its
+	// own beside updates.json, which a pick writes whole.
+	src.Order = &updates.Order{
+		Load: func() map[string]time.Time {
+			var made map[string]time.Time
+			st.load("update-order.json", &made)
+			return made
+		},
+		Save: func(made map[string]time.Time) error { return st.save("update-order.json", made) },
 	}
 	c.setUp(u, updateKeyText, src, exe, runtime.GOOS)
 	return c
@@ -480,8 +512,8 @@ func pieced(p updates.Pieced) {
 		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int64("bytes", p.Packed).
 			Msg("the build could not be put together from its parts, so it was downloaded packed")
 		return
-	case p.Err != nil && p.Kept+p.Fetched > 0:
-		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int("kept", p.Kept).Int("fetched", p.Fetched).
+	case p.Err != nil && p.Kept+p.Patched+p.Fetched > 0:
+		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int("kept", p.Kept).Int("patched", p.Patched).Int("fetched", p.Fetched).
 			Int64("bytes", p.Bytes).Msg("the packed build could not be downloaded, so it was put together from its pieces")
 		return
 	case p.Err != nil:
@@ -492,8 +524,12 @@ func pieced(p updates.Pieced) {
 			Msg("the build was downloaded packed, which weighed less than the pieces the app lacked")
 		return
 	}
-	theLog.line(zerolog.InfoLevel, "updates").Int("kept", p.Kept).Int("fetched", p.Fetched).
-		Int64("bytes", p.Bytes).Msg("the build was put together from the app's own files and the pieces fetched")
+	if p.PatchErr != nil {
+		theLog.line(zerolog.WarnLevel, "updates").Err(p.PatchErr).
+			Msg("a patch could not make its file, so that file was downloaded as its piece")
+	}
+	theLog.line(zerolog.InfoLevel, "updates").Int("kept", p.Kept).Int("patched", p.Patched).Int("fetched", p.Fetched).
+		Int64("bytes", p.Bytes).Msg("the build was put together from the app's own files, the patches and the pieces fetched")
 }
 
 // progress is told about every quarter of a megabyte, and passes it on a
@@ -559,6 +595,7 @@ func (c *updating) Follow(channel string) error {
 	}
 	c.mu.Lock()
 	c.round++
+	c.byHand = true
 	if c.stop != nil {
 		c.stop()
 	}
@@ -610,6 +647,7 @@ func (c *updating) checkNow() {
 	}
 	c.mu.Lock()
 	c.listed = time.Now()
+	c.byHand = true
 	c.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	if _, err := c.src.Fetch(ctx); err != nil {
@@ -672,6 +710,8 @@ func (c *updating) checkOnce() {
 	ctx, cancel := context.WithTimeout(c.life, 30*time.Minute)
 	c.mu.Lock()
 	round := c.round
+	hand := c.byHand
+	c.byHand = false
 	c.stop = cancel
 	c.mu.Unlock()
 	defer func() {
@@ -729,6 +769,20 @@ func (c *updating) checkOnce() {
 		return
 	}
 	commit, _ := rel.Metadata["commit"].(string)
+	// A build that went in and did not start is not taken again by
+	// itself. A pick or Check takes it, since the person may know why it
+	// did not start is gone, and the next build of the channel is taken
+	// as usual.
+	if !hand && c.failed != nil && c.failed() == rel.Version {
+		theLog.line(zerolog.InfoLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).
+			Msg("the channel's newest build did not start before, so it is not taken by itself again")
+		c.drop(round)
+		mine(func(s *UpdateState) {
+			s.Phase, s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "unstarted", rel.Version, rel.Name, commit, 0, 0
+			s.Checked = time.Now()
+		})
+		return
+	}
 	theLog.line(zerolog.InfoLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).
 		Msg("the channel's newest build is fetched, from the builds kept if it is there")
 	mine(func(s *UpdateState) {
@@ -886,6 +940,7 @@ func (c *updating) Restart() error {
 	// replaces it from here on.
 	c.mu.Lock()
 	held := c.held
+	next := c.state.Next
 	ready = c.state.Phase == "ready" && held != nil
 	c.relaunching = ready
 	c.mu.Unlock()
@@ -893,14 +948,44 @@ func (c *updating) Restart() error {
 		reopen()
 		return errors.New("no update is ready")
 	}
-	if err := held.Restart(context.Background()); err != nil {
+	// Our own step puts it in place, not Wails' helper, so a build that
+	// does not start is undone, see trial.go.
+	target, staged := c.appPath(), held.DownloadedPath()
+	err := errors.New("this app cannot put a build in place of itself")
+	if target != "" && staged != "" && c.install != nil {
+		err = c.install(target, staged, next, true)
+	}
+	if err != nil {
 		c.mu.Lock()
 		c.relaunching = false
 		c.mu.Unlock()
 		reopen()
 		return err
 	}
+	theLog.line(zerolog.InfoLevel, "updates").Str("build", next).Str("app", target).Msg("Relaunch puts the build in place once the app has quit")
+	if c.quit != nil {
+		c.quit()
+	}
 	return nil
+}
+
+// appPath is the .app a build is put in place of.
+func (c *updating) appPath() string {
+	if c.app != nil {
+		return c.app()
+	}
+	return runningApp()
+}
+
+// saidStarted is this build saying it started, the first time the
+// interface asks where updates stand: the window is up, the page runs and
+// the Go side answers, which is all a build on trial has to show, see
+// trial.go.
+func (c *updating) saidStarted() {
+	if c == nil || c.started == nil {
+		return
+	}
+	c.startedOnce.Do(c.started)
 }
 
 // relaunchingNow says whether Relaunch is putting a new build in place, so
@@ -924,7 +1009,7 @@ func (c *updating) installOnQuit() {
 	}
 	c.mu.Lock()
 	ready := c.state.Phase == "ready" && !c.relaunching && c.held != nil
-	staged := ""
+	staged, next := "", c.state.Next
 	if ready {
 		staged = c.held.DownloadedPath()
 		c.leaving = true
@@ -933,15 +1018,11 @@ func (c *updating) installOnQuit() {
 	if !ready {
 		return
 	}
-	from := c.app
-	if from == nil {
-		from = runningApp
-	}
-	target := from()
+	target := c.appPath()
 	if staged == "" || target == "" {
 		return
 	}
-	if err := c.install(target, staged); err != nil {
+	if err := c.install(target, staged, next, false); err != nil {
 		theLog.line(zerolog.ErrorLevel, "updates").Err(err).Msg("the build could not be put in place on the way out")
 		return
 	}

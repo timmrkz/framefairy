@@ -246,6 +246,7 @@ func publishPlan(gh gitHub, run, branch, commit string) (plan, error) {
 	p.set("version", version)
 	p.set("commit", commit[:min(len(commit), 12)])
 	p.set("zip", "app-"+channel+"-"+version+".zip")
+	planBases(gh, &p, channel)
 	return p, nil
 }
 

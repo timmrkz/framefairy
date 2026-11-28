@@ -30,6 +30,21 @@ uploaded. The deflated zip stays at its address, signed as before, for
 the apps from before parts. See
 [the decision record](decisions/2026-11-18-an-update-downloads-only-what-changed.md).
 
+**And of a changed file, only the bytes that changed.** A change to the
+code moves addresses in the app program, not its whole size. So each
+build also publishes a patch of each changed file, bsdiff's, against the
+same file of the builds an app is likely to run: every build the
+channel list names, and the newest build of up to three channels that
+left it, a pull request just merged above all. The parts name
+each patch by the SHA-256 of the file it starts from. An app that holds
+that file downloads the patch, a few hundred kilobytes in place of a 7
+MB piece, and makes the file with code of its own, which is checked
+against the file's SHA-256 like a piece. A patch that cannot make its
+file costs only its piece. The patches go up before the entry, and a
+build has at most 60, fewer once the release is nearly full. The app's
+log says for each update how many files it kept, patched and fetched.
+See [the decision record](decisions/2026-11-28-an-update-downloads-the-bytes-that-changed.md).
+
 That is the same on every platform and in every app that updates itself.
 The differences are in who hosts the file, who signs it, what the person
 sees, and whether a licence decides who may have it.
@@ -86,8 +101,9 @@ Every self-updating app in use today does the same five things.
    jobs: Apple's says who made it, ours says this update belongs to this
    app.
 5. **The swap.** When the app quits, a helper moves the old app aside,
-   puts the new one in its place, starts it, and throws the old one away.
-   If anything fails on the way, it puts the old one back.
+   puts the new one in its place and starts it. It throws the old one
+   away once the new one says it started. If anything fails on the way,
+   or the new one never says so, it puts the old one back.
 
 **The update key must never be lost.** Every copy of the app in the world
 carries its public half. Without the private half, no update can ever
@@ -325,11 +341,10 @@ How it would work:
 
 What it can start with and what it cannot:
 
-- **It needs no Apple certificate.** Until batch 5.5 the builds are signed
-  the way `make app` signs them today, ad hoc. A file the app downloads
-  itself carries no quarantine mark, so macOS runs it without asking, the
-  same as a build made by `make`. This has to be confirmed on the user's Mac, and
-  it is the first thing the batch that builds this tries.
+- **It needs no notarisation.** A file the app downloads itself carries
+  no quarantine mark, so macOS runs it without asking Gatekeeper. Each
+  build is signed with the Developer ID all the same, see The Developer
+  ID below, so macOS knows it as the same app after every update.
 - **It takes a few minutes per push.** The build runs in CI after each
   commit, so an update is ready a few minutes after Claude pushes, not at
   once. The pull request says when it is ready: the status Ready to update
@@ -355,6 +370,7 @@ issued by anybody: they are made once, on the user's Mac, with one command.
 | --- | --- | --- | --- |
 | The release key | what customers download | a GitHub secret only the release workflow can read, behind an environment that waits for the user's approval, and a backup in the user's password manager | in the repository, built into every customer build |
 | The development key | the builds of `main` and of pull requests | `FRAMEFAIRY_UPDATE_KEY`, a secret of the GitHub environment `updates`, which only main can enter, and the password manager | in the repository, built into every development build |
+| The development Developer ID | the programs of every build of `main` and of pull requests, for macOS, see The Developer ID | `FRAMEFAIRY_DEVELOPER_ID` and its password, secrets of the environment `updates`, and the password manager | Apple's certificate, in every signed program |
 
 - **The private half never leaves those two places.** It is not in the
   repository, not in a chat, not on a cloud session's disk. The user makes the
@@ -394,6 +410,11 @@ issued by anybody: they are made once, on the user's Mac, with one command.
 - **A development build does not trust a release, and a customer build
   does not trust a development build.** Each carries one public half. A
   customer can never be handed a pull request's build, even by mistake.
+- **The Developer ID is a certificate of its own for development
+  builds.** A customer release will be signed with a separate Developer
+  ID certificate of the same team, behind the release environment, so a
+  development one that leaks is revoked without touching what customers
+  run.
 - **Losing the release key** means no update can reach the copies already
   sold. Losing the development key costs nothing but a new pair and one
   install by hand. That is why only the release key needs the approval
@@ -439,8 +460,9 @@ reviewed yet, and `sign` runs only once it passed:
   program the list does not know, fails.
 - **Info.plist** gives reasons for the four folders a video is opened
   from and the microphone, for Dictate, and for nothing else.
-- **Entitlements**, once the app is signed with the Developer ID: the
-  microphone and nothing else.
+- **Entitlements**: the microphone and nothing else. The build is signed
+  ad hoc without any, and `harden` adds the microphone after the check,
+  from main's `build/entitlements.plist`.
 
 A refused build says so on the commit that was built, as a failed
 Ready to update to with the first thing found, so the pull request shows
@@ -461,6 +483,138 @@ What it cannot catch is code that hides the name it looks up, built from
 pieces while it runs. Then macOS is the wall: none of these inputs works
 until the person allows it in System Settings. The check makes sure the
 app never asks.
+
+### The Developer ID
+
+Every build the user updates to is signed again with their Developer ID
+and Apple's hardened runtime, by `framefairy-release harden` in
+`publish.yml`, see `cmd/framefairy-release/devid.go`. The hardened
+runtime keeps other programs from putting their own code into the app:
+macOS ignores the `DYLD_` settings it is started with, refuses debuggers,
+and loads only libraries signed by Apple or by the same developer. The
+app is signed as entitled to the microphone and nothing else,
+`build/entitlements.plist`, because under the hardened runtime an app
+without it hears only silence on Dictate. macOS still asks the first
+time.
+
+A Developer ID also makes every build the same app to macOS. A build
+signed ad hoc looks like a new app after each update, so macOS asks
+again for Documents and for the keys the app keeps in the keychain. The
+first build signed with the Developer ID asks once more, then no update
+does.
+
+`codesign` and the keychain are only on a Mac, so the job that publishes
+runs on one. The job `plan` asks on Linux first whether there is
+anything to publish, so a run that publishes nothing takes no Mac. The
+Mac runs main's signed build of the release tool for a Mac, which
+`release-tool.yml` makes beside the one for Linux.
+
+codesign puts Apple's time stamp into every signature, so a library
+signed again is a new file even when its code did not change, and an
+update would download ffmpeg, llama-server and the speech libraries
+every time. So `framefairy-release signed-before` first downloads the
+libraries and programs of main's build and of the channel's, as they
+were signed then, read the way the app reads a build. `harden` keeps
+such a copy in place of the one it just signed when the two are the same
+signed code: the same bytes up to the signature, nothing after it, the
+same blobs in the signature but the CMS one, which holds the time, and
+the same certificates in the CMS. The rest of the CMS is not compared,
+since `codesign --verify` checks it. A library signed before a
+certificate was renewed is never kept. The kept copy is checked against
+the team like every other, and the app is sealed around it. See
+`cmd/framefairy-release/kept.go`.
+
+Builds made on the Mac with `make` stay signed ad hoc, without the
+hardened runtime, like Xcode's Sign to Run Locally. Under it an app
+signed ad hoc may load no library but Apple's, and the speech libraries
+are not Apple's.
+
+Until `build/team-id.txt` names the team, builds go out signed ad hoc,
+as they are made, and the run says so. Once it does, a build is
+published only when it is signed with that team's Developer ID, and a
+missing secret fails the run on main and on the commit, never quietly.
+To set it up once:
+
+1. In [Certificates](https://developer.apple.com/account/resources/certificates/add),
+   choose **Developer ID Application**. Apple asks for a certificate
+   request: on the Mac, in **Keychain Access**, choose **Keychain Access,
+   Certificate Assistant, Request a Certificate From a Certificate
+   Authority**, enter the email address, choose **Saved to disk**, and
+   upload that file. Download the certificate and double-click it. It
+   shows in Keychain Access under **My Certificates**, with its private
+   key under it. Make one for this app's development builds alone, so it
+   can be revoked without the certificates of other apps or of a
+   customer release. Apple allows five.
+2. In Keychain Access, right-click the certificate, **Export**, and save
+   it as `developer-id.p12` on the Desktop with a new password. The file
+   holds the private key too, which Apple cannot give out again, so it is
+   the backup. Put it and its password in the password manager.
+3. In Terminal, `base64 -i ~/Desktop/developer-id.p12 | pbcopy` puts the
+   certificate on the clipboard as text.
+4. On GitHub, in the environment `updates`, add two **environment
+   secrets**: `FRAMEFAIRY_DEVELOPER_ID` with the clipboard, and
+   `FRAMEFAIRY_DEVELOPER_ID_PASSWORD` with the password. Then delete
+   `developer-id.p12` from the Desktop.
+5. The team ID, ten letters and digits under **Membership details** in
+   the [account](https://developer.apple.com/account), goes in
+   `build/team-id.txt`. It is not a secret: every app the team signs
+   carries it.
+
+From then on `framefairy-release sign` reads the team from
+`build/team-id.txt` itself and refuses a build in which
+any program is signed ad hoc, without the hardened runtime, or by
+another team, or whose app is signed as anything but
+`com.framefairy.app`, or any other program or library as anything but
+its part of it.
+
+Every build of a pull request is signed with the Developer ID too, so
+the user can try it. Its zip comes from the pull request's branch and is
+unpacked on the Mac that holds the certificate, so `harden` trusts
+nothing in it:
+
+- It runs after `check`, unpacks the zip itself, and only files and
+  folders inside `Frame Fairy.app`. A link, or a name that leads out of
+  the .app, stops it before anything is written.
+- It runs only `security`, `codesign` and `ditto`, from `/usr/bin`,
+  never a program found through `PATH`.
+- It reads both secrets once and takes them out of its environment, so
+  no program it starts sees them. Every step that holds a key runs the
+  release tool built before them, so `go` and its compiler never see
+  either key. The key goes into a keychain made for the run, marked so it
+  cannot be exported again, and the keychain is deleted at the end, also
+  when signing fails.
+- It takes Apple's certificate between the Developer ID and Apple's root
+  only when it is signed by the Apple Root CA that macOS itself ships.
+- It signs the app as `com.framefairy.app`, whatever its `Info.plist`
+  says, and each program and library in it as a part of it, by its file
+  name, like `com.framefairy.app.llama-server`. macOS gives code of the
+  team the microphone and the keychain items of the app it is signed as,
+  so no build, and nothing in one, can be signed as another app of the
+  same team.
+- It refuses a build with a program anywhere but `Contents/MacOS` and
+  the libraries of `Contents/Frameworks`, which it signs itself.
+- Once signed, codesign checks every program and the app against
+  Apple's certificate of the team, not only the team the signature
+  names, which is a string.
+
+The job `outside` of `mac-nightly.yml` signs a bundle the same way, with
+a certificate the test makes, and has the release tool read what
+codesign wrote, see `hardened_real_darwin_test.go`.
+
+If a build signed this way does not open, the app cannot update away
+from it. `make install` in a checkout puts a build made on the Mac back
+in `/Applications`, and Updates works again from there. Removing
+`build/team-id.txt` on main sends builds out signed ad hoc again.
+
+The certificate runs out on the date Keychain Access shows. A new one is
+made with steps 1 to 4. Every signature carries Apple's time stamp, so a
+build signed before then stays good after.
+
+The builds are not notarised. Notarising is what lets a downloaded app
+open past Gatekeeper on any Mac. The app downloads its updates itself,
+and macOS asks Gatekeeper only of files a browser or mail marks as
+downloaded, so nothing here needs it. The first download for customers
+does, see [PACKAGING.md](PACKAGING.md).
 
 ### How the app knows the pull requests
 
@@ -593,6 +747,19 @@ with its newest build, so one fetch is the whole check:
   in the list for the apps that do not check them, and an app that does
   will not install it until a new build of that channel brings one. See
   `ClaimMessage` in `updates/updates.go`.
+- **No step back within a channel.** The claim says which build an entry
+  is, not when it was made. So whoever can write the release could put
+  back an older entry of a channel, signed as it was then, with a bug
+  fixed since. Each entry carries `made`, when the run that built it was
+  created, which a run made again keeps, and `order`, Ed25519 over the
+  claim of the stored zip and that time together. The app keeps the
+  newest `made` it took of each channel in `update-order.json` beside
+  `updates.json`, and refuses a build of that channel made before it,
+  see `Order` in `updates/order.go`. Picking another channel is never
+  refused. The publish refuses an older commit too, by its git history,
+  see `publishPlan`, so this is the same rule where the build is
+  installed. An entry from before orders were signed is taken only
+  while nothing of its channel was taken with one.
 - **A customer build will have no channel list.** It will know the stable
   feed and nothing else.
 - Asking GitHub's API from the app was the other way. It would put the
@@ -708,16 +875,33 @@ search says Stopped with Continue in the new build.
 
 **Quitting with a build ready puts it in place**, the way Chrome does:
 the next start is the new build, and nothing opens by itself in between.
-Relaunch does the same at once, through Wails' updater, whose own step
-always opens the app again. So quitting starts a step of our own,
-`install.go`: the same program, started again with three variables in its
-environment, which waits up to a minute for the app to be gone, moves the
-app aside, moves the new build into its place, and only then removes the
-old one. When the new build does not go in whole, the old app is put
-back. It only ever replaces a `.app`, only with a build the updater
-unpacked, and never an app that is still running. When it goes wrong, why
-is in `$TMPDIR/framefairy-install-<pid>.log`. When it goes right, it
-leaves no log.
+Relaunch does the same at once and opens it. Both go through a step of
+our own, `install.go`: the same program, started again with five
+variables in its environment, which waits up to a minute for the app to
+be gone, starts the new build's program once, told only to load and end,
+moves the app aside into `update-before` in the app's folder, and moves
+the new build into its place. When the new build does not go in whole,
+the old app is put back. It only ever replaces a `.app`, only with a
+build the updater unpacked, and never an app that is still running. When
+it goes wrong, why is in `$TMPDIR/framefairy-install-<pid>.log`. When it
+goes right, it leaves no log.
+
+**A build that does not start is undone.** Under the hardened runtime
+macOS ends a program whose library it refuses before any of our code
+runs, so the step loads the new program first, and a build that does
+not load never goes in. One that goes in is on trial, in
+`update-before/trial.json`, until its window has asked where updates
+stand, and then the build before goes. On Relaunch the step opens the
+new build and waits a minute for that. When it does not come, the step
+ends the new build, puts the build before back and opens it. Put in place
+on quit, nobody waits, so each start counts itself, and the third start
+after two that did not say they started puts the build before back.
+The settings and the library stay as the new build left them. The build
+is written down in `update-failed.json`, the app does not take it again
+by itself, and the Updates page says The newest build did not start.
+Check takes it all the same, and the next build of the channel goes in
+as usual. See
+[the decision record](decisions/2026-11-28-a-build-that-does-not-start-is-undone.md).
 
 **Wails unpacks a build beside the app**, in a `wails-update-` folder in
 `/Applications` when the app is there, so moving it into place is a
@@ -757,26 +941,27 @@ minutes. Once a channel is picked, another channel is what follows it.
 
 | Part | Where | What it does |
 | --- | --- | --- |
-| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A build with parts is put together from the running app's own files and the pieces it lacks, `assemble.go`, and downloaded as the stored zip packed with zstd when that fails or weighs less, `whole.go`. A build without parts is downloaded whole. `parts.go` holds what the parts are and how a build is packed in them. A channel that has gone is followed by nothing, never by main by itself. Every build downloads into the app's caches first and goes on to the end whoever still waits for it, so a channel picked again has its build at once or on its way, and whatever the list stops naming is removed each time it is read, unless it is still arriving |
-| The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
-| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, a newer build in place of one that is ready once it is whole, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
-| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot whenever the page marks something, in the colour the page wears it in: work on a newer build, looking, downloading or a newer commit being built, pulses in the accent, a newer build ready stands still in the accent, a pull request followed that closed or that conflicts with main stands still in the colour of a warning, the dot of work on it pulsing in that colour too, and a check that did not get through stands still in red. Up to date, a build made on the Mac and a build that does not update itself wear none. Both read the one state and the one mark, in `frontend/src/lib/updates.svelte.ts`, so the row never says less than the page or something else. Its title then says what the page says. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or PR #N, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check while a channel is followed, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. A check or a download that did not get through says why in words a person uses, from `updateProblem`, no connection to GitHub, GitHub busy, nothing found, a build that could not be verified or a disk that took nothing, in one short sentence, and asks to check the internet connection only when the error was the network's, a certificate the Mac does not trust among them, which is what a hotel's Wi-Fi or a company's proxy shows it. What the system said is under it apart, in a field at the height of a control on one line that scrolls sideways, with a button at its end that copies it for a report, and Try again stands on the same row as the field. Looking is shown for at least 1.4 seconds, on the page and on the row alike, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
-| The key and the signing | `cmd/framefairy-release` | every decision the two workflows make, one command a step. `key` makes the pair, `build-plan` says what a push is a build of and whether it needs one, `publish-plan` what a finished build is published as and refuses a commit its channel's history does not hold, `pack` writes the build again with each file stored as it is, its parts, its pieces and the zip packed with zstd, `check` refuses a build that could reach past the app, before the key is there, `sign` signs a build `check` passed, and the stored zip `pack` wrote beside it, and refuses a key that is not the app's, `publish` uploads the pieces the release lacks, the zip, the stored zip packed, its parts, then its entry, then marks the commit, `not-published` marks a commit whose publishing failed and says why, `channels` writes the channel list and leaves out a newest commit whose build ended without one, and `unstick` cancels a publish stuck before its environment. What they ask GitHub is in `github.go`, behind an interface the tests replace. A decision about a build goes here, never into a script, see [the decision record](decisions/2026-11-14-update-decisions-in-go.md) |
+| The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A build with parts is put together from the running app's own files, the patches of a file it holds an older copy of, `patch.go`, and the pieces it lacks, `assemble.go`, and downloaded as the stored zip packed with zstd when that fails or weighs less, `whole.go`. A build without parts is downloaded whole. `parts.go` holds what the parts are and how a build is packed in them. A channel that has gone is followed by nothing, never by main by itself. Every build downloads into the app's caches first and goes on to the end whoever still waits for it, so a channel picked again has its build at once or on its way, and whatever the list stops naming is removed each time it is read, unless it is still arriving |
+| The download and the swap | Wails' `pkg/updater`, `cmd/framefairy-app/install.go` and `trial.go` | Wails' updater downloads, checks the checksum and the signature and unpacks the `.app`. Our own step puts it in place, on quit and on Relaunch alike, once its program loads, keeps the build before until the new one says it started, and puts it back when it never does |
+| The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, a newer build in place of one that is ready once it is whole, the picked channel in `updates.json` beside the settings, the newest build taken of each channel in `update-order.json`, the build that last did not start in `update-failed.json`, which a check by itself does not take, when the last check ended, the restart into a new build, which waits for work in hand |
+| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot whenever the page marks something, in the colour the page wears it in: work on a newer build, looking, downloading or a newer commit being built, pulses in the accent, a newer build ready stands still in the accent, a pull request followed that closed or that conflicts with main stands still in the colour of a warning, the dot of work on it pulsing in that colour too, and a check that did not get through, or a newest build that did not start, stands still in red. Up to date, a build made on the Mac and a build that does not update itself wear none. Both read the one state and the one mark, in `frontend/src/lib/updates.svelte.ts`, so the row never says less than the page or something else. Its title then says what the page says. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or PR #N, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check while a channel is followed, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. A check or a download that did not get through says why in words a person uses, from `updateProblem`, no connection to GitHub, GitHub busy, nothing found, a build that could not be verified or a disk that took nothing, in one short sentence, and asks to check the internet connection only when the error was the network's, a certificate the Mac does not trust among them, which is what a hotel's Wi-Fi or a company's proxy shows it. What the system said is under it apart, in a field at the height of a control on one line that scrolls sideways, with a button at its end that copies it for a report, and Try again stands on the same row as the field. Looking is shown for at least 1.4 seconds, on the page and on the row alike, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
+| The key and the signing | `cmd/framefairy-release` | every decision the two workflows make, one command a step. `key` makes the pair, `build-plan` says what a push is a build of and whether it needs one, `publish-plan` what a finished build is published as and refuses a commit its channel's history does not hold, `pack` writes the build again with each file stored as it is, its parts, its pieces, its patches against the builds `publish-plan` named and the zip packed with zstd, `check` refuses a build that could reach past the app, before the key is there, `sign` signs a build `check` passed, and the stored zip `pack` wrote beside it, and refuses a key that is not the app's, `publish` uploads the pieces and patches the release lacks, the zip, the stored zip packed, its parts, then its entry, then marks the commit, `not-published` marks a commit whose publishing failed and says why, `channels` writes the channel list and leaves out a newest commit whose build ended without one, and `unstick` cancels a publish stuck before its environment. What they ask GitHub is in `github.go`, behind an interface the tests replace. A decision about a build goes here, never into a script, see [the decision record](decisions/2026-11-14-update-decisions-in-go.md) |
 | The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so main's copy asks for no secret and no token that can write, which a branch's copy could, so what holds is the `updates` environment and the history check in `publish.yml`. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `needsBuild` in `cmd/framefairy-release` |
-| The publishing | `.github/workflows/publish.yml` | runs from main whenever a build starts or ends. It works out which channel, commit and version a build is from GitHub's record of the run, packs the zip in parts, signs it and the stored zip, uploads the pieces the release lacks, the zip, the stored zip packed, its parts and its entry to the `dev` release, takes away the zips, packed zips, parts and pieces no entry reaches, writes the list at the start of a push and when its build is done, and marks a pull request's commit Ready to update to the moment its entry is up |
+| The publishing | `.github/workflows/publish.yml` | runs from main whenever a build starts or ends. It works out which channel, commit and version a build is from GitHub's record of the run, packs the zip in parts, signs it and the stored zip, uploads the pieces and patches the release lacks, the zip, the stored zip packed, its parts and its entry to the `dev` release, takes away the zips, packed zips, parts, pieces and patches no entry reaches, keeping the parts and pieces of the builds a new build is patched against, writes the list at the start of a push and when its build is done, and marks a pull request's commit Ready to update to the moment its entry is up |
 | The make targets | `make install`, `make update-key` | the app into `/Applications`, and the key |
 
 The signature is Ed25519 over the SHA-256 of the zip, which is what Wails'
-updater checks, and the claim is Ed25519 over the entry's channel, version,
-commit, size and checksum, which the app checks itself. Sparkle signs the file itself, so a Sparkle appcast and
+updater checks, the claim is Ed25519 over the entry's channel, version,
+commit, size and checksum, and the order is Ed25519 over the claim and
+when the build was made. The app checks the last two itself. Sparkle signs the file itself, so a Sparkle appcast and
 this list could never have shared a signature, and the list is a small
 JSON file of our own rather than an appcast.
 
 Still to come, in the order they are needed:
 
-- **Tried on the Mac.** That a downloaded build that is signed ad hoc
-  runs, that the swap works in `/Applications`, and what the helper's
-  log says, in `$TMPDIR/wails-update-<pid>.log`, when it does not.
+- **Tried on the Mac.** That a downloaded build runs, that the swap
+  works in `/Applications`, and what the step's log says, in
+  `$TMPDIR/framefairy-install-<pid>.log`, when it does not.
 - **macOS asks for Documents again after every update.** It remembers a
   folder it let an app into by the app's signature, and a build signed ad
   hoc is known only by the hash of its own program, so every new build

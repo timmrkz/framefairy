@@ -374,9 +374,10 @@ func TestNoPullRequestTarget(t *testing.T) {
 
 // publish.yml reads a branch's build before it signs it, and the reading
 // runs in a step of its own that holds no secret and no token: the zip is
-// code nobody has reviewed, and nothing needs the update key or a token
-// that writes until it has passed.
-// The step that signs comes after it, and runs only when it passed.
+// code nobody has reviewed, and nothing needs the update key, the
+// Developer ID or a token that writes until it has passed. The step that
+// signs, and every step that holds a secret, the Developer ID's included,
+// come after it, and run only when it passed.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
@@ -418,12 +419,12 @@ func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
 						t.Errorf("%q holds %s while it reads the build", s.Name, k)
 					}
 				}
-			case strings.Contains(s.Run, "framefairy-release sign"):
-				signed = true
+			case strings.Contains(s.Run, "framefairy-release sign") || holdsASecret(s.Env):
+				signed = signed || strings.Contains(s.Run, "framefairy-release sign")
 				if checked == "" {
-					t.Errorf("%q signs a build no step before it checked, or the check has no id to be asked by", s.Name)
+					t.Errorf("%q signs a build or holds a key, and no step before it checked the build, or the check has no id to be asked by", s.Name)
 				} else if want := "steps." + checked + ".outcome == 'success'"; strings.TrimSpace(s.If) != want {
-					t.Errorf("%q runs if %s, where only if: %s says it signs nothing the check did not pass", s.Name, s.If, want)
+					t.Errorf("%q runs if %s, where only if: %s says it holds no key for a build the check did not pass", s.Name, s.If, want)
 				}
 			}
 		}
@@ -431,6 +432,16 @@ func TestTheBuildIsCheckedBeforeTheKeyIsThere(t *testing.T) {
 	if !signed {
 		t.Error("found no step in publish.yml that runs framefairy-release sign")
 	}
+}
+
+// holdsASecret says whether a step's environment holds a secret.
+func holdsASecret(env map[string]string) bool {
+	for _, v := range env {
+		if strings.Contains(v, "secrets.") {
+			return true
+		}
+	}
+	return false
 }
 
 // A job that shares its concurrency group with another job can be
@@ -1066,5 +1077,46 @@ func TestAScheduledRunThatFailsTellsOfItself(t *testing.T) {
 	}
 	if scheduled < 4 {
 		t.Errorf("found %d workflows on a schedule, fewer than the four there are", scheduled)
+	}
+}
+
+// A publish stuck before the environment is cancelled whatever the step
+// before did. unstick comes after channels in both jobs that write the
+// list, and a step runs only when every step before it passed unless its
+// if says otherwise. So a list that failed to write once left a stuck
+// publish waiting until the next build ended.
+//
+// On the real disk: what is read is the repository's own workflow.
+func TestAStuckPublishIsCancelledWhateverTheListDid(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "publish.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				If  string `yaml:"if"`
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for name, job := range wf.Jobs {
+		for _, s := range job.Steps {
+			if !strings.Contains(s.Run, "framefairy-release unstick") {
+				continue
+			}
+			found++
+			if strings.TrimSpace(s.If) != "${{ !cancelled() }}" {
+				t.Errorf("unstick in the job %s runs only when every step before it passed, its if is %q", name, s.If)
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("publish.yml runs no framefairy-release unstick")
 	}
 }

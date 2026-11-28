@@ -54,13 +54,39 @@ func twoBuilds(t *testing.T) (target, from string) {
 func quitAt(int, time.Duration) bool     { return true }
 func neverQuits(int, time.Duration) bool { return false }
 
+// testStep is the step on quit for target and from, with the app's folder
+// beside them, whose new build loads.
+//
+// On the real disk: the step moves bundles between the app's place and the app's folder.
+func testStep(t *testing.T, target, from string, wait func(int, time.Duration) bool) installStep {
+	t.Helper()
+	folder := filepath.Join(filepath.Dir(filepath.Dir(target)), "Application Support", "FrameFairy")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return installStep{
+		target: target, from: from, version: "0.3.0-main.5", pid: 42, folder: folder,
+		program: "framefairy-app", gone: wait,
+		loads:   func(string) error { return nil },
+		launch:  func(string) error { t.Error("the step on quit opened an app"); return nil },
+		started: func(string, time.Duration) bool { t.Error("the step on quit waited for a start"); return false },
+		stop:    func(int) { t.Error("the step on quit ended a program") },
+	}
+}
+
+func (s installStep) withTarget(target string) installStep {
+	s.target = target
+	return s
+}
+
 // Once the app is gone, the new build is where the app was, whole, and
 // nothing is left beside it or where it was unpacked.
 //
 // On the real disk: an update moves a bundle with its links and modes.
 func TestAReadyBuildGoesInPlaceOfTheApp(t *testing.T) {
 	target, from := twoBuilds(t)
-	if err := installWhenGone(target, from, 42, quitAt); err != nil {
+	step := testStep(t, target, from, quitAt)
+	if err := step.run(); err != nil {
 		t.Fatal(err)
 	}
 	if got := says(t, target); got != "new" {
@@ -73,17 +99,19 @@ func TestAReadyBuildGoesInPlaceOfTheApp(t *testing.T) {
 	if link, err := os.Readlink(filepath.Join(target, "Contents", "Current")); err != nil || link != "MacOS/framefairy-app" {
 		t.Errorf("the link is %q, %v", link, err)
 	}
-	for _, left := range []string{target + ".old", filepath.Dir(from)} {
-		if _, err := os.Stat(left); !os.IsNotExist(err) {
-			t.Errorf("%s is still there", left)
-		}
+	if _, err := os.Stat(filepath.Dir(from)); !os.IsNotExist(err) {
+		t.Errorf("%s is still there", filepath.Dir(from))
+	}
+	// The build before is kept until the new one says it started.
+	if got := says(t, filepath.Join(step.folder, beforeDir, "Frame Fairy.app")); got != "old" {
+		t.Errorf("the build before kept says %q", got)
 	}
 }
 
 // An app that did not quit after all is never replaced under itself.
 func TestAnAppThatDidNotQuitIsLeftAlone(t *testing.T) {
 	target, from := twoBuilds(t)
-	if err := installWhenGone(target, from, 42, neverQuits); err == nil {
+	if err := testStep(t, target, from, neverQuits).run(); err == nil {
 		t.Error("replaced an app that was still running")
 	}
 	if says(t, target) != "old" || says(t, from) != "new" {
@@ -105,7 +133,7 @@ func TestTheStepReplacesNothingElse(t *testing.T) {
 		{target, elsewhere},
 		{target, filepath.Dir(from)},
 	} {
-		if err := installWhenGone(c.target, c.from, 42, quitAt); err == nil {
+		if err := testStep(t, target, c.from, quitAt).withTarget(c.target).run(); err == nil {
 			t.Errorf("replaced %s with %s", c.target, c.from)
 		}
 	}
@@ -120,7 +148,7 @@ func TestTheStepReplacesNothingElse(t *testing.T) {
 func TestAMissingBuildLeavesTheApp(t *testing.T) {
 	target, from := twoBuilds(t)
 	_ = os.RemoveAll(from)
-	if err := installWhenGone(target, from, 42, quitAt); err == nil {
+	if err := testStep(t, target, from, quitAt).run(); err == nil {
 		t.Error("no error")
 	}
 	if says(t, target) != "old" {
@@ -183,7 +211,10 @@ func TestQuittingWithABuildReadyInstallsIt(t *testing.T) {
 	c.app = inApplications
 	cleanStaged(t, c)
 	var started [][2]string
-	c.install = func(target, from string) error {
+	c.install = func(target, from, version string, open bool) error {
+		if open || version != "0.3.0-main.5" {
+			t.Errorf("the step on quit was asked to open %v the build %q", open, version)
+		}
 		started = append(started, [2]string{target, from})
 		return nil
 	}

@@ -30,21 +30,24 @@
 # run of builds.yml is published, and only a commit that main's history
 # holds, or the history of the pull request's newest commit.
 #
-# Three jobs, each step one command of cmd/framefairy-release, which
+# Four jobs, each step one command of cmd/framefairy-release, which
 # makes every decision in Go, see
 # docs/decisions/2026-11-14-update-decisions-in-go.md:
 #
 # 1. announce, the moment a build starts, writes the channel list again,
 #    so the Updates page says for the whole of the build that the build it
 #    offers is not the newest.
-# 2. publish, per channel, one after another and never stopped half way,
-#    checks that the commit is its channel's, packs the build in parts,
-#    checks it, signs the zip and the stored zip, uploads the zip with
-#    the stored zip packed with zstd, its parts, the pieces the release
-#    lacks and its entry to the release dev, and marks a pull request's
+# 2. plan, on Linux, asks whether there is anything to publish, so a run
+#    that publishes nothing takes no Mac.
+# 3. publish, on a Mac, per channel, one after another and never stopped
+#    half way, checks that the commit is its channel's, checks the build,
+#    signs it again with the Developer ID, packs it in parts, signs the
+#    zip and the stored zip with the update key, uploads the zip with
+#    the stored zip packed with zstd, its parts, the pieces and patches
+#    the release lacks and its entry to the release dev, and marks a pull request's
 #    commit ready to update to. A build it does not
 #    publish says why on its commit.
-# 3. list, whenever a build ends, however it ended, writes the list again
+# 4. list, whenever a build ends, however it ended, writes the list again
 #    from every entry. It takes away the entry of any pull request that is
 #    not open any more, which is how a closed pull request leaves the
 #    list, and stops saying a build is coming once it ended without one.
@@ -97,10 +100,17 @@ jobs:
       - uses: ./.github/actions/release-tool
       - name: Write the channel list from every entry
         run: framefairy-release channels
+      # Whatever the list did: a list that failed to write is no reason
+      # to leave a publish waiting for good.
       - name: Cancel a publish stuck before the environment
+        if: ${{ !cancelled() }}
         run: framefairy-release unstick
 
-  publish:
+  # Whether there is anything to publish, asked on Linux, so a run that
+  # publishes nothing, a commit built already, a branch with no open pull
+  # request, takes no Mac. publish asks again on the Mac, where its answer
+  # is the one that counts, since a pull request can close in between.
+  plan:
     if: >-
       github.event.action == 'completed' &&
       github.event.workflow_run.conclusion == 'success' &&
@@ -108,6 +118,53 @@ jobs:
       github.event.workflow_run.path == '.github/workflows/builds.yml' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      statuses: write
+      # To check the release tool's signature.
+      attestations: read
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    outputs:
+      run: ${{ steps.which.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tool
+      - id: which
+        name: Is there anything to publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.event.workflow_run.id }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: framefairy-release publish-plan -run "$RUN" -branch "$BRANCH" -commit "$SHA"
+      # A plan that fails publishes nothing, and says so on the commit,
+      # as a publish that fails does.
+      - name: Say on the commit why it is not published
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: framefairy-release not-published -commit "$SHA" -run "$RUN"
+
+  publish:
+    needs: plan
+    if: >-
+      needs.plan.outputs.run == 'true' &&
+      github.event.action == 'completed' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.path == '.github/workflows/builds.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    # On a Mac, for codesign and the keychain, see "Sign it with the
+    # Developer ID" below. Only a build that is published takes it.
+    runs-on: macos-latest
     timeout-minutes: 20
     environment: updates
     concurrency:
@@ -129,8 +186,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # main's own build of the tool, signed, from no cache anybody else
-      # wrote, see .github/actions/release-tool.
+      # main's own build of the tool for a Mac, signed, from no cache
+      # anybody else wrote, see .github/actions/release-tool.
       - uses: ./.github/actions/release-tool
 
       # What the build is a build of, from GitHub's record of the run and
@@ -154,24 +211,69 @@ jobs:
           github-token: ${{ github.token }}
 
       # The build is a branch's code, read here before anybody reviewed
-      # it, so this step does not hold the key: nothing needs it until the
+      # it, so this step does not hold a key: nothing needs one until the
       # reading is done, and a zip made to trip the reader finds no key
-      # and no token to take. The step after it signs only a build this one passed.
+      # and no token to take. The steps after it run only when it passed.
+      - id: check
+        if: steps.which.outputs.run == 'true'
+        name: Check what it could reach
+        run: framefairy-release check -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
+
+      # The libraries of main's build and of the channel's, as they were
+      # signed then. harden keeps such a copy in place of a library it
+      # signed afresh when the two are the same signed code, so a library
+      # whose code did not change is the same file in every build, and an
+      # update does not download it again. From the release's public
+      # addresses, in a step with no secret and no token, since what the
+      # release holds is untrusted, and harden checks a kept copy like any
+      # other. What cannot be had costs only the keeping. See kept.go.
+      - id: before
+        if: steps.check.outcome == 'success'
+        name: Earlier copies of the libraries
+        continue-on-error: true
+        # Each file is read with the app's own waits, so a release that
+        # stalls ends this step, never the publish.
+        timeout-minutes: 5
+        env:
+          CHANNEL: ${{ steps.which.outputs.channel }}
+        run: framefairy-release signed-before -channel "$CHANNEL" -out "$RUNNER_TEMP/kept"
+
+      # Every build the user gets is signed again with their Developer ID
+      # and the hardened runtime, so no other program can put its code
+      # into the app, and macOS knows the app again after an update and
+      # does not ask for Documents or the keychain anew. Until
+      # build/team-id.txt names the team, harden says so and the build
+      # stays signed ad hoc, the way it is made. Once it does, a build
+      # without the Developer ID is never published. See
+      # cmd/framefairy-release/devid.go and docs/UPDATES.md, The Developer ID.
+      - id: harden
+        if: steps.check.outcome == 'success'
+        name: Sign it with the Developer ID
+        env:
+          FRAMEFAIRY_DEVELOPER_ID: ${{ secrets.FRAMEFAIRY_DEVELOPER_ID }}
+          FRAMEFAIRY_DEVELOPER_ID_PASSWORD: ${{ secrets.FRAMEFAIRY_DEVELOPER_ID_PASSWORD }}
+        run: framefairy-release harden -zip "$RUNNER_TEMP/build/app.zip" -kept "$RUNNER_TEMP/kept" -refusal "$RUNNER_TEMP/refused.txt"
+
       # The zip the build left deflates every file. Packed again, each
       # file is stored as it is, and its parts and pieces let an app that
       # knows them download only the files it does not have, and the
       # stored zip packed with zstd is what it downloads when they fail.
       # Both zips are signed. The zip the build left is still published
-      # for the apps from before. See docs/UPDATES.md.
+      # for the apps from before. Packed after harden, so its parts are
+      # of the build the user gets. See docs/UPDATES.md.
+      #
+      # Each file that changed also gets a patch against the same file of
+      # the builds an app is likely to run, which publish-plan named with
+      # its token. pack reads them from the release's public addresses,
+      # in this step with no token, as an app does. What cannot be had
+      # costs only its patches. See patches.go.
       - id: pack
-        if: steps.which.outputs.run == 'true'
+        if: steps.harden.outcome == 'success'
         name: Pack it in parts
-        run: framefairy-release pack -zip "$RUNNER_TEMP/build/app.zip" -out "$RUNNER_TEMP/packed"
-
-      - id: check
-        if: steps.pack.outcome == 'success'
-        name: Check what it could reach
-        run: framefairy-release check -zip "$RUNNER_TEMP/build/app.zip" -refusal "$RUNNER_TEMP/refused.txt"
+        env:
+          BASES: ${{ steps.which.outputs.bases }}
+          ROOM: ${{ steps.which.outputs.room }}
+        run: framefairy-release pack -zip "$RUNNER_TEMP/build/app.zip" -out "$RUNNER_TEMP/packed" -bases "$BASES" -room "$ROOM"
 
       - id: sign
         if: steps.check.outcome == 'success'
@@ -183,10 +285,17 @@ jobs:
           VERSION: ${{ steps.which.outputs.version }}
           COMMIT: ${{ steps.which.outputs.commit }}
           URL: https://github.com/${{ github.repository }}/releases/download/dev/${{ steps.which.outputs.zip }}
+          # When the run that built it was created, which a run made again
+          # keeps, signed as the build's order, so the app never takes a
+          # build of a channel made before one it took. See updates.Order.
+          MADE: ${{ github.event.workflow_run.created_at }}
+        # Once build/team-id.txt names the team, sign reads it and refuses
+        # a build that is not signed with its Developer ID and the hardened
+        # runtime throughout, so it is never lost on the way unseen.
         run: >-
           framefairy-release sign -zip "$RUNNER_TEMP/build/app.zip" -parts "$RUNNER_TEMP/packed/parts.json"
           -channel "$CHANNEL" -name "$NAME"
-          -version "$VERSION" -commit "$COMMIT" -url "$URL" -out "$RUNNER_TEMP/entry.json" -refusal "$RUNNER_TEMP/refused.txt"
+          -version "$VERSION" -commit "$COMMIT" -url "$URL" -made "$MADE" -out "$RUNNER_TEMP/entry.json" -refusal "$RUNNER_TEMP/refused.txt"
 
       # The zip first and its entry after, and a pull request's commit
       # marked ready the moment its entry is up, #839. See publish.go.
@@ -218,7 +327,7 @@ jobs:
   # come, and the list stops saying it is. A pull request that is closed
   # builds nothing and leaves the list this way too.
   list:
-    needs: publish
+    needs: [plan, publish]
     if: >-
       always() &&
       github.event.action == 'completed' &&
@@ -248,5 +357,8 @@ jobs:
       - uses: ./.github/actions/release-tool
       - name: Write the channel list from every entry
         run: framefairy-release channels
+      # Whatever the list did: a list that failed to write is no reason
+      # to leave a publish waiting for good.
       - name: Cancel a publish stuck before the environment
+        if: ${{ !cancelled() }}
         run: framefairy-release unstick

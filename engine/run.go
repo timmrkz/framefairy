@@ -876,14 +876,18 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 
 	// The captions are made from the words the episode says, the same words
 	// the app shows, see ClipCaptions. Without a transcript there are none.
-	heard := &Transcript{}
+	// A short is named by those words with captions or without, see
+	// Transcript.Named.
+	said, heard := &Transcript{}, &Transcript{}
+	t, err := SavedTranscript(r.e.Files, opts.Source, logsDir, opts.ASRModel, opts.SilenceDB)
+	if err == nil && t != nil {
+		said = t
+	}
 	if !opts.NoCaptions {
-		t, err := SavedTranscript(r.e.Files, opts.Source, logsDir, opts.ASRModel, opts.SilenceDB)
 		if err != nil {
 			log.Warn("there is no transcript to make captions from, so the clips get none")
-		} else {
-			heard = t
 		}
+		heard = said
 	}
 
 	own := filepath.Dir(fileio.ResolvePath(r.planPath)) == fileio.ResolvePath(logsDir)
@@ -898,10 +902,14 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 		started := time.Now()
 		log.Info("%s: %ss, %d segment(s), %d cues", clip.Basename(),
 			num.Fixed(clip.Duration(), 1), len(clip.Segments), len(cues))
-		// A preview, which the plan never notes, keeps the clip's id.
+		// A preview, which the plan never notes, keeps the clip's id. A
+		// short is named by the words the clip shows now, see
+		// Transcript.Named.
+		named := clip
+		named.Title, named.Slug = said.Named(clip)
 		stem := clip.Basename()
 		if !opts.Preview {
-			stem = shortStem(outDir, plan, clip)
+			stem = shortStem(outDir, plan, named)
 		}
 		path, err := e.renderShort(ctx, clip, opts.Source, source, outDir, stem, cues, rs,
 			drawing.Style, captionDir, opts.DryRun)
@@ -930,7 +938,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 			// episode's own: a plan file handed to the command line from
 			// elsewhere is the person's, and is read, not written.
 			if own {
-				if err := recordShort(r.e.Files, r.planPath, clip.ID, path); err != nil {
+				if err := recordShort(r.e.Files, r.planPath, named, path); err != nil {
 					failed(fmt.Errorf("%s: could not note where the short went: %w", clip.Basename(), err))
 					continue
 				}

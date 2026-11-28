@@ -24,9 +24,17 @@
 //	    write the build again as the zip it is published as, its files
 //	    stored, with its parts, a piece for every file and the zip packed
 //	    with zstd, see pack.go
-//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-refusal F]
+//	framefairy-release signed-before -channel C -out D
+//	    download the libraries of main's build and the channel's as
+//	    they were signed, for harden -kept, see kept.go
+//	framefairy-release harden -zip F [-team-file F] [-kept D] [-refusal F] | -app A -p12 F
+//	    sign the app again with the Developer ID and the hardened
+//	    runtime, on a Mac, before pack, see devid.go
+//	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F] [-made T] [-team-file F] [-refusal F]
 //	    sign a build that check passed with the private half, read from
-//	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list
+//	    FRAMEFAIRY_UPDATE_KEY, and write its entry for the channel list.
+//	    Once build/team-id.txt names a team, it refuses a build not signed
+//	    by that team with the hardened runtime, see hardened.go
 //	framefairy-release publish -zip F -as NAME -entry F -channel C -commit X [-packed D]
 //	    upload the build and its entry, and what pack wrote beside it,
 //	    and mark a pull request's commit Ready to update to
@@ -59,7 +67,7 @@
 //	    newest release, from how scripts/upstream.sh --behind ended and
 //	    what it wrote, see behind.go
 //
-// Every command but key, check, sign, walks, fits and self asks GitHub,
+// Every command but key, check, signed-before, harden, sign, walks, fits and self asks GitHub,
 // with GH_TOKEN and GH_REPO, through the interface in github.go.
 package main
 
@@ -106,6 +114,10 @@ func main() {
 		err = packCommand(args)
 	case "check":
 		err = check(args)
+	case "signed-before":
+		err = signedBeforeCommand(args)
+	case "harden":
+		err = harden(args)
 	case "sign":
 		err = sign(args)
 	case "publish":
@@ -229,8 +241,31 @@ func sign(args []string) error {
 	where := fs.String("url", "", "where the zip will be downloaded from")
 	out := fs.String("out", "", "where the entry goes")
 	parts := fs.String("parts", "", "the parts pack wrote, beside the stored zip and the zip packed, if it was packed")
+	teamFile := fs.String("team-file", "build/team-id.txt", "the file that names the team whose Developer ID the build must be signed with")
+	madeAt := fs.String("made", "", "when the run that built it was created, RFC 3339, signed as the build's order")
 	_ = fs.Parse(args)
-	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out), os.Stderr)
+	var made time.Time
+	if *madeAt != "" {
+		t, err := time.Parse(time.RFC3339, *madeAt)
+		if err != nil {
+			return refused(*refusal, fmt.Errorf("-made: %w", err), os.Stderr)
+		}
+		made = t.UTC()
+	}
+	// The team is read from main's checkout here, as harden reads it, and
+	// never handed on by a step, so a build that lost its signature on the
+	// way is refused whatever the steps between said. The stored zip is
+	// the same app as the zip, see sameApp, so reading the zip reads both.
+	team, err := teamOf(*teamFile)
+	if err == nil && team != "" {
+		if _, err = teamRequirement(team); err == nil {
+			err = checkHardened(*zipPath, team)
+		}
+	}
+	if err != nil {
+		return refused(*refusal, err, os.Stderr)
+	}
+	return refused(*refusal, signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out, made), os.Stderr)
 }
 
 // unpacksTo says whether a zip packed with zstd unpacks to the zip with
@@ -255,7 +290,9 @@ func unpacksTo(packed, digest []byte) error {
 // stored zip beside them too, once they are read as its parts and the zip
 // packed beside them unpacks to it, and the entry names it. An app that
 // knows parts installs that zip, and an app from before installs the zip.
-func signBuild(zipPath, channel, name, version, commit, where, parts, out string) error {
+// With a made time it signs that too, as the build's order, see
+// updates.Order.
+func signBuild(zipPath, channel, name, version, commit, where, parts, out string, made time.Time) error {
 	private, public, err := keys()
 	if err != nil {
 		return err
@@ -290,6 +327,13 @@ func signBuild(zipPath, channel, name, version, commit, where, parts, out string
 		b.Stored = &st
 	}
 	b.Claim = updates.SignClaim(private, b)
+	if !made.IsZero() {
+		b.Made = made
+		b.Order = updates.SignOrder(private, b)
+		if err := updates.VerifyOrder(public, b); err != nil {
+			return err
+		}
+	}
 	if err := b.Check(); err != nil {
 		return err
 	}

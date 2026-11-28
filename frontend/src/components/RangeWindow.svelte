@@ -220,9 +220,10 @@
   });
 
   // Dragging the playhead, the same way as on the clip timeline, see
-  // lib/scrub.ts. A press anywhere on the track takes hold of it, and so
-  // does the line past the track's border, and the video preview follows
-  // the hand.
+  // lib/scrub.ts. A press anywhere on the track takes hold of it, a clip's
+  // mark too, and so does the line past the track's border, and the video
+  // preview follows the hand. A press on a mark let go where it was
+  // pressed chooses its clip.
   let scrubbing = $state(false);
 
   function scrub(event: PointerEvent) {
@@ -242,7 +243,16 @@
         scrubbing = held;
         onhold?.(held);
       },
+      tapped(event),
     );
+  }
+
+  // What a press let go where it was pressed does: on a clip's mark it
+  // chooses the clip. The track holds the pointer from the press on, so
+  // the mark's own click cannot be relied on to come, see the mark.
+  function tapped(event: PointerEvent): (() => void) | undefined {
+    const key = (event.target as Element | null)?.closest?.<HTMLElement>(".clipmark")?.dataset.key;
+    return key !== undefined && onmark ? () => onmark(key) : undefined;
   }
 
   // The step of the ruler, a line every so often, see ticks below. A
@@ -448,9 +458,14 @@
       class:waiting={m.arriving}
       style="left: {on(m.start)}; width: max(calc({on(m.end)} - {on(m.start)}), 4px)"
       aria-label="Clip at {clock(m.start)}"
+      data-key={m.key}
       {@attach hoverClip(m.key, onhover)}
-      onpointerdown={(e) => e.stopPropagation()}
-      onclick={() => onmark?.(m.key)}
+      onclick={(e) => {
+        // A pointer's press is the track's, see tapped. A key's is the
+        // button's, and so is a click sent by a program, which have no
+        // presses to count.
+        if (e.detail === 0) onmark?.(m.key);
+      }}
     ></button>
   {/each}
   <!-- The ruler, in two layers, and they have to be two.
@@ -477,7 +492,7 @@
   <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
     <Info label="What the range picker is" side="right">
       The whole video, with its clips as marks. Press or drag anywhere to move the playhead, and
-      press a mark to work on its clip. The marks at the four corners are where Search looks next, or
+      click a mark to work on its clip. A drag that starts on a mark moves the playhead too. The marks at the four corners are where Search looks next, or
       where Continue carries on a search that stopped: drag a bar between them to look somewhere
       else, drag a triangle to make it shorter or longer, and double-click to put it back. Moved
       off a search that stopped, Search starts afresh where they are. It is at least as long as its clips need and at most as long as

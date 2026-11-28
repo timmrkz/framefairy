@@ -757,7 +757,7 @@ func FuzzParseParts(f *testing.F) {
 				continue
 			}
 			whole += part.Size
-			if rest, ok := inApp(part.Name); !ok || !filepath.IsLocal(rest) {
+			if rest, ok := InApp(part.Name); !ok || !filepath.IsLocal(rest) {
 				t.Fatalf("a part names %q", part.Name)
 			}
 		}

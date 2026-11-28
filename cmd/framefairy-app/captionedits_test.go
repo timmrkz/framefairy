@@ -763,3 +763,39 @@ func TestTheTranscriptSearchAnswersOverTheCardsAsTheyAre(t *testing.T) {
 		t.Errorf("after the correction, pausenhof finds %v and schulhof %v", got, gone)
 	}
 }
+
+// A clip's first word corrected in the caption box renames the clip: the
+// card says the words it shows now, in the answer to the correction and in
+// the clip list after it. It kept the title it was found with, the user's
+// report on issue #1015.
+func TestAClipsFirstWordCorrectedRenamesItsCard(t *testing.T) {
+	e := newCaptionEditor(t)
+	title := func() string {
+		t.Helper()
+		clips, err := e.svc.Clips(context.Background(), e.mine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range clips {
+			if c.ID == "01" {
+				return c.Title
+			}
+		}
+		t.Fatal("the clip list has no clip 01")
+		return ""
+	}
+	if got, want := title(), "Ich war vielleicht sechs Jahre alt, als mich auf dem"; got != want {
+		t.Fatalf("before the correction the card says %q, not %q", got, want)
+	}
+	entry, err := e.svc.SetWord(context.Background(), e.mine, e.plan, "01", 10, "Er")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Er war vielleicht sechs Jahre alt, als mich auf dem Schulhof"
+	if entry.Title != want {
+		t.Errorf("the answer to the correction says %q, not %q", entry.Title, want)
+	}
+	if got := title(); got != want {
+		t.Errorf("after the correction the card says %q, not %q", got, want)
+	}
+}

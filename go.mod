@@ -5,7 +5,9 @@ go 1.27
 require (
 	github.com/abadojack/whatlanggo v1.0.1
 	github.com/asticode/go-astiav v0.43.0
+	github.com/dsnet/compress v0.0.0-20171208185109-cc9eb1d7ad76
 	github.com/fsnotify/fsnotify v1.10.1
+	github.com/gabstv/go-bsdiff v1.0.5
 	github.com/gen2brain/malgo v0.11.28
 	github.com/k2-fsa/sherpa-onnx-go/v2 v2.0.1
 	github.com/klauspost/compress v1.20.5

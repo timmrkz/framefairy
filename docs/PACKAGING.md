@@ -729,7 +729,10 @@ the hardened runtime an app that opens the microphone needs
 `com.apple.security.device.audio-input` as well as
 `NSMicrophoneUsageDescription`, or macOS hands it silence without asking.
 Dictate on Report a Problem records, plan row 2.189, so the signing step
-adds it. Today's ad hoc signature has no hardened runtime and needs
+adds it: `framefairy-release harden` signs every build to update to with
+the Developer ID, the hardened runtime and `build/entitlements.plist`,
+see The Developer ID in [UPDATES.md](UPDATES.md). A build made with
+`make` keeps its ad hoc signature, with no hardened runtime, and needs
 nothing.
 
 ## Still open

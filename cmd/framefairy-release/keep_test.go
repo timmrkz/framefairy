@@ -27,19 +27,19 @@ func (r *toolRelease) remove(a asset) error {
 	return nil
 }
 
-// A build kept in the release replaces the one there, and takes the
-// builds named by a key from before away, so the release holds the one
-// file the jobs download.
+// The builds kept in the release replace the ones there, and take the
+// builds named by a key from before away, so the release holds the two
+// files the jobs download, one for Linux and one for a Mac.
 func TestKeepingABuildLeavesItAlone(t *testing.T) {
 	t.Parallel()
 	r := &toolRelease{
 		files: []asset{{name: toolName}, {name: "framefairy-release-0123456789abcdef"}},
 		data:  map[string][]byte{toolName: []byte("older"), "framefairy-release-0123456789abcdef": []byte("keyed")},
 	}
-	if err := keepTool(r, []byte("newer"), io.Discard); err != nil {
+	if err := keepTool(r, map[string][]byte{toolName: []byte("newer"), toolMac: []byte("for a Mac")}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.files) != 1 || r.files[0].name != toolName || string(r.data[toolName]) != "newer" {
-		t.Errorf("the release holds %v, want only the new build", r.files)
+	if len(r.files) != 2 || string(r.data[toolName]) != "newer" || string(r.data[toolMac]) != "for a Mac" {
+		t.Errorf("the release holds %v, want only the two new builds", r.files)
 	}
 }

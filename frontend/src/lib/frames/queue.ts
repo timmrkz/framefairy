@@ -333,8 +333,11 @@ export class FrameQueue {
   private c0: number | null = null;
   private m0 = 0;
   // What is on the sound card, with the sound card's time each stretch
-  // ends at by itself, see clip.
-  private sources = new Map<AudioBufferSourceNode, number>();
+  // ends at by itself, see clip, and how many changes of the clip the
+  // play had taken in when it was decoded, see takeIn.
+  private sources = new Map<AudioBufferSourceNode, { stop: number; gen: number }>();
+  // The most changes of the clip any sound handed over had taken in.
+  private handedGen = 0;
   // Where the sound handed to the sound card in this play reaches, in its
   // seconds, and the sound come before the clock started.
   private handedTo = -Infinity;
@@ -663,16 +666,24 @@ export class FrameQueue {
       return;
     }
     this.trace(`the clip changed while it plays, taken in at ${got.at.toFixed(3)} s, ${((got.at - this.sounded()) * 1000).toFixed(0)} ms ahead of the sound`);
+    // The sound of the clip as it was stops at the place. The sound of
+    // this change can be here already, from a pull of the sound that
+    // was answered first: it begins at the place and goes on, and is
+    // neither stopped nor pulled again. Stopped, the Go side would not
+    // send it twice, and the sound card played nothing for as long as it
+    // lasted, then clicked, the loop walk on CI.
     const stop = this.c0 + (Math.round(got.at * this.sampleRate) - this.m0) / this.sampleRate;
-    for (const [src, end] of this.sources) {
-      if (end <= stop) continue;
+    for (const [src, s] of this.sources) {
+      if (s.stop <= stop || s.gen >= got.gen) continue;
       try {
         src.stop(Math.max(stop, this.audio.currentTime));
       } catch {}
-      this.sources.set(src, stop);
+      s.stop = stop;
     }
-    this.handedTo = Math.min(this.handedTo, stop);
-    this.soundTo = Math.min(this.soundTo, Math.round(got.at * this.sampleRate));
+    if (this.handedGen < got.gen) {
+      this.handedTo = Math.min(this.handedTo, stop);
+      this.soundTo = Math.min(this.soundTo, Math.round(got.at * this.sampleRate));
+    }
     this.pump();
   }
 
@@ -1415,7 +1426,7 @@ export class FrameQueue {
     const now = this.sources.size ? this.audio.currentTime : 0;
     const end = this.goPlay?.end ?? Infinity;
     const ends = this.c0 !== null && Number.isFinite(end) ? this.c0 + (Math.round(end * this.sampleRate) - this.m0) / this.sampleRate : Infinity;
-    for (const [src, stops] of this.sources) {
+    for (const [src, { stop: stops }] of this.sources) {
       if (Math.min(stops, ends) > now) this.stats.soundThrown++;
       try {
         src.stop();
@@ -1424,6 +1435,7 @@ export class FrameQueue {
     }
     this.sources.clear();
     this.handedTo = -Infinity;
+    this.handedGen = 0;
     if (this.goPlay) {
       for (const s of this.goPlay.shots.splice(0)) this.closeFrame(s.frame);
       this.goPlay.close();
@@ -1890,6 +1902,7 @@ export class FrameQueue {
     const when = this.c0 + (c.out - this.m0) / rate;
     if (when < this.handedTo - 1 / rate) this.stats.soundTwice++;
     this.handedTo = Math.max(this.handedTo, when + c.length / rate);
+    this.handedGen = Math.max(this.handedGen, c.gen);
     const now = this.audio.currentTime;
     if (when < now) {
       this.stats.lateSound++;
@@ -1908,7 +1921,7 @@ export class FrameQueue {
       this.sources.delete(src);
       src.disconnect();
     };
-    this.sources.set(src, when + c.length / rate);
+    this.sources.set(src, { stop: when + c.length / rate, gen: c.gen });
     this.clip(src);
   }
 
@@ -1919,7 +1932,7 @@ export class FrameQueue {
   // allows until it has stopped, so the loop switched on and off a dozen
   // times in the last second leaves the sound as it was.
   private clip(src: AudioBufferSourceNode) {
-    const own = this.sources.get(src);
+    const own = this.sources.get(src)?.stop;
     if (own === undefined || this.c0 === null) return;
     const end = this.goPlay?.end ?? Infinity;
     const at = Number.isFinite(end) ? this.c0 + (Math.round(end * this.sampleRate) - this.m0) / this.sampleRate : own;
