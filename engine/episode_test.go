@@ -165,6 +165,8 @@ func placeShort(t *testing.T, plan, dir, id string) string {
 
 // placeShortSaying is placeShort of a clip that shows the words of said,
 // which it is named by, the way Run names it, see Transcript.Named.
+//
+// On the real disk: a short is a file on the disk, see IsShort.
 func placeShortSaying(t *testing.T, plan, dir, id string, said *Transcript) string {
 	t.Helper()
 	loaded, clips, err := LoadClips(disk, plan)
