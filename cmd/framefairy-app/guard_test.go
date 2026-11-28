@@ -381,7 +381,6 @@ func TestAPlanIsOnlyEditedWithItsOwnEpisode(t *testing.T) {
 		_, errs["SetCropGlide"] = svc.SetCropGlide(ctx, mine, wrong, "01", 2, true)
 		_, errs["SetCaptionTime"] = svc.SetCaptionTime(ctx, mine, wrong, "01", 1, "start", 1.1, false)
 		_, errs["ShapeCaptionTime"] = svc.ShapeCaptionTime(mine, wrong, "01", 1, "start", 1.1, false)
-		_, errs["ResetCrop"] = svc.ResetCrop(ctx, mine, wrong, "01", 1)
 		_, errs["RotatePart"] = svc.RotatePart(ctx, mine, wrong, "01", 1)
 		_, errs["RemoveClip"] = svc.RemoveClip(ctx, mine, wrong, "01", true)
 		_, errs["Shape"] = svc.Shape(mine, wrong, "01", g, "")

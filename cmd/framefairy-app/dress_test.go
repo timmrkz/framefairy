@@ -91,14 +91,16 @@ func TestTheDressRouteAnswersTheDressOfAFrameOfAClip(t *testing.T) {
 	}
 }
 
-// After the automatic crop was brought back, each frame says whether Put
-// the crop back would move its crop, judged against the framing the
-// window names as the one to put back: not on the half of a clip before
-// its switch keyframe, where the reset changed nothing, and on the half
-// after it. A framing the app no longer keeps cannot say, so Put the crop
-// back is offered there, and an ask that names none offers it nowhere.
-// The user saw an arrow that did nothing on the first half of such a
-// clip.
+// Each frame says where the app places its crop and whether it stands
+// anywhere else, and once the crop was brought back there, whether Put
+// the crop back would move it, judged against the framing the window
+// names as the one to put back. On a clip whose switch keyframe moved the
+// crop, that is the keyframe and the half after it, never the half before
+// it, where nothing was moved. Bringing the crop back keeps the keyframe.
+// A framing the app no longer keeps cannot say, so Put the crop back is
+// offered there, and an ask that names none offers it nowhere. The user
+// saw the arrow on the first half of such a clip, and its click removed
+// the keyframe.
 func TestADressSaysWherePuttingTheCropBackMovesIt(t *testing.T) {
 	t.Parallel()
 	svc, mine := memoryLibrary(t, "ep.mp4")
@@ -115,15 +117,10 @@ func TestADressSaysWherePuttingTheCropBackMovesIt(t *testing.T) {
 	if err != nil || len(clips) != 1 || clips[0].Framing == "" {
 		t.Fatalf("the clips %+v: %v", clips, err)
 	}
-	was := clips[0].Framing
-	reset, err := svc.ResetCrop(context.Background(), video, plan, "01", 13.0)
-	if err != nil || reset.Framing == "" || reset.Framing == was {
-		t.Fatalf("the clip after the reset %+v: %v", reset, err)
-	}
 	handler := mediaMiddleware(svc)(http.NotFoundHandler())
-	back := func(at, named string) bool {
+	dress := func(framing, at, named string) sentDress {
 		t.Helper()
-		q := url.Values{"path": {video}, "framing": {reset.Framing}, "at": {at}, "w": {"874"}, "h": {"492"}}
+		q := url.Values{"path": {video}, "framing": {framing}, "at": {at}, "w": {"874"}, "h": {"492"}}
 		if named != "" {
 			q.Set("back", named)
 		}
@@ -136,7 +133,27 @@ func TestADressSaysWherePuttingTheCropBackMovesIt(t *testing.T) {
 		if err := json.Unmarshal([]byte(rec.Header().Get("X-Frame-Dress")), &d); err != nil {
 			t.Fatalf("the dress %q: %v", rec.Header().Get("X-Frame-Dress"), err)
 		}
-		return d.Back
+		return d
+	}
+	was := clips[0].Framing
+	for _, c := range []struct {
+		at    string
+		moved bool
+	}{{"11.0", false}, {"12.0", true}, {"13.0", true}} {
+		if d := dress(was, c.at, ""); d.Moved != c.moved || d.Auto != 40 {
+			t.Errorf("the frame at %s s has its crop at %v, the app's at %v, moved %v, want moved %v at 40", c.at, d.Left, d.Auto, d.Moved, c.moved)
+		}
+	}
+	reset, err := svc.SetCrop(context.Background(), video, plan, "01", 12.0, 40)
+	if err != nil || reset.Framing == "" || reset.Framing == was || len(reset.CropMarks) != 1 {
+		t.Fatalf("the clip after the crop was brought back %+v: %v", reset, err)
+	}
+	if d := dress(reset.Framing, "13.0", ""); d.Moved || d.Left != 40 {
+		t.Errorf("after the crop was brought back, the frame at 13.0 s has it at %v, moved %v", d.Left, d.Moved)
+	}
+	back := func(at, named string) bool {
+		t.Helper()
+		return dress(reset.Framing, at, named).Back
 	}
 	for _, c := range []struct {
 		at, named string

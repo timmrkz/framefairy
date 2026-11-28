@@ -73,6 +73,9 @@ export type FrameDress = {
   height: number;
   cropWidth: number;
   left: number;
+  // Where the app places the crop on this frame, and whether it stands
+  // anywhere else, which the arrow in the crop frame's corner puts right.
+  auto: number;
   moved: boolean;
   mark: CropMark | null;
   movable: boolean;
@@ -103,6 +106,7 @@ export function sameDress(a: FrameDress | null | undefined, b: FrameDress | null
     a.height === b.height &&
     a.cropWidth === b.cropWidth &&
     a.left === b.left &&
+    a.auto === b.auto &&
     a.moved === b.moved &&
     !!a.back === !!b.back &&
     a.movable === b.movable &&

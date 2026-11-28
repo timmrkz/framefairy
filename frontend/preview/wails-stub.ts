@@ -991,7 +991,6 @@ const edits = new Set([
   "SetCropMark",
   "SetCropGlide",
   "SetCaptionTime",
-  "ResetCrop",
   "RemoveClip",
   "Reshape",
   "SetWord",

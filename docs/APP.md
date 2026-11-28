@@ -1355,17 +1355,21 @@ bubble scrolled by those eight pixels.
   off. The frame is there while the playhead is in the clip, and only
   then. The new place applies to the whole clip, every piece of it, since a
   clip has one crop. A part turned with Rotate is the one exception and
-  keeps a crop of its own. Once a crop was moved, the frame's top right
-  corner shows **Automatic crop**, an anticlockwise arrow, while the
-  pointer is on the frame. It brings back the automatic placement,
-  removing the keyframes with it, and then turns clockwise into **Put the
-  crop back**, which takes that click back again, crop marks and all, the
-  way the captions are put back. Each arrow shows only on a frame whose
-  crop it would move, which the engine says in the frame's dress: before
-  a clip's first keyframe the crop is the automatic one, and the arrow
-  would do nothing there. At the picture's right edge the arrow stands
-  clear of the video preview's info mark. A click on the frame
-  without dragging plays or pauses.
+  keeps a crop of its own. Where the crop on the frame shown stands
+  anywhere but where the app places it, and a drag could move it there,
+  the frame's top right corner shows **Automatic crop**, an anticlockwise
+  arrow, while the pointer is on the frame. Its click moves the crop
+  frame to the app's place, exactly as a drag there would, so on a
+  keyframe it moves that keyframe's crop, and it never puts or removes a
+  keyframe. Then it turns clockwise into **Put the crop back**, which
+  moves the crop frame back to where it stood, and nothing more, the way
+  the captions are put back. Each arrow shows only on a frame whose crop
+  it would move, which the engine says in the frame's dress, `Auto` and
+  `Moved`: before a clip's switch keyframe the crop can stand where the
+  app placed it, and the arrow would do nothing there. Each arrow says
+  its name in a tooltip, and the frame itself has none. At the picture's
+  right edge the arrow stands clear of the video preview's info mark. A
+  click on the frame without dragging plays or pauses.
 - **Clip list:** beside the player, exactly as tall as the video preview with
   the range picker under it, every clip found, in time order, with its start
   and length. A green dot marks a rendered clip. Click one to select it,
@@ -2915,9 +2919,9 @@ who moves across the picture. Plan row 3.26, the design is in
   ring of the same size and colour, which fills in once a second circle
   is put, and its title says it needs a second glide keyframe to glide.
   The user picked the ring from a sheet of eight, over a dimmed circle.
-- **Automatic crop**, the arrow in the crop frame's corner, removes every
-  keyframe of the clip and brings back the crop the engine found, and
-  **Put the crop back** brings back the keyframes with the crop.
+- **Automatic crop**, the arrow in the crop frame's corner, moves the
+  crop on the frame shown to where the engine places it, on a keyframe
+  that keyframe's crop, and keeps every keyframe, see Moving the crop.
   Removing a keyframe gives its part the crop of the part before it,
   the keyframe before or the clip's own. Rotating a part keeps its
   keyframes. Each

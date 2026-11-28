@@ -2624,15 +2624,6 @@
     }
   }
 
-  async function resetCrop(clip: ClipEntry, at: number) {
-    try {
-      const updated = await api.resetCrop(path, clip.plan, clip.id, at);
-      putClip(updated);
-    } catch (err) {
-      oops(errorText(err));
-    }
-  }
-
   // A number of the search typed: how many clips, the shortest or the
   // longest. The numbers live in the workspace, next to the episode they
   // are about, and are kept the moment they change, like everything else
@@ -3391,7 +3382,6 @@
           drafts={captionDrafts}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           oncrop={(key, at, left) => onTheClip(key, (c) => setCrop(c, at, left))}
-          onresetcrop={(key, at) => onTheClip(key, (c) => resetCrop(c, at))}
           oncropmark={(key, from, to, x, glide) => onTheClip(key, (c) => setCropMark(c, from, to, x, glide))}
           oncaptiony={(y) => setCaptionsHeight(y)}
           onword={(key, start, text) => onTheClip(key, (c) => setWord(c, start, text))}

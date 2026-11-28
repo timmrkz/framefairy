@@ -618,6 +618,10 @@ type SegmentView struct {
 	Marks []CropMarkView `json:"marks"`
 	// Part is the part of the clip the piece is in, see PieceView.Part.
 	Part int `json:"part"`
+	// Auto is where the app placed the crop, see Segment.Auto. The window
+	// is not sent it: each frame's dress says where the app places its
+	// crop, see FrameDress.Auto.
+	Auto *int `json:"-"`
 }
 
 // WordView is one word. In a caption it also says which word of the
@@ -737,7 +741,7 @@ func SegmentViews(segments []Segment) []SegmentView {
 	out := make([]SegmentView, 0, len(segments))
 	for i, s := range segments {
 		out = append(out, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate,
-			CropMarkViews(s.Marks), parts[i].Part})
+			CropMarkViews(s.Marks), parts[i].Part, s.Auto})
 	}
 	return out
 }

@@ -113,6 +113,10 @@ func TestLoadClipsRefusesPlansThatCannotRender(t *testing.T) {
 			`"crop_x": "links"}]}]}`},
 		{"a crop far outside any frame", `{"clips": [{"segments": [{"start": 0, "end": 1, ` +
 			`"crop_x": 9000000}]}]}`},
+		{"an automatic crop that is not a number", `{"clips": [{"segments": [{"start": 0, "end": 1, ` +
+			`"crop_x": 10, "crop_x_auto": "links"}]}]}`},
+		{"an automatic crop far outside any frame", `{"clips": [{"segments": [{"start": 0, "end": 1, ` +
+			`"crop_x": 10, "crop_x_auto": -9000000}]}]}`},
 		{"two clips with one name", `{"clips": [{"id": "01", "slug": "a b", "segments": ` +
 			`[{"start": 0, "end": 1}]}, {"id": "01", "slug": "a/b", "segments": [{"start": 2, ` +
 			`"end": 3}]}]}`},
@@ -160,6 +164,10 @@ func TestLoadClipsCleansWhatItKeeps(t *testing.T) {
 	for _, seg := range first.Segments {
 		if !seg.Moved || seg.CropX == nil || *seg.CropX != 300 {
 			t.Errorf("a piece does not play with the crop placed by hand: %+v", seg)
+		}
+		// And keeps where the app placed it, the crop frame's default.
+		if seg.Auto == nil || *seg.Auto != 100 {
+			t.Errorf("a piece does not know where the app placed its crop: %+v", seg)
 		}
 	}
 	if first.Duration() != 4 {

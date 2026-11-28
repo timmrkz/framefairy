@@ -174,6 +174,7 @@ const dress = {
   height: 270,
   cropWidth: 152,
   left: 100,
+  auto: 100,
   moved: false,
   mark: null,
   movable: true,
@@ -222,6 +223,12 @@ describe("the dress that comes with a frame", () => {
     expect(sameDress(d, { ...d })).toBe(true);
     expect(sameDress(d, { ...d, back: true })).toBe(false);
     expect(sameDress({ ...d, back: false }, d)).toBe(true);
+  });
+
+  it("is another dress where only the app's place for the crop differs", () => {
+    const d = dressedOf(JSON.stringify(dress), null, () => null)!.dress!;
+    expect(sameDress(d, { ...d, auto: 40, moved: true })).toBe(false);
+    expect(sameDress(d, { ...d, auto: 40 })).toBe(false);
   });
 
   it("shows nothing it cannot read", () => {

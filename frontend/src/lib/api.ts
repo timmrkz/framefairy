@@ -1245,8 +1245,6 @@ export const api = {
     call<ClipEntry>("RemoveClip", path, plan, clip, removed),
   setCrop: (path: string, plan: string, clip: string, at: number, left: number) =>
     call<ClipEntry>("SetCrop", path, plan, clip, at, left),
-  resetCrop: (path: string, plan: string, clip: string, at: number) =>
-    call<ClipEntry>("ResetCrop", path, plan, clip, at),
   rotatePart: (path: string, plan: string, clip: string, at: number) =>
     call<RotatedClip>("RotatePart", path, plan, clip, at),
   setCaptionStyle: (path: string, plan: string, font: string, size: number) =>

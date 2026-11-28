@@ -923,25 +923,20 @@ func TestCropByHand(t *testing.T) {
 	if err := SetCrop(fsys, path, "01", 11, 600, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
-	// A centred clip can be moved and reset too.
+	// A centred clip can be moved too.
 	if err := SetCrop(fsys, path, "02", 21, 100, SourceInfo{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops("01") + "| " + crops("02"); got != "600* 600* 600* | 100* " {
 		t.Errorf("after moving again %q", got)
 	}
-	if err := ResetCrop(fsys, path, "01", 3); err != nil {
-		t.Fatal(err)
+	// The automatic placement is kept, the default the crop frame is
+	// brought back to, see FrameDress.Auto.
+	if got := *clipByID(t, fsys, path, "01").Segments[0].Auto; got != 400 {
+		t.Errorf("the automatic crop kept is %d, want 400", got)
 	}
-	if err := ResetCrop(fsys, path, "02", 21); err != nil {
-		t.Fatal(err)
-	}
-	if got := crops("01") + "| " + crops("02"); got != "400 400 400 | centre " {
-		t.Errorf("after resetting %q", got)
-	}
-	body, _ := afero.ReadFile(fsys, path)
-	if strings.Contains(string(body), "crop_x_auto") {
-		t.Errorf("reset left the automatic value behind\n%s", body)
+	if got := clipByID(t, fsys, path, "02").Segments[0].Auto; got != nil {
+		t.Errorf("the automatic crop of a centred clip kept is %d, want centred", *got)
 	}
 	if err := SetCrop(fsys, path, "01", 2, -4, SourceInfo{}); err == nil {
 		t.Errorf("a negative crop was accepted")

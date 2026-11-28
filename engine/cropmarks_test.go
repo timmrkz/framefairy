@@ -471,7 +471,7 @@ func TestOneKeyframeIsACameraSwitch(t *testing.T) {
 // before it, and a drag there moves nothing. Anywhere else in a piece the
 // keyframes steer, the crop frame shows the crop as the short has it and
 // a drag moves nothing. A piece no keyframe steers has one crop, the
-// clip's, placed anywhere in it. Automatic crop removes the keyframes.
+// clip's, placed anywhere in it.
 func TestTheCropIsPlacedOnlyOnAKeyframe(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	if err := SetCrop(fsys, path, "01", 11.5, 80, at25); err != nil {
@@ -504,12 +504,6 @@ func TestTheCropIsPlacedOnlyOnAKeyframe(t *testing.T) {
 		t.Errorf("the crop of the clip is %v, not 80", seg.CropX)
 	}
 
-	if err := ResetCrop(fsys, path, "01", 10.5); err != nil {
-		t.Fatal(err)
-	}
-	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 0 {
-		t.Errorf("automatic crop left the keyframes %v", got)
-	}
 }
 
 // S puts a diamond and G a circle, a drag along the clip timeline keeps a
@@ -566,22 +560,6 @@ func TestACropMarkIsFoundOnItsOwnFrameWhereverInItItIs(t *testing.T) {
 	got := loadedClip(t, fsys, path).CropMarks
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("the marks are %v, not %v", got, want)
-	}
-}
-
-// A trim that hides a keyframe keeps it in the clip's plan. Automatic
-// crop removes it with the rest, so taking the trim back brings
-// back no mark the person had already let go of.
-func TestAutomaticCropRemovesTheMarksATrimHides(t *testing.T) {
-	fsys, path := rotatablePlanPath(t)
-	cropMarks(t, fsys, path, CropMark{At: 10.2, X: 100}, CropMark{At: 10.8, X: 200})
-	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 10.5})
-	if err := ResetCrop(fsys, path, "01", 10.6); err != nil {
-		t.Fatal(err)
-	}
-	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 10.0})
-	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 0 {
-		t.Errorf("after Automatic crop and the trim taken back the clip has the marks %v", got)
 	}
 }
 

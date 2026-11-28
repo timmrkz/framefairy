@@ -31,32 +31,39 @@ func TestADressedFrameHasTheCropTheRenderCropsBy(t *testing.T) {
 	}
 }
 
-// The automatic crop is offered only on a frame it would change. A piece
-// whose own crop the app placed and a switch keyframe halfway stands where
-// the automatic crop puts it until the keyframe, and only from there on is
-// it moved. The user saw the arrow do nothing on the first half of such a
-// clip. A crop placed by hand is moved on every frame of the piece.
-func TestOnlyAFrameTheAutomaticCropWouldChangeIsMoved(t *testing.T) {
+// The crop frame is moved only on a frame whose crop stands elsewhere
+// than where the app places it. A piece with a switch keyframe halfway
+// stands where the app put it until the keyframe, even once a person
+// placed it there by hand, and only from the keyframe on is it moved. The
+// user saw the arrow that brings the crop back offered where it changed
+// nothing, on the first half of such a clip.
+func TestOnlyAFrameWhoseCropIsNotWhereTheAppPutItIsMoved(t *testing.T) {
 	t.Parallel()
 	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
-	auto := SegmentView{Start: 0, End: 2, CropX: intPtr(50), Marks: []CropMarkView{{At: 1, X: 300}}}
+	auto := SegmentView{Start: 0, End: 2, CropX: intPtr(50), Auto: intPtr(50), Marks: []CropMarkView{{At: 1, X: 300}}}
+	again := auto
+	again.Moved = true
 	byHand := auto
-	byHand.Moved = true
+	byHand.Moved, byHand.CropX = true, intPtr(120)
+	onAuto := auto
+	onAuto.Marks = []CropMarkView{{At: 1, X: 50}}
 	for _, c := range []struct {
+		name  string
 		view  SegmentView
 		at    float64
 		moved bool
 	}{
-		{auto, 0.2, false},
-		{auto, 0.96, false},
-		{auto, 1, true},
-		{auto, 1.6, true},
-		{byHand, 0.2, true},
-		{byHand, 1.6, true},
+		{"before the keyframe", auto, 0.2, false},
+		{"on the frame before the keyframe", auto, 0.96, false},
+		{"on the keyframe", auto, 1, true},
+		{"after the keyframe", auto, 1.6, true},
+		{"placed by hand where the app put it", again, 0.2, false},
+		{"placed by hand elsewhere", byHand, 0.2, true},
+		{"after a keyframe where the app put it", onAuto, 1.6, false},
 	} {
 		d := source.Dress([]SegmentView{c.view}, nil, c.view.Marks, c.at, 1080, 1920)
-		if d.Moved != c.moved {
-			t.Errorf("the frame at %.2f s of a piece placed by hand %v, its crop at %v, is moved %v, want %v", c.at, c.view.Moved, d.Left, d.Moved, c.moved)
+		if d.Moved != c.moved || d.Auto != 50 {
+			t.Errorf("%s, at %.2f s, the crop at %v and the app's at %v is moved %v, want %v at 50", c.name, c.at, d.Left, d.Auto, d.Moved, c.moved)
 		}
 	}
 }

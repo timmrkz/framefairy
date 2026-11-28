@@ -46,7 +46,6 @@
     nearestHeight,
     type CaptionsView,
     type ClipEntry,
-    type CropMark,
     type SourceView,
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
@@ -68,7 +67,6 @@
     onplayclip,
     oncaptionmoved,
     oncrop,
-    onresetcrop,
     oncropmark,
     oncaptiony,
     onword,
@@ -133,7 +131,6 @@
     // clip chosen when it went out put a crop or a word on the next clip
     // when another was chosen in between, see #880.
     oncrop?: (key: string, at: number, left: number) => Promise<void>;
-    onresetcrop?: (key: string, at: number) => Promise<void>;
     // Puts a keyframe back at a moment with its crop, the way the clip
     // timeline puts one, for the marks a reset took away.
     oncropmark?: (key: string, from: number, to: number, x: number, glide?: boolean) => Promise<void>;
@@ -208,18 +205,18 @@
   let dragCaptions = $state<number | null>(null);
   let savingCaptions = $state(false);
 
-  // Going back to the automatic crop is one click, so taking that back has
-  // to be one click too. What a reset threw away, the crop and the crop
-  // marks of the clip, is kept until the clip changes or it is placed by
-  // hand again. A part rotated on its own has a crop of its own, so the
-  // undo is for the pieces turned the way the reset one was, see #396.
+  // Bringing the crop back to where the app places it is one click, so
+  // taking that back has to be one click too. Both are a drag of the crop
+  // frame and nothing more: the crop where it stood, on the frame it was
+  // moved on, is kept until the clip changes or the crop is placed by hand
+  // again. A part rotated on its own has a crop of its own, so the undo is
+  // for the pieces turned the way the moved one was, see #396.
   let undoCrop = $state<{
     key: string;
     turn: number;
     at: number;
-    left: number | null;
-    marks: CropMark[];
-    // The clip's framing before the reset, which the frames are dressed
+    left: number;
+    // The clip's framing before the click, which the frames are dressed
     // against, so the arrow that puts it back shows only where it would
     // move the crop.
     framing: string;
@@ -691,14 +688,12 @@
     return () => clearTimeout(settled);
   });
 
-  // The keyframe on the frame on the canvas, whose diamond or circle is
-  // lit then, and whether a drag places the crop there: on a keyframe, so
-  // what is moved is seen, or in a piece no keyframe steers. Anywhere
-  // else the crop frame shows the crop as the short has it, held or
-  // gliding, and takes only a click, Tim on #750. The engine says both,
+  // Whether a drag places the crop on the frame on the canvas: on a
+  // keyframe, so what is moved is seen, or in a piece no keyframe steers.
+  // Anywhere else the crop frame shows the crop as the short has it, held
+  // or gliding, and takes only a click, Tim on #750. The engine says so,
   // see engine.FrameDress, and refuses a drag where it would not take one,
   // see engine.SetCrop.
-  const markHere = $derived(clip ? (dressed?.mark ?? null) : null);
   const cropMovable = $derived(!!clip && !!dressed?.movable);
 
   // The crop's left edge as the video preview shows it now, which a crop
@@ -727,17 +722,18 @@
     };
   });
 
-  // What the corner of the crop frame offers: the automatic crop, once the
-  // crop was placed by hand, and the crop as it was, once that click was
-  // made, the way the captions are put back and then put as they were:
-  // back, the arrow turning anticlockwise, and forward again, clockwise.
-  // Each only on a frame whose crop it would move, which the Go side says
-  // in the frame's dress: an arrow that changes nothing on screen reads
-  // as a button that does not work.
+  // What the corner of the crop frame offers: the crop where the app
+  // places it, on a frame whose crop stands anywhere else and can be
+  // placed there, and the crop as it was, once that click was made, the
+  // way the captions are put back and then put as they were: back, the
+  // arrow turning anticlockwise, and forward again, clockwise. Each only
+  // on a frame whose crop it would move, which the Go side says in the
+  // frame's dress: an arrow that changes nothing on screen reads as a
+  // button that does not work.
   const cropUndo = $derived(
     !clip
       ? ""
-      : crop?.moved
+      : crop?.moved && cropMovable
         ? "back"
         : undoCrop?.key === clip.key && undoCrop.turn === turn && dressed?.back
           ? "forward"
@@ -1657,35 +1653,30 @@
     target.addEventListener("pointercancel", up);
   }
 
+  // The crop frame moved to where the app places the crop on this frame,
+  // as a drag there would: a keyframe under the playhead takes it, and so
+  // does a piece no keyframe steers. No keyframe is put or removed.
   async function resetCrop() {
-    if (!clip || !onresetcrop) return;
-    const at = cropMoment();
-    const was = dressed?.piece ?? 0;
-    const turned = turn;
-    // A crop the app placed is put back by the keyframes alone: placed
-    // again by hand, at the same place, it would count as moved, and the
-    // automatic crop would then be offered where it changes nothing.
-    const had = clip.segments[was]?.moved ? (clip.cropLefts[was] ?? null) : null;
-    const marked = clip.cropMarks ?? [];
-    const framing = clip.framing ?? "";
+    if (!clip || !oncrop || !dressed) return;
+    const d = dressed;
+    const was = { key: clip.key, turn, at: cropMoment(), left: d.left, framing: clip.framing ?? "" };
     savingCrop = true;
     try {
-      await onresetcrop(clip.key, at);
-      const still = clip?.cropMarks ?? [];
-      const marks = marked.filter((m) => !still.some((k) => k.at === m.at));
-      if (had !== null || marks.length) undoCrop = { key: clip!.key, turn: turned, at, left: had, marks, framing };
+      await oncrop(was.key, was.at, d.auto);
+      undoCrop = was;
     } finally {
       savingCrop = false;
     }
   }
 
+  // The crop frame moved back to where it stood before, on the frame it
+  // was moved on, and nothing more.
   async function cropBack() {
     const back = undoCrop;
     if (!back || !oncrop) return;
     savingCrop = true;
     try {
-      if (back.left !== null) await oncrop(back.key, back.at, back.left);
-      for (const m of back.marks) await oncropmark?.(back.key, -1, m.at, m.x, !!m.glide);
+      await oncrop(back.key, back.at, back.left);
       undoCrop = null;
     } finally {
       savingCrop = false;
@@ -1852,13 +1843,6 @@
         class:held={dragLeft !== null}
         class:fixed={!cropMovable}
         style="left: {crop.left}%; width: {crop.width}%"
-        title={cropMovable
-          ? "Drag sideways to place the crop"
-          : markHere?.opens
-            ? markHere.fromClip
-              ? "The glide starts here from the clip's own crop"
-              : "The glide starts here from the crop of the keyframe before it. Move that crop there"
-            : "The crop as the short has it here. Put the playhead on a keyframe to place its crop, or press S or G to put one here"}
         data-movable={cropMovable}
         onpointerdown={dragCrop}
       >
@@ -1874,7 +1858,7 @@
             style="--rest: {100 - crop.left - crop.width}"
             disabled={savingCrop}
             aria-label={cropUndo === "back" ? "Automatic crop" : "Put the crop back"}
-            title={cropUndo === "back" ? "Let the app place the crop again" : "Put the crop back where you had it"}
+            title={cropUndo === "back" ? "Automatic crop" : "Put the crop back"}
             onpointerdown={(e) => e.stopPropagation()}
             onclick={cropUndo === "back" ? resetCrop : cropBack}
           >
