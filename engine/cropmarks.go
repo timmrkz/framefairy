@@ -1019,19 +1019,6 @@ func pieceHolding(pieces []*object, at float64) int {
 	return -1
 }
 
-// marksTurned is which of a clip's keyframes belong to one turn of the
-// picture, by their index, so a crop placed or put back for that turn
-// takes them along too.
-func marksTurned(marks []CropMark, turn int) map[int]bool {
-	out := map[int]bool{}
-	for i, m := range marks {
-		if m.Turn == turn {
-			out[i] = true
-		}
-	}
-	return out
-}
-
 // SetCropMark adds, moves or removes a keyframe of a clip, the way
 // SetThumbnail does a thumbnail: from is the mark as it is and to where it
 // goes, both in seconds of the video. A from below nought adds one at to
