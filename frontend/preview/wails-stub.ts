@@ -1020,6 +1020,8 @@ const edits = new Set([
   "RotatePart",
   "SetThumbnail",
   "SetCropMark",
+  "ResetCrop",
+  "PutCropBack",
   "SetCropGlide",
   "SetCaptionTime",
   "RemoveClip",

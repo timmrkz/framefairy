@@ -35,8 +35,10 @@ type FrameDress struct {
 	// the crop frame to Auto would change what the frame shows. A crop
 	// placed by hand where the app placed it, or a keyframe on that
 	// place, is not moved.
-	Auto  float64 `json:"auto"`
-	Moved bool    `json:"moved"`
+	// The window is sent neither: the app's Go side says what the crop
+	// frame's corner offers.
+	Auto  float64 `json:"-"`
+	Moved bool    `json:"-"`
 	// Mark is the keyframe on the frame, or nil, and Movable whether a
 	// drag may place the crop here: on a keyframe that does not open a
 	// glide, or anywhere in a piece no keyframe steers, see SetCrop.

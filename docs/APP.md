@@ -1373,9 +1373,13 @@ bubble scrolled by those eight pixels.
   keyframe. Then it turns clockwise into **Put the crop back**, which
   moves the crop frame back to where it stood, and nothing more, the way
   the captions are put back. Each arrow shows only on a frame whose crop
-  it would move, which the engine says in the frame's dress, `Auto` and
-  `Moved`: before a clip's switch keyframe the crop can stand where the
-  app placed it, and the arrow would do nothing there. Each arrow says
+  it would move: before a clip's switch keyframe the crop can stand where
+  the app placed it, and the arrow would do nothing there. The Go side
+  decides all of it and says it in the frame's dress, `corner`, and a
+  click is `ResetCrop` or `PutCropBack`, which keep the way back beside
+  the video's undo steps while the clip is as the click left it, see
+  [the decision record](decisions/2026-11-28-go-decides-the-crop-arrow.md).
+  The window only draws the arrow it is sent. Each arrow says
   its name in a tooltip, and the frame itself has none. At the picture's
   right edge the arrow stands clear of the video preview's info mark. A
   click on the frame without dragging plays or pauses.

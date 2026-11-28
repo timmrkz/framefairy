@@ -73,10 +73,6 @@ export type FrameDress = {
   height: number;
   cropWidth: number;
   left: number;
-  // Where the app places the crop on this frame, and whether it stands
-  // anywhere else, which the arrow in the crop frame's corner puts right.
-  auto: number;
-  moved: boolean;
   mark: CropMark | null;
   movable: boolean;
   key?: string;
@@ -87,9 +83,9 @@ export type FrameDress = {
   scale?: number;
   bounce?: [number, number, number];
   turned?: FrameDress & { framing: string };
-  // Whether Put the crop back would move the crop on this frame, for an
-  // ask that names the framing to put back.
-  back?: boolean;
+  // What the crop frame's corner offers on this frame, which the Go side
+  // decides: the crop brought to where the app places it, or put back.
+  corner?: "auto" | "back";
 };
 
 // Whether two dresses draw the same crop, turn and keyframe, and offer the
@@ -106,9 +102,7 @@ export function sameDress(a: FrameDress | null | undefined, b: FrameDress | null
     a.height === b.height &&
     a.cropWidth === b.cropWidth &&
     a.left === b.left &&
-    a.auto === b.auto &&
-    a.moved === b.moved &&
-    !!a.back === !!b.back &&
+    a.corner === b.corner &&
     a.movable === b.movable &&
     JSON.stringify(a.mark) === JSON.stringify(b.mark)
   );
@@ -447,10 +441,6 @@ export type CaptionAsk = {
   drafts: Record<string, string>;
   typing?: string;
   size?: [number, number];
-  // The framing the clip had before the automatic crop was brought back,
-  // so each frame's dress says whether Put the crop back would move its
-  // crop, see FrameDress.back.
-  back?: string;
 };
 
 // What an ask asks the Go side for, a frame and a size aside, with the key
@@ -461,7 +451,6 @@ export function asked(ask: CaptionAsk): Record<string, string> {
     ...(ask.on ? { on: ask.on } : {}),
     ...(ask.track ? { track: ask.track, ...(ask.typing ? { typing: ask.typing } : {}), ...ask.drafts } : {}),
     ...(ask.size ? { lw: String(ask.size[0]), lh: String(ask.size[1]) } : {}),
-    ...(ask.back ? { back: ask.back } : {}),
     dressKey: keyOf(ask),
   };
 }
@@ -475,7 +464,6 @@ export function keyOf(ask: CaptionAsk | null): string {
     ...(ask.on ? { on: ask.on } : {}),
     ...(ask.track ? { track: ask.track, ...(ask.typing ? { typing: ask.typing } : {}), ...ask.drafts } : {}),
     ...(ask.size ? { lw: String(ask.size[0]), lh: String(ask.size[1]) } : {}),
-    ...(ask.back ? { back: ask.back } : {}),
   }).toString();
 }
 

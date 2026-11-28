@@ -105,12 +105,6 @@ type dressAsk struct {
 	// of its captions, which each frame's dress says back, so the window
 	// knows what a frame it keeps was dressed for, see sentDress.
 	key, track string
-	// back is the framing the clip had before the automatic crop was
-	// brought back, which Put the crop back gives it again, see
-	// sentDress.Back. Nil where the window named none, or one the app no
-	// longer keeps, which backAsked tells apart.
-	back      *framed
-	backAsked bool
 }
 
 // dressWords are the words of a request that say how its frames are
@@ -144,12 +138,6 @@ func (s *FrameFairy) readDress(path string, q url.Values, width, height int) (*d
 			return nil, errDressUnknown
 		}
 		a.drawing = kept.drawing
-	}
-	if was := q.Get("back"); was != "" {
-		a.backAsked = true
-		if g, ok := s.previews.framings.get(was); ok && g.episode == path {
-			a.back = &g
-		}
 	}
 	if a.part != "" && a.part != engine.LiftWord && a.part != engine.LiftRest {
 		return nil, fmt.Errorf("part is %q", a.part)
@@ -198,7 +186,6 @@ func (s *FrameFairy) readDress(path string, q url.Values, width, height int) (*d
 func (a *dressAsk) with(clip framed, drawing *engine.CaptionDrawing, track string, video bool) *dressAsk {
 	b := *a
 	b.clip, b.drawing, b.video = clip, drawing, video
-	b.back, b.backAsked = nil, false
 	b.named = url.Values{}
 	for k, v := range a.named {
 		b.named[k] = v
@@ -236,25 +223,10 @@ type sentDress struct {
 	// Turned is the frame's dress once R turns the part that holds it,
 	// see turnedDress.
 	Turned *turnedDress `json:"turned,omitempty"`
-	// Back is whether the crop on the frame would move were the framing
-	// the ask names as back given again, see putBack.
-	Back bool `json:"back,omitempty"`
-}
-
-// putBack says whether the frame dressed d would be dressed with its crop
-// elsewhere under the framing the clip had before the automatic crop was
-// brought back, so Put the crop back is offered only where it changes the
-// frame. A framing the app no longer keeps cannot say, so it is offered.
-func putBack(a *dressAsk, d engine.FrameDress, at float64) bool {
-	if !a.backAsked || a.video || !d.In {
-		return false
-	}
-	if a.back == nil {
-		return true
-	}
-	b := a.back
-	was := b.source.DressAlone(b.segments, b.rotations, b.marks, at, b.width, b.height)
-	return was.Left != d.Left || was.CropWidth != d.CropWidth || was.Turn != d.Turn
+	// Corner is what the crop frame's corner offers on the frame, the
+	// crop brought to where the app places it or put back, or nothing,
+	// see corner in cropback.go.
+	Corner string `json:"corner,omitempty"`
 }
 
 // turnedDress is a frame's dress with its part turned a quarter further,
@@ -338,7 +310,7 @@ type dressed struct {
 // so a panic in it fails the request or the stream, not the app.
 func (s *FrameFairy) dressFrame(ctx context.Context, a *dressAsk, at float64, have string) (dressed, error) {
 	d := a.clip.dress(at, a.video)
-	out := dressed{sent: sentDress{FrameDress: d, Key: a.key, Track: a.track, Showing: [3]int{-1, -1, -1}, Turned: s.turned(a, d, at), Back: putBack(a, d, at)}}
+	out := dressed{sent: sentDress{FrameDress: d, Key: a.key, Track: a.track, Showing: [3]int{-1, -1, -1}, Turned: s.turned(a, d, at), Corner: s.corner(a, d, at)}}
 	if a.drawing == nil || !d.Clip {
 		return out, nil
 	}

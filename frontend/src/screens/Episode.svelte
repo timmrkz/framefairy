@@ -1897,6 +1897,16 @@
     return clip ? save(clip) : Promise.resolve();
   }
 
+  // A click on the arrow in the crop frame's corner, which the Go side
+  // carries out and answers with the clip as it is now.
+  async function cropCorner(call: () => Promise<ClipEntry>) {
+    try {
+      putClip(await call());
+    } catch (err) {
+      oops(errorText(err));
+    }
+  }
+
   async function setCrop(clip: ClipEntry, at: number, left: number) {
     try {
       const updated = await api.setCrop(path, clip.plan, clip.id, at, left);
@@ -3401,7 +3411,8 @@
           drafts={captionDrafts}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           oncrop={(key, at, left) => onTheClip(key, (c) => setCrop(c, at, left))}
-          oncropmark={(key, from, to, x, glide) => onTheClip(key, (c) => setCropMark(c, from, to, x, glide))}
+          onresetcrop={(key, at) => onTheClip(key, (c) => cropCorner(() => api.resetCrop(path, c.plan, c.id, at)))}
+          onputcropback={(key) => onTheClip(key, (c) => cropCorner(() => api.putCropBack(path, c.plan, c.id)))}
           oncaptiony={(y) => setCaptionsHeight(y)}
           onword={(key, start, text) => onTheClip(key, (c) => setWord(c, start, text))}
           onremoveword={(key, start, part) => onTheClip(key, (c) => removeWord(c, start, part))}

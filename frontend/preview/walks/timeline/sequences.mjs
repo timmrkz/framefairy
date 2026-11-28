@@ -368,12 +368,12 @@ export default [
     // walk shows once that the video preview follows them, still,
     // playing and past a cut. A glide is no more steps to the window.
     // A keyframe before a cut once stopped holding its crop after it,
-    // found by Tim, plan row 2.238. The arrows in the crop frame's
-    // corner show only where their click moves the crop: on the keyframe,
-    // not before it, where the crop is the automatic one, and not after
-    // it, where a drag moves nothing. Automatic crop moves the crop
-    // there as a drag would and keeps the keyframe. The user saw the
-    // arrow before the keyframe, and its click removed the keyframe.
+    // found by Tim, plan row 2.238. Go decides which arrow the crop
+    // frame's corner shows on each frame, see cropback_test.go, so the
+    // walk only shows that the window draws none where Go names none,
+    // draws the one it names, and that its click moves the crop and keeps
+    // the keyframe. The user saw the arrow before the keyframe, and its
+    // click removed the keyframe.
     name: "one switch keyframe put with S switches the crop there, holds it past a cut, and the crop is placed only with the playhead on it",
     steps: [
       ["added", 30, "25"],
@@ -390,19 +390,13 @@ export default [
       ["crop kept", 0.75],
       ["keyframes", 1],
       ["crop arrow", [0.25, "none"]],
-      ["crop arrow", [0.75, "none"]],
       ["crop arrow", [0.5, "Automatic crop"]],
       ["crop corner", "Automatic crop"],
       ["keyframes", 1],
       ["crop kept", 0.5],
-      ["crop arrow", [0.25, "none"]],
-      ["crop arrow", [0.75, "Put the crop back"]],
-      ["crop arrow", [0.5, "Put the crop back"]],
       ["crop corner", "Put the crop back"],
       ["keyframes", 1],
       ["crop kept", 0.75],
-      ["crop arrow", [0.25, "none"]],
-      ["crop arrow", [0.5, "Automatic crop"]],
       ["crop holds"],
       ["crop holds while playing"],
       ["cut at", 0.75],

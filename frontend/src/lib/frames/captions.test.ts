@@ -174,8 +174,6 @@ const dress = {
   height: 270,
   cropWidth: 152,
   left: 100,
-  auto: 100,
-  moved: false,
   mark: null,
   movable: true,
   key: "k",
@@ -218,17 +216,11 @@ describe("the dress that comes with a frame", () => {
   // differs from the one before only in whether Put the crop back would
   // move its crop. Taken for the same dress, the frame kept the one
   // without it, and the arrow never came.
-  it("is another dress where only Put the crop back differs", () => {
+  it("is another dress where only the crop frame's corner differs", () => {
     const d = dressedOf(JSON.stringify(dress), null, () => null)!.dress!;
     expect(sameDress(d, { ...d })).toBe(true);
-    expect(sameDress(d, { ...d, back: true })).toBe(false);
-    expect(sameDress({ ...d, back: false }, d)).toBe(true);
-  });
-
-  it("is another dress where only the app's place for the crop differs", () => {
-    const d = dressedOf(JSON.stringify(dress), null, () => null)!.dress!;
-    expect(sameDress(d, { ...d, auto: 40, moved: true })).toBe(false);
-    expect(sameDress(d, { ...d, auto: 40 })).toBe(false);
+    expect(sameDress(d, { ...d, corner: "auto" })).toBe(false);
+    expect(sameDress({ ...d, corner: "auto" }, { ...d, corner: "back" })).toBe(false);
   });
 
   it("shows nothing it cannot read", () => {

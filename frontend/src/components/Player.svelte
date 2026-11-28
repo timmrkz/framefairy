@@ -69,7 +69,8 @@
     onplayclip,
     oncaptionmoved,
     oncrop,
-    oncropmark,
+    onresetcrop,
+    onputcropback,
     oncaptiony,
     onword,
     onremoveword,
@@ -133,9 +134,10 @@
     // clip chosen when it went out put a crop or a word on the next clip
     // when another was chosen in between, see #880.
     oncrop?: (key: string, at: number, left: number) => Promise<void>;
-    // Puts a keyframe back at a moment with its crop, the way the clip
-    // timeline puts one, for the marks a reset took away.
-    oncropmark?: (key: string, from: number, to: number, x: number, glide?: boolean) => Promise<void>;
+    // The two arrows in the crop frame's corner, which the Go side offers
+    // in each frame's dress and carries out, see ResetCrop and PutCropBack.
+    onresetcrop?: (key: string, at: number) => Promise<void>;
+    onputcropback?: (key: string) => Promise<void>;
     // Puts the captions at a distance from the bottom of a 1080x1920
     // frame. There is one place for every clip of every episode, so this
     // saves a setting rather than editing the clip.
@@ -207,23 +209,6 @@
   let savingCrop = $state(false);
   let dragCaptions = $state<number | null>(null);
   let savingCaptions = $state(false);
-
-  // Bringing the crop back to where the app places it is one click, so
-  // taking that back has to be one click too. Both are a drag of the crop
-  // frame and nothing more: the crop where it stood, on the frame it was
-  // moved on, is kept until the clip changes or the crop is placed by hand
-  // again. A part rotated on its own has a crop of its own, so the undo is
-  // for the pieces turned the way the moved one was, see #396.
-  let undoCrop = $state<{
-    key: string;
-    turn: number;
-    at: number;
-    left: number;
-    // The clip's framing before the click, which the frames are dressed
-    // against, so the arrow that puts it back shows only where it would
-    // move the crop.
-    framing: string;
-  } | null>(null);
 
   // The episode, played from its own file onto the canvas by the frame
   // queue, see lib/frames/. Every frame drawn, playing or paused, comes
@@ -716,27 +701,14 @@
       // animation frame each time a start dragged later passed the frame
       // on screen, before the playhead followed, issue #755.
       inside: place !== "video" && d.in,
-      moved: d.moved,
     };
   });
 
-  // What the corner of the crop frame offers: the crop where the app
-  // places it, on a frame whose crop stands anywhere else and can be
-  // placed there, and the crop as it was, once that click was made, the
-  // way the captions are put back and then put as they were: back, the
-  // arrow turning anticlockwise, and forward again, clockwise. Each only
-  // on a frame whose crop it would move, which the Go side says in the
-  // frame's dress: an arrow that changes nothing on screen reads as a
-  // button that does not work.
-  const cropUndo = $derived(
-    !clip
-      ? ""
-      : crop?.moved && cropMovable
-        ? "back"
-        : undoCrop?.key === clip.key && undoCrop.turn === turn && dressed?.back
-          ? "forward"
-          : "",
-  );
+  // What the corner of the crop frame offers on the frame on screen, as
+  // the Go side says in its dress: the crop brought to where the app
+  // places it, the arrow turning anticlockwise, or put back, clockwise,
+  // the way the captions are put back. Drawn by the icon of that name.
+  const cornerIcon = $derived(!clip ? "" : dressed?.corner === "auto" ? "back" : dressed?.corner === "back" ? "forward" : "");
 
   // The video preview shows one moment at a time: a frame, and the crop
   // frame, its shade and the captions that belong to that frame, all of
@@ -1353,7 +1325,6 @@
     const ask = clip && askOf(clip, captions);
     if (!ask) return null;
     if (place === "video") return { ...ask, on: "video", track: undefined, drafts: {} };
-    if (undoCrop?.key === clip.key && undoCrop.framing) ask.back = undoCrop.framing;
     if (!ask.track || !captions?.captions) return ask;
     if (fixing && (!laidWords || typed < 0)) return { ...ask, track: undefined, drafts: {} };
     if (dragCaptions !== null) ask.drafts.y = String(dragCaptions);
@@ -1633,7 +1604,6 @@
       const framing = clip?.framing ?? null;
       try {
         await oncrop(on, cropMoment(), dragLeft);
-        undoCrop = null;
         // Kept until the frame on screen has the dress of the crop taken.
         if (framing !== null && clip?.key === on) cropTaken = framing;
         else dragLeft = null;
@@ -1649,31 +1619,15 @@
     target.addEventListener("pointercancel", up);
   }
 
-  // The crop frame moved to where the app places the crop on this frame,
-  // as a drag there would: a keyframe under the playhead takes it, and so
-  // does a piece no keyframe steers. No keyframe is put or removed.
-  async function resetCrop() {
-    if (!clip || !oncrop || !dressed) return;
-    const d = dressed;
-    const was = { key: clip.key, turn, at: cropMoment(), left: d.left, framing: clip.framing ?? "" };
+  // A click on the arrow in the crop frame's corner, forwarded with the
+  // clip and the frame on screen. The Go side decides what it does.
+  async function pressCorner() {
+    if (!clip || savingCrop) return;
+    const key = clip.key;
     savingCrop = true;
     try {
-      await oncrop(was.key, was.at, d.auto);
-      undoCrop = was;
-    } finally {
-      savingCrop = false;
-    }
-  }
-
-  // The crop frame moved back to where it stood before, on the frame it
-  // was moved on, and nothing more.
-  async function cropBack() {
-    const back = undoCrop;
-    if (!back || !oncrop) return;
-    savingCrop = true;
-    try {
-      await oncrop(back.key, back.at, back.left);
-      undoCrop = null;
+      if (dressed?.corner === "auto") await onresetcrop?.(key, cropMoment());
+      else if (dressed?.corner === "back") await onputcropback?.(key);
     } finally {
       savingCrop = false;
     }
@@ -1848,17 +1802,17 @@
              mark when the frame reaches the picture's right edge, see
              .undo. A press on it is no drag of the crop and no click that
              plays. -->
-        {#if cropUndo}
+        {#if cornerIcon}
           <button
             class="undo undo-mark"
             style="--rest: {100 - crop.left - crop.width}"
             disabled={savingCrop}
-            aria-label={cropUndo === "back" ? "Automatic crop" : "Put the crop back"}
-            title={cropUndo === "back" ? "Automatic crop" : "Put the crop back"}
+            aria-label={cornerIcon === "back" ? "Automatic crop" : "Put the crop back"}
+            title={cornerIcon === "back" ? "Automatic crop" : "Put the crop back"}
             onpointerdown={(e) => e.stopPropagation()}
-            onclick={cropUndo === "back" ? resetCrop : cropBack}
+            onclick={pressCorner}
           >
-            <Icon name={cropUndo} />
+            <Icon name={cornerIcon} />
           </button>
         {/if}
       </div>
