@@ -54,6 +54,11 @@ type heardLookups struct {
 
 	languageOnce sync.Once
 	language     string
+
+	// named is the names of clips whose first words are corrected, see
+	// Transcript.Named, by what their words depend on.
+	namedMu sync.Mutex
+	named   map[string][2]string
 }
 
 // keyed is the key of each heard word and the word of each key, or none

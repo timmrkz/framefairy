@@ -30,6 +30,10 @@ func TestAClipIsCalledByTheWordsItShowsNow(t *testing.T) {
 	found := Clip{ID: "01", Slug: "ick-hab", Title: "Ick hab", Segments: []Segment{{Start: 9.9, End: 14}}}
 	corrected := found
 	corrected.Corrections = map[string]string{wordKey(10): "Ich"}
+	// The same clip corrected another way, named after the first was,
+	// so a name kept for its first correction is not the one it gets.
+	again := found
+	again.Corrections = map[string]string{wordKey(10): "Du"}
 	moved := found
 	moved.Segments = []Segment{{Start: 10.45, End: 14}}
 	removed := found
@@ -44,6 +48,8 @@ func TestAClipIsCalledByTheWordsItShowsNow(t *testing.T) {
 	}{
 		{"as it was found", found, said, "Ick hab mich gestern im Wald verlaufen.", "ick-hab-mich-gestern-im-wald-verlaufen"},
 		{"its first word corrected", corrected, said, "Ich hab mich gestern im Wald verlaufen.", "ich-hab-mich-gestern-im-wald-verlaufen"},
+		{"its first word corrected again", again, said, "Du hab mich gestern im Wald verlaufen.", "du-hab-mich-gestern-im-wald-verlaufen"},
+		{"its first word corrected back", corrected, said, "Ich hab mich gestern im Wald verlaufen.", "ich-hab-mich-gestern-im-wald-verlaufen"},
 		{"its start moved past its first word", moved, said, "hab mich gestern im Wald verlaufen.", "hab-mich-gestern-im-wald-verlaufen"},
 		{"its first word removed", removed, said, "hab mich gestern im Wald verlaufen.", "hab-mich-gestern-im-wald-verlaufen"},
 		{"where no word is heard", elsewhere, said, "Ick hab", "ick-hab"},
