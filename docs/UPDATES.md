@@ -524,6 +524,15 @@ certificate was renewed is never kept. The kept copy is checked against
 the team like every other, and the app is sealed around it. See
 `cmd/framefairy-release/kept.go`.
 
+The app runs a tool beside it only when it carries the tool's SHA-256,
+which make builds in, see `engine/tool/find.go`. Signing a tool makes it
+a file of another SHA-256, so once the tools are signed and kept,
+`harden` writes their new sums into the app's own program in place of
+the ones make built in, and only then signs the app, whose signature
+then covers them. A build whose program lacks the sum of a tool it
+carries is not signed at all, because the app would refuse that tool.
+See `cmd/framefairy-release/sums.go`.
+
 Builds made on the Mac with `make` stay signed ad hoc, without the
 hardened runtime, like Xcode's Sign to Run Locally. Under it an app
 signed ad hoc may load no library but Apple's, and the speech libraries
